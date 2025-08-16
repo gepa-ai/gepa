@@ -246,6 +246,9 @@ pip install terminal-bench
 python src/gepa/examples/terminal-bench/train_terminus.py --model_name=gpt-5-mini
 ```
 
+Our preliminary experiments show that GEPA can optimize the human-engineered system prompt for the terminus agent to achieve improvements from 16.7% to 26.7% on a subset of terminal-bench (on ~30 tasks). We are running more experiments to understand the impact of GEPA on the performance of the terminus agent.
+
+
 ## How does GEPA work
 
 GEPA optimizes text components of systems using an evolutionary search algorithm that uses LLM-based reflection for mutating candidates. Most importantly, GEPA leverages task-specific textual feedback (for example, compiler error messages, profiler performance reports, documentation, etc.) to guide the search process. For further details, refer to the paper: [GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning](https://arxiv.org/abs/2507.19457).
