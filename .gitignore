@@ -204,3 +204,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Experiments
+runs/
+gepa_terminus/

@@ -23,12 +23,13 @@ def run_agent_tb(
     dataset_version: str = "head",
     agent_import_path: str = "train_terminus:TerminusWrapper",
     n_concurrent: int = 6,
+    prompt_template_path: str = "prompt-templates/instruction_prompt.txt",
 ):
     """Run the replay agent for multiple task IDs using tb run command."""
 
     env = os.environ.copy()
     # write instruction prompt to file
-    with open("prompt-templates/instruction_prompt.txt", "w") as f:
+    with open(prompt_template_path, "w") as f:
         f.write(instruction_prompt)
 
     cmd = [
@@ -46,6 +47,8 @@ def run_agent_tb(
         run_id,
         "--n-concurrent",
         str(n_concurrent),
+        "--output-path",
+        str(Path(os.getcwd()) / "runs"),
     ]
     if isinstance(task_ids, list):
         for task_id in task_ids:
@@ -56,7 +59,7 @@ def run_agent_tb(
     print(f"Running command: {' '.join(cmd)}")
 
     try:
-        result = subprocess.run(cmd, env=env, cwd=Path(__file__).parent, check=True)
+        result = subprocess.run(cmd, env=env, cwd=Path(prompt_template_path).parent.parent, check=True)
         print(f"Command completed successfully with return code: {result.returncode}")
         return result.returncode
     except subprocess.CalledProcessError as e:
@@ -138,8 +141,13 @@ def get_results(task_id: str, run_id: str) -> tuple[int, list]:
 
 class TerminusAdapter(GEPAAdapter):
 
-    def __init__(self, n_concurrent: int = 6):
+    def __init__(
+        self,
+        n_concurrent: int = 6,
+        instruction_prompt_path: str = "prompt-templates/instruction_prompt.txt",
+    ):
         self.n_concurrent = n_concurrent
+        self.instruction_prompt_path = instruction_prompt_path
 
     def evaluate(
         self,
@@ -159,6 +167,7 @@ class TerminusAdapter(GEPAAdapter):
             example_model_name,
             instruction_prompt=candidate["instruction_prompt"],
             n_concurrent=self.n_concurrent,
+            prompt_template_path=self.instruction_prompt_path,
         )
 
         for example in batch:
