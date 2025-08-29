@@ -17,14 +17,14 @@ authors = [
 license = { text = "MIT" }
 requires-python = ">=3.10, <3.14"
 
-dependencies = []
 
 [project.optional-dependencies]
 full = [
     "litellm>=1.64.0",
     "datasets>=2.14.6",
     "wandb",
-    "tqdm>=4.66.1"
+    "tqdm>=4.66.1",
+    "google-auth>=2.40.3"
 ]
 dspy = []
 test = [

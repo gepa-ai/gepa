@@ -279,6 +279,7 @@ We encourage the community and users to help us develop adapters to allow GEPA t
     - [DefaultAdapter](src/gepa/adapters/default_adapter/) - System Prompt Optimization for a single-turn task.
     - [DSPy Full Program Adapter](src/gepa/adapters/dspy_full_program_adapter/) - Evolves entire DSPy programs including signatures, modules, and control flow. Achieves **93% accuracy** on MATH benchmark (vs 67% with basic DSPy ChainOfThought).
     - [TerminalBench Adapter](src/gepa/adapters/terminal_bench_adapter/) - Easily integrating GEPA into a Terminus, a sophisticated external agentic pipeline, and optimizing the agents' system prompt.
+    - [AnyMaths Adapter](src/gepa/adapters/anymaths_adapter/) - Specialized adapter for optimizing mathematical problem-solving and reasoning tasks. Currently running eval benchmarks on various math datasets (`"openai/gsm8k"`). Please ping [@egmaminta on LinkedIn](www.linkedin.com/in/egmaminta) if you are interested in contributing more eval scores of LLMs, or simply for collaboration.
 
 ## Reference and Citation
 
