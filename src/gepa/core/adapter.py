@@ -18,12 +18,15 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
       they are forwarded to other parts of the user's code or logging as-is.
     - scores: per-example numeric scores (floats). GEPA sums these for minibatch acceptance
       and averages them over the full validation set for tracking/pareto fronts.
+    - multi_scores: per-example multi-dimensional scores (dict of metric_name -> score). 
+      This allows tracking multiple metrics simultaneously for multi-objective optimization.
     - trajectories: optional per-example traces used by make_reflective_dataset to build
       a reflective dataset (See `GEPAAdapter.make_reflective_dataset`). If capture_traces=True is passed to `evaluate`, trajectories
       should be provided and align one-to-one with `outputs` and `scores`.
     """
     outputs: list[RolloutOutput]
     scores: list[float]
+    multi_scores: list[dict[str, float]] | None = None
     trajectories: list[Trajectory] | None = None
 
 class ProposalFn(Protocol):

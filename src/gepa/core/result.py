@@ -46,6 +46,7 @@ class GEPAResult(Generic[RolloutOutput]):
     val_subscores: list[list[float]]
     per_val_instance_best_candidates: list[set[int]]
     discovery_eval_counts: list[int]
+    val_multi_scores: list[list[dict[str, float]]] | None = None
 
     # Optional data
     best_outputs_valset: list[list[tuple[int, list[RolloutOutput]]]] | None = None
@@ -85,6 +86,7 @@ class GEPAResult(Generic[RolloutOutput]):
             parents=self.parents,
             val_aggregate_scores=self.val_aggregate_scores,
             val_subscores=self.val_subscores,
+            val_multi_scores=self.val_multi_scores,
             best_outputs_valset=self.best_outputs_valset,
             per_val_instance_best_candidates=[list(s) for s in self.per_val_instance_best_candidates],
             discovery_eval_counts=self.discovery_eval_counts,
@@ -106,6 +108,7 @@ class GEPAResult(Generic[RolloutOutput]):
             val_aggregate_scores=list(state.program_full_scores_val_set),
             best_outputs_valset=getattr(state, "best_outputs_valset", None),
             val_subscores=[list(s) for s in state.prog_candidate_val_subscores],
+            val_multi_scores=[list(s) for s in state.prog_candidate_multi_subscores] if hasattr(state, 'prog_candidate_multi_subscores') else None,
             per_val_instance_best_candidates=[set(s) for s in state.program_at_pareto_front_valset],
             discovery_eval_counts=list(state.num_metric_calls_by_discovery),
             total_metric_calls=getattr(state, "total_num_evals", None),

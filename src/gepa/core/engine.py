@@ -93,6 +93,14 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         valset_outputs, valset_subscores = self._val_evaluator()(new_program)
         valset_score = sum(valset_subscores) / len(valset_subscores)
 
+        valset_multi_scores = None
+        if hasattr(valset_outputs, 'multi_scores') and valset_outputs.multi_scores is not None:
+            valset_multi_scores = valset_outputs.multi_scores
+        elif isinstance(valset_outputs, list) and len(valset_outputs) > 0:
+            # for extracting multi_scores from the first output if it's an evaluation batch
+            if hasattr(valset_outputs[0], 'multi_scores') and valset_outputs[0].multi_scores is not None:
+                valset_multi_scores = valset_outputs[0].multi_scores
+
         state.num_full_ds_evals += 1
         state.total_num_evals += len(valset_subscores)
 
@@ -102,6 +110,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
             valset_score=valset_score,
             valset_outputs=valset_outputs,
             valset_subscores=valset_subscores,
+            valset_multi_scores=valset_multi_scores,
             run_dir=self.run_dir,
             num_metric_calls_by_discovery_of_new_program=num_metric_calls_by_discovery,
         )
