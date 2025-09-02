@@ -40,6 +40,7 @@ class AnyMathsAdapter(GEPAAdapter[AnyMathsDataInst, AnyMathsTrajectory, AnyMaths
         model: str,
         failure_score: float = 0.0,
         api_base: str | None = "http://localhost:11434",
+        api_key: str | None = None,
         max_litellm_workers: int = 10,
     ) -> None:
         import litellm
@@ -49,6 +50,7 @@ class AnyMathsAdapter(GEPAAdapter[AnyMathsDataInst, AnyMathsTrajectory, AnyMaths
         self.litellm = litellm
         self.max_litellm_workers = max_litellm_workers
         self.api_base = api_base
+        self.api_key = api_key
 
         if self.model.startswith("ollama"):
             assert self.api_base is not None, "API base URL must be provided when using Ollama."
@@ -87,6 +89,7 @@ class AnyMathsAdapter(GEPAAdapter[AnyMathsDataInst, AnyMathsTrajectory, AnyMaths
                 model=self.model,
                 messages=litellm_requests,
                 api_base=self.api_base,
+                api_key=self.api_key,
                 max_workers=self.max_litellm_workers,
                 format=AnyMathsStructuredOutput.model_json_schema(),
             )
