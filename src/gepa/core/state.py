@@ -14,10 +14,12 @@ class GEPAState(Generic[RolloutOutput]):
     parent_program_for_candidate: list[list[int | None]]
 
     program_full_scores_val_set: list[float]
+    program_multi_scores_val_set: list[list[dict[str, float]]]
 
     program_at_pareto_front_valset: list[set[int]]
 
     prog_candidate_val_subscores: list[list[float]]
+    prog_candidate_multi_subscores: list[list[dict[str, float]]]
 
     list_of_named_predictors: list[str]
     named_predictor_id_to_update_next_for_program_candidate: list[int]
@@ -39,6 +41,7 @@ class GEPAState(Generic[RolloutOutput]):
         self,
         seed_candidate: dict[str, str],
         base_valset_eval_output: tuple[list[RolloutOutput], list[float]],
+        base_valset_multi_scores: list[dict[str, float]] | None = None,
         track_best_outputs: bool = False,
     ):
         valset_base_score = sum(base_valset_eval_output[1]) / len(base_valset_eval_output[1])
@@ -60,6 +63,16 @@ class GEPAState(Generic[RolloutOutput]):
         self.prog_candidate_val_subscores = [base_valset_eval_output[1]]
         self.num_metric_calls_by_discovery = [0]
 
+        # Initialize multi-dimensional scores
+        if base_valset_multi_scores is not None:
+            self.program_multi_scores_val_set = [base_valset_multi_scores]
+            self.prog_candidate_multi_subscores = [base_valset_multi_scores]
+        else:
+            # Create default single-dimensional scores if multi_scores not provided
+            default_multi_scores = [{"score": score} for score in base_valset_eval_output[1]]
+            self.program_multi_scores_val_set = [default_multi_scores]
+            self.prog_candidate_multi_subscores = [default_multi_scores]
+
         if track_best_outputs:
             # [(program_idx_1, output_1), (program_idx_2, output_2), ...]
             self.best_outputs_valset = [[(0, output)] for output in base_valset_eval_output[0]]
@@ -73,6 +86,8 @@ class GEPAState(Generic[RolloutOutput]):
         assert len(self.program_candidates) == len(self.named_predictor_id_to_update_next_for_program_candidate)
 
         assert len(self.prog_candidate_val_subscores) == len(self.program_candidates)
+        assert len(self.program_multi_scores_val_set) == len(self.program_candidates)
+        assert len(self.prog_candidate_multi_subscores) == len(self.program_candidates)
         assert len(self.pareto_front_valset) == len(self.program_at_pareto_front_valset)
         assert len(self.program_candidates) == len(self.num_metric_calls_by_discovery)
 
@@ -113,8 +128,9 @@ class GEPAState(Generic[RolloutOutput]):
         valset_score: float,
         valset_outputs: Any,
         valset_subscores: list[float],
-        run_dir: str | None,
-        num_metric_calls_by_discovery_of_new_program: int
+        valset_multi_scores: list[dict[str, float]] | None = None,
+        run_dir: str | None = None,
+        num_metric_calls_by_discovery_of_new_program: int = 0
     ):
         new_program_idx = len(self.program_candidates)
         self.program_candidates.append(new_program)
@@ -126,6 +142,15 @@ class GEPAState(Generic[RolloutOutput]):
 
         self.prog_candidate_val_subscores.append(valset_subscores)
         self.program_full_scores_val_set.append(valset_score)
+        
+        if valset_multi_scores is not None:
+            self.prog_candidate_multi_subscores.append(valset_multi_scores)
+            self.program_multi_scores_val_set.append(valset_multi_scores)
+        else:
+            default_multi_scores = [{"score": score} for score in valset_subscores]
+            self.prog_candidate_multi_subscores.append(default_multi_scores)
+            self.program_multi_scores_val_set.append(default_multi_scores)
+        
         for task_idx, (old_score, new_score) in enumerate(zip(self.pareto_front_valset, valset_subscores, strict=False)):
             if new_score > old_score:
                 self.pareto_front_valset[task_idx] = new_score
@@ -178,9 +203,18 @@ def initialize_gepa_state(
             write_eval_output_to_directory(valset_out, os.path.join(run_dir, "generated_best_outputs_valset"))
         num_evals_run += len(valset_out[1])
 
+        
+        base_valset_multi_scores = None
+        if hasattr(valset_out[0], 'multi_scores') and valset_out[0].multi_scores is not None:
+            base_valset_multi_scores = valset_out[0].multi_scores
+        elif isinstance(valset_out[0], list) and len(valset_out[0]) > 0:
+            if hasattr(valset_out[0][0], 'multi_scores') and valset_out[0][0].multi_scores is not None:
+                base_valset_multi_scores = valset_out[0][0].multi_scores
+
         gepa_state = GEPAState(
             seed_candidate,
             valset_out,
+            base_valset_multi_scores=base_valset_multi_scores,
             track_best_outputs=track_best_outputs,
         )
 
