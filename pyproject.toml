@@ -26,6 +26,27 @@ full = [
     "wandb",
     "tqdm>=4.66.1"
 ]
+chromadb = [
+    "litellm>=1.64.0",
+    "chromadb>=0.4.0"
+]
+weaviate = [
+    "litellm>=1.64.0",
+    "weaviate-client>=4.0.0"
+]
+qdrant = [
+    "litellm>=1.64.0",
+    "qdrant-client>=1.15.0"
+]
+milvus = [
+    "litellm>=1.64.0",
+    "pymilvus>=2.6.0"
+]
+lancedb = [
+    "litellm>=1.64.0",
+    "lancedb>=0.22.0",
+    "pyarrow>=10.0.0"
+]
 dspy = []
 test = [
     "gepa[full]",
