@@ -1,4 +1,4 @@
-# Generic RAG Adapter for GEPA
+# Generic RAG Adapter for GEPA (DOCS ONLY)
 
 A vector store-agnostic RAG (Retrieval-Augmented Generation) adapter that enables GEPA to optimize RAG systems across any vector store implementation.
 
@@ -7,31 +7,31 @@ A vector store-agnostic RAG (Retrieval-Augmented Generation) adapter that enable
 The Generic RAG Adapter brings GEPA's evolutionary optimization to the world of RAG systems. With its pluggable vector store architecture, you can optimize RAG prompts once and deploy across any vector store—from local ChromaDB instances to production Weaviate clusters.
 
 **Key Benefits:**
-- **Vector Store Agnostic**: Write once, run anywhere (ChromaDB, Weaviate, Qdrant, Pinecone, Milvus)
+- **Vector Store Agnostic**: Write once, run anywhere (ChromaDB, Weaviate, Qdrant, Milvus, LanceDB)
 - **Multi-Component Optimization**: Simultaneously optimize query reformulation, context synthesis, answer generation, and reranking
 - **Comprehensive Evaluation**: Both retrieval quality (precision, recall, MRR) and generation quality (F1, BLEU, faithfulness) metrics
 - **Production Ready**: Battle-tested with proper error handling, logging, and performance monitoring
+- **5 Vector Stores Supported**: Complete examples for ChromaDB, Weaviate, Qdrant, Milvus, and LanceDB
 
 ## 🚀 Quick Start
 
 ### Installation
 
 ```bash
-# Basic RAG optimization support
-pip install gepa[rag]
-
-# With specific vector stores
+# Install with specific vector database support
 pip install gepa[chromadb]    # For ChromaDB
-pip install gepa[weaviate]    # For Weaviate
+pip install gepa[weaviate]    # For Weaviate  
+pip install gepa[lancedb]     # For LanceDB
+pip install gepa[milvus]      # For Milvus
+pip install gepa[qdrant]      # For Qdrant
+
+# Or install all at once
+pip install gepa[chromadb,weaviate,lancedb,milvus,qdrant]
 
 # Setup local Ollama models for examples
-# Standard models (higher quality)
-ollama pull gpt-oss:20b   # Task execution model
-ollama pull gpt-oss:120b  # Reflection model for optimization
-
-# Memory-friendly alternatives (for low-resource machines)
-ollama pull llama3.2:1b   # Lightweight task model (~1GB RAM)
-ollama pull llama3.1:8b   # Lightweight reflection model (~5GB RAM)
+ollama pull qwen3:8b          # Default for ChromaDB/Weaviate/Qdrant
+ollama pull llama3.1:8b       # Default for LanceDB/Milvus
+ollama pull nomic-embed-text:latest  # Embedding model
 ```
 
 ### 5-Minute Example
@@ -88,17 +88,24 @@ print("Optimized RAG prompts:", result.best_candidate)
 ### Vector Store Support
 
 ```python
-# ChromaDB (local development)
+# ChromaDB (local development, no Docker required)
 vector_store = ChromaVectorStore.create_local("./kb", "docs")
 
-# Weaviate (production with hybrid search)
-vector_store = WeaviateVectorStore.create_cloud(
-    cluster_url="https://your-cluster.weaviate.network",
-    auth_credentials=weaviate.AuthApiKey("your-key"),
-    collection_name="KnowledgeBase"
+# Weaviate (production with hybrid search, Docker required)
+vector_store = WeaviateVectorStore.create_local(
+    host="localhost", port=8080, collection_name="KnowledgeBase"
 )
 
-# Same optimization pipeline works with both!
+# Qdrant (high performance, Docker optional)
+vector_store = QdrantVectorStore.create_local("./qdrant_db", "KnowledgeBase")
+
+# Milvus (cloud-native, uses Milvus Lite by default)
+vector_store = MilvusVectorStore.create_local("KnowledgeBase")
+
+# LanceDB (serverless, no Docker required)
+vector_store = LanceDBVectorStore.create_local("./lancedb", "KnowledgeBase")
+
+# Same optimization pipeline works with all!
 ```
 
 **Optimizable Components:**
@@ -143,7 +150,7 @@ User Query → Query Reformulation → Document Retrieval → Document Reranking
 ## 🔧 Supported Vector Stores
 
 ### ChromaDB
-Perfect for local development, prototyping, and smaller deployments.
+Perfect for local development, prototyping, and smaller deployments. **No Docker required.**
 
 ```python
 from gepa.adapters.generic_rag_adapter import ChromaVectorStore
@@ -161,7 +168,7 @@ vector_store = ChromaVectorStore.create_memory(
 ```
 
 ### Weaviate
-Production-grade with advanced features like hybrid search and multi-tenancy.
+Production-grade with advanced features like hybrid search and multi-tenancy. **Docker required.**
 
 ```python
 from gepa.adapters.generic_rag_adapter import WeaviateVectorStore
@@ -179,13 +186,52 @@ vector_store = WeaviateVectorStore.create_cloud(
     auth_credentials=weaviate.AuthApiKey("your-api-key"),
     collection_name="Documents"
 )
+```
 
-# Custom deployment
-vector_store = WeaviateVectorStore.create_custom(
-    url="https://your-weaviate-instance.com",
-    auth_credentials=auth_credentials,
-    collection_name="Documents"
+### Qdrant
+High-performance vector database with advanced filtering and payload search. **Docker optional.**
+
+```python
+from gepa.adapters.generic_rag_adapter import QdrantVectorStore
+
+# In-memory (default, no setup required)
+vector_store = QdrantVectorStore.create_memory("documents")
+
+# Local persistent storage
+vector_store = QdrantVectorStore.create_local("./qdrant_db", "documents")
+
+# Remote Qdrant server
+vector_store = QdrantVectorStore.create_remote(
+    host="localhost", port=6333, collection_name="documents"
 )
+```
+
+### Milvus
+Cloud-native vector database designed for large-scale AI applications. **Uses Milvus Lite by default (no Docker required).**
+
+```python
+from gepa.adapters.generic_rag_adapter import MilvusVectorStore
+
+# Milvus Lite (local SQLite-based, no Docker required)
+vector_store = MilvusVectorStore.create_local("documents")
+
+# Full Milvus server (Docker required)
+vector_store = MilvusVectorStore.create_remote(
+    uri="http://localhost:19530", collection_name="documents"
+)
+```
+
+### LanceDB
+Serverless vector database built on the Lance columnar format. **No Docker required.**
+
+```python
+from gepa.adapters.generic_rag_adapter import LanceDBVectorStore
+
+# Local LanceDB instance
+vector_store = LanceDBVectorStore.create_local("./lancedb", "documents")
+
+# In-memory (testing)
+vector_store = LanceDBVectorStore.create_memory("documents")
 ```
 
 ### Adding New Vector Stores
@@ -486,26 +532,37 @@ for i, (trajectory, score) in enumerate(zip(eval_batch.trajectories, eval_batch.
 
 ## 📚 Complete Examples
 
-### Basic Usage
-- **[Basic RAG Optimization](examples/rag_optimization_example.py)** - Start here with ChromaDB
-- **[Weaviate Integration](examples/weaviate_rag_optimization.py)** - Production deployment example
-- **[Multi-Store Comparison](examples/multi_vector_store_comparison.py)** - Compare vector stores
+### Vector Database Examples
+Each vector database has a complete working example in `src/gepa/examples/rag_adapter/`:
 
-### Advanced Patterns
-- **[Production Deployment](examples/production_rag_setup.py)** - Scalable production configuration
-- **[Custom Vector Store](examples/custom_vector_store_example.py)** - Implement your own vector store
-- **[Evaluation Analysis](examples/rag_evaluation_analysis.py)** - Deep-dive into metrics and performance
+- **[ChromaDB Example](examples/rag_adapter/chromadb_optimization.py)** - Local development, no Docker required
+- **[Weaviate Example](examples/rag_adapter/weaviate_optimization.py)** - Production deployment with hybrid search
+- **[Qdrant Example](examples/rag_adapter/qdrant_optimization.py)** - High performance with advanced filtering
+- **[Milvus Example](examples/rag_adapter/milvus_optimization.py)** - Cloud-native with Milvus Lite
+- **[LanceDB Example](examples/rag_adapter/lancedb_optimization.py)** - Serverless, developer-friendly
+
+### Quick Start Guide
+- **[RAG_GUIDE.md](examples/rag_adapter/RAG_GUIDE.md)** - Comprehensive setup instructions for all databases
+- **Docker Requirements** - Clear guidance on which examples need Docker vs. which don't
+- **Model Recommendations** - Performance expectations and use cases for each database
 
 ## 🤝 Contributing
 
 We welcome contributions! Priority areas:
 
 ### New Vector Store Implementations
-- **Qdrant**: Cloud-native vector database with advanced filtering
 - **Pinecone**: Managed vector database with high performance
-- **Milvus**: Open-source vector database for production scale
 - **Elasticsearch**: Search engine with vector capabilities
 - **OpenSearch**: Open-source alternative to Elasticsearch
+- **FAISS**: Facebook AI Similarity Search
+- **Annoy**: Approximate Nearest Neighbors
+
+**Already Implemented:**
+- ✅ **ChromaDB** - Local development and prototyping
+- ✅ **Weaviate** - Production-grade with hybrid search
+- ✅ **Qdrant** - High performance with advanced filtering
+- ✅ **Milvus** - Cloud-native with Milvus Lite support
+- ✅ **LanceDB** - Serverless, developer-friendly
 
 ### Enhancement Areas
 - Advanced reranking algorithms (learning-to-rank, neural rerankers)
@@ -537,6 +594,9 @@ See our [contribution guide](CONTRIBUTING.md) for detailed instructions.
 
 - **[`ChromaVectorStore`](vector_stores/chroma_store.py)**: ChromaDB implementation
 - **[`WeaviateVectorStore`](vector_stores/weaviate_store.py)**: Weaviate implementation
+- **[`QdrantVectorStore`](vector_stores/qdrant_store.py)**: Qdrant implementation
+- **[`MilvusVectorStore`](vector_stores/milvus_store.py)**: Milvus implementation
+- **[`LanceDBVectorStore`](vector_stores/lancedb_store.py)**: LanceDB implementation
 
 ### Type Definitions
 
