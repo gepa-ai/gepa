@@ -1,5 +1,6 @@
 from typing import Any, TypedDict
 
+import litellm
 from pydantic import BaseModel, Field
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
@@ -53,6 +54,9 @@ class AnyMathsAdapter(GEPAAdapter[AnyMathsDataInst, AnyMathsTrajectory, AnyMaths
         if self.model.startswith("ollama"):
             assert self.api_base is not None, "API base URL must be provided when using Ollama."
 
+        if self.api_base is None or self.api_base == "":
+            self.api_base = None
+
     def evaluate(
         self,
         batch: list[AnyMathsDataInst],
@@ -89,8 +93,13 @@ class AnyMathsAdapter(GEPAAdapter[AnyMathsDataInst, AnyMathsTrajectory, AnyMaths
                 api_base=self.api_base,
                 max_workers=self.max_litellm_workers,
                 format=AnyMathsStructuredOutput.model_json_schema(),
+                response_format={
+                    "type": "json_object",
+                    "response_schema": AnyMathsStructuredOutput.model_json_schema(),
+                    "enforce_validation": True,
+                },
             )
-        except Exception as e:
+        except litellm.exceptions.JSONSchemaValidationError as e:
             raise e
 
         for data, response in zip(batch, responses, strict=False):

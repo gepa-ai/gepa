@@ -23,6 +23,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     ):
         self.task_lm = task_lm
         self.metric_fn = metric_fn
+        assert reflection_lm is not None, "DspyAdapter for full-program evolution requires a reflection_lm to be provided"
         self.reflection_lm = reflection_lm
         self.failure_score = failure_score
         self.num_threads = num_threads

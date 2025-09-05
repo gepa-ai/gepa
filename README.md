@@ -265,7 +265,8 @@ We encourage the community and users to help us develop adapters to allow GEPA t
     Step-by-step notebooks showing how to use GEPA for practical optimization tasks via DSPy, including math, structured data extraction for enterprise tasks and privacy conscious delegation task.
   - [Video tutorial by @weaviate on using dspy.GEPA to optimize a listwise reranker](https://www.youtube.com/watch?v=H4o7h6ZbA4o)
 - **Social and Discussion:**  
-  - [X (formerly Twitter) Announcement Thread (Lakshya A Agrawal)](https://x.com/LakshyAAAgrawal/status/1949867947867984322)  
+  - [X (formerly Twitter) Announcement Thread (Lakshya A Agrawal)](https://x.com/LakshyAAAgrawal/status/1949867947867984322)
+  - [GEPA covered by VentureBeat](https://venturebeat.com/ai/gepa-optimizes-llms-without-costly-reinforcement-learning)
   - Stay up to date:  
     - [@LakshyAAAgrawal on X (Twitter)](https://x.com/LakshyAAAgrawal)  
     - [@lateinteraction on X (Twitter)](https://twitter.com/lateinteraction)
@@ -279,6 +280,13 @@ We encourage the community and users to help us develop adapters to allow GEPA t
     - [DefaultAdapter](src/gepa/adapters/default_adapter/) - System Prompt Optimization for a single-turn task.
     - [DSPy Full Program Adapter](src/gepa/adapters/dspy_full_program_adapter/) - Evolves entire DSPy programs including signatures, modules, and control flow. Achieves **93% accuracy** on MATH benchmark (vs 67% with basic DSPy ChainOfThought).
     - [TerminalBench Adapter](src/gepa/adapters/terminal_bench_adapter/) - Easily integrating GEPA into a Terminus, a sophisticated external agentic pipeline, and optimizing the agents' system prompt.
+    - [AnyMaths Adapter](src/gepa/adapters/anymaths_adapter/) - Adapter for optimizing mathematical problem-solving and reasoning tasks. Contributed by [@egmaminta](www.linkedin.com/in/egmaminta).
+- **GEPA uses**
+    - [Context Compression using GEPA](https://github.com/Laurian/context-compression-experiments-2508)
+    - [GEPA Integration into SuperOptiX-AI](https://github.com/SuperagenticAI/gepa-eval)
+    - [GEPA for Observable Javascript](https://observablehq.com/@tomlarkworthy/gepa)
+    - [bandit_dspy](https://github.com/evalops/bandit_dspy)
+    - [GEPA in Go Programming Language](https://github.com/XiaoConstantine/dspy-go)
 
 ## Reference and Citation
 
@@ -294,3 +302,5 @@ If you use this repository, or the GEPA algorithm, kindly cite:
       url={https://arxiv.org/abs/2507.19457}, 
 }
 ```
+
+[![Star History Chart](https://api.star-history.com/svg?repos=gepa-ai/gepa&type=Date)](https://www.star-history.com/#gepa-ai/gepa&Date)

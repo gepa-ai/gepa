@@ -2,7 +2,7 @@
 # https://github.com/gepa-ai/gepa
 
 import random
-from typing import Any
+from typing import Any, Callable
 
 from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
@@ -10,7 +10,7 @@ from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
-from gepa.proposer.reflective_mutation.base import LanguageModel
+from gepa.proposer.reflective_mutation.base import LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import CurrentBestCandidateSelector, ParetoCandidateSelector
@@ -22,13 +22,15 @@ def optimize(
     trainset: list[DataInst],
     valset: list[DataInst] | None = None,
     adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None,
-    task_lm: str | None = None,
+    task_lm: str | Callable | None = None,
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
     candidate_selection_strategy: str = "pareto",
     skip_perfect_score=True,
     reflection_minibatch_size=3,
     perfect_score=1,
+    # Component selection configuration
+    module_selector: "ReflectionComponentSelector | str | None" = None,
     # Merge-based configuration
     use_merge=False,
     max_merge_invocations=5,
@@ -95,6 +97,9 @@ def optimize(
     - reflection_minibatch_size: The number of examples to use for reflection in each proposal step.
     - perfect_score: The perfect score to achieve.
 
+    # Component selection configuration
+    - module_selector: Component selection strategy. Can be a ReflectionComponentSelector instance, a string ('round_robin'), or None. If None, defaults to 'round_robin'. The 'round_robin' strategy cycles through components in order.
+
     # Merge-based configuration
     - use_merge: Whether to use the merge strategy.
     - max_merge_invocations: The maximum number of merge invocations to perform.
@@ -124,9 +129,12 @@ def optimize(
         )
 
     assert max_metric_calls is not None, "max_metric_calls must be set"
-    assert reflection_lm is not None, (
-        "GEPA currently requires a reflection LM to be provided. We will soon support simpler application without specifying a reflection LM."
-    )
+
+    if not hasattr(adapter, "propose_new_texts"):
+        assert reflection_lm is not None, (
+            f"reflection_lm was not provided. The adapter used '{adapter!s}' does not provide a propose_new_texts method, " + \
+            "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
+        )
 
     if isinstance(reflection_lm, str):
         import litellm
@@ -148,7 +156,20 @@ def optimize(
     candidate_selector = (
         ParetoCandidateSelector(rng=rng) if candidate_selection_strategy == "pareto" else CurrentBestCandidateSelector()
     )
-    module_selector = RoundRobinReflectionComponentSelector()
+
+    module_selector = module_selector or "round_robin"
+
+    if isinstance(module_selector, str):
+        module_selector_cls = {
+            "round_robin": RoundRobinReflectionComponentSelector,
+        }.get(module_selector)
+
+        assert module_selector_cls is not None, (
+            f"Unknown module_selector strategy: {module_selector}. Supported strategies: 'round_robin'"
+        )
+
+        module_selector = module_selector_cls()
+
     batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size, rng=rng)
 
     reflective_proposer = ReflectiveMutationProposer(

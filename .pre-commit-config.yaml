@@ -22,6 +22,6 @@ repos:
         args: ["--allow-multiple-documents", "--unsafe"]
       - id: check-toml
       - id: check-added-large-files
-        args: ["--maxkb=1024"]
+        args: ["--maxkb=3000"]
       - id: check-merge-conflict
       - id: debug-statements
