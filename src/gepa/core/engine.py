@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import signal
 import traceback
 from typing import Any, Callable, Generic
 
@@ -45,12 +46,25 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         track_best_outputs: bool = False,
         display_progress_bar: bool = False,
         raise_on_exception: bool = True,
+        # Graceful stopping
+        stop_callback: Callable[[], bool] | None = None,
+        enable_signal_handling: bool = True,
     ):
         # Budget constraint: max_metric_calls must be set
         assert max_metric_calls is not None, "max_metric_calls must be set"
 
         self.logger = logger
         self.run_dir = run_dir
+        
+        # Graceful stopping mechanism
+        self.stop_callback = stop_callback
+        self.enable_signal_handling = enable_signal_handling
+        self._stop_requested = False
+        self._original_signal_handlers = {}
+        
+        # Set up signal handling for graceful shutdown
+        if self.enable_signal_handling:
+            self._setup_signal_handlers()
         self.evaluator = evaluator
         self.valset = valset
         self.seed_candidate = seed_candidate
@@ -180,6 +194,11 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
 
         # Main loop
         while state.total_num_evals < self.max_metric_calls:
+            # Check for stop request
+            if self._should_stop():
+                self.logger.log(f"Iteration {state.i + 1}: Stop requested. Saving state and exiting gracefully...")
+                break
+                
             if self.display_progress_bar:
                 delta = state.total_num_evals - last_pbar_val
                 progress_bar.update(delta)
@@ -260,5 +279,43 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         if self.display_progress_bar:
             progress_bar.close()
 
+        # Restore original signal handlers
+        self._restore_signal_handlers()
+        
         state.save(self.run_dir)
         return state
+
+    def _setup_signal_handlers(self):
+        """Set up signal handlers for graceful shutdown."""
+        def signal_handler(signum, frame):
+            self.logger.log(f"Received signal {signum}. Initiating graceful shutdown...")
+            self._stop_requested = True
+            
+        # Store original handlers and set new ones
+        for sig in [signal.SIGINT, signal.SIGTERM]:
+            try:
+                self._original_signal_handlers[sig] = signal.signal(sig, signal_handler)
+            except (OSError, ValueError):
+                # Signal not available on this platform
+                pass
+
+    def _restore_signal_handlers(self):
+        """Restore original signal handlers."""
+        for sig, handler in self._original_signal_handlers.items():
+            try:
+                signal.signal(sig, handler)
+            except (OSError, ValueError):
+                pass
+
+    def _should_stop(self) -> bool:
+        """Check if the optimization should stop."""
+        if self._stop_requested:
+            return True
+        if self.stop_callback and self.stop_callback():
+            return True
+        return False
+
+    def request_stop(self):
+        """Manually request the optimization to stop gracefully."""
+        self.logger.log("Stop requested manually. Initiating graceful shutdown...")
+        self._stop_requested = True
