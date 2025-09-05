@@ -341,7 +341,10 @@ class LanceDBVectorStore(VectorStoreInterface):
                 # IN clause for multiple values
                 if all(isinstance(v, str) for v in value):
                     # String values - properly escape
-                    escaped_values = [f"'{v.replace('\'', '\'\'')}'" for v in value]
+                    escaped_values = []
+                    for v in value:
+                        escaped_v = v.replace("'", "''")
+                        escaped_values.append(f"'{escaped_v}'")
                     values_str = ', '.join(escaped_values)
                     expressions.append(f"{key} IN ({values_str})")
                 else:
