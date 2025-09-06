@@ -252,8 +252,6 @@ python src/gepa/examples/terminal-bench/train_terminus.py --model_name=gpt-5-min
 
 The [Generic RAG Adapter](src/gepa/adapters/generic_rag_adapter/) enables GEPA to optimize Retrieval-Augmented Generation (RAG) systems using any vector store (ChromaDB, Weaviate, Qdrant, Pinecone) through a pluggable interface. It optimizes query reformulation, context synthesis, answer generation, and document reranking simultaneously.
 
-```bash
-```
 
 See the [complete RAG adapter examples and documentation](src/gepa/examples/rag_adapter/RAG_GUIDE.md) for usage examples, supported vector stores, and step-by-step guides.
 
@@ -288,7 +286,7 @@ We encourage the community and users to help us develop adapters to allow GEPA t
   - [Contributed Adapters](src/gepa/adapters/) – see our adapter templates and issue tracker to request new integrations.
     - [DefaultAdapter](src/gepa/adapters/default_adapter/) - System Prompt Optimization for a single-turn task.
     - [DSPy Full Program Adapter](src/gepa/adapters/dspy_full_program_adapter/) - Evolves entire DSPy programs including signatures, modules, and control flow. Achieves **93% accuracy** on MATH benchmark (vs 67% with basic DSPy ChainOfThought).
-    - [Generic RAG Adapter](src/gepa/adapters/generic_rag_adapter/) - **NEW** Vector store-agnostic RAG optimization supporting ChromaDB, Weaviate, Qdrant, Pinecone, and more. Optimizes query reformulation, context synthesis, answer generation, and document reranking prompts.
+    - [Generic RAG Adapter](src/gepa/adapters/generic_rag_adapter/) - Vector store-agnostic RAG optimization supporting ChromaDB, Weaviate, Qdrant, Pinecone, and more. Optimizes query reformulation, context synthesis, answer generation, and document reranking prompts.
     - [TerminalBench Adapter](src/gepa/adapters/terminal_bench_adapter/) - Easily integrating GEPA into a Terminus, a sophisticated external agentic pipeline, and optimizing the agents' system prompt.
     - [AnyMaths Adapter](src/gepa/adapters/anymaths_adapter/) - Adapter for optimizing mathematical problem-solving and reasoning tasks. Contributed by [@egmaminta](www.linkedin.com/in/egmaminta).
 - **GEPA uses**
