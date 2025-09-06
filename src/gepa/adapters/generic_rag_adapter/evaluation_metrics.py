@@ -161,8 +161,8 @@ class RAGEvaluationMetrics:
         if len(pred_words) < n or len(truth_words) < n:
             return self._token_f1(prediction, ground_truth)
 
-        pred_ngrams = set(tuple(pred_words[i : i + n]) for i in range(len(pred_words) - n + 1))
-        truth_ngrams = set(tuple(truth_words[i : i + n]) for i in range(len(truth_words) - n + 1))
+        pred_ngrams = {tuple(pred_words[i : i + n]) for i in range(len(pred_words) - n + 1)}
+        truth_ngrams = {tuple(truth_words[i : i + n]) for i in range(len(truth_words) - n + 1)}
 
         if len(pred_ngrams) == 0 or len(truth_ngrams) == 0:
             return 0.0

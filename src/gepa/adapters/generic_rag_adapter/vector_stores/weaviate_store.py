@@ -24,13 +24,14 @@ class WeaviateVectorStore(VectorStoreInterface):
             collection_name: Name of the collection/class to use
             embedding_function: Optional function to compute embeddings for queries
         """
-        try:
-            import weaviate
-            import weaviate.classes as wvc
-        except ImportError as e:
+        import importlib.util
+
+        if importlib.util.find_spec("weaviate") is None:
             raise ImportError(
                 "Weaviate client is required for WeaviateVectorStore. Install with: pip install weaviate-client"
-            ) from e
+            )
+
+        import weaviate.classes as wvc
 
         self.client = client
         self.collection_name = collection_name
@@ -54,15 +55,15 @@ class WeaviateVectorStore(VectorStoreInterface):
         """Search for documents similar to the query text using embeddings."""
         if self.embedding_function is None:
             raise ValueError("No embedding function provided for similarity search")
-        
+
         # Compute embeddings for the query
         try:
             query_vector = self.embedding_function(query)
-            if hasattr(query_vector, 'tolist'):
+            if hasattr(query_vector, "tolist"):
                 query_vector = query_vector.tolist()
         except Exception as e:
             raise RuntimeError(f"Failed to compute embeddings for query: {e!s}") from e
-        
+
         # Use vector search with computed embeddings
         return self.vector_search(query_vector, k, filters)
 
@@ -78,22 +79,16 @@ class WeaviateVectorStore(VectorStoreInterface):
         try:
             # Execute query
             if weaviate_filters:
-                response = self.collection.query.near_vector(
-                    near_vector=query_vector, 
-                    limit=k
-                ).where(weaviate_filters)
+                response = self.collection.query.near_vector(near_vector=query_vector, limit=k).where(weaviate_filters)
             else:
-                response = self.collection.query.near_vector(
-                    near_vector=query_vector, 
-                    limit=k
-                )
-            
+                response = self.collection.query.near_vector(near_vector=query_vector, limit=k)
+
             # Handle GenerativeReturn object - access .objects attribute
-            if hasattr(response, 'objects'):
+            if hasattr(response, "objects"):
                 results = response.objects
             else:
                 results = response
-            
+
             return self._format_results(results)
 
         except Exception as e:
@@ -158,7 +153,7 @@ class WeaviateVectorStore(VectorStoreInterface):
                                 vector_data = sample.objects[0].vector
                                 if isinstance(vector_data, dict):
                                     # Named vectors case
-                                    for vector_name, vector_values in vector_data.items():
+                                    for _vector_name, vector_values in vector_data.items():
                                         if vector_values:
                                             dimension = len(vector_values)
                                             break
@@ -173,7 +168,7 @@ class WeaviateVectorStore(VectorStoreInterface):
             supports_hybrid = True  # Weaviate generally supports hybrid search
             try:
                 # Test if hybrid search works by doing a minimal query
-                test_result = self.collection.query.hybrid(query="test", limit=1)
+                self.collection.query.hybrid(query="test", limit=1)
                 supports_hybrid = True
             except Exception:
                 supports_hybrid = False
@@ -270,7 +265,7 @@ class WeaviateVectorStore(VectorStoreInterface):
         documents = []
 
         # Handle both GenerativeReturn objects and direct lists
-        if hasattr(results, 'objects'):
+        if hasattr(results, "objects"):
             objects_list = results.objects
         else:
             objects_list = results

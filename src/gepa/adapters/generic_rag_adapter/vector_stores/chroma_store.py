@@ -23,10 +23,10 @@ class ChromaVectorStore(VectorStoreInterface):
             collection_name: Name of the collection to use
             embedding_function: Optional embedding function for text queries
         """
-        try:
-            import chromadb
-        except ImportError as e:
-            raise ImportError("ChromaDB is required for ChromaVectorStore. Install with: pip install chromadb") from e
+        import importlib.util
+
+        if importlib.util.find_spec("chromadb") is None:
+            raise ImportError("ChromaDB is required for ChromaVectorStore. Install with: pip install chromadb")
 
         self.client = client
         self.collection_name = collection_name
@@ -131,9 +131,9 @@ class ChromaVectorStore(VectorStoreInterface):
             # ChromaDB uses cosine distance, so similarity = 1 - distance
             # Ensure distance is a scalar value (handle numpy arrays and lists)
             try:
-                if hasattr(distance, 'item'):  # numpy scalar
+                if hasattr(distance, "item"):  # numpy scalar
                     distance_val = distance.item()
-                elif hasattr(distance, '__len__') and len(distance) == 1:  # single-element array/list
+                elif hasattr(distance, "__len__") and len(distance) == 1:  # single-element array/list
                     distance_val = float(distance[0])
                 else:
                     distance_val = float(distance)
