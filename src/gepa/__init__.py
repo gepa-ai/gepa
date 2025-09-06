@@ -6,10 +6,10 @@ from .api import optimize
 from .core.adapter import EvaluationBatch, GEPAAdapter
 from .core.result import GEPAResult
 from .examples import aime
-from .utils.stopping import (
+from .utils.stop_condition import (
     create_composite_stopper,
     create_file_stopper,
     create_iteration_stopper,
     create_score_threshold_stopper,
-    create_timeout_stopper,
+    create_timeout_stopcondition,
 )
