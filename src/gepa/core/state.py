@@ -18,7 +18,7 @@ class GEPAState(Generic[RolloutOutput]):
 
     program_at_pareto_front_valset: list[set[int]]
 
-    prog_candidate_val_subscores: list[list[float]]
+    prog_candidate_val_subscores: list[list[tuple[float, ...]]]
     prog_candidate_multi_subscores: list[list[dict[str, float]]]
 
     list_of_named_predictors: list[str]
@@ -60,7 +60,7 @@ class GEPAState(Generic[RolloutOutput]):
         self.named_predictor_id_to_update_next_for_program_candidate = [0]
         self.i = -1
 
-        self.prog_candidate_val_subscores = [base_valset_eval_output[1]]
+        self.prog_candidate_val_subscores = [[(s,) for s in base_valset_eval_output[1]]]
         self.num_metric_calls_by_discovery = [0]
 
         # Initialize multi-dimensional scores
@@ -140,7 +140,7 @@ class GEPAState(Generic[RolloutOutput]):
         self.named_predictor_id_to_update_next_for_program_candidate.append(max_predictor_id)
         self.parent_program_for_candidate.append([p for p in parent_program_idx])
 
-        self.prog_candidate_val_subscores.append(valset_subscores)
+        self.prog_candidate_val_subscores.append([(s,) for s in valset_subscores])
         self.program_full_scores_val_set.append(valset_score)
         
         if valset_multi_scores is not None:
