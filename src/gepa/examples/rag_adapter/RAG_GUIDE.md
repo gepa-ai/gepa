@@ -1,54 +1,64 @@
-# GEPA Generic RAG Adapter Examples
+# GEPA Generic RAG Adapter Guide
 
-This directory contains focused examples demonstrating how to use GEPA's Generic RAG Adapter with different vector stores. Each example supports both local Ollama models and cloud-based LLMs with real AI/ML knowledge bases.
+This guide demonstrates how to use GEPA's Generic RAG Adapter with the new **unified `rag_optimization.py`** script that supports multiple vector stores. This consolidated approach makes it easy to test and compare different vector databases with a single command.
 
-## 📂 Examples Overview
+## 🆕 Unified Script: `rag_optimization.py`
 
-| Example | Vector Store | Docker Required | Key Features |
-|---------|--------------|----------------|--------------|
-| `chromadb_optimization.py` | ChromaDB | ❌ No | Local storage, simple setup, semantic search |
-| `weaviate_optimization.py` | Weaviate | ✅ Yes | Hybrid search, production-ready, advanced features |
-| `lancedb_optimization.py` | LanceDB | ❌ No | Serverless, columnar format, developer-friendly |
-| `milvus_optimization.py` | Milvus | ❌ No* | Cloud-native, scalable, Milvus Lite for local dev |
-| `qdrant_optimization.py` | Qdrant | ❌ No* | Advanced filtering, payload search, high performance |
+**One script, multiple vector stores!** We've consolidated all individual optimization scripts into a single, powerful `rag_optimization.py` that supports all vector stores through command-line arguments.
+
+### 📂 Supported Vector Stores
+
+| Vector Store | Docker Required | Key Features | Usage |
+|--------------|----------------|--------------|--------|
+| **ChromaDB** (default) | ❌ No | Local storage, simple setup, semantic search | `--vector-store chromadb` |
+| **LanceDB** | ❌ No | Serverless, columnar format, developer-friendly | `--vector-store lancedb` |
+| **Milvus** | ❌ No* | Cloud-native, scalable, Milvus Lite for local dev | `--vector-store milvus` |
+| **Qdrant** | ❌ No* | Advanced filtering, payload search, high performance | `--vector-store qdrant` |
+| **Weaviate** | ✅ Yes | Hybrid search, production-ready, advanced features | `--vector-store weaviate` |
 
 *Docker optional for production deployments
+
+### ✨ Benefits of the Unified Approach
+
+- **🔄 Easy Switching**: Test different vector stores with just a flag change
+- **🔧 Consistent Interface**: Same commands work across all databases
+- **📊 Fair Comparison**: Identical test conditions for comparing performance
+- **🛠 Less Maintenance**: Single file to maintain instead of 5 separate scripts
 
 ## 🚀 Quick Start Guide
 
 ### Prerequisites
 
 1. **Install Dependencies:**
-   
-   **Option A: Install with GEPA (Recommended)**
+
+   **Option A: Install All Vector Store Support**
    ```bash
-   # Install GEPA with specific vector database support
-   pip install gepa[chromadb]    # For ChromaDB
-   pip install gepa[weaviate]    # For Weaviate  
-   pip install gepa[lancedb]     # For LanceDB
-   pip install gepa[milvus]      # For Milvus
-   pip install gepa[qdrant]      # For Qdrant
-   
-   # Or install all at once
-   pip install gepa[chromadb,weaviate,lancedb,milvus,qdrant]
+   # Install GEPA with all vector database support (recommended)
+   pip install gepa[rag]
+
+   # Or install individual vector store dependencies
+   pip install chromadb                    # For ChromaDB
+   pip install lancedb pyarrow sentence-transformers  # For LanceDB
+   pip install pymilvus sentence-transformers         # For Milvus
+   pip install qdrant-client                          # For Qdrant
+   pip install weaviate-client                        # For Weaviate
    ```
-   
-   **Option B: Manual Installation**
+
+   **Option B: Install Only What You Need**
    ```bash
-   # Core GEPA
+   # Core GEPA + specific vector store
    pip install gepa
-   
-   # Vector database clients (install as needed)
-   pip install chromadb          # For ChromaDB
-   pip install weaviate-client   # For Weaviate
-   pip install lancedb pyarrow   # For LanceDB
-   pip install pymilvus          # For Milvus
-   pip install qdrant-client     # For Qdrant
-   
-   # LLM support
+
+   # ChromaDB (easiest to start with)
+   pip install chromadb
+
+   # LanceDB (serverless, no Docker needed)
+   pip install lancedb pyarrow sentence-transformers
+
+   # LLM support (if not using Ollama)
    pip install litellm
    ```
-   
+
    **Embedding Models (choose one):**
    ```bash
    pip install sentence-transformers  # For local embeddings
@@ -59,7 +69,7 @@ This directory contains focused examples demonstrating how to use GEPA's Generic
    ```bash
    # Install Ollama
    curl -fsSL https://ollama.com/install.sh | sh
-   
+
    # Pull models used in examples
    ollama pull qwen3:8b
    ollama pull llama3.1:8b
@@ -73,7 +83,7 @@ This directory contains focused examples demonstrating how to use GEPA's Generic
    ```
 
 4. **Docker Requirements:**
-   
+
    | Database | Docker Required | Notes |
    |----------|----------------|-------|
    | **ChromaDB** | ❌ No | Runs locally, no external services |
@@ -81,27 +91,23 @@ This directory contains focused examples demonstrating how to use GEPA's Generic
    | **Milvus** | ❌ No (default) | Uses Milvus Lite (local SQLite) |
    | **Qdrant** | ❌ No (default) | Uses in-memory mode by default |
    | **Weaviate** | ✅ Yes | Requires Docker or cloud instance |
-   
+
    **Docker Setup (only for Weaviate):**
    ```bash
    # Start Weaviate with Docker
    docker run -p 8080:8080 -p 50051:50051 cr.weaviate.io/semitechnologies/weaviate:1.26.1
    ```
-   
+
    **Optional Docker Setup:**
    ```bash
    # For production Milvus (optional)
    docker run -d -p 19530:19530 milvusdb/milvus:latest standalone
-   
+
    # For production Qdrant (optional)
    docker run -p 6333:6333 qdrant/qdrant
    ```
 
-## 🔵 ChromaDB Example
-
-ChromaDB is perfect for getting started - it's lightweight, runs locally, and requires no external services.
-
-**✅ No Docker Required:** Runs completely locally.
+## 🚀 Using the Unified RAG Optimization Script
 
 ### Basic Usage
 
@@ -109,245 +115,222 @@ ChromaDB is perfect for getting started - it's lightweight, runs locally, and re
 # Navigate to the examples directory
 cd src/gepa/examples/rag_adapter
 
-# Run with default settings (Ollama qwen3:8b)
-python chromadb_optimization.py
+# 🔵 ChromaDB (Default - No Docker Required)
+python rag_optimization.py --vector-store chromadb
 
-# Quick test (no optimization)
-python chromadb_optimization.py --max-iterations 0
+# 🟢 LanceDB (Serverless - No Docker Required)
+python rag_optimization.py --vector-store lancedb
 
-# Full optimization run
-python chromadb_optimization.py --max-iterations 20
+# 🔵 Milvus (Local Lite Mode - No Docker Required)
+python rag_optimization.py --vector-store milvus
+
+# 🟡 Qdrant (In-Memory - No Docker Required)
+python rag_optimization.py --vector-store qdrant
+
+# 🟠 Weaviate (Requires Docker)
+python rag_optimization.py --vector-store weaviate
 ```
 
-### With Different Models
+### Quick Test (No Optimization)
 
 ```bash
-# Use different Ollama model
-python chromadb_optimization.py --model ollama/llama3.1:8b
+# Test setup without running full optimization
+python rag_optimization.py --vector-store chromadb --max-iterations 0
+python rag_optimization.py --vector-store lancedb --max-iterations 0
+python rag_optimization.py --vector-store qdrant --max-iterations 0
+```
 
-# Use cloud model (requires API key)
-python chromadb_optimization.py --model gpt-4o-mini --max-iterations 10
+### Full Optimization Runs
 
-# Use Anthropic model
-python chromadb_optimization.py --model claude-3-haiku-20240307
+```bash
+# ChromaDB with 10 iterations
+python rag_optimization.py --vector-store chromadb --max-iterations 10
+
+# LanceDB with 20 iterations
+python rag_optimization.py --vector-store lancedb --max-iterations 20
+
+# Qdrant with 15 iterations
+python rag_optimization.py --vector-store qdrant --max-iterations 15
+```
+
+### Different Models
+
+```bash
+# Use different Ollama models
+python rag_optimization.py --vector-store chromadb --model ollama/llama3.1:8b
+
+# Use cloud models (requires API key)
+python rag_optimization.py --vector-store lancedb --model gpt-4o-mini --max-iterations 10
+
+# Use Anthropic models
+python rag_optimization.py --vector-store qdrant --model claude-3-haiku-20240307
 ```
 
 
-## 🟠 Weaviate Example
+## 📋 Vector Store Specific Instructions
+
+### 🔵 ChromaDB (Default & Easiest)
+
+ChromaDB is perfect for getting started - lightweight, runs locally, no external services needed.
+
+**✅ No Docker Required**
+
+```bash
+# Basic usage (default vector store)
+python rag_optimization.py --vector-store chromadb
+
+# Or simply (chromadb is the default)
+python rag_optimization.py
+
+# Quick test
+python rag_optimization.py --max-iterations 0
+
+# Full optimization run
+python rag_optimization.py --max-iterations 20
+```
+
+**Key Features:**
+- Local persistent storage
+- Simple setup with no configuration
+- Semantic similarity search
+- Built-in embedding functions
+
+
+### 🟢 LanceDB (Serverless & Developer-Friendly)
+
+LanceDB is a serverless vector database built on the Lance columnar format, perfect for local development.
+
+**✅ No Docker Required**
+
+```bash
+# Basic usage
+python rag_optimization.py --vector-store lancedb
+
+# With different models
+python rag_optimization.py --vector-store lancedb --model ollama/qwen3:8b
+
+# Full optimization run
+python rag_optimization.py --vector-store lancedb --max-iterations 20
+```
+
+**Key Features:**
+- Serverless architecture (no external services)
+- Built on Apache Arrow/Lance for performance
+- Creates local database files (./lancedb_demo)
+- Developer-friendly with simple setup
+
+
+### 🔵 Milvus (Cloud-Native & Scalable)
+
+Milvus is a cloud-native vector database designed for large-scale AI applications. Uses Milvus Lite for local development.
+
+**✅ No Docker Required (uses Milvus Lite locally)**
+
+```bash
+# Basic usage (uses local SQLite-based Milvus Lite)
+python rag_optimization.py --vector-store milvus
+
+# With different models
+python rag_optimization.py --vector-store milvus --model gpt-4o-mini --max-iterations 10
+
+# Full optimization run
+python rag_optimization.py --vector-store milvus --max-iterations 15
+```
+
+**Key Features:**
+- Milvus Lite (local SQLite, no Docker needed)
+- Creates local ./milvus_demo.db file automatically
+- Cloud-native design for production scaling
+- Advanced indexing and search capabilities
+
+
+### 🟡 Qdrant (High-Performance & Advanced Filtering)
+
+Qdrant is a high-performance vector database with advanced filtering and payload search capabilities.
+
+**✅ No Docker Required (uses in-memory mode by default)**
+
+```bash
+# Basic usage (in-memory mode)
+python rag_optimization.py --vector-store qdrant
+
+# With different models
+python rag_optimization.py --vector-store qdrant --model gpt-4o-mini --max-iterations 10
+
+# Full optimization run
+python rag_optimization.py --vector-store qdrant --max-iterations 15
+```
+
+**Key Features:**
+- In-memory mode (no external services needed)
+- Advanced metadata filtering capabilities
+- Payload search (vector + metadata combined)
+- High-performance optimized for speed and scale
+- Optional persistent storage or remote server
+
+
+### 🟠 Weaviate (Hybrid Search)
 
 Weaviate offers advanced features like hybrid search (semantic + keyword) and is production-ready.
 
-**⚠️ Docker Required:** This example requires a running Weaviate instance.
-
-### Setup Weaviate
+**⚠️ Docker Required**
 
 ```bash
-# Start Weaviate with Docker (required)
+# Setup: Start Weaviate with Docker (required)
 docker run -p 8080:8080 -p 50051:50051 cr.weaviate.io/semitechnologies/weaviate:1.26.1
 
 # Verify Weaviate is running
 curl http://localhost:8080/v1/meta
-```
 
-### Basic Usage
+# Basic usage (requires Docker setup above)
+python rag_optimization.py --vector-store weaviate
 
-```bash
-# Navigate to the examples directory
-cd src/gepa/examples/rag_adapter
-
-# Run with default settings (Ollama qwen3:8b)
-python weaviate_optimization.py
-
-# Skip data setup (use existing collection)
-python weaviate_optimization.py --skip-setup
+# With cloud models
+python rag_optimization.py --vector-store weaviate --model gpt-4o-mini --max-iterations 10
 
 # Full optimization run
-python weaviate_optimization.py --max-iterations 15
+python rag_optimization.py --vector-store weaviate --max-iterations 15
 ```
 
-### With Different Models
-
-```bash
-# Use cloud model with Weaviate
-python weaviate_optimization.py --model gpt-4o-mini --max-iterations 10
-
-# Use different local model
-python weaviate_optimization.py --model ollama/llama3.1:8b
-```
-
-
-## 🟢 LanceDB Example
-
-LanceDB is a serverless vector database built on the Lance columnar format, perfect for developer-friendly local development.
-
-**✅ No Docker Required:** Serverless, creates local files.
-
-### Key Features
-- **Serverless**: No external services required
-- **Columnar Format**: Built on Apache Arrow/Lance for performance
-- **Developer-Friendly**: Simple setup, works out of the box
-- **Local Storage**: Creates local database files
-
-### Basic Usage
-
-```bash
-# Navigate to the examples directory
-cd src/gepa/examples/rag_adapter
-
-# Run with default settings (Ollama llama3.1:8b)
-python lancedb_optimization.py
-
-# Quick test (no optimization)
-python lancedb_optimization.py --max-iterations 0
-
-# Full optimization run
-python lancedb_optimization.py --max-iterations 20
-```
-
-### With Different Models
-
-```bash
-# Use different Ollama model
-python lancedb_optimization.py --model ollama/qwen3:8b
-
-# Use cloud model (requires API key)
-python lancedb_optimization.py --model gpt-4o-mini --max-iterations 10
-
-# Use Anthropic model
-python lancedb_optimization.py --model claude-3-haiku-20240307
-```
-
-
-## 🔵 Milvus Example
-
-Milvus is a cloud-native vector database designed for large-scale AI applications. This example uses Milvus Lite for local development.
-
-**✅ No Docker Required:** Uses Milvus Lite (local SQLite) by default.
-
-### Key Features
-- **Milvus Lite**: Local SQLite-based version (no Docker required)
-- **Cloud-Native**: Production-ready with full Milvus server option
-- **Scalable**: Designed for large-scale applications
-- **Local Development**: Perfect for testing and development
-
-### Setup Milvus
-
-```bash
-# Default: Milvus Lite (no setup required)
-# Creates local ./milvus_demo.db file automatically
-
-# Optional: Full Milvus Server (for production)
-docker run -d -p 19530:19530 milvusdb/milvus:latest standalone
-```
-
-### Basic Usage
-
-```bash
-# Navigate to the examples directory
-cd src/gepa/examples/rag_adapter
-
-# Run with default settings (Ollama llama3.1:8b, Milvus Lite)
-python milvus_optimization.py
-
-# Quick test (no optimization)
-python milvus_optimization.py --max-iterations 0
-
-# Full optimization run
-python milvus_optimization.py --max-iterations 15
-```
-
-### With Different Models
-
-```bash
-# Use cloud model with Milvus
-python milvus_optimization.py --model gpt-4o-mini --max-iterations 10
-
-# Use different local model
-python milvus_optimization.py --model ollama/qwen3:8b
-```
-
-
-## 🟡 Qdrant Example
-
-Qdrant is a high-performance vector database with advanced filtering and payload search capabilities.
-
-**✅ No Docker Required:** Uses in-memory mode by default.
-
-### Key Features
-- **Advanced Filtering**: Rich metadata filtering capabilities
-- **Payload Search**: Search by both vectors and metadata
-- **High Performance**: Optimized for speed and scale
-- **Flexible Deployment**: In-memory, local file, or remote server
-
-### Setup Qdrant
-
-```bash
-# Default: In-memory mode (no setup required)
-python qdrant_optimization.py
-
-# Option 1: Local persistent storage
-python qdrant_optimization.py --path ./qdrant_db
-
-# Option 2: Remote Qdrant server (optional)
-docker run -p 6333:6333 qdrant/qdrant
-python qdrant_optimization.py --host localhost --port 6333
-```
-
-### Basic Usage
-
-```bash
-# Navigate to the examples directory
-cd src/gepa/examples/rag_adapter
-
-# Run with default settings (Ollama qwen3:8b, in-memory)
-python qdrant_optimization.py
-
-# With persistent local storage
-python qdrant_optimization.py --path ./qdrant_db
-
-# With remote Qdrant server
-python qdrant_optimization.py --host localhost --port 6333
-
-# Full optimization run
-python qdrant_optimization.py --max-iterations 15
-```
-
-### With Different Models
-
-```bash
-# Use cloud model with Qdrant
-python qdrant_optimization.py --model gpt-4o-mini --max-iterations 10
-
-# Use different local model
-python qdrant_optimization.py --model ollama/llama3.1:8b
-
-# With API key for secured instances
-python qdrant_optimization.py --api-key your-api-key
-```
+**Key Features:**
+- Hybrid search (semantic + keyword/BM25 combined)
+- Production-ready with clustering support
+- Rich GraphQL and RESTful APIs
+- Advanced schema management
+- Built-in vectorization modules
 
 
 ## ⚙️ Configuration Options
 
 ### Command Line Arguments
 
-All examples support these common arguments:
+The unified `rag_optimization.py` script supports these arguments:
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--model` | `ollama/qwen3:8b` (ChromaDB/Weaviate/Qdrant)<br>`ollama/llama3.1:8b` (LanceDB/Milvus) | LLM model to use |
-| `--embedding-model` | `ollama/nomic-embed-text:latest` | Embedding model |
-| `--max-iterations` | `5` | GEPA optimization iterations |
-| `--verbose` | `False` | Enable detailed logging |
+| `--vector-store` | `chromadb` | Choose vector store: `chromadb`, `lancedb`, `milvus`, `qdrant`, `weaviate` |
+| `--model` | `ollama/qwen3:8b` | LLM model to use for generation |
+| `--embedding-model` | `ollama/nomic-embed-text:latest` | Embedding model for vector search |
+| `--max-iterations` | `5` | GEPA optimization iterations (use 0 to skip optimization) |
+| `--verbose` | `False` | Enable detailed logging and debugging |
 
-**Database-specific arguments:**
+### Complete Help
 
-| Database | Argument | Default | Description |
-|----------|----------|---------|-------------|
-| **Weaviate** | `--skip-setup` | `False` | Use existing Weaviate collection |
-| **Qdrant** | `--path` | `:memory:` | Local Qdrant database path |
-| **Qdrant** | `--host` | `None` | Qdrant server host (for remote) |
-| **Qdrant** | `--port` | `6333` | Qdrant server port |
-| **Qdrant** | `--api-key` | `None` | Qdrant API key (for secured instances) |
+```bash
+# See all available options
+python rag_optimization.py --help
+```
+
+### Vector Store Selection
+
+```bash
+# Available vector stores (choose one)
+--vector-store chromadb   # Default: Local, no Docker
+--vector-store lancedb    # Serverless, no Docker
+--vector-store milvus     # Local Lite mode, no Docker
+--vector-store qdrant     # In-memory mode, no Docker
+--vector-store weaviate   # Requires Docker
+```
 
 ### Model Recommendations
 
@@ -371,17 +354,26 @@ All examples support these common arguments:
 ### Quick Health Check
 
 ```bash
-# Test all examples (no optimization)
-python chromadb_optimization.py --max-iterations 0
-python weaviate_optimization.py --max-iterations 0
-python lancedb_optimization.py --max-iterations 0
-python milvus_optimization.py --max-iterations 0
-python qdrant_optimization.py --max-iterations 0
+# Test all vector stores (no optimization, just setup verification)
+python rag_optimization.py --vector-store chromadb --max-iterations 0
+python rag_optimization.py --vector-store lancedb --max-iterations 0
+python rag_optimization.py --vector-store milvus --max-iterations 0
+python rag_optimization.py --vector-store qdrant --max-iterations 0
+python rag_optimization.py --vector-store weaviate --max-iterations 0  # Requires Docker
 
-# Test external services
-curl http://localhost:8080/v1/meta  # Weaviate
-curl http://localhost:6333/health   # Qdrant
-ollama list                         # Ollama models
+# Test external services (if using)
+curl http://localhost:8080/v1/meta  # Weaviate (if using Docker)
+ollama list                         # Check available Ollama models
+```
+
+### Compare Vector Stores
+
+```bash
+# Run same optimization across all vector stores for comparison
+python rag_optimization.py --vector-store chromadb --max-iterations 5
+python rag_optimization.py --vector-store lancedb --max-iterations 5
+python rag_optimization.py --vector-store milvus --max-iterations 5
+python rag_optimization.py --vector-store qdrant --max-iterations 5
 ```
 
 ## 🔧 Troubleshooting
@@ -392,7 +384,14 @@ ollama list                         # Ollama models
 ```bash
 # Make sure you're in the right directory
 cd /path/to/gepa/src/gepa/examples/rag_adapter
-python chromadb_optimization.py
+python rag_optimization.py --vector-store chromadb
+
+# If you get import errors, install missing dependencies
+pip install chromadb                    # For ChromaDB
+pip install lancedb pyarrow sentence-transformers  # For LanceDB
+pip install pymilvus sentence-transformers         # For Milvus
+pip install qdrant-client                          # For Qdrant
+pip install weaviate-client                        # For Weaviate
 ```
 
 #### Ollama Issues
@@ -476,13 +475,35 @@ docker ps | grep qdrant
 #### Memory Issues
 ```bash
 # Use cloud model instead of local
-python chromadb_optimization.py --model gpt-4o-mini
+python rag_optimization.py --vector-store chromadb --model gpt-4o-mini
 
 # Reduce iterations
-python chromadb_optimization.py --max-iterations 2
+python rag_optimization.py --vector-store chromadb --max-iterations 2
 
 # Test without optimization first
-python chromadb_optimization.py --max-iterations 0
+python rag_optimization.py --vector-store chromadb --max-iterations 0
+```
+
+#### Vector Store Specific Issues
+
+```bash
+# ChromaDB - No common issues, very stable
+
+# LanceDB - Check PyArrow installation
+python -c "import pyarrow; print('PyArrow OK')"
+pip install lancedb pyarrow sentence-transformers
+
+# Milvus - Check PyMilvus installation
+python -c "import pymilvus; print('PyMilvus OK')"
+pip install pymilvus sentence-transformers
+
+# Qdrant - Check client installation
+python -c "import qdrant_client; print('Qdrant client OK')"
+pip install qdrant-client
+
+# Weaviate - Ensure Docker is running
+curl http://localhost:8080/v1/meta
+docker run -p 8080:8080 -p 50051:50051 cr.weaviate.io/semitechnologies/weaviate:1.26.1
 ```
 
 ### Getting Help
@@ -553,8 +574,12 @@ Typical score improvements with GEPA:
 **Setup Commands:**
 ```bash
 # No Docker required for ChromaDB!
-# Run optimization directly
-PYTHONPATH=src python src/gepa/examples/rag_adapter/chromadb_optimization.py --max-iterations 10 --model ollama/qwen3:8b --verbose
+# Run optimization directly with unified script
+PYTHONPATH=src python src/gepa/examples/rag_adapter/rag_optimization.py \
+    --vector-store chromadb \
+    --max-iterations 10 \
+    --model ollama/qwen3:8b \
+    --verbose
 ```
 
 **Key Observations:**
@@ -585,12 +610,3 @@ Computer vision is a field of artificial intelligence (AI) focused on enabling c
 - Maintained technical accuracy while improving clarity
 
 ---
-
-
-### Quick Decision Guide
-
-- **New to vector databases?** → Start with **ChromaDB** or **LanceDB**
-- **Need advanced filtering?** → Choose **Qdrant**
-- **Building for scale?** → Use **Milvus** or **Weaviate**
-- **Want hybrid search?** → Go with **Weaviate**
-- **Prefer serverless?** → Try **LanceDB**
