@@ -26,7 +26,7 @@ pip install gepa
 cd src/gepa/examples/rag_adapter
 
 # Option A: Install all vector store dependencies (recommended for exploration)
-pip install -r rag_requirements.txt
+pip install -r requirements-rag.txt
 
 # Option B: Install specific vector store dependencies
 pip install litellm chromadb                    # For ChromaDB
@@ -41,7 +41,7 @@ ollama pull llama3.1:8b       # Default for LanceDB/Milvus
 ollama pull nomic-embed-text:latest  # Embedding model
 ```
 
-**Note:** For specific version requirements, see the `rag_requirements.txt` file in the `examples/rag_adapter/` directory.
+**Note:** For specific version requirements, see the `requirements-rag.txt` file in the `examples/rag_adapter/` directory.
 
 ### 5-Minute Example
 
@@ -553,7 +553,7 @@ We've consolidated all vector database examples into a single, unified script in
 
 ### Quick Start Guide
 - **[RAG_GUIDE.md](examples/rag_adapter/RAG_GUIDE.md)** - Comprehensive setup instructions for the unified approach
-- **[rag_requirements.txt](examples/rag_adapter/rag_requirements.txt)** - All vector store dependencies in one file
+- **[requirements-rag.txt](examples/rag_adapter/requirements-rag.txt)** - All vector store dependencies in one file
 - **Docker Requirements** - Clear guidance on which vector stores need Docker vs. which don't
 - **Model Recommendations** - Performance expectations and use cases for each database
 

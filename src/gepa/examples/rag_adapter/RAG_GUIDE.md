@@ -42,7 +42,7 @@ This guide demonstrates how to use GEPA's Generic RAG Adapter with the new **uni
 
    ```bash
    # Option A: Install all dependencies (recommended for exploration)
-   pip install -r rag_requirements.txt
+   pip install -r requirements-rag.txt
 
    # Option B: Install specific vector store dependencies
    # ChromaDB (easiest to start with)
@@ -61,7 +61,7 @@ This guide demonstrates how to use GEPA's Generic RAG Adapter with the new **uni
    pip install litellm weaviate-client
    ```
 
-   **Note:** Vector store dependencies are now separate from the core GEPA package and must be installed manually based on which vector stores you want to use. For specific version requirements, see `rag_requirements.txt`.
+   **Note:** Vector store dependencies are now separate from the core GEPA package and must be installed manually based on which vector stores you want to use. For specific version requirements, see `requirements-rag.txt`.
 
 2. **For Local Models (Ollama):**
    ```bash
@@ -384,8 +384,8 @@ python rag_optimization.py --vector-store qdrant --max-iterations 5
 cd /path/to/gepa/src/gepa/examples/rag_adapter
 python rag_optimization.py --vector-store chromadb
 
-# If you get import errors, install missing dependencies using rag_requirements.txt
-pip install -r rag_requirements.txt
+# If you get import errors, install missing dependencies using requirements-rag.txt
+pip install -r requirements-rag.txt
 
 # Or install specific vector store dependencies:
 pip install litellm chromadb                    # For ChromaDB

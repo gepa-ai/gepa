@@ -26,4 +26,4 @@ pyarrow>=10.0.0
 # For Qdrant: pip install litellm>=1.64.0 qdrant-client>=1.15.0
 # For Milvus: pip install litellm>=1.64.0 pymilvus>=2.6.0
 # For LanceDB: pip install litellm>=1.64.0 lancedb>=0.22.0 pyarrow>=10.0.0
-# For all: pip install -r rag_requirements.txt
+# For all: pip install -r requirements-rag.txt
