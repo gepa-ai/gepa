@@ -223,7 +223,6 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
     # Create RAG configuration
     rag_config = {"retrieval_strategy": "similarity", "top_k": 3, "retrieval_weight": 0.4, "generation_weight": 0.6}
 
-    print("Initializing GenericRAGAdapter with AI/ML knowledge base...")
 
     # Create the RAG adapter with our mocked LLM
     adapter = TestRAGAdapter(vector_store=mock_chromadb_store, rag_config=rag_config)
@@ -236,7 +235,6 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
     seed_candidate = {"answer_generation": "Answer the question '{query}' using the provided context: {context}"}
 
     # 2. Execution: Run the core RAG optimization logic
-    print("Running GEPA optimization process on RAG system...")
     gepa_result = gepa.optimize(
         seed_candidate=seed_candidate,
         trainset=trainset,
@@ -275,13 +273,6 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
     assert gepa_result.total_metric_calls > 0
     assert gepa_result.num_full_val_evals > 0
 
-    print("✅ RAG end-to-end optimization completed successfully!")
-    print(f"   Initial prompt: {seed_prompt}")
-    print(f"   Final prompt: {optimized_prompt}")
-    print(f"   Best score: {best_score}")
-    print(f"   Total metric calls: {gepa_result.total_metric_calls}")
-    print(f"   Full val evaluations: {gepa_result.num_full_val_evals}")
-
 
 def test_rag_adapter_basic_functionality(mock_chromadb_store):
     """
@@ -316,5 +307,3 @@ def test_rag_adapter_basic_functionality(mock_chromadb_store):
         assert len(result.scores) == 1
         assert isinstance(result.scores[0], float)
         assert 0 <= result.scores[0] <= 1
-
-        print("✅ Basic RAG adapter functionality test passed")
