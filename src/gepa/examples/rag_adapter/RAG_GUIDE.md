@@ -31,39 +31,37 @@ This guide demonstrates how to use GEPA's Generic RAG Adapter with the new **uni
 
 1. **Install Dependencies:**
 
-   **Option A: Install All Vector Store Support**
+   **Install GEPA Core:**
    ```bash
-   # Install GEPA with all vector database support (recommended)
-   pip install gepa[rag]
-
-   # Or install individual vector store dependencies
-   pip install chromadb                    # For ChromaDB
-   pip install lancedb pyarrow sentence-transformers  # For LanceDB
-   pip install pymilvus sentence-transformers         # For Milvus
-   pip install qdrant-client                          # For Qdrant
-   pip install weaviate-client                        # For Weaviate
-   ```
-
-   **Option B: Install Only What You Need**
-   ```bash
-   # Core GEPA + specific vector store
    pip install gepa
-
-   # ChromaDB (easiest to start with)
-   pip install chromadb
-
-   # LanceDB (serverless, no Docker needed)
-   pip install lancedb pyarrow sentence-transformers
-
-   # LLM support (if not using Ollama)
-   pip install litellm
    ```
 
-   **Embedding Models (choose one):**
+   **Install RAG Adapter Dependencies:**
+   
+   You can either install all vector store dependencies or specific ones:
+
    ```bash
-   pip install sentence-transformers  # For local embeddings
-   # OR use cloud embeddings (no additional install needed)
+   # Option A: Install all dependencies (recommended for exploration)
+   pip install -r rag_requirements.txt
+
+   # Option B: Install specific vector store dependencies
+   # ChromaDB (easiest to start with)
+   pip install litellm chromadb
+
+   # LanceDB (serverless, no Docker needed)  
+   pip install litellm lancedb pyarrow
+
+   # Milvus (local Lite mode)
+   pip install litellm pymilvus
+
+   # Qdrant (in-memory mode)
+   pip install litellm qdrant-client
+
+   # Weaviate (requires Docker)
+   pip install litellm weaviate-client
    ```
+
+   **Note:** Vector store dependencies are now separate from the core GEPA package and must be installed manually based on which vector stores you want to use. For specific version requirements, see `rag_requirements.txt`.
 
 2. **For Local Models (Ollama):**
    ```bash
@@ -386,12 +384,15 @@ python rag_optimization.py --vector-store qdrant --max-iterations 5
 cd /path/to/gepa/src/gepa/examples/rag_adapter
 python rag_optimization.py --vector-store chromadb
 
-# If you get import errors, install missing dependencies
-pip install chromadb                    # For ChromaDB
-pip install lancedb pyarrow sentence-transformers  # For LanceDB
-pip install pymilvus sentence-transformers         # For Milvus
-pip install qdrant-client                          # For Qdrant
-pip install weaviate-client                        # For Weaviate
+# If you get import errors, install missing dependencies using rag_requirements.txt
+pip install -r rag_requirements.txt
+
+# Or install specific vector store dependencies:
+pip install litellm chromadb                    # For ChromaDB
+pip install litellm lancedb pyarrow             # For LanceDB
+pip install litellm pymilvus                    # For Milvus
+pip install litellm qdrant-client               # For Qdrant
+pip install litellm weaviate-client             # For Weaviate
 ```
 
 #### Ollama Issues
@@ -430,7 +431,7 @@ python -c "import lancedb; print('LanceDB installed')"
 python -c "import pyarrow; print('PyArrow installed')"
 
 # Install missing dependencies
-pip install lancedb pyarrow
+pip install litellm lancedb pyarrow
 
 # Check sentence-transformers for embeddings
 python -c "import sentence_transformers; print('sentence-transformers installed')"
@@ -443,7 +444,7 @@ pip install sentence-transformers
 python -c "import pymilvus; print('PyMilvus installed')"
 
 # Install missing dependencies
-pip install pymilvus
+pip install litellm pymilvus
 
 # Check if milvus_demo.db file exists
 ls -la milvus_demo.db
@@ -459,7 +460,7 @@ curl http://localhost:19530/health
 python -c "import qdrant_client; print('Qdrant client installed')"
 
 # Install missing dependencies
-pip install qdrant-client
+pip install litellm qdrant-client
 
 # Test Qdrant server connection
 curl http://localhost:6333/health
@@ -491,15 +492,15 @@ python rag_optimization.py --vector-store chromadb --max-iterations 0
 
 # LanceDB - Check PyArrow installation
 python -c "import pyarrow; print('PyArrow OK')"
-pip install lancedb pyarrow sentence-transformers
+pip install litellm lancedb pyarrow
 
 # Milvus - Check PyMilvus installation
 python -c "import pymilvus; print('PyMilvus OK')"
-pip install pymilvus sentence-transformers
+pip install litellm pymilvus
 
 # Qdrant - Check client installation
 python -c "import qdrant_client; print('Qdrant client OK')"
-pip install qdrant-client
+pip install litellm qdrant-client
 
 # Weaviate - Ensure Docker is running
 curl http://localhost:8080/v1/meta

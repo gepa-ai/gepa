@@ -27,7 +27,7 @@ class LanceDBVectorStore(VectorStoreInterface):
         import importlib.util
 
         if importlib.util.find_spec("lancedb") is None:
-            raise ImportError("LanceDB is required for LanceDBVectorStore. Install with: pip install lancedb")
+            raise ImportError("LanceDB is required for LanceDBVectorStore. Install with: pip install litellm lancedb pyarrow")
 
         self.db = db
         self.table_name = table_name
@@ -380,7 +380,7 @@ class LanceDBVectorStore(VectorStoreInterface):
         import importlib.util
 
         if importlib.util.find_spec("lancedb") is None or importlib.util.find_spec("pyarrow") is None:
-            raise ImportError("LanceDB and PyArrow are required. Install with: pip install lancedb pyarrow")
+            raise ImportError("LanceDB and PyArrow are required. Install with: pip install litellm lancedb pyarrow")
 
         import lancedb
 
@@ -406,7 +406,7 @@ class LanceDBVectorStore(VectorStoreInterface):
         import importlib.util
 
         if importlib.util.find_spec("lancedb") is None or importlib.util.find_spec("pyarrow") is None:
-            raise ImportError("LanceDB and PyArrow are required. Install with: pip install lancedb pyarrow")
+            raise ImportError("LanceDB and PyArrow are required. Install with: pip install litellm lancedb pyarrow")
 
         import lancedb
 

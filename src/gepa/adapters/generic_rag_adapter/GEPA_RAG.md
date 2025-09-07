@@ -18,21 +18,30 @@ The Generic RAG Adapter brings GEPA's evolutionary optimization to the world of 
 ### Installation
 
 ```bash
-# Install with specific vector database support
-pip install gepa[chromadb]    # For ChromaDB
-pip install gepa[weaviate]    # For Weaviate  
-pip install gepa[lancedb]     # For LanceDB
-pip install gepa[milvus]      # For Milvus
-pip install gepa[qdrant]      # For Qdrant
+# Install core GEPA package
+pip install gepa
 
-# Or install all at once
-pip install gepa[chromadb,weaviate,lancedb,milvus,qdrant]
+# Install RAG adapter dependencies
+# Navigate to the examples/rag_adapter directory
+cd src/gepa/examples/rag_adapter
+
+# Option A: Install all vector store dependencies (recommended for exploration)
+pip install -r rag_requirements.txt
+
+# Option B: Install specific vector store dependencies
+pip install litellm chromadb                    # For ChromaDB
+pip install litellm weaviate-client             # For Weaviate  
+pip install litellm lancedb pyarrow             # For LanceDB
+pip install litellm pymilvus                    # For Milvus
+pip install litellm qdrant-client               # For Qdrant
 
 # Setup local Ollama models for examples
 ollama pull qwen3:8b          # Default for ChromaDB/Weaviate/Qdrant
 ollama pull llama3.1:8b       # Default for LanceDB/Milvus
 ollama pull nomic-embed-text:latest  # Embedding model
 ```
+
+**Note:** For specific version requirements, see the `rag_requirements.txt` file in the `examples/rag_adapter/` directory.
 
 ### 5-Minute Example
 
@@ -532,18 +541,20 @@ for i, (trajectory, score) in enumerate(zip(eval_batch.trajectories, eval_batch.
 
 ## 📚 Complete Examples
 
-### Vector Database Examples
-Each vector database has a complete working example in `src/gepa/examples/rag_adapter/`:
+### Unified RAG Optimization Script
+We've consolidated all vector database examples into a single, unified script in `src/gepa/examples/rag_adapter/`:
 
-- **[ChromaDB Example](examples/rag_adapter/chromadb_optimization.py)** - Local development, no Docker required
-- **[Weaviate Example](examples/rag_adapter/weaviate_optimization.py)** - Production deployment with hybrid search
-- **[Qdrant Example](examples/rag_adapter/qdrant_optimization.py)** - High performance with advanced filtering
-- **[Milvus Example](examples/rag_adapter/milvus_optimization.py)** - Cloud-native with Milvus Lite
-- **[LanceDB Example](examples/rag_adapter/lancedb_optimization.py)** - Serverless, developer-friendly
+- **[Unified RAG Optimization](examples/rag_adapter/rag_optimization.py)** - One script supporting all vector stores
+  - ChromaDB - Local development, no Docker required
+  - Weaviate - Production deployment with hybrid search
+  - Qdrant - High performance with advanced filtering  
+  - Milvus - Cloud-native with Milvus Lite
+  - LanceDB - Serverless, developer-friendly
 
 ### Quick Start Guide
-- **[RAG_GUIDE.md](examples/rag_adapter/RAG_GUIDE.md)** - Comprehensive setup instructions for all databases
-- **Docker Requirements** - Clear guidance on which examples need Docker vs. which don't
+- **[RAG_GUIDE.md](examples/rag_adapter/RAG_GUIDE.md)** - Comprehensive setup instructions for the unified approach
+- **[rag_requirements.txt](examples/rag_adapter/rag_requirements.txt)** - All vector store dependencies in one file
+- **Docker Requirements** - Clear guidance on which vector stores need Docker vs. which don't
 - **Model Recommendations** - Performance expectations and use cases for each database
 
 ## 🤝 Contributing

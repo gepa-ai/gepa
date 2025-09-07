@@ -26,7 +26,7 @@ class ChromaVectorStore(VectorStoreInterface):
         import importlib.util
 
         if importlib.util.find_spec("chromadb") is None:
-            raise ImportError("ChromaDB is required for ChromaVectorStore. Install with: pip install chromadb")
+            raise ImportError("ChromaDB is required for ChromaVectorStore. Install with: pip install litellm chromadb")
 
         self.client = client
         self.collection_name = collection_name
@@ -161,7 +161,7 @@ class ChromaVectorStore(VectorStoreInterface):
         try:
             import chromadb
         except ImportError as e:
-            raise ImportError("ChromaDB is required. Install with: pip install chromadb") from e
+            raise ImportError("ChromaDB is required. Install with: pip install litellm chromadb") from e
 
         client = chromadb.PersistentClient(path=persist_directory)
         return cls(client, collection_name, embedding_function)
@@ -181,7 +181,7 @@ class ChromaVectorStore(VectorStoreInterface):
         try:
             import chromadb
         except ImportError as e:
-            raise ImportError("ChromaDB is required. Install with: pip install chromadb") from e
+            raise ImportError("ChromaDB is required. Install with: pip install litellm chromadb") from e
 
         client = chromadb.Client()
         return cls(client, collection_name, embedding_function)
