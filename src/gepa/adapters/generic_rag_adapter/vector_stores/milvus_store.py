@@ -135,21 +135,8 @@ class MilvusVectorStore(VectorStoreInterface):
     def delete_documents(self, ids: list[str]) -> bool:
         """Delete documents by their IDs."""
         try:
-            # Create filter expression for IDs with proper escaping
-            def _escape_id(id_str: str) -> str:
-                # Escape backslashes and double quotes for Milvus expression syntax
-                return id_str.replace("\\", "\\\\").replace('"', '\\"')
-
-            if len(ids) == 1:
-                safe_id = _escape_id(ids[0])
-                filter_expr = f'id == "{safe_id}"'
-            else:
-                safe_ids = [_escape_id(id_) for id_ in ids]
-                ids_str = '", "'.join(safe_ids)
-                filter_expr = f'id in ["{ids_str}"]'
-
-            # Delete documents
-            result = self.client.delete(collection_name=self.collection_name, filter=filter_expr)
+            # Use parameterized ID-based deletion to avoid injection
+            result = self.client.delete(collection_name=self.collection_name, ids=ids)
 
             return "delete_count" in result and result["delete_count"] > 0
 
