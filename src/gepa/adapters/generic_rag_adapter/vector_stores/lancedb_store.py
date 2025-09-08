@@ -130,19 +130,11 @@ class LanceDBVectorStore(VectorStoreInterface):
     def delete_documents(self, ids: list[str]) -> bool:
         """Delete documents by their IDs."""
         try:
-            # Create filter expression for IDs with proper escaping
-            def _escape_id(id_str: str) -> str:
-                # Escape single quotes by doubling them and escape backslashes
-                return id_str.replace("\\", "\\\\").replace("'", "''")
-
+            # Use parameterized filter to avoid injection
             if len(ids) == 1:
-                safe_id = _escape_id(ids[0])
-                filter_expr = f"id = '{safe_id}'"
+                filter_expr = {"id": ids[0]}
             else:
-                safe_ids = [_escape_id(id_) for id_ in ids]
-                ids_quoted = [f"'{id_}'" for id_ in safe_ids]
-                ids_str = ", ".join(ids_quoted)
-                filter_expr = f"id IN ({ids_str})"
+                filter_expr = {"id": {"$in": ids}}
 
             # Delete documents
             self.table.delete(filter_expr)
