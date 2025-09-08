@@ -129,24 +129,29 @@ class ChromaVectorStore(VectorStoreInterface):
         for doc, metadata, distance in zip(docs, metadatas, distances, strict=False):
             # Convert distance to similarity score (higher is better)
             # ChromaDB uses cosine distance, so similarity = 1 - distance
-            # Ensure distance is a scalar value (handle numpy arrays and lists)
-            try:
-                if hasattr(distance, "item"):  # numpy scalar
-                    distance_val = distance.item()
-                elif hasattr(distance, "__len__") and len(distance) == 1:  # single-element array/list
-                    distance_val = float(distance[0])
-                else:
-                    distance_val = float(distance)
-            except (TypeError, ValueError, IndexError) as e:
-                import logging
-                logging.warning(f"Unexpected distance format: {type(distance)}, value: {distance}, error: {e}")
-                distance_val = 0.0  # Default fallback
+            distance_val = self._extract_distance_value(distance)
             similarity_score = max(0.0, 1.0 - distance_val)
 
             documents.append({"content": doc, "metadata": metadata or {}, "score": similarity_score})
 
         return documents
 
+    def _extract_distance_value(self, distance) -> float:
+        """
+        Helper to extract a scalar float from a distance value returned by ChromaDB.
+        Handles numpy scalars, single-element lists/arrays, and plain floats.
+        """
+        try:
+            if hasattr(distance, "item"):  # numpy scalar
+                return distance.item()
+            elif hasattr(distance, "__len__") and not isinstance(distance, (str, bytes)) and len(distance) == 1:
+                return float(distance[0])
+            else:
+                return float(distance)
+        except (TypeError, ValueError, IndexError) as e:
+            import logging
+            logging.warning(f"Unexpected distance format: {type(distance)}, value: {distance}, error: {e}")
+            return 0.0  # Default fallback
     @classmethod
     def create_local(cls, persist_directory: str, collection_name: str, embedding_function=None) -> "ChromaVectorStore":
         """
