@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import os
 import random
 from typing import Any, Callable
 
@@ -15,6 +16,7 @@ from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMuta
 from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import CurrentBestCandidateSelector, ParetoCandidateSelector
 from gepa.strategies.component_selector import RoundRobinReflectionComponentSelector
+from gepa.utils import CompositeStopper, FileStopper
 
 
 def optimize(
@@ -39,6 +41,7 @@ def optimize(
     # Logging
     logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
+    log_dir: str | None = None,
     use_wandb: bool = False,
     wandb_api_key: str | None = None,
     wandb_init_kwargs: dict[str, Any] | None = None,
@@ -113,6 +116,7 @@ def optimize(
     # Logging
     - logger: A `LoggerProtocol` instance that is used to log the progress of the optimization.
     - run_dir: The directory to save the results to.
+    - log_dir: The directory to monitor for a "gepa.stop" file. If provided, a FileStopper is automatically created to check for the presence of "gepa.stop" in this directory, allowing graceful stopping of the optimization process.
     - use_wandb: Whether to use Weights and Biases to log the progress of the optimization.
     - wandb_api_key: The API key to use for Weights and Biases.
     - wandb_init_kwargs: Additional keyword arguments to pass to the Weights and Biases initialization.
@@ -132,6 +136,14 @@ def optimize(
         )
 
     assert max_metric_calls is not None, "max_metric_calls must be set"
+
+    if log_dir is not None:
+        stop_file_path = os.path.join(log_dir, "gepa.stop")
+        file_stopper = FileStopper(stop_file_path)
+        if stop_callback is None:
+            stop_callback = file_stopper
+        else:
+            stop_callback = CompositeStopper(stop_callback, file_stopper)
 
     if not hasattr(adapter, "propose_new_texts"):
         assert reflection_lm is not None, (

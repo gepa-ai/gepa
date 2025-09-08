@@ -17,7 +17,7 @@ class GEPAState(Generic[RolloutOutput]):
 
     program_at_pareto_front_valset: list[set[int]]
 
-    prog_candidate_val_subscores: list[list[tuple[float, ...]]]
+    prog_candidate_val_subscores: list[list[float]]
 
     list_of_named_predictors: list[str]
     named_predictor_id_to_update_next_for_program_candidate: list[int]
