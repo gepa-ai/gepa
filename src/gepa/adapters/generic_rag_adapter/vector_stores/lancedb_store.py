@@ -130,11 +130,17 @@ class LanceDBVectorStore(VectorStoreInterface):
     def delete_documents(self, ids: list[str]) -> bool:
         """Delete documents by their IDs."""
         try:
-            # Create filter expression for IDs
+            # Create filter expression for IDs with proper escaping
+            def _escape_id(id_str: str) -> str:
+                # Escape single quotes by doubling them and escape backslashes
+                return id_str.replace("\\", "\\\\").replace("'", "''")
+
             if len(ids) == 1:
-                filter_expr = f"id = '{ids[0]}'"
+                safe_id = _escape_id(ids[0])
+                filter_expr = f"id = '{safe_id}'"
             else:
-                ids_quoted = [f"'{id_}'" for id_ in ids]
+                safe_ids = [_escape_id(id_) for id_ in ids]
+                ids_quoted = [f"'{id_}'" for id_ in safe_ids]
                 ids_str = ", ".join(ids_quoted)
                 filter_expr = f"id IN ({ids_str})"
 
@@ -331,8 +337,8 @@ class LanceDBVectorStore(VectorStoreInterface):
 
         for key, value in filters.items():
             if isinstance(value, str):
-                # String exact match - properly escape quotes
-                escaped_value = value.replace("'", "''")
+                # String exact match - properly escape quotes and backslashes
+                escaped_value = value.replace("\\", "\\\\").replace("'", "''")
                 expressions.append(f"{key} = '{escaped_value}'")
             elif isinstance(value, int | float):
                 # Numeric exact match

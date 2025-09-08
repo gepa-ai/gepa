@@ -180,9 +180,9 @@ def create_embedding_function():
                             return response["embedding"]
                     raise ValueError(f"Unknown response format: {type(response)}")
                 except Exception as e:
-                    import random
-                    print(f"Warning: Embedding failed, using random vector: {e}")
-                    return [random.random() for _ in range(768)]
+                    raise RuntimeError(
+                        f"Embedding failed: {e}. Please check your embedding model setup (sentence-transformers or litellm) and ensure all dependencies are installed."
+                    )
             return embed_text
         except ImportError:
             raise ImportError("Either sentence-transformers or litellm is required for embeddings")

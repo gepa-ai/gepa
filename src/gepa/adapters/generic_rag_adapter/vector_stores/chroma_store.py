@@ -137,7 +137,9 @@ class ChromaVectorStore(VectorStoreInterface):
                     distance_val = float(distance[0])
                 else:
                     distance_val = float(distance)
-            except (TypeError, ValueError, IndexError):
+            except (TypeError, ValueError, IndexError) as e:
+                import logging
+                logging.warning(f"Unexpected distance format: {type(distance)}, value: {distance}, error: {e}")
                 distance_val = 0.0  # Default fallback
             similarity_score = max(0.0, 1.0 - distance_val)
 
