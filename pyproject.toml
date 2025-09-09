@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="gepa"
 #replace_package_version_marker
-version="0.0.10"
+version="0.0.11"
 description = "A framework for optimizing textual system components (AI prompts, code snippets, etc.) using LLM-based reflection and Pareto-efficient evolutionary search."
 readme = "README.md"
 authors = [
