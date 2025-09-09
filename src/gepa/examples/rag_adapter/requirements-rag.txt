@@ -1,0 +1,29 @@
+# RAG Adapter Dependencies
+# Install these dependencies based on which vector store you want to use
+
+# Common dependency for all vector stores
+litellm>=1.64.0
+
+# ChromaDB vector store
+chromadb>=0.4.0
+
+# Weaviate vector store  
+weaviate-client>=4.0.0
+
+# Qdrant vector store
+qdrant-client>=1.15.0
+
+# Milvus vector store
+pymilvus>=2.6.0
+
+# LanceDB vector store
+lancedb>=0.22.0
+pyarrow>=10.0.0
+
+# Installation examples:
+# For ChromaDB: pip install litellm>=1.64.0 chromadb>=0.4.0
+# For Weaviate: pip install litellm>=1.64.0 weaviate-client>=4.0.0  
+# For Qdrant: pip install litellm>=1.64.0 qdrant-client>=1.15.0
+# For Milvus: pip install litellm>=1.64.0 pymilvus>=2.6.0
+# For LanceDB: pip install litellm>=1.64.0 lancedb>=0.22.0 pyarrow>=10.0.0
+# For all: pip install -r requirements-rag.txt
