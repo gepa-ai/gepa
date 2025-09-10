@@ -109,8 +109,10 @@ def optimize(
     - use_merge: Whether to use the merge strategy.
     - max_merge_invocations: The maximum number of merge invocations to perform.
 
-    # Budget
+    # Budget and Stop Condition
     - max_metric_calls: The maximum number of metric calls to perform.
+    - stop_callback: Optional callback function that returns True when optimization should stop. Can be used with FileStopper, TimeoutStopCondition, or custom stopping logic.
+    - enable_signal_handling: Whether to enable signal handling for graceful shutdown on SIGINT/SIGTERM. Only needed if you want to stop optimization via keyboard interrupt or system signals.
 
     # Logging
     - logger: A `LoggerProtocol` instance that is used to log the progress of the optimization.
