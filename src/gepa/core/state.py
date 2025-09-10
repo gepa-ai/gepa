@@ -57,7 +57,7 @@ class GEPAState(Generic[RolloutOutput]):
         self.named_predictor_id_to_update_next_for_program_candidate = [0]
         self.i = -1
 
-        self.prog_candidate_val_subscores = [[(s,) for s in base_valset_eval_output[1]]]
+        self.prog_candidate_val_subscores = [base_valset_eval_output[1]]
         self.num_metric_calls_by_discovery = [0]
 
         if track_best_outputs:
@@ -124,7 +124,7 @@ class GEPAState(Generic[RolloutOutput]):
         self.named_predictor_id_to_update_next_for_program_candidate.append(max_predictor_id)
         self.parent_program_for_candidate.append([p for p in parent_program_idx])
 
-        self.prog_candidate_val_subscores.append([(s,) for s in valset_subscores])
+        self.prog_candidate_val_subscores.append(valset_subscores)
         self.program_full_scores_val_set.append(valset_score)
         for task_idx, (old_score, new_score) in enumerate(zip(self.pareto_front_valset, valset_subscores, strict=False)):
             if new_score > old_score:

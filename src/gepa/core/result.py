@@ -43,7 +43,7 @@ class GEPAResult(Generic[RolloutOutput]):
     candidates: list[dict[str, str]]
     parents: list[list[int | None]]
     val_aggregate_scores: list[float]
-    val_subscores: list[list[tuple[float, ...]]]
+    val_subscores: list[list[float]]
     per_val_instance_best_candidates: list[set[int]]
     discovery_eval_counts: list[int]
 

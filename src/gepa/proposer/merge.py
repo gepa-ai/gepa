@@ -261,8 +261,8 @@ class MergeProposer(ProposeNewCandidate):
             state.prog_candidate_val_subscores[id2],
         )
         mini_devset = [self.valset[k] for k in subsample_ids]
-        id1_sub_scores = [state.prog_candidate_val_subscores[id1][k][0] for k in subsample_ids]
-        id2_sub_scores = [state.prog_candidate_val_subscores[id2][k][0] for k in subsample_ids]
+        id1_sub_scores = [state.prog_candidate_val_subscores[id1][k] for k in subsample_ids]
+        id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
 
         _, new_sub_scores = self.evaluator(mini_devset, new_program)
