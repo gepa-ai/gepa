@@ -20,13 +20,13 @@ from .stop_condition import (
 __all__ = [
     "StopperProtocol",
     "TimeoutStopCondition",
-    "FileStopper", 
+    "FileStopper",
     "IterationStopper",
     "ScoreThresholdStopper",
     "CompositeStopper",
     "create_timeout_stopcondition",
     "create_file_stopper",
-    "create_iteration_stopper", 
+    "create_iteration_stopper",
     "create_score_threshold_stopper",
     "create_composite_stopper",
 ]

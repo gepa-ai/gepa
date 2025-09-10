@@ -14,7 +14,7 @@ class StopperProtocol(Protocol):
     
     A stopper is a callable object that returns True when the optimization should stop.
     """
-    
+
     def __call__(self) -> bool:
         """
         Check if the optimization should stop.
@@ -27,11 +27,11 @@ class StopperProtocol(Protocol):
 
 class TimeoutStopCondition:
     # stop callback that stops after a specified timeout
-    
+
     def __init__(self, timeout_seconds: float):
         self.timeout_seconds = timeout_seconds
         self.start_time = time.time()
-    
+
     def __call__(self) -> bool:
         # return true if timeout has been reached
         return time.time() - self.start_time > self.timeout_seconds
@@ -39,19 +39,19 @@ class TimeoutStopCondition:
 
 class FileStopper:
     # stop callback that stops when a specific file exists
-    
+
     def __init__(self, stop_file_path: str):
         self.stop_file_path = stop_file_path
-    
+
     def __call__(self) -> bool:
         # returns true if stop file exists
         return os.path.exists(self.stop_file_path)
-    
+
     def create_stop_file(self):
         # create the stop file to signal stopping
-        with open(self.stop_file_path, 'w') as f:
+        with open(self.stop_file_path, "w") as f:
             f.write(f"Stop requested at {time.time()}\n")
-    
+
     def remove_stop_file(self):
         # remove the stop file
         if os.path.exists(self.stop_file_path):
@@ -60,15 +60,15 @@ class FileStopper:
 
 class IterationStopper:
     # stop callback that stops after a specified number of iterations
-    
+
     def __init__(self, max_iterations: int):
         self.max_iterations = max_iterations
         self.current_iterations = 0
-    
+
     def __call__(self) -> bool:
         # return true if max iterations reached
         return self.current_iterations >= self.max_iterations
-    
+
     def increment(self):
         # increment the iteration counter
         self.current_iterations += 1
@@ -76,11 +76,11 @@ class IterationStopper:
 
 class ScoreThresholdStopper:
     # stop callback that stops when a score threshold is reached
-    
+
     def __init__(self, threshold: float, score_getter: Callable[[], float]):
         self.threshold = threshold
         self.score_getter = score_getter
-    
+
     def __call__(self) -> bool:
         # return true if score threshold is reached
         try:
@@ -92,13 +92,13 @@ class ScoreThresholdStopper:
 
 class CompositeStopper:
     # stop callback that combines multiple stopping conditions
-    
+
     def __init__(self, *stoppers: Callable[[], bool], mode: str = "any"):
         # initialize composite stopper
-        
+
         self.stoppers = stoppers
         self.mode = mode
-    
+
     def __call__(self) -> bool:
         # return true if stopping condition is met
         if self.mode == "any":

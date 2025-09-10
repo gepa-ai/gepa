@@ -53,7 +53,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
 
         self.logger = logger
         self.run_dir = run_dir
-        
+
         # Graceful stopping mechanism
         self.stop_callback = stop_callback
         self.enable_signal_handling = enable_signal_handling
@@ -163,15 +163,6 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
               step=state.i + 1,
           )
 
-          if self.use_wandb:
-              import wandb  # type: ignore
-              wandb.log(
-                  {
-                      "base_program_full_valset_score": state.program_full_scores_val_set[0],
-                      "iteration": state.i + 1,
-                  }
-              )
-
           self.logger.log(
               f"Iteration {state.i + 1}: Base program full valset score: {state.program_full_scores_val_set[0]}"
           )
@@ -264,7 +255,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         def signal_handler(signum, frame):
             self.logger.log(f"Received signal {signum}. Initiating graceful shutdown...")
             self._stop_requested = True
-            
+
         # Store original handlers and set new ones
         for sig in [signal.SIGINT, signal.SIGTERM]:
             try:
