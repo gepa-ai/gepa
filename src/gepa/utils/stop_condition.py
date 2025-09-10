@@ -4,7 +4,25 @@ Utility functions for graceful stopping of GEPA runs.
 
 import os
 import time
-from typing import Callable
+from typing import Callable, Protocol, runtime_checkable
+
+
+@runtime_checkable
+class StopperProtocol(Protocol):
+    """
+    Protocol for stop condition objects.
+    
+    A stopper is a callable object that returns True when the optimization should stop.
+    """
+    
+    def __call__(self) -> bool:
+        """
+        Check if the optimization should stop.
+        
+        Returns:
+            True if the optimization should stop, False otherwise.
+        """
+        ...
 
 
 class TimeoutStopCondition:

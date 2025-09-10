@@ -8,6 +8,7 @@ from .stop_condition import (
     FileStopper,
     IterationStopper,
     ScoreThresholdStopper,
+    StopperProtocol,
     TimeoutStopCondition,
     create_composite_stopper,
     create_file_stopper,
@@ -17,6 +18,7 @@ from .stop_condition import (
 )
 
 __all__ = [
+    "StopperProtocol",
     "TimeoutStopCondition",
     "FileStopper", 
     "IterationStopper",

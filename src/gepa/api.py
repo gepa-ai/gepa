@@ -5,6 +5,12 @@ import os
 import random
 from typing import Any, Callable
 
+from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
+from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.engine import GEPAEngine
+from gepa.core.result import GEPAResult
+from gepa.logging.experiment_tracker import create_experiment_tracker
+from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
