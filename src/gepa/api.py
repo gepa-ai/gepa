@@ -54,6 +54,9 @@ def optimize(
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
+    # Graceful stopping
+    stop_callback: Callable[[], bool] | None = None,
+    enable_signal_handling: bool = True,
 ):
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -234,6 +237,8 @@ def optimize(
         track_best_outputs=track_best_outputs,
         display_progress_bar=display_progress_bar,
         raise_on_exception=raise_on_exception,
+        stop_callback=stop_callback,
+        enable_signal_handling=enable_signal_handling,
     )
 
     with experiment_tracker:
