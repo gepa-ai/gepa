@@ -5,17 +5,15 @@ import os
 import random
 from typing import Any, Callable
 
-from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
-from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
-from gepa.core.engine import GEPAEngine
-from gepa.core.result import GEPAResult
-from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import CurrentBestCandidateSelector, ParetoCandidateSelector
-from gepa.strategies.component_selector import RoundRobinReflectionComponentSelector
+from gepa.strategies.component_selector import (
+    AllReflectionComponentSelector,
+    RoundRobinReflectionComponentSelector,
+)
 from gepa.utils import CompositeStopper, FileStopper
 
 
@@ -32,7 +30,7 @@ def optimize(
     reflection_minibatch_size=3,
     perfect_score=1,
     # Component selection configuration
-    module_selector: "ReflectionComponentSelector | str | None" = None,
+    module_selector: "ReflectionComponentSelector | str" = "round_robin",
     # Merge-based configuration
     use_merge=False,
     max_merge_invocations=5,
@@ -47,6 +45,9 @@ def optimize(
     use_wandb: bool = False,
     wandb_api_key: str | None = None,
     wandb_init_kwargs: dict[str, Any] | None = None,
+    use_mlflow: bool = False,
+    mlflow_tracking_uri: str | None = None,
+    mlflow_experiment_name: str | None = None,
     track_best_outputs: bool = False,
     display_progress_bar: bool = False,
     # Reproducibility
@@ -103,7 +104,7 @@ def optimize(
     - perfect_score: The perfect score to achieve.
 
     # Component selection configuration
-    - module_selector: Component selection strategy. Can be a ReflectionComponentSelector instance, a string ('round_robin'), or None. If None, defaults to 'round_robin'. The 'round_robin' strategy cycles through components in order.
+    - module_selector: Component selection strategy. Can be a ReflectionComponentSelector instance or a string ('round_robin', 'all'). Defaults to 'round_robin'. The 'round_robin' strategy cycles through components in order. The 'all' strategy selects all components for modification in every GEPA iteration.
 
     # Merge-based configuration
     - use_merge: Whether to use the merge strategy.
@@ -121,6 +122,10 @@ def optimize(
     - use_wandb: Whether to use Weights and Biases to log the progress of the optimization.
     - wandb_api_key: The API key to use for Weights and Biases.
     - wandb_init_kwargs: Additional keyword arguments to pass to the Weights and Biases initialization.
+    - use_mlflow: Whether to use MLflow to log the progress of the optimization.
+      Both wandb and mlflow can be used simultaneously if desired.
+    - mlflow_tracking_uri: The tracking URI to use for MLflow.
+    - mlflow_experiment_name: The experiment name to use for MLflow.
     - track_best_outputs: Whether to track the best outputs on the validation set. If True, GEPAResult will contain the best outputs obtained for each task in the validation set.
 
     # Reproducibility
@@ -148,8 +153,8 @@ def optimize(
 
     if not hasattr(adapter, "propose_new_texts"):
         assert reflection_lm is not None, (
-            f"reflection_lm was not provided. The adapter used '{adapter!s}' does not provide a propose_new_texts method, " + \
-            "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
+            f"reflection_lm was not provided. The adapter used '{adapter!s}' does not provide a propose_new_texts method, "
+            + "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
         )
 
     if isinstance(reflection_lm, str):
@@ -173,20 +178,28 @@ def optimize(
         ParetoCandidateSelector(rng=rng) if candidate_selection_strategy == "pareto" else CurrentBestCandidateSelector()
     )
 
-    module_selector = module_selector or "round_robin"
-
     if isinstance(module_selector, str):
         module_selector_cls = {
             "round_robin": RoundRobinReflectionComponentSelector,
+            "all": AllReflectionComponentSelector,
         }.get(module_selector)
 
         assert module_selector_cls is not None, (
-            f"Unknown module_selector strategy: {module_selector}. Supported strategies: 'round_robin'"
+            f"Unknown module_selector strategy: {module_selector}. Supported strategies: 'round_robin', 'all'"
         )
 
         module_selector = module_selector_cls()
 
     batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size, rng=rng)
+
+    experiment_tracker = create_experiment_tracker(
+        use_wandb=use_wandb,
+        wandb_api_key=wandb_api_key,
+        wandb_init_kwargs=wandb_init_kwargs,
+        use_mlflow=use_mlflow,
+        mlflow_tracking_uri=mlflow_tracking_uri,
+        mlflow_experiment_name=mlflow_experiment_name,
+    )
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
@@ -197,7 +210,7 @@ def optimize(
         batch_sampler=batch_sampler,
         perfect_score=perfect_score,
         skip_perfect_score=skip_perfect_score,
-        use_wandb=use_wandb,
+        experiment_tracker=experiment_tracker,
         reflection_lm=reflection_lm,
     )
 
@@ -227,15 +240,16 @@ def optimize(
         reflective_proposer=reflective_proposer,
         merge_proposer=merge_proposer,
         logger=logger,
-        use_wandb=use_wandb,
-        wandb_api_key=wandb_api_key,
-        wandb_init_kwargs=wandb_init_kwargs,
+        experiment_tracker=experiment_tracker,
         track_best_outputs=track_best_outputs,
         display_progress_bar=display_progress_bar,
         raise_on_exception=raise_on_exception,
         stop_callback=stop_callback,
         enable_signal_handling=enable_signal_handling,
     )
-    state = engine.run()
+
+    with experiment_tracker:
+        state = engine.run()
+
     result = GEPAResult.from_state(state)
     return result

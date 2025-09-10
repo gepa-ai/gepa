@@ -9,27 +9,27 @@ from gepa.core.state import GEPAState
 
 
 class CandidateSelector(Protocol):
-    def select_candidate_idx(self, state: GEPAState) -> int:
-        ...
+    def select_candidate_idx(self, state: GEPAState) -> int: ...
+
 
 class ReflectionComponentSelector(Protocol):
-    def select_modules(
+    def __call__(
         self,
         state: GEPAState,
         trajectories: list[Trajectory],
         subsample_scores: list[float],
         candidate_idx: int,
         candidate: dict[str, str],
-    ) -> list[str]:
-        ...
+    ) -> list[str]: ...
+
 
 class BatchSampler(Protocol):
-    def next_minibatch_indices(self, trainset_size: int, iteration: int) -> list[int]:
-        ...
+    def next_minibatch_indices(self, trainset_size: int, iteration: int) -> list[int]: ...
+
 
 class LanguageModel(Protocol):
-    def __call__(self, prompt: str) -> str:
-        ...
+    def __call__(self, prompt: str) -> str: ...
+
 
 @dataclass
 class Signature:

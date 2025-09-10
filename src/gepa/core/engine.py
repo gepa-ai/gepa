@@ -8,7 +8,6 @@ from typing import Any, Callable, Generic
 
 from gepa.core.state import GEPAState, initialize_gepa_state
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
-from gepa.logging.wandb_utils import initialize_wandb
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 
@@ -41,9 +40,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         merge_proposer: MergeProposer | None,
         # Logging
         logger: Any,
-        use_wandb: bool = False,
-        wandb_api_key: str | None = None,
-        wandb_init_kwargs: dict[str, Any] | None = None,
+        experiment_tracker: Any,
         track_best_outputs: bool = False,
         display_progress_bar: bool = False,
         raise_on_exception: bool = True,
@@ -69,10 +66,8 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         self.max_metric_calls = max_metric_calls
 
         self.perfect_score = perfect_score
-        self.use_wandb = use_wandb
-        self.wandb_api_key = wandb_api_key
         self.seed = seed
-        self.wandb_init_kwargs = wandb_init_kwargs or {}
+        self.experiment_tracker = experiment_tracker
 
         self.reflective_proposer = reflective_proposer
         self.merge_proposer = merge_proposer
@@ -127,144 +122,142 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
             valset_score=valset_score,
             new_program_idx=new_program_idx,
             valset_subscores=valset_subscores,
-            # new_instruction="Merged or Reflective program",
-            use_wandb=self.use_wandb,
+            experiment_tracker=self.experiment_tracker,
             linear_pareto_front_program_idx=linear_pareto_front_program_idx,
         )
         return new_program_idx, linear_pareto_front_program_idx
 
     def run(self) -> GEPAState:
-        with self._signal_handler_context():
-            if self.use_wandb:
-                initialize_wandb(wandb_api_key=self.wandb_api_key, wandb_init_kwargs=self.wandb_init_kwargs)
+      with self._signal_handler_context():
+          # Check tqdm availability if progress bar is enabled
+          progress_bar = None
+          if self.display_progress_bar:
+              if tqdm is None:
+                  raise ImportError("tqdm must be installed when display_progress_bar is enabled")
+              # Initialize progress bar
+              progress_bar = tqdm(total=self.max_metric_calls, desc="GEPA Optimization", unit="rollouts")
+              progress_bar.update(0)
+              last_pbar_val = 0
 
-            # Check tqdm availability if progress bar is enabled
-            progress_bar = None
-            if self.display_progress_bar:
-                if tqdm is None:
-                    raise ImportError("tqdm must be installed when display_progress_bar is enabled")
-                # Initialize progress bar
-                progress_bar = tqdm(total=self.max_metric_calls, desc="GEPA Optimization", unit="rollouts")
-                progress_bar.update(0)
-                last_pbar_val = 0
+          # Prepare valset
+          if self.valset is None:
+              raise ValueError("valset must be provided to GEPAEngine.run()")
 
-            # Prepare valset
-            if self.valset is None:
-                raise ValueError("valset must be provided to GEPAEngine.run()")
+          # Initialize state
+          state = initialize_gepa_state(
+              run_dir=self.run_dir,
+              logger=self.logger,
+              seed_candidate=self.seed_candidate,
+              valset_evaluator=self._val_evaluator(),
+              track_best_outputs=self.track_best_outputs,
+          )
 
-            # Initialize state (keeps your previous semantics)
-            state = initialize_gepa_state(
-                run_dir=self.run_dir,
-                logger=self.logger,
-                seed_candidate=self.seed_candidate,
-                valset_evaluator=self._val_evaluator(),
-                track_best_outputs=self.track_best_outputs,
-            )
+          assert len(state.pareto_front_valset) == len(self.valset)
 
-            assert len(state.pareto_front_valset) == len(self.valset)
+          # Log base program score
+          self.experiment_tracker.log_metrics(
+              {
+                  "base_program_full_valset_score": state.program_full_scores_val_set[0],
+                  "iteration": state.i + 1,
+              },
+              step=state.i + 1,
+          )
 
-            if self.use_wandb:
-                import wandb  # type: ignore
+          if self.use_wandb:
+              import wandb  # type: ignore
+              wandb.log(
+                  {
+                      "base_program_full_valset_score": state.program_full_scores_val_set[0],
+                      "iteration": state.i + 1,
+                  }
+              )
 
-                wandb.log(
-                    {
-                        "base_program_full_valset_score": state.program_full_scores_val_set[0],
-                        "iteration": state.i + 1,
-                    }
-                )
+          self.logger.log(
+              f"Iteration {state.i + 1}: Base program full valset score: {state.program_full_scores_val_set[0]}"
+          )
 
-            self.logger.log(
-                f"Iteration {state.i + 1}: Base program full valset score: {state.program_full_scores_val_set[0]}"
-            )
+          # Merge scheduling
+          if self.merge_proposer is not None:
+              self.merge_proposer.last_iter_found_new_program = False
 
-            # Merge scheduling
-            if self.merge_proposer is not None:
-                self.merge_proposer.last_iter_found_new_program = False
+          # Main loop
+          while not self._should_stop(state):
+              if self.display_progress_bar:
+                  delta = state.total_num_evals - last_pbar_val
+                  progress_bar.update(delta)
+                  last_pbar_val = state.total_num_evals
 
-            # Main loop
-            while not self._should_stop(state):
-                if self.display_progress_bar:
-                    delta = state.total_num_evals - last_pbar_val
-                    progress_bar.update(delta)
-                    last_pbar_val = state.total_num_evals
+              assert state.is_consistent()
+              try:
+                  state.save(self.run_dir)
+                  state.i += 1
+                  state.full_program_trace.append({"i": state.i})
 
-                assert state.is_consistent()
-                try:
-                    state.save(self.run_dir)
-                    state.i += 1
-                    state.full_program_trace.append({"i": state.i})
+                  # 1) Attempt merge first if scheduled and last iter found new program
+                  if self.merge_proposer is not None and self.merge_proposer.use_merge:
+                      if self.merge_proposer.merges_due > 0 and self.merge_proposer.last_iter_found_new_program:
+                          proposal = self.merge_proposer.propose(state)
+                          self.merge_proposer.last_iter_found_new_program = False  # old behavior
 
-                    # 1) Attempt merge first if scheduled and last iter found new program
-                    if self.merge_proposer is not None and self.merge_proposer.use_merge:
-                        if self.merge_proposer.merges_due > 0 and self.merge_proposer.last_iter_found_new_program:
-                            proposal = self.merge_proposer.propose(state)
-                            # Old behavior: clear the flag as soon as we attempt a merge
-                            self.merge_proposer.last_iter_found_new_program = False
+                          if proposal is not None and proposal.tag == "merge":
+                              parent_sums = proposal.subsample_scores_before or [float("-inf"), float("-inf")]
+                              new_sum = sum(proposal.subsample_scores_after or [])
 
-                            if proposal is not None and proposal.tag == "merge":
-                                parent_sums = proposal.subsample_scores_before or [float("-inf"), float("-inf")]
-                                new_sum = sum(proposal.subsample_scores_after or [])
+                              if new_sum >= max(parent_sums):
+                                  self._run_full_eval_and_add(
+                                      new_program=proposal.candidate,
+                                      state=state,
+                                      parent_program_idx=proposal.parent_program_ids,
+                                  )
+                                  self.merge_proposer.merges_due -= 1
+                                  self.merge_proposer.total_merges_tested += 1
+                                  continue  # skip reflective this iteration
+                              else:
+                                  self.logger.log(
+                                      f"Iteration {state.i + 1}: New program subsample score {new_sum} "
+                                      f"is worse than both parents {parent_sums}, skipping merge"
+                                  )
+                                  continue
+                      self.merge_proposer.last_iter_found_new_program = False
 
-                                if new_sum >= max(parent_sums):
-                                    # ACCEPTED: consume one merge attempt and record it
-                                    self._run_full_eval_and_add(
-                                        new_program=proposal.candidate,
-                                        state=state,
-                                        parent_program_idx=proposal.parent_program_ids,
-                                    )
-                                    self.merge_proposer.merges_due -= 1
-                                    self.merge_proposer.total_merges_tested += 1
+                  # 2) Reflective mutation proposer
+                  proposal = self.reflective_proposer.propose(state)
+                  if proposal is None:
+                      self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
+                      continue
 
-                                    # Skip reflective this iteration (old behavior)
-                                    continue
-                                else:
-                                    # REJECTED: do NOT consume merges_due or total_merges_tested
-                                    self.logger.log(
-                                        f"Iteration {state.i + 1}: New program subsample score {new_sum} is worse than both parents {parent_sums}, skipping merge"
-                                    )
-                                    # Skip reflective this iteration (old behavior)
-                                    continue
-                        # Old behavior: regardless of whether we attempted, clear the flag before reflective
-                        self.merge_proposer.last_iter_found_new_program = False
+                  old_sum = sum(proposal.subsample_scores_before or [])
+                  new_sum = sum(proposal.subsample_scores_after or [])
+                  if new_sum <= old_sum:
+                      self.logger.log(f"Iteration {state.i + 1}: New subsample score is not better, skipping")
+                      continue
 
-                    # 2) Reflective mutation proposer
-                    proposal = self.reflective_proposer.propose(state)
-                    if proposal is None:
-                        self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
-                        continue
+                  # Accept
+                  self._run_full_eval_and_add(
+                      new_program=proposal.candidate,
+                      state=state,
+                      parent_program_idx=proposal.parent_program_ids,
+                  )
 
-                    # Acceptance: require strict improvement on subsample
-                    old_sum = sum(proposal.subsample_scores_before or [])
-                    new_sum = sum(proposal.subsample_scores_after or [])
-                    if new_sum <= old_sum:
-                        self.logger.log(f"Iteration {state.i + 1}: New subsample score is not better, skipping")
-                        continue
+                  if self.merge_proposer is not None:
+                      self.merge_proposer.last_iter_found_new_program = True
+                      if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
+                          self.merge_proposer.merges_due += 1
 
-                    # Accept: full eval + add
-                    self._run_full_eval_and_add(
-                        new_program=proposal.candidate, state=state, parent_program_idx=proposal.parent_program_ids
-                    )
+              except Exception as e:
+                  self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
+                  self.logger.log(traceback.format_exc())
+                  if self.raise_on_exception:
+                      raise e
+                  else:
+                      continue
 
-                    # Schedule merge attempts like original behavior
-                    if self.merge_proposer is not None:
-                        self.merge_proposer.last_iter_found_new_program = True
-                        if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
-                            self.merge_proposer.merges_due += 1
+          if self.display_progress_bar:
+              progress_bar.close()
 
-                except Exception as e:
-                    self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
-                    self.logger.log(traceback.format_exc())
-                    if self.raise_on_exception:
-                        raise e
-                    else:
-                        continue
+      state.save(self.run_dir)
+      return state
 
-            # Close progress bar if it exists
-            if self.display_progress_bar:
-                progress_bar.close()
-
-        state.save(self.run_dir)
-        return state
 
     def _setup_signal_handlers(self):
         """Set up signal handlers for graceful shutdown."""
