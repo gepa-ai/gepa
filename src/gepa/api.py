@@ -36,8 +36,10 @@ def optimize(
     # Merge-based configuration
     use_merge=False,
     max_merge_invocations=5,
-    # Budget
+    # Budget and Stop Condition
     max_metric_calls=None,
+    stop_callback: Callable[[], bool] | None = None,
+    enable_signal_handling: bool = True,
     # Logging
     logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
@@ -50,9 +52,6 @@ def optimize(
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
-    # Graceful stopping
-    stop_callback: Callable[[], bool] | None = None,
-    enable_signal_handling: bool = True,
 ):
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
