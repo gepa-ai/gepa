@@ -163,12 +163,8 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
 
         # Create no improvement stopper if requested
         if self.max_iterations_without_improvement is not None:
-            def get_best_score():
-                return max(state.program_full_scores_val_set) if state.program_full_scores_val_set else 0.0
-
             self._no_improvement_stopper = NoImprovementStopper(
-                self.max_iterations_without_improvement,
-                get_best_score
+                self.max_iterations_without_improvement
             )
 
             # Combine with existing stop_callback if it exists

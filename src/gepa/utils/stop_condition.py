@@ -62,20 +62,6 @@ class FileStopper(StopperProtocol):
             os.remove(self.stop_file_path)
 
 
-class IterationStopper(StopperProtocol):
-    # stop callback that stops after a specified number of iterations
-
-    def __init__(self, max_iterations: int):
-        self.max_iterations = max_iterations
-        self.current_iterations = 0
-
-    def __call__(self, gepa_state) -> bool:
-        # return true if max iterations reached
-        return self.current_iterations >= self.max_iterations
-
-    def increment(self):
-        # increment the iteration counter
-        self.current_iterations += 1
 
 
 class ScoreThresholdStopper(StopperProtocol):
@@ -97,16 +83,15 @@ class ScoreThresholdStopper(StopperProtocol):
 class NoImprovementStopper(StopperProtocol):
     # stop callback that stops after a specified number of iterations without improvement
 
-    def __init__(self, max_iterations_without_improvement: int, score_getter: Callable[[], float]):
+    def __init__(self, max_iterations_without_improvement: int):
         self.max_iterations_without_improvement = max_iterations_without_improvement
-        self.score_getter = score_getter
         self.best_score = float("-inf")
         self.iterations_without_improvement = 0
 
     def __call__(self, gepa_state) -> bool:
         # return true if max iterations without improvement reached
         try:
-            current_score = self.score_getter()
+            current_score = max(gepa_state.program_full_scores_val_set) if gepa_state.program_full_scores_val_set else 0.0
             if current_score > self.best_score:
                 self.best_score = current_score
                 self.iterations_without_improvement = 0
@@ -187,45 +172,3 @@ class CompositeStopper(StopperProtocol):
             raise ValueError(f"Unknown mode: {self.mode}")
 
 
-def create_timeout_stopcondition(timeout_seconds: float) -> Callable[[Any], bool]:
-    # create a timeout-based stop callback
-    return TimeoutStopCondition(timeout_seconds)
-
-
-def create_file_stopper(stop_file_path: str) -> tuple[Callable[[Any], bool], FileStopper]:
-    # creates a file-based stop callback
-    file_stopper = FileStopper(stop_file_path)
-    return file_stopper, file_stopper
-
-
-def create_iteration_stopper(max_iterations: int) -> tuple[Callable[[Any], bool], IterationStopper]:
-    # creates an iteration-based stop callback
-    iteration_stopper = IterationStopper(max_iterations)
-    return iteration_stopper, iteration_stopper
-
-
-def create_score_threshold_stopper(threshold: float, score_getter: Callable[[], float]) -> Callable[[Any], bool]:
-    # creates a score threshold-based stop callback
-    return ScoreThresholdStopper(threshold, score_getter)
-
-
-def create_no_improvement_stopper(max_iterations_without_improvement: int, score_getter: Callable[[], float]) -> tuple[Callable[[Any], bool], NoImprovementStopper]:
-    # creates a no-improvement-based stop callback
-    no_improvement_stopper = NoImprovementStopper(max_iterations_without_improvement, score_getter)
-    return no_improvement_stopper, no_improvement_stopper
-
-
-def create_signal_stopper(signals=None) -> tuple[Callable[[Any], bool], SignalStopper]:
-    # creates a signal-based stop callback
-    signal_stopper = SignalStopper(signals)
-    return signal_stopper, signal_stopper
-
-
-def create_max_metric_calls_stopper(max_metric_calls: int) -> Callable[[Any], bool]:
-    # creates a max metric calls-based stop callback
-    return MaxMetricCallsStopper(max_metric_calls)
-
-
-def create_composite_stopper(*stoppers: Callable[[Any], bool], mode: str = "any") -> Callable[[Any], bool]:
-    # creates a composite stop callback that combines multiple conditions
-    return CompositeStopper(*stoppers, mode=mode)
