@@ -57,12 +57,12 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         self.max_iterations_without_improvement = max_iterations_without_improvement
         self._stop_requested = False
         self._no_improvement_stopper = None
-        
+
         # Create composite stopper with user callback + max_metric_calls stopper
-        from gepa.utils import MaxMetricCallsStopper, CompositeStopper
-        
+        from gepa.utils import CompositeStopper, MaxMetricCallsStopper
+
         max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
-        
+
         if stop_callback is None:
             self.stop_callback = max_calls_stopper
         else:
@@ -165,12 +165,12 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         if self.max_iterations_without_improvement is not None:
             def get_best_score():
                 return max(state.program_full_scores_val_set) if state.program_full_scores_val_set else 0.0
-            
+
             self._no_improvement_stopper = NoImprovementStopper(
-                self.max_iterations_without_improvement, 
+                self.max_iterations_without_improvement,
                 get_best_score
             )
-            
+
             # Combine with existing stop_callback if it exists
             if self.stop_callback is None:
                 self.stop_callback = self._no_improvement_stopper

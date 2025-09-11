@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+from typing import ClassVar
 
 from gepa.proposer.reflective_mutation.base import Signature
 
@@ -24,8 +25,8 @@ Read all the assistant responses and the corresponding feedback. Identify all ni
 
 Provide the new instructions within ``` blocks."""
 
-    input_keys = ["current_instruction_doc", "dataset_with_feedback"]
-    output_keys = ["new_instruction"]
+    input_keys: ClassVar[list[str]] = ["current_instruction_doc", "dataset_with_feedback"]
+    output_keys: ClassVar[list[str]] = ["new_instruction"]
 
     @classmethod
     def prompt_renderer(cls, input_dict: dict[str, str]) -> str:
@@ -40,7 +41,7 @@ Provide the new instructions within ``` blocks."""
                     if not value:
                         s += "\n"
                     return s
-                elif isinstance(value, (list, tuple)):
+                elif isinstance(value, list | tuple):
                     s = ""
                     for i, item in enumerate(value):
                         s += f"{'#' * level} Item {i + 1}\n"

@@ -20,7 +20,7 @@ from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
 )
-from gepa.utils import CompositeStopper, FileStopper, NoImprovementStopper, SignalStopper
+from gepa.utils import CompositeStopper, FileStopper
 
 
 def optimize(

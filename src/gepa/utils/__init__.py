@@ -26,7 +26,7 @@ from .stop_condition import (
 __all__ = [
     "StopperProtocol",
     "TimeoutStopCondition",
-    "FileStopper", 
+    "FileStopper",
     "IterationStopper",
     "MaxMetricCallsStopper",
     "NoImprovementStopper",

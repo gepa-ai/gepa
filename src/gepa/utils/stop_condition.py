@@ -12,17 +12,17 @@ from typing import Any, Callable, Protocol, runtime_checkable
 class StopperProtocol(Protocol):
     """
     Protocol for stop condition objects.
-    
+
     A stopper is a callable object that returns True when the optimization should stop.
     """
 
     def __call__(self, gepa_state) -> bool:
         """
         Check if the optimization should stop.
-        
+
         Args:
             gepa_state: The current GEPA state containing optimization information
-            
+
         Returns:
             True if the optimization should stop, False otherwise.
         """
@@ -96,13 +96,13 @@ class ScoreThresholdStopper(StopperProtocol):
 
 class NoImprovementStopper(StopperProtocol):
     # stop callback that stops after a specified number of iterations without improvement
-    
+
     def __init__(self, max_iterations_without_improvement: int, score_getter: Callable[[], float]):
         self.max_iterations_without_improvement = max_iterations_without_improvement
         self.score_getter = score_getter
-        self.best_score = float('-inf')
+        self.best_score = float("-inf")
         self.iterations_without_improvement = 0
-    
+
     def __call__(self, gepa_state) -> bool:
         # return true if max iterations without improvement reached
         try:
@@ -112,11 +112,11 @@ class NoImprovementStopper(StopperProtocol):
                 self.iterations_without_improvement = 0
             else:
                 self.iterations_without_improvement += 1
-            
+
             return self.iterations_without_improvement >= self.max_iterations_without_improvement
         except Exception:
             return False
-    
+
     def reset(self):
         """Reset the counter (useful when manually improving the score)."""
         self.iterations_without_improvement = 0
@@ -124,18 +124,18 @@ class NoImprovementStopper(StopperProtocol):
 
 class SignalStopper(StopperProtocol):
     # stop callback that stops when a signal is received
-    
+
     def __init__(self, signals=None):
         self.signals = signals or [signal.SIGINT, signal.SIGTERM]
         self._stop_requested = False
         self._original_handlers = {}
         self._setup_signal_handlers()
-    
+
     def _setup_signal_handlers(self):
         """Set up signal handlers for graceful shutdown."""
         def signal_handler(signum, frame):
             self._stop_requested = True
-            
+
         # Store original handlers and set new ones
         for sig in self.signals:
             try:
@@ -143,11 +143,11 @@ class SignalStopper(StopperProtocol):
             except (OSError, ValueError):
                 # Signal not available on this platform
                 pass
-    
+
     def __call__(self, gepa_state) -> bool:
         # return true if a signal was received
         return self._stop_requested
-    
+
     def cleanup(self):
         """Restore original signal handlers."""
         for sig, handler in self._original_handlers.items():
@@ -159,10 +159,10 @@ class SignalStopper(StopperProtocol):
 
 class MaxMetricCallsStopper(StopperProtocol):
     # stop callback that stops after a maximum number of metric calls
-    
+
     def __init__(self, max_metric_calls: int):
         self.max_metric_calls = max_metric_calls
-    
+
     def __call__(self, gepa_state) -> bool:
         # return true if max metric calls reached
         return gepa_state.total_num_evals >= self.max_metric_calls
@@ -170,13 +170,13 @@ class MaxMetricCallsStopper(StopperProtocol):
 
 class CompositeStopper(StopperProtocol):
     # stop callback that combines multiple stopping conditions
-    
+
     def __init__(self, *stoppers: Callable[[Any], bool], mode: str = "any"):
         # initialize composite stopper
-        
+
         self.stoppers = stoppers
         self.mode = mode
-    
+
     def __call__(self, gepa_state) -> bool:
         # return true if stopping condition is met
         if self.mode == "any":

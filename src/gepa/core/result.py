@@ -21,7 +21,7 @@ class GEPAResult(Generic[RolloutOutput]):
 
     Optional fields:
     - best_outputs_valset: per-task best outputs on the validation set. [task_idx -> [(program_idx_1, output_1), (program_idx_2, output_2), ...]]
-    
+
     Run-level metadata:
     - total_metric_calls: total number of metric calls made across the run
     - num_full_val_evals: number of full validation evaluations performed
@@ -76,24 +76,24 @@ class GEPAResult(Generic[RolloutOutput]):
 
     def to_dict(self) -> dict[str, Any]:
         cands = [
-            {k: v for k, v in cand.items()}
+            dict(cand.items())
             for cand in self.candidates
         ]
 
-        return dict(
-            candidates=cands,
-            parents=self.parents,
-            val_aggregate_scores=self.val_aggregate_scores,
-            val_subscores=self.val_subscores,
-            best_outputs_valset=self.best_outputs_valset,
-            per_val_instance_best_candidates=[list(s) for s in self.per_val_instance_best_candidates],
-            discovery_eval_counts=self.discovery_eval_counts,
-            total_metric_calls=self.total_metric_calls,
-            num_full_val_evals=self.num_full_val_evals,
-            run_dir=self.run_dir,
-            seed=self.seed,
-            best_idx=self.best_idx,
-        )
+        return {
+            "candidates": cands,
+            "parents": self.parents,
+            "val_aggregate_scores": self.val_aggregate_scores,
+            "val_subscores": self.val_subscores,
+            "best_outputs_valset": self.best_outputs_valset,
+            "per_val_instance_best_candidates": [list(s) for s in self.per_val_instance_best_candidates],
+            "discovery_eval_counts": self.discovery_eval_counts,
+            "total_metric_calls": self.total_metric_calls,
+            "num_full_val_evals": self.num_full_val_evals,
+            "run_dir": self.run_dir,
+            "seed": self.seed,
+            "best_idx": self.best_idx,
+        }
 
     @staticmethod
     def from_state(state: Any, run_dir: str | None = None, seed: int | None = None) -> "GEPAResult":
