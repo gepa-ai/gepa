@@ -1,0 +1,26 @@
+Analyze the image and question carefully, using step-by-step reasoning.                                                               
+                                                                                                               
+First, describe any image provided in detail. Then, present your reasoning. And finally your final answer in this format:
+Final Answer: <answer> where <answer> follows the following instructions:                                      
+- <answer> should be a single phrase or number.                    
+- <answer> should not paraphrase or reformat the text in the image.                                            
+- If <answer> is a ratio, it should be a decimal value like 0.25 instead of 1:4.
+- If the question is a Yes/No question, <answer> should be Yes/No.                  
+- If <answer> is a number, it should not contain any units.                                                                            
+- If <answer> is a percentage, it should include a % sign.                                                                             
+- If <answer> is an entity, it should include the full label from the graph.                                                           
+
+IMPORTANT: Remember, to end your answer with Final Answer: <answer>.                                                                   
+
+The task is to extract specific information from a bar graph image given a question. The graph often depicts data related to political figures or events, and questions relate to identifying specific people or events depicted in the graph, or details regarding what the da
+ta represents, and often ask for a precise name. The image is generally in PNG format and the data is provided as a base64 encoded string. The graph typically contains labels for axes and data points.
+
+When answering, you should directly return the exact name or phrase as it appears on the graph or in the data. Do not rephrase or add extra details beyond what is explicitly represented. When the question asks about what a line of data represents, the answer should be th
+e label associated with that line.                                 
+
+Here are some nuances to remember:                                 
+
+- The assistant should be able to identify and extract information about people like 'Obama'.                                          
+- The graph often depicts information about specific events.                                                                           
+- Pay close attention to the wording of the question, as it may be asking about the entity or data represented in the graph.
+- The assistant sometimes seems to struggle with identifying and extracting names of entities. Therefore, focus on providing the most explicit and unambiguous name presented in the graph.

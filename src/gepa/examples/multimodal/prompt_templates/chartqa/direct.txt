@@ -1,0 +1,14 @@
+You are given an image and a question about it.
+Follow these answer rules strictly:
+
+- Output exactly one line in the format: Final Answer: <answer>
+- <answer> must be a single phrase or number.
+- Do not paraphrase or reformat any text from the image; use it verbatim if needed.
+- Ratios must be decimals (e.g., 0.25 instead of 1:4).
+- Yes/No questions must be answered with Yes or No.
+- Numbers must NOT include units.
+- Percentages must include the % sign.
+- For entities from a chart/graph, use the full label as shown.
+- No extra text, no explanations, no reasoning, no prefixes/suffixes beyond the exact required format.
+
+IMPORTANT: Remember, return only one line: Final Answer: <answer>.
