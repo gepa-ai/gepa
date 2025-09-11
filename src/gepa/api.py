@@ -20,7 +20,7 @@ from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
 )
-from gepa.utils import CompositeStopper, FileStopper
+from gepa.utils import CompositeStopper, FileStopper, NoImprovementStopper, SignalStopper
 
 
 def optimize(
@@ -42,12 +42,11 @@ def optimize(
     max_merge_invocations=5,
     # Budget and Stop Condition
     max_metric_calls=None,
-    stop_callback: Callable[[], bool] | None = None,
-    enable_signal_handling: bool = True,
+    stop_callback: Callable[[Any], bool] | None = None,
+    max_iterations_without_improvement: int | None = None,
     # Logging
     logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
-    log_dir: str | None = None,
     use_wandb: bool = False,
     wandb_api_key: str | None = None,
     wandb_init_kwargs: dict[str, Any] | None = None,
@@ -118,13 +117,12 @@ def optimize(
 
     # Budget and Stop Condition
     - max_metric_calls: The maximum number of metric calls to perform.
-    - stop_callback: Optional callback function that returns True when optimization should stop. Can be used with FileStopper, TimeoutStopCondition, or custom stopping logic.
-    - enable_signal_handling: Whether to enable signal handling for graceful shutdown on SIGINT/SIGTERM. Only needed if you want to stop optimization via keyboard interrupt or system signals.
+    - stop_callback: Optional callback function that returns True when optimization should stop. Can be used with FileStopper, TimeoutStopCondition, SignalStopper, or custom stopping logic.
+    - max_iterations_without_improvement: Maximum number of iterations without improvement before stopping early. If provided, automatically creates a NoImprovementStopper that monitors the best score and stops when no improvement occurs for this many iterations.
 
     # Logging
     - logger: A `LoggerProtocol` instance that is used to log the progress of the optimization.
-    - run_dir: The directory to save the results to.
-    - log_dir: The directory to monitor for a "gepa.stop" file. If provided, a FileStopper is automatically created to check for the presence of "gepa.stop" in this directory, allowing graceful stopping of the optimization process.
+    - run_dir: The directory to save the results to. If provided, a FileStopper is automatically created to check for the presence of "gepa.stop" in this directory, allowing graceful stopping of the optimization process.
     - use_wandb: Whether to use Weights and Biases to log the progress of the optimization.
     - wandb_api_key: The API key to use for Weights and Biases.
     - wandb_init_kwargs: Additional keyword arguments to pass to the Weights and Biases initialization.
@@ -149,13 +147,16 @@ def optimize(
 
     assert max_metric_calls is not None, "max_metric_calls must be set"
 
-    if log_dir is not None:
-        stop_file_path = os.path.join(log_dir, "gepa.stop")
+    if run_dir is not None:
+        stop_file_path = os.path.join(run_dir, "gepa.stop")
         file_stopper = FileStopper(stop_file_path)
         if stop_callback is None:
             stop_callback = file_stopper
         else:
             stop_callback = CompositeStopper(stop_callback, file_stopper)
+
+    # Note: No improvement stopper will be handled in the engine
+    # Note: Signal handling can be added by passing SignalStopper() as stop_callback
 
     if not hasattr(adapter, "propose_new_texts"):
         assert reflection_lm is not None, (
@@ -251,7 +252,7 @@ def optimize(
         display_progress_bar=display_progress_bar,
         raise_on_exception=raise_on_exception,
         stop_callback=stop_callback,
-        enable_signal_handling=enable_signal_handling,
+        max_iterations_without_improvement=max_iterations_without_improvement,
     )
 
     with experiment_tracker:

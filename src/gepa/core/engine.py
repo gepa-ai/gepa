@@ -1,15 +1,14 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-import signal
 import traceback
-from contextlib import contextmanager
 from typing import Any, Callable, Generic
 
 from gepa.core.state import GEPAState, initialize_gepa_state
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
+from gepa.utils import NoImprovementStopper
 
 from .adapter import DataInst, RolloutOutput, Trajectory
 
@@ -45,8 +44,8 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         display_progress_bar: bool = False,
         raise_on_exception: bool = True,
         # Graceful stopping
-        stop_callback: Callable[[], bool] | None = None,
-        enable_signal_handling: bool = True,
+        stop_callback: Callable[[Any], bool] | None = None,
+        max_iterations_without_improvement: int | None = None,
     ):
         # Budget constraint: max_metric_calls must be set
         assert max_metric_calls is not None, "max_metric_calls must be set"
@@ -55,10 +54,19 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         self.run_dir = run_dir
 
         # Graceful stopping mechanism
-        self.stop_callback = stop_callback
-        self.enable_signal_handling = enable_signal_handling
+        self.max_iterations_without_improvement = max_iterations_without_improvement
         self._stop_requested = False
-        self._original_signal_handlers = {}
+        self._no_improvement_stopper = None
+        
+        # Create composite stopper with user callback + max_metric_calls stopper
+        from gepa.utils import MaxMetricCallsStopper, CompositeStopper
+        
+        max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
+        
+        if stop_callback is None:
+            self.stop_callback = max_calls_stopper
+        else:
+            self.stop_callback = CompositeStopper(stop_callback, max_calls_stopper)
         self.evaluator = evaluator
         self.valset = valset
         self.seed_candidate = seed_candidate
@@ -128,168 +136,151 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         return new_program_idx, linear_pareto_front_program_idx
 
     def run(self) -> GEPAState:
-      with self._signal_handler_context():
-          # Check tqdm availability if progress bar is enabled
-          progress_bar = None
-          if self.display_progress_bar:
-              if tqdm is None:
-                  raise ImportError("tqdm must be installed when display_progress_bar is enabled")
-              # Initialize progress bar
-              progress_bar = tqdm(total=self.max_metric_calls, desc="GEPA Optimization", unit="rollouts")
-              progress_bar.update(0)
-              last_pbar_val = 0
+        # Check tqdm availability if progress bar is enabled
+        progress_bar = None
+        if self.display_progress_bar:
+            if tqdm is None:
+                raise ImportError("tqdm must be installed when display_progress_bar is enabled")
+            # Initialize progress bar
+            progress_bar = tqdm(total=self.max_metric_calls, desc="GEPA Optimization", unit="rollouts")
+            progress_bar.update(0)
+            last_pbar_val = 0
 
-          # Prepare valset
-          if self.valset is None:
-              raise ValueError("valset must be provided to GEPAEngine.run()")
+        # Prepare valset
+        if self.valset is None:
+            raise ValueError("valset must be provided to GEPAEngine.run()")
 
-          # Initialize state
-          state = initialize_gepa_state(
-              run_dir=self.run_dir,
-              logger=self.logger,
-              seed_candidate=self.seed_candidate,
-              valset_evaluator=self._val_evaluator(),
-              track_best_outputs=self.track_best_outputs,
-          )
+        # Initialize state
+        state = initialize_gepa_state(
+            run_dir=self.run_dir,
+            logger=self.logger,
+            seed_candidate=self.seed_candidate,
+            valset_evaluator=self._val_evaluator(),
+            track_best_outputs=self.track_best_outputs,
+        )
 
-          assert len(state.pareto_front_valset) == len(self.valset)
+        assert len(state.pareto_front_valset) == len(self.valset)
 
-          # Log base program score
-          self.experiment_tracker.log_metrics(
-              {
-                  "base_program_full_valset_score": state.program_full_scores_val_set[0],
-                  "iteration": state.i + 1,
-              },
-              step=state.i + 1,
-          )
+        # Create no improvement stopper if requested
+        if self.max_iterations_without_improvement is not None:
+            def get_best_score():
+                return max(state.program_full_scores_val_set) if state.program_full_scores_val_set else 0.0
+            
+            self._no_improvement_stopper = NoImprovementStopper(
+                self.max_iterations_without_improvement, 
+                get_best_score
+            )
+            
+            # Combine with existing stop_callback if it exists
+            if self.stop_callback is None:
+                self.stop_callback = self._no_improvement_stopper
+            else:
+                from gepa.utils import CompositeStopper
+                self.stop_callback = CompositeStopper(self.stop_callback, self._no_improvement_stopper)
 
-          self.logger.log(
-              f"Iteration {state.i + 1}: Base program full valset score: {state.program_full_scores_val_set[0]}"
-          )
+        # Log base program score
+        self.experiment_tracker.log_metrics(
+            {
+                "base_program_full_valset_score": state.program_full_scores_val_set[0],
+                "iteration": state.i + 1,
+            },
+            step=state.i + 1,
+        )
 
-          # Merge scheduling
-          if self.merge_proposer is not None:
-              self.merge_proposer.last_iter_found_new_program = False
+        self.logger.log(
+            f"Iteration {state.i + 1}: Base program full valset score: {state.program_full_scores_val_set[0]}"
+        )
 
-          # Main loop
-          while not self._should_stop(state):
-              if self.display_progress_bar:
-                  delta = state.total_num_evals - last_pbar_val
-                  progress_bar.update(delta)
-                  last_pbar_val = state.total_num_evals
+        # Merge scheduling
+        if self.merge_proposer is not None:
+            self.merge_proposer.last_iter_found_new_program = False
 
-              assert state.is_consistent()
-              try:
-                  state.save(self.run_dir)
-                  state.i += 1
-                  state.full_program_trace.append({"i": state.i})
+        # Main loop
+        while not self._should_stop(state):
+            if self.display_progress_bar:
+                delta = state.total_num_evals - last_pbar_val
+                progress_bar.update(delta)
+                last_pbar_val = state.total_num_evals
 
-                  # 1) Attempt merge first if scheduled and last iter found new program
-                  if self.merge_proposer is not None and self.merge_proposer.use_merge:
-                      if self.merge_proposer.merges_due > 0 and self.merge_proposer.last_iter_found_new_program:
-                          proposal = self.merge_proposer.propose(state)
-                          self.merge_proposer.last_iter_found_new_program = False  # old behavior
-
-                          if proposal is not None and proposal.tag == "merge":
-                              parent_sums = proposal.subsample_scores_before or [float("-inf"), float("-inf")]
-                              new_sum = sum(proposal.subsample_scores_after or [])
-
-                              if new_sum >= max(parent_sums):
-                                  self._run_full_eval_and_add(
-                                      new_program=proposal.candidate,
-                                      state=state,
-                                      parent_program_idx=proposal.parent_program_ids,
-                                  )
-                                  self.merge_proposer.merges_due -= 1
-                                  self.merge_proposer.total_merges_tested += 1
-                                  continue  # skip reflective this iteration
-                              else:
-                                  self.logger.log(
-                                      f"Iteration {state.i + 1}: New program subsample score {new_sum} "
-                                      f"is worse than both parents {parent_sums}, skipping merge"
-                                  )
-                                  continue
-                      self.merge_proposer.last_iter_found_new_program = False
-
-                  # 2) Reflective mutation proposer
-                  proposal = self.reflective_proposer.propose(state)
-                  if proposal is None:
-                      self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
-                      continue
-
-                  old_sum = sum(proposal.subsample_scores_before or [])
-                  new_sum = sum(proposal.subsample_scores_after or [])
-                  if new_sum <= old_sum:
-                      self.logger.log(f"Iteration {state.i + 1}: New subsample score is not better, skipping")
-                      continue
-
-                  # Accept
-                  self._run_full_eval_and_add(
-                      new_program=proposal.candidate,
-                      state=state,
-                      parent_program_idx=proposal.parent_program_ids,
-                  )
-
-                  if self.merge_proposer is not None:
-                      self.merge_proposer.last_iter_found_new_program = True
-                      if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
-                          self.merge_proposer.merges_due += 1
-
-              except Exception as e:
-                  self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
-                  self.logger.log(traceback.format_exc())
-                  if self.raise_on_exception:
-                      raise e
-                  else:
-                      continue
-
-          if self.display_progress_bar:
-              progress_bar.close()
-
-      state.save(self.run_dir)
-      return state
-
-
-    def _setup_signal_handlers(self):
-        """Set up signal handlers for graceful shutdown."""
-        def signal_handler(signum, frame):
-            self.logger.log(f"Received signal {signum}. Initiating graceful shutdown...")
-            self._stop_requested = True
-
-        # Store original handlers and set new ones
-        for sig in [signal.SIGINT, signal.SIGTERM]:
+            assert state.is_consistent()
             try:
-                self._original_signal_handlers[sig] = signal.signal(sig, signal_handler)
-            except (OSError, ValueError):
-                # Signal not available on this platform
-                pass
+                state.save(self.run_dir)
+                state.i += 1
+                state.full_program_trace.append({"i": state.i})
 
-    def _restore_signal_handlers(self):
-        """Restore original signal handlers."""
-        for sig, handler in self._original_signal_handlers.items():
-            try:
-                signal.signal(sig, handler)
-            except (OSError, ValueError):
-                pass
+                # 1) Attempt merge first if scheduled and last iter found new program
+                if self.merge_proposer is not None and self.merge_proposer.use_merge:
+                    if self.merge_proposer.merges_due > 0 and self.merge_proposer.last_iter_found_new_program:
+                        proposal = self.merge_proposer.propose(state)
+                        self.merge_proposer.last_iter_found_new_program = False  # old behavior
 
-    @contextmanager
-    def _signal_handler_context(self):
-        """Context manager for signal handling setup and restoration."""
-        if self.enable_signal_handling:
-            self._setup_signal_handlers()
-        try:
-            yield
-        finally:
-            if self.enable_signal_handling:
-                self._restore_signal_handlers()
+                        if proposal is not None and proposal.tag == "merge":
+                            parent_sums = proposal.subsample_scores_before or [float("-inf"), float("-inf")]
+                            new_sum = sum(proposal.subsample_scores_after or [])
+
+                            if new_sum >= max(parent_sums):
+                                self._run_full_eval_and_add(
+                                    new_program=proposal.candidate,
+                                    state=state,
+                                    parent_program_idx=proposal.parent_program_ids,
+                                )
+                                self.merge_proposer.merges_due -= 1
+                                self.merge_proposer.total_merges_tested += 1
+                                continue  # skip reflective this iteration
+                            else:
+                                self.logger.log(
+                                    f"Iteration {state.i + 1}: New program subsample score {new_sum} "
+                                    f"is worse than both parents {parent_sums}, skipping merge"
+                                )
+                                continue
+                    self.merge_proposer.last_iter_found_new_program = False
+
+                # 2) Reflective mutation proposer
+                proposal = self.reflective_proposer.propose(state)
+                if proposal is None:
+                    self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
+                    continue
+
+                old_sum = sum(proposal.subsample_scores_before or [])
+                new_sum = sum(proposal.subsample_scores_after or [])
+                if new_sum <= old_sum:
+                    self.logger.log(f"Iteration {state.i + 1}: New subsample score is not better, skipping")
+                    continue
+
+                # Accept
+                self._run_full_eval_and_add(
+                    new_program=proposal.candidate,
+                    state=state,
+                    parent_program_idx=proposal.parent_program_ids,
+                )
+
+                if self.merge_proposer is not None:
+                    self.merge_proposer.last_iter_found_new_program = True
+                    if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
+                        self.merge_proposer.merges_due += 1
+
+            except Exception as e:
+                self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
+                self.logger.log(traceback.format_exc())
+                if self.raise_on_exception:
+                    raise e
+                else:
+                    continue
+
+        # Cleanup outside signal handler context
+        if self.display_progress_bar:
+            progress_bar.close()
+
+        state.save(self.run_dir)
+        return state
+
+
 
     def _should_stop(self, state: GEPAState) -> bool:
         """Check if the optimization should stop."""
         if self._stop_requested:
             return True
-        if self.stop_callback and self.stop_callback():
-            return True
-        if state.total_num_evals >= self.max_metric_calls:
+        if self.stop_callback and self.stop_callback(state):
             return True
         return False
 

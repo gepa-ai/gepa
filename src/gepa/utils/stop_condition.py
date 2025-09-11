@@ -3,8 +3,9 @@ Utility functions for graceful stopping of GEPA runs.
 """
 
 import os
+import signal
 import time
-from typing import Callable, Protocol, runtime_checkable
+from typing import Any, Callable, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -15,35 +16,38 @@ class StopperProtocol(Protocol):
     A stopper is a callable object that returns True when the optimization should stop.
     """
 
-    def __call__(self) -> bool:
+    def __call__(self, gepa_state) -> bool:
         """
         Check if the optimization should stop.
         
+        Args:
+            gepa_state: The current GEPA state containing optimization information
+            
         Returns:
             True if the optimization should stop, False otherwise.
         """
         ...
 
 
-class TimeoutStopCondition:
+class TimeoutStopCondition(StopperProtocol):
     # stop callback that stops after a specified timeout
 
     def __init__(self, timeout_seconds: float):
         self.timeout_seconds = timeout_seconds
         self.start_time = time.time()
 
-    def __call__(self) -> bool:
+    def __call__(self, gepa_state) -> bool:
         # return true if timeout has been reached
         return time.time() - self.start_time > self.timeout_seconds
 
 
-class FileStopper:
+class FileStopper(StopperProtocol):
     # stop callback that stops when a specific file exists
 
     def __init__(self, stop_file_path: str):
         self.stop_file_path = stop_file_path
 
-    def __call__(self) -> bool:
+    def __call__(self, gepa_state) -> bool:
         # returns true if stop file exists
         return os.path.exists(self.stop_file_path)
 
@@ -58,14 +62,14 @@ class FileStopper:
             os.remove(self.stop_file_path)
 
 
-class IterationStopper:
+class IterationStopper(StopperProtocol):
     # stop callback that stops after a specified number of iterations
 
     def __init__(self, max_iterations: int):
         self.max_iterations = max_iterations
         self.current_iterations = 0
 
-    def __call__(self) -> bool:
+    def __call__(self, gepa_state) -> bool:
         # return true if max iterations reached
         return self.current_iterations >= self.max_iterations
 
@@ -74,14 +78,14 @@ class IterationStopper:
         self.current_iterations += 1
 
 
-class ScoreThresholdStopper:
+class ScoreThresholdStopper(StopperProtocol):
     # stop callback that stops when a score threshold is reached
 
     def __init__(self, threshold: float, score_getter: Callable[[], float]):
         self.threshold = threshold
         self.score_getter = score_getter
 
-    def __call__(self) -> bool:
+    def __call__(self, gepa_state) -> bool:
         # return true if score threshold is reached
         try:
             current_score = self.score_getter()
@@ -90,47 +94,138 @@ class ScoreThresholdStopper:
             return False
 
 
-class CompositeStopper:
+class NoImprovementStopper(StopperProtocol):
+    # stop callback that stops after a specified number of iterations without improvement
+    
+    def __init__(self, max_iterations_without_improvement: int, score_getter: Callable[[], float]):
+        self.max_iterations_without_improvement = max_iterations_without_improvement
+        self.score_getter = score_getter
+        self.best_score = float('-inf')
+        self.iterations_without_improvement = 0
+    
+    def __call__(self, gepa_state) -> bool:
+        # return true if max iterations without improvement reached
+        try:
+            current_score = self.score_getter()
+            if current_score > self.best_score:
+                self.best_score = current_score
+                self.iterations_without_improvement = 0
+            else:
+                self.iterations_without_improvement += 1
+            
+            return self.iterations_without_improvement >= self.max_iterations_without_improvement
+        except Exception:
+            return False
+    
+    def reset(self):
+        """Reset the counter (useful when manually improving the score)."""
+        self.iterations_without_improvement = 0
+
+
+class SignalStopper(StopperProtocol):
+    # stop callback that stops when a signal is received
+    
+    def __init__(self, signals=None):
+        self.signals = signals or [signal.SIGINT, signal.SIGTERM]
+        self._stop_requested = False
+        self._original_handlers = {}
+        self._setup_signal_handlers()
+    
+    def _setup_signal_handlers(self):
+        """Set up signal handlers for graceful shutdown."""
+        def signal_handler(signum, frame):
+            self._stop_requested = True
+            
+        # Store original handlers and set new ones
+        for sig in self.signals:
+            try:
+                self._original_handlers[sig] = signal.signal(sig, signal_handler)
+            except (OSError, ValueError):
+                # Signal not available on this platform
+                pass
+    
+    def __call__(self, gepa_state) -> bool:
+        # return true if a signal was received
+        return self._stop_requested
+    
+    def cleanup(self):
+        """Restore original signal handlers."""
+        for sig, handler in self._original_handlers.items():
+            try:
+                signal.signal(sig, handler)
+            except (OSError, ValueError):
+                pass
+
+
+class MaxMetricCallsStopper(StopperProtocol):
+    # stop callback that stops after a maximum number of metric calls
+    
+    def __init__(self, max_metric_calls: int):
+        self.max_metric_calls = max_metric_calls
+    
+    def __call__(self, gepa_state) -> bool:
+        # return true if max metric calls reached
+        return gepa_state.total_num_evals >= self.max_metric_calls
+
+
+class CompositeStopper(StopperProtocol):
     # stop callback that combines multiple stopping conditions
-
-    def __init__(self, *stoppers: Callable[[], bool], mode: str = "any"):
+    
+    def __init__(self, *stoppers: Callable[[Any], bool], mode: str = "any"):
         # initialize composite stopper
-
+        
         self.stoppers = stoppers
         self.mode = mode
-
-    def __call__(self) -> bool:
+    
+    def __call__(self, gepa_state) -> bool:
         # return true if stopping condition is met
         if self.mode == "any":
-            return any(stopper() for stopper in self.stoppers)
+            return any(stopper(gepa_state) for stopper in self.stoppers)
         elif self.mode == "all":
-            return all(stopper() for stopper in self.stoppers)
+            return all(stopper(gepa_state) for stopper in self.stoppers)
         else:
             raise ValueError(f"Unknown mode: {self.mode}")
 
 
-def create_timeout_stopcondition(timeout_seconds: float) -> Callable[[], bool]:
+def create_timeout_stopcondition(timeout_seconds: float) -> Callable[[Any], bool]:
     # create a timeout-based stop callback
     return TimeoutStopCondition(timeout_seconds)
 
 
-def create_file_stopper(stop_file_path: str) -> tuple[Callable[[], bool], FileStopper]:
+def create_file_stopper(stop_file_path: str) -> tuple[Callable[[Any], bool], FileStopper]:
     # creates a file-based stop callback
     file_stopper = FileStopper(stop_file_path)
     return file_stopper, file_stopper
 
 
-def create_iteration_stopper(max_iterations: int) -> tuple[Callable[[], bool], IterationStopper]:
+def create_iteration_stopper(max_iterations: int) -> tuple[Callable[[Any], bool], IterationStopper]:
     # creates an iteration-based stop callback
     iteration_stopper = IterationStopper(max_iterations)
     return iteration_stopper, iteration_stopper
 
 
-def create_score_threshold_stopper(threshold: float, score_getter: Callable[[], float]) -> Callable[[], bool]:
+def create_score_threshold_stopper(threshold: float, score_getter: Callable[[], float]) -> Callable[[Any], bool]:
     # creates a score threshold-based stop callback
     return ScoreThresholdStopper(threshold, score_getter)
 
 
-def create_composite_stopper(*stoppers: Callable[[], bool], mode: str = "any") -> Callable[[], bool]:
+def create_no_improvement_stopper(max_iterations_without_improvement: int, score_getter: Callable[[], float]) -> tuple[Callable[[Any], bool], NoImprovementStopper]:
+    # creates a no-improvement-based stop callback
+    no_improvement_stopper = NoImprovementStopper(max_iterations_without_improvement, score_getter)
+    return no_improvement_stopper, no_improvement_stopper
+
+
+def create_signal_stopper(signals=None) -> tuple[Callable[[Any], bool], SignalStopper]:
+    # creates a signal-based stop callback
+    signal_stopper = SignalStopper(signals)
+    return signal_stopper, signal_stopper
+
+
+def create_max_metric_calls_stopper(max_metric_calls: int) -> Callable[[Any], bool]:
+    # creates a max metric calls-based stop callback
+    return MaxMetricCallsStopper(max_metric_calls)
+
+
+def create_composite_stopper(*stoppers: Callable[[Any], bool], mode: str = "any") -> Callable[[Any], bool]:
     # creates a composite stop callback that combines multiple conditions
     return CompositeStopper(*stoppers, mode=mode)
