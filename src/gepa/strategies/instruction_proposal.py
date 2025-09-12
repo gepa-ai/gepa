@@ -1,8 +1,6 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from typing import ClassVar
-
 from gepa.proposer.reflective_mutation.base import Signature
 
 
@@ -25,8 +23,8 @@ Read all the assistant responses and the corresponding feedback. Identify all ni
 
 Provide the new instructions within ``` blocks."""
 
-    input_keys: ClassVar[list[str]] = ["current_instruction_doc", "dataset_with_feedback"]
-    output_keys: ClassVar[list[str]] = ["new_instruction"]
+    input_keys = ["current_instruction_doc", "dataset_with_feedback"]
+    output_keys = ["new_instruction"]
 
     @classmethod
     def prompt_renderer(cls, input_dict: dict[str, str]) -> str:

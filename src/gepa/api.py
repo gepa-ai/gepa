@@ -20,7 +20,7 @@ from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
 )
-from gepa.utils import CompositeStopper, FileStopper
+from gepa.utils import FileStopper, StopperProtocol
 
 
 def optimize(
@@ -42,8 +42,7 @@ def optimize(
     max_merge_invocations=5,
     # Budget and Stop Condition
     max_metric_calls=None,
-    stop_callback: Callable[[Any], bool] | None = None,
-    max_iterations_without_improvement: int | None = None,
+    stop_callbacks: "StopperProtocol | list[StopperProtocol] | None" = None,
     # Logging
     logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
@@ -116,9 +115,8 @@ def optimize(
     - max_merge_invocations: The maximum number of merge invocations to perform.
 
     # Budget and Stop Condition
-    - max_metric_calls: The maximum number of metric calls to perform.
-    - stop_callback: Optional callback function that returns True when optimization should stop. Can be used with FileStopper, TimeoutStopCondition, SignalStopper, or custom stopping logic.
-    - max_iterations_without_improvement: Maximum number of iterations without improvement before stopping early. If provided, automatically creates a NoImprovementStopper that monitors the best score and stops when no improvement occurs for this many iterations.
+    - max_metric_calls: Optional maximum number of metric calls to perform. If not provided, stop_callbacks must be provided.
+    - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single StopperProtocol or a list of StopperProtocol instances. Examples: FileStopper, TimeoutStopCondition, SignalStopper, NoImprovementStopper, or custom stopping logic. If not provided, max_metric_calls must be provided.
 
     # Logging
     - logger: A `LoggerProtocol` instance that is used to log the progress of the optimization.
@@ -145,18 +143,37 @@ def optimize(
             "Since an adapter is provided, GEPA does not require a task LM to be provided. Please set the `task_lm` parameter to None."
         )
 
-    assert max_metric_calls is not None, "max_metric_calls must be set"
+    # Comprehensive stop_callback logic
+    # Convert stop_callbacks to a list if it's not already
+    stop_callbacks_list = []
+    if stop_callbacks is not None:
+        if isinstance(stop_callbacks, list):
+            stop_callbacks_list.extend(stop_callbacks)
+        else:
+            stop_callbacks_list.append(stop_callbacks)
 
+    # Add file stopper if run_dir is provided
     if run_dir is not None:
         stop_file_path = os.path.join(run_dir, "gepa.stop")
         file_stopper = FileStopper(stop_file_path)
-        if stop_callback is None:
-            stop_callback = file_stopper
-        else:
-            stop_callback = CompositeStopper(stop_callback, file_stopper)
+        stop_callbacks_list.append(file_stopper)
 
-    # Note: No improvement stopper will be handled in the engine
-    # Note: Signal handling can be added by passing SignalStopper() as stop_callback
+    # Add max_metric_calls stopper if provided
+    if max_metric_calls is not None:
+        from gepa.utils import MaxMetricCallsStopper
+        max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
+        stop_callbacks_list.append(max_calls_stopper)
+
+    # Assert that at least one stopping condition is provided
+    if len(stop_callbacks_list) == 0:
+        raise ValueError("The user must provide either stop_callbacks or max_metric_calls to specify a stopping condition.")
+
+    # Create composite stopper if multiple stoppers, or use single stopper
+    if len(stop_callbacks_list) == 1:
+        stop_callback = stop_callbacks_list[0]
+    else:
+        from gepa.utils import CompositeStopper
+        stop_callback = CompositeStopper(*stop_callbacks_list)
 
     if not hasattr(adapter, "propose_new_texts"):
         assert reflection_lm is not None, (
@@ -252,7 +269,6 @@ def optimize(
         display_progress_bar=display_progress_bar,
         raise_on_exception=raise_on_exception,
         stop_callback=stop_callback,
-        max_iterations_without_improvement=max_iterations_without_improvement,
     )
 
     with experiment_tracker:

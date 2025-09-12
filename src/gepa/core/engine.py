@@ -8,7 +8,6 @@ from gepa.core.state import GEPAState, initialize_gepa_state
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
-from gepa.utils import NoImprovementStopper
 
 from .adapter import DataInst, RolloutOutput, Trajectory
 
@@ -31,7 +30,6 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         valset: list[DataInst] | None,
         seed_candidate: dict[str, str],
         # Controls
-        max_metric_calls: int | None,
         perfect_score: float,
         seed: int,
         # Strategies and helpers
@@ -40,33 +38,34 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         # Logging
         logger: Any,
         experiment_tracker: Any,
+        # Optional parameters
+        max_metric_calls: int | None = None,
         track_best_outputs: bool = False,
         display_progress_bar: bool = False,
         raise_on_exception: bool = True,
         # Graceful stopping
         stop_callback: Callable[[Any], bool] | None = None,
-        max_iterations_without_improvement: int | None = None,
     ):
-        # Budget constraint: max_metric_calls must be set
-        assert max_metric_calls is not None, "max_metric_calls must be set"
+        # Budget constraint: max_metric_calls is optional (handled in API layer)
 
         self.logger = logger
         self.run_dir = run_dir
 
         # Graceful stopping mechanism
-        self.max_iterations_without_improvement = max_iterations_without_improvement
         self._stop_requested = False
-        self._no_improvement_stopper = None
 
-        # Create composite stopper with user callback + max_metric_calls stopper
-        from gepa.utils import CompositeStopper, MaxMetricCallsStopper
+        # Set up stopping mechanism
+        if max_metric_calls is not None:
+            from gepa.utils import CompositeStopper, MaxMetricCallsStopper
+            max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
 
-        max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
-
-        if stop_callback is None:
-            self.stop_callback = max_calls_stopper
+            if stop_callback is None:
+                self.stop_callback = max_calls_stopper
+            else:
+                self.stop_callback = CompositeStopper(stop_callback, max_calls_stopper)
         else:
-            self.stop_callback = CompositeStopper(stop_callback, max_calls_stopper)
+            # Only use the provided stop_callback
+            self.stop_callback = stop_callback
         self.evaluator = evaluator
         self.valset = valset
         self.seed_candidate = seed_candidate
@@ -161,18 +160,6 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
 
         assert len(state.pareto_front_valset) == len(self.valset)
 
-        # Create no improvement stopper if requested
-        if self.max_iterations_without_improvement is not None:
-            self._no_improvement_stopper = NoImprovementStopper(
-                self.max_iterations_without_improvement
-            )
-
-            # Combine with existing stop_callback if it exists
-            if self.stop_callback is None:
-                self.stop_callback = self._no_improvement_stopper
-            else:
-                from gepa.utils import CompositeStopper
-                self.stop_callback = CompositeStopper(self.stop_callback, self._no_improvement_stopper)
 
         # Log base program score
         self.experiment_tracker.log_metrics(

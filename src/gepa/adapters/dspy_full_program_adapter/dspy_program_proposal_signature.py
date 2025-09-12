@@ -1,8 +1,6 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from typing import ClassVar
-
 import yaml
 
 from gepa.proposer.reflective_mutation.base import Signature
@@ -89,8 +87,8 @@ Assignment:
 Output Format:
 - Start with the checklist in plain text (3-7 short bullets).
 - Follow immediately with one code block in triple backticks containing the complete Python code, including assigning a `program` object."""
-    input_keys: ClassVar[list[str]] = ["curr_program", "dataset_with_feedback"]
-    output_keys: ClassVar[list[str]] = ["new_program"]
+    input_keys = ["curr_program", "dataset_with_feedback"]
+    output_keys = ["new_program"]
 
     @classmethod
     def prompt_renderer(cls, input_dict: dict[str, str]) -> str:
