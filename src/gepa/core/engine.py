@@ -39,14 +39,12 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         logger: Any,
         experiment_tracker: Any,
         # Optional parameters
-        max_metric_calls: int | None = None,
         track_best_outputs: bool = False,
         display_progress_bar: bool = False,
         raise_on_exception: bool = True,
         # Graceful stopping
         stop_callback: Callable[[Any], bool] | None = None,
     ):
-        # Budget constraint: max_metric_calls is optional (handled in API layer)
 
         self.logger = logger
         self.run_dir = run_dir
@@ -55,22 +53,11 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         self._stop_requested = False
 
         # Set up stopping mechanism
-        if max_metric_calls is not None:
-            from gepa.utils import CompositeStopper, MaxMetricCallsStopper
-            max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
-
-            if stop_callback is None:
-                self.stop_callback = max_calls_stopper
-            else:
-                self.stop_callback = CompositeStopper(stop_callback, max_calls_stopper)
-        else:
-            # Only use the provided stop_callback
-            self.stop_callback = stop_callback
+        self.stop_callback = stop_callback
         self.evaluator = evaluator
         self.valset = valset
         self.seed_candidate = seed_candidate
 
-        self.max_metric_calls = max_metric_calls
 
         self.perfect_score = perfect_score
         self.seed = seed
@@ -141,7 +128,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
             if tqdm is None:
                 raise ImportError("tqdm must be installed when display_progress_bar is enabled")
             # Initialize progress bar
-            progress_bar = tqdm(total=self.max_metric_calls, desc="GEPA Optimization", unit="rollouts")
+            progress_bar = tqdm(desc="GEPA Optimization", unit="rollouts")
             progress_bar.update(0)
             last_pbar_val = 0
 
@@ -202,6 +189,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
                             new_sum = sum(proposal.subsample_scores_after or [])
 
                             if new_sum >= max(parent_sums):
+                                # ACCEPTED: consume one merge attempt and record it
                                 self._run_full_eval_and_add(
                                     new_program=proposal.candidate,
                                     state=state,

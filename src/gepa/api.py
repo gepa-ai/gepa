@@ -258,7 +258,6 @@ def optimize(
         evaluator=evaluator,
         valset=valset,
         seed_candidate=seed_candidate,
-        max_metric_calls=max_metric_calls,
         perfect_score=perfect_score,
         seed=seed,
         reflective_proposer=reflective_proposer,

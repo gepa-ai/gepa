@@ -7,6 +7,8 @@ import signal
 import time
 from typing import Any, Callable, Protocol, runtime_checkable
 
+from gepa.core.state import GEPAState
+
 
 @runtime_checkable
 class StopperProtocol(Protocol):
@@ -16,7 +18,7 @@ class StopperProtocol(Protocol):
     A stopper is a callable object that returns True when the optimization should stop.
     """
 
-    def __call__(self, gepa_state) -> bool:
+    def __call__(self, gepa_state: GEPAState) -> bool:
         """
         Check if the optimization should stop.
 
@@ -36,7 +38,7 @@ class TimeoutStopCondition(StopperProtocol):
         self.timeout_seconds = timeout_seconds
         self.start_time = time.time()
 
-    def __call__(self, gepa_state) -> bool:
+    def __call__(self, gepa_state: GEPAState) -> bool:
         # return true if timeout has been reached
         return time.time() - self.start_time > self.timeout_seconds
 
@@ -47,14 +49,9 @@ class FileStopper(StopperProtocol):
     def __init__(self, stop_file_path: str):
         self.stop_file_path = stop_file_path
 
-    def __call__(self, gepa_state) -> bool:
+    def __call__(self, gepa_state: GEPAState) -> bool:
         # returns true if stop file exists
         return os.path.exists(self.stop_file_path)
-
-    def create_stop_file(self):
-        # create the stop file to signal stopping
-        with open(self.stop_file_path, "w") as f:
-            f.write(f"Stop requested at {time.time()}\n")
 
     def remove_stop_file(self):
         # remove the stop file
@@ -67,14 +64,13 @@ class FileStopper(StopperProtocol):
 class ScoreThresholdStopper(StopperProtocol):
     # stop callback that stops when a score threshold is reached
 
-    def __init__(self, threshold: float, score_getter: Callable[[], float]):
+    def __init__(self, threshold: float):
         self.threshold = threshold
-        self.score_getter = score_getter
 
-    def __call__(self, gepa_state) -> bool:
+    def __call__(self, gepa_state: GEPAState) -> bool:
         # return true if score threshold is reached
         try:
-            current_score = self.score_getter()
+            current_score = gepa_state.program_full_scores_val_set[-1] if gepa_state.program_full_scores_val_set else 0.0
             return current_score >= self.threshold
         except Exception:
             return False
@@ -88,7 +84,7 @@ class NoImprovementStopper(StopperProtocol):
         self.best_score = float("-inf")
         self.iterations_without_improvement = 0
 
-    def __call__(self, gepa_state) -> bool:
+    def __call__(self, gepa_state: GEPAState) -> bool:
         # return true if max iterations without improvement reached
         try:
             current_score = max(gepa_state.program_full_scores_val_set) if gepa_state.program_full_scores_val_set else 0.0
@@ -129,7 +125,7 @@ class SignalStopper(StopperProtocol):
                 # Signal not available on this platform
                 pass
 
-    def __call__(self, gepa_state) -> bool:
+    def __call__(self, gepa_state: GEPAState) -> bool:
         # return true if a signal was received
         return self._stop_requested
 
@@ -148,7 +144,7 @@ class MaxMetricCallsStopper(StopperProtocol):
     def __init__(self, max_metric_calls: int):
         self.max_metric_calls = max_metric_calls
 
-    def __call__(self, gepa_state) -> bool:
+    def __call__(self, gepa_state: GEPAState) -> bool:
         # return true if max metric calls reached
         return gepa_state.total_num_evals >= self.max_metric_calls
 
@@ -162,7 +158,7 @@ class CompositeStopper(StopperProtocol):
         self.stoppers = stoppers
         self.mode = mode
 
-    def __call__(self, gepa_state) -> bool:
+    def __call__(self, gepa_state: GEPAState) -> bool:
         # return true if stopping condition is met
         if self.mode == "any":
             return any(stopper(gepa_state) for stopper in self.stoppers)
