@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-
 from gepa.proposer.reflective_mutation.base import Signature
 
 
@@ -40,7 +39,7 @@ Provide the new instructions within ``` blocks."""
                     if not value:
                         s += "\n"
                     return s
-                elif isinstance(value, (list, tuple)):
+                elif isinstance(value, list | tuple):
                     s = ""
                     for i, item in enumerate(value):
                         s += f"{'#' * level} Item {i + 1}\n"

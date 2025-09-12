@@ -44,7 +44,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
         scores: list[float] = []
         trajectories: list[DefaultTrajectory] | None = [] if capture_traces else None
 
-        system_content = list(candidate.values())[0]
+        system_content = next(iter(candidate.values()))
 
         litellm_requests = []
 

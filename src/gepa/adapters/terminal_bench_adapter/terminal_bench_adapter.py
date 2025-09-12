@@ -98,7 +98,7 @@ def get_results(task_id: str, run_id: str) -> tuple[int, list]:
     with open(result_json) as f:
         result = json.load(f)
     if result.get("parser_results", None):
-        score = sum(map(lambda x: x == "passed", result["parser_results"].values()))
+        score = sum(x == "passed" for x in result["parser_results"].values())
     else:
         score = 0
 
@@ -208,7 +208,7 @@ class TerminusAdapter(GEPAAdapter):
         components_to_update: list[str],
     ):
         reflective_dataset = {"instruction_prompt": []}
-        for score, trajectory in zip(eval_batch.scores, eval_batch.trajectories, strict=False):
+        for _score, trajectory in zip(eval_batch.scores, eval_batch.trajectories, strict=False):
             if trajectory["success"]:
                 feedback = "Successfully solved the task!"
             else:
