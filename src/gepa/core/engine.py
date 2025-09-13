@@ -127,8 +127,23 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         if self.display_progress_bar:
             if tqdm is None:
                 raise ImportError("tqdm must be installed when display_progress_bar is enabled")
-            # Initialize progress bar
-            progress_bar = tqdm(desc="GEPA Optimization", unit="rollouts")
+            
+            # Check if stop_callback contains MaxMetricCallsStopper
+            total_calls = None
+            if hasattr(self.stop_callback, 'max_metric_calls'):
+                # Direct MaxMetricCallsStopper
+                total_calls = self.stop_callback.max_metric_calls
+            elif hasattr(self.stop_callback, 'stoppers'):
+                # CompositeStopper - iterate to find MaxMetricCallsStopper
+                for stopper in self.stop_callback.stoppers:
+                    if hasattr(stopper, 'max_metric_calls'):
+                        total_calls = stopper.max_metric_calls
+                        break
+            
+            if total_calls is not None:
+                progress_bar = tqdm(total=total_calls, desc="GEPA Optimization", unit="rollouts")
+            else:
+                progress_bar = tqdm(desc="GEPA Optimization", unit="rollouts")
             progress_bar.update(0)
             last_pbar_val = 0
 

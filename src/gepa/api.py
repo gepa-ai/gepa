@@ -40,9 +40,9 @@ def optimize(
     # Merge-based configuration
     use_merge=False,
     max_merge_invocations=5,
-    # Budget and Stop Condition
-    max_metric_calls=None,
+    # Controls
     stop_callbacks: "StopperProtocol | list[StopperProtocol] | None" = None,
+    max_metric_calls=None,
     # Logging
     logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
@@ -166,7 +166,7 @@ def optimize(
 
     # Assert that at least one stopping condition is provided
     if len(stop_callbacks_list) == 0:
-        raise ValueError("The user must provide either stop_callbacks or max_metric_calls to specify a stopping condition.")
+        raise ValueError("The user must provide at least one of stop_callbacks or max_metric_calls to specify a stopping condition.")
 
     # Create composite stopper if multiple stoppers, or use single stopper
     if len(stop_callbacks_list) == 1:
