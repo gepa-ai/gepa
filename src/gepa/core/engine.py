@@ -130,13 +130,13 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
             
             # Check if stop_callback contains MaxMetricCallsStopper
             total_calls = None
-            if hasattr(self.stop_callback, 'max_metric_calls'):
+            if hasattr(self.stop_callback, "max_metric_calls"):
                 # Direct MaxMetricCallsStopper
                 total_calls = self.stop_callback.max_metric_calls
-            elif hasattr(self.stop_callback, 'stoppers'):
+            elif hasattr(self.stop_callback, "stoppers"):
                 # CompositeStopper - iterate to find MaxMetricCallsStopper
                 for stopper in self.stop_callback.stoppers:
-                    if hasattr(stopper, 'max_metric_calls'):
+                    if hasattr(stopper, "max_metric_calls"):
                         total_calls = stopper.max_metric_calls
                         break
             
