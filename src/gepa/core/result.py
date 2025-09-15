@@ -21,7 +21,7 @@ class GEPAResult(Generic[RolloutOutput]):
 
     Optional fields:
     - best_outputs_valset: per-task best outputs on the validation set. [task_idx -> [(program_idx_1, output_1), (program_idx_2, output_2), ...]]
-    
+
     Run-level metadata:
     - total_metric_calls: total number of metric calls made across the run
     - num_full_val_evals: number of full validation evaluations performed
@@ -76,7 +76,7 @@ class GEPAResult(Generic[RolloutOutput]):
 
     def to_dict(self) -> dict[str, Any]:
         cands = [
-            {k: v for k, v in cand.items()}
+            dict(cand.items())
             for cand in self.candidates
         ]
 

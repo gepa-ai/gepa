@@ -30,7 +30,6 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         valset: list[DataInst] | None,
         seed_candidate: dict[str, str],
         # Controls
-        max_metric_calls: int | None,
         perfect_score: float,
         seed: int,
         # Strategies and helpers
@@ -39,20 +38,26 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         # Logging
         logger: Any,
         experiment_tracker: Any,
+        # Optional parameters
         track_best_outputs: bool = False,
         display_progress_bar: bool = False,
         raise_on_exception: bool = True,
+        # Graceful stopping
+        stop_callback: Callable[[Any], bool] | None = None,
     ):
-        # Budget constraint: max_metric_calls must be set
-        assert max_metric_calls is not None, "max_metric_calls must be set"
 
         self.logger = logger
         self.run_dir = run_dir
+
+        # Graceful stopping mechanism
+        self._stop_requested = False
+
+        # Set up stopping mechanism
+        self.stop_callback = stop_callback
         self.evaluator = evaluator
         self.valset = valset
         self.seed_candidate = seed_candidate
 
-        self.max_metric_calls = max_metric_calls
 
         self.perfect_score = perfect_score
         self.seed = seed
@@ -122,8 +127,23 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         if self.display_progress_bar:
             if tqdm is None:
                 raise ImportError("tqdm must be installed when display_progress_bar is enabled")
-            # Initialize progress bar
-            progress_bar = tqdm(total=self.max_metric_calls, desc="GEPA Optimization", unit="rollouts")
+
+            # Check if stop_callback contains MaxMetricCallsStopper
+            total_calls = None
+            if hasattr(self.stop_callback, "max_metric_calls"):
+                # Direct MaxMetricCallsStopper
+                total_calls = self.stop_callback.max_metric_calls
+            elif hasattr(self.stop_callback, "stoppers"):
+                # CompositeStopper - iterate to find MaxMetricCallsStopper
+                for stopper in self.stop_callback.stoppers:
+                    if hasattr(stopper, "max_metric_calls"):
+                        total_calls = stopper.max_metric_calls
+                        break
+
+            if total_calls is not None:
+                progress_bar = tqdm(total=total_calls, desc="GEPA Optimization", unit="rollouts")
+            else:
+                progress_bar = tqdm(desc="GEPA Optimization", unit="rollouts")
             progress_bar.update(0)
             last_pbar_val = 0
 
@@ -131,7 +151,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         if self.valset is None:
             raise ValueError("valset must be provided to GEPAEngine.run()")
 
-        # Initialize state (keeps your previous semantics)
+        # Initialize state
         state = initialize_gepa_state(
             run_dir=self.run_dir,
             logger=self.logger,
@@ -142,7 +162,8 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
 
         assert len(state.pareto_front_valset) == len(self.valset)
 
-        # Log initial metrics
+
+        # Log base program score
         self.experiment_tracker.log_metrics(
             {
                 "base_program_full_valset_score": state.program_full_scores_val_set[0],
@@ -160,7 +181,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
             self.merge_proposer.last_iter_found_new_program = False
 
         # Main loop
-        while state.total_num_evals < self.max_metric_calls:
+        while not self._should_stop(state):
             if self.display_progress_bar:
                 delta = state.total_num_evals - last_pbar_val
                 progress_bar.update(delta)
@@ -176,8 +197,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
                 if self.merge_proposer is not None and self.merge_proposer.use_merge:
                     if self.merge_proposer.merges_due > 0 and self.merge_proposer.last_iter_found_new_program:
                         proposal = self.merge_proposer.propose(state)
-                        # Old behavior: clear the flag as soon as we attempt a merge
-                        self.merge_proposer.last_iter_found_new_program = False
+                        self.merge_proposer.last_iter_found_new_program = False  # old behavior
 
                         if proposal is not None and proposal.tag == "merge":
                             parent_sums = proposal.subsample_scores_before or [float("-inf"), float("-inf")]
@@ -192,17 +212,13 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
                                 )
                                 self.merge_proposer.merges_due -= 1
                                 self.merge_proposer.total_merges_tested += 1
-
-                                # Skip reflective this iteration (old behavior)
-                                continue
+                                continue  # skip reflective this iteration
                             else:
-                                # REJECTED: do NOT consume merges_due or total_merges_tested
                                 self.logger.log(
-                                    f"Iteration {state.i + 1}: New program subsample score {new_sum} is worse than both parents {parent_sums}, skipping merge"
+                                    f"Iteration {state.i + 1}: New program subsample score {new_sum} "
+                                    f"is worse than both parents {parent_sums}, skipping merge"
                                 )
-                                # Skip reflective this iteration (old behavior)
                                 continue
-                    # Old behavior: regardless of whether we attempted, clear the flag before reflective
                     self.merge_proposer.last_iter_found_new_program = False
 
                 # 2) Reflective mutation proposer
@@ -211,19 +227,19 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
                     self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
                     continue
 
-                # Acceptance: require strict improvement on subsample
                 old_sum = sum(proposal.subsample_scores_before or [])
                 new_sum = sum(proposal.subsample_scores_after or [])
                 if new_sum <= old_sum:
                     self.logger.log(f"Iteration {state.i + 1}: New subsample score is not better, skipping")
                     continue
 
-                # Accept: full eval + add
+                # Accept
                 self._run_full_eval_and_add(
-                    new_program=proposal.candidate, state=state, parent_program_idx=proposal.parent_program_ids
+                    new_program=proposal.candidate,
+                    state=state,
+                    parent_program_idx=proposal.parent_program_ids,
                 )
 
-                # Schedule merge attempts like original behavior
                 if self.merge_proposer is not None:
                     self.merge_proposer.last_iter_found_new_program = True
                     if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
@@ -237,9 +253,24 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
                 else:
                     continue
 
-        # Close progress bar if it exists
+        # Cleanup outside signal handler context
         if self.display_progress_bar:
             progress_bar.close()
 
         state.save(self.run_dir)
         return state
+
+
+
+    def _should_stop(self, state: GEPAState) -> bool:
+        """Check if the optimization should stop."""
+        if self._stop_requested:
+            return True
+        if self.stop_callback and self.stop_callback(state):
+            return True
+        return False
+
+    def request_stop(self):
+        """Manually request the optimization to stop gracefully."""
+        self.logger.log("Stop requested manually. Initiating graceful shutdown...")
+        self._stop_requested = True

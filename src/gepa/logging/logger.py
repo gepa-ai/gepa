@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import sys
 from typing import Protocol
 
 
@@ -8,11 +9,10 @@ class LoggerProtocol(Protocol):
     def log(self, message: str):
         ...
 
+
 class StdOutLogger(LoggerProtocol):
     def log(self, message: str):
         print(message)
-
-import sys
 
 
 class Tee:
