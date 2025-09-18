@@ -104,22 +104,22 @@ One thing to be very careful about is handling interactive sessions like less, v
     )
 
     adapter = TerminusAdapter(n_concurrent=args.n_concurrent, instruction_prompt_path=INSTRUCTION_PROMPT_PATH)
-    testset_results_no_prompt = adapter.evaluate(testset, {"instruction_prompt": ""}, capture_traces=True)
+    # testset_results_no_prompt = adapter.evaluate(testset, {"instruction_prompt": ""}, capture_traces=True)
     testset_results_before_opt = adapter.evaluate(
         testset,
         {"instruction_prompt": initial_prompt_from_terminus},
         capture_traces=True,
     )
 
-    with open("gepa_terminus/testset_results_no_prompt.json", "w") as f:
-        json.dump(
-            {
-                "score": sum(trajectory["success"] for trajectory in testset_results_no_prompt.trajectories),
-                "trajectories": testset_results_no_prompt.trajectories,
-            },
-            f,
-            indent=4,
-        )
+    # with open("gepa_terminus/testset_results_no_prompt.json", "w") as f:
+    #     json.dump(
+    #         {
+    #             "score": sum(trajectory["success"] for trajectory in testset_results_no_prompt.trajectories),
+    #             "trajectories": testset_results_no_prompt.trajectories,
+    #         },
+    #         f,
+    #         indent=4,
+    #     )
     with open("gepa_terminus/testset_results_before_opt.json", "w") as f:
         json.dump(
             {
@@ -130,32 +130,32 @@ One thing to be very careful about is handling interactive sessions like less, v
             indent=4,
         )
 
-    optimized_results = optimize(
-        seed_candidate={"instruction_prompt": initial_prompt_from_terminus},
-        trainset=trainset,
-        valset=valset,
-        adapter=adapter,
-        reflection_lm=reflection_lm,
-        use_wandb=True,
-        max_metric_calls=400,
-        reflection_minibatch_size=3,
-        perfect_score=1,
-        skip_perfect_score=False,
-        run_dir="gepa_terminus",
-    )
+    # optimized_results = optimize(
+    #     seed_candidate={"instruction_prompt": initial_prompt_from_terminus},
+    #     trainset=trainset,
+    #     valset=valset,
+    #     adapter=adapter,
+    #     reflection_lm=reflection_lm,
+    #     use_wandb=True,
+    #     max_metric_calls=400,
+    #     reflection_minibatch_size=3,
+    #     perfect_score=1,
+    #     skip_perfect_score=False,
+    #     run_dir="gepa_terminus",
+    # )
 
-    testset_results_after_opt = adapter.evaluate(
-        testset,
-        {"instruction_prompt": optimized_results.best_candidate["instruction_prompt"]},
-        capture_traces=True,
-    )
+    # testset_results_after_opt = adapter.evaluate(
+    #     testset,
+    #     {"instruction_prompt": optimized_results.best_candidate["instruction_prompt"]},
+    #     capture_traces=True,
+    # )
 
-    with open("gepa_terminus/optimized_results.json", "w") as f:
-        json.dump(
-            {
-                "score": sum(trajectory["success"] for trajectory in testset_results_after_opt.trajectories),
-                "trajectories": testset_results_after_opt.trajectories,
-            },
-            f,
-            indent=4,
-        )
+    # with open("gepa_terminus/optimized_results.json", "w") as f:
+    #     json.dump(
+    #         {
+    #             "score": sum(trajectory["success"] for trajectory in testset_results_after_opt.trajectories),
+    #             "trajectories": testset_results_after_opt.trajectories,
+    #         },
+    #         f,
+    #         indent=4,
+    #     )
