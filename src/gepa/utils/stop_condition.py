@@ -5,7 +5,7 @@ Utility functions for graceful stopping of GEPA runs.
 import os
 import signal
 import time
-from typing import Any, Callable, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from gepa.core.state import GEPAState
 
