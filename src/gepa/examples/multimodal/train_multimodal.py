@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import sys
+import os
+# Add the src directory to Python path
+sys.path.insert(0, '/mlf11-shared/multimodal/benchmarks/gepa/gepa/src')
+
 import argparse
 import logging
 from pathlib import Path
 from typing import Any
-
 import gepa
-from gepa.adapters.multimodal_adapter.multimodal_adapter import MultimodalAdapter
+
+from gepa.adapters.multimodal_adapter import MultimodalAdapter
 from gepa.examples.multimodal.chartqa.ds_chartqa_helper import init_dataset as load_chartqa
 
 
