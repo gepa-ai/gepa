@@ -160,7 +160,7 @@ class CompositeStopper(StopperProtocol):
 
     Allows combining several stoppers and stopping when any or all of them are triggered.
     """
-    def __init__(self, *stoppers: Callable[[Any], bool], mode: str = "any"):
+    def __init__(self, *stoppers: StopperProtocol, mode: str = "any"):
         # initialize composite stopper
 
         self.stoppers = stoppers
