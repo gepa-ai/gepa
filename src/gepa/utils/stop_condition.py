@@ -60,7 +60,9 @@ class FileStopper(StopperProtocol):
 
 
 class ScoreThresholdStopper(StopperProtocol):
-    # stop callback that stops when a score threshold is reached
+    """
+    Stop callback that stops when a score threshold is reached.
+    """
 
     def __init__(self, threshold: float):
         self.threshold = threshold
