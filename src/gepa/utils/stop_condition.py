@@ -32,7 +32,7 @@ class StopperProtocol(Protocol):
 
 
 class TimeoutStopCondition(StopperProtocol):
-    # stop callback that stops after a specified timeout
+    """Stop callback that stops after a specified timeout."""
 
     def __init__(self, timeout_seconds: float):
         self.timeout_seconds = timeout_seconds
@@ -44,7 +44,9 @@ class TimeoutStopCondition(StopperProtocol):
 
 
 class FileStopper(StopperProtocol):
-    # stop callback that stops when a specific file exists
+    """
+    Stop callback that stops when a specific file exists.
+    """
 
     def __init__(self, stop_file_path: str):
         self.stop_file_path = stop_file_path
@@ -60,7 +62,9 @@ class FileStopper(StopperProtocol):
 
 
 class ScoreThresholdStopper(StopperProtocol):
-    # stop callback that stops when a score threshold is reached
+    """
+    Stop callback that stops when a score threshold is reached.
+    """
 
     def __init__(self, threshold: float):
         self.threshold = threshold
@@ -77,7 +81,9 @@ class ScoreThresholdStopper(StopperProtocol):
 
 
 class NoImprovementStopper(StopperProtocol):
-    # stop callback that stops after a specified number of iterations without improvement
+    """
+    Stop callback that stops after a specified number of iterations without improvement.
+    """
 
     def __init__(self, max_iterations_without_improvement: int):
         self.max_iterations_without_improvement = max_iterations_without_improvement
@@ -106,7 +112,7 @@ class NoImprovementStopper(StopperProtocol):
 
 
 class SignalStopper(StopperProtocol):
-    # stop callback that stops when a signal is received
+    """Stop callback that stops when a signal is received."""
 
     def __init__(self, signals=None):
         self.signals = signals or [signal.SIGINT, signal.SIGTERM]
@@ -142,7 +148,9 @@ class SignalStopper(StopperProtocol):
 
 
 class MaxMetricCallsStopper(StopperProtocol):
-    # stop callback that stops after a maximum number of metric calls
+    """
+    Stop callback that stops after a maximum number of metric calls.
+    """
 
     def __init__(self, max_metric_calls: int):
         self.max_metric_calls = max_metric_calls
@@ -153,9 +161,12 @@ class MaxMetricCallsStopper(StopperProtocol):
 
 
 class CompositeStopper(StopperProtocol):
-    # stop callback that combines multiple stopping conditions
+    """
+    Stop callback that combines multiple stopping conditions.
 
-    def __init__(self, *stoppers: Callable[[Any], bool], mode: str = "any"):
+    Allows combining several stoppers and stopping when any or all of them are triggered.
+    """
+    def __init__(self, *stoppers: StopperProtocol, mode: str = "any"):
         # initialize composite stopper
 
         self.stoppers = stoppers
