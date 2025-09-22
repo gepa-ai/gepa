@@ -1,13 +1,2 @@
-from .multimodal_adapter import (
-    MultimodalAdapter,
-    MultiModalDataInst,
-    MultiModalTrajectory,
-    MultiModalRolloutOutput,
-)
+from .multimodal_adapter import MultimodalAdapter
 
-__all__ = [
-    "MultimodalAdapter",
-    "MultiModalDataInst",
-    "MultiModalTrajectory",
-    "MultiModalRolloutOutput",
-]

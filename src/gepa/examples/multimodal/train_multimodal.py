@@ -1,10 +1,5 @@
 from __future__ import annotations
 
-import sys
-import os
-# Add the src directory to Python path
-sys.path.insert(0, '/mlf11-shared/multimodal/benchmarks/gepa/gepa/src')
-
 import argparse
 import logging
 from pathlib import Path
