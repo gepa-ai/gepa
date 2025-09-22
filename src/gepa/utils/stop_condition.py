@@ -5,7 +5,7 @@ Utility functions for graceful stopping of GEPA runs.
 import os
 import signal
 import time
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from gepa.core.state import GEPAState
 
@@ -166,7 +166,8 @@ class CompositeStopper(StopperProtocol):
 
     Allows combining several stoppers and stopping when any or all of them are triggered.
     """
-    def __init__(self, *stoppers: StopperProtocol, mode: str = "any"):
+
+    def __init__(self, *stoppers: StopperProtocol, mode: Literal["any", "all"] = "any"):
         # initialize composite stopper
 
         self.stoppers = stoppers
