@@ -44,7 +44,9 @@ class TimeoutStopCondition(StopperProtocol):
 
 
 class FileStopper(StopperProtocol):
-    # stop callback that stops when a specific file exists
+    """
+    Stop callback that stops when a specific file exists.
+    """
 
     def __init__(self, stop_file_path: str):
         self.stop_file_path = stop_file_path
