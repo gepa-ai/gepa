@@ -59,8 +59,6 @@ class FileStopper(StopperProtocol):
             os.remove(self.stop_file_path)
 
 
-
-
 class ScoreThresholdStopper(StopperProtocol):
     # stop callback that stops when a score threshold is reached
 
@@ -70,8 +68,10 @@ class ScoreThresholdStopper(StopperProtocol):
     def __call__(self, gepa_state: GEPAState) -> bool:
         # return true if score threshold is reached
         try:
-            current_score = gepa_state.program_full_scores_val_set[-1] if gepa_state.program_full_scores_val_set else 0.0
-            return current_score >= self.threshold
+            current_best_score = (
+                max(gepa_state.program_full_scores_val_set) if gepa_state.program_full_scores_val_set else 0.0
+            )
+            return current_best_score >= self.threshold
         except Exception:
             return False
 
@@ -87,7 +87,9 @@ class NoImprovementStopper(StopperProtocol):
     def __call__(self, gepa_state: GEPAState) -> bool:
         # return true if max iterations without improvement reached
         try:
-            current_score = max(gepa_state.program_full_scores_val_set) if gepa_state.program_full_scores_val_set else 0.0
+            current_score = (
+                max(gepa_state.program_full_scores_val_set) if gepa_state.program_full_scores_val_set else 0.0
+            )
             if current_score > self.best_score:
                 self.best_score = current_score
                 self.iterations_without_improvement = 0
@@ -114,6 +116,7 @@ class SignalStopper(StopperProtocol):
 
     def _setup_signal_handlers(self):
         """Set up signal handlers for graceful shutdown."""
+
         def signal_handler(signum, frame):
             self._stop_requested = True
 
@@ -166,5 +169,3 @@ class CompositeStopper(StopperProtocol):
             return all(stopper(gepa_state) for stopper in self.stoppers)
         else:
             raise ValueError(f"Unknown mode: {self.mode}")
-
-

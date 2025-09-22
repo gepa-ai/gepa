@@ -42,10 +42,9 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         track_best_outputs: bool = False,
         display_progress_bar: bool = False,
         raise_on_exception: bool = True,
-        # Graceful stopping
+        # Budget and Stop Condition
         stop_callback: Callable[[Any], bool] | None = None,
     ):
-
         self.logger = logger
         self.run_dir = run_dir
 
@@ -57,7 +56,6 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         self.evaluator = evaluator
         self.valset = valset
         self.seed_candidate = seed_candidate
-
 
         self.perfect_score = perfect_score
         self.seed = seed
@@ -162,7 +160,6 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
 
         assert len(state.pareto_front_valset) == len(self.valset)
 
-
         # Log base program score
         self.experiment_tracker.log_metrics(
             {
@@ -214,11 +211,15 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
                                 self.merge_proposer.total_merges_tested += 1
                                 continue  # skip reflective this iteration
                             else:
+                                # REJECTED: do NOT consume merges_due or total_merges_tested
                                 self.logger.log(
                                     f"Iteration {state.i + 1}: New program subsample score {new_sum} "
                                     f"is worse than both parents {parent_sums}, skipping merge"
                                 )
+                                # Skip reflective this iteration (old behavior)
                                 continue
+
+                    # Old behavior: regardless of whether we attempted, clear the flag before reflective
                     self.merge_proposer.last_iter_found_new_program = False
 
                 # 2) Reflective mutation proposer
@@ -227,19 +228,21 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
                     self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
                     continue
 
+                # Acceptance: require strict improvement on subsample
                 old_sum = sum(proposal.subsample_scores_before or [])
                 new_sum = sum(proposal.subsample_scores_after or [])
                 if new_sum <= old_sum:
                     self.logger.log(f"Iteration {state.i + 1}: New subsample score is not better, skipping")
                     continue
 
-                # Accept
+                # Accept: full eval + add
                 self._run_full_eval_and_add(
                     new_program=proposal.candidate,
                     state=state,
                     parent_program_idx=proposal.parent_program_ids,
                 )
 
+                # Schedule merge attempts like original behavior
                 if self.merge_proposer is not None:
                     self.merge_proposer.last_iter_found_new_program = True
                     if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
@@ -253,14 +256,12 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
                 else:
                     continue
 
-        # Cleanup outside signal handler context
+        # Close progress bar if it exists
         if self.display_progress_bar:
             progress_bar.close()
 
         state.save(self.run_dir)
         return state
-
-
 
     def _should_stop(self, state: GEPAState) -> bool:
         """Check if the optimization should stop."""
