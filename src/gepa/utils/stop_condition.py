@@ -147,6 +147,19 @@ class SignalStopper(StopperProtocol):
                 pass
 
 
+class MaxTrackedCandidatesStopper(StopperProtocol):
+    """
+    Stop callback that stops after a maximum number of tracked candidates.
+    """
+
+    def __init__(self, max_tracked_candidates: int):
+        self.max_tracked_candidates = max_tracked_candidates
+
+    def __call__(self, gepa_state: GEPAState) -> bool:
+        # return true if max tracked candidates reached
+        return len(gepa_state.program_candidates) >= self.max_tracked_candidates
+
+
 class MaxMetricCallsStopper(StopperProtocol):
     """
     Stop callback that stops after a maximum number of metric calls.
