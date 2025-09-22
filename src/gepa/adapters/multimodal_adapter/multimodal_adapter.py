@@ -9,25 +9,20 @@ import re
 from typing import Any, TypedDict
 from PIL import Image as PILImage
 from pydantic import BaseModel, Field
-from gepa.examples.multimodal.chartqa.chartqa_metric import get_metric 
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
-import logging
 
 
 class MultiModalDataInst(TypedDict):
-    """
-    User-defined type of input data to the program under optimization.
-    """
     input: str
-    images: list[Any]
+    images: list[Any] # could be URLs, paths, PIL Images, or bytes
     answer: str
     additional_context: dict[str, str]
 
 
 class MultiModalTrajectory(TypedDict):
-    data: MultiModalDataInst # The input data instance
-    full_assistant_response: str # The full raw response from the model
+    data: MultiModalDataInst
+    full_assistant_response: str
 
 
 class MultiModalRolloutOutput(TypedDict):
@@ -60,8 +55,6 @@ class MultimodalAdapter(GEPAAdapter[MultiModalDataInst, MultiModalTrajectory, Mu
         self.api_base = api_base
         self.api_key = api_key
         self.max_litellm_workers = max_litellm_workers
-        self.log = logging.getLogger("MultimodalAdapter")
-        self.relaxed_metric = get_metric()
 
     def _image_part(self, img: Any) -> dict[str, Any]:
         # Accept data URLs, http(s), local paths, PIL.Image, bytes
@@ -83,6 +76,7 @@ class MultimodalAdapter(GEPAAdapter[MultiModalDataInst, MultiModalTrajectory, Mu
             return {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
         return {"type": "text", "text": f"[Unsupported image type: {type(img)}]"}
 
+
     def evaluate(
         self,
         batch: list[MultiModalDataInst],
@@ -92,7 +86,6 @@ class MultimodalAdapter(GEPAAdapter[MultiModalDataInst, MultiModalTrajectory, Mu
         outputs: list[MultiModalRolloutOutput] = []
         scores: list[float] = []
         trajectories: list[MultiModalTrajectory] | None = [] if capture_traces else None
-        log_file = open("chartqa_eval_log.txt", "a", encoding="utf-8")
         if not candidate:
             raise ValueError("Candidate must contain at least one component text.")
         system_content = next(iter(candidate.values()))
@@ -170,15 +163,6 @@ class MultimodalAdapter(GEPAAdapter[MultiModalDataInst, MultiModalTrajectory, Mu
                 refs = [data["answer"]]
 
             metric_input = full_assistant_response  # metric extracts "Final Answer:" internally
-            metric_score = self.relaxed_metric.score(metric_input, refs) if correct_format else 0.0
-            log_file.write(
-                f"Q: {data['input']}\n"
-                f"Pred: {final_answer}\n"
-                f"Gold: {refs}\n"
-                f"Score: {metric_score}\n"
-                f"Raw: {raw}\n"
-                "----\n"
-            )
             score = metric_score if metric_score > 0 else self.failure_score
 
             output = {"full_assistant_response": full_assistant_response}
@@ -188,15 +172,6 @@ class MultimodalAdapter(GEPAAdapter[MultiModalDataInst, MultiModalTrajectory, Mu
                 trajectories.append({"data": data, "full_assistant_response": full_assistant_response})
 
         nonzero = sum(1 for s in scores if s > 0)
-        self.log.info(
-            "Multimodal evaluate (%s): batch=%d parsed_ok=%d nonzero=%d mean=%.4f",
-            self.relaxed_metric.name,
-            len(batch),
-            sum(1 for o in outputs if "Final Answer:" in o["full_assistant_response"]),
-            nonzero,
-            (sum(scores) / max(1, len(scores))),
-        )
-        log_file.close()
         return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
 
     def make_reflective_dataset(

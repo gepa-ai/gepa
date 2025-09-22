@@ -45,25 +45,25 @@ def init_multimodal_dataset(
                 return out
 
             return convert(train_raw), convert(val_raw), convert(test_raw)
-        case _:
+        case _: # Future work can introduce new multimodal benchmarks here
             raise ValueError(f"Unsupported multimodal dataset: {multimodal_dset_name}")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--multimodal_dset_name", type=str, default="chartqa")
-    parser.add_argument("--model_name", type=str, default="huggingface/gemma-3-4b-it")
-    parser.add_argument("--api_base", type=str, default="http://localhost:8050/v1")
+    parser.add_argument("--model_name", type=str)
+    parser.add_argument("--api_base", type=str)
     parser.add_argument("--api_key", type=str, default="EMPTY")
     parser.add_argument("--reflection_api_key", type=str, default="EMPTY")
     parser.add_argument("--max_litellm_workers", type=int, default=32)
     parser.add_argument("--budget", type=int, default=150, help="The budget for the optimization process.")
-    parser.add_argument("--reflection_lm", type=str, default="huggingface/gemma-3-12b-it")
-    parser.add_argument("--reflection_api_base", type=str, default="http://localhost:8051/v1")
+    parser.add_argument("--reflection_lm", type=str)
+    parser.add_argument("--reflection_api_base")
     parser.add_argument("--reflection_minibatch_size", type=int, default=3)
     parser.add_argument("--seed", type=int, default=0)
 
-    parser.add_argument("--prompt", type=str, choices=["direct", "cot"], default="cot")
+    parser.add_argument("--prompt", type=str)
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument("--train_limit", type=int, default=None)
     parser.add_argument("--val_limit", type=int, default=None)
