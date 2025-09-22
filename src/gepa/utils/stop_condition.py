@@ -77,7 +77,9 @@ class ScoreThresholdStopper(StopperProtocol):
 
 
 class NoImprovementStopper(StopperProtocol):
-    # stop callback that stops after a specified number of iterations without improvement
+    """
+    Stop callback that stops after a specified number of iterations without improvement.
+    """
 
     def __init__(self, max_iterations_without_improvement: int):
         self.max_iterations_without_improvement = max_iterations_without_improvement
