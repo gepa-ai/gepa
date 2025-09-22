@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import os
 import random
 from typing import Any, Callable
 
@@ -19,6 +20,7 @@ from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
 )
+from gepa.utils import FileStopper, StopperProtocol
 
 
 def optimize(
@@ -38,8 +40,9 @@ def optimize(
     # Merge-based configuration
     use_merge=False,
     max_merge_invocations=5,
-    # Budget
+    # Budget and Stop Condition
     max_metric_calls=None,
+    stop_callbacks: "StopperProtocol | list[StopperProtocol] | None" = None,
     # Logging
     logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
@@ -111,12 +114,13 @@ def optimize(
     - use_merge: Whether to use the merge strategy.
     - max_merge_invocations: The maximum number of merge invocations to perform.
 
-    # Budget
-    - max_metric_calls: The maximum number of metric calls to perform.
+    # Budget and Stop Condition
+    - max_metric_calls: Optional maximum number of metric calls to perform. If not provided, stop_callbacks must be provided.
+    - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single StopperProtocol or a list of StopperProtocol instances. Examples: FileStopper, TimeoutStopCondition, SignalStopper, NoImprovementStopper, or custom stopping logic. If not provided, max_metric_calls must be provided.
 
     # Logging
     - logger: A `LoggerProtocol` instance that is used to log the progress of the optimization.
-    - run_dir: The directory to save the results to.
+    - run_dir: The directory to save the results to. Optimization state and results will be saved to this directory. If the directory already exists, GEPA will read the state from this directory and resume the optimization from the last saved state. If provided, a FileStopper is automatically created which checks for the presence of "gepa.stop" in this directory, allowing graceful stopping of the optimization process upon its presence.
     - use_wandb: Whether to use Weights and Biases to log the progress of the optimization.
     - wandb_api_key: The API key to use for Weights and Biases.
     - wandb_init_kwargs: Additional keyword arguments to pass to the Weights and Biases initialization.
@@ -139,7 +143,41 @@ def optimize(
             "Since an adapter is provided, GEPA does not require a task LM to be provided. Please set the `task_lm` parameter to None."
         )
 
-    assert max_metric_calls is not None, "max_metric_calls must be set"
+    # Comprehensive stop_callback logic
+    # Convert stop_callbacks to a list if it's not already
+    stop_callbacks_list = []
+    if stop_callbacks is not None:
+        if isinstance(stop_callbacks, list):
+            stop_callbacks_list.extend(stop_callbacks)
+        else:
+            stop_callbacks_list.append(stop_callbacks)
+
+    # Add file stopper if run_dir is provided
+    if run_dir is not None:
+        stop_file_path = os.path.join(run_dir, "gepa.stop")
+        file_stopper = FileStopper(stop_file_path)
+        stop_callbacks_list.append(file_stopper)
+
+    # Add max_metric_calls stopper if provided
+    if max_metric_calls is not None:
+        from gepa.utils import MaxMetricCallsStopper
+
+        max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
+        stop_callbacks_list.append(max_calls_stopper)
+
+    # Assert that at least one stopping condition is provided
+    if len(stop_callbacks_list) == 0:
+        raise ValueError(
+            "The user must provide at least one of stop_callbacks or max_metric_calls to specify a stopping condition."
+        )
+
+    # Create composite stopper if multiple stoppers, or use single stopper
+    if len(stop_callbacks_list) == 1:
+        stop_callback = stop_callbacks_list[0]
+    else:
+        from gepa.utils import CompositeStopper
+
+        stop_callback = CompositeStopper(*stop_callbacks_list)
 
     if not hasattr(adapter, "propose_new_texts"):
         assert reflection_lm is not None, (
@@ -224,7 +262,6 @@ def optimize(
         evaluator=evaluator,
         valset=valset,
         seed_candidate=seed_candidate,
-        max_metric_calls=max_metric_calls,
         perfect_score=perfect_score,
         seed=seed,
         reflective_proposer=reflective_proposer,
@@ -234,6 +271,7 @@ def optimize(
         track_best_outputs=track_best_outputs,
         display_progress_bar=display_progress_bar,
         raise_on_exception=raise_on_exception,
+        stop_callback=stop_callback,
     )
 
     with experiment_tracker:

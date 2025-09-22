@@ -7,7 +7,7 @@ def json_default(x):
     """Default JSON encoder for objects that are not serializable by default."""
     try:
         return {**x}
-    except:
+    except Exception:
         return repr(x)
 
 def idxmax(lst: list[float]) -> int:

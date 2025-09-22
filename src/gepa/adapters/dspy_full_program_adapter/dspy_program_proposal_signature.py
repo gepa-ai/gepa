@@ -49,7 +49,7 @@ class ComplexModule(dspy.Module):
     def __init__(self):
         self.reasoner = dspy.ChainOfThought("question -> intermediate_answer")
         self.finalizer = dspy.Predict("intermediate_answer -> answer")
-    
+
     def forward(self, question: str):
         intermediate = self.reasoner(question=question)
         final = self.finalizer(intermediate_answer=intermediate.intermediate_answer)

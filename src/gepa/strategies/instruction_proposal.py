@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-
 from gepa.proposer.reflective_mutation.base import Signature
 
 

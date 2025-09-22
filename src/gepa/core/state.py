@@ -87,7 +87,7 @@ class GEPAState(Generic[RolloutOutput]):
             return
         with open(os.path.join(run_dir, "gepa_state.bin"), "wb") as f:
             import pickle
-            d = {k: v for k, v in self.__dict__.items()}
+            d = dict(self.__dict__.items())
             pickle.dump(d, f)
 
     @staticmethod
@@ -122,7 +122,7 @@ class GEPAState(Generic[RolloutOutput]):
         # Find the highest predictor id from the parent programs
         max_predictor_id = max([self.named_predictor_id_to_update_next_for_program_candidate[p] for p in parent_program_idx])
         self.named_predictor_id_to_update_next_for_program_candidate.append(max_predictor_id)
-        self.parent_program_for_candidate.append([p for p in parent_program_idx])
+        self.parent_program_for_candidate.append(list(parent_program_idx))
 
         self.prog_candidate_val_subscores.append(valset_subscores)
         self.program_full_scores_val_set.append(valset_score)
@@ -155,7 +155,7 @@ def write_eval_output_to_directory(
     eval_out: tuple[list[RolloutOutput], list[float]],
     output_dir: str
 ):
-    for task_idx, score in enumerate(eval_out[1]):
+    for task_idx, _score in enumerate(eval_out[1]):
         os.makedirs(os.path.join(output_dir, f"task_{task_idx}"), exist_ok=True)
         with open(os.path.join(output_dir, f"task_{task_idx}", f"iter_{0}_prog_0.json"), "w") as f:
             json.dump(eval_out[1][task_idx], f, indent=4, default=json_default)
