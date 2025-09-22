@@ -298,6 +298,7 @@ We encourage the community and users to help us develop adapters to allow GEPA t
     - [GEPA for Observable Javascript](https://observablehq.com/@tomlarkworthy/gepa)
     - [bandit_dspy](https://github.com/evalops/bandit_dspy)
     - [GEPA in Go Programming Language](https://github.com/XiaoConstantine/dspy-go)
+    - [100% accuracy using GEPA on the clock-hands problem](https://colab.research.google.com/drive/1W-XNxKL2CXFoUTwrL7GLCZ7J7uZgXsut?usp=sharing)
 
 ## Reference and Citation
 
