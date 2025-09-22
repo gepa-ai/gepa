@@ -142,7 +142,9 @@ class SignalStopper(StopperProtocol):
 
 
 class MaxMetricCallsStopper(StopperProtocol):
-    # stop callback that stops after a maximum number of metric calls
+    """
+    Stop callback that stops after a maximum number of metric calls.
+    """
 
     def __init__(self, max_metric_calls: int):
         self.max_metric_calls = max_metric_calls
