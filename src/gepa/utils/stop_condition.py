@@ -153,8 +153,11 @@ class MaxMetricCallsStopper(StopperProtocol):
 
 
 class CompositeStopper(StopperProtocol):
-    # stop callback that combines multiple stopping conditions
+    """
+    Stop callback that combines multiple stopping conditions.
 
+    Allows combining several stoppers and stopping when any or all of them are triggered.
+    """
     def __init__(self, *stoppers: Callable[[Any], bool], mode: str = "any"):
         # initialize composite stopper
 
