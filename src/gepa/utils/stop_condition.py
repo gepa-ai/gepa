@@ -106,7 +106,7 @@ class NoImprovementStopper(StopperProtocol):
 
 
 class SignalStopper(StopperProtocol):
-    # stop callback that stops when a signal is received
+    """Stop callback that stops when a signal is received."""
 
     def __init__(self, signals=None):
         self.signals = signals or [signal.SIGINT, signal.SIGTERM]
