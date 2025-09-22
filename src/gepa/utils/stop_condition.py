@@ -32,7 +32,7 @@ class StopperProtocol(Protocol):
 
 
 class TimeoutStopCondition(StopperProtocol):
-    # stop callback that stops after a specified timeout
+    """Stop callback that stops after a specified timeout."""
 
     def __init__(self, timeout_seconds: float):
         self.timeout_seconds = timeout_seconds
