@@ -42,7 +42,7 @@ class GEPAState(Generic[RolloutOutput]):
         track_best_outputs: bool = False,
     ):
         valset_base_score = sum(base_valset_eval_output[1]) / len(base_valset_eval_output[1])
-        base_valset_pareto_front = base_valset_eval_output[1]
+        base_valset_pareto_front = list(base_valset_eval_output[1])
 
         self.program_candidates = [seed_candidate]
         self.program_full_scores_val_set = [valset_base_score]
