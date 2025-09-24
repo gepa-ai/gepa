@@ -28,6 +28,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         run_dir: str | None,
         evaluator: Callable[[list[DataInst], dict[str, str]], tuple[list[RolloutOutput], list[float]]],
         valset: list[DataInst] | None,
+        testset: list[DataInst] | None,
         seed_candidate: dict[str, str],
         # Controls
         perfect_score: float,
@@ -55,6 +56,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         self.stop_callback = stop_callback
         self.evaluator = evaluator
         self.valset = valset
+        self.testset = testset
         self.seed_candidate = seed_candidate
 
         self.perfect_score = perfect_score
@@ -77,6 +79,10 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         assert self.valset is not None
         return lambda prog: self.evaluator(self.valset, prog)
 
+    def _test_evaluator(self) -> Callable[[dict[str, str]], tuple[list[RolloutOutput], list[float]]]:
+        assert self.testset is not None
+        return lambda prog: self.evaluator(self.testset, prog)
+
     def _get_pareto_front_programs(self, state: GEPAState) -> list:
         return state.program_at_pareto_front_valset
 
@@ -91,6 +97,9 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         valset_outputs, valset_subscores = self._val_evaluator()(new_program)
         valset_score = sum(valset_subscores) / len(valset_subscores)
 
+        testset_outputs, testset_subscores = self._test_evaluator()(new_program)
+        testset_score = sum(testset_subscores) / len(testset_subscores)
+
         state.num_full_ds_evals += 1
         state.total_num_evals += len(valset_subscores)
 
@@ -98,6 +107,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
             parent_program_idx=parent_program_idx,
             new_program=new_program,
             valset_score=valset_score,
+            testset_score=testset_score,
             valset_outputs=valset_outputs,
             valset_subscores=valset_subscores,
             run_dir=self.run_dir,
@@ -112,6 +122,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
             logger=self.logger,
             gepa_state=state,
             valset_score=valset_score,
+            testset_score=testset_score,
             new_program_idx=new_program_idx,
             valset_subscores=valset_subscores,
             experiment_tracker=self.experiment_tracker,
@@ -155,6 +166,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
             logger=self.logger,
             seed_candidate=self.seed_candidate,
             valset_evaluator=self._val_evaluator(),
+            testset_evaluator=self._test_evaluator(),
             track_best_outputs=self.track_best_outputs,
         )
 
