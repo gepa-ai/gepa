@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import gepa.core.state as state_mod
+import gepa
 
 
 @pytest.fixture
@@ -88,3 +89,44 @@ def test_gepa_state_save_and_initialize(run_dir):
     )
 
     assert state.__dict__ == result.__dict__
+
+
+def test_e2e_resume_run(mocked_lms, run_dir):
+    """E2E tests for resuming a previous run from a run_dir."""
+    import gepa
+    from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
+
+    # 1. Setup: Unpack fixtures and load data
+    task_lm, reflection_lm = mocked_lms
+    adapter = DefaultAdapter(model=task_lm)
+    trainset, valset, _ = gepa.examples.aime.init_dataset()
+    trainset = trainset[:10]
+    valset = valset[:10]  # [3:8]
+    seed_prompt = {
+        "system_prompt": "You are a helpful assistant. You are given a question and you need to answer it. The answer should be given at the end of your response in exactly the format '### <final answer>'"
+    }
+
+    first_run = gepa.optimize(
+        seed_candidate=seed_prompt,
+        trainset=trainset,
+        valset=valset,
+        adapter=adapter,
+        max_metric_calls=30,
+        reflection_lm=reflection_lm,
+        display_progress_bar=True,
+        run_dir=run_dir,
+    )
+
+    # Resume from the same run_dir. Even if called with `max_metric_calls=0`,
+    # the result should have `total_metric_calls` equal to the amount from the previous run.
+    second_run = gepa.optimize(
+        seed_candidate=seed_prompt,
+        trainset=trainset,
+        valset=valset,
+        adapter=adapter,
+        max_metric_calls=0,
+        reflection_lm=reflection_lm,
+        display_progress_bar=True,
+        run_dir=run_dir,
+    )
+    assert second_run.total_metric_calls == first_run.total_metric_calls
