@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -89,6 +90,14 @@ def test_gepa_state_save_and_initialize(run_dir):
     )
 
     assert state.__dict__ == result.__dict__
+
+
+@pytest.fixture(scope="module")
+def recorder_dir() -> Path:
+    """Use the cached mocked LLM aime prompt optimization"""
+    RECORDER_DIR = Path(__file__).parent / "test_aime_prompt_optimization"
+    RECORDER_DIR.mkdir(parents=True, exist_ok=True)
+    return RECORDER_DIR
 
 
 def test_e2e_resume_run(mocked_lms, run_dir):

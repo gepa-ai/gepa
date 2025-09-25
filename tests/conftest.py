@@ -3,16 +3,6 @@ import json
 from pathlib import Path
 import pytest
 
-# --- Constants and Setup ---
-RECORDER_DIR = Path(__file__).parent / "cache"
-
-@pytest.fixture(scope="module")
-def recorder_dir() -> Path:
-    """Provides the path to the recording directory and ensures it exists."""
-    RECORDER_DIR.mkdir(parents=True, exist_ok=True)
-    return RECORDER_DIR
-
-
 # --- Pytest Fixtures ---
 @pytest.fixture(scope="module")
 def mocked_lms(recorder_dir):
@@ -21,6 +11,8 @@ def mocked_lms(recorder_dir):
 
     In 'record' mode, it calls the actual LLM API and saves the results.
     In 'replay' mode (default), it loads results from a cached JSON file.
+
+    Takes as input `recorder_dir`, a fixture returning the path to store the llm cache in.
     """
     should_record = os.environ.get("RECORD_TESTS", "false").lower() == "true"
     cache_file = recorder_dir / "llm_cache.json"

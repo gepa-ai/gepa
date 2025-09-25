@@ -3,7 +3,14 @@ import os
 from pathlib import Path
 import pytest
 
-MODULE_DIR = Path(__file__).parent
+RECORDER_DIR = Path(__file__).parent
+
+@pytest.fixture(scope="module")
+def recorder_dir() -> Path:
+    """Provides the path to the recording directory and ensures it exists."""
+    RECORDER_DIR.mkdir(parents=True, exist_ok=True)
+    return RECORDER_DIR
+
 
 # --- The Test Function ---
 
@@ -41,7 +48,7 @@ def test_aime_prompt_optimize(mocked_lms, recorder_dir):
     )
 
     # 3. Assertion: Verify the result against the golden file
-    optimized_prompt_file = MODULE_DIR / "optimized_prompt.txt"
+    optimized_prompt_file = recorder_dir / "optimized_prompt.txt"
     best_prompt = gepa_result.best_candidate["system_prompt"]
 
     # In record mode, we save the "golden" result
