@@ -167,7 +167,7 @@ def initialize_gepa_state(
     valset_evaluator: Callable[[dict[str, str]], tuple[list[RolloutOutput], list[float]]],
     track_best_outputs: bool = False,
 ):
-    if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")) and os.path.exists(os.path.join(run_dir, "prog_candidates")):
+    if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)
     else:
