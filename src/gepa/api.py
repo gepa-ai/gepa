@@ -27,6 +27,7 @@ def optimize(
     seed_candidate: dict[str, str],
     trainset: list[DataInst],
     valset: list[DataInst] | None = None,
+    testset: list[DataInst] | None = None,
     adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None,
     task_lm: str | Callable | None = None,
     # Reflection-based configuration
@@ -261,6 +262,7 @@ def optimize(
         run_dir=run_dir,
         evaluator=evaluator,
         valset=valset,
+        testset=testset,
         seed_candidate=seed_candidate,
         perfect_score=perfect_score,
         seed=seed,

@@ -10,6 +10,7 @@ def log_detailed_metrics_after_discovering_new_program(
     logger,
     gepa_state: GEPAState,
     valset_score,
+    testset_score,
     new_program_idx,
     valset_subscores,
     experiment_tracker,
@@ -19,6 +20,7 @@ def log_detailed_metrics_after_discovering_new_program(
     best_prog_as_per_agg_score_valset = idxmax(gepa_state.program_full_scores_val_set)
 
     logger.log(f"Iteration {gepa_state.i + 1}: Full valset score for new program: {valset_score}")
+    logger.log(f"Iteration {gepa_state.i + 1}: Full testset score for new program: {testset_score}")
     logger.log(
         f"Iteration {gepa_state.i + 1}: Full train_val score for new program: {gepa_state.per_program_tracked_scores[new_program_idx]}"
     )
@@ -50,7 +52,8 @@ def log_detailed_metrics_after_discovering_new_program(
 
     metrics = {
         "iteration": gepa_state.i + 1,
-        # "full_valset_score": valset_score,
+        "full_valset_score": valset_score,
+        "full_testset_score": testset_score,
         # "full_train_val_score": gepa_state.per_program_tracked_scores[new_program_idx],
         "new_program_idx": new_program_idx,
         "valset_pareto_front_scores": gepa_state.pareto_front_valset,

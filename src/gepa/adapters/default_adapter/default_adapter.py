@@ -25,6 +25,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
         model: str | Callable,
         failure_score: float = 0.0,
         max_litellm_workers: int = 10,
+        metric: Callable = None,
     ):
         if isinstance(model, str):
             import litellm
@@ -33,6 +34,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
 
         self.failure_score = failure_score
         self.max_litellm_workers = max_litellm_workers
+        self.metric = metric
 
     def evaluate(
         self,
@@ -68,7 +70,10 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
 
         for data, assistant_response in zip(batch, responses, strict=False):
             output = {"full_assistant_response": assistant_response}
-            score = 1.0 if data["answer"] in assistant_response else 0.0
+            if not self.metric:
+                score = 1.0 if data["answer"] in assistant_response else 0.0
+            else:
+                score = self.metric(data, assistant_response)
 
             outputs.append(output)
             scores.append(score)
