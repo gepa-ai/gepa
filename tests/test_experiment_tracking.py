@@ -1,10 +1,11 @@
 import os
 import shutil
 import tempfile
+import sys
 from pathlib import Path
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from gepa.logging.experiment_tracker import ExperimentTracker, create_experiment_tracker
 
@@ -124,17 +125,18 @@ class TestExperimentTrackerIntegration:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
     @pytest.fixture
-    def wandb_offline_mode(self):
-        """Set wandb to offline mode for testing."""
+    def mock_wandb(self):
+        """Mock wandb."""
         if not has_wandb():
             pytest.skip("wandb not available")
-        original_mode = os.environ.get("WANDB_MODE")
-        os.environ["WANDB_MODE"] = "offline"
-        yield
-        if original_mode is not None:
-            os.environ["WANDB_MODE"] = original_mode
-        else:
-            os.environ.pop("WANDB_MODE", None)
+        if 'wandb' in sys.modules:
+            del sys.modules['wandb']
+        wandb = MagicMock()
+        def finish():
+            wandb.run = None
+        wandb.finish.side_effect = finish
+        with patch.dict("sys.modules", {"wandb": wandb}):
+            yield wandb
 
     def test_no_backends_works(self):
         """Test that no backends configuration works."""
@@ -154,7 +156,7 @@ class TestExperimentTrackerIntegration:
         assert not tracker.is_active()
 
     @pytest.mark.skipif(not has_wandb(), reason="wandb not available")
-    def test_wandb_offline_initialization(self, wandb_offline_mode, temp_dir):
+    def test_wandb_offline_initialization(self, mock_wandb, temp_dir):
         """Test wandb initialization in offline mode."""
         tracker = ExperimentTracker(
             use_wandb=True,
@@ -170,16 +172,16 @@ class TestExperimentTrackerIntegration:
         tracker.start_run()
 
         # Should be able to log metrics
-        with patch("wandb.log") as mock_log:
-            tracker.log_metrics({"loss": 0.5, "accuracy": 0.9}, step=1)
-            tracker.log_metrics({"loss": 0.4, "accuracy": 0.95}, step=2)
-            
-            # Verify wandb.log was called correctly
-            assert mock_log.call_count == 2
-            assert mock_log.call_args_list[0][0][0] == {"loss": 0.5, "accuracy": 0.9}
-            assert mock_log.call_args_list[0][1]["step"] == 1
-            assert mock_log.call_args_list[1][0][0] == {"loss": 0.4, "accuracy": 0.95}
-            assert mock_log.call_args_list[1][1]["step"] == 2
+        mock_log = mock_wandb.log
+        tracker.log_metrics({"loss": 0.5, "accuracy": 0.9}, step=1)
+        tracker.log_metrics({"loss": 0.4, "accuracy": 0.95}, step=2)
+        
+        # Verify wandb.log was called correctly
+        assert mock_log.call_count == 2
+        assert mock_log.call_args_list[0][0][0] == {"loss": 0.5, "accuracy": 0.9}
+        assert mock_log.call_args_list[0][1]["step"] == 1
+        assert mock_log.call_args_list[1][0][0] == {"loss": 0.4, "accuracy": 0.95}
+        assert mock_log.call_args_list[1][1]["step"] == 2
 
         # Should be active
         assert tracker.is_active()
@@ -252,7 +254,7 @@ class TestExperimentTrackerIntegration:
         assert metrics["accuracy"] == 0.95  # Last logged value
 
     @pytest.mark.skipif(not has_wandb() or not has_mlflow(), reason="wandb or mlflow not available")
-    def test_both_backends_offline(self, wandb_offline_mode, temp_dir):
+    def test_both_backends_offline(self, mock_wandb, temp_dir):
         """Test using both wandb and mlflow simultaneously in offline mode."""
         tracker = ExperimentTracker(
             use_wandb=True,
@@ -270,12 +272,11 @@ class TestExperimentTrackerIntegration:
         tracker.start_run()
 
         # Should be able to log metrics to both backends
-        with patch("wandb.log") as mock_wandb_log, patch("mlflow.log_metrics") as mock_mlflow_log:
+        with patch("wandb.log") as mock_wandb_log:
             tracker.log_metrics({"loss": 0.4, "accuracy": 0.95})
             
-            # Verify both backends were called
+            # Verify wandb was called
             mock_wandb_log.assert_called_once_with({"loss": 0.4, "accuracy": 0.95}, step=None)
-            mock_mlflow_log.assert_called_once_with({"loss": 0.4, "accuracy": 0.95}, step=None)
 
         # Should be active
         assert tracker.is_active()
@@ -312,7 +313,7 @@ class TestExperimentTrackerIntegration:
         assert mlflow_metrics["accuracy"] == 0.95
 
     @pytest.mark.skipif(not has_wandb(), reason="wandb not available")
-    def test_context_manager_wandb_offline(self, wandb_offline_mode, temp_dir):
+    def test_context_manager_wandb(self, mock_wandb, temp_dir):
         """Test context manager with wandb in offline mode."""
         tracker = ExperimentTracker(
             use_wandb=True,
@@ -324,18 +325,17 @@ class TestExperimentTrackerIntegration:
         )
 
         # Test context manager workflow
-        with patch("wandb.log") as mock_log:
-            with tracker:
-                assert tracker.is_active()
-                tracker.log_metrics({"loss": 0.5}, step=1)
-                tracker.log_metrics({"accuracy": 0.9}, step=2)
-                
-                # Verify wandb.log was called correctly
-                assert mock_log.call_count == 2
-                assert mock_log.call_args_list[0][0][0] == {"loss": 0.5}
-                assert mock_log.call_args_list[0][1]["step"] == 1
-                assert mock_log.call_args_list[1][0][0] == {"accuracy": 0.9}
-                assert mock_log.call_args_list[1][1]["step"] == 2
+        with tracker:
+            assert tracker.is_active()
+            tracker.log_metrics({"loss": 0.5}, step=1)
+            tracker.log_metrics({"accuracy": 0.9}, step=2)
+            
+            # Verify wandb.log was called correctly
+            assert mock_wandb.log.call_count == 2
+            assert mock_wandb.log.call_args_list[0][0][0] == {"loss": 0.5}
+            assert mock_wandb.log.call_args_list[0][1]["step"] == 1
+            assert mock_wandb.log.call_args_list[1][0][0] == {"accuracy": 0.9}
+            assert mock_wandb.log.call_args_list[1][1]["step"] == 2
 
         # Should not be active after context exit
         assert not tracker.is_active()
@@ -360,7 +360,7 @@ class TestExperimentTrackerIntegration:
         assert not tracker.is_active()
 
     @pytest.mark.skipif(not has_wandb() or not has_mlflow(), reason="wandb or mlflow not available")
-    def test_context_manager_both_backends(self, wandb_offline_mode, temp_dir):
+    def test_context_manager_both_backends(self, mock_wandb, temp_dir):
         """Test context manager with both backends."""
         tracker = ExperimentTracker(
             use_wandb=True,
@@ -373,34 +373,38 @@ class TestExperimentTrackerIntegration:
             mlflow_experiment_name="test-experiment",
         )
 
-        # Test context manager workflow
-        with patch("wandb.log") as mock_wandb_log, patch("mlflow.log_metrics") as mock_mlflow_log:
-            with tracker:
-                assert tracker.is_active()
-                tracker.log_metrics({"loss": 0.5}, step=1)
-                tracker.log_metrics({"accuracy": 0.9}, step=2)
-                
-                # Verify both backends were called correctly
-                assert mock_wandb_log.call_count == 2
-                assert mock_mlflow_log.call_count == 2
-                
-                # Check wandb calls
-                assert mock_wandb_log.call_args_list[0][0][0] == {"loss": 0.5}
-                assert mock_wandb_log.call_args_list[0][1]["step"] == 1
-                assert mock_wandb_log.call_args_list[1][0][0] == {"accuracy": 0.9}
-                assert mock_wandb_log.call_args_list[1][1]["step"] == 2
-                
-                # Check mlflow calls
-                assert mock_mlflow_log.call_args_list[0][0][0] == {"loss": 0.5}
-                assert mock_mlflow_log.call_args_list[0][1]["step"] == 1
-                assert mock_mlflow_log.call_args_list[1][0][0] == {"accuracy": 0.9}
-                assert mock_mlflow_log.call_args_list[1][1]["step"] == 2
+    
+        with tracker:
+            assert tracker.is_active()
+            tracker.log_metrics({"loss": 0.5}, step=1)
+            tracker.log_metrics({"accuracy": 0.9}, step=2)
+            
+            # Verify wandb was called correctly
+            assert mock_wandb.log.call_count == 2
+            assert mock_wandb.log.call_args_list[0][0][0] == {"loss": 0.5}
+            assert mock_wandb.log.call_args_list[0][1]["step"] == 1
+            assert mock_wandb.log.call_args_list[1][0][0] == {"accuracy": 0.9}
+            assert mock_wandb.log.call_args_list[1][1]["step"] == 2
 
         # Should not be active after context exit
         assert not tracker.is_active()
 
+        # Verify mlflow metrics were stored
+        from mlflow.tracking import MlflowClient
+        client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
+        experiment = client.get_experiment_by_name("test-experiment")
+        runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+        assert len(runs) > 0
+
+        # Check mlflow metrics
+        mlflow_metrics = runs[0].data.metrics
+        assert "loss" in mlflow_metrics
+        assert "accuracy" in mlflow_metrics
+        assert mlflow_metrics["loss"] == 0.5
+        assert mlflow_metrics["accuracy"] == 0.9
+
     @pytest.mark.skipif(not has_wandb(), reason="wandb not available")
-    def test_context_manager_with_exception_wandb(self, wandb_offline_mode, temp_dir):
+    def test_context_manager_with_exception_wandb(self, mock_wandb, temp_dir):
         """Test context manager with exception - should still clean up."""
         tracker = ExperimentTracker(
             use_wandb=True,
@@ -411,14 +415,13 @@ class TestExperimentTrackerIntegration:
             use_mlflow=False,
         )
 
-        with patch("wandb.log") as mock_log:
-            with pytest.raises(ValueError):
-                with tracker:
-                    tracker.log_metrics({"test": 1.0}, step=1)
-                    raise ValueError("test exception")
-            
-            # Verify wandb.log was called before the exception
-            mock_log.assert_called_once_with({"test": 1.0}, step=1)
+        with pytest.raises(ValueError):
+            with tracker:
+                tracker.log_metrics({"test": 1.0}, step=1)
+                raise ValueError("test exception")
+        
+        # Verify wandb.log was called before the exception
+        mock_wandb.log.assert_called_once_with({"test": 1.0}, step=1)
 
         # Should not be active after exception
         assert not tracker.is_active()
@@ -438,24 +441,6 @@ class TestExperimentTrackerIntegration:
                 tracker.log_metrics({"test": 1.0}, step=1)
                 raise ValueError("test exception")
 
-    @pytest.mark.skipif(not has_wandb(), reason="wandb not available")
-    def test_wandb_offline_artifacts(self, wandb_offline_mode, temp_dir):
-        """Test that wandb offline mode creates artifacts."""
-        tracker = ExperimentTracker(
-            use_wandb=True,
-            wandb_init_kwargs={
-                "project": "test-project",
-                "dir": temp_dir,
-            },
-            use_mlflow=False,
-        )
-
-        with patch("wandb.log") as mock_log:
-            with tracker:
-                tracker.log_metrics({"test": 1.0}, step=1)
-                
-                # Verify wandb.log was called
-                mock_log.assert_called_once_with({"test": 1.0}, step=1)
 
     @pytest.mark.skipif(not has_mlflow(), reason="mlflow not available")
     def test_mlflow_experiment_creation(self, temp_dir):
@@ -477,7 +462,7 @@ class TestExperimentTrackerIntegration:
             tracker.log_metrics({"test": 1.0}, step=1)
 
     @pytest.mark.skipif(not has_wandb(), reason="wandb not available")
-    def test_metric_logging_variations_wandb(self, wandb_offline_mode, temp_dir):
+    def test_metric_logging_variations_wandb(self, mock_wandb, temp_dir):
         """Test various metric logging scenarios with wandb."""
         tracker = ExperimentTracker(
             use_wandb=True,
@@ -488,7 +473,11 @@ class TestExperimentTrackerIntegration:
             use_mlflow=False,
         )
 
-        with patch("wandb.log") as mock_log:
+        from unittest.mock import MagicMock
+        mock_wandb = MagicMock()
+        mock_wandb.log = MagicMock()
+        
+        with patch.dict('sys.modules', {'wandb': mock_wandb}):
             with tracker:
                 # Test different metric types
                 tracker.log_metrics({"loss": 0.5}, step=1)
@@ -501,22 +490,22 @@ class TestExperimentTrackerIntegration:
                 # Test with None step
                 tracker.log_metrics({"test_metric": 42}, step=None)
 
-            # Verify all metrics were logged to wandb
-            assert mock_log.call_count == 5
-            
-            # Check each call
-            expected_calls = [
-                ({"loss": 0.5}, {"step": 1}),
-                ({"accuracy": 0.9, "f1": 0.85}, {"step": 2}),
-                ({"learning_rate": 0.001}, {"step": 3}),
-                ({"final_loss": 0.1}, {"step": None}),
-                ({"test_metric": 42}, {"step": None}),
-            ]
-            
-            for i, (expected_metrics, expected_kwargs) in enumerate(expected_calls):
-                call_args, call_kwargs = mock_log.call_args_list[i]
-                assert call_args[0] == expected_metrics
-                assert call_kwargs == expected_kwargs
+        # Verify all metrics were logged to wandb
+        assert mock_wandb.log.call_count == 5
+        
+        # Check each call
+        expected_calls = [
+            ({"loss": 0.5}, {"step": 1}),
+            ({"accuracy": 0.9, "f1": 0.85}, {"step": 2}),
+            ({"learning_rate": 0.001}, {"step": 3}),
+            ({"final_loss": 0.1}, {"step": None}),
+            ({"test_metric": 42}, {"step": None}),
+        ]
+        
+        for i, (expected_metrics, expected_kwargs) in enumerate(expected_calls):
+            call_args, call_kwargs = mock_wandb.log.call_args_list[i]
+            assert call_args[0] == expected_metrics
+            assert call_kwargs == expected_kwargs
 
     @pytest.mark.skipif(not has_mlflow(), reason="mlflow not available")
     def test_metric_logging_variations_mlflow(self, temp_dir):
