@@ -473,22 +473,17 @@ class TestExperimentTrackerIntegration:
             use_mlflow=False,
         )
 
-        from unittest.mock import MagicMock
-        mock_wandb = MagicMock()
-        mock_wandb.log = MagicMock()
-        
-        with patch.dict('sys.modules', {'wandb': mock_wandb}):
-            with tracker:
-                # Test different metric types
-                tracker.log_metrics({"loss": 0.5}, step=1)
-                tracker.log_metrics({"accuracy": 0.9, "f1": 0.85}, step=2)
-                tracker.log_metrics({"learning_rate": 0.001}, step=3)
+        with tracker:
+            # Test different metric types
+            tracker.log_metrics({"loss": 0.5}, step=1)
+            tracker.log_metrics({"accuracy": 0.9, "f1": 0.85}, step=2)
+            tracker.log_metrics({"learning_rate": 0.001}, step=3)
 
-                # Test without step
-                tracker.log_metrics({"final_loss": 0.1})
+            # Test without step
+            tracker.log_metrics({"final_loss": 0.1})
 
-                # Test with None step
-                tracker.log_metrics({"test_metric": 42}, step=None)
+            # Test with None step
+            tracker.log_metrics({"test_metric": 42}, step=None)
 
         # Verify all metrics were logged to wandb
         assert mock_wandb.log.call_count == 5
