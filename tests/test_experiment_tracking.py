@@ -172,16 +172,15 @@ class TestExperimentTrackerIntegration:
         tracker.start_run()
 
         # Should be able to log metrics
-        mock_log = mock_wandb.log
         tracker.log_metrics({"loss": 0.5, "accuracy": 0.9}, step=1)
         tracker.log_metrics({"loss": 0.4, "accuracy": 0.95}, step=2)
         
         # Verify wandb.log was called correctly
-        assert mock_log.call_count == 2
-        assert mock_log.call_args_list[0][0][0] == {"loss": 0.5, "accuracy": 0.9}
-        assert mock_log.call_args_list[0][1]["step"] == 1
-        assert mock_log.call_args_list[1][0][0] == {"loss": 0.4, "accuracy": 0.95}
-        assert mock_log.call_args_list[1][1]["step"] == 2
+        assert mock_wandb.log.call_count == 2
+        assert mock_wandb.log.call_args_list[0][0][0] == {"loss": 0.5, "accuracy": 0.9}
+        assert mock_wandb.log.call_args_list[0][1]["step"] == 1
+        assert mock_wandb.log.call_args_list[1][0][0] == {"loss": 0.4, "accuracy": 0.95}
+        assert mock_wandb.log.call_args_list[1][1]["step"] == 2
 
         # Should be active
         assert tracker.is_active()
