@@ -277,6 +277,7 @@ We encourage the community and users to help us develop adapters to allow GEPA t
 - **Social and Discussion:**  
   - [X (formerly Twitter) Announcement Thread (Lakshya A Agrawal)](https://x.com/LakshyAAAgrawal/status/1949867947867984322)
   - [GEPA covered by VentureBeat](https://venturebeat.com/ai/gepa-optimizes-llms-without-costly-reinforcement-learning)
+  - [GEPA's use by Databricks covered by VentureBeat](https://venturebeat.com/ai/the-usd100m-openai-partnership-is-nice-but-databricks-real-breakthrough)
   - Stay up to date:  
     - [@LakshyAAAgrawal on X (Twitter)](https://x.com/LakshyAAAgrawal)  
     - [@lateinteraction on X (Twitter)](https://twitter.com/lateinteraction)
