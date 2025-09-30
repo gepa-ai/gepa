@@ -35,6 +35,7 @@ def optimize(
     skip_perfect_score=True,
     reflection_minibatch_size=3,
     perfect_score=1,
+    reflection_prompt_template: str | None = None,
     # Component selection configuration
     module_selector: "ReflectionComponentSelector | str" = "round_robin",
     # Merge-based configuration
@@ -106,6 +107,7 @@ def optimize(
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
     - reflection_minibatch_size: The number of examples to use for reflection in each proposal step.
     - perfect_score: The perfect score to achieve.
+    - reflection_prompt_template: The prompt template to use for reflection. If not provided, GEPA will use the default prompt template (see InstructionProposalSignature). It should contain the following placeholders, which will be replaced with actual values: <curr_instructions> (the instructions to evolve), <inputs_outputs_feedback> (the inputs, outputs, and feedback to reflect on).
 
     # Component selection configuration
     - module_selector: Component selection strategy. Can be a ReflectionComponentSelector instance or a string ('round_robin', 'all'). Defaults to 'round_robin'. The 'round_robin' strategy cycles through components in order. The 'all' strategy selects all components for modification in every GEPA iteration.
@@ -240,6 +242,7 @@ def optimize(
         skip_perfect_score=skip_perfect_score,
         experiment_tracker=experiment_tracker,
         reflection_lm=reflection_lm,
+        reflection_prompt_template=reflection_prompt_template,
     )
 
     def evaluator(inputs, prog):
