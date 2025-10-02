@@ -30,7 +30,8 @@ full = [
 dspy = []
 test = [
     "gepa[full]",
-    "pytest"
+    "pytest",
+    "pyright"
 ]
 build = [
     "setuptools>=77.0.1",

@@ -1,0 +1,12 @@
+{
+  "include": [
+    "src",
+    "tests"
+  ],
+  "exclude": [
+    "src/gepa/adapters/dspy_adapter",
+    "src/gepa/adapters/dspy_full_program_adapter",
+    "src/gepa/examples"
+  ],
+  "stubPath": "typings"
+}
