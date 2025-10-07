@@ -93,12 +93,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
 
         # 1) Evaluate current program with traces
         eval_curr = self.adapter.evaluate(minibatch, curr_prog, capture_traces=True)
+        state.total_num_evals += len(subsample_ids)
+        state.full_program_trace[-1]["subsample_scores"] = eval_curr.scores
+
         if not eval_curr.trajectories or len(eval_curr.trajectories) == 0:
             self.logger.log(f"Iteration {i}: No trajectories captured. Skipping.")
             return None
-
-        state.total_num_evals += len(subsample_ids)
-        state.full_program_trace[-1]["subsample_scores"] = eval_curr.scores
 
         if self.skip_perfect_score and all(s >= self.perfect_score for s in eval_curr.scores):
             self.logger.log(f"Iteration {i}: All subsample scores perfect. Skipping.")
