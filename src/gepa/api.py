@@ -54,6 +54,7 @@ def optimize(
     mlflow_experiment_name: str | None = None,
     track_best_outputs: bool = False,
     display_progress_bar: bool = False,
+    use_cloudpickle: bool = False,
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
@@ -129,6 +130,7 @@ def optimize(
     - mlflow_tracking_uri: The tracking URI to use for MLflow.
     - mlflow_experiment_name: The experiment name to use for MLflow.
     - track_best_outputs: Whether to track the best outputs on the validation set. If True, GEPAResult will contain the best outputs obtained for each task in the validation set.
+    - use_cloudpickle: Use cloudpickle instead of pickle. This can be helpful when the serialized state contains dynamically generated DSPy signatures.
 
     # Reproducibility
     - seed: The seed to use for the random number generator.
@@ -272,6 +274,7 @@ def optimize(
         display_progress_bar=display_progress_bar,
         raise_on_exception=raise_on_exception,
         stop_callback=stop_callback,
+        use_cloudpickle=use_cloudpickle,
     )
 
     with experiment_tracker:
