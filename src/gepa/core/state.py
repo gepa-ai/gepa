@@ -96,10 +96,7 @@ class GEPAState(Generic[RolloutOutput]):
     @staticmethod
     def load(run_dir: str) -> "GEPAState":
         with open(os.path.join(run_dir, "gepa_state.bin"), "rb") as f:
-            try:
-                import cloudpickle as pickle
-            except ImportError:
-                import pickle
+            import pickle
             d = pickle.load(f)
         state = GEPAState.__new__(GEPAState)
         state.__dict__.update(d)
