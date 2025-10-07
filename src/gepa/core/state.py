@@ -86,13 +86,13 @@ class GEPAState(Generic[RolloutOutput, ValId]):
 
         return True
 
-    def save(self, run_dir: str | None):
+    def save(self, run_dir: str | None, *, use_cloudpickle: bool = False):
         if run_dir is None:
             return
         with open(os.path.join(run_dir, "gepa_state.bin"), "wb") as f:
-            try:
+            if use_cloudpickle:
                 import cloudpickle as pickle
-            except ImportError:
+            else:
                 import pickle
             d = dict(self.__dict__.items())
             d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
