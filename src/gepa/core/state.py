@@ -101,10 +101,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
     @staticmethod
     def load(run_dir: str) -> "GEPAState":
         with open(os.path.join(run_dir, "gepa_state.bin"), "rb") as f:
-            try:
-                import cloudpickle as pickle
-            except ImportError:
-                import pickle
+            import pickle
             d = pickle.load(f)
 
         version = d.get("validation_schema_version")
