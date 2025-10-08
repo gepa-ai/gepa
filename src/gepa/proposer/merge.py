@@ -84,18 +84,7 @@ def find_common_ancestor_pair(
 
     return None
 
-
-def sample_and_attempt_merge_programs_by_common_predictors(
-    agg_scores,
-    rng,
-    merge_candidates,
-    merges_performed,
-    program_candidates: list[dict[str, str]],
-    parent_program_for_candidate,
-    program_val_scores,
-    overlap_floor: int = 5,
-    max_attempts: int = 10,
-):
+def sample_and_attempt_merge_programs_by_common_predictors(agg_scores, rng, merge_candidates, merges_performed, program_candidates: list[dict[str, str]], parent_program_for_candidate, max_attempts=10):
     if len(merge_candidates) < 2:
         return (False, None, None, None, None)
     if len(parent_program_for_candidate) < 3:
@@ -272,8 +261,6 @@ class MergeProposer(ProposeNewCandidate):
             merges_performed=self.merges_performed,
             program_candidates=state.program_candidates,
             parent_program_for_candidate=state.parent_program_for_candidate,
-            program_val_scores=state.prog_candidate_val_subscores,
-            overlap_floor=self.val_overlap_floor,
         )
 
         if not merge_output[0]:
@@ -288,15 +275,10 @@ class MergeProposer(ProposeNewCandidate):
         self.logger.log(f"Iteration {i}: Merged programs {id1} and {id2} via ancestor {ancestor}")
 
         subsample_ids = self.select_eval_subsample_for_merged_program(
-            state.prog_candidate_val_subscores[id1],
-            state.prog_candidate_val_subscores[id2],
+            state.program_val_scores[id1],
+            state.program_val_scores[id2],
         )
-        if not subsample_ids:
-            self.logger.log(
-                f"Iteration {i}: Skipping merge of {id1} and {id2} due to insufficient overlapping val coverage"
-            )
-            return None
-        mini_devset = self.valset.fetch(subsample_ids)
+        mini_devset = [self.valset[k] for k in subsample_ids]
         id1_sub_scores = [state.prog_candidate_val_subscores[id1][k] for k in subsample_ids]
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids

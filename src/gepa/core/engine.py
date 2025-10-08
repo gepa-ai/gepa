@@ -130,7 +130,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             gepa_state=state,
             valset_score=valset_score,
             new_program_idx=new_program_idx,
-            valset_subscores=valset_subscores,
+            valset_scores=valset_subscores,
             experiment_tracker=self.experiment_tracker,
             linear_pareto_front_program_idx=linear_pareto_front_program_idx,
             valset_size=len(self.valset),

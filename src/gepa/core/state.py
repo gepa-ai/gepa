@@ -23,7 +23,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
     program_candidates: list[dict[str, str]]
     parent_program_for_candidate: list[list[ProgramIdx | None]]
 
-    prog_candidate_val_subscores: list[ValScores]
+    program_full_scores_val_set: list[float]
 
     pareto_front_valset: ValScores
     program_at_pareto_front_valset: dict[ValId, set[ProgramIdx]]
@@ -51,7 +51,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
     ):
         base_outputs, base_scores = base_valset_eval_output
         self.program_candidates = [seed_candidate]
-        self.prog_candidate_val_subscores = [base_scores]
+        self.program_full_scores_val_set = [valset_base_score]
 
         self.pareto_front_valset = {val_id: score for val_id, score in base_scores.items()}
         self.parent_program_for_candidate = [[None]]
@@ -73,7 +73,9 @@ class GEPAState(Generic[RolloutOutput, ValId]):
     def is_consistent(self):
         assert len(self.program_candidates) == len(self.parent_program_for_candidate)
         assert len(self.program_candidates) == len(self.named_predictor_id_to_update_next_for_program_candidate)
-        assert len(self.program_candidates) == len(self.prog_candidate_val_subscores)
+
+        assert len(self.prog_candidate_val_subscores) == len(self.program_candidates)
+        assert len(self.pareto_front_valset) == len(self.program_at_pareto_front_valset)
         assert len(self.program_candidates) == len(self.num_metric_calls_by_discovery)
 
         for front in self.program_at_pareto_front_valset.values():
@@ -102,6 +104,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
     def load(run_dir: str) -> "GEPAState":
         with open(os.path.join(run_dir, "gepa_state.bin"), "rb") as f:
             import pickle
+
             d = pickle.load(f)
 
         version = d.get("validation_schema_version")
@@ -111,92 +114,12 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         state = GEPAState.__new__(GEPAState)
         state.__dict__.update(d)
 
-        state.validation_schema_version = GEPAState._VALIDATION_SCHEMA_VERSION
-        assert set(state.pareto_front_valset.keys()) == set(state.program_at_pareto_front_valset.keys())
-        assert len(state.program_candidates) == len(state.prog_candidate_val_subscores)
-        assert len(state.program_candidates) == len(state.num_metric_calls_by_discovery)
+        assert len(state.program_candidates) == len(state.program_full_scores_val_set)
+        assert len(state.pareto_front_valset) == len(state.program_at_pareto_front_valset)
+
         assert len(state.program_candidates) == len(state.parent_program_for_candidate)
         assert len(state.program_candidates) == len(state.named_predictor_id_to_update_next_for_program_candidate)
         return state
-
-    @staticmethod
-    def _migrate_legacy_state_dict(d: dict[str, Any]) -> None:
-        legacy_scores: list[list[float]] = d.pop("prog_candidate_val_subscores", [])
-        # convert to sparse val subscores
-        d["prog_candidate_val_subscores"] = [
-            {idx: score for idx, score in enumerate(scores)} for scores in legacy_scores
-        ]
-
-        pareto_front = d.get("pareto_front_valset")
-        if isinstance(pareto_front, list):
-            d["pareto_front_valset"] = {idx: score for idx, score in enumerate(pareto_front)}
-
-        program_at_front = d.get("program_at_pareto_front_valset")
-        if isinstance(program_at_front, list):
-            d["program_at_pareto_front_valset"] = {idx: set(front) for idx, front in enumerate(program_at_front)}
-
-        best_outputs = d.get("best_outputs_valset")
-        if isinstance(best_outputs, list):
-            d["best_outputs_valset"] = {idx: list(outputs) for idx, outputs in enumerate(best_outputs)}
-
-        d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
-
-    def get_program_average(self, program_idx: int) -> tuple[float, int]:
-        scores = self.prog_candidate_val_subscores[program_idx]
-        if not scores:
-            return float("-inf"), 0
-        num_samples = len(scores)
-        avg = sum(scores.values()) / num_samples
-        return avg, num_samples
-
-    @property
-    def valset_evaluations(self) -> dict[ValId, list[ProgramIdx]]:
-        """
-        Valset examples by id and programs that have evaluated them. Keys consist of all known
-        valset ids
-        """
-        result = defaultdict(list)
-        for program_idx, val_scores in enumerate(self.prog_candidate_val_subscores):
-            for val_id in val_scores.keys():
-                result[val_id].append(program_idx)
-        return result
-
-    @property
-    def program_full_scores_val_set(self) -> list[float]:
-        return [self.get_program_average(program_idx)[0] for program_idx in range(len(self.prog_candidate_val_subscores))]
-
-    @property
-    def per_program_tracked_scores(self) -> list[float]:
-        # NOTE(aria42): This same as valset program average scores, but this was already the case
-        return [self.get_program_average(program_idx)[0] for program_idx in range(len(self.prog_candidate_val_subscores))]
-
-    def _update_pareto_front_for_val_id(
-        self,
-        val_id: ValId,
-        score: float,
-        program_idx: ProgramIdx,
-        outputs: ValOutputs | None,
-        run_dir: str | None,
-        iteration: int,
-    ) -> None:
-        prev_score = self.pareto_front_valset.get(val_id, float("-inf"))
-        if score > prev_score:
-            self.pareto_front_valset[val_id] = score
-            self.program_at_pareto_front_valset[val_id] = {program_idx}
-            output = outputs.get(val_id) if outputs is not None else None
-            if self.best_outputs_valset is not None and output is not None:
-                self.best_outputs_valset[val_id] = [(program_idx, output)]
-                if run_dir is not None:
-                    task_dir = os.path.join(run_dir, "generated_best_outputs_valset", f"task_{val_id}")
-                    os.makedirs(task_dir, exist_ok=True)
-                    with open(os.path.join(task_dir, f"iter_{iteration}_prog_{program_idx}.json"), "w") as fout:
-                        json.dump(output, fout, indent=4, default=json_default)
-        elif score == prev_score:
-            pareto_front = self.program_at_pareto_front_valset.setdefault(val_id, set())
-            pareto_front.add(program_idx)
-            output = outputs.get(val_id) if outputs is not None else None
-            if self.best_outputs_valset is not None and output is not None:
-                self.best_outputs_valset[val_id].append((program_idx, output))
 
     def update_state_with_new_program(
         self,
@@ -218,32 +141,41 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         self.named_predictor_id_to_update_next_for_program_candidate.append(max_predictor_id)
         self.parent_program_for_candidate.append(list(parent_program_idx))
 
-        self.prog_candidate_val_subscores.append(dict(valset_subscores))
+        self.prog_candidate_val_subscores.append(valset_subscores)
+        self.program_full_scores_val_set.append(valset_score)
+        for task_idx, (old_score, new_score) in enumerate(zip(self.pareto_front_valset, valset_subscores, strict=False)):
+            if new_score > old_score:
+                self.pareto_front_valset[task_idx] = new_score
+                self.program_at_pareto_front_valset[task_idx] = {new_program_idx}
 
-        for val_id, score in valset_subscores.items():
-            self._update_pareto_front_for_val_id(val_id, score, new_program_idx, valset_outputs, run_dir, self.i + 1)
+                if self.best_outputs_valset is not None:
+                    self.best_outputs_valset[task_idx] = [(new_program_idx, valset_outputs[task_idx])]
 
-        linear_pareto_front_program_idx = self._best_program_idx()
+                if run_dir is not None:
+                    os.makedirs(os.path.join(run_dir, "generated_best_outputs_valset", f"task_{task_idx}"), exist_ok=True)
+                    with open(os.path.join(run_dir, "generated_best_outputs_valset", f"task_{task_idx}", f"iter_{self.i+1}_prog_{new_program_idx}.json"), "w") as f:
+                        json.dump(valset_outputs[task_idx], f, indent=4, default=json_default)
+            elif new_score == old_score:
+                self.program_at_pareto_front_valset[task_idx].add(new_program_idx)
+                if self.best_outputs_valset is not None:
+                    self.best_outputs_valset[task_idx].append((new_program_idx, valset_outputs[task_idx]))
+
+        assert len(valset_subscores) == len(self.program_at_pareto_front_valset)
+
+        self.per_program_tracked_scores = self.program_full_scores_val_set
+
+        linear_pareto_front_program_idx = idxmax(self.per_program_tracked_scores)
+
         return new_program_idx, linear_pareto_front_program_idx
 
-    def _best_program_idx(self) -> ProgramIdx:
-        best_idx = 0
-        best_avg, best_cov = self.get_program_average(0)
-        for idx in range(1, len(self.program_candidates)):
-            avg, cov = self.get_program_average(idx)
-            if avg > best_avg or (avg == best_avg and cov > best_cov):
-                best_idx = idx
-                best_avg, best_cov = avg, cov
-        return best_idx
-
-
-def write_eval_scores_to_directory(scores: ValScores, output_dir: str):
-    for val_id, score in scores.items():
-        task_dir = os.path.join(output_dir, f"task_{val_id}")
-        os.makedirs(task_dir, exist_ok=True)
-        with open(os.path.join(task_dir, f"iter_{0}_prog_0.json"), "w") as f:
-            json.dump(score, f, indent=4, default=json_default)
-
+def write_eval_output_to_directory(
+    eval_out: tuple[list[RolloutOutput], list[float]],
+    output_dir: str
+):
+    for task_idx, _score in enumerate(eval_out[1]):
+        os.makedirs(os.path.join(output_dir, f"task_{task_idx}"), exist_ok=True)
+        with open(os.path.join(output_dir, f"task_{task_idx}", f"iter_{0}_prog_0.json"), "w") as f:
+            json.dump(eval_out[1][task_idx], f, indent=4, default=json_default)
 
 def initialize_gepa_state(
     run_dir: str | None,
@@ -260,8 +192,8 @@ def initialize_gepa_state(
 
         seed_val_outputs, seed_val_scores = valset_evaluator(seed_candidate)
         if run_dir is not None:
-            write_eval_scores_to_directory(seed_val_scores, os.path.join(run_dir, "generated_best_outputs_valset"))
-        num_evals_run += len(seed_val_scores)
+            write_eval_output_to_directory(valset_out, os.path.join(run_dir, "generated_best_outputs_valset"))
+        num_evals_run += len(valset_out[1])
 
         gepa_state = GEPAState(
             seed_candidate,
