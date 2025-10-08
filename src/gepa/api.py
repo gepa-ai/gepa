@@ -9,6 +9,7 @@ from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
+from gepa.core.state import GEPAState
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -40,6 +41,7 @@ def optimize(
     # Merge-based configuration
     use_merge=False,
     max_merge_invocations=5,
+    merge_val_overlap_floor: int = 5,
     # Budget and Stop Condition
     max_metric_calls=None,
     stop_callbacks: "StopperProtocol | list[StopperProtocol] | None" = None,
@@ -57,6 +59,7 @@ def optimize(
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
+    val_evaluation_policy: Callable[[GEPAState], list[int]] | None = None,
 ):
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -255,6 +258,7 @@ def optimize(
             use_merge=use_merge,
             max_merge_invocations=max_merge_invocations,
             rng=rng,
+            val_overlap_floor=merge_val_overlap_floor,
         )
 
     engine = GEPAEngine(
@@ -272,6 +276,7 @@ def optimize(
         display_progress_bar=display_progress_bar,
         raise_on_exception=raise_on_exception,
         stop_callback=stop_callback,
+        val_evaluation_policy=val_evaluation_policy,
     )
 
     with experiment_tracker:

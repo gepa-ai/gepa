@@ -284,14 +284,14 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
     # 2. Verify score arrays have expected structure
     assert len(gepa_result.val_aggregate_scores) == 1  # Only one validation score recorded
     assert len(gepa_result.val_subscores) == 1  # Val subscores for each candidate
-    assert len(gepa_result.val_subscores[0]) == 1  # One score per validation instance
+    assert len(gepa_result.val_subscores[0]) == 1  # One score per evaluated validation instance
     assert all(isinstance(score, (int, float)) for score in gepa_result.val_aggregate_scores)
-    assert all(isinstance(subscores, list) for subscores in gepa_result.val_subscores)
+    assert all(isinstance(subscores, dict) for subscores in gepa_result.val_subscores)
     assert all(0 <= score <= 1 for score in gepa_result.val_aggregate_scores)  # Scores should be normalized
     
     # 3. Verify base program evaluation (iteration 0) happened
     base_val_score = gepa_result.val_aggregate_scores[0]  
-    base_val_subscore = gepa_result.val_subscores[0][0]  # First candidate, first val instance
+    base_val_subscore = next(iter(gepa_result.val_subscores[0].values()))  # First candidate, first evaluated val instance
     assert isinstance(base_val_score, (int, float))
     assert isinstance(base_val_subscore, (int, float))
     assert base_val_score > 0  # Should have meaningful score from mock LLM

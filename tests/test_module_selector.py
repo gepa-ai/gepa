@@ -16,8 +16,9 @@ def common_mocks():
         program_candidates=[{"test": "value"}],
         parent_program_for_candidate=[None],
         program_full_scores_val_set=[0.5],
-        prog_candidate_val_subscores=[[]],
-        program_at_pareto_front_valset=[set()],
+        per_program_tracked_scores=[0.5],
+        program_val_scores=[{}],
+        program_at_pareto_front_valset={},
         num_metric_calls_by_discovery=[1],
     )
 

@@ -82,19 +82,41 @@ def find_common_ancestor_pair(rng, parent_list, program_indexes, merges_performe
 
     return None
 
-def sample_and_attempt_merge_programs_by_common_predictors(agg_scores, rng, merge_candidates, merges_performed, program_candidates: list[dict[str, str]], parent_program_for_candidate, max_attempts=10):
+def sample_and_attempt_merge_programs_by_common_predictors(
+    agg_scores,
+    rng,
+    merge_candidates,
+    merges_performed,
+    program_candidates: list[dict[str, str]],
+    parent_program_for_candidate,
+    program_val_scores,
+    overlap_floor: int = 5,
+    max_attempts: int = 10,
+):
     if len(merge_candidates) < 2:
         return (False, None, None, None, None)
     if len(parent_program_for_candidate) < 3:
         return (False, None, None, None, None)
 
     for _ in range(max_attempts):
-        ids_to_merge = find_common_ancestor_pair(rng, parent_program_for_candidate, list(merge_candidates), merges_performed=merges_performed, agg_scores=agg_scores, program_candidates=program_candidates, max_attempts=10)
+        ids_to_merge = find_common_ancestor_pair(
+            rng,
+            parent_program_for_candidate,
+            list(merge_candidates),
+            merges_performed=merges_performed,
+            agg_scores=agg_scores,
+            program_candidates=program_candidates,
+            max_attempts=10,
+        )
         if ids_to_merge is None:
             continue
         id1, id2, ancestor = ids_to_merge
 
         assert (id1, id2, ancestor) not in merges_performed, "This pair has already been merged"
+
+        common_ids = set(program_val_scores[id1].keys()) & set(program_val_scores[id2].keys())
+        if len(common_ids) < overlap_floor:
+            continue
 
         assert agg_scores[ancestor] <= agg_scores[id1], "Ancestor should not be better than its descendants"
         assert agg_scores[ancestor] <= agg_scores[id2], "Ancestor should not be better than its descendants"
@@ -173,6 +195,7 @@ class MergeProposer(ProposeNewCandidate):
         use_merge: bool,
         max_merge_invocations: int,
         rng: random.Random | None = None,
+        val_overlap_floor: int = 5,
     ):
         self.logger = logger
         self.valset = valset
@@ -183,6 +206,8 @@ class MergeProposer(ProposeNewCandidate):
             self.rng = random.Random(0)
         else:
             self.rng = rng
+
+        self.val_overlap_floor = val_overlap_floor
 
         # Internal counters matching original behavior
         self.merges_due = 0
@@ -198,31 +223,34 @@ class MergeProposer(ProposeNewCandidate):
 
     def select_eval_subsample_for_merged_program(
         self,
-        scores1: list[float],
-        scores2: list[float],
+        scores1: dict[int, float],
+        scores2: dict[int, float],
         num_subsample_ids: int = 5,
     ) -> list[int]:
-        all_indices = set(range(len(scores1)))
-        p1 = [i for i, (s1, s2) in enumerate(zip(scores1, scores2, strict=False)) if s1 > s2]
-        p2 = [i for i, (s1, s2) in enumerate(zip(scores1, scores2, strict=False)) if s2 > s1]
-        p3 = [i for i in all_indices if i not in p1 and i not in p2]
+        common_ids = list(set(scores1.keys()) & set(scores2.keys()))
 
-        n_each = math.ceil(num_subsample_ids / 3)
-        n1 = min(len(p1), n_each)
-        n2 = min(len(p2), n_each)
-        n3 = min(len(p3), num_subsample_ids - (n1 + n2))
-        selected = []
-        if n1: selected += self.rng.sample(p1, k=n1)
-        if n2: selected += self.rng.sample(p2, k=n2)
-        if n3: selected += self.rng.sample(p3, k=n3)
+        p1 = [idx for idx in common_ids if scores1[idx] > scores2[idx]]
+        p2 = [idx for idx in common_ids if scores2[idx] > scores1[idx]]
+        p3 = [idx for idx in common_ids if idx not in p1 and idx not in p2]
+
+        n_each = max(1, math.ceil(num_subsample_ids / 3))
+        selected: list[int] = []
+        for bucket in (p1, p2, p3):
+            if len(selected) >= num_subsample_ids:
+                break
+            available = [idx for idx in bucket if idx not in selected]
+            take = min(len(available), n_each, num_subsample_ids - len(selected))
+            if take > 0:
+                selected += self.rng.sample(available, k=take)
 
         remaining = num_subsample_ids - len(selected)
-        unused = list(all_indices - set(selected))
         if remaining > 0:
+            unused = [idx for idx in common_ids if idx not in selected]
             if len(unused) >= remaining:
                 selected += self.rng.sample(unused, k=remaining)
             else:
-                selected += self.rng.choices(list(all_indices), k=remaining)
+                selected += self.rng.choices(common_ids, k=remaining)
+
         return selected[:num_subsample_ids]
 
     def propose(self, state: GEPAState) -> CandidateProposal | None:
@@ -243,6 +271,8 @@ class MergeProposer(ProposeNewCandidate):
             merges_performed=self.merges_performed,
             program_candidates=state.program_candidates,
             parent_program_for_candidate=state.parent_program_for_candidate,
+            program_val_scores=state.program_val_scores,
+            overlap_floor=self.val_overlap_floor,
         )
 
         if not merge_output[0]:
@@ -257,12 +287,17 @@ class MergeProposer(ProposeNewCandidate):
         self.logger.log(f"Iteration {i}: Merged programs {id1} and {id2} via ancestor {ancestor}")
 
         subsample_ids = self.select_eval_subsample_for_merged_program(
-            state.prog_candidate_val_subscores[id1],
-            state.prog_candidate_val_subscores[id2],
+            state.program_val_scores[id1],
+            state.program_val_scores[id2],
         )
+        if not subsample_ids:
+            self.logger.log(
+                f"Iteration {i}: Skipping merge of {id1} and {id2} due to insufficient overlapping val coverage"
+            )
+            return None
         mini_devset = [self.valset[k] for k in subsample_ids]
-        id1_sub_scores = [state.prog_candidate_val_subscores[id1][k] for k in subsample_ids]
-        id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
+        id1_sub_scores = [state.program_val_scores[id1][k] for k in subsample_ids]
+        id2_sub_scores = [state.program_val_scores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
 
         _, new_sub_scores = self.evaluator(mini_devset, new_program)
