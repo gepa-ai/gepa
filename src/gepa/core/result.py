@@ -104,7 +104,7 @@ class GEPAResult(Generic[RolloutOutput]):
             parents=list(state.parent_program_for_candidate),
             val_aggregate_scores=list(state.program_full_scores_val_set),
             best_outputs_valset=getattr(state, "best_outputs_valset", None),
-            val_subscores=[dict(scores) for scores in state.program_val_scores],
+            val_subscores=[dict(scores) for scores in state.prog_candidate_val_subscores],
             per_val_instance_best_candidates={
                 val_id: set(front) for val_id, front in state.program_at_pareto_front_valset.items()
             },

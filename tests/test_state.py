@@ -45,8 +45,8 @@ def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
     p0 = base / "task_0" / "iter_0_prog_0.json"
     p1 = base / "task_1" / "iter_0_prog_0.json"
     assert p0.exists() and p1.exists()
-    assert json.loads(p0.read_text()) == "out0"
-    assert json.loads(p1.read_text()) == {"k": "out1"}
+    assert json.loads(p0.read_text()) == 0.1
+    assert json.loads(p1.read_text()) == 0.2
 
 
 def test_initialize_gepa_state_no_run_dir():
@@ -142,8 +142,8 @@ def test_dynamic_validation(run_dir):
 
     state_phase_one = state_mod.GEPAState.load(str(run_dir))
     assert len(state_phase_one.program_candidates) >= 2
-    assert 0 in state_phase_one.program_val_scores[-1]
-    assert 1 not in state_phase_one.program_val_scores[-1]
+    assert 0 in state_phase_one.prog_candidate_val_subscores[-1]
+    assert 1 not in state_phase_one.prog_candidate_val_subscores[-1]
     assert state_phase_one.valset_evaluations.keys() == {0, 1}
 
     extended_valset = valset_initial + [{"id": 2, "difficulty": 4}]
@@ -171,8 +171,8 @@ def test_dynamic_validation(run_dir):
 
     resumed_state = state_mod.GEPAState.load(str(run_dir))
     assert resumed_state.valset_evaluations.keys() == valset_ids
-    assert set(resumed_state.program_val_scores[0].keys()) == {0, 1}
-    covered_ids = set().union(*[scores.keys() for scores in resumed_state.program_val_scores])
+    assert set(resumed_state.prog_candidate_val_subscores[0].keys()) == {0, 1}
+    covered_ids = set().union(*[scores.keys() for scores in resumed_state.prog_candidate_val_subscores])
     assert covered_ids == {0, 1, 2}
 
 
@@ -189,9 +189,8 @@ def test_load_legacy_state(legacy_run_dir):
     """Ensure legacy gepa_state.bin files migrate correctly when loaded."""
     state = state_mod.GEPAState.load(str(legacy_run_dir))
 
-    assert isinstance(state.program_val_scores, list)
-    assert all(isinstance(scores, dict) for scores in state.program_val_scores)
-    assert "prog_candidate_val_subscores" not in state.__dict__
+    assert isinstance(state.prog_candidate_val_subscores, list)
+    assert all(isinstance(scores, dict) for scores in state.prog_candidate_val_subscores)
     assert state.validation_schema_version == state_mod.GEPAState._VALIDATION_SCHEMA_VERSION
     assert state.valset_evaluations.keys() == set(range(45))
 

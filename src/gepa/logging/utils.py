@@ -11,7 +11,7 @@ def log_detailed_metrics_after_discovering_new_program(
     gepa_state: GEPAState,
     valset_score,
     new_program_idx,
-    valset_scores,
+    valset_subscores,
     experiment_tracker,
     linear_pareto_front_program_idx,
     valset_size: int,
@@ -27,7 +27,7 @@ def log_detailed_metrics_after_discovering_new_program(
     logger.log(
         f"Iteration {gepa_state.i + 1}: Train/val aggregate for new program: {gepa_state.per_program_tracked_scores[new_program_idx]}"
     )
-    logger.log(f"Iteration {gepa_state.i + 1}: Individual valset scores for new program: {valset_scores}")
+    logger.log(f"Iteration {gepa_state.i + 1}: Individual valset scores for new program: {valset_subscores}")
     logger.log(f"Iteration {gepa_state.i + 1}: New valset pareto front scores: {gepa_state.pareto_front_valset}")
 
     pareto_scores = [score for score in gepa_state.pareto_front_valset.values() if score != float("-inf")]
@@ -59,7 +59,7 @@ def log_detailed_metrics_after_discovering_new_program(
         "iteration": gepa_state.i + 1,
         "new_program_idx": new_program_idx,
         "valset_pareto_front_scores": dict(gepa_state.pareto_front_valset),
-        "individual_valset_score_new_program": dict(valset_scores),
+        "individual_valset_score_new_program": dict(valset_subscores),
         "valset_pareto_front_agg": pareto_avg,
         "valset_pareto_front_programs": {k: list(v) for k, v in gepa_state.program_at_pareto_front_valset.items()},
         "best_valset_agg_score": max(gepa_state.program_full_scores_val_set),

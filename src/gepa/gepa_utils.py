@@ -55,8 +55,6 @@ def remove_dominated_programs(program_at_pareto_front_valset, scores=None):
 
     dominators = [p for p in programs if p not in dominated]
     for front in program_at_pareto_front_valset.values():
-        if not front:
-            continue
         assert any(p in front for p in dominators)
 
     new_program_at_pareto_front_valset = {
