@@ -100,6 +100,46 @@ result = gepa.optimize(
 export OPENAI_API_KEY=your-key-here
 ```
 
+### Option 3: Remote MCP Servers (Truested/Self-Hosted Servers)
+
+Connect to thousands of public MCP servers via SSE or StreamableHTTP:
+
+```python
+# Remote SSE server
+adapter = MCPAdapter(
+    tool_name="search_web",
+    task_model="openai/gpt-4o-mini",
+    metric_fn=lambda item, output: 1.0 if item["reference_answer"] in output else 0.0,
+    remote_url="https://mcp-server.com/sse",
+    remote_transport="sse",
+)
+
+# Remote HTTP server with authentication
+adapter = MCPAdapter(
+    tool_name="analyze_data",
+    task_model="openai/gpt-4o-mini",
+    metric_fn=my_metric,
+    remote_url="https://mcp-server.com/mcp",
+    remote_transport="streamable_http",
+    remote_headers={"Authorization": "Bearer YOUR_TOKEN"},
+    remote_timeout=30,
+)
+
+result = gepa.optimize(
+    seed_candidate={"tool_description": "Search web for information"},
+    trainset=dataset[:20],
+    valset=dataset[20:],
+    adapter=adapter,
+    reflection_lm="openai/gpt-4o",
+    max_metric_calls=150,
+)
+```
+
+**Benefits:**
+- Access thousands of public MCP servers that you trust
+- No local server setup required
+- Use hosted/managed MCP tools
+
 ## Architecture
 
 ### Two-Pass Workflow
@@ -221,7 +261,9 @@ def llm_judge(item, output):
 
 ## MCP Server Examples
 
-### Filesystem Server
+### Local Servers
+
+#### Filesystem Server (stdio)
 
 ```python
 from mcp import StdioServerParameters
@@ -272,6 +314,43 @@ adapter = MCPAdapter(
 )
 ```
 
+### Remote Servers
+
+#### Public SSE Server
+
+```python
+adapter = MCPAdapter(
+    tool_name="search_web",
+    task_model="openai/gpt-4o-mini",
+    metric_fn=my_metric,
+    remote_url="https://public-mcp.example.com/sse",
+    remote_transport="sse",
+)
+```
+
+#### Authenticated HTTP Server
+
+```python
+adapter = MCPAdapter(
+    tool_name="company_data",
+    task_model="openai/gpt-4o-mini",
+    metric_fn=my_metric,
+    remote_url="https://internal-mcp.company.com/mcp",
+    remote_transport="streamable_http",
+    remote_headers={
+        "Authorization": "Bearer YOUR_API_TOKEN",
+        "X-Custom-Header": "value",
+    },
+    remote_timeout=60,
+)
+```
+
+**Available transports:**
+- `"sse"` - Server-Sent Events (good for streaming)
+- `"streamable_http"` - HTTP with session management (better for production)
+
+**See also:** The [remote_server.py example](../../examples/mcp_tool_optimization/remote_server.py) for a complete command-line tool.
+
 ## Advanced Configuration
 
 ### Custom Model Functions
@@ -304,6 +383,31 @@ adapter = MCPAdapter(
     enable_two_pass=False,  # Single-pass only
 )
 ```
+
+### Remote Server Configuration
+
+```python
+adapter = MCPAdapter(
+    tool_name="my_tool",
+    task_model="openai/gpt-4o-mini",
+    metric_fn=my_metric,
+
+    # Remote server settings
+    remote_url="https://mcp.example.com/sse",
+    remote_transport="sse",  # or "streamable_http"
+    remote_headers={
+        "Authorization": "Bearer TOKEN",
+        "User-Agent": "GEPA/1.0",
+    },
+    remote_timeout=30,  # seconds
+
+    # Other settings
+    enable_two_pass=True,
+    failure_score=0.0,
+)
+```
+
+**Important:** You must provide EITHER `server_params` (local) OR `remote_url` (remote), not both.
 
 ### Error Handling
 

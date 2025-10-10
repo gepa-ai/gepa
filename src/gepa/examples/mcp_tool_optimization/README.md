@@ -8,8 +8,9 @@ Choose your setup:
 
 | Example | Models | API Keys | Best For |
 |---------|--------|----------|----------|
-| **ollama_example.py** | 🏠 Local Ollama | ❌ None | 
-| **simple_example.py** | ☁️ OpenAI API | ✅ Required |
+| **local_ollama.py** | 🏠 Local Ollama | ❌ None | 100% local, free |
+| **cloud_api.py** | ☁️ OpenAI API | ✅ Required | Production quality |
+| **remote_server.py** | Any | Maybe | Remote MCP tools |
 
 ## Prerequisites
 
@@ -40,7 +41,7 @@ export OPENAI_API_KEY=your-key-here
 
 ## Examples
 
-### ollama_example.py ⭐ RECOMMENDED
+### local_ollama.py ⭐ RECOMMENDED
 
 **100% local optimization - no API keys, no cost, maximum privacy!**
 
@@ -59,7 +60,7 @@ export OPENAI_API_KEY=your-key-here
 ollama serve  # In a separate terminal
 
 # Run the example
-python ollama_example.py
+python local_ollama.py
 ```
 
 **Expected runtime:** ~3-10 minutes (depends on your hardware)
@@ -73,7 +74,7 @@ python ollama_example.py
 - Disk: ~30GB for models
 - CPU/GPU: Faster is better, GPU highly recommended
 
-### simple_example.py
+### cloud_api.py
 
 **Fast optimization with OpenAI API**
 
@@ -87,7 +88,7 @@ python ollama_example.py
 
 ```bash
 export OPENAI_API_KEY=your-key-here
-python simple_example.py
+python cloud_api.py
 ```
 
 **Expected output:**
@@ -99,6 +100,51 @@ python simple_example.py
 
 **Expected cost:**  30 iterations (depends)
 
+### remote_server.py (TRUSTED!)
+
+**Connect to remote MCP servers**
+
+**What it does:**
+- Demonstrates remote MCP server connection via SSE or StreamableHTTP
+- Shows authentication with API headers
+- Command-line interface for easy testing
+- Optimizes tools from public/hosted MCP servers
+
+**Run it:**
+
+```bash
+# With a public SSE server
+python remote_server.py \
+    --url https://mcp-server.com/sse \
+    --transport sse \
+    --tool-name search_web
+
+# With authentication
+python remote_server.py \
+    --url https://mcp-server.com/sse \
+    --transport sse \
+    --tool-name search_web \
+    --auth-header "Authorization: Bearer YOUR_TOKEN"
+
+# With StreamableHTTP transport
+python remote_server.py \
+    --url https://mcp-server.com/mcp \
+    --transport streamable_http \
+    --tool-name analyze_data
+```
+
+**Requirements:**
+- Access to a remote MCP server URL
+- Optional: API token for authentication
+- Task/reflection models (defaults to GPT-4o-mini and GPT-4o but feel free to change to gpt-5 or whatever)
+
+**Expected cost:** Depends on your chosen task/reflection models
+
+**Key features:**
+- No local MCP server setup needed
+- Access thousands of public MCP tools
+- Production-ready remote optimization
+
 ## Understanding the Output
 
 The optimization process will show:
@@ -109,10 +155,6 @@ The optimization process will show:
 4. **Comparison**: Original vs. optimized tool description
 
 
-
-**Why different models for task vs reflection?**
-- **Task model**: Runs many times, needs to be fast
-- **Reflection model**: Runs fewer times, benefits from better reasoning
 
 
 ## Customization
@@ -172,8 +214,6 @@ After running the example:
 4. **Production use**: Deploy optimized tool descriptions in your application
 
 ## Troubleshooting
-
-
 
 ### npx not found
 

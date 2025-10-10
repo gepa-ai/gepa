@@ -1,26 +1,33 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3 -u
 """
-MCP tool optimization example using LOCAL Ollama models.
+Local Ollama MCP Tool Optimization
 
-This example demonstrates GEPA MCP optimization running entirely locally:
-- Task model: Ollama (e.g., llama:3.2:1b, llama3.1:8b)
-- Reflection model: Ollama (llama3.1:8b or larger model for better reasoning)
-- MCP server: Local filesystem server
+Demonstrates GEPA optimization using 100% local models. Feel free to replace models of your choice.
 
-No API keys or external services required!
+What this shows:
+- Using local Ollama models (llama3.1:8b for both tasks and reflection)
+- Local Python MCP server
+- Completely offline operation
+- No API keys or external services
+- Demonstrates MCP adapter with GEPA optimization
 
-Prerequisites:
-    1. Install Ollama: https://ollama.com
-    2. Pull models:
-       ollama pull llama:3.1:8b
-       ollama pull llama:3.2:1b
-    3. Install dependencies:
-       pip install mcp gepa litellm
+Requirements:
+- Ollama installed (https://ollama.com)
+- Model: ollama pull llama3.1:8b
+
+Compare with:
+- cloud_api.py: Cloud APIs, requires key
+- remote_server.py: Remote MCP servers
 
 Usage:
-    python ollama_example.py
+    ollama pull llama3.1:8b
+    python local_ollama.py
 """
 
+import logging
+
+# Enable logging to see progress with unbuffered output
+import sys
 import tempfile
 from pathlib import Path
 
@@ -28,6 +35,19 @@ from mcp import StdioServerParameters
 
 import gepa
 from gepa.adapters.mcp_adapter import MCPAdapter
+
+sys.stdout = sys.stderr  # Redirect stdout to stderr (unbuffered)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stderr,  # Log to stderr (unbuffered)
+    force=True,
+)
+
+# Suppress verbose litellm logging
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def create_test_files():
@@ -91,42 +111,56 @@ March,Widget B,28000,260
 
 
 def create_dataset(temp_dir: str):
-    """Create evaluation dataset optimized for local models."""
+    """Create evaluation dataset with mix of explicit and implicit queries."""
     dataset = [
+        # Explicit queries (easier - specify to read file)
         {
-            "user_query": "What time is the team meeting scheduled?",
+            "user_query": f"Read the file {temp_dir}/meeting_notes.txt and tell me what time is the team meeting scheduled?",
             "tool_arguments": {"path": f"{temp_dir}/meeting_notes.txt"},
             "reference_answer": "3pm",
             "additional_context": {},
         },
         {
-            "user_query": "What port is the server configured to run on?",
+            "user_query": f"Read {temp_dir}/server_config.json and tell me what port is the server configured to run on?",
             "tool_arguments": {"path": f"{temp_dir}/server_config.json"},
             "reference_answer": "8080",
             "additional_context": {},
         },
+        # Implicit queries (harder - don't explicitly say "read")
         {
-            "user_query": "Is debug mode enabled in the server configuration?",
+            "user_query": f"What time is the team meeting? Check {temp_dir}/meeting_notes.txt",
+            "tool_arguments": {"path": f"{temp_dir}/meeting_notes.txt"},
+            "reference_answer": "3pm",
+            "additional_context": {},
+        },
+        {
+            "user_query": f"Is debug mode enabled? File: {temp_dir}/server_config.json",
             "tool_arguments": {"path": f"{temp_dir}/server_config.json"},
             "reference_answer": "true",
             "additional_context": {},
         },
         {
-            "user_query": "What is this project about according to the README?",
-            "tool_arguments": {"path": f"{temp_dir}/project_readme.md"},
-            "reference_answer": "MCP tool integration",
-            "additional_context": {},
-        },
-        {
-            "user_query": "How much revenue did Widget B generate in February?",
+            "user_query": f"Widget B revenue in February? Source: {temp_dir}/sales_data.csv",
             "tool_arguments": {"path": f"{temp_dir}/sales_data.csv"},
             "reference_answer": "25000",
             "additional_context": {},
         },
         {
-            "user_query": "Where is the team meeting being held?",
+            "user_query": f"Where is the meeting? ({temp_dir}/meeting_notes.txt)",
             "tool_arguments": {"path": f"{temp_dir}/meeting_notes.txt"},
             "reference_answer": "Conference Room B",
+            "additional_context": {},
+        },
+        {
+            "user_query": f"Widget A units sold in January - see {temp_dir}/sales_data.csv",
+            "tool_arguments": {"path": f"{temp_dir}/sales_data.csv"},
+            "reference_answer": "150",
+            "additional_context": {},
+        },
+        {
+            "user_query": f"Database host address from {temp_dir}/server_config.json?",
+            "tool_arguments": {"path": f"{temp_dir}/server_config.json"},
+            "reference_answer": "db.example.com",
             "additional_context": {},
         },
     ]
@@ -135,16 +169,38 @@ def create_dataset(temp_dir: str):
 
 def simple_metric(item, output: str) -> float:
     """
-    Simple metric: check if reference answer appears in output.
+    Stricter metric: checks multiple aspects for better differentiation.
 
-    Returns 1.0 if reference is found, 0.0 otherwise.
+    Returns:
+    - 1.0 if exact reference answer found
+    - 0.5 if partial match or related info
+    - 0.0 if wrong or missing
     """
     if not output:
         return 0.0
 
-    reference = item["reference_answer"]
-    if reference and reference.lower() in output.lower():
+    reference = item["reference_answer"].lower()
+    output_lower = output.lower()
+
+    # Exact match
+    if reference in output_lower:
         return 1.0
+
+    # Partial credit for numerical answers that are close
+    if reference.isdigit():
+        import re
+
+        numbers = re.findall(r"\b\d+\b", output_lower)
+        if reference in numbers:
+            return 1.0
+        elif numbers:
+            return 0.3  # Found a number but wrong one
+
+    # Partial credit for having related keywords
+    keywords = reference.split()
+    if len(keywords) > 1 and any(kw in output_lower for kw in keywords):
+        return 0.3
+
     return 0.0
 
 
@@ -197,9 +253,8 @@ def main():
         print("\nSetup instructions:")
         print("1. Install Ollama: https://ollama.com/")
         print("2. Start Ollama: ollama serve")
-        print("3. Pull models:")
-        print("   ollama pull llama:3.2:1b")
-        print("   ollama pull llama:3.1:8b")
+        print("3. Pull model:")
+        print("   ollama pull llama3.1:8b")
         return
 
     # Create test environment
@@ -210,23 +265,32 @@ def main():
     print(f"  Example: '{dataset[0]['user_query']}'")
 
     # Configure MCP server (local filesystem)
+    # Using our simple Python-based server instead of the npm version
+    # which has issues with stdio communication
+    import os
+    import sys
+    from pathlib import Path
+
+    server_script = Path(__file__).parent / "simple_mcp_server.py"
     server_params = StdioServerParameters(
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-filesystem", temp_dir],
+        command=sys.executable,
+        args=[str(server_script), temp_dir],
+        env={**os.environ},
     )
 
     print("\n" + "=" * 60)
     print("Configuration")
     print("=" * 60)
-    print("\nMCP Server (Local):")
-    print(f"  Command: {server_params.command}")
+    print("\nMCP Server (Local Python):")
+    print("  Server: simple_mcp_server.py")
     print("  Tool: read_file")
     print(f"  Directory: {temp_dir}")
 
     # Configure models - using Ollama via litellm
     # Litellm automatically detects ollama/ prefix
-    task_model = "ollama/llama:3.2:1b"  # OR Replace with Smaller, faster model for task execution
-    reflection_model = "ollama/llama:3.1:8b"  # OR Replace with Larger model for better reasoning
+    # Using same 8B model for both - reliable but benefits from good descriptions
+    task_model = "ollama/llama3.1:8b"  # 8B model for task execution
+    reflection_model = "ollama/llama3.1:8b"  # 8B model for reflection/proposals
 
     print("\nModels (Local Ollama):")
     print(f"  Task Model: {task_model}")
@@ -235,25 +299,26 @@ def main():
 
     # Create adapter
     adapter = MCPAdapter(
-        server_params=server_params,
         tool_name="read_file",
         task_model=task_model,
         metric_fn=simple_metric,
+        server_params=server_params,  # Local stdio server
         base_system_prompt="You are a helpful file reading assistant. Answer questions based on file contents.",
         enable_two_pass=True,
     )
 
-    # Seed candidate with basic tool description
+    # Seed candidate with basic but incomplete description
+    # GEPA will improve this by adding specifics about file types, usage, etc.
     seed_candidate = {
-        "tool_description": "Read the contents of a file from the filesystem.",
+        "tool_description": "Reads file contents. Provide the file path.",
     }
 
-    print("\nSeed Candidate:")
+    print("\nSeed Candidate (basic):")
     print(f"  '{seed_candidate['tool_description']}'")
 
-    # Split dataset
-    trainset = dataset[:4]
-    valset = dataset[4:]
+    # Split dataset - use more for training to give GEPA more examples
+    trainset = dataset[:6]
+    valset = dataset[6:]
 
     print("\nDataset Split:")
     print(f"  Training: {len(trainset)} examples")
@@ -272,8 +337,7 @@ def main():
             valset=valset,
             adapter=adapter,
             reflection_lm=reflection_model,
-            max_metric_calls=20,  # Smaller number for local demo
-            verbose=True,
+            max_metric_calls=15,  # Smaller number for faster local demo
         )
 
         print("\n" + "=" * 60)
@@ -286,8 +350,9 @@ def main():
             print(f"  {text}")
 
         print("\nPerformance:")
-        print(f"  Best Score: {result.best_score:.2f}")
-        print(f"  Metric Calls: {len(result.pareto_frontier) if hasattr(result, 'pareto_frontier') else 'N/A'}")
+        print(f"  Best Score: {result.val_aggregate_scores[result.best_idx]:.2f}")
+        print(f"  Total Metric Calls: {result.total_metric_calls if result.total_metric_calls else 'N/A'}")
+        print(f"  Candidates Evaluated: {result.num_candidates}")
 
         print("\n" + "=" * 60)
         print("Before vs After")
@@ -312,8 +377,9 @@ def main():
 
         print("\n\nTroubleshooting:")
         print("1. Ensure Ollama is running: ollama serve")
-        print("2. Check models are pulled:")
-        print("3. Verify npx/node is installed for MCP server")
+        print("2. Check model is pulled:")
+        print("   ollama pull llama3.1:8b")
+        print("3. Verify Python is available for MCP server")
 
     finally:
         print(f"\n\nTest files: {temp_dir}")
@@ -322,5 +388,5 @@ def main():
 
 if __name__ == "__main__":
     # No API keys needed for local operation!
-    print("\n🚀 Running with local models..\n")
+    print("\n🚀 Running with local models..\n", flush=True)
     main()

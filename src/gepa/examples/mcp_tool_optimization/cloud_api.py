@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
 """
-Simple example demonstrating MCP tool optimization with GEPA.
+Cloud API MCP Tool Optimization
 
-This example optimizes a filesystem tool's description to improve how
-the model understands and uses the tool.
+Demonstrates GEPA optimization using cloud-based LLM APIs. You can extend this to your cloud providers or models.
 
-Prerequisites:
-    pip install mcp gepa litellm
+What this shows:
+- Using cloud APIs (OpenAI GPT-4o-mini or whatever cloud based model)
+- Local MCP server (npx filesystem server)
+- Production-quality optimization
+
+Requirements:
+- API key (export OPENAI_API_KEY=your-key or simialar cloud based provider)
+- Node.js for npx
+
 
 Usage:
-    python simple_example.py
+    export OPENAI_API_KEY=your-key
+    python cloud_api.py
 """
 
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -20,6 +28,10 @@ from mcp import StdioServerParameters
 
 import gepa
 from gepa.adapters.mcp_adapter import MCPAdapter
+
+# Suppress verbose litellm logging
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def create_test_files():
@@ -155,7 +167,7 @@ def main():
             trainset=trainset,
             valset=valset,
             adapter=adapter,
-            reflection_lm="openai/gpt-4o",
+            reflection_lm="openai/gpt-4o",  # Just an example replace your model
             max_metric_calls=30,  # Small number for quick demo
         )
 
