@@ -91,6 +91,17 @@ def test_gepa_state_save_and_initialize(run_dir):
 
     assert state.__dict__ == result.__dict__
 
+    state.save(run_dir, use_cloudpickle=True)
+    result = state_mod.initialize_gepa_state(
+        run_dir=str(run_dir),
+        logger=fake_logger,
+        seed_candidate=seed,
+        valset_evaluator=valset_evaluator,
+        track_best_outputs=False,
+    )
+
+    assert state.__dict__ == result.__dict__
+
 
 @pytest.fixture(scope="module")
 def recorder_dir() -> Path:

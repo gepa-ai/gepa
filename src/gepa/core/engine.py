@@ -42,6 +42,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         track_best_outputs: bool = False,
         display_progress_bar: bool = False,
         raise_on_exception: bool = True,
+        use_cloudpickle: bool = False,
         # Budget and Stop Condition
         stop_callback: Callable[[Any], bool] | None = None,
     ):
@@ -70,6 +71,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
 
         self.track_best_outputs = track_best_outputs
         self.display_progress_bar = display_progress_bar
+        self.use_cloudpickle = use_cloudpickle
 
         self.raise_on_exception = raise_on_exception
 
@@ -186,7 +188,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
 
             assert state.is_consistent()
             try:
-                state.save(self.run_dir)
+                state.save(self.run_dir, use_cloudpickle=self.use_cloudpickle)
                 state.i += 1
                 state.full_program_trace.append({"i": state.i})
 
