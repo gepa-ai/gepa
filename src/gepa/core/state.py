@@ -33,7 +33,7 @@ class GEPAState(Generic[RolloutOutput]):
 
     per_program_tracked_scores: list[float]
 
-    best_outputs_valset: list[tuple[int, list[RolloutOutput]]] | None = None
+    best_outputs_valset: list[list[tuple[int, RolloutOutput]]] | None = None
 
     def __init__(
         self,

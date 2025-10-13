@@ -1,7 +1,8 @@
-import os
 import json
-from pathlib import Path
+import os
+
 import pytest
+
 
 # --- Pytest Fixtures ---
 @pytest.fixture(scope="module")
@@ -35,14 +36,14 @@ def mocked_lms(recorder_dir):
 
         print("\n--- Running in RECORD mode. Making live API calls. ---")
 
-        def task_lm(messages):
+        def _record_task_lm(messages):
             key = get_task_key(messages)
             if key not in cache:
                 response = litellm.completion(model="openai/gpt-4.1-nano", messages=messages)
                 cache[key] = response.choices[0].message.content.strip()
             return cache[key]
 
-        def reflection_lm(prompt):
+        def _record_reflection_lm(prompt):
             key = get_reflection_key(prompt)
             if key not in cache:
                 response = litellm.completion(model="openai/gpt-4.1", messages=[{"role": "user", "content": prompt}])
@@ -50,11 +51,12 @@ def mocked_lms(recorder_dir):
             return cache[key]
 
         # Yield the live functions to the test, then save the cache on teardown.
-        yield task_lm, reflection_lm
-
-        print(f"--- Saving cache to {cache_file} ---")
-        with open(cache_file, "w") as f:
-            json.dump(cache, f, indent=2)
+        try:
+            yield _record_task_lm, _record_reflection_lm
+        finally:
+            print(f"--- Saving cache to {cache_file} ---")
+            with open(cache_file, "w") as f:
+                json.dump(cache, f, indent=2)
 
     # --- Replay Mode ---
     else:
@@ -65,16 +67,16 @@ def mocked_lms(recorder_dir):
         except FileNotFoundError:
             pytest.fail(f"Cache file not found: {cache_file}. Run with 'RECORD_TESTS=true pytest' to generate it.")
 
-        def task_lm(messages):
+        def _replay_task_lm(messages):
             key = get_task_key(messages)
             if key not in cache:
                 pytest.fail(f"Unseen input for task_lm in replay mode. Key: {key}")
             return cache[key]
 
-        def reflection_lm(prompt):
+        def _replay_reflection_lm(prompt):
             key = get_reflection_key(prompt)
             if key not in cache:
                 pytest.fail(f"Unseen input for reflection_lm in replay mode. Key: {key}")
             return cache[key]
 
-        yield task_lm, reflection_lm
+        yield _replay_task_lm, _replay_reflection_lm

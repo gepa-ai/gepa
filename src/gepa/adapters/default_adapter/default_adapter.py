@@ -12,12 +12,15 @@ class DefaultDataInst(TypedDict):
     additional_context: dict[str, str]
     answer: str
 
+
 class DefaultTrajectory(TypedDict):
     data: DefaultDataInst
     full_assistant_response: str
 
+
 class DefaultRolloutOutput(TypedDict):
     full_assistant_response: str
+
 
 class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRolloutOutput]):
     def __init__(
@@ -28,6 +31,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
     ):
         if isinstance(model, str):
             import litellm
+
             self.litellm = litellm
         self.model = model
 
@@ -60,20 +64,28 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
 
         try:
             if isinstance(self.model, str):
-                responses = [resp.choices[0].message.content.strip() for resp in self.litellm.batch_completion(model=self.model, messages=litellm_requests, max_workers=self.max_litellm_workers)]
+                responses = [
+                    resp.choices[0].message.content.strip()
+                    for resp in self.litellm.batch_completion(
+                        model=self.model,
+                        messages=litellm_requests,
+                        max_workers=self.max_litellm_workers,
+                    )
+                ]
             else:
                 responses = [self.model(messages) for messages in litellm_requests]
         except Exception as e:
             raise e
 
         for data, assistant_response in zip(batch, responses, strict=False):
-            output = {"full_assistant_response": assistant_response}
+            output: DefaultRolloutOutput = {"full_assistant_response": assistant_response}
             score = 1.0 if data["answer"] in assistant_response else 0.0
 
             outputs.append(output)
             scores.append(score)
 
             if capture_traces:
+                assert trajectories is not None
                 trajectories.append(
                     {
                         "data": data,
@@ -94,8 +106,14 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
         assert len(components_to_update) == 1
         comp = components_to_update[0]
 
+        trajectories = eval_batch.trajectories
+        if trajectories is None:
+            raise ValueError(
+                "DefaultAdapter.make_reflective_dataset requires capture_traces=True so trajectories are available."
+            )
+
         items: list[dict[str, Any]] = []
-        trace_instances = list(zip(eval_batch.trajectories, eval_batch.scores, eval_batch.outputs, strict=False))
+        trace_instances = list(zip(trajectories, eval_batch.scores, eval_batch.outputs, strict=False))
 
         for trace_instance in trace_instances:
             traj, score, _ = trace_instance
@@ -103,7 +121,9 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
             generated_outputs = traj["full_assistant_response"]
 
             if score > 0.0:
-                feedback = f"The generated response is correct. The response include the correct answer '{data['answer']}'"
+                feedback = (
+                    f"The generated response is correct. The response include the correct answer '{data['answer']}'"
+                )
             else:
                 additional_context_str = "\n".join(f"{k}: {v}" for k, v in data["additional_context"].items())
                 feedback = f"The generated response is incorrect. The correct answer is '{data['answer']}'. Ensure that the correct answer is included in the response exactly as it is. Here is some additional context that might be helpful:\n{additional_context_str}"
