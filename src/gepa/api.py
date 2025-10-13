@@ -244,6 +244,7 @@ def optimize(
         raise_on_exception=raise_on_exception,
     )
 
+
 def _optimize_impl(
     *,
     seed_candidate: dict[str, str],

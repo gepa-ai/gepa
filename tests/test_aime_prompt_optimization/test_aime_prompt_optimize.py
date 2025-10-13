@@ -1,9 +1,10 @@
-import json
 import os
 from pathlib import Path
+
 import pytest
 
 RECORDER_DIR = Path(__file__).parent
+
 
 @pytest.fixture(scope="module")
 def recorder_dir() -> Path:
@@ -13,6 +14,7 @@ def recorder_dir() -> Path:
 
 
 # --- The Test Function ---
+
 
 def test_aime_prompt_optimize(mocked_lms, recorder_dir):
     """

@@ -23,6 +23,7 @@ class ParetoCandidateSelector(CandidateSelector):
             self.rng,
         )
 
+
 class CurrentBestCandidateSelector(CandidateSelector):
     def __init__(self):
         pass

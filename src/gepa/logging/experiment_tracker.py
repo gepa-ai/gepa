@@ -48,6 +48,7 @@ class ExperimentTracker:
         """Initialize wandb."""
         try:
             import wandb  # type: ignore
+
             if self.wandb_api_key:
                 wandb.login(key=self.wandb_api_key, verify=True)
             else:
@@ -61,6 +62,7 @@ class ExperimentTracker:
         """Initialize mlflow."""
         try:
             import mlflow  # type: ignore
+
             if self.mlflow_tracking_uri:
                 mlflow.set_tracking_uri(self.mlflow_tracking_uri)
             if self.mlflow_experiment_name:
@@ -74,9 +76,11 @@ class ExperimentTracker:
         """Start a new run."""
         if self.use_wandb:
             import wandb  # type: ignore
+
             wandb.init(**self.wandb_init_kwargs)
         if self.use_mlflow:
             import mlflow  # type: ignore
+
             mlflow.start_run(nested=True)
 
     def log_metrics(self, metrics: dict[str, Any], step: int | None = None):
@@ -84,6 +88,7 @@ class ExperimentTracker:
         if self.use_wandb:
             try:
                 import wandb  # type: ignore
+
                 wandb.log(metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log to wandb: {e}")
@@ -91,6 +96,7 @@ class ExperimentTracker:
         if self.use_mlflow:
             try:
                 import mlflow  # type: ignore
+
                 mlflow.log_metrics(metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log to mlflow: {e}")
@@ -100,6 +106,7 @@ class ExperimentTracker:
         if self.use_wandb:
             try:
                 import wandb  # type: ignore
+
                 if wandb.run is not None:
                     wandb.finish()
             except Exception as e:
@@ -108,6 +115,7 @@ class ExperimentTracker:
         if self.use_mlflow:
             try:
                 import mlflow  # type: ignore
+
                 if mlflow.active_run() is not None:
                     mlflow.end_run()
             except Exception as e:
@@ -118,6 +126,7 @@ class ExperimentTracker:
         if self.use_wandb:
             try:
                 import wandb  # type: ignore
+
                 if wandb.run is not None:
                     return True
             except Exception:
@@ -126,6 +135,7 @@ class ExperimentTracker:
         if self.use_mlflow:
             try:
                 import mlflow  # type: ignore
+
                 if mlflow.active_run() is not None:
                     return True
             except Exception:
