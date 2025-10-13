@@ -8,7 +8,7 @@ from gepa.core.state import GEPAState, initialize_gepa_state
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
-from gepa.utils import CompositeStopper, MaxMetricCallsStopper, StopperProtocol
+from gepa.utils import StopperProtocol
 
 from .adapter import DataInst, RolloutOutput, Trajectory
 
@@ -284,10 +284,12 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
 
         direct_value = getattr(callback, "max_metric_calls", None)
         if isinstance(direct_value, int):
+            # Direct MaxMetricCallsStopper exposes the attribute
             return direct_value
 
         stoppers = getattr(callback, "stoppers", None)
         if isinstance(stoppers, list):
+            # CompositeStopper - iterate to find nested MaxMetricCallsStopper
             for stopper in stoppers:
                 nested_value = getattr(stopper, "max_metric_calls", None)
                 if isinstance(nested_value, int):

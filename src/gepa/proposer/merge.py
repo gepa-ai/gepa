@@ -185,7 +185,7 @@ def sample_and_attempt_merge_programs_by_common_predictors(
                 new_program[pred_name] = program_candidates[id1][pred_name]
                 new_prog_desc = (*new_prog_desc, id1)
             else:
-                assert False, "Unexpected case in predictor merging logic"
+                raise AssertionError("Unexpected case in predictor merging logic")
 
         if (id1, id2, new_prog_desc) in descendant_descriptions:
             # This triplet has already been merged, so we skip it
@@ -253,9 +253,12 @@ class MergeProposer(ProposeNewCandidate):
         n2 = min(len(p2), n_each)
         n3 = min(len(p3), num_subsample_ids - (n1 + n2))
         selected = []
-        if n1: selected += self.rng.sample(p1, k=n1)
-        if n2: selected += self.rng.sample(p2, k=n2)
-        if n3: selected += self.rng.sample(p3, k=n3)
+        if n1:
+            selected += self.rng.sample(p1, k=n1)
+        if n2:
+            selected += self.rng.sample(p2, k=n2)
+        if n3:
+            selected += self.rng.sample(p3, k=n3)
 
         remaining = num_subsample_ids - len(selected)
         unused = list(all_indices - set(selected))

@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from typing import Any, Callable, ClassVar, Protocol
+from typing import Any, ClassVar, Protocol
 
 from gepa.core.adapter import Trajectory
 from gepa.core.state import GEPAState
