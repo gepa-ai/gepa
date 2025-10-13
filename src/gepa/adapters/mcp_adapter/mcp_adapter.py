@@ -75,7 +75,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
 
     def __init__(
         self,
-        tool_name: str,
+        tool_names: str | list[str],  # Support both single tool (str) and multiple tools (list[str])
         task_model: str | Callable,
         metric_fn: Callable[[MCPDataInst, str], float],
         # Local server params (for stdio transport)
@@ -94,7 +94,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
         Initialize MCPAdapter.
 
         Args:
-            tool_name: Name of the tool to optimize
+            tool_names: Name(s) of the tool(s) to optimize. Can be a single tool (str) or multiple tools (list[str])
             task_model: Model to use for task execution (litellm model string or callable)
             metric_fn: Function to score outputs: (data_inst, output) -> float
             server_params: MCP server configuration for local stdio (command, args, env)
@@ -121,7 +121,12 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
         self.remote_headers = remote_headers or {}
         self.remote_timeout = remote_timeout
 
-        self.tool_name = tool_name
+        # Normalize tool_names to always be a list
+        if isinstance(tool_names, str):
+            self.tool_names = [tool_names]
+        else:
+            self.tool_names = tool_names
+    
         self.base_system_prompt = base_system_prompt
         self.enable_two_pass = enable_two_pass
         self.failure_score = failure_score
@@ -208,13 +213,15 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
 
             # Get tool information
             tools_list = await client.list_tools()
-            tool_info = next((t for t in tools_list if t.get("name") == self.tool_name), None)
-            if not tool_info:
-                raise ValueError(f"Tool '{self.tool_name}' not found. Available: {[t.get('name') for t in tools_list]}")
 
-            # Build system prompt
-            system_prompt = self._build_system_prompt(candidate, tool_info)
-            optimized_description = candidate.get("tool_description", tool_info.get("description", ""))
+            # Filter tools to only include the ones we want to optimize
+            available_tools = [t for t in tools_list if t.get("name") in self.tool_names]
+            if not available_tools:
+                available_tool_names = [t.get("name") for t in tools_list]
+                raise ValueError(f"None of the specified tools {self.tool_names} found. Available: {available_tool_names}")
+
+            # Build system prompt with all available tools
+            system_prompt = self._build_system_prompt(candidate, available_tools)
 
             # Evaluate each item in batch
             for idx, item in enumerate(batch):
@@ -222,7 +229,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                     logger.info(f"Evaluating item {idx + 1}/{len(batch)}: {item['user_query'][:50]}...")
 
                     # First pass: Model calls tool
-                    first_pass_result = await self._first_pass(client, item, system_prompt, tool_info)
+                    first_pass_result = await self._first_pass(client, item, system_prompt, available_tools)
                     logger.info(f"First pass complete for item {idx + 1}")
 
                     # Second pass: Model uses tool response (if enabled)
@@ -241,6 +248,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                         {
                             "final_answer": final_output,
                             "tool_called": first_pass_result["tool_called"],
+                            "selected_tool": first_pass_result["selected_tool"],
                             "tool_response": first_pass_result["tool_response"],
                         }
                     )
@@ -251,7 +259,8 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                         trajectories.append(
                             {
                                 "user_query": item["user_query"],
-                                "tool_name": self.tool_name,
+                                "tool_names": self.tool_names,
+                                "selected_tool": first_pass_result["selected_tool"],
                                 "tool_called": first_pass_result["tool_called"],
                                 "tool_arguments": first_pass_result["tool_arguments"],
                                 "tool_response": first_pass_result["tool_response"],
@@ -269,6 +278,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                         {
                             "final_answer": "",
                             "tool_called": False,
+                            "selected_tool": None,
                             "tool_response": None,
                         }
                     )
@@ -278,7 +288,8 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                         trajectories.append(
                             {
                                 "user_query": item["user_query"],
-                                "tool_name": self.tool_name,
+                                "tool_names": self.tool_names,
+                                "selected_tool": None,
                                 "tool_called": False,
                                 "tool_arguments": None,
                                 "tool_response": None,
@@ -298,6 +309,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                     {
                         "final_answer": "",
                         "tool_called": False,
+                        "selected_tool": None,
                         "tool_response": None,
                     }
                 )
@@ -306,7 +318,8 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                     trajectories.append(
                         {
                             "user_query": item["user_query"],
-                            "tool_name": self.tool_name,
+                            "tool_names": self.tool_names,
+                            "selected_tool": None,
                             "tool_called": False,
                             "tool_arguments": None,
                             "tool_response": None,
@@ -328,7 +341,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
         client: SimpleStdioMCPClient,
         item: MCPDataInst,
         system_prompt: str,
-        tool_info: dict[str, Any],
+        available_tools: list[dict[str, Any]],
     ) -> dict[str, Any]:
         """
         First pass: Model receives query and calls tool if needed.
@@ -336,6 +349,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
         Returns dict with:
             - output: Raw model output
             - tool_called: Whether tool was called
+            - selected_tool: Which tool was selected (if any)
             - tool_arguments: Arguments passed to tool (if called)
             - tool_response: Tool response (if called)
         """
@@ -359,6 +373,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
 
             # Parse tool call (JSON format)
             tool_called = False
+            selected_tool = None
             tool_arguments = None
             tool_response = None
 
@@ -366,13 +381,20 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                 parsed = json.loads(model_output)
                 if parsed.get("action") == "call_tool":
                     tool_called = True
+                    selected_tool = parsed.get("tool")
                     tool_arguments = parsed.get("arguments", {})
 
-                    # Call the tool via simple MCP client
-                    result = await client.call_tool(self.tool_name, tool_arguments)
+                    # Validate tool selection
+                    if selected_tool not in self.tool_names:
+                        logger.warning(f"Model selected invalid tool '{selected_tool}', available: {self.tool_names}")
+                        tool_called = False
+                        selected_tool = None
+                    else:
+                        # Call the selected tool via MCP client
+                        result = await client.call_tool(selected_tool, tool_arguments)
 
-                    # Extract text from tool response
-                    tool_response = self._extract_tool_response(result)
+                        # Extract text from tool response
+                        tool_response = self._extract_tool_response(result)
 
             except (json.JSONDecodeError, KeyError):
                 # Model didn't follow JSON format, treat as direct answer
@@ -381,6 +403,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
             return {
                 "output": model_output,
                 "tool_called": tool_called,
+                "selected_tool": selected_tool,
                 "tool_arguments": tool_arguments,
                 "tool_response": tool_response,
             }
@@ -390,6 +413,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
             return {
                 "output": f"ERROR: {e!s}",
                 "tool_called": False,
+                "selected_tool": None,
                 "tool_arguments": None,
                 "tool_response": None,
             }
@@ -429,51 +453,66 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
             logger.exception("Second pass failed")
             return f"ERROR: {e!s}"
 
-    def _build_system_prompt(self, candidate: dict[str, str], tool_info: dict[str, Any]) -> str:
-        """Build system prompt with tool information."""
-        tool_description = candidate.get("tool_description", tool_info.get("description", ""))
+    def _build_system_prompt(self, candidate: dict[str, str], available_tools: list[dict[str, Any]]) -> str:
+        """Build system prompt with tool information for multiple tools."""
         custom_system_prompt = candidate.get("system_prompt", self.base_system_prompt)
 
-        # Build example arguments from schema
-        input_schema = tool_info.get("inputSchema", {})
-        properties = input_schema.get("properties", {})
+        # Build tool descriptions - use optimized descriptions if available
+        tool_descriptions = {}
+        for tool in available_tools:
+            tool_name = tool.get("name")
+            # Use optimized description if available, otherwise use original
+            optimized_desc = candidate.get(f"tool_description_{tool_name}", None)
+            tool_descriptions[tool_name] = optimized_desc or tool.get("description", "")
 
-        # Create example with actual parameter names from schema
-        example_args = {}
-        for param_name, param_info in properties.items():
-            # Use first parameter as example, or create simple example
-            if param_info.get("type") == "string":
-                example_args[param_name] = "example_value"
-            elif param_info.get("type") == "number":
-                example_args[param_name] = 123
-            elif param_info.get("type") == "boolean":
-                example_args[param_name] = True
-            else:
-                example_args[param_name] = "value"
+        # Build tools section
+        tools_section = "You have access to the following tools:\n\n"
 
-        # Fallback if no properties
-        if not example_args:
-            example_args = {"param": "value"}
+        for tool in available_tools:
+            tool_name = tool.get("name")
+            tool_description = tool_descriptions[tool_name]
+            input_schema = tool.get("inputSchema", {})
 
-        example_json = json.dumps(example_args)
+            # Build example arguments from schema
+            properties = input_schema.get("properties", {})
+            example_args = {}
+            for param_name, param_info in properties.items():
+                if param_info.get("type") == "string":
+                    example_args[param_name] = "example_value"
+                elif param_info.get("type") == "number":
+                    example_args[param_name] = 123
+                elif param_info.get("type") == "boolean":
+                    example_args[param_name] = True
+                else:
+                    example_args[param_name] = "value"
 
-        # Build tool info section
-        # NOTE: Simplified format to avoid triggering "thinking" mode in reasoning models
-        tool_section = f"""
-You have access to the tool: {self.tool_name}
+            # Fallback if no properties
+            if not example_args:
+                example_args = {"param": "value"}
+
+            example_json = json.dumps(example_args)
+
+            tools_section += f"""Tool: {tool_name}
 Description: {tool_description}
 Input Schema: {json.dumps(input_schema, indent=2)}
+Example usage: {{"action": "call_tool", "tool": "{tool_name}", "arguments": {example_json}}}
 
-When you need to use the tool, respond ONLY with JSON:
-{{"action": "call_tool", "arguments": {example_json}}}
+"""
+
+        # Add usage instructions
+        usage_instructions = f"""
+When you need to use a tool, respond ONLY with JSON:
+{{"action": "call_tool", "tool": "tool_name", "arguments": {{"param": "value"}}}}
 
 When you can answer directly, respond ONLY with JSON:
 {{"action": "answer", "text": "your answer"}}
 
+Choose the most appropriate tool for the task. Available tools: {[t.get("name") for t in available_tools]}
+
 Always respond with valid JSON. No other text.
 """
 
-        return f"{custom_system_prompt}\n{tool_section}"
+        return f"{custom_system_prompt}\n{tools_section}{usage_instructions}"
 
     def _extract_tool_response(self, result: dict) -> str:
         """Extract text from MCP tool response."""
@@ -515,6 +554,7 @@ Always respond with valid JSON. No other text.
                             },
                             "Generated Outputs": {
                                 "tool_called": traj["tool_called"],
+                                "selected_tool": traj["selected_tool"],
                                 "tool_arguments": traj["tool_arguments"],
                                 "final_answer": traj["model_final_output"],
                             },
@@ -540,24 +580,39 @@ Always respond with valid JSON. No other text.
         return reflective_data
 
     def _generate_tool_feedback(self, traj: MCPTrajectory, score: float) -> str:
-        """Generate feedback focused on tool usage."""
+        """Generate feedback focused on tool usage and selection."""
         if score > 0.5:
-            return (
-                f"Good! The tool was used appropriately and produced a correct answer. "
-                f"Tool called: {traj['tool_called']}, Score: {score:.2f}"
-            )
+            if traj["tool_called"]:
+                return (
+                    f"Good! The tool '{traj['selected_tool']}' was used appropriately and produced a correct answer. "
+                    f"Tool called: {traj['tool_called']}, Score: {score:.2f}"
+                )
+            else:
+                return (
+                    f"Good! The model correctly determined no tool was needed and provided a direct answer. "
+                    f"Score: {score:.2f}"
+                )
         else:
             feedback_parts = [f"The response was incorrect (score: {score:.2f})."]
 
             if not traj["tool_called"]:
                 feedback_parts.append(
-                    "The tool was not called. Consider whether calling the tool would help answer this query."
+                    "The tool was not called. Consider whether calling a tool would help answer this query."
                 )
             else:
+                selected_tool = traj["selected_tool"]
+                available_tools = traj["tool_names"]
                 feedback_parts.append(
-                    f"The tool was called with arguments {traj['tool_arguments']}, "
-                    f"but the final answer was still incorrect. The tool description might need to be clearer."
+                    f"The tool '{selected_tool}' was called with arguments {traj['tool_arguments']}, "
+                    f"but the final answer was still incorrect. "
                 )
+                if len(available_tools) > 1:
+                    feedback_parts.append(
+                        f"Consider whether a different tool from {available_tools} would be more appropriate, "
+                        f"or if the tool description needs to be clearer."
+                    )
+                else:
+                    feedback_parts.append("The tool description might need to be clearer.")
 
             return " ".join(feedback_parts)
 

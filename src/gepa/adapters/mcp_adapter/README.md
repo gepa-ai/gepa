@@ -8,6 +8,29 @@ This adapter optimizes:
 - **Tool descriptions**: Improve how tools are described to the model
 - **System prompts**: Optimize guidance for when and how to use tools
 - **Tool usage patterns**: Learn better tool invocation strategies
+- **Tool selection**: Choose the right tool from multiple available options
+
+## Multi-Tool Support
+
+The MCP adapter supports both single-tool and multi-tool scenarios:
+
+### Single Tool
+```python
+adapter = MCPAdapter(
+    tool_names="read_file",  # Single tool as string
+    task_model="gpt-4o-mini", # Change as per you model choice
+    metric_fn=my_metric,
+)
+```
+
+### Multiple Tools (New Feature)
+```python
+adapter = MCPAdapter(
+    tool_names=["read_file", "write_file", "list_files"],  # Multiple tools as list
+    task_model="gpt-4o-mini", # Change as per you model choice
+    metric_fn=my_metric,
+)
+```
 
 ## Installation
 
@@ -46,7 +69,7 @@ dataset = [
 # Create adapter with LOCAL Ollama models
 adapter = MCPAdapter(
     server_params=server_params,
-    tool_name="read_file",
+    tool_names=["read_file", "write_file", "list_files"],  # Multiple tools for selection
     task_model="ollama/llama3.2:1b",  # Local model via Ollama, replace with your model 
     metric_fn=lambda item, output: 1.0 if item["reference_answer"] in output else 0.0,
 )
@@ -80,7 +103,7 @@ ollama pull llama3.2:1b
 # Same as above, but use OpenAI models
 adapter = MCPAdapter(
     server_params=server_params,
-    tool_name="read_file",
+    tool_names=["read_file", "write_file", "list_files"],  # Multiple tools for selection
     task_model="openai/gpt-4o-mini",  # OpenAI API,  replace with your model choice 
     metric_fn=lambda item, output: 1.0 if item["reference_answer"] in output else 0.0,
 )
@@ -107,7 +130,7 @@ Connect to thousands of public MCP servers via SSE or StreamableHTTP:
 ```python
 # Remote SSE server
 adapter = MCPAdapter(
-    tool_name="search_web",
+    tool_names=["search_web", "analyze_data", "summarize_text"],  # Multiple tools for selection
     task_model="openai/gpt-4o-mini",
     metric_fn=lambda item, output: 1.0 if item["reference_answer"] in output else 0.0,
     remote_url="https://mcp-server.com/sse",
@@ -116,7 +139,7 @@ adapter = MCPAdapter(
 
 # Remote HTTP server with authentication
 adapter = MCPAdapter(
-    tool_name="analyze_data",
+    tool_names=["analyze_data", "visualize_data", "export_data"],  # Multiple tools for selection
     task_model="openai/gpt-4o-mini",
     metric_fn=my_metric,
     remote_url="https://mcp-server.com/mcp",
@@ -174,16 +197,25 @@ Each evaluation creates a fresh MCP session, avoiding state management complexit
 
 ### Tool Description
 
-Optimizes the description field of the MCP tool, improving how the model understands when and how to use it.
+Optimizes the description field of MCP tools, improving how the model understands when and how to use each tool.
 
 ```python
+# Single tool optimization
 seed_candidate = {
     "tool_description": "Search through documentation files"
 }
 
-# GEPA will optimize this to something like:
-# "Search documentation by keyword. Use when user asks about API usage,
-#  code examples, or feature documentation. Returns relevant doc sections."
+# Multi-tool optimization
+seed_candidate = {
+    "tool_description_read_file": "Read file contents from the filesystem",
+    "tool_description_write_file": "Write content to a file on the filesystem",
+    "tool_description_list_files": "List files and directories in a given path"
+}
+
+# GEPA will optimize these to something like:
+# "tool_description_read_file": "Read file contents. Use when user asks to view, show, or display file contents. Returns the full text content of the specified file."
+# "tool_description_write_file": "Write content to files. Use when user asks to create, save, or update file contents. Requires file path and content parameters."
+# "tool_description_list_files": "List directory contents. Use when user asks to see what files are available, browse directories, or find files. Returns a list of files and folders."
 ```
 
 ### System Prompt
@@ -441,10 +473,11 @@ Example reflective entry for `tool_description` (successful case):
     },
     "Generated Outputs": {
         "tool_called": True,
+        "selected_tool": "read_file",
         "tool_arguments": {"path": "config.json"},
         "final_answer": "The config file contains database settings: host=localhost, port=5432, user=admin",
     },
-    "Feedback": "Good! The tool was used appropriately and produced a correct answer. Tool called: True, Score: 0.85"
+    "Feedback": "Good! The tool 'read_file' was used appropriately and produced a correct answer. Tool called: True, Score: 0.85"
 }
 ```
 
@@ -475,10 +508,29 @@ Example reflective entry for a failed case (tool called but wrong answer):
     },
     "Generated Outputs": {
         "tool_called": True,
+        "selected_tool": "read_file",
         "tool_arguments": {"path": "config.json"},
         "final_answer": "The file contains some configuration data.",
     },
-    "Feedback": "The response was incorrect (score: 0.30). The tool was called with arguments {'path': 'config.json'}, but the final answer was still incorrect. The tool description might need to be clearer."
+    "Feedback": "The response was incorrect (score: 0.30). The tool 'read_file' was called with arguments {'path': 'config.json'}, but the final answer was still incorrect. Consider whether a different tool from ['read_file', 'write_file', 'list_files'] would be more appropriate, or if the tool description needs to be clearer."
+}
+```
+
+Example reflective entry for multi-tool selection (wrong tool chosen):
+
+```python
+{
+    "Inputs": {
+        "user_query": "What files are in the docs folder?",
+        "tool_description": "List files and directories in a given path",
+    },
+    "Generated Outputs": {
+        "tool_called": True,
+        "selected_tool": "read_file",  # Wrong tool selected
+        "tool_arguments": {"path": "docs"},
+        "final_answer": "Error: docs is not a file",
+    },
+    "Feedback": "The response was incorrect (score: 0.20). The tool 'read_file' was called with arguments {'path': 'docs'}, but the final answer was still incorrect. Consider whether a different tool from ['read_file', 'write_file', 'list_files'] would be more appropriate, or if the tool description needs to be clearer."
 }
 ```
 
