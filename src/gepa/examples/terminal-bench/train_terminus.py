@@ -12,6 +12,7 @@ from gepa.adapters.terminal_bench_adapter.terminal_bench_adapter import (
     TerminalBenchTask,
     TerminusAdapter,
 )
+from gepa.core.data_loader import ListDataLoader
 
 INSTRUCTION_PROMPT_PATH = Path(__file__).parent / "prompt-templates/instruction_prompt.txt"
 
@@ -132,8 +133,8 @@ One thing to be very careful about is handling interactive sessions like less, v
 
     optimized_results = optimize(
         seed_candidate={"instruction_prompt": initial_prompt_from_terminus},
-        trainset=trainset,
-        valset=valset,
+        trainset=ListDataLoader(trainset),
+        valset=ListDataLoader(valset),
         adapter=adapter,
         reflection_lm=reflection_lm,
         use_wandb=True,

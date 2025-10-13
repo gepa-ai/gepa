@@ -1,6 +1,6 @@
-import json
 import os
 from pathlib import Path
+
 import pytest
 
 RECORDER_DIR = Path(__file__).parent
@@ -21,6 +21,7 @@ def test_aime_prompt_optimize(mocked_lms, recorder_dir):
     # Imports for the specific test logic
     import gepa
     from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
+    from gepa.core.data_loader import ListDataLoader
 
     # 1. Setup: Unpack fixtures and load data
     task_lm, reflection_lm = mocked_lms
@@ -39,8 +40,8 @@ def test_aime_prompt_optimize(mocked_lms, recorder_dir):
     print("Running GEPA optimization process...")
     gepa_result = gepa.optimize(
         seed_candidate=seed_prompt,
-        trainset=trainset,
-        valset=valset,
+        trainset=ListDataLoader(list(trainset)),
+        valset=ListDataLoader(list(valset)),
         adapter=adapter,
         max_metric_calls=30,
         reflection_lm=reflection_lm,

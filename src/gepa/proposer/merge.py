@@ -6,7 +6,8 @@ import random
 from copy import deepcopy
 from typing import Any, Callable
 
-from gepa.core.adapter import DataInst, RolloutOutput
+from gepa.core.adapter import RolloutOutput
+from gepa.core.data_loader import DataId, DataInst, DataLoader
 from gepa.core.state import GEPAState
 from gepa.gepa_utils import find_dominator_programs
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -190,7 +191,7 @@ class MergeProposer(ProposeNewCandidate):
     def __init__(
         self,
         logger: Any,
-        valset: list[DataInst],
+        valset: DataLoader[DataId, DataInst],
         evaluator: Callable[[list[DataInst], dict[str, str]], tuple[list[RolloutOutput], list[float]]],
         use_merge: bool,
         max_merge_invocations: int,
@@ -295,7 +296,7 @@ class MergeProposer(ProposeNewCandidate):
                 f"Iteration {i}: Skipping merge of {id1} and {id2} due to insufficient overlapping val coverage"
             )
             return None
-        mini_devset = [self.valset[k] for k in subsample_ids]
+        mini_devset = self.valset.fetch(subsample_ids)
         id1_sub_scores = [state.prog_candidate_val_subscores[id1][k] for k in subsample_ids]
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids

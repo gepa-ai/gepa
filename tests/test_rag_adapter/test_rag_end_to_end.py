@@ -5,6 +5,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from gepa.core.data_loader import ListDataLoader
+
 
 @pytest.fixture
 def sample_ai_ml_dataset():
@@ -237,8 +239,8 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
     # 2. Execution: Run the core RAG optimization logic
     gepa_result = gepa.optimize(
         seed_candidate=seed_candidate,
-        trainset=trainset,
-        valset=valset,
+        trainset=ListDataLoader(list(trainset)),
+        valset=ListDataLoader(list(valset)),
         adapter=adapter,
         max_metric_calls=5,  # Small number for fast testing
         reflection_lm=simple_reflection_lm,
@@ -331,8 +333,8 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
     adapter2 = TestRAGAdapter(vector_store=mock_chromadb_store, rag_config=rag_config)
     gepa_result2 = gepa.optimize(
         seed_candidate=seed_candidate,
-        trainset=trainset,
-        valset=valset,
+        trainset=ListDataLoader(list(trainset)),
+        valset=ListDataLoader(list(valset)),
         adapter=adapter2,
         max_metric_calls=5,
         reflection_lm=simple_reflection_lm,

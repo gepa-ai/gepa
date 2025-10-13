@@ -4,12 +4,13 @@
 import traceback
 from typing import Any, Callable, Generic
 
+from gepa.core.data_loader import DataId, DataInst, DataLoader
 from gepa.core.state import GEPAState, initialize_gepa_state
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 
-from .adapter import DataInst, RolloutOutput, Trajectory
+from .adapter import RolloutOutput, Trajectory
 
 # Import tqdm for progress bar functionality
 try:
@@ -18,7 +19,7 @@ except ImportError:
     tqdm = None
 
 
-class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
+class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     """
     Orchestrates the optimization loop. It uses pluggable ProposeNewCandidate strategies.
     """
@@ -27,7 +28,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         self,
         run_dir: str | None,
         evaluator: Callable[[list[DataInst], dict[str, str]], tuple[list[RolloutOutput], list[float]]],
-        valset: list[DataInst] | None,
+        valset: DataLoader[DataId, DataInst] | None,
         seed_candidate: dict[str, str],
         # Controls
         perfect_score: float,
@@ -80,14 +81,13 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
     ) -> tuple[dict[int, RolloutOutput], dict[int, float]]:
         assert self.valset is not None
 
-        indices = self.val_evaluation_policy(state) if self.val_evaluation_policy else range(len(self.valset))
-        indices = indices or []
-        batch = [self.valset[idx] for idx in indices]
+        val_ids = self.val_evaluation_policy(state) if self.val_evaluation_policy else list(self.valset.all_ids())
+        batch = self.valset.fetch(val_ids)
         outputs, scores = self.evaluator(batch, program)
-        assert len(outputs) == len(indices), "Eval outputs should match length of selected validation indices"
+        assert len(outputs) == len(val_ids), "Eval outputs should match length of selected validation indices"
 
-        outputs_by_val_idx = dict(zip(indices, outputs, strict=False))
-        scores_by_val_idx = dict(zip(indices, scores, strict=False))
+        outputs_by_val_idx = dict(zip(val_ids, outputs, strict=False))
+        scores_by_val_idx = dict(zip(val_ids, scores, strict=False))
         return outputs_by_val_idx, scores_by_val_idx
 
     def _get_pareto_front_programs(self, state: GEPAState) -> list:
@@ -166,10 +166,11 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
             raise ValueError("valset must be provided to GEPAEngine.run()")
 
         def valset_evaluator(program: dict[str, str]):
-            all_outputs, all_scores = self.evaluator(self.valset, program)
+            all_ids = list(self.valset.all_ids())
+            all_outputs, all_scores = self.evaluator(self.valset.fetch(all_ids), program)
             return (
-                {val_idx: output for val_idx, output in enumerate(all_outputs)},
-                {val_idx: score for val_idx, score in enumerate(all_scores)},
+                dict(zip(all_ids, all_outputs, strict=False)),
+                dict(zip(all_ids, all_scores, strict=False)),
             )
 
         # Initialize state

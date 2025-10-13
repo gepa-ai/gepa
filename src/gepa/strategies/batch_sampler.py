@@ -4,6 +4,7 @@
 import random
 from collections import Counter
 
+from gepa.core.data_loader import DataId, DataInst, DataLoader
 from gepa.proposer.reflective_mutation.base import BatchSampler
 
 
@@ -16,7 +17,7 @@ class EpochShuffledBatchSampler(BatchSampler):
     """
     def __init__(self, minibatch_size: int, rng: random.Random | None = None):
         self.minibatch_size = minibatch_size
-        self.shuffled_ids: list[int] = []
+        self.shuffled_ids: list[DataId] = []
         self.epoch = -1
         self.id_freqs = Counter()
         if rng is None:
@@ -24,8 +25,10 @@ class EpochShuffledBatchSampler(BatchSampler):
         else:
             self.rng = rng
 
-    def _update_shuffled(self, trainset_size: int):
-        self.shuffled_ids = list(range(trainset_size))
+    def _update_shuffled(self, loader: DataLoader[DataId, DataInst]):
+        all_ids = list(loader.all_ids())
+        trainset_size = len(loader)
+        self.shuffled_ids = list(all_ids)
         self.rng.shuffle(self.shuffled_ids)
         for i in self.shuffled_ids:
             self.id_freqs[i] += 1
@@ -38,12 +41,12 @@ class EpochShuffledBatchSampler(BatchSampler):
                 self.shuffled_ids.append(selected_id)
                 self.id_freqs[selected_id] += 1
 
-    def next_minibatch_indices(self, trainset_size: int, iteration: int) -> list[int]:
+    def next_minibatch_ids(self, loader: DataLoader[DataId, DataInst], iteration: int) -> list[int]:
         base_idx = iteration * self.minibatch_size
         curr_epoch = 0 if self.epoch == -1 else base_idx // max(len(self.shuffled_ids), 1)
         if curr_epoch > self.epoch:
             self.epoch = curr_epoch
-            self._update_shuffled(trainset_size)
+            self._update_shuffled(loader)
 
         assert len(self.shuffled_ids) >= self.minibatch_size
         assert len(self.shuffled_ids) % self.minibatch_size == 0

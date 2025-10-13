@@ -4,10 +4,12 @@
 from dataclasses import dataclass
 from typing import Any, Generic, Protocol, TypeVar
 
+from .data_loader import DataInst
+
 # Generic type aliases matching your original
 RolloutOutput = TypeVar("RolloutOutput")
 Trajectory = TypeVar("Trajectory")
-DataInst = TypeVar("DataInst")
+
 
 @dataclass
 class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
@@ -22,9 +24,11 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
       a reflective dataset (See `GEPAAdapter.make_reflective_dataset`). If capture_traces=True is passed to `evaluate`, trajectories
       should be provided and align one-to-one with `outputs` and `scores`.
     """
+
     outputs: list[RolloutOutput]
     scores: list[float]
     trajectories: list[Trajectory] | None = None
+
 
 class ProposalFn(Protocol):
     def __call__(
@@ -45,6 +49,7 @@ class ProposalFn(Protocol):
         - Dict[str, str] mapping component names to newly proposed component texts.
         """
         ...
+
 
 class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
     """

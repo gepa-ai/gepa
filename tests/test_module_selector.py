@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from gepa import optimize
+from gepa.core.data_loader import ListDataLoader
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
@@ -36,10 +37,11 @@ def test_module_selector_default_round_robin(mock_proposer, mock_run, common_moc
 
     # Create mock data instances
     mock_data = [Mock() for _ in range(3)]
+    train_loader = ListDataLoader(mock_data)
 
     result = optimize(
         seed_candidate={"test": "value"},
-        trainset=mock_data,
+        trainset=train_loader,
         adapter=mock_adapter,
         reflection_lm=lambda x: "test response",
         # Use default module_selector
@@ -63,10 +65,11 @@ def test_module_selector_string_round_robin(mock_proposer, mock_run, common_mock
 
     # Create mock data instances
     mock_data = [Mock() for _ in range(3)]
+    train_loader = ListDataLoader(mock_data)
 
     result = optimize(
         seed_candidate={"test": "value"},
-        trainset=mock_data,
+        trainset=train_loader,
         adapter=mock_adapter,
         reflection_lm=lambda x: "test response",
         module_selector="round_robin",
@@ -90,10 +93,11 @@ def test_module_selector_string_all(mock_proposer, mock_run, common_mocks):
 
     # Create mock data instances to avoid empty trainset concern
     mock_data = [Mock() for _ in range(3)]
+    train_loader = ListDataLoader(mock_data)
 
     result = optimize(
         seed_candidate={"test": "value"},
-        trainset=mock_data,
+        trainset=train_loader,
         adapter=mock_adapter,
         reflection_lm=lambda x: "test response",
         module_selector="all",
@@ -122,10 +126,11 @@ def test_module_selector_custom_instance(mock_proposer, mock_run, common_mocks):
 
     # Create mock data instances
     mock_data = [Mock() for _ in range(3)]
+    train_loader = ListDataLoader(mock_data)
 
     result = optimize(
         seed_candidate={"test": "value"},
-        trainset=mock_data,
+        trainset=train_loader,
         adapter=mock_adapter,
         reflection_lm=lambda x: "test response",
         module_selector=custom_selector,
@@ -171,7 +176,7 @@ def test_module_selector_invalid_string_raises_error(common_mocks):
     with pytest.raises(AssertionError, match="Unknown module_selector strategy"):
         optimize(
             seed_candidate={"test": "value"},
-            trainset=mock_data,
+            trainset=ListDataLoader(mock_data),
             adapter=mock_adapter,
             reflection_lm=lambda x: "test response",
             module_selector="invalid_strategy",

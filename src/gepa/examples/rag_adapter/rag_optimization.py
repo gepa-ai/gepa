@@ -65,6 +65,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 import gepa  # noqa: E402
 from gepa.adapters.generic_rag_adapter import GenericRAGAdapter, RAGDataInst  # noqa: E402
+from gepa.core.data_loader import ListDataLoader  # noqa: E402
 
 # Vector store imports (lazy loaded)
 _vector_stores = {}
@@ -752,8 +753,8 @@ def main():
 
             result = gepa.optimize(
                 seed_candidate=initial_prompts,
-                trainset=train_data,
-                valset=val_data,
+                trainset=ListDataLoader(train_data),
+                valset=ListDataLoader(val_data),
                 adapter=rag_adapter,
                 reflection_lm=llm_client,
                 max_metric_calls=args.max_iterations,

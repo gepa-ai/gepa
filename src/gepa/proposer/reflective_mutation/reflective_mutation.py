@@ -3,7 +3,8 @@
 
 from typing import Any
 
-from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.adapter import GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.data_loader import DataId, DataInst, DataLoader
 from gepa.core.state import GEPAState
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 from gepa.proposer.reflective_mutation.base import (
@@ -29,7 +30,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
     def __init__(
         self,
         logger: Any,
-        trainset: list[DataInst],
+        trainset: DataLoader[DataId, DataInst],
         adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput],
         candidate_selector: CandidateSelector,
         module_selector: ReflectionComponentSelector,
@@ -86,9 +87,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
 
         self.experiment_tracker.log_metrics({"iteration": i, "selected_program_candidate": curr_prog_id}, step=i)
 
-        subsample_ids = self.batch_sampler.next_minibatch_indices(len(self.trainset), i - 1)
+        subsample_ids = self.batch_sampler.next_minibatch_ids(self.trainset, i - 1)
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
-        minibatch = [self.trainset[j] for j in subsample_ids]
+        minibatch = self.trainset.fetch(subsample_ids)
 
         # 1) Evaluate current program with traces
         eval_curr = self.adapter.evaluate(minibatch, curr_prog, capture_traces=True)
