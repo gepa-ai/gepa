@@ -126,7 +126,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
             self.tool_names = [tool_names]
         else:
             self.tool_names = tool_names
-    
+
         self.base_system_prompt = base_system_prompt
         self.enable_two_pass = enable_two_pass
         self.failure_score = failure_score
@@ -264,7 +264,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                                 "tool_called": first_pass_result["tool_called"],
                                 "tool_arguments": first_pass_result["tool_arguments"],
                                 "tool_response": first_pass_result["tool_response"],
-                                "tool_description_used": optimized_description,
+                                "tool_description_used": candidate.get("tool_description", ""),
                                 "system_prompt_used": system_prompt,
                                 "model_first_pass_output": first_pass_result["output"],
                                 "model_final_output": final_output,
@@ -293,7 +293,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                                 "tool_called": False,
                                 "tool_arguments": None,
                                 "tool_response": None,
-                                "tool_description_used": optimized_description,
+                                "tool_description_used": candidate.get("tool_description", ""),
                                 "system_prompt_used": system_prompt,
                                 "model_first_pass_output": f"ERROR: {e!s}",
                                 "model_final_output": "",
