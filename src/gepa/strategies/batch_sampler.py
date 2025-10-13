@@ -14,6 +14,7 @@ class EpochShuffledBatchSampler(BatchSampler):
     - Pad to minibatch size with least frequent ids
     - Deterministic via state.rng1
     """
+
     def __init__(self, minibatch_size: int, rng: random.Random | None = None):
         self.minibatch_size = minibatch_size
         self.shuffled_ids: list[int] = []

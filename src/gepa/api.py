@@ -3,10 +3,13 @@
 
 import os
 import random
-from typing import Any, Callable
+from typing import Any, Callable, TypeGuard, TypeVar
 
-from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
-from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.adapters.default_adapter.default_adapter import (
+    DefaultAdapter,
+    DefaultDataInst,
+)
+from gepa.core.adapter import GEPAAdapter
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.logging.experiment_tracker import create_experiment_tracker
@@ -22,12 +25,34 @@ from gepa.strategies.component_selector import (
 )
 from gepa.utils import FileStopper, StopperProtocol
 
+DataInstT = TypeVar("DataInstT")
+TrajectoryT = TypeVar("TrajectoryT")
+RolloutOutputT = TypeVar("RolloutOutputT")
+
+
+def _is_default_dataset(value: object) -> TypeGuard[list[DefaultDataInst]]:
+    if not isinstance(value, list):
+        return False
+    for item in value:
+        if not isinstance(item, dict):
+            return False
+        input_value = item.get("input")
+        additional_context = item.get("additional_context")
+        answer_value = item.get("answer")
+        if not isinstance(input_value, str) or not isinstance(answer_value, str):
+            return False
+        if not isinstance(additional_context, dict):
+            return False
+        if not all(isinstance(k, str) and isinstance(v, str) for k, v in additional_context.items()):
+            return False
+    return True
+
 
 def optimize(
     seed_candidate: dict[str, str],
-    trainset: list[DataInst],
-    valset: list[DataInst] | None = None,
-    adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None,
+    trainset: list[DataInstT],
+    valset: list[DataInstT] | None = None,
+    adapter: GEPAAdapter[DataInstT, TrajectoryT, RolloutOutputT] | None = None,
     task_lm: str | Callable | None = None,
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
@@ -139,15 +164,120 @@ def optimize(
         assert task_lm is not None, (
             "Since no adapter is provided, GEPA requires a task LM to be provided. Please set the `task_lm` parameter."
         )
-        adapter = DefaultAdapter(model=task_lm)
-    else:
-        assert task_lm is None, (
-            "Since an adapter is provided, GEPA does not require a task LM to be provided. Please set the `task_lm` parameter to None."
+        if not _is_default_dataset(trainset):
+            raise TypeError(
+                "DefaultAdapter requires trainset items with keys 'input', 'additional_context', and 'answer'."
+            )
+        default_trainset = trainset
+
+        default_valset: list[DefaultDataInst] | None
+        if valset is None:
+            default_valset = None
+        else:
+            if not _is_default_dataset(valset):
+                raise TypeError(
+                    "DefaultAdapter requires valset items with keys 'input', 'additional_context', and 'answer'."
+                )
+            default_valset = valset
+
+        default_adapter = DefaultAdapter(model=task_lm)
+        return _optimize_impl(
+            seed_candidate=seed_candidate,
+            trainset=default_trainset,
+            valset=default_valset,
+            adapter=default_adapter,
+            reflection_lm=reflection_lm,
+            candidate_selection_strategy=candidate_selection_strategy,
+            skip_perfect_score=skip_perfect_score,
+            reflection_minibatch_size=reflection_minibatch_size,
+            perfect_score=perfect_score,
+            module_selector=module_selector,
+            use_merge=use_merge,
+            max_merge_invocations=max_merge_invocations,
+            max_metric_calls=max_metric_calls,
+            stop_callbacks=stop_callbacks,
+            logger=logger,
+            run_dir=run_dir,
+            use_wandb=use_wandb,
+            wandb_api_key=wandb_api_key,
+            wandb_init_kwargs=wandb_init_kwargs,
+            use_mlflow=use_mlflow,
+            mlflow_tracking_uri=mlflow_tracking_uri,
+            mlflow_experiment_name=mlflow_experiment_name,
+            track_best_outputs=track_best_outputs,
+            display_progress_bar=display_progress_bar,
+            use_cloudpickle=use_cloudpickle,
+            seed=seed,
+            raise_on_exception=raise_on_exception,
         )
 
+    assert task_lm is None, (
+        "Since an adapter is provided, GEPA does not require a task LM to be provided. Please set the `task_lm` parameter to None."
+    )
+    return _optimize_impl(
+        seed_candidate=seed_candidate,
+        trainset=trainset,
+        valset=valset,
+        adapter=adapter,
+        reflection_lm=reflection_lm,
+        candidate_selection_strategy=candidate_selection_strategy,
+        skip_perfect_score=skip_perfect_score,
+        reflection_minibatch_size=reflection_minibatch_size,
+        perfect_score=perfect_score,
+        module_selector=module_selector,
+        use_merge=use_merge,
+        max_merge_invocations=max_merge_invocations,
+        max_metric_calls=max_metric_calls,
+        stop_callbacks=stop_callbacks,
+        logger=logger,
+        run_dir=run_dir,
+        use_wandb=use_wandb,
+        wandb_api_key=wandb_api_key,
+        wandb_init_kwargs=wandb_init_kwargs,
+        use_mlflow=use_mlflow,
+        mlflow_tracking_uri=mlflow_tracking_uri,
+        mlflow_experiment_name=mlflow_experiment_name,
+        track_best_outputs=track_best_outputs,
+        display_progress_bar=display_progress_bar,
+        use_cloudpickle=use_cloudpickle,
+        seed=seed,
+        raise_on_exception=raise_on_exception,
+    )
+
+
+def _optimize_impl(
+    *,
+    seed_candidate: dict[str, str],
+    trainset: list[DataInstT],
+    valset: list[DataInstT] | None,
+    adapter: GEPAAdapter[DataInstT, TrajectoryT, RolloutOutputT],
+    reflection_lm: LanguageModel | str | None,
+    candidate_selection_strategy: str,
+    skip_perfect_score: bool,
+    reflection_minibatch_size: int,
+    perfect_score: float,
+    module_selector: ReflectionComponentSelector | str,
+    use_merge: bool,
+    max_merge_invocations: int,
+    max_metric_calls: int | None,
+    stop_callbacks: StopperProtocol | list[StopperProtocol] | None,
+    logger: LoggerProtocol | None,
+    run_dir: str | None,
+    use_wandb: bool,
+    wandb_api_key: str | None,
+    wandb_init_kwargs: dict[str, Any] | None,
+    use_mlflow: bool,
+    mlflow_tracking_uri: str | None,
+    mlflow_experiment_name: str | None,
+    track_best_outputs: bool,
+    display_progress_bar: bool,
+    use_cloudpickle: bool,
+    seed: int,
+    raise_on_exception: bool,
+) -> GEPAResult:
     # Comprehensive stop_callback logic
     # Convert stop_callbacks to a list if it's not already
-    stop_callbacks_list = []
+    stop_callbacks_list: list[StopperProtocol] = []
     if stop_callbacks is not None:
         if isinstance(stop_callbacks, list):
             stop_callbacks_list.extend(stop_callbacks)
@@ -218,7 +348,9 @@ def optimize(
             f"Unknown module_selector strategy: {module_selector}. Supported strategies: 'round_robin', 'all'"
         )
 
-        module_selector = module_selector_cls()
+        module_selector_obj: ReflectionComponentSelector = module_selector_cls()
+    else:
+        module_selector_obj = module_selector
 
     batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size, rng=rng)
 
@@ -236,7 +368,7 @@ def optimize(
         trainset=trainset,
         adapter=adapter,
         candidate_selector=candidate_selector,
-        module_selector=module_selector,
+        module_selector=module_selector_obj,
         batch_sampler=batch_sampler,
         perfect_score=perfect_score,
         skip_perfect_score=skip_perfect_score,
@@ -244,7 +376,7 @@ def optimize(
         reflection_lm=reflection_lm,
     )
 
-    def evaluator(inputs, prog):
+    def evaluator(inputs: list[DataInstT], prog: dict[str, str]) -> tuple[list[RolloutOutputT], list[float]]:
         eval_out = adapter.evaluate(inputs, prog, capture_traces=False)
         return eval_out.outputs, eval_out.scores
 
@@ -280,5 +412,4 @@ def optimize(
     with experiment_tracker:
         state = engine.run()
 
-    result = GEPAResult.from_state(state)
-    return result
+    return GEPAResult.from_state(state)

@@ -26,5 +26,5 @@ class ProposeNewCandidate(Protocol):
     It may compute subsample evaluations, set trace fields in state, etc.
     The engine will handle acceptance and full eval unless the strategy already did those and encoded in metadata.
     """
-    def propose(self, state: GEPAState) -> CandidateProposal | None:
-        ...
+
+    def propose(self, state: GEPAState) -> CandidateProposal | None: ...

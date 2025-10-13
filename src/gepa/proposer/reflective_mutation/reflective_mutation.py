@@ -61,6 +61,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
 
         from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
+        if self.reflection_lm is None:
+            raise ValueError(
+                "ReflectiveMutationProposer requires a reflection_lm when the adapter does not provide propose_new_texts."
+            )
+
         new_texts: dict[str, str] = {}
         for name in components_to_update:
             base_instruction = candidate[name]

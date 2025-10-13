@@ -8,6 +8,7 @@ from gepa.core.state import GEPAState, initialize_gepa_state
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
+from gepa.utils import StopperProtocol
 
 from .adapter import DataInst, RolloutOutput, Trajectory
 
@@ -44,7 +45,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         raise_on_exception: bool = True,
         use_cloudpickle: bool = False,
         # Budget and Stop Condition
-        stop_callback: Callable[[Any], bool] | None = None,
+        stop_callback: StopperProtocol | None = None,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -76,8 +77,9 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         self.raise_on_exception = raise_on_exception
 
     def _val_evaluator(self) -> Callable[[dict[str, str]], tuple[list[RolloutOutput], list[float]]]:
-        assert self.valset is not None
-        return lambda prog: self.evaluator(self.valset, prog)
+        valset = self.valset
+        assert valset is not None
+        return lambda prog: self.evaluator(valset, prog)
 
     def _get_pareto_front_programs(self, state: GEPAState) -> list:
         return state.program_at_pareto_front_valset
@@ -124,28 +126,20 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
     def run(self) -> GEPAState:
         # Check tqdm availability if progress bar is enabled
         progress_bar = None
+        last_pbar_val = 0
         if self.display_progress_bar:
             if tqdm is None:
                 raise ImportError("tqdm must be installed when display_progress_bar is enabled")
 
             # Check if stop_callback contains MaxMetricCallsStopper
-            total_calls = None
-            if hasattr(self.stop_callback, "max_metric_calls"):
-                # Direct MaxMetricCallsStopper
-                total_calls = self.stop_callback.max_metric_calls
-            elif hasattr(self.stop_callback, "stoppers"):
-                # CompositeStopper - iterate to find MaxMetricCallsStopper
-                for stopper in self.stop_callback.stoppers:
-                    if hasattr(stopper, "max_metric_calls"):
-                        total_calls = stopper.max_metric_calls
-                        break
+            total_calls = self._max_metric_calls()
 
             if total_calls is not None:
                 progress_bar = tqdm(total=total_calls, desc="GEPA Optimization", unit="rollouts")
             else:
                 progress_bar = tqdm(desc="GEPA Optimization", unit="rollouts")
-            progress_bar.update(0)
-            last_pbar_val = 0
+            if progress_bar is not None:
+                progress_bar.update(0)
 
         # Prepare valset
         if self.valset is None:
@@ -181,7 +175,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
 
         # Main loop
         while not self._should_stop(state):
-            if self.display_progress_bar:
+            if progress_bar is not None:
                 delta = state.total_num_evals - last_pbar_val
                 progress_bar.update(delta)
                 last_pbar_val = state.total_num_evals
@@ -234,10 +228,14 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
                 old_sum = sum(proposal.subsample_scores_before or [])
                 new_sum = sum(proposal.subsample_scores_after or [])
                 if new_sum <= old_sum:
-                    self.logger.log(f"Iteration {state.i + 1}: New subsample score {new_sum} is not better than old score {old_sum}, skipping")
+                    self.logger.log(
+                        f"Iteration {state.i + 1}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
+                    )
                     continue
                 else:
-                    self.logger.log(f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool.")
+                    self.logger.log(
+                        f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
+                    )
 
                 # Accept: full eval + add
                 self._run_full_eval_and_add(
@@ -261,7 +259,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
                     continue
 
         # Close progress bar if it exists
-        if self.display_progress_bar:
+        if progress_bar is not None:
             progress_bar.close()
 
         state.save(self.run_dir)
@@ -279,3 +277,25 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         """Manually request the optimization to stop gracefully."""
         self.logger.log("Stop requested manually. Initiating graceful shutdown...")
         self._stop_requested = True
+
+    def _max_metric_calls(self) -> int | None:
+        """
+        Extract the max_metric_calls value if the configured stopper exposes it.
+        """
+        callback = self.stop_callback
+        if callback is None:
+            return None
+
+        direct_value = getattr(callback, "max_metric_calls", None)
+        if isinstance(direct_value, int):
+            # Direct MaxMetricCallsStopper exposes the attribute
+            return direct_value
+
+        stoppers = getattr(callback, "stoppers", None)
+        if isinstance(stoppers, list):
+            # CompositeStopper - iterate to find nested MaxMetricCallsStopper
+            for stopper in stoppers:
+                nested_value = getattr(stopper, "max_metric_calls", None)
+                if isinstance(nested_value, int):
+                    return nested_value
+        return None

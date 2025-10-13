@@ -1,11 +1,10 @@
-import os
 import shutil
-import tempfile
 import sys
+import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import MagicMock, patch
 
 from gepa.logging.experiment_tracker import ExperimentTracker, create_experiment_tracker
 
@@ -14,6 +13,7 @@ def has_wandb():
     """Check if wandb is available."""
     try:
         import wandb  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -23,6 +23,7 @@ def has_mlflow():
     """Check if mlflow is available."""
     try:
         import mlflow  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -129,11 +130,13 @@ class TestExperimentTrackerIntegration:
         """Mock wandb."""
         if not has_wandb():
             pytest.skip("wandb not available")
-        if 'wandb' in sys.modules:
-            del sys.modules['wandb']
+        if "wandb" in sys.modules:
+            del sys.modules["wandb"]
         wandb = MagicMock()
+
         def finish():
             wandb.run = None
+
         wandb.finish.side_effect = finish
         with patch.dict("sys.modules", {"wandb": wandb}):
             yield wandb
@@ -174,7 +177,7 @@ class TestExperimentTrackerIntegration:
         # Should be able to log metrics
         tracker.log_metrics({"loss": 0.5, "accuracy": 0.9}, step=1)
         tracker.log_metrics({"loss": 0.4, "accuracy": 0.95}, step=2)
-        
+
         # Verify wandb.log was called correctly
         assert mock_wandb.log.call_count == 2
         assert mock_wandb.log.call_args_list[0][0][0] == {"loss": 0.5, "accuracy": 0.9}
@@ -214,6 +217,7 @@ class TestExperimentTrackerIntegration:
 
         # Verify metrics were logged by checking mlflow run data
         import mlflow
+
         run = mlflow.active_run()
         assert run is not None
         assert run.info.run_id is not None
@@ -230,6 +234,7 @@ class TestExperimentTrackerIntegration:
 
         # Check that metrics were stored in the mlflow tracking store
         from mlflow.tracking import MlflowClient
+
         client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
 
         # Get the experiment
@@ -273,7 +278,7 @@ class TestExperimentTrackerIntegration:
         # Should be able to log metrics to both backends
         with patch("wandb.log") as mock_wandb_log:
             tracker.log_metrics({"loss": 0.4, "accuracy": 0.95})
-            
+
             # Verify wandb was called
             mock_wandb_log.assert_called_once_with({"loss": 0.4, "accuracy": 0.95}, step=None)
 
@@ -282,11 +287,13 @@ class TestExperimentTrackerIntegration:
 
         # Check wandb
         import wandb
+
         wandb_run = wandb.run
         assert wandb_run is not None
 
         # Check mlflow
         import mlflow
+
         mlflow_run = mlflow.active_run()
         assert mlflow_run is not None
         assert mlflow_run.info.run_id is not None
@@ -299,6 +306,7 @@ class TestExperimentTrackerIntegration:
 
         # Verify mlflow metrics were stored
         from mlflow.tracking import MlflowClient
+
         client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
         experiment = client.get_experiment_by_name("test-experiment")
         runs = client.search_runs(experiment_ids=[experiment.experiment_id])
@@ -328,7 +336,7 @@ class TestExperimentTrackerIntegration:
             assert tracker.is_active()
             tracker.log_metrics({"loss": 0.5}, step=1)
             tracker.log_metrics({"accuracy": 0.9}, step=2)
-            
+
             # Verify wandb.log was called correctly
             assert mock_wandb.log.call_count == 2
             assert mock_wandb.log.call_args_list[0][0][0] == {"loss": 0.5}
@@ -372,12 +380,11 @@ class TestExperimentTrackerIntegration:
             mlflow_experiment_name="test-experiment",
         )
 
-    
         with tracker:
             assert tracker.is_active()
             tracker.log_metrics({"loss": 0.5}, step=1)
             tracker.log_metrics({"accuracy": 0.9}, step=2)
-            
+
             # Verify wandb was called correctly
             assert mock_wandb.log.call_count == 2
             assert mock_wandb.log.call_args_list[0][0][0] == {"loss": 0.5}
@@ -390,6 +397,7 @@ class TestExperimentTrackerIntegration:
 
         # Verify mlflow metrics were stored
         from mlflow.tracking import MlflowClient
+
         client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
         experiment = client.get_experiment_by_name("test-experiment")
         runs = client.search_runs(experiment_ids=[experiment.experiment_id])
@@ -418,7 +426,7 @@ class TestExperimentTrackerIntegration:
             with tracker:
                 tracker.log_metrics({"test": 1.0}, step=1)
                 raise ValueError("test exception")
-        
+
         # Verify wandb.log was called before the exception
         mock_wandb.log.assert_called_once_with({"test": 1.0}, step=1)
 
@@ -439,7 +447,6 @@ class TestExperimentTrackerIntegration:
             with tracker:
                 tracker.log_metrics({"test": 1.0}, step=1)
                 raise ValueError("test exception")
-
 
     @pytest.mark.skipif(not has_mlflow(), reason="mlflow not available")
     def test_mlflow_experiment_creation(self, temp_dir):
@@ -486,7 +493,7 @@ class TestExperimentTrackerIntegration:
 
         # Verify all metrics were logged to wandb
         assert mock_wandb.log.call_count == 5
-        
+
         # Check each call
         expected_calls = [
             ({"loss": 0.5}, {"step": 1}),
@@ -495,7 +502,7 @@ class TestExperimentTrackerIntegration:
             ({"final_loss": 0.1}, {"step": None}),
             ({"test_metric": 42}, {"step": None}),
         ]
-        
+
         for i, (expected_metrics, expected_kwargs) in enumerate(expected_calls):
             call_args, call_kwargs = mock_wandb.log.call_args_list[i]
             assert call_args[0] == expected_metrics
@@ -525,6 +532,7 @@ class TestExperimentTrackerIntegration:
 
         # Verify all metrics were logged to mlflow
         from mlflow.tracking import MlflowClient
+
         client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
         experiment = client.get_experiment_by_name("test-experiment")
         runs = client.search_runs(experiment_ids=[experiment.experiment_id])

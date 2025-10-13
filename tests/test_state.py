@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import gepa.core.state as state_mod
 import gepa
+import gepa.core.state as state_mod
 
 
 @pytest.fixture
@@ -113,7 +113,6 @@ def recorder_dir() -> Path:
 
 def test_e2e_resume_run(mocked_lms, run_dir):
     """E2E tests for resuming a previous run from a run_dir."""
-    import gepa
     from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
 
     # 1. Setup: Unpack fixtures and load data

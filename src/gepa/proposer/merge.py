@@ -11,6 +11,11 @@ from gepa.core.state import GEPAState
 from gepa.gepa_utils import find_dominator_programs
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 
+# MergeHistory keeps track of merge attempts:
+#   - index 0: list of (id1, id2, ancestor) triples already merged
+#   - index 1: list of (id1, id2, descriptor) triples for new-program compositions
+MergeHistory = tuple[list[tuple[int, int, int]], list[tuple[int, int, tuple[int, ...]]]]
+
 
 def does_triplet_have_desirable_predictors(program_candidates: list[dict[str, str]], ancestor, id1, id2):
     found_predictors = []
@@ -19,22 +24,27 @@ def does_triplet_have_desirable_predictors(program_candidates: list[dict[str, st
         pred_anc = program_candidates[ancestor][pred_name]
         pred_id1 = program_candidates[id1][pred_name]
         pred_id2 = program_candidates[id2][pred_name]
-        if (
-            (pred_anc == pred_id1) or
-            (pred_anc == pred_id2)
-        ) and (
-            pred_id1 != pred_id2
-        ):
+        if ((pred_anc == pred_id1) or (pred_anc == pred_id2)) and (pred_id1 != pred_id2):
             # We have a predictor that is the same as one of its ancestors, so we can update it with the other
-            same_as_ancestor_id = (1 if pred_anc == pred_id1 else 2)
+            same_as_ancestor_id = 1 if pred_anc == pred_id1 else 2
             found_predictors.append((pred_idx, same_as_ancestor_id))
 
     return len(found_predictors) > 0
 
-def filter_ancestors(i, j, common_ancestors, merges_performed, agg_scores, program_candidates):
+
+def filter_ancestors(
+    i: int,
+    j: int,
+    common_ancestors: set[int],
+    merges_performed: MergeHistory,
+    agg_scores: list[float],
+    program_candidates: list[dict[str, str]],
+):
+    ancestor_triplets = merges_performed[0]
+
     filtered_ancestors = []
     for ancestor in common_ancestors:
-        if (i, j, ancestor) in merges_performed[0]:
+        if (i, j, ancestor) in ancestor_triplets:
             continue
 
         if agg_scores[ancestor] > agg_scores[i] or agg_scores[ancestor] > agg_scores[j]:
@@ -46,7 +56,16 @@ def filter_ancestors(i, j, common_ancestors, merges_performed, agg_scores, progr
         filtered_ancestors.append(ancestor)
     return filtered_ancestors
 
-def find_common_ancestor_pair(rng, parent_list, program_indexes, merges_performed, agg_scores, program_candidates, max_attempts=10):
+
+def find_common_ancestor_pair(
+    rng,
+    parent_list: list[list[int | None]],
+    program_indexes: list[int],
+    merges_performed: MergeHistory,
+    agg_scores: list[float],
+    program_candidates: list[dict[str, str]],
+    max_attempts: int = 10,
+):
     def get_ancestors(node, ancestors_found):
         parents = parent_list[node]
         for parent in parents:
@@ -77,24 +96,46 @@ def find_common_ancestor_pair(rng, parent_list, program_indexes, merges_performe
         common_ancestors = filter_ancestors(i, j, common_ancestors, merges_performed, agg_scores, program_candidates)
         if common_ancestors:
             # Select a random common ancestor
-            common_ancestor = rng.choices(common_ancestors, k=1, weights=[agg_scores[ancestor] for ancestor in common_ancestors])[0]
+            common_ancestor = rng.choices(
+                common_ancestors, k=1, weights=[agg_scores[ancestor] for ancestor in common_ancestors]
+            )[0]
             return (i, j, common_ancestor)
 
     return None
 
-def sample_and_attempt_merge_programs_by_common_predictors(agg_scores, rng, merge_candidates, merges_performed, program_candidates: list[dict[str, str]], parent_program_for_candidate, max_attempts=10):
+
+def sample_and_attempt_merge_programs_by_common_predictors(
+    agg_scores: list[float],
+    rng,
+    merge_candidates: list[int],
+    merges_performed: MergeHistory,
+    program_candidates: list[dict[str, str]],
+    parent_program_for_candidate: list[list[int | None]],
+    max_attempts: int = 10,
+):
     if len(merge_candidates) < 2:
         return (False, None, None, None, None)
     if len(parent_program_for_candidate) < 3:
         return (False, None, None, None, None)
 
+    ancestor_triplets = merges_performed[0]
+    descendant_descriptions = merges_performed[1]
+
     for _ in range(max_attempts):
-        ids_to_merge = find_common_ancestor_pair(rng, parent_program_for_candidate, list(merge_candidates), merges_performed=merges_performed, agg_scores=agg_scores, program_candidates=program_candidates, max_attempts=10)
+        ids_to_merge = find_common_ancestor_pair(
+            rng,
+            parent_program_for_candidate,
+            list(merge_candidates),
+            merges_performed=merges_performed,
+            agg_scores=agg_scores,
+            program_candidates=program_candidates,
+            max_attempts=10,
+        )
         if ids_to_merge is None:
             continue
         id1, id2, ancestor = ids_to_merge
 
-        assert (id1, id2, ancestor) not in merges_performed, "This pair has already been merged"
+        assert (id1, id2, ancestor) not in ancestor_triplets, "This pair has already been merged"
 
         assert agg_scores[ancestor] <= agg_scores[id1], "Ancestor should not be better than its descendants"
         assert agg_scores[ancestor] <= agg_scores[id2], "Ancestor should not be better than its descendants"
@@ -107,36 +148,32 @@ def sample_and_attempt_merge_programs_by_common_predictors(agg_scores, rng, merg
         new_prog_desc = ()
 
         pred_names = set(program_candidates[ancestor].keys())
-        assert pred_names == set(program_candidates[id1].keys()) == set(program_candidates[id2].keys()), "Predictors should be the same across all programs"
+        assert pred_names == set(program_candidates[id1].keys()) == set(program_candidates[id2].keys()), (
+            "Predictors should be the same across all programs"
+        )
         for pred_name in pred_names:
             pred_anc = program_candidates[ancestor][pred_name]
             pred_id1 = program_candidates[id1][pred_name]
             pred_id2 = program_candidates[id2][pred_name]
-            if (
-                (pred_anc == pred_id1) or
-                (pred_anc == pred_id2)
-            ) and (
-                pred_id1 != pred_id2
-            ):
+            if ((pred_anc == pred_id1) or (pred_anc == pred_id2)) and (pred_id1 != pred_id2):
                 # We have a predictor that is the same as one of its ancestors, so we can update it with the other
-                same_as_ancestor_id = (1 if pred_anc == pred_id1 else 2)
+                same_as_ancestor_id = 1 if pred_anc == pred_id1 else 2
                 # new_program.named_predictors()[pred_idx][1].signature = program_candidates[id2 if same_as_ancestor_id == 1 else id1].named_predictors()[pred_idx][1].signature
                 new_program[pred_name] = program_candidates[id2 if same_as_ancestor_id == 1 else id1][pred_name]
                 new_prog_desc = (*new_prog_desc, id2 if same_as_ancestor_id == 1 else id1)
-            elif (
-                (pred_anc != pred_id1) and
-                (pred_anc != pred_id2)
-            ):
+            elif (pred_anc != pred_id1) and (pred_anc != pred_id2):
                 # Both predictors are different from  the ancestor, and it is difficult to decide which one gives the benefits
                 # We randomly select one of the descendants to update the predictor
                 # The probability of selecting is proportional to the agg_scores of the descendants
                 # prog_to_get_instruction_from = id1 if (rng.random() < (agg_scores[id1] / (agg_scores[id1] + agg_scores[id2]))) else id2
-                prog_to_get_instruction_from = id1 if (agg_scores[id1] > agg_scores[id2]) else (id2 if agg_scores[id2] > agg_scores[id1] else rng.choice([id1, id2]))
+                prog_to_get_instruction_from = (
+                    id1
+                    if (agg_scores[id1] > agg_scores[id2])
+                    else (id2 if agg_scores[id2] > agg_scores[id1] else rng.choice([id1, id2]))
+                )
                 new_program[pred_name] = program_candidates[prog_to_get_instruction_from][pred_name]
                 new_prog_desc = (*new_prog_desc, prog_to_get_instruction_from)
-            elif (
-                pred_id1 == pred_id2
-            ):
+            elif pred_id1 == pred_id2:
                 # Either both predictors are the same, or both are different from the ancestor
                 # If both are different from the ancestor, we should use the new predictor, so selecting either one of the descendants is fine
                 # If both are same as the ancesor, again selecting any one of the descendants is fine
@@ -144,17 +181,18 @@ def sample_and_attempt_merge_programs_by_common_predictors(agg_scores, rng, merg
                 new_program[pred_name] = program_candidates[id1][pred_name]
                 new_prog_desc = (*new_prog_desc, id1)
             else:
-                assert False, "Unexpected case in predictor merging logic"
+                raise AssertionError("Unexpected case in predictor merging logic")
 
-        if (id1, id2, new_prog_desc) in merges_performed[1]:
+        if (id1, id2, new_prog_desc) in descendant_descriptions:
             # This triplet has already been merged, so we skip it
             continue
 
-        merges_performed[1].append((id1, id2, new_prog_desc))
+        descendant_descriptions.append((id1, id2, new_prog_desc))
 
         return (True, new_program, id1, id2, ancestor)
 
     return (False, None, None, None, None)
+
 
 class MergeProposer(ProposeNewCandidate):
     """
@@ -165,6 +203,7 @@ class MergeProposer(ProposeNewCandidate):
     - Return proposal if merge's subsample score >= max(parents)
     The engine handles full eval + adding to state.
     """
+
     def __init__(
         self,
         logger: Any,
@@ -187,7 +226,7 @@ class MergeProposer(ProposeNewCandidate):
         # Internal counters matching original behavior
         self.merges_due = 0
         self.total_merges_tested = 0
-        self.merges_performed: tuple[list[tuple[int, int, int]], Any] = ([], [])
+        self.merges_performed: MergeHistory = ([], [])
 
         # Toggle controlled by engine: set True when last iter found new program
         self.last_iter_found_new_program = False
@@ -212,9 +251,12 @@ class MergeProposer(ProposeNewCandidate):
         n2 = min(len(p2), n_each)
         n3 = min(len(p3), num_subsample_ids - (n1 + n2))
         selected = []
-        if n1: selected += self.rng.sample(p1, k=n1)
-        if n2: selected += self.rng.sample(p2, k=n2)
-        if n3: selected += self.rng.sample(p3, k=n3)
+        if n1:
+            selected += self.rng.sample(p1, k=n1)
+        if n2:
+            selected += self.rng.sample(p2, k=n2)
+        if n3:
+            selected += self.rng.sample(p3, k=n3)
 
         remaining = num_subsample_ids - len(selected)
         unused = list(all_indices - set(selected))
@@ -245,12 +287,14 @@ class MergeProposer(ProposeNewCandidate):
             parent_program_for_candidate=state.parent_program_for_candidate,
         )
 
-        if not merge_output[0]:
+        success, new_program, id1, id2, ancestor = merge_output
+
+        if not success:
             self.logger.log(f"Iteration {i}: No merge candidates found")
             return None
 
-        # success, new_program, id1, id2, ancestor
-        success, new_program, id1, id2, ancestor = merge_output
+        assert new_program is not None
+        assert id1 is not None and id2 is not None and ancestor is not None
         state.full_program_trace[-1]["merged"] = True
         state.full_program_trace[-1]["merged_entities"] = (id1, id2, ancestor)
         self.merges_performed[0].append((id1, id2, ancestor))
@@ -282,5 +326,5 @@ class MergeProposer(ProposeNewCandidate):
             subsample_scores_before=[sum(id1_sub_scores), sum(id2_sub_scores)],  # packed as [parent1_sum, parent2_sum]
             subsample_scores_after=new_sub_scores,
             tag="merge",
-            metadata={"ancestor": ancestor}
+            metadata={"ancestor": ancestor},
         )

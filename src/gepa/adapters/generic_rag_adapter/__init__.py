@@ -16,18 +16,21 @@ from .vector_stores.weaviate_store import WeaviateVectorStore
 # Optional vector stores - import only if dependencies are available
 try:
     from .vector_stores.qdrant_store import QdrantVectorStore
+
     _QDRANT_AVAILABLE = True
 except ImportError:
     _QDRANT_AVAILABLE = False
 
 try:
     from .vector_stores.milvus_store import MilvusVectorStore
+
     _MILVUS_AVAILABLE = True
 except ImportError:
     _MILVUS_AVAILABLE = False
 
 try:
     from .vector_stores.lancedb_store import LanceDBVectorStore
+
     _LANCEDB_AVAILABLE = True
 except ImportError:
     _LANCEDB_AVAILABLE = False
