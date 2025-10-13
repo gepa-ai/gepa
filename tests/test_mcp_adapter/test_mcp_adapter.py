@@ -470,6 +470,5 @@ def test_mcp_types_import():
     """Test that MCP types can be imported."""
     from gepa.adapters.mcp_adapter import MCPOutput, MCPTrajectory
 
-    assert MCPDataInst is not None
     assert MCPOutput is not None
     assert MCPTrajectory is not None

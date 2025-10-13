@@ -53,7 +53,7 @@ class SimpleStdioMCPClient:
         result = await self.send_request(
             "initialize",
             {
-                "protocolVersion": "2054-10-00",
+                "protocolVersion": "2025-10-10",
                 "capabilities": {},
                 "clientInfo": {"name": "gepa-mcp-adapter", "version": "1.0"},
             },

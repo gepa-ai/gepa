@@ -431,7 +431,7 @@ The adapter generates reflective datasets for each component showing:
 - Cases where tools should/shouldn't be called
 - How well tool responses were utilized
 
-Example reflective entry for `tool_description`:
+Example reflective entry for `tool_description` (successful case):
 
 ```python
 {
@@ -442,9 +442,43 @@ Example reflective entry for `tool_description`:
     "Generated Outputs": {
         "tool_called": True,
         "tool_arguments": {"path": "config.json"},
-        "final_answer": "The config file contains...",
+        "final_answer": "The config file contains database settings: host=localhost, port=5432, user=admin",
     },
-    "Feedback": "The tool was not called. Consider whether calling the tool would help..."
+    "Feedback": "Good! The tool was used appropriately and produced a correct answer. Tool called: True, Score: 0.85"
+}
+```
+
+Example reflective entry for a failed case (tool not called):
+
+```python
+{
+    "Inputs": {
+        "user_query": "What's in config.json?",
+        "tool_description": "Read file contents",
+    },
+    "Generated Outputs": {
+        "tool_called": False,
+        "tool_arguments": None,
+        "final_answer": "I don't have access to file contents.",
+    },
+    "Feedback": "The response was incorrect (score: 0.20). The tool was not called. Consider whether calling the tool would help answer this query."
+}
+```
+
+Example reflective entry for a failed case (tool called but wrong answer):
+
+```python
+{
+    "Inputs": {
+        "user_query": "What's in config.json?",
+        "tool_description": "Read file contents",
+    },
+    "Generated Outputs": {
+        "tool_called": True,
+        "tool_arguments": {"path": "config.json"},
+        "final_answer": "The file contains some configuration data.",
+    },
+    "Feedback": "The response was incorrect (score: 0.30). The tool was called with arguments {'path': 'config.json'}, but the final answer was still incorrect. The tool description might need to be clearer."
 }
 ```
 
