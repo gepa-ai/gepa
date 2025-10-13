@@ -27,7 +27,9 @@ class MilvusVectorStore(VectorStoreInterface):
         import importlib.util
 
         if importlib.util.find_spec("pymilvus") is None:
-            raise ImportError("Milvus client is required for MilvusVectorStore. Install with: pip install litellm pymilvus")
+            raise ImportError(
+                "Milvus client is required for MilvusVectorStore. Install with: pip install litellm pymilvus"
+            )
 
         self.client = client
         self.collection_name = collection_name

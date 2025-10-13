@@ -39,6 +39,7 @@ class GEPAResult(Generic[RolloutOutput]):
     - instance_winners(t): set of candidates on the pareto front for val instance t
     - to_dict(...), save_json(...): serialization helpers
     """
+
     # Core data
     candidates: list[dict[str, str]]
     parents: list[list[int | None]]
@@ -75,10 +76,7 @@ class GEPAResult(Generic[RolloutOutput]):
         return self.candidates[self.best_idx]
 
     def to_dict(self) -> dict[str, Any]:
-        cands = [
-            dict(cand.items())
-            for cand in self.candidates
-        ]
+        cands = [dict(cand.items()) for cand in self.candidates]
 
         return dict(
             candidates=cands,

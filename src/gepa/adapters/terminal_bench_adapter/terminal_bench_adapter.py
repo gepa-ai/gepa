@@ -72,7 +72,6 @@ def run_agent_tb(
 
 
 def get_results(task_id: str, run_id: str) -> tuple[int, list]:
-
     def _read_episode_response(episode_dir: Path) -> CommandBatchResponse | None:
         """Helper method to read and parse response.json from an episode directory."""
         response_file = episode_dir / "response.json"
@@ -89,9 +88,7 @@ def get_results(task_id: str, run_id: str) -> tuple[int, list]:
         for dir in logging_dir_base.iterdir():
             if dir.is_dir() and dir.name.startswith(task_id):
                 return dir
-        raise ValueError(
-            f"No logging directory found for task {task_id} and run {run_id}"
-        )
+        raise ValueError(f"No logging directory found for task {task_id} and run {run_id}")
 
     logging_dir = _get_logging_dir(task_id, run_id)
     result_json = logging_dir / "results.json"
@@ -141,7 +138,6 @@ def get_results(task_id: str, run_id: str) -> tuple[int, list]:
 
 
 class TerminusAdapter(GEPAAdapter):
-
     def __init__(
         self,
         n_concurrent: int = 6,
@@ -173,9 +169,7 @@ class TerminusAdapter(GEPAAdapter):
 
         for example in batch:
             try:
-                success, score, failed_reason, messages = get_results(
-                    example.task_id, example_run_id
-                )
+                success, score, failed_reason, messages = get_results(example.task_id, example_run_id)
             except Exception as e:
                 print(f"Error running example {example.task_id} {example_run_id}: {e}")
                 success = False
@@ -212,9 +206,7 @@ class TerminusAdapter(GEPAAdapter):
             if trajectory["success"]:
                 feedback = "Successfully solved the task!"
             else:
-                feedback = (
-                    f"Failed to solve the task. Reason: {trajectory['failed_reason']}"
-                )
+                feedback = f"Failed to solve the task. Reason: {trajectory['failed_reason']}"
             reflective_dataset["instruction_prompt"].append(
                 {
                     "Message History": trajectory["messages"],
