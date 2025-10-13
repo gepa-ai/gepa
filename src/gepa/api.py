@@ -33,6 +33,7 @@ def optimize(
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
     candidate_selection_strategy: str = "pareto",
+    pareto_frontier_type: str = "instance",
     skip_perfect_score=True,
     reflection_minibatch_size=3,
     perfect_score=1,
@@ -206,7 +207,9 @@ def optimize(
 
     rng = random.Random(seed)
     candidate_selector = (
-        ParetoCandidateSelector(rng=rng) if candidate_selection_strategy == "pareto" else CurrentBestCandidateSelector()
+        ParetoCandidateSelector(rng=rng, pareto_frontier_type=pareto_frontier_type)
+        if candidate_selection_strategy == "pareto"
+        else CurrentBestCandidateSelector()
     )
 
     if isinstance(module_selector, str):
@@ -246,8 +249,7 @@ def optimize(
     )
 
     def evaluator(inputs, prog):
-        eval_out = adapter.evaluate(inputs, prog, capture_traces=False)
-        return eval_out.outputs, eval_out.scores
+        return adapter.evaluate(inputs, prog, capture_traces=False)
 
     merge_proposer = None
     if use_merge:
@@ -259,6 +261,7 @@ def optimize(
             max_merge_invocations=max_merge_invocations,
             rng=rng,
             val_overlap_floor=merge_val_overlap_floor,
+            pareto_frontier_type=pareto_frontier_type,
         )
 
     engine = GEPAEngine(
@@ -270,6 +273,7 @@ def optimize(
         seed=seed,
         reflective_proposer=reflective_proposer,
         merge_proposer=merge_proposer,
+        pareto_frontier_type=pareto_frontier_type,
         logger=logger,
         experiment_tracker=experiment_tracker,
         track_best_outputs=track_best_outputs,

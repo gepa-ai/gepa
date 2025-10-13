@@ -6,7 +6,7 @@ import random
 from copy import deepcopy
 from typing import Any, Callable
 
-from gepa.core.adapter import DataInst, RolloutOutput
+from gepa.core.adapter import DataInst, EvaluationBatch, RolloutOutput
 from gepa.core.state import GEPAState
 from gepa.gepa_utils import find_dominator_programs
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -191,11 +191,12 @@ class MergeProposer(ProposeNewCandidate):
         self,
         logger: Any,
         valset: list[DataInst],
-        evaluator: Callable[[list[DataInst], dict[str, str]], tuple[list[RolloutOutput], list[float]]],
+        evaluator: Callable[[list[DataInst], dict[str, str]], EvaluationBatch],
         use_merge: bool,
         max_merge_invocations: int,
         rng: random.Random | None = None,
         val_overlap_floor: int = 5,
+        pareto_frontier_type: str = "instance",
     ):
         self.logger = logger
         self.valset = valset
@@ -208,6 +209,7 @@ class MergeProposer(ProposeNewCandidate):
             self.rng = rng
 
         self.val_overlap_floor = val_overlap_floor
+        self.pareto_frontier_type = pareto_frontier_type
 
         # Internal counters matching original behavior
         self.merges_due = 0
@@ -262,7 +264,7 @@ class MergeProposer(ProposeNewCandidate):
             self.logger.log(f"Iteration {i}: No merge candidates scheduled")
             return None
 
-        pareto_front_programs = state.program_at_pareto_front_valset
+        pareto_front_programs = state.get_pareto_front_mapping(self.pareto_frontier_type)
         merge_candidates = find_dominator_programs(pareto_front_programs, state.per_program_tracked_scores)
         merge_output = sample_and_attempt_merge_programs_by_common_predictors(
             agg_scores=state.per_program_tracked_scores,
@@ -300,7 +302,8 @@ class MergeProposer(ProposeNewCandidate):
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
 
-        _, new_sub_scores = self.evaluator(mini_devset, new_program)
+        eval_batch = self.evaluator(mini_devset, new_program)
+        new_sub_scores = eval_batch.scores
 
         state.full_program_trace[-1]["id1_subsample_scores"] = id1_sub_scores
         state.full_program_trace[-1]["id2_subsample_scores"] = id2_sub_scores
