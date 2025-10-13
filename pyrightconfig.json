@@ -3,6 +3,7 @@
     "src",
     "tests"
   ],
+  "typeCheckingMode": "standard",
   "exclude": [
     "src/gepa/adapters/dspy_adapter",
     "src/gepa/adapters/dspy_full_program_adapter",
