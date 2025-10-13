@@ -15,18 +15,22 @@ ValId = TypeVar("ValId", bound=Hashable)
 """Opaque identifier for valset examples"""
 ValScores: TypeAlias = dict[ValId, float]
 ValOutputs: TypeAlias = dict[ValId, RolloutOutput]
+ObjectiveScores: TypeAlias = dict[str, float]
 
 
 class GEPAState(Generic[RolloutOutput, ValId]):
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 2
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 3
 
     program_candidates: list[dict[str, str]]
     parent_program_for_candidate: list[list[ProgramIdx | None]]
 
     prog_candidate_val_subscores: list[ValScores]
+    prog_candidate_objective_scores: list[ObjectiveScores]
 
     pareto_front_valset: ValScores
     program_at_pareto_front_valset: dict[ValId, set[ProgramIdx]]
+    objective_pareto_front: ObjectiveScores
+    program_at_pareto_front_objectives: dict[str, set[ProgramIdx]]
 
     list_of_named_predictors: list[str]
     named_predictor_id_to_update_next_for_program_candidate: list[int]
@@ -46,16 +50,22 @@ class GEPAState(Generic[RolloutOutput, ValId]):
     def __init__(
         self,
         seed_candidate: dict[str, str],
-        base_valset_eval_output: tuple[ValOutputs, ValScores],
+        base_valset_eval_output: tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None],
         track_best_outputs: bool = False,
     ):
-        base_outputs, base_scores = base_valset_eval_output
+        base_outputs, base_scores, base_objective_scores = base_valset_eval_output
         self.program_candidates = [seed_candidate]
         self.prog_candidate_val_subscores = [base_scores]
+        base_objective_aggregates = self._aggregate_objective_scores(base_objective_scores)
+        self.prog_candidate_objective_scores = [base_objective_aggregates]
 
         self.pareto_front_valset = {val_id: score for val_id, score in base_scores.items()}
         self.parent_program_for_candidate = [[None]]
         self.program_at_pareto_front_valset = {val_id: {0} for val_id in base_scores.keys()}
+        self.objective_pareto_front = dict(base_objective_aggregates)
+        self.program_at_pareto_front_objectives = {
+            objective: {0} for objective in base_objective_aggregates.keys()
+        }
 
         self.list_of_named_predictors = list(seed_candidate.keys())
         self.named_predictor_id_to_update_next_for_program_candidate = [0]
@@ -74,6 +84,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         assert len(self.program_candidates) == len(self.parent_program_for_candidate)
         assert len(self.program_candidates) == len(self.named_predictor_id_to_update_next_for_program_candidate)
         assert len(self.program_candidates) == len(self.prog_candidate_val_subscores)
+        assert len(self.program_candidates) == len(self.prog_candidate_objective_scores)
         assert len(self.program_candidates) == len(self.num_metric_calls_by_discovery)
 
         for front in self.program_at_pareto_front_valset.values():
@@ -83,6 +94,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
                 )
 
         assert set(self.pareto_front_valset.keys()) == set(self.program_at_pareto_front_valset.keys())
+        assert set(self.objective_pareto_front.keys()) == set(self.program_at_pareto_front_objectives.keys())
 
         return True
 
@@ -138,6 +150,14 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         if isinstance(best_outputs, list):
             d["best_outputs_valset"] = {idx: list(outputs) for idx, outputs in enumerate(best_outputs)}
 
+        if "prog_candidate_objective_scores" not in d:
+            num_candidates = len(d.get("program_candidates", []))
+            d["prog_candidate_objective_scores"] = [{} for _ in range(num_candidates)]
+        if "objective_pareto_front" not in d:
+            d["objective_pareto_front"] = {}
+        if "program_at_pareto_front_objectives" not in d:
+            d["program_at_pareto_front_objectives"] = {}
+
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     def get_program_average(self, program_idx: int) -> tuple[float, int]:
@@ -168,6 +188,38 @@ class GEPAState(Generic[RolloutOutput, ValId]):
     def per_program_tracked_scores(self) -> list[float]:
         # NOTE(aria42): This same as valset program average scores, but this was already the case
         return [self.get_program_average(program_idx)[0] for program_idx in range(len(self.prog_candidate_val_subscores))]
+
+    @staticmethod
+    def _aggregate_objective_scores(
+        val_objective_scores: dict[ValId, ObjectiveScores] | None,
+    ) -> ObjectiveScores:
+        if not val_objective_scores:
+            return {}
+        totals: dict[str, float] = {}
+        counts: dict[str, int] = {}
+        for objective_dict in val_objective_scores.values():
+            for objective, score in objective_dict.items():
+                totals[objective] = totals.get(objective, 0.0) + score
+                counts[objective] = counts.get(objective, 0) + 1
+        return {
+            objective: totals[objective] / counts[objective]
+            for objective in totals.keys()
+            if counts[objective] > 0
+        }
+
+    def _update_objective_pareto_front(
+        self, objective_scores: ObjectiveScores, program_idx: ProgramIdx
+    ) -> None:
+        if not objective_scores:
+            return
+        for objective, score in objective_scores.items():
+            prev_score = self.objective_pareto_front.get(objective, float("-inf"))
+            if score > prev_score:
+                self.objective_pareto_front[objective] = score
+                self.program_at_pareto_front_objectives[objective] = {program_idx}
+            elif score == prev_score:
+                front = self.program_at_pareto_front_objectives.setdefault(objective, set())
+                front.add(program_idx)
 
     def _update_pareto_front_for_val_id(
         self,
@@ -202,6 +254,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         parent_program_idx: list[ProgramIdx],
         new_program: dict[str, str],
         valset_subscores: ValScores,
+        valset_objective_subscores: dict[ValId, ObjectiveScores] | None,
         valset_outputs: ValOutputs | None,
         run_dir: str | None,
         num_metric_calls_by_discovery_of_new_program: int,
@@ -218,9 +271,13 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         self.parent_program_for_candidate.append(list(parent_program_idx))
 
         self.prog_candidate_val_subscores.append(dict(valset_subscores))
+        objective_scores = self._aggregate_objective_scores(valset_objective_subscores)
+        self.prog_candidate_objective_scores.append(objective_scores)
 
         for val_id, score in valset_subscores.items():
             self._update_pareto_front_for_val_id(val_id, score, new_program_idx, valset_outputs, run_dir, self.i + 1)
+
+        self._update_objective_pareto_front(objective_scores, new_program_idx)
 
         linear_pareto_front_program_idx = self._best_program_idx()
         return new_program_idx, linear_pareto_front_program_idx
@@ -234,6 +291,23 @@ class GEPAState(Generic[RolloutOutput, ValId]):
                 best_idx = idx
                 best_avg, best_cov = avg, cov
         return best_idx
+
+    def get_pareto_front_mapping(self, pareto_frontier_type: str) -> dict[Any, set[ProgramIdx]]:
+        if pareto_frontier_type == "instance":
+            return {val_id: set(front) for val_id, front in self.program_at_pareto_front_valset.items()}
+        if pareto_frontier_type == "objective":
+            return {
+                objective: set(front)
+                for objective, front in self.program_at_pareto_front_objectives.items()
+            }
+        if pareto_frontier_type == "hybrid":
+            combined: dict[Any, set[ProgramIdx]] = {
+                val_id: set(front) for val_id, front in self.program_at_pareto_front_valset.items()
+            }
+            for objective, front in self.program_at_pareto_front_objectives.items():
+                combined[f"objective::{objective}"] = set(front)
+            return combined
+        raise ValueError(f"Unknown pareto_frontier_type: {pareto_frontier_type}")
 
 
 def write_eval_scores_to_directory(scores: ValScores, output_dir: str):
@@ -257,14 +331,14 @@ def initialize_gepa_state(
     else:
         num_evals_run = 0
 
-        seed_val_outputs, seed_val_scores = valset_evaluator(seed_candidate)
+        seed_val_outputs, seed_val_scores, seed_objective_scores = valset_evaluator(seed_candidate)
         if run_dir is not None:
             write_eval_scores_to_directory(seed_val_scores, os.path.join(run_dir, "generated_best_outputs_valset"))
         num_evals_run += len(seed_val_scores)
 
         gepa_state = GEPAState(
             seed_candidate,
-            (seed_val_outputs, seed_val_scores),
+            (seed_val_outputs, seed_val_scores, seed_objective_scores),
             track_best_outputs=track_best_outputs,
         )
 
