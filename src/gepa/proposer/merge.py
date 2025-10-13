@@ -6,7 +6,7 @@ import random
 from copy import deepcopy
 from typing import Any, Callable
 
-from gepa.core.adapter import DataInst, EvaluationBatch, RolloutOutput
+from gepa.core.adapter import DataInst, EvaluationBatch
 from gepa.core.state import GEPAState
 from gepa.gepa_utils import find_dominator_programs
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -44,7 +44,13 @@ def filter_ancestors(i, j, common_ancestors, merges_performed, agg_scores, progr
 
 
 def find_common_ancestor_pair(
-    rng, parent_list, program_indexes, merges_performed, agg_scores, program_candidates, max_attempts=10
+    rng,
+    parent_list,
+    program_indexes,
+    merges_performed,
+    agg_scores,
+    program_candidates,
+    max_attempts=10,
 ):
     def get_ancestors(node, ancestors_found):
         parents = parent_list[node]
@@ -77,7 +83,9 @@ def find_common_ancestor_pair(
         if common_ancestors:
             # Select a random common ancestor
             common_ancestor = rng.choices(
-                common_ancestors, k=1, weights=[agg_scores[ancestor] for ancestor in common_ancestors]
+                common_ancestors,
+                k=1,
+                weights=[agg_scores[ancestor] for ancestor in common_ancestors],
             )[0]
             return (i, j, common_ancestor)
 
@@ -114,7 +122,11 @@ def sample_and_attempt_merge_programs_by_common_predictors(
             continue
         id1, id2, ancestor = ids_to_merge
 
-        assert (id1, id2, ancestor) not in merges_performed, "This pair has already been merged"
+        assert (
+            id1,
+            id2,
+            ancestor,
+        ) not in merges_performed, "This pair has already been merged"
 
         common_ids = set(program_val_scores[id1].keys()) & set(program_val_scores[id2].keys())
         if len(common_ids) < overlap_floor:
@@ -143,7 +155,10 @@ def sample_and_attempt_merge_programs_by_common_predictors(
                 same_as_ancestor_id = 1 if pred_anc == pred_id1 else 2
                 # new_program.named_predictors()[pred_idx][1].signature = program_candidates[id2 if same_as_ancestor_id == 1 else id1].named_predictors()[pred_idx][1].signature
                 new_program[pred_name] = program_candidates[id2 if same_as_ancestor_id == 1 else id1][pred_name]
-                new_prog_desc = (*new_prog_desc, id2 if same_as_ancestor_id == 1 else id1)
+                new_prog_desc = (
+                    *new_prog_desc,
+                    id2 if same_as_ancestor_id == 1 else id1,
+                )
             elif (pred_anc != pred_id1) and (pred_anc != pred_id2):
                 # Both predictors are different from  the ancestor, and it is difficult to decide which one gives the benefits
                 # We randomly select one of the descendants to update the predictor
@@ -196,7 +211,7 @@ class MergeProposer(ProposeNewCandidate):
         max_merge_invocations: int,
         rng: random.Random | None = None,
         val_overlap_floor: int = 5,
-        pareto_frontier_type: str = "instance",
+        frontier_type: str = "instance",
     ):
         self.logger = logger
         self.valset = valset
@@ -209,7 +224,7 @@ class MergeProposer(ProposeNewCandidate):
             self.rng = rng
 
         self.val_overlap_floor = val_overlap_floor
-        self.pareto_frontier_type = pareto_frontier_type
+        self.frontier_type = frontier_type
 
         # Internal counters matching original behavior
         self.merges_due = 0
@@ -264,7 +279,7 @@ class MergeProposer(ProposeNewCandidate):
             self.logger.log(f"Iteration {i}: No merge candidates scheduled")
             return None
 
-        pareto_front_programs = state.get_pareto_front_mapping(self.pareto_frontier_type)
+        pareto_front_programs = state.get_pareto_front_mapping(self.frontier_type)
         merge_candidates = find_dominator_programs(pareto_front_programs, state.per_program_tracked_scores)
         merge_output = sample_and_attempt_merge_programs_by_common_predictors(
             agg_scores=state.per_program_tracked_scores,
@@ -317,7 +332,10 @@ class MergeProposer(ProposeNewCandidate):
             candidate=new_program,
             parent_program_ids=[id1, id2],
             subsample_indices=subsample_ids,
-            subsample_scores_before=[sum(id1_sub_scores), sum(id2_sub_scores)],  # packed as [parent1_sum, parent2_sum]
+            subsample_scores_before=[
+                sum(id1_sub_scores),
+                sum(id2_sub_scores),
+            ],  # packed as [parent1_sum, parent2_sum]
             subsample_scores_after=new_sub_scores,
             tag="merge",
             metadata={"ancestor": ancestor},

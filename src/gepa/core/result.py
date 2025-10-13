@@ -49,10 +49,10 @@ class GEPAResult(Generic[RolloutOutput]):
     val_aggregate_scores: list[float]
     val_subscores: list[ValScores]
     per_val_instance_best_candidates: dict[ValId, set[ProgramIdx]]
+    discovery_eval_counts: list[int]
     val_aggregate_subscores: list[dict[str, float]] | None = None
     per_objective_best_candidates: dict[str, set[ProgramIdx]] | None = None
     objective_pareto_front: dict[str, float] | None = None
-    discovery_eval_counts: list[int]
 
     # Optional data
     best_outputs_valset: dict[ValId, list[tuple[ProgramIdx, RolloutOutput]]] | None = None
@@ -92,11 +92,11 @@ class GEPAResult(Generic[RolloutOutput]):
             best_outputs_valset=self.best_outputs_valset,
             per_val_instance_best_candidates={k: list(v) for k, v in self.per_val_instance_best_candidates.items()},
             val_aggregate_subscores=self.val_aggregate_subscores,
-            per_objective_best_candidates={
-                k: list(v) for k, v in self.per_objective_best_candidates.items()
-            }
-            if self.per_objective_best_candidates is not None
-            else None,
+            per_objective_best_candidates=(
+                {k: list(v) for k, v in self.per_objective_best_candidates.items()}
+                if self.per_objective_best_candidates is not None
+                else None
+            ),
             objective_pareto_front=self.objective_pareto_front,
             discovery_eval_counts=self.discovery_eval_counts,
             total_metric_calls=self.total_metric_calls,
@@ -114,8 +114,7 @@ class GEPAResult(Generic[RolloutOutput]):
         objective_scores_list = [dict(scores) for scores in state.prog_candidate_objective_scores]
         has_objective_scores = any(obj for obj in objective_scores_list)
         per_objective_best = {
-            objective: set(front)
-            for objective, front in state.program_at_pareto_front_objectives.items()
+            objective: set(front) for objective, front in state.program_at_pareto_front_objectives.items()
         }
         objective_front = dict(state.objective_pareto_front)
 
@@ -128,8 +127,8 @@ class GEPAResult(Generic[RolloutOutput]):
             per_val_instance_best_candidates={
                 val_id: set(front) for val_id, front in state.program_at_pareto_front_valset.items()
             },
-            val_aggregate_subscores=objective_scores_list if has_objective_scores else None,
-            per_objective_best_candidates=per_objective_best if per_objective_best else None,
+            val_aggregate_subscores=(objective_scores_list if has_objective_scores else None),
+            per_objective_best_candidates=(per_objective_best if per_objective_best else None),
             objective_pareto_front=objective_front if objective_front else None,
             discovery_eval_counts=list(state.num_metric_calls_by_discovery),
             total_metric_calls=getattr(state, "total_num_evals", None),

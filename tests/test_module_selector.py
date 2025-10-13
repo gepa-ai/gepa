@@ -19,6 +19,9 @@ def common_mocks():
         prog_candidate_val_subscores=[{}],
         program_at_pareto_front_valset={},
         num_metric_calls_by_discovery=[1],
+        prog_candidate_objective_scores=[{}],
+        program_at_pareto_front_objectives={},
+        objective_pareto_front={},
     )
 
     mock_adapter = Mock()

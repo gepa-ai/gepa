@@ -13,10 +13,18 @@ from gepa.core.state import GEPAState
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
-from gepa.proposer.reflective_mutation.base import LanguageModel, ReflectionComponentSelector
-from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
+from gepa.proposer.reflective_mutation.base import (
+    LanguageModel,
+    ReflectionComponentSelector,
+)
+from gepa.proposer.reflective_mutation.reflective_mutation import (
+    ReflectiveMutationProposer,
+)
 from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
-from gepa.strategies.candidate_selector import CurrentBestCandidateSelector, ParetoCandidateSelector
+from gepa.strategies.candidate_selector import (
+    CurrentBestCandidateSelector,
+    ParetoCandidateSelector,
+)
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
@@ -33,7 +41,7 @@ def optimize(
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
     candidate_selection_strategy: str = "pareto",
-    pareto_frontier_type: str = "instance",
+    frontier_type: str = "instance",
     skip_perfect_score=True,
     reflection_minibatch_size=3,
     perfect_score=1,
@@ -207,7 +215,7 @@ def optimize(
 
     rng = random.Random(seed)
     candidate_selector = (
-        ParetoCandidateSelector(rng=rng, pareto_frontier_type=pareto_frontier_type)
+        ParetoCandidateSelector(rng=rng, frontier_type=frontier_type)
         if candidate_selection_strategy == "pareto"
         else CurrentBestCandidateSelector()
     )
@@ -261,7 +269,7 @@ def optimize(
             max_merge_invocations=max_merge_invocations,
             rng=rng,
             val_overlap_floor=merge_val_overlap_floor,
-            pareto_frontier_type=pareto_frontier_type,
+            frontier_type=frontier_type,
         )
 
     engine = GEPAEngine(
@@ -273,7 +281,7 @@ def optimize(
         seed=seed,
         reflective_proposer=reflective_proposer,
         merge_proposer=merge_proposer,
-        pareto_frontier_type=pareto_frontier_type,
+        frontier_type=frontier_type,
         logger=logger,
         experiment_tracker=experiment_tracker,
         track_best_outputs=track_best_outputs,

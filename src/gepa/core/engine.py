@@ -7,7 +7,9 @@ from typing import Any, Callable, Generic
 from gepa.core.state import GEPAState, initialize_gepa_state
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.merge import MergeProposer
-from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
+from gepa.proposer.reflective_mutation.reflective_mutation import (
+    ReflectiveMutationProposer,
+)
 
 from .adapter import DataInst, EvaluationBatch, RolloutOutput, Trajectory
 
@@ -35,7 +37,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         # Strategies and helpers
         reflective_proposer: ReflectiveMutationProposer,
         merge_proposer: MergeProposer | None,
-        pareto_frontier_type: str,
+        frontier_type: str,
         # Logging
         logger: Any,
         experiment_tracker: Any,
@@ -65,7 +67,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
 
         self.reflective_proposer = reflective_proposer
         self.merge_proposer = merge_proposer
-        self.pareto_frontier_type = pareto_frontier_type
+        self.frontier_type = frontier_type
 
         # Merge scheduling flags (mirroring previous behavior)
         if self.merge_proposer is not None:
@@ -98,7 +100,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         return outputs_by_val_idx, scores_by_val_idx, objective_by_val_idx
 
     def _get_pareto_front_programs(self, state: GEPAState) -> list:
-        return state.get_pareto_front_mapping(self.pareto_frontier_type)
+        return state.get_pareto_front_mapping(self.frontier_type)
 
     def _run_full_eval_and_add(
         self,
@@ -234,7 +236,10 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
                         self.merge_proposer.last_iter_found_new_program = False  # old behavior
 
                         if proposal is not None and proposal.tag == "merge":
-                            parent_sums = proposal.subsample_scores_before or [float("-inf"), float("-inf")]
+                            parent_sums = proposal.subsample_scores_before or [
+                                float("-inf"),
+                                float("-inf"),
+                            ]
                             new_sum = sum(proposal.subsample_scores_after or [])
 
                             if new_sum >= max(parent_sums):

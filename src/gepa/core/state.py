@@ -63,9 +63,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         self.parent_program_for_candidate = [[None]]
         self.program_at_pareto_front_valset = {val_id: {0} for val_id in base_scores.keys()}
         self.objective_pareto_front = dict(base_objective_aggregates)
-        self.program_at_pareto_front_objectives = {
-            objective: {0} for objective in base_objective_aggregates.keys()
-        }
+        self.program_at_pareto_front_objectives = {objective: {0} for objective in base_objective_aggregates.keys()}
 
         self.list_of_named_predictors = list(seed_candidate.keys())
         self.named_predictor_id_to_update_next_for_program_candidate = [0]
@@ -182,12 +180,16 @@ class GEPAState(Generic[RolloutOutput, ValId]):
 
     @property
     def program_full_scores_val_set(self) -> list[float]:
-        return [self.get_program_average(program_idx)[0] for program_idx in range(len(self.prog_candidate_val_subscores))]
+        return [
+            self.get_program_average(program_idx)[0] for program_idx in range(len(self.prog_candidate_val_subscores))
+        ]
 
     @property
     def per_program_tracked_scores(self) -> list[float]:
         # NOTE(aria42): This same as valset program average scores, but this was already the case
-        return [self.get_program_average(program_idx)[0] for program_idx in range(len(self.prog_candidate_val_subscores))]
+        return [
+            self.get_program_average(program_idx)[0] for program_idx in range(len(self.prog_candidate_val_subscores))
+        ]
 
     @staticmethod
     def _aggregate_objective_scores(
@@ -202,14 +204,10 @@ class GEPAState(Generic[RolloutOutput, ValId]):
                 totals[objective] = totals.get(objective, 0.0) + score
                 counts[objective] = counts.get(objective, 0) + 1
         return {
-            objective: totals[objective] / counts[objective]
-            for objective in totals.keys()
-            if counts[objective] > 0
+            objective: totals[objective] / counts[objective] for objective in totals.keys() if counts[objective] > 0
         }
 
-    def _update_objective_pareto_front(
-        self, objective_scores: ObjectiveScores, program_idx: ProgramIdx
-    ) -> None:
+    def _update_objective_pareto_front(self, objective_scores: ObjectiveScores, program_idx: ProgramIdx) -> None:
         if not objective_scores:
             return
         for objective, score in objective_scores.items():
@@ -240,7 +238,10 @@ class GEPAState(Generic[RolloutOutput, ValId]):
                 if run_dir is not None:
                     task_dir = os.path.join(run_dir, "generated_best_outputs_valset", f"task_{val_id}")
                     os.makedirs(task_dir, exist_ok=True)
-                    with open(os.path.join(task_dir, f"iter_{iteration}_prog_{program_idx}.json"), "w") as fout:
+                    with open(
+                        os.path.join(task_dir, f"iter_{iteration}_prog_{program_idx}.json"),
+                        "w",
+                    ) as fout:
                         json.dump(output, fout, indent=4, default=json_default)
         elif score == prev_score:
             pareto_front = self.program_at_pareto_front_valset.setdefault(val_id, set())
@@ -292,22 +293,19 @@ class GEPAState(Generic[RolloutOutput, ValId]):
                 best_avg, best_cov = avg, cov
         return best_idx
 
-    def get_pareto_front_mapping(self, pareto_frontier_type: str) -> dict[Any, set[ProgramIdx]]:
-        if pareto_frontier_type == "instance":
+    def get_pareto_front_mapping(self, frontier_type: str) -> dict[Any, set[ProgramIdx]]:
+        if frontier_type == "instance":
             return {val_id: set(front) for val_id, front in self.program_at_pareto_front_valset.items()}
-        if pareto_frontier_type == "objective":
-            return {
-                objective: set(front)
-                for objective, front in self.program_at_pareto_front_objectives.items()
-            }
-        if pareto_frontier_type == "hybrid":
+        if frontier_type == "objective":
+            return {objective: set(front) for objective, front in self.program_at_pareto_front_objectives.items()}
+        if frontier_type == "hybrid":
             combined: dict[Any, set[ProgramIdx]] = {
                 val_id: set(front) for val_id, front in self.program_at_pareto_front_valset.items()
             }
             for objective, front in self.program_at_pareto_front_objectives.items():
                 combined[f"objective::{objective}"] = set(front)
             return combined
-        raise ValueError(f"Unknown pareto_frontier_type: {pareto_frontier_type}")
+        raise ValueError(f"Unknown frontier_type: {frontier_type}")
 
 
 def write_eval_scores_to_directory(scores: ValScores, output_dir: str):
