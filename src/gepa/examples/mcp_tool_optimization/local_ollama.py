@@ -6,7 +6,8 @@ Demonstrates GEPA optimization using 100% local models. Feel free to replace mod
 
 What this shows:
 - Using local Ollama models (llama3.1:8b for both tasks and reflection)
-- Local Python MCP server
+- Local Python MCP server with multiple tools
+- Multi-tool selection and optimization
 - Completely offline operation
 - No API keys or external services
 - Demonstrates MCP adapter with GEPA optimization
@@ -111,9 +112,9 @@ March,Widget B,28000,260
 
 
 def create_dataset(temp_dir: str):
-    """Create evaluation dataset with mix of explicit and implicit queries."""
+    """Create evaluation dataset with queries that require different tools."""
     dataset = [
-        # Explicit queries (easier - specify to read file)
+        # Read file queries
         {
             "user_query": f"Read the file {temp_dir}/meeting_notes.txt and tell me what time is the team meeting scheduled?",
             "tool_arguments": {"path": f"{temp_dir}/meeting_notes.txt"},
@@ -126,7 +127,33 @@ def create_dataset(temp_dir: str):
             "reference_answer": "8080",
             "additional_context": {},
         },
-        # Implicit queries (harder - don't explicitly say "read")
+        # List files queries
+        {
+            "user_query": f"What files are available in {temp_dir}?",
+            "tool_arguments": {"path": temp_dir},
+            "reference_answer": "meeting_notes.txt",
+            "additional_context": {},
+        },
+        {
+            "user_query": f"Show me all the files in the directory {temp_dir}",
+            "tool_arguments": {"path": temp_dir},
+            "reference_answer": "server_config.json",
+            "additional_context": {},
+        },
+        # Write file queries
+        {
+            "user_query": f"Create a new file called {temp_dir}/test_output.txt with the content 'Hello World'",
+            "tool_arguments": {"path": f"{temp_dir}/test_output.txt", "content": "Hello World"},
+            "reference_answer": "Hello World",
+            "additional_context": {},
+        },
+        {
+            "user_query": f"Write 'Test data' to {temp_dir}/temp_file.txt",
+            "tool_arguments": {"path": f"{temp_dir}/temp_file.txt", "content": "Test data"},
+            "reference_answer": "Test data",
+            "additional_context": {},
+        },
+        # Mixed queries (should choose appropriate tool)
         {
             "user_query": f"What time is the team meeting? Check {temp_dir}/meeting_notes.txt",
             "tool_arguments": {"path": f"{temp_dir}/meeting_notes.txt"},
@@ -149,18 +176,6 @@ def create_dataset(temp_dir: str):
             "user_query": f"Where is the meeting? ({temp_dir}/meeting_notes.txt)",
             "tool_arguments": {"path": f"{temp_dir}/meeting_notes.txt"},
             "reference_answer": "Conference Room B",
-            "additional_context": {},
-        },
-        {
-            "user_query": f"Widget A units sold in January - see {temp_dir}/sales_data.csv",
-            "tool_arguments": {"path": f"{temp_dir}/sales_data.csv"},
-            "reference_answer": "150",
-            "additional_context": {},
-        },
-        {
-            "user_query": f"Database host address from {temp_dir}/server_config.json?",
-            "tool_arguments": {"path": f"{temp_dir}/server_config.json"},
-            "reference_answer": "db.example.com",
             "additional_context": {},
         },
     ]
@@ -283,7 +298,7 @@ def main():
     print("=" * 60)
     print("\nMCP Server (Local Python):")
     print("  Server: simple_mcp_server.py")
-    print("  Tool: read_file")
+    print("  Tools: read_file, write_file, list_files")
     print(f"  Directory: {temp_dir}")
 
     # Configure models - using Ollama via litellm
@@ -297,24 +312,27 @@ def main():
     print(f"  Reflection Model: {reflection_model}")
     print("  No API keys required! Running 100% locally.")
 
-    # Create adapter
+    # Create adapter with multiple tools
     adapter = MCPAdapter(
-        tool_name="read_file",
+        tool_names=["read_file", "write_file", "list_files"],  # Multiple tools for selection
         task_model=task_model,
         metric_fn=simple_metric,
         server_params=server_params,  # Local stdio server
-        base_system_prompt="You are a helpful file reading assistant. Answer questions based on file contents.",
+        base_system_prompt="You are a helpful file assistant. Choose the right tool for each task: read files, write files, or list directory contents.",
         enable_two_pass=True,
     )
 
-    # Seed candidate with basic but incomplete description
-    # GEPA will improve this by adding specifics about file types, usage, etc.
+    # Seed candidate with basic but incomplete descriptions for all tools
+    # GEPA will improve these by adding specifics about when to use each tool
     seed_candidate = {
-        "tool_description": "Reads file contents. Provide the file path.",
+        "tool_description_read_file": "Reads file contents. Provide the file path.",
+        "tool_description_write_file": "Writes content to a file. Provide path and content.",
+        "tool_description_list_files": "Lists files in a directory. Provide the directory path.",
     }
 
     print("\nSeed Candidate (basic):")
-    print(f"  '{seed_candidate['tool_description']}'")
+    for tool, desc in seed_candidate.items():
+        print(f"  {tool}: '{desc}'")
 
     # Split dataset - use more for training to give GEPA more examples
     trainset = dataset[:6]
@@ -326,9 +344,10 @@ def main():
 
     # Run optimization
     print("\n" + "=" * 60)
-    print("Starting Local Optimization...")
+    print("Starting Local Multi-Tool Optimization...")
     print("=" * 60)
     print("\nNote: Local models may take longer than API calls.")
+    print("Optimizing tool descriptions for: read_file, write_file, list_files")
 
     try:
         result = gepa.optimize(
@@ -355,19 +374,23 @@ def main():
         print(f"  Candidates Evaluated: {result.num_candidates}")
 
         print("\n" + "=" * 60)
-        print("Before vs After")
+        print("Before vs After - Multi-Tool Descriptions")
         print("=" * 60)
-        print("\nOriginal Description:")
-        print(f"  {seed_candidate['tool_description']}")
-        print("\nOptimized Description:")
-        print(f"  {result.best_candidate['tool_description']}")
+
+        for tool_name in ["read_file", "write_file", "list_files"]:
+            tool_key = f"tool_description_{tool_name}"
+            print(f"\n{tool_name.upper()}:")
+            print(f"  Original: {seed_candidate[tool_key]}")
+            print(f"  Optimized: {result.best_candidate[tool_key]}")
 
         print("\n" + "=" * 60)
         print("Key Results")
         print("=" * 60)
+        print("  - Multi-tool selection: read_file, write_file, list_files")
         print("  - Task execution: Local Ollama model")
         print("  - Reflection/proposals: Local Ollama model")
         print("  - MCP server: Local filesystem")
+        print("  - Tool selection optimization: Model learns when to use each tool")
 
     except Exception as e:
         print(f"\n✗ Error during optimization: {e}")
