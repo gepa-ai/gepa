@@ -12,10 +12,14 @@ from gepa.core.result import GEPAResult
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
-from gepa.proposer.reflective_mutation.base import LanguageModel, ReflectionComponentSelector
+from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
-from gepa.strategies.candidate_selector import CurrentBestCandidateSelector, ParetoCandidateSelector
+from gepa.strategies.candidate_selector import (
+    CurrentBestCandidateSelector,
+    EpsilonGreedyCandidateSelector,
+    ParetoCandidateSelector,
+)
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
@@ -31,7 +35,7 @@ def optimize(
     task_lm: str | Callable | None = None,
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
-    candidate_selection_strategy: str = "pareto",
+    candidate_selection_strategy: CandidateSelector | str = "pareto",
     skip_perfect_score=True,
     reflection_minibatch_size=3,
     perfect_score=1,
@@ -202,9 +206,22 @@ def optimize(
         valset = trainset
 
     rng = random.Random(seed)
-    candidate_selector = (
-        ParetoCandidateSelector(rng=rng) if candidate_selection_strategy == "pareto" else CurrentBestCandidateSelector()
-    )
+
+    if isinstance(candidate_selection_strategy, str):
+        candidate_selector_cls = {
+            "pareto": ParetoCandidateSelector(rng=rng),
+            "best": CurrentBestCandidateSelector(),
+            "epsilon_greedy": EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
+        }.get(candidate_selection_strategy)
+
+        assert candidate_selector_cls is not None, (
+            f"Unknown candidate_selector strategy: {candidate_selection_strategy}. Supported strategies: 'pareto', 'best', 'epsilon_greedy'"
+        )
+
+        candidate_selector = candidate_selector_cls
+
+    if isinstance(candidate_selection_strategy, CandidateSelector):
+        candidate_selector = candidate_selection_strategy
 
     if isinstance(module_selector, str):
         module_selector_cls = {

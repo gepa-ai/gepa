@@ -23,6 +23,7 @@ class ParetoCandidateSelector(CandidateSelector):
             self.rng,
         )
 
+
 class CurrentBestCandidateSelector(CandidateSelector):
     def __init__(self):
         pass
@@ -30,3 +31,20 @@ class CurrentBestCandidateSelector(CandidateSelector):
     def select_candidate_idx(self, state: GEPAState) -> int:
         assert len(state.per_program_tracked_scores) == len(state.program_candidates)
         return idxmax(state.per_program_tracked_scores)
+
+
+class EpsilonGreedyCandidateSelector(CandidateSelector):
+    def __init__(self, epsilon: float, rng: random.Random | None):
+        assert 0.0 <= epsilon <= 1.0
+        self.epsilon = epsilon
+        if rng is None:
+            self.rng = random.Random(0)
+        else:
+            self.rng = rng
+
+    def select_candidate_idx(self, state: GEPAState) -> int:
+        assert len(state.per_program_tracked_scores) == len(state.program_candidates)
+        if self.rng.random() < self.epsilon:
+            return self.rng.randint(0, len(state.program_candidates) - 1)
+        else:
+            return idxmax(state.per_program_tracked_scores)
