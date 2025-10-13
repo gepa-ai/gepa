@@ -1,6 +1,8 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import re
+
 from gepa.proposer.reflective_mutation.base import Signature
 
 
@@ -62,27 +64,36 @@ Provide the new instructions within ``` blocks."""
         prompt = cls.prompt_template
         prompt = prompt.replace("<curr_instructions>", input_dict["current_instruction_doc"])
         prompt = prompt.replace("<inputs_outputs_feedback>", format_samples(input_dict["dataset_with_feedback"]))
+
         return prompt
 
     @classmethod
     def output_extractor(cls, lm_out: str) -> dict[str, str]:
-        # Extract ``` blocks
-        new_instruction = None
-        if lm_out.count("```") >= 2:
-            start = lm_out.find("```")
+        def extract_instruction_text() -> str:
+            # Find the first and last backtick positions (if any)
+            start = lm_out.find("```") + 3
             end = lm_out.rfind("```")
-            if start >= end:
-                new_instruction = lm_out
-            if start == -1 or end == -1:
-                new_instruction = lm_out
-            else:
-                new_instruction = lm_out[start+3:end].strip()
-        else:
-            lm_out = lm_out.strip()
-            if lm_out.startswith("```"):
-                lm_out = lm_out[3:]
-            if lm_out.endswith("```"):
-                lm_out = lm_out[:-3]
-            new_instruction = lm_out
 
-        return {"new_instruction": new_instruction}
+            # Handle if the first and last backticks are the same or overlap
+            if start >= end:
+                # Handle incomplete blocks
+                stripped = lm_out.strip()
+                if stripped.startswith("```"):
+                    # Remove opening ``` and optional language specifier
+                    match = re.match(r"^```\S*\n?", lm_out)
+                    if match:
+                        return lm_out[match.end() :].strip()
+                elif stripped.endswith("```"):
+                    # Remove closing ```
+                    return stripped[:-3].strip()
+                return stripped
+
+            # Skip optional language specifier
+            content = lm_out[start:end]
+            match = re.match(r"^\S*\n", content)
+            if match:
+                content = content[match.end() :]
+
+            return content.strip()
+
+        return {"new_instruction": extract_instruction_text()}
