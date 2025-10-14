@@ -283,7 +283,6 @@ def optimize(
         stop_callback=stop_callback,
         val_evaluation_policy=val_evaluation_policy,
         use_cloudpickle=use_cloudpickle,
-        val_evaluation_policy=val_evaluation_policy,
     )
 
     with experiment_tracker:

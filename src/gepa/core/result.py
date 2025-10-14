@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from typing import Any, Generic
 
 from gepa.core.adapter import RolloutOutput
-from gepa.core.state import ProgramIdx, ValId, ValScores
+from gepa.core.data_loader import DataId
+from gepa.core.state import ProgramIdx, ValScores
 
 
 @dataclass(frozen=True)
@@ -46,11 +47,11 @@ class GEPAResult(Generic[RolloutOutput]):
     parents: list[list[ProgramIdx | None]]
     val_aggregate_scores: list[float]
     val_subscores: list[ValScores]
-    per_val_instance_best_candidates: dict[ValId, set[ProgramIdx]]
+    per_val_instance_best_candidates: dict[DataId, set[ProgramIdx]]
     discovery_eval_counts: list[int]
 
     # Optional data
-    best_outputs_valset: dict[ValId, list[tuple[ProgramIdx, RolloutOutput]]] | None = None
+    best_outputs_valset: dict[DataId, list[tuple[ProgramIdx, RolloutOutput]]] | None = None
 
     # Run metadata (optional)
     total_metric_calls: int | None = None

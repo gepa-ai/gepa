@@ -47,8 +47,8 @@ def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
     p0 = base / "task_0" / "iter_0_prog_0.json"
     p1 = base / "task_1" / "iter_0_prog_0.json"
     assert p0.exists() and p1.exists()
-    assert json.loads(p0.read_text()) == "out0"
-    assert json.loads(p1.read_text()) == {"k": "out1"}
+    assert json.loads(p0.read_text()) == 0.1
+    assert json.loads(p1.read_text()) == 0.2
 
 
 def test_initialize_gepa_state_no_run_dir():
