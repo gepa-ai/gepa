@@ -17,7 +17,7 @@ def common_mocks():
         parent_program_for_candidate=[None],
         program_full_scores_val_set=[0.5],
         prog_candidate_val_subscores=[{}],
-        program_at_pareto_front_valset={},
+        program_at_pareto_front_valset={0: {}},
         num_metric_calls_by_discovery=[1],
     )
 

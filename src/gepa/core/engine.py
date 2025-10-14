@@ -134,7 +134,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             gepa_state=state,
             valset_score=valset_score,
             new_program_idx=new_program_idx,
-            valset_scores=valset_subscores,
+            valset_subscores=valset_subscores,
             experiment_tracker=self.experiment_tracker,
             linear_pareto_front_program_idx=linear_pareto_front_program_idx,
             valset_size=len(self.valset),
@@ -189,7 +189,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         )
 
         # Log base program score
-        base_val_avg, base_val_coverage = state.get_program_average(0)
+        base_val_avg, base_val_coverage = state.get_program_average_val_subset(0)
         self.experiment_tracker.log_metrics(
             {
                 "base_program_full_valset_score": base_val_avg,

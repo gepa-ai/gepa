@@ -62,9 +62,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         self.num_metric_calls_by_discovery = [0]
 
-        self.best_outputs_valset = (
-            {val_id: [(0, output)] for val_id, output in base_outputs.items()} if track_best_outputs else None
-        )
+        if track_best_outputs:
+            self.best_outputs_valset = (
+                {val_id: [(0, output)] for val_id, output in base_outputs.items()} if track_best_outputs else None
+            )
 
         self.full_program_trace = []
         self.validation_schema_version = self._VALIDATION_SCHEMA_VERSION
@@ -142,7 +143,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
-    def get_program_average(self, program_idx: int) -> tuple[float, int]:
+    def get_program_average_val_subset(self, program_idx: int) -> tuple[float, int]:
         scores = self.prog_candidate_val_subscores[program_idx]
         if not scores:
             return float("-inf"), 0
@@ -165,14 +166,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     @property
     def program_full_scores_val_set(self) -> list[float]:
         return [
-            self.get_program_average(program_idx)[0] for program_idx in range(len(self.prog_candidate_val_subscores))
-        ]
-
-    @property
-    def per_program_tracked_scores(self) -> list[float]:
-        # NOTE(aria42): This same as valset program average scores, but this was already the case
-        return [
-            self.get_program_average(program_idx)[0] for program_idx in range(len(self.prog_candidate_val_subscores))
+            self.get_program_average_val_subset(program_idx)[0] for program_idx in range(len(self.prog_candidate_val_subscores))
         ]
 
     def _update_pareto_front_for_val_id(

@@ -83,7 +83,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
         curr_prog = state.program_candidates[curr_prog_id]
         state.full_program_trace[-1]["selected_program_candidate"] = curr_prog_id
         self.logger.log(
-            f"Iteration {i}: Selected program {curr_prog_id} score: {state.per_program_tracked_scores[curr_prog_id]}"
+            f"Iteration {i}: Selected program {curr_prog_id} score: {state.program_full_scores_val_set[curr_prog_id]}"
         )
 
         self.experiment_tracker.log_metrics({"iteration": i, "selected_program_candidate": curr_prog_id}, step=i)

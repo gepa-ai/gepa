@@ -253,9 +253,9 @@ class MergeProposer(ProposeNewCandidate):
             return None
 
         pareto_front_programs = state.program_at_pareto_front_valset
-        merge_candidates = find_dominator_programs(pareto_front_programs, state.per_program_tracked_scores)
+        merge_candidates = find_dominator_programs(pareto_front_programs, state.program_full_scores_val_set)
         merge_output = sample_and_attempt_merge_programs_by_common_predictors(
-            agg_scores=state.per_program_tracked_scores,
+            agg_scores=state.program_full_scores_val_set,
             rng=self.rng,
             merge_candidates=merge_candidates,
             merges_performed=self.merges_performed,

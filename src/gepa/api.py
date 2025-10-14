@@ -23,6 +23,7 @@ from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
 )
+from gepa.strategies.eval_policy import EvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
 
 
@@ -62,7 +63,7 @@ def optimize(
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
-    val_evaluation_policy: Callable[[GEPAState], list[int]] | None = None,
+    val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
 ):
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
