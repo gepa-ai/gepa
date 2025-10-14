@@ -9,11 +9,11 @@ from gepa.core.state import GEPAState
 from gepa.gepa_utils import ensure_loader
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 from gepa.proposer.reflective_mutation.base import (
-    BatchSampler,
     CandidateSelector,
     LanguageModel,
     ReflectionComponentSelector,
 )
+from gepa.strategies.batch_sampler import BatchSampler
 
 
 class ReflectiveMutationProposer(ProposeNewCandidate):
@@ -88,7 +88,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
 
         self.experiment_tracker.log_metrics({"iteration": i, "selected_program_candidate": curr_prog_id}, step=i)
 
-        subsample_ids = self.batch_sampler.next_minibatch_ids(self.trainset, i - 1)
+        subsample_ids = self.batch_sampler.next_minibatch_ids(self.trainset, state)
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
         minibatch = self.trainset.fetch(subsample_ids)
 

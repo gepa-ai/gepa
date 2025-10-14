@@ -3,19 +3,25 @@
 
 import random
 from collections import Counter
+from typing import Protocol
 
 from gepa.core.adapter import DataInst
 from gepa.core.data_loader import DataId, DataLoader
-from gepa.proposer.reflective_mutation.base import BatchSampler
+from gepa.core.state import GEPAState
 
 
-class EpochShuffledBatchSampler(BatchSampler):
+class BatchSampler(Protocol[DataId, DataInst]):
+    def next_minibatch_ids(self, loader: DataLoader[DataId, DataInst], state: GEPAState) -> list[DataId]: ...
+
+
+class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
     """
     Mirrors the original batching logic:
     - Shuffle ids each epoch
     - Pad to minibatch size with least frequent ids
     - Deterministic via state.rng1
     """
+
     def __init__(self, minibatch_size: int, rng: random.Random | None = None):
         self.minibatch_size = minibatch_size
         self.shuffled_ids: list[DataId] = []
@@ -42,8 +48,8 @@ class EpochShuffledBatchSampler(BatchSampler):
                 self.shuffled_ids.append(selected_id)
                 self.id_freqs[selected_id] += 1
 
-    def next_minibatch_ids(self, loader: DataLoader[DataId, DataInst], iteration: int) -> list[int]:
-        base_idx = iteration * self.minibatch_size
+    def next_minibatch_ids(self, loader: DataLoader[DataId, DataInst], state: GEPAState) -> list[DataId]:
+        base_idx = state.i * self.minibatch_size
         curr_epoch = 0 if self.epoch == -1 else base_idx // max(len(self.shuffled_ids), 1)
         if curr_epoch > self.epoch:
             self.epoch = curr_epoch

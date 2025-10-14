@@ -4,8 +4,7 @@
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
-from gepa.core.adapter import DataInst, Trajectory
-from gepa.core.data_loader import DataId, DataLoader
+from gepa.core.adapter import Trajectory
 from gepa.core.state import GEPAState
 
 
@@ -22,10 +21,6 @@ class ReflectionComponentSelector(Protocol):
         candidate_idx: int,
         candidate: dict[str, str],
     ) -> list[str]: ...
-
-
-class BatchSampler(Protocol):
-    def next_minibatch_ids(self, loader: DataLoader[DataId, DataInst], iteration: int) -> list[DataId]: ...
 
 
 class LanguageModel(Protocol):
