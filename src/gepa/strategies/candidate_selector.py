@@ -23,9 +23,10 @@ class ParetoCandidateSelector(CandidateSelector):
             state.program_full_scores_val_set,
             self.rng,
         )
-        
+
     def supports_eval_policy(self, eval_policy: EvaluationPolicy) -> bool:
         return not eval_policy.is_evaluation_sparse()
+
 
 class CurrentBestCandidateSelector(CandidateSelector):
     def __init__(self):

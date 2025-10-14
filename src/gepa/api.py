@@ -10,7 +10,6 @@ from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
-from gepa.core.state import GEPAState
 from gepa.gepa_utils import ensure_loader
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
@@ -214,10 +213,12 @@ def optimize(
     candidate_selector = (
         ParetoCandidateSelector(rng=rng) if candidate_selection_strategy == "pareto" else CurrentBestCandidateSelector()
     )
-    
+
     val_evaluation_policy = val_evaluation_policy or FullEvaluationPolicy()
     if not candidate_selector.supports_eval_policy(val_evaluation_policy):
-        raise ValueError(f"Candidate selector ({type(candidate_selector)}) does not support eval_policy {type(val_evaluation_policy)}")
+        raise ValueError(
+            f"Candidate selector ({type(candidate_selector)}) does not support eval_policy {type(val_evaluation_policy)}"
+        )
 
     if isinstance(module_selector, str):
         module_selector_cls = {

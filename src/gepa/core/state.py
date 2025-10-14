@@ -105,9 +105,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
             d = pickle.load(f)
 
+        # handle schema migration
         version = d.get("validation_schema_version")
-        if version is None:
-            GEPAState._migrate_legacy_state_dict(d)
+        if version is None or version == 1:
+            GEPAState._migrate_from_legacy_state_v0(d)
 
         state = GEPAState.__new__(GEPAState)
         state.__dict__.update(d)
@@ -120,7 +121,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         return state
 
     @staticmethod
-    def _migrate_legacy_state_dict(d: dict[str, Any]) -> None:
+    def _migrate_from_legacy_state_v0(d: dict[str, Any]) -> None:
         legacy_scores: list[list[float]] = d.pop("prog_candidate_val_subscores", [])
         # convert to sparse val subscores
         d["prog_candidate_val_subscores"] = [

@@ -15,6 +15,7 @@ class CandidateSelector(Protocol):
     def supports_eval_policy(eval_policy: EvaluationPolicy) -> bool:
         return True
 
+
 class ReflectionComponentSelector(Protocol):
     def __call__(
         self,
