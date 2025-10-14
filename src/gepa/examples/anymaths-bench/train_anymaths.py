@@ -61,7 +61,6 @@ if __name__ == "__main__":
 
     from gepa import optimize
     from gepa.adapters.anymaths_adapter import AnyMathsAdapter
-    from gepa.core.data_loader import ListDataLoader
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--anymaths_dset_name", type=str, default="openai/gsm8k")
@@ -160,8 +159,8 @@ if __name__ == "__main__":
 
     optimized_results = optimize(
         seed_candidate={"instruction_prompt": seed_instruction},
-        trainset=ListDataLoader(trainset),
-        valset=ListDataLoader(valset),
+        trainset=trainset,
+        valset=valset,
         adapter=AnyMathsAdapter(model=base_lm, api_base=api_base, max_litellm_workers=max_litellm_workers),
         reflection_lm=reflection_lm,
         reflection_minibatch_size=reflection_minibatch_size,

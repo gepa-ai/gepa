@@ -65,7 +65,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 import gepa  # noqa: E402
 from gepa.adapters.generic_rag_adapter import GenericRAGAdapter, RAGDataInst  # noqa: E402
-from gepa.core.data_loader import ListDataLoader  # noqa: E402
 
 # Vector store imports (lazy loaded)
 _vector_stores = {}
@@ -81,22 +80,27 @@ def lazy_import_vector_store(store_name: str):
     try:
         if store_name == "chromadb":
             from gepa.adapters.generic_rag_adapter import ChromaVectorStore
+
             _vector_stores[store_name] = ChromaVectorStore
             return ChromaVectorStore
         elif store_name == "lancedb":
             from gepa.adapters.generic_rag_adapter import LanceDBVectorStore
+
             _vector_stores[store_name] = LanceDBVectorStore
             return LanceDBVectorStore
         elif store_name == "milvus":
             from gepa.adapters.generic_rag_adapter import MilvusVectorStore
+
             _vector_stores[store_name] = MilvusVectorStore
             return MilvusVectorStore
         elif store_name == "qdrant":
             from gepa.adapters.generic_rag_adapter import QdrantVectorStore
+
             _vector_stores[store_name] = QdrantVectorStore
             return QdrantVectorStore
         elif store_name == "weaviate":
             from gepa.adapters.generic_rag_adapter import WeaviateVectorStore
+
             _vector_stores[store_name] = WeaviateVectorStore
             return WeaviateVectorStore
         else:
@@ -115,7 +119,7 @@ def get_install_command(store_name: str) -> str:
         "lancedb": "lancedb pyarrow sentence-transformers",
         "milvus": "pymilvus sentence-transformers",
         "qdrant": "qdrant-client",
-        "weaviate": "weaviate-client"
+        "weaviate": "weaviate-client",
     }
     return commands.get(store_name, "unknown")
 
@@ -124,6 +128,7 @@ def create_llm_client(model_name: str):
     """Create LLM client supporting both Ollama and cloud models."""
     try:
         import litellm
+
         litellm.drop_params = True
         litellm.set_verbose = False
     except ImportError:
@@ -160,12 +165,14 @@ def create_embedding_function():
     """Create embedding function using sentence-transformers as fallback."""
     try:
         from sentence_transformers import SentenceTransformer
+
         model = SentenceTransformer("all-MiniLM-L6-v2")
         return lambda text: model.encode(text)
     except ImportError:
         # Fallback to litellm for embedding
         try:
             import litellm
+
             def embed_text(text: str):
                 try:
                     response = litellm.embedding(model="ollama/nomic-embed-text:latest", input=text)
@@ -184,6 +191,7 @@ def create_embedding_function():
                     raise RuntimeError(
                         f"Embedding failed: {e}. Please check your embedding model setup (sentence-transformers or litellm) and ensure all dependencies are installed."
                     )
+
             return embed_text
         except ImportError:
             raise ImportError("Either sentence-transformers or litellm is required for embeddings")
@@ -206,9 +214,7 @@ def setup_chromadb_store():
     embedding_function = embedding_functions.DefaultEmbeddingFunction()
     chroma_vector_store = lazy_import_vector_store("chromadb")
     vector_store = chroma_vector_store.create_local(
-        persist_directory=temp_dir,
-        collection_name="ai_ml_knowledge",
-        embedding_function=embedding_function
+        persist_directory=temp_dir, collection_name="ai_ml_knowledge", embedding_function=embedding_function
     )
 
     documents = get_sample_documents()
@@ -245,7 +251,9 @@ def setup_lancedb_store():
         return vector_store
 
     except ImportError as e:
-        raise ImportError(f"LanceDB dependencies missing: {e}\nInstall with: pip install lancedb pyarrow sentence-transformers")
+        raise ImportError(
+            f"LanceDB dependencies missing: {e}\nInstall with: pip install lancedb pyarrow sentence-transformers"
+        )
 
 
 def setup_milvus_store():
@@ -432,10 +440,16 @@ def get_sample_documents_simple() -> list[dict[str, str]]:
         {"content": "Machine learning is a method of data analysis that automates analytical model building."},
         {"content": "It is a branch of artificial intelligence based on the idea that systems can learn from data."},
         {"content": "Machine learning algorithms build a model based on training data to make predictions."},
-        {"content": "Deep learning is part of a broader family of machine learning methods based on artificial neural networks."},
+        {
+            "content": "Deep learning is part of a broader family of machine learning methods based on artificial neural networks."
+        },
         {"content": "It uses multiple layers to progressively extract higher-level features from raw input."},
-        {"content": "Deep learning models can automatically learn representations of data with multiple levels of abstraction."},
-        {"content": "Natural language processing (NLP) is a subfield of linguistics, computer science, and artificial intelligence."},
+        {
+            "content": "Deep learning models can automatically learn representations of data with multiple levels of abstraction."
+        },
+        {
+            "content": "Natural language processing (NLP) is a subfield of linguistics, computer science, and artificial intelligence."
+        },
         {"content": "It deals with the interaction between computers and human language."},
         {"content": "NLP techniques enable computers to process and analyze large amounts of natural language data."},
     ]
@@ -656,14 +670,9 @@ Supported Vector Stores:
         type=str,
         default="chromadb",
         choices=["chromadb", "lancedb", "milvus", "qdrant", "weaviate"],
-        help="Vector store to use (default: chromadb)"
+        help="Vector store to use (default: chromadb)",
     )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="ollama/qwen3:8b",
-        help="LLM model (default: ollama/qwen3:8b)"
-    )
+    parser.add_argument("--model", type=str, default="ollama/qwen3:8b", help="LLM model (default: ollama/qwen3:8b)")
     parser.add_argument(
         "--embedding-model",
         type=str,
@@ -753,8 +762,8 @@ def main():
 
             result = gepa.optimize(
                 seed_candidate=initial_prompts,
-                trainset=ListDataLoader(train_data),
-                valset=ListDataLoader(val_data),
+                trainset=train_data,
+                valset=val_data,
                 adapter=rag_adapter,
                 reflection_lm=llm_client,
                 max_metric_calls=args.max_iterations,
@@ -789,12 +798,15 @@ def main():
         print(f"\n❌ Error: {e}")
         if args.verbose:
             import traceback
+
             traceback.print_exc()
 
         print("\n🔧 Troubleshooting tips:")
         if args.vector_store == "weaviate":
             print("  • Ensure Weaviate is running: curl http://localhost:8080/v1/meta")
-            print("  • Start Weaviate: docker run -p 8080:8080 -p 50051:50051 cr.weaviate.io/semitechnologies/weaviate:1.26.1")
+            print(
+                "  • Start Weaviate: docker run -p 8080:8080 -p 50051:50051 cr.weaviate.io/semitechnologies/weaviate:1.26.1"
+            )
         elif args.vector_store == "qdrant":
             print("  • For external Qdrant: docker run -p 6333:6333 qdrant/qdrant")
 

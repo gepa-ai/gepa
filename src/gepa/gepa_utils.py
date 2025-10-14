@@ -2,6 +2,11 @@
 # https://github.com/gepa-ai/gepa
 
 
+from typing import Sequence
+
+from gepa.core.adapter import DataInst
+from gepa.core.data_loader import DataId, DataLoader, ListDataLoader
+
 
 def json_default(x):
     """Default JSON encoder for objects that are not serializable by default."""
@@ -10,10 +15,12 @@ def json_default(x):
     except Exception:
         return repr(x)
 
+
 def idxmax(lst: list[float]) -> int:
     """Return the index of the maximum value in a list."""
     max_val = max(lst)
     return lst.index(max_val)
+
 
 def is_dominated(y, programs, program_at_pareto_front_valset):
     y_fronts = [front for front in program_at_pareto_front_valset.values() if y in front]
@@ -27,6 +34,15 @@ def is_dominated(y, programs, program_at_pareto_front_valset):
             return False
 
     return True
+
+
+def ensure_loader(data_or_loader: Sequence[DataInst] | DataLoader[DataId, DataInst]) -> DataLoader[DataId, DataInst]:
+    if isinstance(data_or_loader, DataLoader):
+        return data_or_loader
+    if isinstance(data_or_loader, Sequence):
+        return ListDataLoader(data_or_loader)
+    raise TypeError(f"Unable to cast to a DataLoader type: {type(data_or_loader)}")
+
 
 def remove_dominated_programs(program_at_pareto_front_valset, scores=None):
     freq = {}
@@ -68,6 +84,7 @@ def remove_dominated_programs(program_at_pareto_front_valset, scores=None):
 
     return new_program_at_pareto_front_valset
 
+
 def find_dominator_programs(pareto_front_programs, train_val_weighted_agg_scores_for_all_programs):
     train_val_pareto_front_programs = pareto_front_programs
     new_program_at_pareto_front_valset = remove_dominated_programs(
@@ -79,7 +96,10 @@ def find_dominator_programs(pareto_front_programs, train_val_weighted_agg_scores
     uniq_progs = set(uniq_progs)
     return list(uniq_progs)
 
-def select_program_candidate_from_pareto_front(pareto_front_programs, train_val_weighted_agg_scores_for_all_programs, rng):
+
+def select_program_candidate_from_pareto_front(
+    pareto_front_programs, train_val_weighted_agg_scores_for_all_programs, rng
+):
     train_val_pareto_front_programs = pareto_front_programs
     new_program_at_pareto_front_valset = remove_dominated_programs(
         train_val_pareto_front_programs, scores=train_val_weighted_agg_scores_for_all_programs
@@ -91,7 +111,9 @@ def select_program_candidate_from_pareto_front(pareto_front_programs, train_val_
                 program_frequency_in_validation_pareto_front[prog_idx] = 0
             program_frequency_in_validation_pareto_front[prog_idx] += 1
 
-    sampling_list = [prog_idx for prog_idx, freq in program_frequency_in_validation_pareto_front.items() for _ in range(freq)]
+    sampling_list = [
+        prog_idx for prog_idx, freq in program_frequency_in_validation_pareto_front.items() for _ in range(freq)
+    ]
     if not sampling_list:
         return idxmax(train_val_weighted_agg_scores_for_all_programs)
     curr_prog_id = rng.choice(sampling_list)

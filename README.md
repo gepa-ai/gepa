@@ -39,12 +39,9 @@ pip install git+https://github.com/gepa-ai/gepa.git
 GEPA can be run in just a few lines of code. In this example, we'll use GEPA to optimize a system prompt for math problems from the AIME benchmark ([full tutorial](https://dspy.ai/tutorials/gepa_aime/)). Run the following in an environment with `OPENAI_API_KEY`:
 ```python
 import gepa
-from gepa.core.data_loader import ListDataLoader
 
 # Load AIME dataset
 trainset, valset, _ = gepa.examples.aime.init_dataset()
-train_loader = ListDataLoader(trainset)
-val_loader = ListDataLoader(valset)
 
 seed_prompt = {
     "system_prompt": "You are a helpful assistant. You are given a question and you need to answer it. The answer should be given at the end of your response in exactly the format '### <final answer>'"
@@ -53,8 +50,8 @@ seed_prompt = {
 # Let's run GEPA optimization process.
 gepa_result = gepa.optimize(
     seed_candidate=seed_prompt,
-    train_loader=train_loader,
-    val_loader=val_loader,
+    trainset=trainset,
+    valset=valset,
     task_lm="openai/gpt-4.1-mini", # <-- This is the model being optimized
     max_metric_calls=150, # <-- Set a budget
     reflection_lm="openai/gpt-5", # <-- Use a strong model to reflect on mistakes and propose better prompts

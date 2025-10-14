@@ -4,8 +4,10 @@
 import traceback
 from typing import Any, Callable, Generic
 
-from gepa.core.data_loader import DataId, DataInst, DataLoader
+from gepa.core.adapter import DataInst
+from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState, initialize_gepa_state
+from gepa.gepa_utils import ensure_loader
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
@@ -28,7 +30,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self,
         run_dir: str | None,
         evaluator: Callable[[list[DataInst], dict[str, str]], tuple[list[RolloutOutput], list[float]]],
-        valset: DataLoader[DataId, DataInst] | None,
+        valset: list[DataInst] | DataLoader[DataId, DataInst] | None,
         seed_candidate: dict[str, str],
         # Controls
         perfect_score: float,
@@ -57,7 +59,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Set up stopping mechanism
         self.stop_callback = stop_callback
         self.evaluator = evaluator
-        self.valset = valset
+        self.valset = ensure_loader(valset)
         self.seed_candidate = seed_candidate
 
         self.perfect_score = perfect_score

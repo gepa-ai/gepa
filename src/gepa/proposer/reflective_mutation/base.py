@@ -4,8 +4,8 @@
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
-from gepa.core.adapter import Trajectory
-from gepa.core.data_loader import DataId, DataInst, DataLoader
+from gepa.core.adapter import DataInst, Trajectory
+from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState
 
 

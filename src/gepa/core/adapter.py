@@ -4,11 +4,10 @@
 from dataclasses import dataclass
 from typing import Any, Generic, Protocol, TypeVar
 
-from .data_loader import DataInst
-
 # Generic type aliases matching your original
 RolloutOutput = TypeVar("RolloutOutput")
 Trajectory = TypeVar("Trajectory")
+DataInst = TypeVar("DataInst")
 
 
 @dataclass

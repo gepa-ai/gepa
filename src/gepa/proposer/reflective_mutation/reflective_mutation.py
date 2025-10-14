@@ -3,9 +3,10 @@
 
 from typing import Any
 
-from gepa.core.adapter import GEPAAdapter, RolloutOutput, Trajectory
-from gepa.core.data_loader import DataId, DataInst, DataLoader
+from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState
+from gepa.gepa_utils import ensure_loader
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 from gepa.proposer.reflective_mutation.base import (
     BatchSampler,
@@ -30,7 +31,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
     def __init__(
         self,
         logger: Any,
-        trainset: DataLoader[DataId, DataInst],
+        trainset: list[DataInst] | DataLoader[DataId, DataInst],
         adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput],
         candidate_selector: CandidateSelector,
         module_selector: ReflectionComponentSelector,
@@ -41,7 +42,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
         reflection_lm: LanguageModel | None = None,
     ):
         self.logger = logger
-        self.trainset = trainset
+        self.trainset = ensure_loader(trainset)
         self.adapter = adapter
         self.candidate_selector = candidate_selector
         self.module_selector = module_selector

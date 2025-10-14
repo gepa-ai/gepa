@@ -10,7 +10,6 @@ import pytest
 import gepa
 import gepa.core.state as state_mod
 from gepa.core.adapter import EvaluationBatch
-from gepa.core.data_loader import ListDataLoader
 
 
 @pytest.fixture
@@ -143,8 +142,8 @@ def test_dynamic_validation(run_dir):
 
     gepa.optimize(
         seed_candidate=seed_candidate,
-        trainset=ListDataLoader(list(trainset)),
-        valset=ListDataLoader(list(valset_initial)),
+        trainset=trainset,
+        valset=valset_initial,
         adapter=adapter,
         reflection_lm=None,
         max_metric_calls=6,
@@ -172,8 +171,8 @@ def test_dynamic_validation(run_dir):
     best_stage1_candidate = state_phase_one.program_candidates[best_stage1_candidate_idx]
     gepa.optimize(
         seed_candidate=best_stage1_candidate,
-        trainset=ListDataLoader(list(trainset)),
-        valset=ListDataLoader(list(extended_valset)),
+        trainset=trainset,
+        valset=extended_valset,
         adapter=adapter,
         reflection_lm=None,
         max_metric_calls=10,
@@ -232,8 +231,8 @@ def test_e2e_resume_run(mocked_lms, run_dir):
 
     first_run = gepa.optimize(
         seed_candidate=seed_prompt,
-        trainset=ListDataLoader(list(trainset)),
-        valset=ListDataLoader(list(valset)),
+        trainset=trainset,
+        valset=valset,
         adapter=adapter,
         max_metric_calls=30,
         reflection_lm=reflection_lm,
@@ -245,8 +244,8 @@ def test_e2e_resume_run(mocked_lms, run_dir):
     # the result should have `total_metric_calls` equal to the amount from the previous run.
     second_run = gepa.optimize(
         seed_candidate=seed_prompt,
-        trainset=ListDataLoader(list(trainset)),
-        valset=ListDataLoader(list(valset)),
+        trainset=trainset,
+        valset=valset,
         adapter=adapter,
         max_metric_calls=0,
         reflection_lm=reflection_lm,

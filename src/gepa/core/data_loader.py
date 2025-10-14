@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Hashable, Protocol, Sequence, TypeVar, runtime_checkable
 
+from gepa.core.adapter import DataInst
+
 DataId = TypeVar("DataId", bound=Hashable)
-DataInst = TypeVar("DataInst")
 
 
 @runtime_checkable

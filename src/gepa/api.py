@@ -6,11 +6,12 @@ import random
 from typing import Any, Callable
 
 from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
-from gepa.core.adapter import GEPAAdapter, RolloutOutput, Trajectory
-from gepa.core.data_loader import DataId, DataInst, DataLoader
+from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.core.state import GEPAState
+from gepa.gepa_utils import ensure_loader
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -27,8 +28,8 @@ from gepa.utils import FileStopper, StopperProtocol
 
 def optimize(
     seed_candidate: dict[str, str],
-    trainset: DataLoader[DataId, DataInst],
-    valset: DataLoader[DataId, DataInst] | None = None,
+    trainset: list[DataInst] | DataLoader[DataId, DataInst],
+    valset: list[DataInst] | DataLoader[DataId, DataInst] | None = None,
     adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None,
     task_lm: str | Callable | None = None,
     # Reflection-based configuration
@@ -100,8 +101,8 @@ def optimize(
 
     Parameters:
     - seed_candidate: The initial candidate to start with.
-    - trainset: Data loader yielding training batches for reflective updates.
-    - valset: The validation data loader to use for tracking Pareto scores. If not provided, GEPA will use the trainset for both.
+    - trainset: Training data or data loader yielding training batches for reflective updates.
+    - valset: Validation data data loader to use for tracking Pareto scores. If not provided, GEPA will use the trainset for both.
     - adapter: A `GEPAAdapter` instance that implements the adapter interface. This allows GEPA to plug into your system's environment. If not provided, GEPA will use a default adapter: `gepa.adapters.default_adapter.default_adapter.DefaultAdapter`, with model defined by `task_lm`.
     - task_lm: Optional. The model to use for the task. This is only used if `adapter` is not provided, and is used to initialize the default adapter.
 
@@ -148,6 +149,10 @@ def optimize(
         assert task_lm is None, (
             "Since an adapter is provided, GEPA does not require a task LM to be provided. Please set the `task_lm` parameter to None."
         )
+
+    # cast data to DataLoader
+    trainset = ensure_loader(trainset)
+    valset = ensure_loader(valset or trainset)
 
     # Comprehensive stop_callback logic
     # Convert stop_callbacks to a list if it's not already
@@ -203,9 +208,6 @@ def optimize(
 
     if logger is None:
         logger = StdOutLogger()
-
-    if valset is None:
-        valset = trainset
 
     rng = random.Random(seed)
     candidate_selector = (

@@ -6,8 +6,8 @@ import random
 from copy import deepcopy
 from typing import Any, Callable
 
-from gepa.core.adapter import RolloutOutput
-from gepa.core.data_loader import DataId, DataInst, DataLoader
+from gepa.core.adapter import DataInst, RolloutOutput
+from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState
 from gepa.gepa_utils import find_dominator_programs
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate

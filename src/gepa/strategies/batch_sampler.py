@@ -4,7 +4,8 @@
 import random
 from collections import Counter
 
-from gepa.core.data_loader import DataId, DataInst, DataLoader
+from gepa.core.adapter import DataInst
+from gepa.core.data_loader import DataId, DataLoader
 from gepa.proposer.reflective_mutation.base import BatchSampler
 
 
