@@ -7,6 +7,7 @@ from typing import Hashable, Protocol, Sequence, TypeVar, runtime_checkable
 from gepa.core.adapter import DataInst
 
 DataId = TypeVar("DataId", bound=Hashable)
+""" Generic for the identifier for data examples """
 
 
 @runtime_checkable
@@ -15,12 +16,15 @@ class DataLoader(Protocol[DataId, DataInst]):
 
     def all_ids(self) -> Sequence[DataId]:
         """Return the ordered universe of ids currently available. This may change over time."""
+        ...
 
     def fetch(self, ids: Sequence[DataId]) -> list[DataInst]:
         """Materialise the payloads corresponding to `ids`, preserving order."""
+        ...
 
     def __len__(self) -> int:
         """Return current number of items in the loader."""
+        ...
 
 
 class MutableDataLoader(DataLoader[DataId, DataInst], Protocol):

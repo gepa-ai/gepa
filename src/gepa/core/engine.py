@@ -79,7 +79,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.use_cloudpickle = use_cloudpickle
 
         self.raise_on_exception = raise_on_exception
-        self.val_evaluation_policy = val_evaluation_policy or FullEvaluationPolicy()
+        self.val_evaluation_policy = val_evaluation_policy
 
     def _evaluate_on_valset(
         self, program: dict[str, str], state: GEPAState

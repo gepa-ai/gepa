@@ -108,12 +108,7 @@ def test_gepa_state_save_and_initialize(run_dir):
     assert state.__dict__ == result.__dict__
 
 
-@pytest.fixture
-def rng():
-    return random.Random(42)
-
-
-def test_dynamic_validation(run_dir):
+def test_dynamic_validation(run_dir, rng):
     trainset = [{"id": i, "difficulty": i + 2} for i in range(3)]
     valset_initial = [{"id": i, "difficulty": i + 2} for i in range(2)]
     seed_candidate = {"system_prompt": "weight=0"}
@@ -141,8 +136,11 @@ def test_dynamic_validation(run_dir):
 
     # initially only validate on first example
     class InitValidationPolicy(EvaluationPolicy):
-        def next_minibatch_ids(self, loader, state) -> list[DataId]:
+        def next_minibatch_ids(self, loader, state):
             return [0]
+        
+        def is_evaluation_sparse(self) -> bool:
+            return False
 
         def get_best_program(self, state: state_mod.GEPAState) -> state_mod.ProgramIdx:
             return 0
@@ -178,6 +176,9 @@ def test_dynamic_validation(run_dir):
 
         def get_best_program(self, state: state_mod.GEPAState) -> state_mod.ProgramIdx:
             return 0
+        
+        def is_evaluation_sparse(self) -> bool:
+            return False
 
     best_stage1_candidate_idx = init_validation_policy.get_best_program(state_phase_one)
     best_stage1_candidate = state_phase_one.program_candidates[best_stage1_candidate_idx]

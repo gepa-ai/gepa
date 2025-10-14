@@ -4,7 +4,7 @@
 import json
 import os
 from collections import defaultdict
-from typing import Any, Callable, ClassVar, Generic, TypeAlias
+from typing import Any, Callable, ClassVar, Generic
 
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
@@ -13,8 +13,6 @@ from gepa.gepa_utils import json_default
 # Types for GEPAState
 ProgramIdx = int
 """Opaque identifier for valset examples"""
-ValScores: TypeAlias = dict[DataId, float]
-ValOutputs: TypeAlias = dict[DataId, RolloutOutput]
 
 
 class GEPAState(Generic[RolloutOutput, DataId]):
@@ -22,9 +20,9 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     program_candidates: list[dict[str, str]]
     parent_program_for_candidate: list[list[ProgramIdx | None]]
-    prog_candidate_val_subscores: list[ValScores]
+    prog_candidate_val_subscores: list[dict[DataId, float]]
 
-    pareto_front_valset: ValScores
+    pareto_front_valset: dict[DataId, float]
     program_at_pareto_front_valset: dict[DataId, set[ProgramIdx]]
 
     list_of_named_predictors: list[str]
@@ -45,7 +43,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     def __init__(
         self,
         seed_candidate: dict[str, str],
-        base_valset_eval_output: tuple[ValOutputs, ValScores],
+        base_valset_eval_output: tuple[dict[DataId, RolloutOutput], dict[DataId, float]],
         track_best_outputs: bool = False,
     ):
         base_outputs, base_scores = base_valset_eval_output
@@ -166,7 +164,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     @property
     def program_full_scores_val_set(self) -> list[float]:
         return [
-            self.get_program_average_val_subset(program_idx)[0] for program_idx in range(len(self.prog_candidate_val_subscores))
+            self.get_program_average_val_subset(program_idx)[0]
+            for program_idx in range(len(self.prog_candidate_val_subscores))
         ]
 
     def _update_pareto_front_for_val_id(
@@ -174,7 +173,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         val_id: DataId,
         score: float,
         program_idx: ProgramIdx,
-        outputs: ValOutputs | None,
+        outputs: dict[DataId, RolloutOutput] | None,
         run_dir: str | None,
         iteration: int,
     ) -> None:
@@ -204,8 +203,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self,
         parent_program_idx: list[ProgramIdx],
         new_program: dict[str, str],
-        valset_subscores: ValScores,
-        valset_outputs: ValOutputs | None,
+        valset_subscores: dict[DataId, float],
+        valset_outputs: dict[DataId, RolloutOutput] | None,
         run_dir: str | None,
         num_metric_calls_by_discovery_of_new_program: int,
     ) -> ProgramIdx:
@@ -226,7 +225,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         return new_program_idx
 
 
-def write_eval_scores_to_directory(scores: ValScores, output_dir: str):
+def write_eval_scores_to_directory(scores: dict[DataId, float], output_dir: str):
     for val_id, score in scores.items():
         task_dir = os.path.join(output_dir, f"task_{val_id}")
         os.makedirs(task_dir, exist_ok=True)
@@ -238,7 +237,7 @@ def initialize_gepa_state(
     run_dir: str | None,
     logger,
     seed_candidate: dict[str, str],
-    valset_evaluator: Callable[[dict[str, str]], tuple[ValOutputs, ValScores]],
+    valset_evaluator: Callable[[dict[str, str]], tuple[dict[DataId, RolloutOutput], dict[DataId, float]]],
     track_best_outputs: bool = False,
 ):
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):

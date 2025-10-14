@@ -16,7 +16,7 @@ from gepa.proposer.reflective_mutation.base import (
 from gepa.strategies.batch_sampler import BatchSampler
 
 
-class ReflectiveMutationProposer(ProposeNewCandidate):
+class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
     """
     Implements current reflective mutation flow:
     - Select candidate via selector
@@ -35,7 +35,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
         adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput],
         candidate_selector: CandidateSelector,
         module_selector: ReflectionComponentSelector,
-        batch_sampler: BatchSampler,
+        batch_sampler: BatchSampler[DataId, DataInst],
         perfect_score: float,
         skip_perfect_score: bool,
         experiment_tracker: Any,

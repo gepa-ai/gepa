@@ -23,7 +23,7 @@ from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
 )
-from gepa.strategies.eval_policy import EvaluationPolicy
+from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
 
 
@@ -214,6 +214,10 @@ def optimize(
     candidate_selector = (
         ParetoCandidateSelector(rng=rng) if candidate_selection_strategy == "pareto" else CurrentBestCandidateSelector()
     )
+    
+    val_evaluation_policy = val_evaluation_policy or FullEvaluationPolicy()
+    if not candidate_selector.supports_eval_policy(val_evaluation_policy):
+        raise ValueError(f"Candidate selector ({type(candidate_selector)}) does not support eval_policy {type(val_evaluation_policy)}")
 
     if isinstance(module_selector, str):
         module_selector_cls = {

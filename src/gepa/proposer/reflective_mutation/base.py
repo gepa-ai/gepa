@@ -6,11 +6,14 @@ from typing import Callable, Protocol
 
 from gepa.core.adapter import Trajectory
 from gepa.core.state import GEPAState
+from gepa.strategies.eval_policy import EvaluationPolicy
 
 
 class CandidateSelector(Protocol):
     def select_candidate_idx(self, state: GEPAState) -> int: ...
 
+    def supports_eval_policy(eval_policy: EvaluationPolicy) -> bool:
+        return True
 
 class ReflectionComponentSelector(Protocol):
     def __call__(

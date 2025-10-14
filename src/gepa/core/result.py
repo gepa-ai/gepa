@@ -6,11 +6,11 @@ from typing import Any, Generic
 
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
-from gepa.core.state import ProgramIdx, ValScores
+from gepa.core.state import ProgramIdx
 
 
 @dataclass(frozen=True)
-class GEPAResult(Generic[RolloutOutput]):
+class GEPAResult(Generic[RolloutOutput, DataId]):
     """
     Immutable snapshot of a GEPA run with convenience accessors.
 
@@ -46,7 +46,7 @@ class GEPAResult(Generic[RolloutOutput]):
     candidates: list[dict[str, str]]
     parents: list[list[ProgramIdx | None]]
     val_aggregate_scores: list[float]
-    val_subscores: list[ValScores]
+    val_subscores: list[dict[DataId, float]]
     per_val_instance_best_candidates: dict[DataId, set[ProgramIdx]]
     discovery_eval_counts: list[int]
 
