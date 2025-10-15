@@ -1,7 +1,13 @@
+import random
+from types import SimpleNamespace
+
+import pytest
+
 from gepa.proposer.merge import (
     does_triplet_have_desirable_predictors,
     filter_ancestors,
     find_common_ancestor_pair,
+    MergeProposer,
     sample_and_attempt_merge_programs_by_common_predictors,
 )
 
@@ -215,3 +221,154 @@ def test_sample_and_attempt_merge_respects_val_support_overlap_gate(rng):
 
     assert result is None
     assert merges_performed[1] == []
+
+
+class _StubLogger:
+    def log(self, _msg):
+        pass
+
+
+class _StubValset:
+    def fetch(self, ids):
+        return [{"id": idx} for idx in ids]
+
+
+def _make_state(prog_val_scores):
+    return SimpleNamespace(
+        i=0,
+        full_program_trace=[{}],
+        program_at_pareto_front_valset={0: {1, 2}},
+        program_full_scores_val_set=[0.1, 0.6, 0.7],
+        program_candidates=[{"pred": "base"}, {"pred": "p1"}, {"pred": "p2"}],
+        parent_program_for_candidate=[[None], [0], [0]],
+        prog_candidate_val_subscores=prog_val_scores,
+        total_num_evals=0,
+    )
+
+
+def test_merge_proposer_skips_pairs_below_overlap_floor(monkeypatch):
+    proposer = MergeProposer(
+        logger=_StubLogger(),
+        valset=_StubValset(),
+        evaluator=lambda batch, prog: (batch, [0.0 for _ in batch]),
+        use_merge=True,
+        max_merge_invocations=5,
+        val_overlap_floor=2,
+        rng=random.Random(0),
+    )
+    proposer.last_iter_found_new_program = True
+    proposer.merges_due = 1
+
+    state = _make_state(
+        [
+            {0: 0.1, 1: 0.2},
+            {0: 0.4, 1: 0.5},
+            {1: 0.55},  # intersection with program 1 has size 1 (< floor)
+        ]
+    )
+
+    monkeypatch.setattr(
+        "gepa.proposer.merge.find_dominator_programs",
+        lambda *_args, **_kwargs: [1, 2],
+    )
+
+    calls: list[bool] = []
+
+    def fake_sample(
+        agg_scores,
+        rng,
+        merge_candidates,
+        merges_performed,
+        program_candidates,
+        parent_program_for_candidate,
+        has_val_support_overlap=None,
+        **_kwargs,
+    ):
+        id1, id2 = merge_candidates[:2]
+        allowed = has_val_support_overlap(id1, id2) if has_val_support_overlap else True
+        calls.append(allowed)
+        if not allowed:
+            return None
+        merges_performed[1].append((id1, id2, ("desc",)))
+        return ({"pred": "merged"}, id1, id2, 0)
+
+    monkeypatch.setattr(
+        "gepa.proposer.merge.sample_and_attempt_merge_programs_by_common_predictors",
+        fake_sample,
+    )
+
+    result = proposer.propose(state)
+
+    assert result is None
+    assert calls == [False]
+    assert proposer.merges_performed[0] == []
+    assert proposer.merges_performed[1] == []
+
+
+def test_merge_proposer_allows_pairs_meeting_overlap_floor(monkeypatch):
+    proposer = MergeProposer(
+        logger=_StubLogger(),
+        valset=_StubValset(),
+        evaluator=lambda batch, prog: (batch, [0.9 for _ in batch]),
+        use_merge=True,
+        max_merge_invocations=5,
+        val_overlap_floor=2,
+        rng=random.Random(0),
+    )
+    proposer.last_iter_found_new_program = True
+    proposer.merges_due = 1
+
+    state = _make_state(
+        [
+            {0: 0.1, 1: 0.2},
+            {0: 0.4, 1: 0.5},
+            {0: 0.45, 1: 0.55},  # perfect overlap with program 1
+        ]
+    )
+
+    monkeypatch.setattr(
+        "gepa.proposer.merge.find_dominator_programs",
+        lambda *_args, **_kwargs: [1, 2],
+    )
+
+    calls: list[bool] = []
+
+    def fake_sample(
+        agg_scores,
+        rng,
+        merge_candidates,
+        merges_performed,
+        program_candidates,
+        parent_program_for_candidate,
+        has_val_support_overlap=None,
+        **_kwargs,
+    ):
+        id1, id2 = merge_candidates[:2]
+        allowed = has_val_support_overlap(id1, id2) if has_val_support_overlap else True
+        calls.append(allowed)
+        if not allowed:
+            return None
+        merges_performed[1].append((id1, id2, ("desc",)))
+        return ({"pred": "merged"}, id1, id2, 0)
+
+    monkeypatch.setattr(
+        "gepa.proposer.merge.sample_and_attempt_merge_programs_by_common_predictors",
+        fake_sample,
+    )
+
+    monkeypatch.setattr(
+        MergeProposer,
+        "select_eval_subsample_for_merged_program",
+        lambda self, scores1, scores2, num_subsample_ids=5: [0, 1],
+    )
+
+    result = proposer.propose(state)
+
+    assert result is not None
+    assert calls == [True]
+    assert result.parent_program_ids == [1, 2]
+    assert result.subsample_indices == [0, 1]
+    assert proposer.merges_performed[0] == [(1, 2, 0)]
+    assert proposer.merges_performed[1] == [(1, 2, ("desc",))]
+    assert state.total_num_evals == 2
+    assert state.full_program_trace[-1]["merged"] is True

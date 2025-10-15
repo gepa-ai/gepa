@@ -264,7 +264,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             if self.val_overlap_floor <= 0:
                 return True
             common_ids = set(state.prog_candidate_val_subscores[id1].keys()) & set(
-                state.prog_candidate_val_subscores[id1].keys()
+                state.prog_candidate_val_subscores[id2].keys()
             )
             return len(common_ids) >= self.val_overlap_floor
 
