@@ -2,7 +2,7 @@
 # https://github.com/gepa-ai/gepa
 
 from dataclasses import dataclass
-from typing import Any, Generic
+from typing import Any, ClassVar, Generic
 
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
@@ -59,6 +59,8 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     run_dir: str | None = None
     seed: int | None = None
 
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 2
+
     # -------- Convenience properties --------
     @property
     def num_candidates(self) -> int:
@@ -93,7 +95,78 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             run_dir=self.run_dir,
             seed=self.seed,
             best_idx=self.best_idx,
+            validation_schema_version=GEPAResult._VALIDATION_SCHEMA_VERSION,
         )
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "GEPAResult":
+        version = d.get("validation_schema_version") or 0
+        if version > GEPAResult._VALIDATION_SCHEMA_VERSION:
+            raise ValueError(
+                f"Unsupported GEPAResult validation schema version {version}; "
+                f"max supported is {GEPAResult._VALIDATION_SCHEMA_VERSION}"
+            )
+
+        if version <= 1:
+            return GEPAResult._migrate_from_dict_v0(d)
+
+        return GEPAResult._from_dict_v2(d)
+
+    @staticmethod
+    def _common_kwargs_from_dict(d: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "candidates": [dict(candidate) for candidate in d.get("candidates", [])],
+            "parents": [list(parent_row) for parent_row in d.get("parents", [])],
+            "val_aggregate_scores": list(d.get("val_aggregate_scores", [])),
+            "discovery_eval_counts": list(d.get("discovery_eval_counts", [])),
+            "total_metric_calls": d.get("total_metric_calls"),
+            "num_full_val_evals": d.get("num_full_val_evals"),
+            "run_dir": d.get("run_dir"),
+            "seed": d.get("seed"),
+        }
+
+    @staticmethod
+    def _migrate_from_dict_v0(d: dict[str, Any]) -> "GEPAResult":
+        kwargs = GEPAResult._common_kwargs_from_dict(d)
+        kwargs["val_subscores"] = [
+            {idx: score for idx, score in enumerate(scores)}
+            for scores in d.get("val_subscores", [])
+        ]
+        kwargs["per_val_instance_best_candidates"] = {
+            idx: set(front)
+            for idx, front in enumerate(d.get("per_val_instance_best_candidates", []))
+        }
+
+        best_outputs_valset = d.get("best_outputs_valset")
+        if best_outputs_valset is not None:
+            kwargs["best_outputs_valset"] = {
+                idx: [(program_idx, output) for program_idx, output in outputs]
+                for idx, outputs in enumerate(best_outputs_valset)
+            }
+        else:
+            kwargs["best_outputs_valset"] = None
+        return GEPAResult(**kwargs)
+
+    @staticmethod
+    def _from_dict_v2(d: dict[str, Any]) -> "GEPAResult":
+        kwargs = GEPAResult._common_kwargs_from_dict(d)
+        kwargs["val_subscores"] = [dict(scores) for scores in d.get("val_subscores", [])]
+        per_val_instance_best_candidates_data = d.get("per_val_instance_best_candidates", {})
+        kwargs["per_val_instance_best_candidates"] = {
+            val_id: set(candidates_on_front)
+            for val_id, candidates_on_front in per_val_instance_best_candidates_data.items()
+        }
+
+        best_outputs_valset = d.get("best_outputs_valset")
+        if best_outputs_valset is not None:
+            kwargs["best_outputs_valset"] = {
+                val_id: [(program_idx, output) for program_idx, output in outputs]
+                for val_id, outputs in best_outputs_valset.items()
+            }
+        else:
+            kwargs["best_outputs_valset"] = None
+
+        return GEPAResult(**kwargs)
 
     @staticmethod
     def from_state(state: Any, run_dir: str | None = None, seed: int | None = None) -> "GEPAResult":
