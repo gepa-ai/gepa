@@ -101,8 +101,8 @@ def optimize(
 
     Parameters:
     - seed_candidate: The initial candidate to start with.
-    - trainset: Training data or data loader yielding training batches for reflective updates.
-    - valset: Validation data data loader to use for tracking Pareto scores. If not provided, GEPA will use the trainset for both.
+    - trainset: Training data supplied as an in-memory sequence or a `DataLoader` yielding batches for reflective updates.
+    - valset: Validation data source (sequence or `DataLoader`) used for tracking Pareto scores. If not provided, GEPA reuses the trainset.
     - adapter: A `GEPAAdapter` instance that implements the adapter interface. This allows GEPA to plug into your system's environment. If not provided, GEPA will use a default adapter: `gepa.adapters.default_adapter.default_adapter.DefaultAdapter`, with model defined by `task_lm`.
     - task_lm: Optional. The model to use for the task. This is only used if `adapter` is not provided, and is used to initialize the default adapter.
 
@@ -119,6 +119,7 @@ def optimize(
     # Merge-based configuration
     - use_merge: Whether to use the merge strategy.
     - max_merge_invocations: The maximum number of merge invocations to perform.
+    - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before attempting a merge subsample.
 
     # Budget and Stop Condition
     - max_metric_calls: Optional maximum number of metric calls to perform. If not provided, stop_callbacks must be provided.
@@ -135,10 +136,13 @@ def optimize(
     - mlflow_tracking_uri: The tracking URI to use for MLflow.
     - mlflow_experiment_name: The experiment name to use for MLflow.
     - track_best_outputs: Whether to track the best outputs on the validation set. If True, GEPAResult will contain the best outputs obtained for each task in the validation set.
+    - display_progress_bar: Show a tqdm progress bar over metric calls when enabled.
     - use_cloudpickle: Use cloudpickle instead of pickle. This can be helpful when the serialized state contains dynamically generated DSPy signatures.
 
     # Reproducibility
     - seed: The seed to use for the random number generator.
+    - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best.
+    - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
     """
     if adapter is None:
         assert task_lm is not None, (

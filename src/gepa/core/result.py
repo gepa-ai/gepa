@@ -17,7 +17,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     - candidates: list of proposed candidates (component_name -> component_text)
     - parents: lineage info; for each candidate i, parents[i] is a list of parent indices or None
     - val_aggregate_scores: per-candidate aggregate score on the validation set (higher is better)
-    - val_subscores: per-candidate per-instance scores on the validation set (len == num_val_instances)
+    - val_subscores: per-candidate mapping from validation id to score on the validation set (sparse dict)
     - per_val_instance_best_candidates: for each val instance t, a set of candidate indices achieving the current best score on t
     - discovery_eval_counts: number of metric calls accumulated up to the discovery of each candidate
 
@@ -129,12 +129,10 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     def _migrate_from_dict_v0(d: dict[str, Any]) -> "GEPAResult":
         kwargs = GEPAResult._common_kwargs_from_dict(d)
         kwargs["val_subscores"] = [
-            {idx: score for idx, score in enumerate(scores)}
-            for scores in d.get("val_subscores", [])
+            {idx: score for idx, score in enumerate(scores)} for scores in d.get("val_subscores", [])
         ]
         kwargs["per_val_instance_best_candidates"] = {
-            idx: set(front)
-            for idx, front in enumerate(d.get("per_val_instance_best_candidates", []))
+            idx: set(front) for idx, front in enumerate(d.get("per_val_instance_best_candidates", []))
         }
 
         best_outputs_valset = d.get("best_outputs_valset")

@@ -12,10 +12,11 @@ from gepa.gepa_utils import json_default
 
 # Types for GEPAState
 ProgramIdx = int
-"""Opaque identifier for valset examples"""
+"""Opaque identifier for program candidates."""
 
 
 class GEPAState(Generic[RolloutOutput, DataId]):
+    """Persistent optimizer state tracking candidates, sparse validation coverage, and execution metadata."""
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 2
 
     program_candidates: list[dict[str, str]]
@@ -153,8 +154,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     @property
     def valset_evaluations(self) -> dict[DataId, list[ProgramIdx]]:
         """
-        Valset examples by id and programs that have evaluated them. Keys consist of all known
-        valset ids
+        Valset examples by id and programs that have evaluated them. Keys include only validation
+        ids that have been scored at least once.
         """
         result = defaultdict(list)
         for program_idx, val_scores in enumerate(self.prog_candidate_val_subscores):

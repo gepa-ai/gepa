@@ -20,7 +20,7 @@ class EvaluationPolicy(BatchSampler[DataId, DataInst]):
 
     @abstractmethod
     def is_evaluation_sparse(self) -> bool:
-        """Returns true if policy will not return full validation"""
+        """Return True when the policy may skip validation ids during a single iteration."""
 
 
 class FullEvaluationPolicy(EvaluationPolicy[DataId, DataInst]):
@@ -29,9 +29,11 @@ class FullEvaluationPolicy(EvaluationPolicy[DataId, DataInst]):
     def next_minibatch_ids(
         self, loader: DataLoader[DataId, DataInst], state: GEPAState, target_program_idx: ProgramIdx | None = None
     ) -> list[DataId]:
+        """Always return the full ordered list of validation ids."""
         return list(loader.all_ids())
 
     def get_best_program(self, state: GEPAState) -> ProgramIdx:
+        """Pick the program whose evaluated validation scores achieve the highest average."""
         best_idx, best_score = -1, float("-inf")
         for program_idx, scores in enumerate(state.prog_candidate_val_subscores):
             avg = sum(scores.values()) / len(scores) if scores else float("-inf")

@@ -1,4 +1,4 @@
-"""Validation data loader protocols and concrete helpers."""
+""" Data loader protocols and concrete helpers."""
 
 from __future__ import annotations
 
