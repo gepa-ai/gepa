@@ -78,13 +78,14 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
         i = state.i + 1
 
         curr_prog_id = self.candidate_selector.select_candidate_idx(state)
-        curr_prog = state.program_candidates[curr_prog_id]
-        state.full_program_trace[-1]["selected_program_candidate"] = curr_prog_id
+        curr_prog_idx_int = int(curr_prog_id)
+        curr_prog = state.program_candidates[curr_prog_idx_int]
+        state.full_program_trace[-1]["selected_program_candidate"] = curr_prog_idx_int
         self.logger.log(
-            f"Iteration {i}: Selected program {curr_prog_id} score: {state.per_program_tracked_scores[curr_prog_id]}"
+            f"Iteration {i}: Selected program {curr_prog_idx_int} score: {state.per_program_tracked_scores[curr_prog_idx_int]}"
         )
 
-        self.experiment_tracker.log_metrics({"iteration": i, "selected_program_candidate": curr_prog_id}, step=i)
+        self.experiment_tracker.log_metrics({"iteration": i, "selected_program_candidate": curr_prog_idx_int}, step=i)
 
         subsample_ids = self.batch_sampler.next_minibatch_indices(len(self.trainset), i - 1)
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids

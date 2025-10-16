@@ -5,12 +5,13 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from gepa.core.state import GEPAState
+from gepa.core.types import CandidateId
 
 
 @dataclass
 class CandidateProposal:
     candidate: dict[str, str]
-    parent_program_ids: list[int]
+    parent_program_ids: list[CandidateId]
     # Optional mini-batch / subsample info
     subsample_indices: list[int] | None = None
     subsample_scores_before: list[float] | None = None
@@ -26,5 +27,5 @@ class ProposeNewCandidate(Protocol):
     It may compute subsample evaluations, set trace fields in state, etc.
     The engine will handle acceptance and full eval unless the strategy already did those and encoded in metadata.
     """
-    def propose(self, state: GEPAState) -> CandidateProposal | None:
-        ...
+
+    def propose(self, state: GEPAState) -> CandidateProposal | None: ...

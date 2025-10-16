@@ -6,16 +6,17 @@ import os
 from typing import Any, Callable, Generic
 
 from gepa.core.adapter import RolloutOutput
+from gepa.core.types import CandidateId
 from gepa.gepa_utils import idxmax, json_default
 
 
 class GEPAState(Generic[RolloutOutput]):
     program_candidates: list[dict[str, str]]
-    parent_program_for_candidate: list[list[int | None]]
+    parent_program_for_candidate: list[list[CandidateId | None]]
 
     program_full_scores_val_set: list[float]
 
-    program_at_pareto_front_valset: list[set[int]]
+    program_at_pareto_front_valset: list[set[CandidateId]]
 
     prog_candidate_val_subscores: list[list[float]]
 
@@ -33,7 +34,7 @@ class GEPAState(Generic[RolloutOutput]):
 
     per_program_tracked_scores: list[float]
 
-    best_outputs_valset: list[tuple[int, list[RolloutOutput]]] | None = None
+    best_outputs_valset: list[tuple[CandidateId, list[RolloutOutput]]] | None = None
 
     def __init__(
         self,
@@ -51,7 +52,7 @@ class GEPAState(Generic[RolloutOutput]):
 
         self.pareto_front_valset = base_valset_pareto_front
         self.parent_program_for_candidate = [[None]]
-        self.program_at_pareto_front_valset = [{0} for _ in range(len(base_valset_pareto_front))]
+        self.program_at_pareto_front_valset = [{CandidateId(0)} for _ in range(len(base_valset_pareto_front))]
 
         self.list_of_named_predictors = list(seed_candidate.keys())
         self.named_predictor_id_to_update_next_for_program_candidate = [0]
@@ -62,7 +63,7 @@ class GEPAState(Generic[RolloutOutput]):
 
         if track_best_outputs:
             # [(program_idx_1, output_1), (program_idx_2, output_2), ...]
-            self.best_outputs_valset = [[(0, output)] for output in base_valset_eval_output[0]]
+            self.best_outputs_valset = [[(CandidateId(0), output)] for output in base_valset_eval_output[0]]
 
         self.full_program_trace = []
 
@@ -78,7 +79,9 @@ class GEPAState(Generic[RolloutOutput]):
 
         for prog_list in self.program_at_pareto_front_valset:
             for prog_idx in prog_list:
-                assert prog_idx < len(self.program_candidates), "Program index in valset pareto front exceeds number of program candidates"
+                assert int(prog_idx) < len(self.program_candidates), (
+                    "Program index in valset pareto front exceeds number of program candidates"
+                )
 
         return True
 
@@ -97,6 +100,7 @@ class GEPAState(Generic[RolloutOutput]):
     def load(run_dir: str) -> "GEPAState":
         with open(os.path.join(run_dir, "gepa_state.bin"), "rb") as f:
             import pickle
+
             d = pickle.load(f)
         state = GEPAState.__new__(GEPAState)
         state.__dict__.update(d)
@@ -111,25 +115,29 @@ class GEPAState(Generic[RolloutOutput]):
 
     def update_state_with_new_program(
         self,
-        parent_program_idx: list[int],
+        parent_program_idx: list[CandidateId],
         new_program: dict[str, str],
         valset_score: float,
         valset_outputs: Any,
         valset_subscores: list[float],
         run_dir: str | None,
-        num_metric_calls_by_discovery_of_new_program: int
-    ):
-        new_program_idx = len(self.program_candidates)
+        num_metric_calls_by_discovery_of_new_program: int,
+    ) -> tuple[CandidateId, CandidateId]:
+        new_program_idx = CandidateId(len(self.program_candidates))
         self.program_candidates.append(new_program)
         self.num_metric_calls_by_discovery.append(num_metric_calls_by_discovery_of_new_program)
         # Find the highest predictor id from the parent programs
-        max_predictor_id = max([self.named_predictor_id_to_update_next_for_program_candidate[p] for p in parent_program_idx])
+        max_predictor_id = max(
+            [self.named_predictor_id_to_update_next_for_program_candidate[int(p)] for p in parent_program_idx]
+        )
         self.named_predictor_id_to_update_next_for_program_candidate.append(max_predictor_id)
         self.parent_program_for_candidate.append(list(parent_program_idx))
 
         self.prog_candidate_val_subscores.append(valset_subscores)
         self.program_full_scores_val_set.append(valset_score)
-        for task_idx, (old_score, new_score) in enumerate(zip(self.pareto_front_valset, valset_subscores, strict=False)):
+        for task_idx, (old_score, new_score) in enumerate(
+            zip(self.pareto_front_valset, valset_subscores, strict=False)
+        ):
             if new_score > old_score:
                 self.pareto_front_valset[task_idx] = new_score
                 self.program_at_pareto_front_valset[task_idx] = {new_program_idx}
@@ -138,8 +146,18 @@ class GEPAState(Generic[RolloutOutput]):
                     self.best_outputs_valset[task_idx] = [(new_program_idx, valset_outputs[task_idx])]
 
                 if run_dir is not None:
-                    os.makedirs(os.path.join(run_dir, "generated_best_outputs_valset", f"task_{task_idx}"), exist_ok=True)
-                    with open(os.path.join(run_dir, "generated_best_outputs_valset", f"task_{task_idx}", f"iter_{self.i+1}_prog_{new_program_idx}.json"), "w") as f:
+                    os.makedirs(
+                        os.path.join(run_dir, "generated_best_outputs_valset", f"task_{task_idx}"), exist_ok=True
+                    )
+                    with open(
+                        os.path.join(
+                            run_dir,
+                            "generated_best_outputs_valset",
+                            f"task_{task_idx}",
+                            f"iter_{self.i + 1}_prog_{new_program_idx}.json",
+                        ),
+                        "w",
+                    ) as f:
                         json.dump(valset_outputs[task_idx], f, indent=4, default=json_default)
             elif new_score == old_score:
                 self.program_at_pareto_front_valset[task_idx].add(new_program_idx)
@@ -150,18 +168,17 @@ class GEPAState(Generic[RolloutOutput]):
 
         self.per_program_tracked_scores = self.program_full_scores_val_set
 
-        linear_pareto_front_program_idx = idxmax(self.per_program_tracked_scores)
+        linear_pareto_front_program_idx = CandidateId(idxmax(self.per_program_tracked_scores))
 
         return new_program_idx, linear_pareto_front_program_idx
 
-def write_eval_output_to_directory(
-    eval_out: tuple[list[RolloutOutput], list[float]],
-    output_dir: str
-):
+
+def write_eval_output_to_directory(eval_out: tuple[list[RolloutOutput], list[float]], output_dir: str):
     for task_idx, _score in enumerate(eval_out[1]):
         os.makedirs(os.path.join(output_dir, f"task_{task_idx}"), exist_ok=True)
         with open(os.path.join(output_dir, f"task_{task_idx}", f"iter_{0}_prog_0.json"), "w") as f:
             json.dump(eval_out[1][task_idx], f, indent=4, default=json_default)
+
 
 def initialize_gepa_state(
     run_dir: str | None,

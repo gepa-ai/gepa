@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Generic
 
 from gepa.core.adapter import RolloutOutput
+from gepa.core.types import CandidateId
 
 
 @dataclass(frozen=True)
@@ -39,16 +40,17 @@ class GEPAResult(Generic[RolloutOutput]):
     - instance_winners(t): set of candidates on the pareto front for val instance t
     - to_dict(...), save_json(...): serialization helpers
     """
+
     # Core data
     candidates: list[dict[str, str]]
-    parents: list[list[int | None]]
+    parents: list[list[CandidateId | None]]
     val_aggregate_scores: list[float]
     val_subscores: list[list[float]]
-    per_val_instance_best_candidates: list[set[int]]
+    per_val_instance_best_candidates: list[set[CandidateId]]
     discovery_eval_counts: list[int]
 
     # Optional data
-    best_outputs_valset: list[list[tuple[int, list[RolloutOutput]]]] | None = None
+    best_outputs_valset: list[list[tuple[CandidateId, list[RolloutOutput]]]] | None = None
 
     # Run metadata (optional)
     total_metric_calls: int | None = None
@@ -66,19 +68,16 @@ class GEPAResult(Generic[RolloutOutput]):
         return len(self.per_val_instance_best_candidates)
 
     @property
-    def best_idx(self) -> int:
+    def best_idx(self) -> CandidateId:
         scores = self.val_aggregate_scores
-        return max(range(len(scores)), key=lambda i: scores[i])
+        return CandidateId(max(range(len(scores)), key=lambda i: scores[i]))
 
     @property
     def best_candidate(self) -> dict[str, str]:
-        return self.candidates[self.best_idx]
+        return self.candidates[int(self.best_idx)]
 
     def to_dict(self) -> dict[str, Any]:
-        cands = [
-            dict(cand.items())
-            for cand in self.candidates
-        ]
+        cands = [dict(cand.items()) for cand in self.candidates]
 
         return dict(
             candidates=cands,

@@ -5,6 +5,7 @@ import traceback
 from typing import Any, Callable, Generic
 
 from gepa.core.state import GEPAState, initialize_gepa_state
+from gepa.core.types import CandidateId
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
@@ -86,8 +87,8 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         self,
         new_program: dict[str, str],
         state: GEPAState,
-        parent_program_idx: list[int],
-    ) -> tuple[int, int]:
+        parent_program_idx: list[CandidateId],
+    ) -> tuple[CandidateId, CandidateId]:
         num_metric_calls_by_discovery = state.total_num_evals
 
         valset_outputs, valset_subscores = self._val_evaluator()(new_program)
@@ -234,10 +235,14 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
                 old_sum = sum(proposal.subsample_scores_before or [])
                 new_sum = sum(proposal.subsample_scores_after or [])
                 if new_sum <= old_sum:
-                    self.logger.log(f"Iteration {state.i + 1}: New subsample score {new_sum} is not better than old score {old_sum}, skipping")
+                    self.logger.log(
+                        f"Iteration {state.i + 1}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
+                    )
                     continue
                 else:
-                    self.logger.log(f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool.")
+                    self.logger.log(
+                        f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
+                    )
 
                 # Accept: full eval + add
                 self._run_full_eval_and_add(

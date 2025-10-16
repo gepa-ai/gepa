@@ -4,6 +4,7 @@
 import random
 
 from gepa.core.state import GEPAState
+from gepa.core.types import CandidateId
 from gepa.gepa_utils import idxmax, select_program_candidate_from_pareto_front
 from gepa.proposer.reflective_mutation.base import CandidateSelector
 
@@ -15,7 +16,7 @@ class ParetoCandidateSelector(CandidateSelector):
         else:
             self.rng = rng
 
-    def select_candidate_idx(self, state: GEPAState) -> int:
+    def select_candidate_idx(self, state: GEPAState) -> CandidateId:
         assert len(state.per_program_tracked_scores) == len(state.program_candidates)
         return select_program_candidate_from_pareto_front(
             state.program_at_pareto_front_valset,
@@ -23,10 +24,11 @@ class ParetoCandidateSelector(CandidateSelector):
             self.rng,
         )
 
+
 class CurrentBestCandidateSelector(CandidateSelector):
     def __init__(self):
         pass
 
-    def select_candidate_idx(self, state: GEPAState) -> int:
+    def select_candidate_idx(self, state: GEPAState) -> CandidateId:
         assert len(state.per_program_tracked_scores) == len(state.program_candidates)
-        return idxmax(state.per_program_tracked_scores)
+        return CandidateId(idxmax(state.per_program_tracked_scores))

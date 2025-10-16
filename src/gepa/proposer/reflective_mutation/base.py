@@ -6,10 +6,11 @@ from typing import Callable, Protocol
 
 from gepa.core.adapter import Trajectory
 from gepa.core.state import GEPAState
+from gepa.core.types import CandidateId
 
 
 class CandidateSelector(Protocol):
-    def select_candidate_idx(self, state: GEPAState) -> int: ...
+    def select_candidate_idx(self, state: GEPAState) -> CandidateId: ...
 
 
 class ReflectionComponentSelector(Protocol):
@@ -18,7 +19,7 @@ class ReflectionComponentSelector(Protocol):
         state: GEPAState,
         trajectories: list[Trajectory],
         subsample_scores: list[float],
-        candidate_idx: int,
+        candidate_idx: CandidateId,
         candidate: dict[str, str],
     ) -> list[str]: ...
 
