@@ -39,13 +39,16 @@ class GEPAState(Generic[RolloutOutput]):
         self,
         seed_candidate: dict[str, str],
         base_valset_eval_output: tuple[list[RolloutOutput], list[float]],
+        base_testset_eval_output: tuple[list[RolloutOutput], list[float]],
         track_best_outputs: bool = False,
     ):
         valset_base_score = sum(base_valset_eval_output[1]) / len(base_valset_eval_output[1])
+        testset_base_score = sum(base_testset_eval_output[1]) / len(base_testset_eval_output[1])
         base_valset_pareto_front = list(base_valset_eval_output[1])
 
         self.program_candidates = [seed_candidate]
         self.program_full_scores_val_set = [valset_base_score]
+        self.program_full_scores_test_set = [testset_base_score]
 
         self.per_program_tracked_scores = [valset_base_score]
 
@@ -114,6 +117,7 @@ class GEPAState(Generic[RolloutOutput]):
         parent_program_idx: list[int],
         new_program: dict[str, str],
         valset_score: float,
+        testset_score: float,
         valset_outputs: Any,
         valset_subscores: list[float],
         run_dir: str | None,
@@ -129,6 +133,7 @@ class GEPAState(Generic[RolloutOutput]):
 
         self.prog_candidate_val_subscores.append(valset_subscores)
         self.program_full_scores_val_set.append(valset_score)
+        self.program_full_scores_test_set.append(testset_score)
         for task_idx, (old_score, new_score) in enumerate(zip(self.pareto_front_valset, valset_subscores, strict=False)):
             if new_score > old_score:
                 self.pareto_front_valset[task_idx] = new_score
@@ -168,6 +173,7 @@ def initialize_gepa_state(
     logger,
     seed_candidate: dict[str, str],
     valset_evaluator: Callable[[dict[str, str]], tuple[list[RolloutOutput], list[float]]],
+    testset_evaluator: Callable[[dict[str, str]], tuple[list[RolloutOutput], list[float]]],
     track_best_outputs: bool = False,
 ):
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
@@ -177,6 +183,7 @@ def initialize_gepa_state(
         num_evals_run = 0
 
         valset_out = valset_evaluator(seed_candidate)
+        testset_out = testset_evaluator(seed_candidate)
         if run_dir is not None:
             write_eval_output_to_directory(valset_out, os.path.join(run_dir, "generated_best_outputs_valset"))
         num_evals_run += len(valset_out[1])
@@ -184,6 +191,7 @@ def initialize_gepa_state(
         gepa_state = GEPAState(
             seed_candidate,
             valset_out,
+            testset_out,
             track_best_outputs=track_best_outputs,
         )
 
