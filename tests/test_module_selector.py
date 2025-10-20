@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from gepa import optimize
+from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
@@ -177,3 +178,26 @@ def test_module_selector_invalid_string_raises_error(common_mocks):
             module_selector="invalid_strategy",
             max_metric_calls=1,
         )
+
+
+@patch("gepa.api.GEPAEngine.run")
+@patch("gepa.api.ReflectiveMutationProposer")
+def test_batch_sampler_custom_instance(mock_proposer, mock_run, common_mocks):
+    """Test that batch_sampler accepts custom instances with optimize()."""
+    mock_run_return, mock_adapter = common_mocks
+    mock_run.return_value = mock_run_return
+
+    custom_batch_sampler = EpochShuffledBatchSampler(minibatch_size=5)
+
+    result = optimize(
+        seed_candidate={"test": "value"},
+        trainset=[Mock() for _ in range(10)],
+        adapter=mock_adapter,
+        reflection_lm=lambda x: "test response",
+        batch_sampler=custom_batch_sampler,
+        max_metric_calls=1,
+    )
+
+    mock_proposer.assert_called_once()
+    call_args = mock_proposer.call_args
+    assert call_args.kwargs["batch_sampler"] is custom_batch_sampler

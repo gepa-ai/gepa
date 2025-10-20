@@ -12,7 +12,7 @@ from gepa.core.result import GEPAResult
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
-from gepa.proposer.reflective_mutation.base import LanguageModel, ReflectionComponentSelector
+from gepa.proposer.reflective_mutation.base import BatchSampler, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import CurrentBestCandidateSelector, ParetoCandidateSelector
@@ -34,6 +34,7 @@ def optimize(
     candidate_selection_strategy: str = "pareto",
     skip_perfect_score=True,
     reflection_minibatch_size=3,
+    batch_sampler: BatchSampler | None = None,
     perfect_score=1,
     # Component selection configuration
     module_selector: "ReflectionComponentSelector | str" = "round_robin",
@@ -105,7 +106,8 @@ def optimize(
     - reflection_lm: A `LanguageModel` instance that is used to reflect on the performance of the candidate program.
     - candidate_selection_strategy: The strategy to use for selecting the candidate to update.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
-    - reflection_minibatch_size: The number of examples to use for reflection in each proposal step.
+    - reflection_minibatch_size: The number of examples to use for reflection in each proposal step. Ignored if batch_sampler is provided.
+    - batch_sampler: Optional custom BatchSampler instance for selecting training examples. If None, defaults to EpochShuffledBatchSampler with reflection_minibatch_size. If provided, reflection_minibatch_size will be ignored.
     - perfect_score: The perfect score to achieve.
 
     # Component selection configuration
@@ -220,7 +222,13 @@ def optimize(
 
         module_selector = module_selector_cls()
 
-    batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size, rng=rng)
+    if batch_sampler is None:
+        batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size, rng=rng)
+    else:
+        logger.log(
+            "WARNING: Both 'batch_sampler' and 'reflection_minibatch_size' were provided. "
+            "Ignoring 'reflection_minibatch_size' since 'batch_sampler' takes precedence."
+        )
 
     experiment_tracker = create_experiment_tracker(
         use_wandb=use_wandb,
