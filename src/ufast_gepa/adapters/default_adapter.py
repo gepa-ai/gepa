@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from ufast_gepa.archive import Archive
 from ufast_gepa.cache import DiskCache
-from ufast_gepa.config import Config, DEFAULT_CONFIG
+from ufast_gepa.config import Config, DEFAULT_CONFIG, adaptive_shards
 from ufast_gepa.evaluator import AsyncEvaluator
 from ufast_gepa.interfaces import Candidate
 from ufast_gepa.logging_utils import EventLogger, build_logger
@@ -54,14 +54,42 @@ class DefaultAdapter:
     """
     Helper harness for running uFast-GEPA on single-component prompts.
 
+    This adapter automatically selects optimal ASHA shard configuration based on
+    your dataset size, following the "Rule of 15" for statistical reliability.
+
+    Parameters:
+        dataset: Sequence of training/validation examples
+        config: Configuration object (shards will be auto-selected if using defaults)
+        mutation_config: Optional mutation configuration
+        cache_dir: Directory for disk cache (default: .ufast_gepa/cache)
+        log_dir: Directory for logs (default: .ufast_gepa/logs)
+        sampler_seed: Random seed for example sampling
+        task_lm: LLM model for task execution (e.g., "openai/gpt-4o-mini")
+        reflection_lm: LLM model for reflection (e.g., "openai/gpt-4o")
+        task_lm_temperature: Temperature for task LLM (None = use model default)
+        reflection_lm_temperature: Temperature for reflection LLM (None = use model default)
+        auto_shards: Enable automatic shard selection (default: True)
+        shard_strategy: Strategy for auto-sharding - "balanced", "conservative", or "aggressive"
+
     Example usage::
 
-        adapter = DefaultAdapter(dataset=trainset, reflection_batch_size=6)
+        # Basic usage with auto-sharding
+        adapter = DefaultAdapter(dataset=trainset)
         result = adapter.optimize(
             seeds=["You are a helpful assistant."],
             max_rounds=4,
-            config=DEFAULT_CONFIG,
         )
+
+        # Conservative strategy for important tasks
+        adapter = DefaultAdapter(
+            dataset=trainset,
+            shard_strategy="conservative",
+        )
+
+        # Manual sharding (disables auto-sharding)
+        config = Config(shards=(0.10, 0.30, 1.0))
+        adapter = DefaultAdapter(dataset=trainset, config=config)
+
         pareto = result["pareto"]
     """
 
@@ -78,9 +106,21 @@ class DefaultAdapter:
         reflection_lm: Optional[str] = None,
         task_lm_temperature: Optional[float] = None,
         reflection_lm_temperature: Optional[float] = None,
+        auto_shards: bool = True,
+        shard_strategy: str = "balanced",
     ) -> None:
         if not dataset:
             raise ValueError("dataset must contain at least one data instance")
+
+        # Apply adaptive sharding if enabled and config uses default shards
+        if auto_shards and config.shards == DEFAULT_CONFIG.shards:
+            optimal_shards = adaptive_shards(len(dataset), strategy=shard_strategy)
+            config = Config(
+                **{k: getattr(config, k) for k in config.__dataclass_fields__}
+            )
+            config.shards = optimal_shards
+            print(f"🔧 Auto-selected shards for {len(dataset)} examples: {optimal_shards} (strategy={shard_strategy})")
+
         self.config = config
         self.dataset = list(dataset)
         self.task_lm = task_lm

@@ -56,6 +56,119 @@ result = adapter.optimize(
 
 `result["pareto"]` gives you the high-quality prompts, and the adapter takes care of the sampler, cache, mutator, and orchestrator wiring.
 
+## How It Works (Simple Explanation)
+
+uFast-GEPA finds the best prompts by testing many variations and keeping the winners. Here's how the key features work:
+
+### 🎯 **Sharding (Progressive Evaluation)**
+
+Think of sharding like a tournament bracket:
+- **Round 1**: Test all candidates on a small sample (5-20% of data)
+- **Round 2**: Only the best advance, tested on more data (20-50%)
+- **Final**: Top performers get full evaluation (100% of data)
+
+**Why?** This saves 60-70% of evaluations by eliminating bad candidates early.
+
+**Auto-Sharding**: The system automatically picks shard sizes based on your dataset:
+- Small dataset (< 50 examples): `(0.30, 1.0)` → 2 stages with reliable signal
+- Medium dataset (100-500): `(0.10, 0.30, 1.0)` → 3 stages for balanced filtering
+- Large dataset (1000+): `(0.05, 0.20, 1.0)` → 3 stages for maximum exploration
+
+You can override with `shard_strategy="conservative"` (safer, slower) or `"aggressive"` (faster, riskier).
+
+### 🏝️ **Island Hopping (Parallel Optimization)**
+
+Imagine 4 research teams working independently, sharing their best ideas:
+- Each **island** runs its own optimization with different starting points
+- Every few rounds, islands **migrate** their top candidates to neighbors
+- This creates diversity: one island might find prompts the others missed
+
+**Why?** 4 islands = 4× throughput, and sharing prevents getting stuck in local optima.
+
+### 💾 **Caching (Smart Reuse)**
+
+Every time we test a prompt on an example, we save the result to disk:
+- Same prompt + same example = instant lookup (~20-40% of evaluations)
+- Cache persists across runs, so restarting is fast
+- Works even if you stop and restart optimization
+
+**Why?** Evaluation is expensive (LLM calls), so never repeat work.
+
+### ⚡ **Async Evaluation (Massive Parallelism)**
+
+Instead of testing prompts one-by-one sequentially:
+- Test **64 prompts in parallel** (configurable via `eval_concurrency`)
+- Evaluate **8 candidates at once** per round (`batch_size`)
+- All examples for one candidate run concurrently
+
+**Why?** Turn minutes into seconds by maxing out your API rate limits.
+
+### 🧬 **Mutation (Creating Better Prompts)**
+
+Two ways to generate new candidates:
+1. **Rule-based edits** (80%): Add examples, fix grammar, clarify instructions
+2. **LLM reflection** (20%): Analyze failures and suggest improvements
+
+**Why?** Mix cheap edits with smart reflection for efficient exploration.
+
+### 📊 **Pareto Archive (Multi-Objective)**
+
+Keep candidates that are best at different tradeoffs:
+- **Candidate A**: 95% quality, 1000 tokens
+- **Candidate B**: 90% quality, 500 tokens ← shorter but still good!
+- **Candidate C**: 85% quality, 200 tokens ← very concise
+
+**Why?** You might prefer shorter prompts for cost/speed even if slightly lower quality.
+
+### 🎨 **Quality-Diversity (QD) Grid**
+
+Beyond Pareto, also track diverse strategies:
+- Short vs long prompts
+- With vs without examples
+- Different reasoning patterns (chain-of-thought, step-by-step, etc.)
+
+**Why?** Sometimes a different *approach* works better for specific cases.
+
+## Simple Mental Model
+
+```
+Start with seed prompts
+    ↓
+┌─────────────────────────┐
+│ EACH ROUND:             │
+│  1. Pick 8 candidates   │ ← From Pareto + QD archives
+│  2. Test on shard       │ ← 5%, 20%, or 100% of data
+│  3. Keep winners        │ ← Top 40% advance to next shard
+│  4. Generate mutations  │ ← Create new variants from winners
+│  5. Share with islands │ ← Migrate top-3 every few rounds
+└─────────────────────────┘
+    ↓ repeat until budget
+Final result: Pareto frontier of optimal prompts
+```
+
+### Example Run
+
+```
+Dataset: 100 examples
+Budget: 500 evaluations
+Shards: (0.05, 0.20, 1.0) → [5 examples, 20 examples, 100 examples]
+
+Round 1: Test 20 candidates × 5 examples = 100 evals
+         → 12 advance (top 60%)
+
+Round 2: Test 12 candidates × 20 examples = 240 evals
+         → 5 advance (top 40%)
+
+Round 3: Test 5 candidates × 100 examples = 500 evals
+         → Keep best 3 on Pareto frontier
+
+Total: 840 potential evals, actually used 500 (ASHA saved 40%)
+       + cache hit 30% → effectively 350 fresh evals
+```
+
+**Without sharding**: Would only test 5 candidates thoroughly with 500 evals.
+**With sharding**: Explored 20+ candidates, found better optima!
+
 ## Integration Steps
 
 1. **Provide LLM hooks** – implement `task_lm_call` and `reflect_lm_call` in `src/ufast_gepa/user_plugs_in.py`. The file ships with deterministic heuristics for local runs; replace them with calls into your production LLM stack. `task_lm_call` should accept a candidate prompt and example payload, returning metrics like `{"quality": float, "neg_cost": float, "tokens": float}`. `reflect_lm_call` receives failure traces plus the parent prompt and must return mutated prompt strings.

@@ -86,7 +86,7 @@ def main() -> None:
 
     config = Config(
         eval_concurrency=4,
-        shards=(0.5, 1.0),
+        # shards will be auto-selected based on dataset size
         max_mutations_per_round=4,
         queue_limit=32,
         migration_period=10,  # effectively disables migration
@@ -97,8 +97,8 @@ def main() -> None:
 
     print(f"\n⚙️  Config:")
     print(f"   Concurrency: {config.eval_concurrency}")
-    print(f"   Shards: {config.shards}")
     print(f"   Max mutations/round: {config.max_mutations_per_round}")
+    print(f"   Shards: auto-selected (will be determined based on dataset size)")
 
     # Check if we should use real LLMs
     import os
