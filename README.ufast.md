@@ -129,6 +129,33 @@ Beyond Pareto, also track diverse strategies:
 
 **Why?** Sometimes a different *approach* works better for specific cases.
 
+### 🛑 **Automatic Stopping (Convergence Detection)**
+
+The stop governor monitors multiple signals to detect when optimization has plateaued:
+- **Hypervolume rate**: Growth of Pareto frontier area
+- **Quality improvement**: Best candidate getting better
+- **Cost efficiency**: Token savings rate (ROI)
+- **QD novelty**: New cells filled in diversity grid
+- **Frontier stability**: How much Pareto front changes
+
+When **all signals** indicate no progress for multiple rounds, optimization stops automatically.
+
+**Why?** Saves you from wasting budget on rounds that won't improve results.
+
+**How to use:**
+```python
+adapter.optimize(
+    seeds=seeds,
+    enable_auto_stop=True,  # Enable automatic stopping
+    max_rounds=None,         # No hard limit, will stop when converged
+)
+```
+
+**Signals tracked:**
+- Uses EWMA smoothing to avoid noise
+- Requires 3 consecutive low-score epochs (hysteresis)
+- Stops if no quality improvement for 6 epochs (hard cap)
+
 ## Simple Mental Model
 
 ```

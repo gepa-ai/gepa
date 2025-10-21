@@ -25,6 +25,7 @@ from .mutator import Mutator
 from .progress_chart import ProgressChart
 from .sampler import InstanceSampler
 from .scheduler import BudgetedScheduler, SchedulerConfig
+from .stop_governor import StopGovernor, StopGovernorConfig, EpochMetrics, compute_hypervolume_2d
 from .token_controller import TokenCostController
 
 
@@ -49,6 +50,8 @@ class Orchestrator:
         token_controller: Optional[TokenCostController] = None,
         island_context: Optional[IslandContext] = None,
         show_progress: bool = True,
+        stop_governor: Optional[StopGovernor] = None,
+        enable_auto_stop: bool = False,
     ) -> None:
         self.config = config
         self.evaluator = evaluator
@@ -74,6 +77,10 @@ class Orchestrator:
         self._last_merge_round: int = -1
         self.show_progress = show_progress
         self.progress_chart = ProgressChart() if show_progress else None
+        self.stop_governor = stop_governor if enable_auto_stop else None
+        self.enable_auto_stop = enable_auto_stop
+        self.total_tokens_spent: int = 0
+        self.qd_cells_seen: set[tuple] = set()
 
     def enqueue(self, candidates: Iterable[Candidate]) -> None:
         for candidate in candidates:
@@ -113,6 +120,16 @@ class Orchestrator:
             await self._maybe_merge()
             await self._maybe_migrate()
             await self._maybe_log_summary()
+
+            # Check stop governor
+            if self.enable_auto_stop and self.stop_governor is not None:
+                should_stop, debug_info = self._check_stop_governor()
+                if should_stop:
+                    await self._log("auto_stop", debug_info)
+                    if self.show_progress:
+                        print(f"\n🛑 Auto-stopping: {debug_info['reason']}")
+                    break
+
             self.round_index += 1
 
         await self.finalize()
@@ -473,3 +490,73 @@ class Orchestrator:
             meta.setdefault("parent_objectives", entry.result.objectives)
             enriched.append(Candidate(text=mutation.text, meta=meta))
         return enriched
+
+    def _check_stop_governor(self) -> tuple[bool, Dict]:
+        """Update stop governor with current metrics and check if we should stop."""
+        if self.stop_governor is None:
+            return False, {}
+
+        # Collect current epoch metrics
+        pareto_entries = self.archive.pareto_entries()
+
+        if not pareto_entries:
+            return False, {"reason": "no_pareto_candidates"}
+
+        # Compute hypervolume
+        points = [
+            (
+                entry.result.objectives.get(self.config.promote_objective, 0.0),
+                entry.result.objectives.get("neg_cost", -entry.result.objectives.get("tokens", 1000)),
+            )
+            for entry in pareto_entries
+        ]
+        hypervolume = compute_hypervolume_2d(points)
+
+        # Find best candidate
+        best_entry = max(
+            pareto_entries,
+            key=lambda e: (
+                e.result.objectives.get(self.config.promote_objective, 0.0),
+                e.result.objectives.get("neg_cost", float('-inf')),
+            ),
+        )
+
+        # Track QD novelty
+        qd_grid = self.archive.sample_qd(limit=1000)
+        current_cells = set()
+        for entry in qd_grid:
+            # Create a hashable cell identifier from QD features
+            cell_id = (
+                int(entry.result.objectives.get("quality", 0) * 100),  # Discretize
+                len(entry.candidate.text) // 100,  # Length bins
+            )
+            current_cells.add(cell_id)
+
+        new_cells = current_cells - self.qd_cells_seen
+        qd_novelty_rate = len(new_cells) / max(len(current_cells), 1)
+        self.qd_cells_seen.update(new_cells)
+
+        # Update token spending
+        tokens_this_round = sum(
+            self.latest_results.get(e.candidate.fingerprint, e.result).objectives.get("tokens", 0)
+            for e in pareto_entries
+        )
+        self.total_tokens_spent += int(tokens_this_round)
+
+        # Create epoch metrics
+        metrics = EpochMetrics(
+            round_num=self.round_index,
+            hypervolume=hypervolume,
+            new_evaluations=self.evaluations_run,
+            best_quality=best_entry.result.objectives.get(self.config.promote_objective, 0.0),
+            best_cost=best_entry.result.objectives.get("neg_cost", float('-inf')),
+            frontier_ids={e.candidate.fingerprint for e in pareto_entries},
+            qd_filled_cells=len(current_cells),
+            qd_total_cells=self.config.qd_bins_length * self.config.qd_bins_bullets * len(self.config.qd_flags),
+            qd_novelty_rate=qd_novelty_rate,
+            total_tokens_spent=self.total_tokens_spent,
+            shadow_significant=True,  # TODO: implement shadow shard testing
+        )
+
+        self.stop_governor.update(metrics)
+        return self.stop_governor.should_stop()

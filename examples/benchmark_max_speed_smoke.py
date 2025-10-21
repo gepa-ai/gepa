@@ -142,12 +142,15 @@ def main() -> None:
 
     print(f'\n🌱 Seed prompt: "{seeds[0][:60]}..."')
     print(f"\n⏱️  Starting optimization (max 2 rounds, 16 evaluations)...\n")
+    print("💡 Tip: Enable auto-stop for automatic convergence detection:")
+    print("   adapter.optimize(seeds=seeds, enable_auto_stop=True, max_rounds=None)\n")
 
     start_time = time.time()
     result = adapter.optimize(
         seeds=seeds,
         max_rounds=3,  # More rounds to see reflection in action
         max_evaluations=24,  # More budget for real LLM calls
+        # enable_auto_stop=True,  # Uncomment to stop automatically when converged
     )
     elapsed = time.time() - start_time
 

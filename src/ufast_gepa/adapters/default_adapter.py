@@ -24,6 +24,7 @@ from ufast_gepa.logging_utils import EventLogger, build_logger
 from ufast_gepa.mutator import MutationConfig, Mutator
 from ufast_gepa.orchestrator import Orchestrator
 from ufast_gepa.sampler import InstanceSampler
+from ufast_gepa.stop_governor import StopGovernor, StopGovernorConfig
 from ufast_gepa.token_controller import TokenCostController
 from ufast_gepa.user_plugs_in import reflect_lm_call, task_lm_call
 
@@ -264,12 +265,16 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
         metrics.setdefault("output", metrics.get("response"))
         return metrics
 
-    def _build_orchestrator(self, logger: Optional[EventLogger]) -> Orchestrator:
+    def _build_orchestrator(self, logger: Optional[EventLogger], enable_auto_stop: bool = False) -> Orchestrator:
         evaluator = AsyncEvaluator(
             cache=self.cache,
             task_runner=self._task_runner,
         )
         orchestrator_logger = logger or build_logger(self.log_dir, "ufast_default")
+
+        # Create stop governor if auto-stop enabled
+        stop_governor = StopGovernor(StopGovernorConfig()) if enable_auto_stop else None
+
         return Orchestrator(
             config=self.config,
             evaluator=evaluator,
@@ -279,6 +284,8 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
             cache=self.cache,
             logger=orchestrator_logger,
             token_controller=self.token_controller,
+            stop_governor=stop_governor,
+            enable_auto_stop=enable_auto_stop,
         )
 
     async def optimize_async(
@@ -290,8 +297,9 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
         logger: Optional[EventLogger] = None,
         task_lm: Optional[str] = None,  # Accept but ignore (uses heuristic)
         reflection_lm: Optional[str] = None,  # Accept but ignore (uses heuristic)
+        enable_auto_stop: bool = False,  # Enable automatic stopping
     ) -> Dict[str, Any]:
-        orchestrator = self._build_orchestrator(logger)
+        orchestrator = self._build_orchestrator(logger, enable_auto_stop=enable_auto_stop)
         seed_candidates = [Candidate(text=seed, meta={"source": "seed"}) for seed in seeds]
         await orchestrator.run(seed_candidates, max_rounds=max_rounds, max_evaluations=max_evaluations)
         pareto = orchestrator.archive.pareto_candidates()
@@ -311,9 +319,19 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
         logger: Optional[EventLogger] = None,
         task_lm: Optional[str] = None,  # Accept for API compatibility (uses heuristic)
         reflection_lm: Optional[str] = None,  # Accept for API compatibility (uses heuristic)
+        enable_auto_stop: bool = False,  # Enable automatic stopping
     ) -> Dict[str, Any]:
         """
         Optimize prompts using uFast-GEPA with heuristic evaluation.
+
+        Parameters:
+            seeds: Initial prompt candidates
+            max_rounds: Maximum optimization rounds (None = unlimited)
+            max_evaluations: Maximum evaluations (None = unlimited)
+            logger: Custom event logger
+            task_lm: Task LLM (for compatibility)
+            reflection_lm: Reflection LLM (for compatibility)
+            enable_auto_stop: Enable automatic convergence detection
 
         Note: task_lm and reflection_lm are accepted for API compatibility with
         benchmark scripts but are not used by DefaultAdapter. This adapter uses
@@ -329,5 +347,6 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
                 logger=logger,
                 task_lm=task_lm,
                 reflection_lm=reflection_lm,
+                enable_auto_stop=enable_auto_stop,
             )
         )
