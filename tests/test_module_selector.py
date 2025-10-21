@@ -28,6 +28,19 @@ def common_mocks():
     return mock_run_return, mock_adapter
 
 
+@pytest.fixture
+def base_optimize_kwargs(common_mocks):
+    """Base kwargs for optimize() in batch_sampler tests."""
+    _, mock_adapter = common_mocks
+    return {
+        "seed_candidate": {"test": "value"},
+        "trainset": [Mock() for _ in range(10)],
+        "adapter": mock_adapter,
+        "reflection_lm": lambda x: "test response",
+        "max_metric_calls": 1,
+    }
+
+
 @patch("gepa.api.GEPAEngine.run")
 @patch("gepa.api.ReflectiveMutationProposer")
 def test_module_selector_default_round_robin(mock_proposer, mock_run, common_mocks):
@@ -182,22 +195,35 @@ def test_module_selector_invalid_string_raises_error(common_mocks):
 
 @patch("gepa.api.GEPAEngine.run")
 @patch("gepa.api.ReflectiveMutationProposer")
-def test_batch_sampler_custom_instance(mock_proposer, mock_run, common_mocks):
+def test_batch_sampler_custom_instance(mock_proposer, mock_run, common_mocks, base_optimize_kwargs):
     """Test that batch_sampler accepts custom instances with optimize()."""
-    mock_run_return, mock_adapter = common_mocks
+    mock_run_return, _ = common_mocks
     mock_run.return_value = mock_run_return
 
     custom_batch_sampler = EpochShuffledBatchSampler(minibatch_size=5)
-
-    result = optimize(
-        seed_candidate={"test": "value"},
-        trainset=[Mock() for _ in range(10)],
-        adapter=mock_adapter,
-        reflection_lm=lambda x: "test response",
-        batch_sampler=custom_batch_sampler,
-        max_metric_calls=1,
-    )
+    result = optimize(**base_optimize_kwargs, batch_sampler=custom_batch_sampler)
 
     mock_proposer.assert_called_once()
-    call_args = mock_proposer.call_args
-    assert call_args.kwargs["batch_sampler"] is custom_batch_sampler
+    assert mock_proposer.call_args.kwargs["batch_sampler"] is custom_batch_sampler
+
+
+def test_batch_sampler_both_params_raises_error(base_optimize_kwargs):
+    """Test that providing both batch_sampler and reflection_minibatch_size raises ValueError."""
+    custom_batch_sampler = EpochShuffledBatchSampler(minibatch_size=5)
+
+    with pytest.raises(ValueError, match="Both 'batch_sampler' and 'reflection_minibatch_size' were provided"):
+        optimize(**base_optimize_kwargs, batch_sampler=custom_batch_sampler, reflection_minibatch_size=3)
+
+
+@patch("gepa.api.GEPAEngine.run")
+@patch("gepa.api.ReflectiveMutationProposer")
+def test_batch_sampler_neither_param_defaults_to_3(mock_proposer, mock_run, common_mocks, base_optimize_kwargs):
+    """Test that providing neither parameter defaults to minibatch_size=3."""
+    mock_run_return, _ = common_mocks
+    mock_run.return_value = mock_run_return
+
+    optimize(**base_optimize_kwargs)
+
+    sampler = mock_proposer.call_args.kwargs["batch_sampler"]
+    assert isinstance(sampler, EpochShuffledBatchSampler)
+    assert sampler.minibatch_size == 3

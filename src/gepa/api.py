@@ -33,8 +33,8 @@ def optimize(
     reflection_lm: LanguageModel | str | None = None,
     candidate_selection_strategy: str = "pareto",
     skip_perfect_score=True,
-    reflection_minibatch_size=3,
     batch_sampler: BatchSampler | None = None,
+    reflection_minibatch_size=None,
     perfect_score=1,
     # Component selection configuration
     module_selector: "ReflectionComponentSelector | str" = "round_robin",
@@ -106,8 +106,8 @@ def optimize(
     - reflection_lm: A `LanguageModel` instance that is used to reflect on the performance of the candidate program.
     - candidate_selection_strategy: The strategy to use for selecting the candidate to update.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
-    - reflection_minibatch_size: The number of examples to use for reflection in each proposal step. Ignored if batch_sampler is provided.
-    - batch_sampler: Optional custom BatchSampler instance for selecting training examples. If None, defaults to EpochShuffledBatchSampler with reflection_minibatch_size. If provided, reflection_minibatch_size will be ignored.
+    - batch_sampler: Optional custom BatchSampler instance for selecting training examples. If None, defaults to EpochShuffledBatchSampler with reflection_minibatch_size=3.
+    - reflection_minibatch_size: [Backwards compatibility] The number of examples to use by EpochShuffledBatchSampler for reflection in each proposal step. Defaults to 3. Cannot be used if batch_sampler is provided.
     - perfect_score: The perfect score to achieve.
 
     # Component selection configuration
@@ -222,13 +222,13 @@ def optimize(
 
         module_selector = module_selector_cls()
 
-    if batch_sampler is None:
-        batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size, rng=rng)
-    else:
-        logger.log(
-            "WARNING: Both 'batch_sampler' and 'reflection_minibatch_size' were provided. "
-            "Ignoring 'reflection_minibatch_size' since 'batch_sampler' takes precedence."
+    if batch_sampler and reflection_minibatch_size:
+        raise ValueError(
+            "Both 'batch_sampler' and 'reflection_minibatch_size' were provided. "
+            "Please provide only one of them."
         )
+    if batch_sampler is None:
+        batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size or 3, rng=rng)
 
     experiment_tracker = create_experiment_tracker(
         use_wandb=use_wandb,
