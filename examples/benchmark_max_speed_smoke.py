@@ -90,7 +90,7 @@ def main() -> None:
         max_mutations_per_round=4,
         queue_limit=32,
         migration_period=10,  # effectively disables migration
-        log_summary_interval=1,  # Show progress every round
+        log_summary_interval=1,  # Show progress chart every round
         cache_path=".ufast_gepa/smoke_cache",
         log_path=".ufast_gepa/smoke_logs",
     )

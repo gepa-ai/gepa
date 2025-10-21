@@ -22,6 +22,7 @@ from .islands import IslandContext, integrate_in, migrate_out
 from .logging_utils import EventLogger
 from .merge import MergeManager
 from .mutator import Mutator
+from .progress_chart import ProgressChart
 from .sampler import InstanceSampler
 from .scheduler import BudgetedScheduler, SchedulerConfig
 from .token_controller import TokenCostController
@@ -47,6 +48,7 @@ class Orchestrator:
         logger: Optional[EventLogger] = None,
         token_controller: Optional[TokenCostController] = None,
         island_context: Optional[IslandContext] = None,
+        show_progress: bool = True,
     ) -> None:
         self.config = config
         self.evaluator = evaluator
@@ -70,6 +72,8 @@ class Orchestrator:
         self.evaluations_run: int = 0
         self.round_index: int = 0
         self._last_merge_round: int = -1
+        self.show_progress = show_progress
+        self.progress_chart = ProgressChart() if show_progress else None
 
     def enqueue(self, candidates: Iterable[Candidate]) -> None:
         for candidate in candidates:
@@ -425,6 +429,29 @@ class Orchestrator:
         if (self.round_index + 1) % interval != 0:
             return
         hardness_size = self.sampler.hardness_size() if hasattr(self.sampler, "hardness_size") else 0
+
+        # Update progress chart
+        if self.progress_chart is not None:
+            pareto = self.archive.pareto_entries()
+            if pareto:
+                # Get best quality from Pareto
+                best_quality = max(
+                    entry.result.objectives.get(self.config.promote_objective, 0.0)
+                    for entry in pareto
+                )
+                # Get current average quality
+                current_quality = sum(
+                    entry.result.objectives.get(self.config.promote_objective, 0.0)
+                    for entry in pareto
+                ) / len(pareto)
+
+                self.progress_chart.update(
+                    round_num=self.round_index,
+                    current_quality=current_quality,
+                    best_quality=best_quality,
+                )
+                self.progress_chart.display()
+
         await self._log(
             "summary",
             {
