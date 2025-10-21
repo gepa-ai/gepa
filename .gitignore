@@ -208,3 +208,12 @@ __marimo__/
 # Experiments
 runs/
 gepa_terminus/
+
+.envrc
+
+
+.claude/
+.ufast_gepa/
+.ufast_gepa/** */
+AGENTS.md
+CLAUDE.md

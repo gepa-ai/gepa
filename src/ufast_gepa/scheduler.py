@@ -1,0 +1,117 @@
+"""
+Budgeted scheduler implementing an ASHA-style successive halving policy.
+
+The current implementation provides transparent hooks for plugging in custom
+promotion heuristics while keeping default behavior light-weight.
+"""
+
+from __future__ import annotations
+
+import statistics
+from collections import deque
+from dataclasses import dataclass, field
+from typing import Deque, Dict, List, Sequence
+
+from .cache import candidate_key
+from .interfaces import Candidate, EvalResult
+
+
+@dataclass
+class Rung:
+    """Tracks candidates evaluated on a specific shard."""
+
+    shard_fraction: float
+    results: Dict[str, Deque[float]] = field(default_factory=dict)
+    max_history: int = 64
+
+    def update(self, candidate: Candidate, score: float) -> None:
+        key = candidate_hash(candidate)
+        history = self.results.setdefault(key, deque(maxlen=self.max_history))
+        history.append(score)
+
+    def summary(self, candidate: Candidate) -> float:
+        values = self.results.get(candidate_hash(candidate), [])
+        return statistics.fmean(values) if values else float("-inf")
+
+
+@dataclass
+class SchedulerConfig:
+    shards: Sequence[float]
+    eps_improve: float
+    quantile: float
+
+
+class BudgetedScheduler:
+    """Manage shard promotion and pruning for asynchronous evaluations."""
+
+    def __init__(self, config: SchedulerConfig) -> None:
+        self.config = config
+        self.rungs = [Rung(shard) for shard in config.shards]
+        self._candidate_levels: Dict[str, int] = {}
+        self._pending_promotions: List[Candidate] = []
+        self._parent_scores: Dict[str, float] = {}
+
+    def current_shard_index(self, candidate: Candidate) -> int:
+        return self._candidate_levels.get(candidate_hash(candidate), 0)
+
+    def current_shard_fraction(self, candidate: Candidate) -> float:
+        idx = self.current_shard_index(candidate)
+        return self.rungs[idx].shard_fraction
+
+    def record(self, candidate: Candidate, result: EvalResult, objective_key: str) -> str:
+        """Record fresh metrics and queue promotions when the candidate excels."""
+        decision = "pending"
+        score = result.objective(objective_key, default=None)
+        if score is None:
+            return decision
+        idx = self.current_shard_index(candidate)
+        rung = self.rungs[idx]
+        rung.update(candidate, score)
+        cand_hash = candidate_hash(candidate)
+        parent_objectives = candidate.meta.get("parent_objectives") if isinstance(candidate.meta, dict) else None
+        parent_score = None
+        if isinstance(parent_objectives, dict):
+            parent_score = parent_objectives.get(objective_key)
+        elif "parent_score" in candidate.meta:
+            parent_score = candidate.meta.get("parent_score")
+        if parent_score is not None and score < parent_score + self.config.eps_improve:
+            self._parent_scores[cand_hash] = score
+            return "pruned"
+        if idx >= len(self.rungs) - 1:
+            return "completed"  # already at max shard
+        threshold = self._promotion_threshold(rung)
+        if threshold == float("-inf"):
+            return decision
+        if score >= threshold:
+            self._candidate_levels[cand_hash] = idx + 1
+            self._pending_promotions.append(candidate)
+            self._parent_scores[cand_hash] = score
+            decision = "promoted"
+        else:
+            decision = "pruned"
+        return decision
+
+    def shard_fraction_for_index(self, index: int) -> float:
+        index = max(0, min(index, len(self.rungs) - 1))
+        return self.rungs[index].shard_fraction
+
+    def promote_ready(self) -> List[Candidate]:
+        """Return candidates ready for the next shard."""
+        ready = list(self._pending_promotions)
+        self._pending_promotions.clear()
+        return ready
+
+    def _promotion_threshold(self, rung: Rung) -> float:
+        """Calculate the moving quantile score threshold for promotion."""
+        samples = [statistics.fmean(list(values)) for values in rung.results.values() if values]
+        if not samples:
+            return float("-inf")
+        if len(samples) < 2:
+            return float("-inf")
+        rank = max(int(len(samples) * (1 - self.config.quantile)), 0)
+        samples.sort(reverse=True)
+        return samples[min(rank, len(samples) - 1)] + self.config.eps_improve
+
+
+def candidate_hash(candidate: Candidate) -> str:
+    return candidate_key(candidate)

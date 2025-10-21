@@ -1,0 +1,8 @@
+{"id": "example-1", "input": "What is 2 + 2?", "answer": "4", "tag": "math", "difficulty": 0.3}
+{"id": "example-2", "input": "Capital of France?", "answer": "Paris", "tag": "geography", "difficulty": 0.5}
+{"id": "example-3", "input": "Name a prime number greater than 10.", "answer": "11", "tag": "math", "difficulty": 0.4}
+{"id": "example-4", "input": "Summarize the benefits of unit testing in one sentence.", "answer": "Unit tests catch regressions early.", "tag": "reasoning", "difficulty": 0.7}
+{"id": "example-5", "input": "Provide a short greeting in Spanish.", "answer": "Hola", "tag": "language", "difficulty": 0.2}
+{"id": "example-6", "input": "List two cloud providers.", "answer": "AWS and GCP", "tag": "coding", "difficulty": 0.4}
+{"id": "example-7", "input": "State Newton's first law in a clause.", "answer": "An object in motion stays in motion.", "tag": "science", "difficulty": 0.6}
+{"id": "example-8", "input": "What is the opposite of 'cold'?", "answer": "Hot", "tag": "language", "difficulty": 0.1}
