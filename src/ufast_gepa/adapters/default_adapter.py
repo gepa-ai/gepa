@@ -152,11 +152,15 @@ Suggest 2-3 improved versions of this prompt that would perform better. Focus on
 
 Output format: Return each improved prompt on a new line, separated by "---"."""
 
-                response = await client.chat.completions.create(
-                    model=reflection_lm.replace("openai/", ""),
-                    messages=[{"role": "user", "content": reflection_prompt}],
-                    temperature=0.7,
-                )
+                # Build kwargs, only include temperature if not None
+                completion_kwargs = {
+                    "model": reflection_lm.replace("openai/", ""),
+                    "messages": [{"role": "user", "content": reflection_prompt}],
+                }
+                if self.reflection_lm_temperature is not None:
+                    completion_kwargs["temperature"] = self.reflection_lm_temperature
+
+                response = await client.chat.completions.create(**completion_kwargs)
 
                 content = response.choices[0].message.content
                 # Split by --- and clean up
@@ -180,13 +184,18 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
 
                 client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-                response = await client.chat.completions.create(
-                    model=self.task_lm.replace("openai/", ""),
-                    messages=[
+                # Build kwargs, only include temperature if not None
+                completion_kwargs = {
+                    "model": self.task_lm.replace("openai/", ""),
+                    "messages": [
                         {"role": "system", "content": candidate.text},
                         {"role": "user", "content": example["input"]},
                     ],
-                )
+                }
+                if self.task_lm_temperature is not None:
+                    completion_kwargs["temperature"] = self.task_lm_temperature
+
+                response = await client.chat.completions.create(**completion_kwargs)
 
                 model_output = response.choices[0].message.content
                 tokens_used = response.usage.total_tokens

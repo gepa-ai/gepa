@@ -116,6 +116,11 @@ def main() -> None:
         task_lm = None
         reflection_lm = None
 
+    # Set temperature to None for models that don't support custom temperatures (like gpt-5-nano)
+    # For other models, you can set it to a specific value like 0.7 or 1.0
+    task_temperature = None if use_real_llms else None
+    reflection_temperature = None if use_real_llms else None
+
     adapter = DefaultAdapter(
         dataset=dataset,
         config=config,
@@ -124,6 +129,8 @@ def main() -> None:
         log_dir=config.log_path,
         task_lm=task_lm,
         reflection_lm=reflection_lm,
+        task_lm_temperature=task_temperature,
+        reflection_lm_temperature=reflection_temperature,
     )
 
     seeds = [
