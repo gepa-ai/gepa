@@ -156,6 +156,115 @@ adapter.optimize(
 - Requires 3 consecutive low-score epochs (hysteresis)
 - Stops if no quality improvement for 6 epochs (hard cap)
 
+### 🌡️ **Temperature Cycling (LLM Hyperparameter Optimization)**
+
+**Optimize both prompt text AND temperature together** to find the best combination for your task. Temperature becomes a first-class optimization dimension alongside prompt engineering.
+
+#### Quick Start
+
+```python
+from ufast_gepa.interfaces import Candidate
+
+# Seed with different temperatures - ASHA will find the best ones!
+seeds = [
+    Candidate(text="You are a helpful assistant.", meta={"temperature": 0.0}),  # Deterministic
+    Candidate(text="You are a helpful assistant.", meta={"temperature": 0.5}),  # Balanced
+    Candidate(text="You are a helpful assistant.", meta={"temperature": 1.0}),  # Creative
+]
+
+result = adapter.optimize(seeds=seeds, max_rounds=5)
+
+# Pareto frontier contains best (prompt, temperature) combinations
+for candidate in result["pareto"]:
+    temp = candidate.meta.get("temperature", "default")
+    print(f"Quality: {candidate.quality:.2f} | Temp: {temp}")
+```
+
+#### How It Works
+
+**1. Temperature as Metadata**
+- Temperature stored in `candidate.meta["temperature"]`
+- Same prompt + different temp = different candidates (different cache fingerprints)
+- Archive tracks Pareto frontier across **(quality, tokens, temperature)**
+
+**2. Automatic Exploration**
+- **Initial diversity**: Seed with 3-4 different temperatures
+- **ASHA testing**: All temps tested cheaply on shard 0 (5% of data)
+- **Smart pruning**: Worst 60% eliminated, only winners advance
+- **Focused mutations**: 20% of mutations vary temperature around successful values
+- **Efficient search**: Explores ±0.3 and anchor values (0.0, 0.5, 1.0)
+- **Valid range**: All temperatures clamped to [0.0, 1.0]
+
+**3. Example Optimization Flow**
+```
+Round 0: Seed 3 temps [0.0, 0.5, 1.0]
+         → ASHA tests on 5% data (cheap!)
+         → Prunes to best 2 temps [0.5, 1.0]
+
+Round 1: Mutate prompt text (keep successful temps)
+         → Generate temp variants: [0.2, 0.7]
+         → Test on 20% data
+         → Best combo: "Be concise." @ temp=0.2
+
+Round 2: Explore around winners
+         → Archive has multiple (prompt, temp) pairs on Pareto frontier
+         → User picks best tradeoff of quality/cost/temperature
+```
+
+#### Smart Compatibility Detection
+
+**Upfront check (one cheap call at init):**
+- Tests if model supports custom temperature with `max_tokens=1` call
+- Uses litellm (works with OpenAI, Anthropic, Cohere, etc.)
+- If incompatible (e.g., `o1-preview`, `gpt-5-nano`), disables temp mutations entirely
+
+```python
+adapter = DefaultAdapter(dataset, task_lm="openai/o1-preview", task_lm_temperature=0.7)
+# → Prints: "⚠️  Model doesn't support custom temperature - using default"
+# → Temperature mutations: DISABLED
+# → Only text mutations generated
+```
+
+#### Opt-In Design
+
+**Temperature cycling only happens if:**
+1. ✅ Seed candidates include temperature metadata
+2. ✅ Model supports custom temperature (auto-detected)
+
+**Backwards compatible:**
+```python
+# String seeds = no temperature cycling (works as before)
+adapter.optimize(seeds=["You are helpful."], max_rounds=5)
+
+# Candidate seeds WITHOUT temp = no temperature cycling
+adapter.optimize(seeds=[Candidate(text="You are helpful.")], max_rounds=5)
+
+# Candidate seeds WITH temp = temperature cycling enabled
+adapter.optimize(seeds=[Candidate(text="You are helpful.", meta={"temperature": 0.7})], max_rounds=5)
+```
+
+#### When to Use Temperature Cycling
+
+**✅ Good use cases:**
+- Math/code tasks where determinism matters (try temp=0.0)
+- Creative tasks needing diversity (try temp=1.5)
+- Unknown optimal temperature (let optimizer find it)
+- Multi-objective: want both quality AND cost-efficiency
+
+**❌ Skip if:**
+- Model doesn't support custom temperature
+- Task is insensitive to temperature
+- Want to minimize evaluation budget (each temp = separate eval)
+
+#### Temperature Ranges by Task Type
+
+- **0.0-0.3 (Low)**: Math, code generation, factual Q&A, classification
+- **0.4-0.6 (Medium)**: General chatbots, summarization, instruction following
+- **0.7-0.9 (High)**: Creative writing, brainstorming, open-ended generation
+- **1.0 (Maximum)**: Maximum diversity within standard range
+
+**Pro tip**: Start with `[0.0, 0.5, 1.0]` and let ASHA + mutations find the sweet spot!
+
 ## Simple Mental Model
 
 ```

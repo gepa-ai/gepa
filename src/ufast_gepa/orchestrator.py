@@ -502,7 +502,7 @@ class Orchestrator:
         if not pareto_entries:
             return False, {"reason": "no_pareto_candidates"}
 
-        # Compute hypervolume
+        # Compute hypervolume (use reference point below all possible values)
         points = [
             (
                 entry.result.objectives.get(self.config.promote_objective, 0.0),
@@ -510,7 +510,8 @@ class Orchestrator:
             )
             for entry in pareto_entries
         ]
-        hypervolume = compute_hypervolume_2d(points)
+        # Reference point: (0 quality, -max_tokens) to ensure all points dominate it
+        hypervolume = compute_hypervolume_2d(points, reference=(0.0, -self.config.max_tokens))
 
         # Find best candidate
         best_entry = max(
@@ -522,9 +523,9 @@ class Orchestrator:
         )
 
         # Track QD novelty
-        qd_grid = self.archive.sample_qd(limit=1000)
+        qd_entries = list(self.archive.qd_grid.values())
         current_cells = set()
-        for entry in qd_grid:
+        for entry in qd_entries:
             # Create a hashable cell identifier from QD features
             cell_id = (
                 int(entry.result.objectives.get("quality", 0) * 100),  # Discretize

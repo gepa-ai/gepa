@@ -14,7 +14,7 @@ from typing import Awaitable, Callable, Dict, Iterable, List, Sequence, Set, Tup
 
 from .interfaces import Candidate
 
-ReflectionRunner = Callable[[Sequence[Dict[str, object]], str], Awaitable[Sequence[str]]]
+ReflectionRunner = Callable[[Sequence[Dict[str, object]], str, Dict[str, object] | None], Awaitable[Sequence[str]]]
 Validator = Callable[[Candidate], None]
 
 
@@ -44,6 +44,7 @@ class Mutator:
         validators: Iterable[Validator] | None = None,
         reflection_runner: ReflectionRunner | None = None,
         seed: int | None = None,
+        temperature_mutations_enabled: bool = True,
     ) -> None:
         self.config = config
         extra_validators = list(validators or [])
@@ -51,6 +52,7 @@ class Mutator:
         self.validators = extra_validators
         self.reflection_runner = reflection_runner
         self.random = random.Random(seed)
+        self.temperature_mutations_enabled = temperature_mutations_enabled
 
     async def propose(
         self,
@@ -75,7 +77,8 @@ class Mutator:
                 collected.extend(traces)
             batch = collected[: self.config.reflection_batch_size]
             if batch:
-                mutated_texts = await self.reflection_runner(batch, candidate.text)
+                # Pass parent metadata to reflection runner (for temperature context)
+                mutated_texts = await self.reflection_runner(batch, candidate.text, candidate.meta)
                 for idx, text in enumerate(mutated_texts):
                     meta = dict(candidate.meta)
                     meta.update({"edit": "reflection", "parent": candidate.fingerprint, "proposal_idx": idx})
@@ -88,6 +91,7 @@ class Mutator:
         text = candidate.text
         edits: List[Candidate] = []
 
+        # Text mutations (keep existing temperature if present)
         if "Think through" not in text:
             meta = dict(candidate.meta, edit="reasoning_hint", parent=candidate.fingerprint)
             edits.append(Candidate(text=f"{text}\n\nThink through the solution before answering.", meta=meta))
@@ -105,6 +109,36 @@ class Mutator:
         if tightened != text:
             meta = dict(candidate.meta, edit="tone_adjust", parent=candidate.fingerprint)
             edits.append(Candidate(text=tightened, meta=meta))
+
+        # Temperature mutations (20% chance - keep text same, vary temperature)
+        # Only mutate temperature if:
+        # 1. Model supports temperature mutations (checked upfront)
+        # 2. Parent candidate has temperature (opt-in behavior)
+        if self.temperature_mutations_enabled and "temperature" in candidate.meta and self.random.random() < 0.2:
+            current_temp = candidate.meta["temperature"]
+            # Try different temperatures: lower, higher, and standard values
+            # Keep within valid range [0.0, 1.0]
+            temp_variants = []
+
+            # Lower creativity (move toward deterministic)
+            if current_temp > 0.3:
+                temp_variants.append(max(0.0, current_temp - 0.3))
+
+            # Higher creativity (move toward diverse)
+            if current_temp < 0.7:
+                temp_variants.append(min(1.0, current_temp + 0.3))
+
+            # Anchors: try standard values if not already there
+            for anchor in [0.0, 0.5, 1.0]:
+                if abs(current_temp - anchor) > 0.2:
+                    temp_variants.append(anchor)
+
+            # Create variants (limit to 2 to avoid explosion)
+            for temp in self.random.sample(temp_variants, min(2, len(temp_variants))):
+                # Clamp to valid range [0.0, 1.0]
+                temp = max(0.0, min(1.0, temp))
+                meta = dict(candidate.meta, temperature=temp, edit="temperature_shift", parent=candidate.fingerprint)
+                edits.append(Candidate(text=text, meta=meta))
 
         return edits
 

@@ -39,12 +39,17 @@ async def task_lm_call(prompt: str, example: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def reflect_lm_call(traces: List[Dict[str, Any]], parent_prompt: str) -> List[str]:
+async def reflect_lm_call(traces: List[Dict[str, Any]], parent_prompt: str, parent_meta: Dict[str, Any] | None = None) -> List[str]:
     """Produce mutated prompt variants based on failure ``traces``.
 
     The default implementation inspects recent trace messages and adds
     corrective clauses that commonly boost reasoning quality. Swap this out for
     a true reflection prompt when integrating with a live LLM.
+
+    Args:
+        traces: List of execution traces from failed examples
+        parent_prompt: The current prompt text
+        parent_meta: Optional metadata (e.g., temperature) for context
     """
 
     if not traces:

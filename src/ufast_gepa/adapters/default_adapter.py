@@ -141,12 +141,21 @@ class DefaultAdapter:
         )
         self.logger: EventLogger | None = None
 
+        # Check if model supports temperature (quick upfront test)
+        self.temperature_supported = True  # Assume supported unless proven otherwise
+        if task_lm and task_lm_temperature is not None:
+            self.temperature_supported = self._check_temperature_support(task_lm, task_lm_temperature)
+            if not self.temperature_supported:
+                print(f"⚠️  Model {task_lm} doesn't support custom temperature - using default")
+                self.task_lm_temperature = None
+
         # Create reflection runner based on whether reflection_lm is provided
         if reflection_lm:
             reflection_runner = self._create_llm_reflection_runner(reflection_lm)
         else:
             reflection_runner = reflect_lm_call  # Use heuristic default
 
+        # Pass temperature support flag to mutator
         self.mutator = Mutator(
             mutation_config
             or MutationConfig(
@@ -156,13 +165,38 @@ class DefaultAdapter:
                 max_tokens=config.max_tokens,
             ),
             reflection_runner=reflection_runner,
+            temperature_mutations_enabled=self.temperature_supported,
         )
         self.token_controller = TokenCostController(config.max_tokens)
         self.log_dir = log_dir or config.log_path
 
+    def _check_temperature_support(self, model: str, test_temp: float) -> bool:
+        """Quick test to see if model supports custom temperature.
+
+        Uses litellm for provider-agnostic testing (OpenAI, Anthropic, etc.)
+        """
+        try:
+            import litellm
+
+            # Quick test call with minimal tokens
+            response = litellm.completion(
+                model=model,
+                messages=[{"role": "user", "content": "Hi"}],
+                temperature=test_temp,
+                max_tokens=1,
+            )
+            return True
+        except Exception as e:
+            error_msg = str(e).lower()
+            # Check if error is specifically about temperature
+            if "temperature" in error_msg or "does not support" in error_msg or "not supported" in error_msg:
+                return False
+            # Other errors (auth, network) - assume temperature works
+            return True
+
     def _create_llm_reflection_runner(self, reflection_lm: str):
         """Create a reflection runner that calls a real LLM."""
-        async def llm_reflection_runner(traces: list, parent_prompt: str) -> list[str]:
+        async def llm_reflection_runner(traces: list, parent_prompt: str, parent_meta: dict = None) -> list[str]:
             if not traces:
                 return []
 
@@ -178,9 +212,15 @@ class DefaultAdapter:
                     for i, t in enumerate(traces[:3])
                 ])
 
+                # Include temperature context if available
+                temp_context = ""
+                if parent_meta and "temperature" in parent_meta:
+                    temp = parent_meta["temperature"]
+                    temp_context = f" (using temperature={temp})"
+
                 reflection_prompt = f"""You are optimizing a prompt for better performance.
 
-Current prompt:
+Current prompt{temp_context}:
 "{parent_prompt}"
 
 Recent performance on examples:
@@ -190,6 +230,8 @@ Suggest 2-3 improved versions of this prompt that would perform better. Focus on
 1. Adding helpful instructions or constraints
 2. Improving clarity and structure
 3. Addressing common failure patterns
+
+Note: Keep suggestions focused on the prompt text. Temperature will be explored separately.
 
 Output format: Return each improved prompt on a new line, separated by "---"."""
 
@@ -210,7 +252,7 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
 
             except Exception as e:
                 print(f"Warning: LLM reflection failed ({e}), using heuristic fallback")
-                return await reflect_lm_call(traces, parent_prompt)
+                return await reflect_lm_call(traces, parent_prompt, parent_meta)
 
         return llm_reflection_runner
 
@@ -225,6 +267,9 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
 
                 client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+                # Determine temperature: candidate.meta > adapter config > None
+                temperature = candidate.meta.get("temperature", self.task_lm_temperature)
+
                 # Build kwargs, only include temperature if not None
                 completion_kwargs = {
                     "model": self.task_lm.replace("openai/", ""),
@@ -233,10 +278,20 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
                         {"role": "user", "content": example["input"]},
                     ],
                 }
-                if self.task_lm_temperature is not None:
-                    completion_kwargs["temperature"] = self.task_lm_temperature
+                if temperature is not None:
+                    completion_kwargs["temperature"] = temperature
 
-                response = await client.chat.completions.create(**completion_kwargs)
+                # Try with temperature, fall back without it if model doesn't support it
+                try:
+                    response = await client.chat.completions.create(**completion_kwargs)
+                except Exception as e:
+                    # Some models don't support custom temperature (e.g., gpt-5-nano, o1-preview)
+                    if "temperature" in str(e).lower() and temperature is not None:
+                        # Retry without temperature
+                        completion_kwargs.pop("temperature", None)
+                        response = await client.chat.completions.create(**completion_kwargs)
+                    else:
+                        raise  # Re-raise if it's a different error
 
                 model_output = response.choices[0].message.content
                 tokens_used = response.usage.total_tokens
@@ -290,7 +345,7 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
 
     async def optimize_async(
         self,
-        seeds: Sequence[str],
+        seeds: Sequence[str | Candidate],
         *,
         max_rounds: Optional[int] = None,
         max_evaluations: Optional[int] = None,
@@ -300,7 +355,16 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
         enable_auto_stop: bool = False,  # Enable automatic stopping
     ) -> Dict[str, Any]:
         orchestrator = self._build_orchestrator(logger, enable_auto_stop=enable_auto_stop)
-        seed_candidates = [Candidate(text=seed, meta={"source": "seed"}) for seed in seeds]
+        # Accept either strings or Candidate objects
+        seed_candidates = []
+        for seed in seeds:
+            if isinstance(seed, Candidate):
+                # Preserve metadata (including temperature)
+                meta = dict(seed.meta, source="seed")
+                seed_candidates.append(Candidate(text=seed.text, meta=meta))
+            else:
+                # String seed
+                seed_candidates.append(Candidate(text=seed, meta={"source": "seed"}))
         await orchestrator.run(seed_candidates, max_rounds=max_rounds, max_evaluations=max_evaluations)
         pareto = orchestrator.archive.pareto_candidates()
         qd = orchestrator.archive.sample_qd(limit=len(pareto))
@@ -312,7 +376,7 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
 
     def optimize(
         self,
-        seeds: Sequence[str],
+        seeds: Sequence[str | Candidate],
         *,
         max_rounds: Optional[int] = None,
         max_evaluations: Optional[int] = None,

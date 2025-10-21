@@ -54,7 +54,7 @@ async def deterministic_task_runner(candidate: Candidate, example_id: str):
     }
 
 
-async def deterministic_reflection_runner(traces, parent_prompt: str):
+async def deterministic_reflection_runner(traces, parent_prompt: str, parent_meta=None):
     """Deterministic reflection runner."""
     if not traces:
         return []

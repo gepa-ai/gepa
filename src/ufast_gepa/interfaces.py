@@ -26,10 +26,14 @@ class Candidate:
 
     @property
     def fingerprint(self) -> str:
-        """Stable identifier derived from the candidate text."""
+        """Stable identifier derived from the candidate text and temperature."""
         import hashlib
 
-        return hashlib.sha256(self.text.encode("utf-8")).hexdigest()
+        # Include temperature in fingerprint so same prompt with different temps
+        # are treated as distinct candidates for caching and evaluation
+        temp = self.meta.get("temperature", "default")
+        key = f"{self.text}::temp={temp}"
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
 @dataclass

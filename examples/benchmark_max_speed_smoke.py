@@ -133,12 +133,21 @@ def main() -> None:
         reflection_lm_temperature=reflection_temperature,
     )
 
+    # Seeds can be strings or Candidate objects with temperature metadata
     seeds = [
         (
             "You are a meticulous AIME math assistant. Explain your reasoning "
             "briefly, keep calculations organized, and end with '### <final answer>'."
         )
     ]
+
+    # Example: Enable temperature cycling by passing Candidate objects
+    # from ufast_gepa.interfaces import Candidate
+    # seeds = [
+    #     Candidate(text=seeds[0], meta={"temperature": 0.0}),  # Deterministic
+    #     Candidate(text=seeds[0], meta={"temperature": 0.7}),  # Balanced
+    #     Candidate(text=seeds[0], meta={"temperature": 1.5}),  # Creative
+    # ]
 
     print(f'\n🌱 Seed prompt: "{seeds[0][:60]}..."')
     print(f"\n⏱️  Starting optimization (max 2 rounds, 16 evaluations)...\n")
