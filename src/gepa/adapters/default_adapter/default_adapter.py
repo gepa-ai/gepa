@@ -60,10 +60,28 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
 
         try:
             if isinstance(self.model, str):
-                responses = [resp.choices[0].message.content.strip() for resp in self.litellm.batch_completion(model=self.model, messages=litellm_requests, max_workers=self.max_litellm_workers)]
+                batch_responses = self.litellm.batch_completion(
+                    model=self.model, messages=litellm_requests, max_workers=self.max_litellm_workers
+                )
+                responses = []
+                for i, resp in enumerate(batch_responses):
+                    # Handle errors in batch_completion responses
+                    if isinstance(resp, Exception):
+                        print(f"Warning: LiteLLM error in batch request {i}: {resp}")
+                        responses.append(f"[Error: {str(resp)}]")
+                    elif hasattr(resp, 'choices'):
+                        responses.append(resp.choices[0].message.content.strip())
+                    else:
+                        print(f"Warning: Unexpected response type for request {i}: {type(resp)}")
+                        print(f"Response content: {resp}")
+                        responses.append(f"[Error: Invalid response type]")
             else:
                 responses = [self.model(messages) for messages in litellm_requests]
         except Exception as e:
+            print(f"\n❌ Error during batch completion:")
+            print(f"   Model: {self.model}")
+            print(f"   Error type: {type(e).__name__}")
+            print(f"   Error message: {str(e)}")
             raise e
 
         for data, assistant_response in zip(batch, responses, strict=False):
