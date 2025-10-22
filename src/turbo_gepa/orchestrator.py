@@ -166,6 +166,13 @@ class Orchestrator:
     async def finalize(self, delta: Optional[float] = None) -> None:
         """Run token-cost pruning on the Pareto frontier."""
 
+        # Wait for any pending state save to complete before finalizing
+        if hasattr(self, '_save_task') and not self._save_task.done():
+            try:
+                await self._save_task
+            except asyncio.CancelledError:
+                pass  # Task was cancelled, that's okay
+
         entries = self.archive.pareto_entries()
         if not entries:
             return
@@ -285,6 +292,15 @@ class Orchestrator:
     async def _handle_results(self, results: Sequence[Tuple[Candidate, EvalResult, str]]) -> None:
         # Parallelize result handling for 2-3x speedup (archive now has proper locking)
         await asyncio.gather(*(self._handle_result(pair) for pair in results))
+
+        # Show progress after processing batch
+        if self.show_progress:
+            import sys
+            pareto = self.archive.pareto_candidates()
+            best_quality = max(c.meta.get("quality", 0.0) for c in pareto) if pareto else 0.0
+            avg_quality = sum(c.meta.get("quality", 0.0) for c in pareto) / len(pareto) if pareto else 0.0
+            sys.stdout.write(f"\r   🔄 Round {self.round_index} | Evals: {self.evaluations_run} | Best: {best_quality:.2%} | Avg: {avg_quality:.2%}  ")
+            sys.stdout.flush()
 
     async def _handle_result(self, pair: Tuple[Candidate, EvalResult, str]) -> None:
         candidate, result, decision = pair
@@ -496,6 +512,8 @@ class Orchestrator:
                     current_quality=current_quality,
                     best_quality=best_quality,
                 )
+                # Clear inline progress and show full chart
+                print()  # Newline to clear inline progress
                 self.progress_chart.display()
 
         await self._log(
@@ -594,17 +612,24 @@ class Orchestrator:
     # State persistence for resumable optimization
 
     async def _save_state(self) -> None:
-        """Save current orchestrator state to cache for resumability."""
+        """Save current orchestrator state to cache for resumability (non-blocking)."""
+        # Cancel any previous save that's still running to avoid queue buildup
+        if hasattr(self, '_save_task') and not self._save_task.done():
+            self._save_task.cancel()
+
         pareto_candidates = self.archive.pareto_candidates()
         qd_candidates = self.archive.sample_qd(limit=len(self.archive.qd_grid))
 
-        await asyncio.to_thread(
-            self.cache.save_state,
-            round_num=self.round_index,
-            evaluations=self.evaluations_run,
-            pareto_candidates=pareto_candidates,
-            qd_candidates=qd_candidates,
-            queue=list(self.queue),
+        # Run save in background - don't block the optimization loop
+        self._save_task = asyncio.create_task(
+            asyncio.to_thread(
+                self.cache.save_state,
+                round_num=self.round_index,
+                evaluations=self.evaluations_run,
+                pareto_candidates=pareto_candidates,
+                qd_candidates=qd_candidates,
+                queue=list(self.queue),
+            )
         )
 
     async def _restore_state(self, state: Dict) -> None:
@@ -612,10 +637,10 @@ class Orchestrator:
         self.round_index = state["round"]
         self.evaluations_run = state["evaluations"]
 
-        # Restore archive by re-inserting candidates
+        # Restore archive by re-inserting candidates (parallelized)
         # Note: We don't have the full EvalResult objects, so we'll need to
         # re-evaluate them (but cache will make this instant)
-        for candidate in state["pareto"] + state["qd"]:
+        async def restore_candidate(candidate: Candidate) -> None:
             # Re-evaluate to get full result (will hit cache)
             shard = self.sampler.sample_shard(self.round_index, len(self.sampler.example_ids))
             result = await self.evaluator.eval_on_shard(
@@ -625,6 +650,10 @@ class Orchestrator:
                 shard_fraction=1.0,
             )
             await self.archive.insert(candidate, result)
+
+        # Restore all candidates in parallel
+        all_candidates = state["pareto"] + state["qd"]
+        await asyncio.gather(*(restore_candidate(c) for c in all_candidates))
 
         # Restore queue
         self.queue = deque(state["queue"], maxlen=self.config.queue_limit)

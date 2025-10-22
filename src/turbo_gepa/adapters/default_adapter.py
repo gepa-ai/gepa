@@ -248,8 +248,15 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
                 return mutations[:3]  # Limit to 3 mutations
 
             except Exception as e:
-                print(f"Warning: LLM reflection failed ({e}), using heuristic fallback")
-                return await reflect_lm_call(traces, parent_prompt, parent_meta)
+                error_type = type(e).__name__
+                error_msg = str(e)
+                print(f"Warning: LLM reflection failed ({error_type}: {error_msg[:100]}), using heuristic fallback")
+                try:
+                    return await reflect_lm_call(traces, parent_prompt, parent_meta)
+                except Exception as fallback_error:
+                    # If even the heuristic fails, return empty list
+                    print(f"Warning: Heuristic reflection fallback also failed ({fallback_error}), returning no mutations")
+                    return []
 
         return llm_reflection_runner
 
@@ -300,8 +307,21 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
                     "response": model_output,
                 }
             except Exception as e:
-                print(f"Warning: LLM call failed ({e}), using heuristic")
-                metrics = await task_lm_call(candidate.text, example)
+                error_type = type(e).__name__
+                error_msg = str(e)
+                print(f"Warning: LLM call failed ({error_type}: {error_msg[:100]}), using heuristic fallback")
+                # Use heuristic fallback instead of crashing
+                try:
+                    metrics = await task_lm_call(candidate.text, example)
+                except Exception as fallback_error:
+                    # If even the heuristic fails, return zero scores
+                    print(f"Warning: Heuristic fallback also failed ({fallback_error}), returning zero scores")
+                    metrics = {
+                        "quality": 0.0,
+                        "neg_cost": 0.0,
+                        "tokens": 0.0,
+                        "error": f"{error_type}: {error_msg}",
+                    }
         else:
             # Use heuristic evaluation
             metrics = await task_lm_call(candidate.text, example)
@@ -314,12 +334,12 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
         metrics.setdefault("output", metrics.get("response"))
         return metrics
 
-    def _build_orchestrator(self, logger: Optional[EventLogger], enable_auto_stop: bool = False) -> Orchestrator:
+    def _build_orchestrator(self, logger: Optional[EventLogger], enable_auto_stop: bool = False, display_progress: bool = True) -> Orchestrator:
         evaluator = AsyncEvaluator(
             cache=self.cache,
             task_runner=self._task_runner,
         )
-        orchestrator_logger = logger or build_logger(self.log_dir, "turbo_default")
+        orchestrator_logger = logger or build_logger(self.log_dir, "turbo_default", display_progress=display_progress)
 
         # Create stop governor if auto-stop enabled
         stop_governor = StopGovernor(StopGovernorConfig()) if enable_auto_stop else None
@@ -335,6 +355,7 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
             token_controller=self.token_controller,
             stop_governor=stop_governor,
             enable_auto_stop=enable_auto_stop,
+            show_progress=display_progress,
         )
 
     async def optimize_async(
@@ -348,15 +369,16 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
         reflection_lm: Optional[str] = None,  # Accept but ignore (uses heuristic)
         enable_auto_stop: bool = False,  # Enable automatic stopping
         optimize_temperature_after_convergence: bool = False,  # Stage temperature optimization
+        display_progress: bool = True,  # Show progress charts
     ) -> Dict[str, Any]:
         # Staged temperature optimization: two-phase approach
         if optimize_temperature_after_convergence:
             return await self._optimize_staged_temperature(
-                seeds, max_rounds, max_evaluations, logger, enable_auto_stop
+                seeds, max_rounds, max_evaluations, logger, enable_auto_stop, display_progress
             )
 
         # Standard integrated optimization
-        orchestrator = self._build_orchestrator(logger, enable_auto_stop=enable_auto_stop)
+        orchestrator = self._build_orchestrator(logger, enable_auto_stop=enable_auto_stop, display_progress=display_progress)
         # Accept either strings or Candidate objects
         seed_candidates = []
         for seed in seeds:
@@ -383,6 +405,7 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
         max_evaluations: Optional[int],
         logger: Optional[EventLogger],
         enable_auto_stop: bool,
+        display_progress: bool = True,
     ) -> Dict[str, Any]:
         """Two-phase optimization: prompts first, then temperature.
 
@@ -410,7 +433,7 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
         phase1_budget = int(max_evaluations * 0.7) if max_evaluations else None
         phase1_rounds = max_rounds if max_rounds else 10  # Default to 10 if unlimited
 
-        orchestrator1 = self._build_orchestrator(logger, enable_auto_stop=enable_auto_stop)
+        orchestrator1 = self._build_orchestrator(logger, enable_auto_stop=enable_auto_stop, display_progress=display_progress)
         await orchestrator1.run(phase1_seeds, max_rounds=phase1_rounds, max_evaluations=phase1_budget)
 
         phase1_pareto = orchestrator1.archive.pareto_entries()
@@ -460,7 +483,7 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
         phase2_budget = int(max_evaluations * 0.3) if max_evaluations else None
         phase2_rounds = min(5, max_rounds) if max_rounds else 5  # Shorter optimization
 
-        orchestrator2 = self._build_orchestrator(logger, enable_auto_stop=False)  # Short phase, no auto-stop
+        orchestrator2 = self._build_orchestrator(logger, enable_auto_stop=False, display_progress=display_progress)  # Short phase, no auto-stop
         await orchestrator2.run(temp_seeds, max_rounds=phase2_rounds, max_evaluations=phase2_budget)
 
         phase2_pareto = orchestrator2.archive.pareto_entries()
@@ -484,6 +507,7 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
         reflection_lm: Optional[str] = None,  # Accept for API compatibility (uses heuristic)
         enable_auto_stop: bool = False,  # Enable automatic stopping
         optimize_temperature_after_convergence: bool = False,  # Stage temperature optimization
+        display_progress: bool = True,  # Show progress charts
     ) -> Dict[str, Any]:
         """
         Optimize prompts using TurboGEPA with heuristic evaluation.
@@ -515,5 +539,6 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
                 reflection_lm=reflection_lm,
                 enable_auto_stop=enable_auto_stop,
                 optimize_temperature_after_convergence=optimize_temperature_after_convergence,
+                display_progress=display_progress,
             )
         )

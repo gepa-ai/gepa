@@ -59,20 +59,43 @@ class AsyncEvaluator:
                 results.append(cached)
                 return
 
-            async with semaphore:
-                metrics = await self.task_runner(candidate, example_id)
-            mapped = self.metrics_mapper(metrics)
-            trace = dict(metrics)
-            trace["example_id"] = example_id
-            result = EvalResult(
-                objectives=mapped,
-                traces=[trace],
-                n_examples=1,
-                shard_fraction=shard_fraction,
-                example_ids=[example_id],
-            )
-            await self.cache.set(candidate, example_id, result)
-            results.append(result)
+            try:
+                async with semaphore:
+                    metrics = await self.task_runner(candidate, example_id)
+                mapped = self.metrics_mapper(metrics)
+                trace = dict(metrics)
+                trace["example_id"] = example_id
+                result = EvalResult(
+                    objectives=mapped,
+                    traces=[trace],
+                    n_examples=1,
+                    shard_fraction=shard_fraction,
+                    example_ids=[example_id],
+                )
+                await self.cache.set(candidate, example_id, result)
+                results.append(result)
+            except Exception as e:
+                # Handle task runner failures gracefully
+                # Return zero scores to avoid crashing the entire batch
+                print(f"Warning: Evaluation failed for example {example_id}: {e}")
+                fallback_metrics = {
+                    "quality": 0.0,
+                    "neg_cost": 0.0,
+                    "tokens": 0.0,
+                }
+                mapped = self.metrics_mapper(fallback_metrics)
+                trace = dict(fallback_metrics)
+                trace["example_id"] = example_id
+                trace["error"] = str(e)
+                result = EvalResult(
+                    objectives=mapped,
+                    traces=[trace],
+                    n_examples=1,
+                    shard_fraction=shard_fraction,
+                    example_ids=[example_id],
+                )
+                # Don't cache failed evaluations - allow retry on next run
+                results.append(result)
 
         await asyncio.gather(*(eval_one(example) for example in example_ids))
 
