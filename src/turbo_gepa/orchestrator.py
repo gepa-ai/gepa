@@ -20,7 +20,7 @@ from .evaluator import AsyncEvaluator
 from .interfaces import Candidate, EvalResult
 from .islands import IslandContext, integrate_in, migrate_out
 from .logging_utils import EventLogger
-from .merge import MergeManager
+# Merge functionality removed - reflection LLM handles combining prompt ideas
 from .mutator import Mutator
 from .progress_chart import ProgressChart
 from .sampler import InstanceSampler
@@ -52,6 +52,7 @@ class Orchestrator:
         show_progress: bool = True,
         stop_governor: Optional[StopGovernor] = None,
         enable_auto_stop: bool = False,
+        example_sampler: Optional[Callable[[int], List[Dict[str, object]]]] = None,
     ) -> None:
         self.config = config
         self.evaluator = evaluator
@@ -60,6 +61,7 @@ class Orchestrator:
         self.mutator = mutator
         self.cache = cache
         self.island_context = island_context
+        self.example_sampler = example_sampler
         self.scheduler = BudgetedScheduler(
             SchedulerConfig(
                 shards=config.shards,
@@ -67,14 +69,14 @@ class Orchestrator:
                 quantile=config.cohort_quantile,
             )
         )
-        self.merge_manager = MergeManager()
+        # Merge manager removed - reflection LLM handles combining ideas
         self.token_controller = token_controller or TokenCostController(config.max_tokens)
         self.logger: EventLogger | _NoopLogger = logger or _NoopLogger()
         self.queue: Deque[Candidate] = deque(maxlen=config.queue_limit)
         self.latest_results: Dict[str, EvalResult] = {}
         self.evaluations_run: int = 0
         self.round_index: int = 0
-        self._last_merge_round: int = -1
+        # Merge tracking removed
         self.show_progress = show_progress
         self.progress_chart = ProgressChart() if show_progress else None
         self.stop_governor = stop_governor if enable_auto_stop else None
@@ -135,7 +137,7 @@ class Orchestrator:
             results = await self._race_batch(batch)
             await self._handle_results(results)
             await self._spawn_mutations()
-            await self._maybe_merge()
+            # Merge removed - reflection LLM handles combining ideas from multiple prompts
             await self._maybe_migrate()
             await self._maybe_log_summary()
 
@@ -296,9 +298,10 @@ class Orchestrator:
         # Show progress after processing batch
         if self.show_progress:
             import sys
-            pareto = self.archive.pareto_candidates()
-            best_quality = max(c.meta.get("quality", 0.0) for c in pareto) if pareto else 0.0
-            avg_quality = sum(c.meta.get("quality", 0.0) for c in pareto) / len(pareto) if pareto else 0.0
+            pareto = self.archive.pareto_entries()
+            # Fix: Read from result.objectives, not candidate.meta
+            best_quality = max(e.result.objectives.get(self.config.promote_objective, 0.0) for e in pareto) if pareto else 0.0
+            avg_quality = sum(e.result.objectives.get(self.config.promote_objective, 0.0) for e in pareto) / len(pareto) if pareto else 0.0
             sys.stdout.write(f"\r   🔄 Round {self.round_index} | Evals: {self.evaluations_run} | Best: {best_quality:.2%} | Avg: {avg_quality:.2%}  ")
             sys.stdout.flush()
 
@@ -334,82 +337,117 @@ class Orchestrator:
             )
 
     async def _spawn_mutations(self) -> None:
+        """Generate mutations using batched reflection for efficiency."""
         entries = self.archive.pareto_entries()
         if not entries:
             return
-        remaining = self.config.max_mutations_per_round
-        if remaining <= 0:
+
+        num_mutations = self.config.max_mutations_per_round
+        if num_mutations <= 0:
             return
-        proposals = await asyncio.gather(*(self._prepare_mutations(entry) for entry in entries))
-        for enriched in proposals:
-            if remaining <= 0:
-                break
-            if not enriched:
-                continue
-            accepted = enriched[:remaining]
-            await self._log("mutation_proposed", {"count": len(accepted)})
-            self.enqueue(accepted)
+
+        mutations = await self._generate_mutations_batched(entries, num_mutations)
+
+        if mutations:
+            await self._log("mutation_proposed", {"count": len(mutations)})
+            self.enqueue(mutations)
             await self._log(
                 "mutation_accepted",
                 {
-                    "candidates": [candidate.fingerprint for candidate in accepted],
+                    "candidates": [candidate.fingerprint for candidate in mutations],
                 },
             )
-            remaining -= len(accepted)
 
-    async def _maybe_merge(self) -> None:
-        if self.round_index - self._last_merge_round < self.config.merge_period:
-            return
-        entries = self.archive.pareto_entries()
-        if len(entries) < 2:
-            return
-        merged_candidates = self.merge_manager.propose([entry.candidate for entry in entries])
-        if not merged_candidates:
-            return
+    async def _generate_mutations_batched(
+        self,
+        entries: List[ArchiveEntry],
+        num_mutations: int,
+    ) -> List[Candidate]:
+        """Generate mutations using batched reflection."""
+        # Smart parent selection: mix of top quality + QD diversity
+        # Select 3-5 parents to give reflection LLM rich context
+        num_parents = min(5, max(3, len(entries)))
 
-        best_entry = max(
+        # Get top performers by quality
+        sorted_entries = sorted(
             entries,
-            key=lambda entry: entry.result.objectives.get(self.config.promote_objective, float("-inf")),
+            key=lambda e: e.result.objectives.get(self.config.promote_objective, float("-inf")),
+            reverse=True,
         )
-        parent_score = best_entry.result.objectives.get(self.config.promote_objective, float("-inf"))
-        shard_fraction = self.config.shards[0]
-        shard_size = self._shard_size(shard_fraction)
-        shard = self.sampler.sample_shard(self.round_index, shard_size)
+        top_quality = sorted_entries[: num_parents // 2 + 1]  # At least half are top quality
 
-        accepted: List[Candidate] = []
-        evaluations = await asyncio.gather(
-            *(
-                self.evaluator.eval_on_shard(
-                    candidate,
-                    shard,
-                    concurrency=self.config.eval_concurrency,
-                    shard_fraction=shard_fraction,
-                )
-                for candidate in merged_candidates
+        # Add diversity from QD grid
+        qd_diverse = self.archive.sample_qd(num_parents - len(top_quality))
+
+        # Combine (deduplicate by fingerprint)
+        selected_fingerprints = {e.candidate.fingerprint for e in top_quality}
+        selected_entries = list(top_quality)
+
+        for candidate in qd_diverse:
+            if candidate.fingerprint not in selected_fingerprints:
+                # Find the entry for this candidate
+                entry = next((e for e in entries if e.candidate.fingerprint == candidate.fingerprint), None)
+                if entry:
+                    selected_entries.append(entry)
+                    selected_fingerprints.add(candidate.fingerprint)
+                if len(selected_entries) >= num_parents:
+                    break
+
+        # Collect failure traces for selected parents (in parallel)
+        progressed_contexts: List[Dict[str, object]] = []
+        fallback_contexts: List[Dict[str, object]] = []
+        for entry in selected_entries:
+            # Allow reflection in early rounds even if candidates haven't progressed past first shard
+            # This prevents chicken-and-egg problem: need reflection to improve seeds, but ASHA kills them first
+            # After round 1, require progression to avoid wasting compute on repeatedly bad candidates
+            shard_progressed = (
+                len(self.config.shards) <= 1  # Single shard = always allow
+                or self.round_index <= 1  # First 2 rounds = always allow (give reflection a chance)
+                or self.scheduler.current_shard_index(entry.candidate) > 0  # Later rounds = must progress
             )
-        )
-        for candidate, result in zip(merged_candidates, evaluations):
-            uplift = result.objectives.get(self.config.promote_objective, float("-inf")) - parent_score
-            if uplift >= self.config.merge_uplift_min:
-                meta = dict(candidate.meta)
-                meta["parent_objectives"] = best_entry.result.objectives
-                merged_candidate = Candidate(text=candidate.text, meta=meta)
-                accepted.append(merged_candidate)
-                await self._log(
-                    "merge_accepted",
-                    {"candidate": candidate.fingerprint, "uplift": uplift},
-                )
-                # _handle_result now awaits archive.insert internally
-                await self._handle_result((merged_candidate, result, "merged"))
+            if shard_progressed:
+                failures = await self.cache.sample_failures(entry.candidate)
+                progressed_contexts.append({
+                    "candidate": entry.candidate,
+                    "failures": failures,
+                })
             else:
-                await self._log(
-                    "merge_rejected",
-                    {"candidate": candidate.fingerprint, "uplift": uplift},
-                )
-        if accepted:
-            self.enqueue(accepted)
-            await self._log("merge_proposed", {"count": len(accepted)})
-        self._last_merge_round = self.round_index
+                fallback_contexts.append({
+                    "candidate": entry.candidate,
+                    "failures": [],
+                })
+
+        parent_contexts = progressed_contexts or fallback_contexts
+        if not parent_contexts:
+            return []
+
+        # Sample task examples for spec induction (3 examples)
+        task_examples = self._sample_task_examples_for_spec_induction(num_examples=3)
+
+        # Hybrid reflection: runs incremental + spec induction concurrently
+        mutations = await self.mutator.propose(parent_contexts, num_mutations, task_examples=task_examples)
+
+        await self._log(
+            "batch_reflection",
+            {
+                "num_parents": len(parent_contexts),
+                "num_mutations_requested": num_mutations,
+                "num_mutations_generated": len(mutations),
+            },
+        )
+
+        return mutations
+
+    def _sample_task_examples_for_spec_induction(self, num_examples: int = 3) -> List[Dict[str, object]]:
+        """Sample a few task examples for spec induction (PROMPT-MII style)."""
+        if self.example_sampler:
+            # Use adapter-provided sampler (has access to actual example data)
+            return self.example_sampler(num_examples)
+        else:
+            # Fallback: return empty list (spec induction won't run)
+            return []
+
+    # _maybe_merge method removed - reflection LLM handles combining ideas from multiple prompts
 
     async def _maybe_migrate(self) -> None:
         if not self.island_context:
@@ -488,33 +526,75 @@ class Orchestrator:
         interval = max(self.config.log_summary_interval, 0)
         if interval == 0:
             return
-        if (self.round_index + 1) % interval != 0:
+
+        # Adaptive display frequency: More frequent early, less frequent later
+        # Round 0: Always show (baseline)
+        # Rounds 1-5: Every round (rapid iteration feedback)
+        # Rounds 6-20: Every 3 rounds (still learning fast)
+        # Rounds 21+: Every interval rounds (config default: 10)
+        should_display = False
+        if self.round_index == 0:
+            should_display = True  # Always show seed baseline
+        elif self.round_index <= 5:
+            should_display = True  # Show every round early on
+        elif self.round_index <= 20:
+            should_display = (self.round_index % 3 == 0)  # Every 3 rounds
+        else:
+            should_display = ((self.round_index + 1) % interval == 0)  # Normal interval
+
+        if not should_display:
             return
+
         hardness_size = self.sampler.hardness_size() if hasattr(self.sampler, "hardness_size") else 0
 
-        # Update progress chart
-        if self.progress_chart is not None:
-            pareto = self.archive.pareto_entries()
-            if pareto:
-                # Get best quality from Pareto
-                best_quality = max(
-                    entry.result.objectives.get(self.config.promote_objective, 0.0)
-                    for entry in pareto
-                )
-                # Get current average quality
-                current_quality = sum(
-                    entry.result.objectives.get(self.config.promote_objective, 0.0)
-                    for entry in pareto
-                ) / len(pareto)
+        # Calculate metrics (needed for both chart display and island dashboard)
+        pareto = self.archive.pareto_entries()
+        if pareto:
+            # Get best quality from Pareto
+            best_quality = max(
+                entry.result.objectives.get(self.config.promote_objective, 0.0)
+                for entry in pareto
+            )
+            # Get current average quality
+            current_quality = sum(
+                entry.result.objectives.get(self.config.promote_objective, 0.0)
+                for entry in pareto
+            ) / len(pareto)
 
+            # Send metrics to island dashboard if available (even if not showing local chart)
+            if self.island_context and self.island_context.metrics_queue:
+                try:
+                    self.island_context.metrics_queue.put_nowait({
+                        "island_id": self.island_context.island_id,
+                        "round": self.round_index,
+                        "best_quality": best_quality,
+                        "avg_quality": current_quality,
+                        "pareto_size": len(pareto),
+                    })
+                except asyncio.QueueFull:
+                    pass  # Dashboard fell behind, skip this update
+
+            # Update and display progress chart if enabled
+            if self.progress_chart is not None:
                 self.progress_chart.update(
                     round_num=self.round_index,
                     current_quality=current_quality,
                     best_quality=best_quality,
                 )
-                # Clear inline progress and show full chart
-                print()  # Newline to clear inline progress
-                self.progress_chart.display()
+
+                # Skip display if we have no meaningful data yet (all zeros)
+                # This happens when task returns 0 quality for all examples
+                has_meaningful_data = best_quality > 0.001 or len(self.progress_chart.quality_history) > 1
+
+                if has_meaningful_data:
+                    # Clear inline progress and show full chart
+                    print()  # Newline to clear inline progress
+                    self.progress_chart.display()
+                elif self.round_index == 0:
+                    # First round with zeros - inform user
+                    print()
+                    print(f"\n   ℹ️  Baseline: {best_quality:.2%} quality on seeds (round 0)")
+                    print(f"   Starting optimization to improve performance...\n")
 
         await self._log(
             "summary",
@@ -526,17 +606,6 @@ class Orchestrator:
                 "hardness_size": hardness_size,
             },
         )
-
-    async def _prepare_mutations(self, entry: ArchiveEntry) -> List[Candidate]:
-        failures = await self.cache.sample_failures(entry.candidate)
-        mutations = await self.mutator.propose(entry.candidate, failures)
-        enriched: List[Candidate] = []
-        for mutation in mutations:
-            meta = dict(mutation.meta)
-            meta.setdefault("parent", entry.candidate.fingerprint)
-            meta.setdefault("parent_objectives", entry.result.objectives)
-            enriched.append(Candidate(text=mutation.text, meta=meta))
-        return enriched
 
     def _check_stop_governor(self) -> tuple[bool, Dict]:
         """Update stop governor with current metrics and check if we should stop."""

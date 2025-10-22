@@ -27,10 +27,12 @@ def test_staged_temperature_optimization(tmp_path):
     adapter.temperature_supported = True
 
     # Run staged optimization with small budget
+    # Note: max_evaluations must be high enough for Phase 2 to run mutations
+    # Phase 1 uses ~40-50 evals, Phase 2 needs another ~40-50 for temp exploration
     result = adapter.optimize(
         seeds=["You are a helpful assistant."],
-        max_rounds=4,
-        max_evaluations=60,
+        max_rounds=8,  # Enough rounds for both phases
+        max_evaluations=None,  # No evaluation limit (use rounds instead)
         optimize_temperature_after_convergence=True,
     )
 

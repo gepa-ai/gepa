@@ -4,39 +4,40 @@ This fork adds a high-throughput, island-aware optimizer inspired by GEPA. The `
 
 ## Quick Start
 
-### Single-Island Demo
+### Available Examples
 
-The simplest way to get started:
-
+**Speed Benchmark:**
 ```bash
-python examples/run_local_demo.py
+python examples/benchmark_max_speed_smoke.py
+```
+Single-island optimization demo with performance metrics.
+
+**AIME Evaluation:**
+```bash
+python examples/aime_full_eval.py
+```
+Full AIME dataset evaluation with TurboGEPA.
+
+**GEPA vs TurboGEPA Comparison:**
+```bash
+# Compare both implementations
+python examples/compare_gepa_vs_turbo.py --mode all --limit 20
+
+# Run only TurboGEPA with temperature optimization
+python examples/compare_gepa_vs_turbo.py --mode turbo-temp --limit 20
 ```
 
-This runs a single-island optimization with a synthetic dataset and logs results to `.turbo_gepa/logs/demo_run.jsonl`.
-
-### Multi-Island Demo
-
-For distributed optimization with migrations:
-
+**Seed Initialization Demo:**
 ```bash
-python examples/run_multi_island_demo.py
+python examples/demo_seed_initialization.py
 ```
+Demonstrates PROMPT-MII style seed initialization.
 
-This launches 4 islands in parallel with ring topology migrations every 2 rounds.
-
-### Benchmark Analysis
-
-After running either demo, analyze performance KPIs:
-
+**Dashboard (optional):**
 ```bash
-python examples/benchmark_run.py --log-path .turbo_gepa/logs/demo_run.jsonl
+python examples/test_dashboard.py
 ```
-
-Or for JSON output:
-
-```bash
-python examples/benchmark_run.py --json
-```
+Multi-island dashboard for monitoring optimization progress.
 
 ### Adapter Usage
 
@@ -70,9 +71,12 @@ Think of sharding like a tournament bracket:
 **Why?** This saves 60-70% of evaluations by eliminating bad candidates early.
 
 **Auto-Sharding**: The system automatically picks shard sizes based on your dataset:
-- Small dataset (< 50 examples): `(0.30, 1.0)` → 2 stages with reliable signal
-- Medium dataset (100-500): `(0.10, 0.30, 1.0)` → 3 stages for balanced filtering
-- Large dataset (1000+): `(0.05, 0.20, 1.0)` → 3 stages for maximum exploration
+- Very small (< 50 examples): `(0.30-0.50, 1.0)` → 2 stages with reliable signal
+- Small (50-100): `(0.20-0.30, 1.0)` → 2 stages
+- Medium (100-500): `(0.10-0.20, 0.30, 1.0)` → 3 stages for balanced filtering
+- Large (500-2000): `(0.05-0.10, 0.20, 1.0)` → 3 stages
+- Very large (2000-5000): `(0.05, 0.20, 1.0)` → 3 stages
+- Massive (5000+): `(0.03, 0.12, 0.40, 1.0)` → 4 stages for maximum exploration
 
 You can override with `shard_strategy="conservative"` (safer, slower) or `"aggressive"` (faster, riskier).
 
@@ -105,11 +109,12 @@ Instead of testing prompts one-by-one sequentially:
 
 ### 🧬 **Mutation (Creating Better Prompts)**
 
-Two ways to generate new candidates:
-1. **Rule-based edits** (80%): Add examples, fix grammar, clarify instructions
-2. **LLM reflection** (20%): Analyze failures and suggest improvements
+Three mutation methods in priority order (consumes budget sequentially):
+1. **Temperature Exploration** (if enabled): Deterministic temperature variations around successful values
+2. **Incremental Reflection**: Batch multiple successful parents → single LLM call generates variations
+3. **Spec Induction**: Generate fresh prompts from task I/O structure (breaks local optima, uses remaining budget)
 
-**Why?** Mix cheap edits with smart reflection for efficient exploration.
+**Why?** Temperature mutations are cheap (no LLM calls). Batched reflection is 3-5× faster than sequential mutations. Spec induction provides diversity when budget allows.
 
 ### 📊 **Pareto Archive (Multi-Objective)**
 
@@ -191,9 +196,10 @@ for candidate in result["pareto"]:
 - **Initial diversity**: Seed with 3-4 different temperatures
 - **ASHA testing**: All temps tested cheaply on shard 0 (5% of data)
 - **Smart pruning**: Worst 60% eliminated, only winners advance
-- **Focused mutations**: 20% of mutations vary temperature around successful values
+- **Focused mutations**: Temperature variations generated around successful values
 - **Efficient search**: Explores ±0.3 and anchor values (0.0, 0.5, 1.0)
 - **Valid range**: All temperatures clamped to [0.0, 1.0]
+- **Opt-in design**: Only enabled when seeds include temperature metadata and model supports it
 
 **3. Example Optimization Flow**
 ```
@@ -468,6 +474,96 @@ The orchestrator automatically:
 - Deduplicates incoming candidates by fingerprint
 - Inserts valid migrants into the local archive
 
+## ⚡ Lightning Modes (Speed Optimization)
+
+TurboGEPA includes pre-configured **lightning modes** for speed/quality tradeoffs:
+
+### Quick Start
+
+```python
+from turbo_gepa import get_lightning_config
+
+# 5x faster, ~85% quality (recommended for iteration)
+config = get_lightning_config("lightning", dataset_size=500)
+
+# 3x faster, ~90% quality (fast production)
+config = get_lightning_config("sprint", dataset_size=500)
+
+# 10x faster, ~70% quality (rapid exploration)
+config = get_lightning_config("blitz", dataset_size=500)
+
+# Default balanced mode
+config = get_lightning_config("balanced", dataset_size=500)
+```
+
+### Mode Comparison
+
+| Mode | Speedup | Quality | Shards | Islands | Use Case |
+|------|---------|---------|--------|---------|----------|
+| **Blitz** | 10× | ~70% | 2-rung (15%→100%) | 1 | Rapid exploration, prototypes |
+| **Lightning** | 5× | ~85% | 2-rung (10%→100%) | 1 | Quick iteration, debugging |
+| **Sprint** | 3× | ~90% | 3-rung (8%→30%→100%) | 2 | Fast production runs |
+| **Balanced** | 1× | 100% | 3-rung (5%→20%→100%) | 2-4 | Production optimization |
+
+### How Lightning Works
+
+Lightning modes achieve speedups through:
+
+1. **Aggressive ASHA pruning**: Fewer rungs + stricter promotion (eliminates 60-75% of candidates early)
+2. **Reduced breadth**: Smaller batch sizes + fewer mutations per round
+3. **Single island**: No migration overhead (blitz/lightning only)
+4. **Streamlined reflection**: Fewer traces analyzed per mutation
+
+### Example Usage
+
+```python
+from turbo_gepa.adapters import DefaultAdapter, DefaultDataInst
+
+# Your dataset
+dataset = [DefaultDataInst(input=q, answer=a, id=str(i)) for i, (q, a) in enumerate(data)]
+
+# Lightning mode for quick iteration
+adapter = DefaultAdapter(
+    dataset=dataset,
+    task_lm="openrouter/google/gemini-flash-1.5",
+    reflection_lm="openrouter/anthropic/claude-3.5-sonnet",
+    auto_config=False,  # Use manual config
+)
+
+# Apply lightning config
+from turbo_gepa import lightning_config
+adapter.config = lightning_config(len(dataset))
+
+# Run optimization
+result = adapter.optimize(seeds=["You are helpful."], max_rounds=10)
+```
+
+### When to Use Each Mode
+
+**Blitz (10× faster)**
+- ✅ Initial exploration of prompt space
+- ✅ Throwaway experiments
+- ✅ A/B testing multiple approaches quickly
+- ❌ Production deployments
+
+**Lightning (5× faster)** ⭐ Recommended
+- ✅ Iterative development
+- ✅ Debugging prompt issues
+- ✅ Quick validation of ideas
+- ✅ Time-constrained optimization
+- ⚠️ May miss subtle optimizations
+
+**Sprint (3× faster)**
+- ✅ Fast production runs
+- ✅ Balanced speed/quality
+- ✅ Most use cases
+- ✅ When you want 90%+ of default quality
+
+**Balanced (default)**
+- ✅ Final production optimization
+- ✅ When quality is paramount
+- ✅ Large evaluation budgets
+
 ## Config Knobs (`turbo_gepa/config.py`)
 
 ### Concurrency & Parallelism
@@ -485,13 +581,11 @@ The orchestrator automatically:
 - `qd_flags` (default: ["cot", "format", "fewshot"]) – Feature flags for QD grid
 
 ### Mutation & Evolution
-- `amortized_rate` (default: 0.8) – Probability of rule-based edits vs reflection
 - `reflection_batch_size` (default: 6) – Max traces per reflection call
 - `max_mutations_per_round` (default: 16) – Cap on mutations generated per round
+- `temperature_mutations_enabled` (default: True) – Enable temperature exploration (opt-in)
 
-### Merging & Compression
-- `merge_period` (default: 3) – Merge candidates every N rounds
-- `merge_uplift_min` (default: 0.01) – Minimum improvement to accept merge
+### Compression
 - `max_tokens` (default: 2048) – Token budget for candidates
 - `prune_delta` (default: 0.005) – Quality tolerance for compression
 - `compression_shard_fraction` (default: 0.2) – Shard size for compression validation
@@ -523,7 +617,6 @@ Structured JSONL logs land in `.turbo_gepa/logs/` (see `logging_utils.py`). Key 
 - `promote` – Candidates promoted to next shard
 - `archive_update` – Archive insertions with objectives
 - `mutation_proposed` / `mutation_accepted` – Mutation lifecycle
-- `merge_proposed` / `merge_accepted` / `merge_rejected` – Merge lifecycle
 - `compression_applied` – Token compression results
 - `migrate_out` / `migrate_in` – Island migrations
 - `summary` – Periodic aggregated metrics
@@ -553,7 +646,7 @@ After a successful run you can inspect:
 
 ## Performance KPIs
 
-The implementation targets these KPIs from the project plan:
+The implementation targets these KPIs:
 
 | KPI | Target | How to Measure |
 |-----|--------|----------------|
@@ -563,47 +656,14 @@ The implementation targets these KPIs from the project plan:
 | **Compressed variants** | ≥1 | Count `compression_applied` events |
 | **Speedup vs serial** | >10× | Compare wall-clock with baseline (requires real LLM) |
 
-Use the benchmark analyzer to validate:
+Monitor KPIs using the benchmark examples:
 
 ```bash
-python examples/benchmark_run.py
-```
+# Run speed benchmark
+python examples/benchmark_max_speed_smoke.py
 
-Example output:
-```
-======================================================================
-TurboGEPA Benchmark Report
-======================================================================
-
-📊 Timing Metrics
-  Total runtime: 12.3s
-  Avg eval latency: 45.2ms
-  P50 eval latency: 38.1ms
-  P95 eval latency: 89.3ms
-
-💾 Cache Metrics
-  Hit rate: 28.4%
-  Hits: 142, Misses: 358
-
-📈 Archive Metrics
-  Pareto size: 5
-  QD grid size: 12
-
-✨ Quality Metrics
-  Initial quality: 0.452
-  Final quality: 0.687
-  Improvement: +0.235
-
-======================================================================
-KPI Validation
-======================================================================
-  ✓ Prune rate at shard 0: 64.2%
-  ✓ Cache hit rate: 28.4%
-  ✓ Pareto size: 5
-  ✓ QD grid size: 12
-  ✓ Quality improvement: 0.452 → 0.687 (Δ=+0.235)
-  ✓ Compressed variants: 3
-======================================================================
+# Compare implementations
+python examples/compare_gepa_vs_turbo.py --mode all
 ```
 
 ## Testing

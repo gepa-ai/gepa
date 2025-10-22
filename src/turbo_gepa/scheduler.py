@@ -102,15 +102,37 @@ class BudgetedScheduler:
         return ready
 
     def _promotion_threshold(self, rung: Rung) -> float:
-        """Calculate the moving quantile score threshold for promotion."""
+        """Calculate the moving quantile score threshold for promotion.
+
+        Always promotes at least the top candidate(s), even if all have same score.
+        This prevents the chicken-and-egg problem where all candidates are equally
+        bad (e.g., all 0%) but we still need to keep the best ones for reflection.
+        """
         samples = [statistics.fmean(list(values)) for values in rung.results.values() if values]
         if not samples:
             return float("-inf")
         if len(samples) < 2:
             return float("-inf")
-        rank = max(int(len(samples) * (1 - self.config.quantile)), 0)
+
+        # Calculate rank for quantile-based promotion (top 40% by default)
+        quantile_rank = max(int(len(samples) * (1 - self.config.quantile)), 0)
+
+        # Always promote at least top 1-2 candidates, even if quantile would prune all
+        # This ensures reflection has something to work with when all candidates are similar
+        min_to_promote = min(2, len(samples))  # Keep at least 1-2 best
+        rank = min(quantile_rank, len(samples) - min_to_promote)
+
         samples.sort(reverse=True)
-        return samples[min(rank, len(samples) - 1)] + self.config.eps_improve
+        threshold_score = samples[rank]
+
+        # Only add eps_improve if there's actually variation in scores
+        # When all candidates are tied (e.g., all 0%), don't add epsilon or we'll prune everyone
+        if len(set(samples)) > 1:
+            # Multiple distinct scores - require improvement over threshold
+            return threshold_score + self.config.eps_improve
+        else:
+            # All tied - just use the score (allows ties to promote)
+            return threshold_score
 
 
 def candidate_hash(candidate: Candidate) -> str:

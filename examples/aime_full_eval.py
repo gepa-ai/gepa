@@ -18,6 +18,7 @@ Configuration:
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from types import MethodType
@@ -26,6 +27,7 @@ import gepa
 from turbo_gepa.adapters.default_adapter import DefaultAdapter, DefaultDataInst
 from turbo_gepa.config import Config
 from turbo_gepa.islands import spawn_islands
+from turbo_gepa.multi_island_dashboard import IslandProgressAggregator
 
 
 # ============================================================================
@@ -33,7 +35,7 @@ from turbo_gepa.islands import spawn_islands
 # ============================================================================
 
 # Dataset
-DATASET_LIMIT = 20  # Limit dataset size for testing (None = full dataset)
+DATASET_LIMIT = None  # Limit dataset size for testing (None = full dataset)
 # Try 10-20 for quick tests, None for full evaluation
 
 # Optimization
@@ -42,16 +44,24 @@ MAX_ROUNDS = None  # Maximum rounds (None = unlimited with auto-stop)
 # Set to a number like 10-20 if you want a hard limit
 
 # Temperature optimization
-WITH_TEMPERATURE = True  # Enable staged temperature optimization
+WITH_TEMPERATURE = False  # Enable staged temperature optimization
 # True = two-phase: prompts first, then temperature
 
 # Islands
-USE_MULTI_ISLANDS = True  # Enable multi-process island optimization
+USE_MULTI_ISLANDS = True  # Enable multi-island optimization with async tasks
 NUM_ISLANDS = 4  # Number of parallel islands to launch
-ISLAND_START_METHOD = "spawn"
 
 # Performance
-EVAL_CONCURRENCY = 64  # Concurrent evaluations (16=slower/cheaper, 64=faster/expensive)
+EVAL_CONCURRENCY = (
+    32  # Concurrent evaluations per island (32=balanced, 16=safer, 64=aggressive)
+)
+# With 4 islands: 32×4 = 128 total concurrent operations (stays under OS file limit)
+MAX_MUTATIONS_PER_ROUND = (
+    8  # Mutations per round per island (8=more exploration, needed for AIME)
+)
+REFLECTION_BATCH_SIZE = (
+    5  # Examples shown to reflection LLM (5=good context for hard problems)
+)
 
 # Cache
 CLEAR_CACHE = True  # Clear cache before starting (True = fresh run, False = resume)
@@ -59,7 +69,8 @@ CLEAR_CACHE = True  # Clear cache before starting (True = fresh run, False = res
 
 # Model
 TASK_MODEL = "openrouter/openai/gpt-oss-120b:nitro"
-REFLECTION_MODEL = "openrouter/openai/gpt-oss-120b:nitro"
+REFLECTION_MODEL = "openrouter/x-ai/grok-4-fast"
+# Set REFLECTION_MODEL = None to use fast heuristic reflection (no LLM calls)
 
 # Seed prompt used by all islands
 SEED_PROMPT = (
@@ -82,7 +93,8 @@ def build_island_config(dataset_size: int, *, island_tag: str | None = None) -> 
     """Create a Config object with optional island-specific cache/log paths."""
     config = Config(
         eval_concurrency=EVAL_CONCURRENCY,
-        max_mutations_per_round=8,
+        max_mutations_per_round=MAX_MUTATIONS_PER_ROUND,
+        reflection_batch_size=REFLECTION_BATCH_SIZE,
         queue_limit=64,
         migration_period=10,
         log_summary_interval=1,
@@ -116,10 +128,11 @@ def serialize_archive_entry(entry) -> dict:
     }
 
 
-def multi_island_worker(context) -> None:
-    """Worker entrypoint for each island process."""
+async def multi_island_worker(context) -> None:
+    """Worker entrypoint for each island async task."""
     island_pid = os.getpid()
-    island_tag = f"island_{island_pid}"
+    island_id = context.island_id
+    island_tag = f"island_{island_id}"
     results_dir = Path(".turbo_gepa/aime_results")
     results_dir.mkdir(parents=True, exist_ok=True)
     output_file = results_dir / f"{island_tag}.json"
@@ -142,14 +155,17 @@ def multi_island_worker(context) -> None:
 
         original_builder = adapter._build_orchestrator
 
-        def build_with_context(self, logger, enable_auto_stop=False, display_progress=False):
+        def build_with_context(
+            self, logger, enable_auto_stop=False, display_progress=False
+        ):
             orchestrator = original_builder(logger, enable_auto_stop, display_progress)
             orchestrator.island_context = context
             return orchestrator
 
         adapter._build_orchestrator = MethodType(build_with_context, adapter)
 
-        result = adapter.optimize(
+        # Disable individual island charts - we show aggregated dashboard instead
+        result = await adapter.optimize_async(
             seeds=[SEED_PROMPT],
             max_rounds=MAX_ROUNDS,
             max_evaluations=None,
@@ -165,6 +181,7 @@ def multi_island_worker(context) -> None:
 
         island_summary = {
             "pid": island_pid,
+            "island_id": island_id,
             "tag": island_tag,
             "timestamp": time.strftime("%Y%m%d_%H%M%S"),
             "best_candidate": best_candidate,
@@ -174,18 +191,19 @@ def multi_island_worker(context) -> None:
         with output_file.open("w", encoding="utf-8") as handle:
             json.dump(island_summary, handle, indent=2)
 
-        print(f"[Island {island_pid}] Completed optimization.")
+        print(f"[Island {island_id}] Completed optimization.")
 
     except Exception as exc:  # pragma: no cover - best effort logging in worker
         island_summary = {
             "pid": island_pid,
+            "island_id": island_id,
             "tag": island_tag,
             "error": str(exc),
             "timestamp": time.strftime("%Y%m%d_%H%M%S"),
         }
         with output_file.open("w", encoding="utf-8") as handle:
             json.dump(island_summary, handle, indent=2)
-        print(f"[Island {island_pid}] Failed with error: {exc}")
+        print(f"[Island {island_id}] Failed with error: {exc}")
 
 
 def load_aime_dataset(limit=None):
@@ -232,7 +250,9 @@ def run_single_island_optimization(dataset):
     print(f"   Eval concurrency: {EVAL_CONCURRENCY}")
     print(f"   Auto-stop enabled: {ENABLE_AUTO_STOP}")
     print(f"   Max rounds: {MAX_ROUNDS if MAX_ROUNDS else 'unlimited (auto-stop)'}")
-    print(f"   Temperature optimization: {'Yes (staged)' if WITH_TEMPERATURE else 'No'}")
+    print(
+        f"   Temperature optimization: {'Yes (staged)' if WITH_TEMPERATURE else 'No'}"
+    )
     print(f"   Cache: {config.cache_path}")
 
     adapter = DefaultAdapter(
@@ -287,7 +307,11 @@ def run_single_island_optimization(dataset):
             print(f"\n🏆 Best Candidate:")
             print(f"   Quality: {best_candidate['quality']:.2%}")
             print(f"   Tokens: {best_candidate['tokens']:.0f}")
-            temp = best_candidate["meta"].get("temperature") if best_candidate["meta"] else None
+            temp = (
+                best_candidate["meta"].get("temperature")
+                if best_candidate["meta"]
+                else None
+            )
             if temp is not None:
                 print(f"   Temperature: {temp}")
             print(f"\n📝 Optimized Prompt:")
@@ -342,8 +366,9 @@ def run_single_island_optimization(dataset):
         return None
 
 
-def run_multi_island_optimization(dataset):
-    """Run TurboGEPA optimization across multiple islands using spawn_islands."""
+async def run_multi_island_optimization(dataset):
+    """Run TurboGEPA optimization across multiple islands using async tasks."""
+    import asyncio
 
     print("\n" + "=" * 80)
     print("⚡ TurboGEPA - AIME Full Evaluation (Multi-Island)")
@@ -356,14 +381,16 @@ def run_multi_island_optimization(dataset):
     print(f"   Eval concurrency: {EVAL_CONCURRENCY}")
     print(f"   Auto-stop enabled: {ENABLE_AUTO_STOP}")
     print(f"   Max rounds: {MAX_ROUNDS if MAX_ROUNDS else 'unlimited (auto-stop)'}")
-    print(f"   Temperature optimization: {'Yes (staged)' if WITH_TEMPERATURE else 'No'}")
+    print(
+        f"   Temperature optimization: {'Yes (staged)' if WITH_TEMPERATURE else 'No'}"
+    )
     print(f"   Islands: {NUM_ISLANDS}")
     print(f"   Cache root: .turbo_gepa/aime_cache")
 
     print(f"\n🌱 Seed prompt ({len(SEED_PROMPT)} chars) shared across islands.")
-    print(f"   Preview: \"{SEED_PROMPT[:100]}...\"")
+    print(f'   Preview: "{SEED_PROMPT[:100]}..."')
 
-    print(f"\n⏱️  Launching {NUM_ISLANDS} islands (start method: {ISLAND_START_METHOD})...")
+    print(f"\n⏱️  Launching {NUM_ISLANDS} islands (async tasks)...")
 
     results_dir = Path(".turbo_gepa/aime_results")
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -373,11 +400,52 @@ def run_multi_island_optimization(dataset):
         except OSError:
             pass
 
-    start_time = time.time()
-    processes = spawn_islands(NUM_ISLANDS, multi_island_worker, start_method=ISLAND_START_METHOD)
+    # Create metrics queue and dashboard aggregator
+    metrics_queue = asyncio.Queue(maxsize=1000)
+    dashboard = IslandProgressAggregator(n_islands=NUM_ISLANDS)
 
-    for proc in processes:
-        proc.join()
+    # Dashboard monitoring task
+    async def monitor_dashboard():
+        """Continuously read from metrics queue and update dashboard."""
+        try:
+            while True:
+                # Wait for metrics with timeout to allow periodic updates
+                try:
+                    metrics = await asyncio.wait_for(metrics_queue.get(), timeout=1.0)
+                    dashboard.update(
+                        island_id=metrics["island_id"],
+                        round_num=metrics["round"],
+                        best_quality=metrics["best_quality"],
+                        avg_quality=metrics["avg_quality"],
+                        pareto_size=metrics["pareto_size"],
+                    )
+                except asyncio.TimeoutError:
+                    # No new metrics, just refresh display with current data
+                    dashboard.display()
+        except asyncio.CancelledError:
+            # Final display before shutdown
+            dashboard.display()
+            raise
+
+    start_time = time.time()
+
+    # Start dashboard monitor
+    dashboard_task = asyncio.create_task(monitor_dashboard())
+
+    # Start island tasks
+    island_tasks = await spawn_islands(
+        NUM_ISLANDS, multi_island_worker, metrics_queue=metrics_queue
+    )
+
+    # Wait for islands to complete
+    await asyncio.gather(*island_tasks)
+
+    # Cancel dashboard monitor
+    dashboard_task.cancel()
+    try:
+        await dashboard_task
+    except asyncio.CancelledError:
+        pass
 
     elapsed = time.time() - start_time
     print(f"\n✅ All islands completed in {elapsed:.1f}s ({elapsed/60:.1f} min)")
@@ -449,10 +517,10 @@ def run_multi_island_optimization(dataset):
     return results_data
 
 
-def run_optimization(dataset):
+async def run_optimization(dataset):
     """Dispatch to single- or multi-island optimization based on configuration."""
     if USE_MULTI_ISLANDS:
-        return run_multi_island_optimization(dataset)
+        return await run_multi_island_optimization(dataset)
     return run_single_island_optimization(dataset)
 
 
@@ -499,12 +567,16 @@ async def evaluate_on_valset(prompt_text, valset, temperature=None):
             error_msg = str(e)
             # Truncate error message for readability
             error_display = error_msg[:80] + "..." if len(error_msg) > 80 else error_msg
-            print(f"   ⚠️  Failed on example {i+1}/{total} ({error_type}: {error_display})")
+            print(
+                f"   ⚠️  Failed on example {i+1}/{total} ({error_type}: {error_display})"
+            )
             # Count as failure
             return False
 
     # Evaluate all examples concurrently
-    results = await asyncio.gather(*(eval_one(i, example) for i, example in enumerate(valset)))
+    results = await asyncio.gather(
+        *(eval_one(i, example) for i, example in enumerate(valset))
+    )
     correct = sum(results)
 
     val_accuracy = correct / total if total > 0 else 0.0
@@ -513,7 +585,7 @@ async def evaluate_on_valset(prompt_text, valset, temperature=None):
     return val_accuracy
 
 
-def main():
+async def main():
     """Main entry point."""
 
     # Check API key
@@ -540,7 +612,7 @@ def main():
     dataset, trainset, valset, testset = load_aime_dataset(limit=DATASET_LIMIT)
 
     # Run optimization
-    results = run_optimization(dataset=dataset)
+    results = await run_optimization(dataset=dataset)
 
     if results and results.get("best_candidate"):
         print("\n✨ Optimization complete!")
@@ -548,14 +620,10 @@ def main():
         print(f"   Total time: {results['results']['elapsed_time']/60:.1f} minutes")
 
         # Evaluate on validation set
-        import asyncio
-
         best_prompt = results["best_candidate"]["text"]
         best_temperature = results["best_candidate"].get("temperature")
 
-        val_accuracy = asyncio.run(
-            evaluate_on_valset(best_prompt, valset, best_temperature)
-        )
+        val_accuracy = await evaluate_on_valset(best_prompt, valset, best_temperature)
 
         # Update results with validation accuracy
         results["validation_accuracy"] = val_accuracy
@@ -577,4 +645,6 @@ def main():
 
 
 if __name__ == "__main__":
-    exit(main())
+    import asyncio
+
+    exit(asyncio.run(main()))

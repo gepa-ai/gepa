@@ -1,70 +1,93 @@
-"""User-supplied LLM integration hooks with safe defaults.
+"""User-supplied LLM integration hooks.
 
-Projects embedding TurboGEPA should replace ``task_lm_call`` and
-``reflect_lm_call`` with calls into their production LLM stack. The default
-implementations below provide deterministic heuristics so local demos and tests
-run without external dependencies.
+Projects embedding TurboGEPA must provide implementations for task_lm_call,
+batch_reflect_lm_call, and spec_induction_lm_call that call their LLM stack.
+
+These stub implementations raise NotImplementedError to ensure users provide
+real LLM integrations.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Set
-
-
-def _heuristic_quality(prompt: str, example: Dict[str, Any]) -> float:
-    difficulty = float(example.get("difficulty", 0.5))
-    coverage = 0.1 if "example" in prompt.lower() else 0.0
-    reasoning = 0.15 if "think through" in prompt.lower() else 0.0
-    formatting = 0.1 if "format" in prompt.lower() else 0.0
-    base = 0.45 + (1.0 - difficulty) * 0.35
-    quality = base + coverage + reasoning + formatting
-    tokens_penalty = max(len(prompt.split()) - 160, 0) * 0.002
-    return max(0.0, min(1.0, quality - tokens_penalty))
+from typing import Any, Dict, List
 
 
 async def task_lm_call(prompt: str, example: Dict[str, Any]) -> Dict[str, Any]:
     """Execute the task model against ``example`` and return metrics.
 
-    Replace this function with a call into your LLM provider for production
-    deployments. The default heuristic depends on optional ``difficulty``
-    metadata in ``example`` to simulate varying hardness.
-    """
-
-    tokens = float(len(prompt.split()))
-    quality = _heuristic_quality(prompt, example)
-    return {
-        "quality": quality,
-        "neg_cost": -tokens,
-        "tokens": tokens,
-    }
-
-
-async def reflect_lm_call(traces: List[Dict[str, Any]], parent_prompt: str, parent_meta: Dict[str, Any] | None = None) -> List[str]:
-    """Produce mutated prompt variants based on failure ``traces``.
-
-    The default implementation inspects recent trace messages and adds
-    corrective clauses that commonly boost reasoning quality. Swap this out for
-    a true reflection prompt when integrating with a live LLM.
+    This function MUST be replaced with a real LLM call in production.
 
     Args:
-        traces: List of execution traces from failed examples
-        parent_prompt: The current prompt text
-        parent_meta: Optional metadata (e.g., temperature) for context
+        prompt: The candidate prompt text
+        example: The task example containing "input", "answer", etc.
+
+    Returns:
+        Dict with keys:
+            - "quality": Float 0-1 indicating correctness
+            - "neg_cost": Negative cost (e.g., -tokens/1000)
+            - "tokens": Token count
+            - "trace": Optional execution trace for reflection
+
+    Raises:
+        NotImplementedError: If not overridden with real LLM implementation
     """
+    raise NotImplementedError(
+        "task_lm_call must be implemented with a real LLM call. "
+        "See examples in src/turbo_gepa/adapters/default_adapter.py for reference."
+    )
 
-    if not traces:
-        return []
 
-    suggestions: Set[str] = set()
-    lower_prompt = parent_prompt.lower()
-    if "step" not in lower_prompt:
-        suggestions.add("Add step-by-step reasoning before final answers.")
-    if "format" not in lower_prompt:
-        suggestions.add("Clarify the expected output format explicitly.")
-    if "avoid" not in lower_prompt:
-        suggestions.add("Add an 'Avoid common mistakes' clause.")
+async def batch_reflect_lm_call(
+    parent_contexts: List[Dict[str, Any]],
+    num_mutations: int,
+) -> List[str]:
+    """Produce mutated prompt variants from MULTIPLE parent prompts.
 
-    patched_prompt = parent_prompt
-    for suggestion in suggestions:
-        patched_prompt = f"{patched_prompt}\n\n{suggestion}"
-    return [patched_prompt]
+    This is more efficient than calling reflect_lm_call separately for each parent,
+    and allows the reflection LLM to synthesize ideas across multiple successful prompts.
+
+    Args:
+        parent_contexts: List of dicts, each containing:
+            - "prompt": The parent prompt text
+            - "traces": List of failure traces for this parent
+            - "meta": Metadata (quality, cost, temperature, etc.)
+        num_mutations: Number of new prompt variants to generate
+
+    Returns:
+        List of new prompt variants (length <= num_mutations)
+
+    Raises:
+        NotImplementedError: If not overridden with real LLM implementation
+    """
+    raise NotImplementedError(
+        "batch_reflect_lm_call must be implemented with a real LLM call. "
+        "See examples in src/turbo_gepa/adapters/default_adapter.py for reference."
+    )
+
+
+async def spec_induction_lm_call(
+    task_examples: List[Dict[str, Any]],
+    num_specs: int,
+) -> List[str]:
+    """Generate fresh prompt specifications from task I/O examples.
+
+    This implements the PROMPT-MII concept: instead of editing existing prompts,
+    induce a new specification from scratch by looking at what the task requires.
+
+    Args:
+        task_examples: List of task examples, each containing:
+            - "input": The task input
+            - "answer": The expected output
+            - (optional) other fields like "difficulty", "additional_context"
+        num_specs: Number of fresh specs to generate
+
+    Returns:
+        List of new prompt specifications (length <= num_specs)
+
+    Raises:
+        NotImplementedError: If not overridden with real LLM implementation
+    """
+    raise NotImplementedError(
+        "spec_induction_lm_call must be implemented with a real LLM call. "
+        "See examples in src/turbo_gepa/adapters/default_adapter.py for reference."
+    )

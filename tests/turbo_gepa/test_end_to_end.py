@@ -103,7 +103,6 @@ def test_end_to_end_kpis(tmp_path):
     )
     mutator = Mutator(
         MutationConfig(
-            amortized_rate=config.amortized_rate,
             reflection_batch_size=config.reflection_batch_size,
             max_mutations=config.max_mutations_per_round,
             max_tokens=config.max_tokens,
@@ -251,7 +250,6 @@ def test_scheduler_promotion_and_pruning(tmp_path):
     archive = Archive(bins_length=4, bins_bullets=4, flags=("cot",))
     mutator = Mutator(
         MutationConfig(
-            amortized_rate=0.9,
             reflection_batch_size=2,
             max_mutations=4,
             max_tokens=2048,
@@ -314,7 +312,7 @@ def test_quality_diversity_coverage(tmp_path):
         flags=config.qd_flags,
     )
     mutator = Mutator(
-        MutationConfig(amortized_rate=1.0, reflection_batch_size=2, max_mutations=8, max_tokens=2048),
+        MutationConfig(reflection_batch_size=2, max_mutations=8, max_tokens=2048),
         seed=77,
     )
 

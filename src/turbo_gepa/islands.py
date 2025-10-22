@@ -1,17 +1,15 @@
 """
-Multi-process island orchestration for TurboGEPA.
+Async island orchestration for TurboGEPA.
 
-The implementation provides thin wrappers around ``multiprocessing`` queues to
-enable non-blocking migrations between islands. Actual evaluation happens in
-the orchestrator loop, keeping island management lightweight.
+Uses asyncio tasks instead of multiprocessing for concurrent island optimization.
+Islands share the same process but run concurrently via async/await.
 """
 
 from __future__ import annotations
 
-import multiprocessing as mp
+import asyncio
 from dataclasses import dataclass
-from typing import Callable, Iterable, List
-from queue import Empty, Full
+from typing import Awaitable, Callable, Iterable, List
 
 from .interfaces import Candidate
 
@@ -20,27 +18,35 @@ from .interfaces import Candidate
 class IslandContext:
     """Holds migration queues for an island."""
 
-    inbound: "mp.Queue[Candidate]"
-    outbound: "mp.Queue[Candidate]"
+    inbound: "asyncio.Queue[Candidate]"
+    outbound: "asyncio.Queue[Candidate]"
+    island_id: int
+    metrics_queue: "asyncio.Queue[dict] | None" = None  # Optional metrics reporting
 
 
-def spawn_islands(
+async def spawn_islands(
     n_islands: int,
-    worker: Callable[[IslandContext], None],
-    *,
-    start_method: str = "spawn",
-) -> List[mp.Process]:
-    """Create and start island processes."""
-    ctx = mp.get_context(start_method)
-    processes: List[mp.Process] = []
-    queues = [ctx.Queue() for _ in range(n_islands)]
+    worker: Callable[[IslandContext], Awaitable[None]],
+    metrics_queue: "asyncio.Queue[dict] | None" = None,
+) -> List[asyncio.Task]:
+    """Create and start island tasks running concurrently.
+
+    Args:
+        n_islands: Number of islands to spawn
+        worker: Async function to run on each island
+        metrics_queue: Optional queue for islands to report metrics to dashboard
+    """
+    tasks: List[asyncio.Task] = []
+    queues = [asyncio.Queue() for _ in range(n_islands)]
+
     for idx in range(n_islands):
         inbound = queues[idx]
         outbound = queues[(idx + 1) % n_islands]
-        process = ctx.Process(target=worker, args=(IslandContext(inbound, outbound),), daemon=True)
-        process.start()
-        processes.append(process)
-    return processes
+        context = IslandContext(inbound, outbound, island_id=idx, metrics_queue=metrics_queue)
+        task = asyncio.create_task(worker(context))
+        tasks.append(task)
+
+    return tasks
 
 
 def migrate_out(context: IslandContext, candidates: Iterable[Candidate]) -> None:
@@ -48,7 +54,7 @@ def migrate_out(context: IslandContext, candidates: Iterable[Candidate]) -> None
     for candidate in candidates:
         try:
             context.outbound.put_nowait(candidate)
-        except Full:
+        except asyncio.QueueFull:
             break
 
 
@@ -58,6 +64,6 @@ def integrate_in(context: IslandContext) -> List[Candidate]:
     while True:
         try:
             received.append(context.inbound.get_nowait())
-        except Empty:
+        except asyncio.QueueEmpty:
             break
     return received

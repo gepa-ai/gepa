@@ -15,7 +15,16 @@ except ImportError:
     pass
 from .archive import Archive  # noqa: F401
 from .cache import DiskCache  # noqa: F401
-from .config import Config, DEFAULT_CONFIG  # noqa: F401
+from .config import (  # noqa: F401
+    Config,
+    DEFAULT_CONFIG,
+    adaptive_config,
+    adaptive_shards,
+    blitz_config,
+    get_lightning_config,
+    lightning_config,
+    sprint_config,
+)
 from .evaluator import AsyncEvaluator  # noqa: F401
 from .interfaces import Candidate, EvalResult  # noqa: F401
 from .logging_utils import EventLogger, SummaryLogger, build_logger  # noqa: F401

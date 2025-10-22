@@ -45,35 +45,36 @@ class StopGovernorConfig:
     alpha: float = 0.3
 
     # Hysteresis: require H consecutive epochs below threshold
-    hysteresis_window: int = 3
+    hysteresis_window: int = 5  # Increased from 3 for more patience
 
     # Overall stop threshold (0-1, lower = easier to stop)
-    stop_threshold: float = 0.2
+    stop_threshold: float = 0.15  # Lowered from 0.2 to be more conservative
 
     # Thresholds for each signal (minimum useful improvement)
-    tau_hv: float = 1e-4  # HV gain per evaluation
-    tau_quality: float = 2e-3  # Quality improvement per epoch
-    tau_cost: float = 10.0  # Tokens saved per epoch
-    tau_qd_novelty: float = 0.05  # 5% novelty rate
-    tau_roi: float = 1e-5  # HV gain per token
+    tau_hv: float = 1e-5  # Lowered from 1e-4 for harder tasks
+    tau_quality: float = 1e-3  # 0.1% absolute improvement per epoch
+    tau_quality_relative: float = 0.01  # OR 1% relative improvement per epoch (whichever is less strict)
+    tau_cost: float = 5.0  # Lowered from 10.0
+    tau_qd_novelty: float = 0.03  # Lowered from 0.05 (3% instead of 5%)
+    tau_roi: float = 1e-6  # Lowered from 1e-5
 
     # Stability thresholds
-    min_jaccard_for_stable: float = 0.8  # Frontier similarity
+    min_jaccard_for_stable: float = 0.85  # Increased from 0.8 (require more stability)
     max_epsilon_churn: float = 0.1  # Epsilon-dominance churn
 
     # Signal weights (for max aggregation)
     weight_hv: float = 1.0
     weight_quality: float = 1.0
-    weight_cost: float = 0.8
-    weight_qd: float = 0.6
-    weight_roi: float = 0.7
+    weight_cost: float = 0.6  # Reduced from 0.8 (care less about cost)
+    weight_qd: float = 0.7  # Increased from 0.6 (care more about exploration)
+    weight_roi: float = 0.5  # Reduced from 0.7
     weight_significance: float = 1.0
 
     # Stability penalty exponent
-    stability_penalty_beta: float = 0.7
+    stability_penalty_beta: float = 0.5  # Reduced from 0.7 (less harsh penalty)
 
     # Hard caps (always enforced)
-    max_no_improvement_epochs: int = 6
+    max_no_improvement_epochs: int = 12  # Doubled from 6 for more patience
 
 
 class StopGovernor:
@@ -164,8 +165,18 @@ class StopGovernor:
         # Signal 1: HV rate (normalized by threshold)
         s_hv = min(1.0, self.ewma_hv_rate / self.config.tau_hv) if self.config.tau_hv > 0 else 1.0
 
-        # Signal 2: Quality improvement
-        s_quality = min(1.0, self.ewma_quality_delta / self.config.tau_quality) if self.config.tau_quality > 0 else 1.0
+        # Signal 2: Quality improvement (use whichever threshold is more lenient)
+        if self.config.tau_quality > 0 and self.config.tau_quality_relative > 0:
+            # Absolute improvement signal
+            absolute_signal = self.ewma_quality_delta / self.config.tau_quality
+            # Relative improvement signal (avoid division by zero)
+            relative_signal = (self.ewma_quality_delta / max(0.01, self.last_best_quality)) / self.config.tau_quality_relative
+            # Use the more lenient of the two (higher signal = more improvement detected)
+            s_quality = min(1.0, max(absolute_signal, relative_signal))
+        elif self.config.tau_quality > 0:
+            s_quality = min(1.0, self.ewma_quality_delta / self.config.tau_quality)
+        else:
+            s_quality = 1.0
 
         # Signal 3: Cost improvement (tokens saved)
         s_cost = min(1.0, self.ewma_cost_delta / self.config.tau_cost) if self.config.tau_cost > 0 else 1.0

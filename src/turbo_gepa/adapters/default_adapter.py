@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from turbo_gepa.archive import Archive
 from turbo_gepa.cache import DiskCache
-from turbo_gepa.config import Config, DEFAULT_CONFIG, adaptive_shards
+from turbo_gepa.config import Config, DEFAULT_CONFIG, adaptive_config, adaptive_shards
 from turbo_gepa.evaluator import AsyncEvaluator
 from turbo_gepa.interfaces import Candidate
 from turbo_gepa.logging_utils import EventLogger, build_logger
@@ -26,7 +26,7 @@ from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
 from turbo_gepa.stop_governor import StopGovernor, StopGovernorConfig
 from turbo_gepa.token_controller import TokenCostController
-from turbo_gepa.user_plugs_in import reflect_lm_call, task_lm_call
+from turbo_gepa.user_plugs_in import batch_reflect_lm_call, spec_induction_lm_call, task_lm_call
 
 
 @dataclass(slots=True)
@@ -55,43 +55,60 @@ class DefaultAdapter:
     """
     Helper harness for running TurboGEPA on single-component prompts.
 
-    This adapter automatically selects optimal ASHA shard configuration based on
-    your dataset size, following the "Rule of 15" for statistical reliability.
+    This adapter automatically optimizes all configuration based on dataset size,
+    including shards, batch sizes, concurrency, and other parameters.
 
     Parameters:
         dataset: Sequence of training/validation examples
-        config: Configuration object (shards will be auto-selected if using defaults)
+        config: Configuration object (will be auto-configured if using defaults)
         mutation_config: Optional mutation configuration
         cache_dir: Directory for disk cache (default: .turbo_gepa/cache)
         log_dir: Directory for logs (default: .turbo_gepa/logs)
         sampler_seed: Random seed for example sampling
-        task_lm: LLM model for task execution (e.g., "openai/gpt-4o-mini")
-        reflection_lm: LLM model for reflection (e.g., "openai/gpt-4o")
+        task_lm: LLM model for task execution (REQUIRED)
+        reflection_lm: LLM model for reflection (REQUIRED)
         task_lm_temperature: Temperature for task LLM (None = use model default)
         reflection_lm_temperature: Temperature for reflection LLM (None = use model default)
-        auto_shards: Enable automatic shard selection (default: True)
-        shard_strategy: Strategy for auto-sharding - "balanced", "conservative", or "aggressive"
+        auto_config: Enable automatic configuration (default: True)
+        shard_strategy: Strategy - "balanced", "conservative", or "aggressive"
+        available_compute: "laptop", "workstation", or "server" (default: "laptop")
 
     Example usage::
 
-        # Basic usage with auto-sharding
-        adapter = DefaultAdapter(dataset=trainset)
-        result = adapter.optimize(
-            seeds=["You are a helpful assistant."],
-            max_rounds=4,
+        # Fully automatic configuration (recommended)
+        adapter = DefaultAdapter(
+            dataset=trainset,
+            task_lm="openrouter/google/gemini-flash-1.5",
+            reflection_lm="openrouter/google/gemini-flash-1.5"
         )
+        result = adapter.optimize(seeds=["You are a helpful assistant."])
 
         # Conservative strategy for important tasks
         adapter = DefaultAdapter(
             dataset=trainset,
-            shard_strategy="conservative",
+            task_lm="openrouter/google/gemini-flash-1.5",
+            reflection_lm="openrouter/google/gemini-flash-1.5",
+            shard_strategy="conservative"
         )
 
-        # Manual sharding (disables auto-sharding)
-        config = Config(shards=(0.10, 0.30, 1.0))
-        adapter = DefaultAdapter(dataset=trainset, config=config)
+        # Server deployment with aggressive exploration
+        adapter = DefaultAdapter(
+            dataset=large_trainset,
+            task_lm="openrouter/google/gemini-flash-1.5",
+            reflection_lm="openrouter/google/gemini-flash-1.5",
+            shard_strategy="aggressive",
+            available_compute="server"
+        )
 
-        pareto = result["pareto"]
+        # Manual configuration (disables auto-config)
+        config = Config(shards=(0.10, 0.30, 1.0), batch_size=16)
+        adapter = DefaultAdapter(
+            dataset=trainset,
+            task_lm="openrouter/google/gemini-flash-1.5",
+            reflection_lm="openrouter/google/gemini-flash-1.5",
+            config=config,
+            auto_config=False
+        )
     """
 
     def __init__(
@@ -107,20 +124,36 @@ class DefaultAdapter:
         reflection_lm: Optional[str] = None,
         task_lm_temperature: Optional[float] = None,
         reflection_lm_temperature: Optional[float] = None,
-        auto_shards: bool = True,
+        auto_config: bool = True,
         shard_strategy: str = "balanced",
+        available_compute: str = "laptop",
     ) -> None:
         if not dataset:
             raise ValueError("dataset must contain at least one data instance")
 
-        # Apply adaptive sharding if enabled and config uses default shards
-        if auto_shards and config.shards == DEFAULT_CONFIG.shards:
-            optimal_shards = adaptive_shards(len(dataset), strategy=shard_strategy)
-            config = Config(
-                **{k: getattr(config, k) for k in config.__dataclass_fields__}
+        # Require task_lm and reflection_lm - TurboGEPA requires real LLM integration
+        if not task_lm:
+            raise ValueError(
+                "task_lm is required. TurboGEPA requires real LLM integration. "
+                "Provide a model string like 'openrouter/google/gemini-flash-1.5'"
             )
-            config.shards = optimal_shards
-            print(f"🔧 Auto-selected shards for {len(dataset)} examples: {optimal_shards} (strategy={shard_strategy})")
+        if not reflection_lm:
+            raise ValueError(
+                "reflection_lm is required. TurboGEPA requires real LLM integration. "
+                "Provide a model string like 'openrouter/google/gemini-flash-1.5'"
+            )
+
+        # Apply adaptive configuration if enabled and using default config
+        if auto_config and config == DEFAULT_CONFIG:
+            config = adaptive_config(
+                len(dataset),
+                strategy=shard_strategy,
+                available_compute=available_compute
+            )
+            print(f"🔧 Auto-configured for {len(dataset)} examples ({available_compute}, {shard_strategy}):")
+            print(f"   Shards: {config.shards}")
+            print(f"   Batch size: {config.batch_size}, Mutations/round: {config.max_mutations_per_round}")
+            print(f"   Eval concurrency: {config.eval_concurrency}, Islands: {config.n_islands}")
 
         self.config = config
         self.dataset = list(dataset)
@@ -149,22 +182,20 @@ class DefaultAdapter:
                 print(f"⚠️  Model {task_lm} doesn't support custom temperature - using default")
                 self.task_lm_temperature = None
 
-        # Create reflection runner based on whether reflection_lm is provided
-        if reflection_lm:
-            reflection_runner = self._create_llm_reflection_runner(reflection_lm)
-        else:
-            reflection_runner = reflect_lm_call  # Use heuristic default
+        # Create batched reflection runner and spec induction runner
+        batch_reflection_runner = self._create_batched_llm_reflection_runner(reflection_lm)
+        spec_induction_runner = self._create_spec_induction_runner(reflection_lm)
 
         # Pass temperature support flag to mutator
         self.mutator = Mutator(
             mutation_config
             or MutationConfig(
-                amortized_rate=config.amortized_rate,
                 reflection_batch_size=config.reflection_batch_size,
                 max_mutations=config.max_mutations_per_round,
                 max_tokens=config.max_tokens,
             ),
-            reflection_runner=reflection_runner,
+            batch_reflection_runner=batch_reflection_runner,
+            spec_induction_runner=spec_induction_runner,
             temperature_mutations_enabled=self.temperature_supported,
         )
         self.token_controller = TokenCostController(config.max_tokens)
@@ -194,47 +225,59 @@ class DefaultAdapter:
             # Other errors (auth, network) - assume temperature works
             return True
 
-    def _create_llm_reflection_runner(self, reflection_lm: str):
-        """Create a reflection runner that calls a real LLM."""
-        async def llm_reflection_runner(traces: list, parent_prompt: str, parent_meta: dict = None) -> list[str]:
-            if not traces:
+    def _create_batched_llm_reflection_runner(self, reflection_lm: str):
+        """Create a batched reflection runner that calls a real LLM with multiple parents."""
+        async def batched_llm_reflection_runner(parent_contexts: list, num_mutations: int) -> list[str]:
+            if not parent_contexts:
                 return []
+
+            import time
+            start_time = time.time()
 
             try:
                 from litellm import acompletion
 
-                # Build reflection prompt
-                failure_summary = "\n".join([
-                    f"- Example {i+1}: quality={t.get('quality', 0):.2f}"
-                    for i, t in enumerate(traces[:3])
-                ])
+                # Build rich reflection prompt showing multiple successful prompts
+                parent_summaries = []
+                for i, ctx in enumerate(parent_contexts[:5]):  # Limit to 5 parents for token efficiency
+                    prompt_text = ctx.get("prompt", "")
+                    meta = ctx.get("meta", {})
+                    quality = meta.get("quality", 0.0)
+                    traces = ctx.get("traces", [])
 
-                # Include temperature context if available
-                temp_context = ""
-                if parent_meta and "temperature" in parent_meta:
-                    temp = parent_meta["temperature"]
-                    temp_context = f" (using temperature={temp})"
+                    # Temperature context if available
+                    temp_info = ""
+                    if "temperature" in meta:
+                        temp_info = f", temp={meta['temperature']:.1f}"
 
-                reflection_prompt = f"""You are optimizing a prompt for better performance.
+                    # Performance summary from traces
+                    if traces:
+                        avg_quality = sum(t.get("quality", 0) for t in traces[:3]) / min(len(traces), 3)
+                        perf_summary = f"Recent avg: {avg_quality:.1%}"
+                    else:
+                        perf_summary = f"Quality: {quality:.1%}"
 
-Current prompt{temp_context}:
-"{parent_prompt}"
+                    parent_summaries.append(f"""PROMPT {chr(65+i)} ({perf_summary}{temp_info}):
+"{prompt_text}"
+""")
 
-Recent performance on examples:
-{failure_summary}
+                all_parents_text = "\n".join(parent_summaries)
 
-Suggest 2-3 improved versions of this prompt that would perform better. Focus on:
-1. Adding helpful instructions or constraints
-2. Improving clarity and structure
-3. Addressing common failure patterns
+                reflection_prompt = f"""You are optimizing prompts for a challenging task. Below are {len(parent_contexts)} successful prompts with different approaches and trade-offs:
 
-Note: Keep suggestions focused on the prompt text. Temperature will be explored separately.
+{all_parents_text}
 
-Output format: Return each improved prompt on a new line, separated by "---"."""
+Generate {num_mutations} NEW prompt variants that:
+1. Synthesize the best ideas from multiple successful prompts above
+2. Address any common weaknesses you observe
+3. Explore different quality/efficiency trade-offs
+4. Are substantially different from each other
+
+Output format: Return each new prompt separated by "---" (exactly {num_mutations} prompts)."""
 
                 # Build kwargs, only include temperature if not None
                 completion_kwargs = {
-                    "model": reflection_lm,  # Use full model name
+                    "model": reflection_lm,
                     "messages": [{"role": "user", "content": reflection_prompt}],
                 }
                 if self.reflection_lm_temperature is not None:
@@ -242,97 +285,164 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
 
                 response = await acompletion(**completion_kwargs)
 
+                elapsed = time.time() - start_time
                 content = response.choices[0].message.content
                 # Split by --- and clean up
                 mutations = [m.strip() for m in content.split("---") if m.strip()]
-                return mutations[:3]  # Limit to 3 mutations
+
+                # Log timing for diagnostics
+                print(f"   ⚡ Batched reflection ({len(parent_contexts)} parents): {elapsed:.2f}s → {len(mutations)} mutations")
+
+                return mutations[:num_mutations]
 
             except Exception as e:
+                elapsed = time.time() - start_time
                 error_type = type(e).__name__
                 error_msg = str(e)
-                print(f"Warning: LLM reflection failed ({error_type}: {error_msg[:100]}), using heuristic fallback")
-                try:
-                    return await reflect_lm_call(traces, parent_prompt, parent_meta)
-                except Exception as fallback_error:
-                    # If even the heuristic fails, return empty list
-                    print(f"Warning: Heuristic reflection fallback also failed ({fallback_error}), returning no mutations")
-                    return []
+                raise RuntimeError(
+                    f"Batched reflection LLM call failed after {elapsed:.2f}s ({error_type}: {error_msg}). "
+                    "Check your API key, model name, and network connection."
+                ) from e
 
-        return llm_reflection_runner
+        return batched_llm_reflection_runner
 
-    async def _task_runner(self, candidate: Candidate, example_id: str) -> Dict[str, float]:
-        example = self.example_map[example_id].to_payload()
+    def _create_spec_induction_runner(self, reflection_lm: str):
+        """Create a spec induction runner that generates fresh prompts from task examples."""
+        async def spec_induction_runner(task_examples: list, num_specs: int) -> list[str]:
+            if not task_examples:
+                return []
 
-        # Use real LLM if task_lm is provided, otherwise use heuristic
-        if self.task_lm:
+            import time
+            start_time = time.time()
+
             try:
                 from litellm import acompletion
 
-                # Determine temperature: candidate.meta > adapter config > None
-                temperature = candidate.meta.get("temperature", self.task_lm_temperature)
+                # Build examples summary
+                example_summaries = []
+                for i, ex in enumerate(task_examples[:3]):  # Limit to 3 examples
+                    input_text = ex.get("input", "")
+                    answer_text = ex.get("answer", "")
+                    example_summaries.append(f"""Example {i+1}:
+Input: {input_text[:200]}{'...' if len(input_text) > 200 else ''}
+Expected Output: {answer_text[:100]}{'...' if len(answer_text) > 100 else ''}
+""")
 
-                # Build kwargs, only include temperature if not None
+                all_examples_text = "\n".join(example_summaries)
+
+                # Simple, freeform spec induction prompt
+                spec_prompt = f"""You are designing prompts for an AI system. Below are {len(task_examples)} examples of the task:
+
+{all_examples_text}
+
+Generate {num_specs} different prompt variations that would teach an AI to solve tasks like these.
+
+Each prompt should:
+- Be self-contained and clear
+- Address the key skills needed (reasoning, calculation, formatting, etc.)
+- Be different from the others in approach or emphasis
+
+Output format: Return each prompt separated by "---" (exactly {num_specs} prompts)."""
+
+                # Build kwargs
                 completion_kwargs = {
-                    "model": self.task_lm,  # Use full model name (e.g., "openrouter/x-ai/grok-4-fast")
-                    "messages": [
-                        {"role": "system", "content": candidate.text},
-                        {"role": "user", "content": example["input"]},
-                    ],
+                    "model": reflection_lm,
+                    "messages": [{"role": "user", "content": spec_prompt}],
                 }
-                if temperature is not None:
-                    completion_kwargs["temperature"] = temperature
+                if self.reflection_lm_temperature is not None:
+                    completion_kwargs["temperature"] = self.reflection_lm_temperature
 
-                # Try with temperature, fall back without it if model doesn't support it
-                try:
-                    response = await acompletion(**completion_kwargs)
-                except Exception as e:
-                    # Some models don't support custom temperature (e.g., o1-preview)
-                    if "temperature" in str(e).lower() and temperature is not None:
-                        # Retry without temperature
-                        completion_kwargs.pop("temperature", None)
-                        response = await acompletion(**completion_kwargs)
-                    else:
-                        raise  # Re-raise if it's a different error
+                response = await acompletion(**completion_kwargs)
 
-                model_output = response.choices[0].message.content
-                tokens_used = response.usage.total_tokens
+                elapsed = time.time() - start_time
+                content = response.choices[0].message.content
+                # Split by --- and clean up
+                specs = [s.strip() for s in content.split("---") if s.strip()]
 
-                # Check if answer is in output
-                quality = 1.0 if example["answer"] in model_output else 0.0
+                # Log timing for diagnostics
+                print(f"   ⚡ Spec induction ({len(task_examples)} examples): {elapsed:.2f}s → {len(specs)} specs")
 
-                metrics = {
-                    "quality": quality,
-                    "neg_cost": -float(tokens_used),
-                    "tokens": float(tokens_used),
-                    "response": model_output,
-                }
+                return specs[:num_specs]
+
             except Exception as e:
+                elapsed = time.time() - start_time
                 error_type = type(e).__name__
                 error_msg = str(e)
-                print(f"Warning: LLM call failed ({error_type}: {error_msg[:100]}), using heuristic fallback")
-                # Use heuristic fallback instead of crashing
-                try:
-                    metrics = await task_lm_call(candidate.text, example)
-                except Exception as fallback_error:
-                    # If even the heuristic fails, return zero scores
-                    print(f"Warning: Heuristic fallback also failed ({fallback_error}), returning zero scores")
-                    metrics = {
-                        "quality": 0.0,
-                        "neg_cost": 0.0,
-                        "tokens": 0.0,
-                        "error": f"{error_type}: {error_msg}",
-                    }
-        else:
-            # Use heuristic evaluation
-            metrics = await task_lm_call(candidate.text, example)
+                raise RuntimeError(
+                    f"Spec induction LLM call failed after {elapsed:.2f}s ({error_type}: {error_msg}). "
+                    "Check your API key, model name, and network connection."
+                ) from e
 
-        if "tokens" not in metrics:
-            metrics["tokens"] = float(len(candidate.text.split()))
-        metrics.setdefault("neg_cost", -float(metrics["tokens"]))
-        metrics.setdefault("quality", 0.0)
-        metrics["example_id"] = example_id
-        metrics.setdefault("output", metrics.get("response"))
-        return metrics
+        return spec_induction_runner
+
+    def _sample_examples(self, num_examples: int) -> list[dict]:
+        """Sample random examples for spec induction."""
+        import random
+        example_ids = list(self.example_map.keys())
+        if len(example_ids) <= num_examples:
+            sampled_ids = example_ids
+        else:
+            sampled_ids = random.sample(example_ids, num_examples)
+
+        return [self.example_map[eid].to_payload() for eid in sampled_ids]
+
+    async def _task_runner(self, candidate: Candidate, example_id: str) -> Dict[str, float]:
+        """Execute task LLM on a single example."""
+        example = self.example_map[example_id].to_payload()
+
+        try:
+            from litellm import acompletion
+
+            # Determine temperature: candidate.meta > adapter config > None
+            temperature = candidate.meta.get("temperature", self.task_lm_temperature)
+
+            # Build kwargs, only include temperature if not None
+            completion_kwargs = {
+                "model": self.task_lm,
+                "messages": [
+                    {"role": "system", "content": candidate.text},
+                    {"role": "user", "content": example["input"]},
+                ],
+            }
+            if temperature is not None:
+                completion_kwargs["temperature"] = temperature
+
+            # Try with temperature, fall back without it if model doesn't support it
+            try:
+                response = await acompletion(**completion_kwargs)
+            except Exception as e:
+                # Some models don't support custom temperature (e.g., o1-preview)
+                if "temperature" in str(e).lower() and temperature is not None:
+                    # Retry without temperature
+                    completion_kwargs.pop("temperature", None)
+                    response = await acompletion(**completion_kwargs)
+                else:
+                    raise  # Re-raise if it's a different error
+
+            model_output = response.choices[0].message.content
+            tokens_used = response.usage.total_tokens
+
+            # Check if answer is in output
+            quality = 1.0 if example["answer"] in model_output else 0.0
+
+            metrics = {
+                "quality": quality,
+                "neg_cost": -float(tokens_used),
+                "tokens": float(tokens_used),
+                "response": model_output,
+                "example_id": example_id,
+                "output": model_output,
+            }
+            return metrics
+
+        except Exception as e:
+            # No heuristic fallback - raise the error with clear message
+            error_type = type(e).__name__
+            error_msg = str(e)
+            raise RuntimeError(
+                f"Task LLM call failed ({error_type}: {error_msg}). "
+                "Check your API key, model name, and network connection."
+            ) from e
 
     def _build_orchestrator(self, logger: Optional[EventLogger], enable_auto_stop: bool = False, display_progress: bool = True) -> Orchestrator:
         evaluator = AsyncEvaluator(
@@ -356,6 +466,7 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
             stop_governor=stop_governor,
             enable_auto_stop=enable_auto_stop,
             show_progress=display_progress,
+            example_sampler=self._sample_examples,
         )
 
     async def optimize_async(
@@ -498,7 +609,7 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
 
     def optimize(
         self,
-        seeds: Sequence[str | Candidate],
+        seeds: Sequence[str | Candidate] | None = None,
         *,
         max_rounds: Optional[int] = None,
         max_evaluations: Optional[int] = None,
@@ -508,6 +619,8 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
         enable_auto_stop: bool = False,  # Enable automatic stopping
         optimize_temperature_after_convergence: bool = False,  # Stage temperature optimization
         display_progress: bool = True,  # Show progress charts
+        enable_seed_initialization: bool = False,  # Use PROMPT-MII-style seed generation
+        num_generated_seeds: int = 3,  # How many seeds to generate if initializing
     ) -> Dict[str, Any]:
         """
         Optimize prompts using TurboGEPA with heuristic evaluation.
@@ -528,7 +641,42 @@ Output format: Return each improved prompt on a new line, separated by "---"."""
         deterministic heuristic evaluation instead of calling real LLMs.
 
         For actual LLM-based optimization, use turbo_gepa.optimize() instead.
+
+        Parameters:
+            enable_seed_initialization: If True, use PROMPT-MII-style spec induction to
+                generate smart initial seeds from task examples instead of using generic prompts.
+                Requires reflection_lm to be set. Can optimize user-provided seeds or generate from scratch.
+            num_generated_seeds: Number of seeds to generate if enable_seed_initialization=True
         """
+        # Handle seed initialization if requested
+        if enable_seed_initialization:
+            from ..seed_initializer import maybe_initialize_seeds
+
+            # Convert user seeds to strings if provided
+            user_seed_strings = None
+            if seeds:
+                user_seed_strings = []
+                for seed in seeds:
+                    if isinstance(seed, Candidate):
+                        user_seed_strings.append(seed.text)
+                    else:
+                        user_seed_strings.append(seed)
+
+            # Generate/optimize seeds
+            seeds = asyncio.run(
+                maybe_initialize_seeds(
+                    dataset=self.dataset,
+                    user_seeds=user_seed_strings,
+                    enable_seed_initialization=True,
+                    num_generated_seeds=num_generated_seeds,
+                    reflection_lm=self.reflection_lm,
+                    reflection_lm_temperature=self.reflection_lm_temperature,
+                )
+            )
+        elif seeds is None:
+            # No seeds provided and initialization disabled - use default
+            seeds = ["You are a helpful assistant. Follow the instructions carefully."]
+
         return asyncio.run(
             self.optimize_async(
                 seeds,

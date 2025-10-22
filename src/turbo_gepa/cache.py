@@ -11,7 +11,6 @@ This enables cross-island reuse and automatic resume after cancellation.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import os
 from collections import defaultdict
@@ -22,9 +21,8 @@ from .interfaces import Candidate, EvalResult
 
 
 def candidate_key(candidate: Candidate) -> str:
-    """Compute a stable hash for a candidate's text."""
-    digest = hashlib.sha256(candidate.text.encode("utf-8")).hexdigest()
-    return digest
+    """Compute a stable hash for a candidate incorporating temperature metadata."""
+    return candidate.fingerprint
 
 
 class DiskCache:
@@ -40,6 +38,8 @@ class DiskCache:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         # Use defaultdict to avoid race condition in lock creation
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        # Global semaphore to limit concurrent file operations (prevent "too many open files")
+        self._file_semaphore = asyncio.Semaphore(100)  # Max 100 concurrent file operations
 
     def _lock_for(self, key: str) -> asyncio.Lock:
         # defaultdict ensures atomic lock creation per key
@@ -59,7 +59,9 @@ class DiskCache:
             return None
         lock = self._lock_for(cand_hash)
         async with lock:
-            cached = await asyncio.to_thread(self._read_record, path, example_id)
+            # Use semaphore to limit concurrent file operations
+            async with self._file_semaphore:
+                cached = await asyncio.to_thread(self._read_record, path, example_id)
         return cached
 
     async def set(self, candidate: Candidate, example_id: str, result: EvalResult) -> None:
@@ -75,7 +77,9 @@ class DiskCache:
         }
         lock = self._lock_for(cand_hash)
         async with lock:
-            await asyncio.to_thread(self._append_record, path, record)
+            # Use semaphore to limit concurrent file operations
+            async with self._file_semaphore:
+                await asyncio.to_thread(self._append_record, path, record)
 
     async def batch_set(self, writes: List[Tuple[Candidate, str, EvalResult]]) -> None:
         """Batch write multiple results, grouping by candidate for efficiency."""
@@ -102,7 +106,9 @@ class DiskCache:
             record_objs = [r[1] for r in records]
             lock = self._lock_for(cand_hash)
             async with lock:
-                await asyncio.to_thread(self._append_records, path, record_objs)
+                # Use semaphore to limit concurrent file operations
+                async with self._file_semaphore:
+                    await asyncio.to_thread(self._append_records, path, record_objs)
 
         # Write all candidate batches in parallel
         await asyncio.gather(*(write_batch(k, v) for k, v in by_candidate.items()))

@@ -114,7 +114,6 @@ def optimize(
         )
         mutator = Mutator(
             MutationConfig(
-                amortized_rate=0.5,
                 reflection_batch_size=6,
                 max_mutations=8,
                 max_tokens=2048,

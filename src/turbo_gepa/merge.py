@@ -1,8 +1,11 @@
 """
-Lazy merge manager for combining module wins between candidates.
+DEPRECATED: Merge functionality has been removed from TurboGEPA.
 
-Merges operate on simple prompt segments, allowing the orchestrator to defer
-full evaluation until a merged candidate demonstrates promise.
+Previously, this module combined sections from multiple prompts through text-splicing.
+Now, the reflection LLM handles all prompt improvements, including intelligently
+synthesizing ideas from multiple good prompts.
+
+This file is kept for historical reference only and is not used in the codebase.
 """
 
 from __future__ import annotations

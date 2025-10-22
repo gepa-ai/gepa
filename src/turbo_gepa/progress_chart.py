@@ -66,9 +66,15 @@ class ProgressChart:
 
         lines = []
 
-        # Header
+        # Header with round info
+        total_rounds = len(self.quality_history)
+        if total_rounds == 1:
+            subtitle = f"Baseline established (Round {self.round_labels[0]})"
+        else:
+            subtitle = f"{total_rounds} rounds completed"
+
         lines.append(f"\n{TermColors.BOLD}{TermColors.CYAN}{'=' * (self.width + 10)}{TermColors.RESET}")
-        lines.append(f"{TermColors.BOLD}{TermColors.WHITE}📈 {self.title}{TermColors.RESET}")
+        lines.append(f"{TermColors.BOLD}{TermColors.WHITE}📈 {self.title}{TermColors.RESET}  {TermColors.GRAY}{subtitle}{TermColors.RESET}")
         lines.append(f"{TermColors.CYAN}{'=' * (self.width + 10)}{TermColors.RESET}\n")
 
         # Stats

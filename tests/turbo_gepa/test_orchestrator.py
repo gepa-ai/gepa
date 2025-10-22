@@ -37,7 +37,6 @@ def test_orchestrator_generates_archive(tmp_path):
     )
     mutator = Mutator(
         MutationConfig(
-            amortized_rate=config.amortized_rate,
             reflection_batch_size=config.reflection_batch_size,
             max_mutations=config.max_mutations_per_round,
             max_tokens=config.max_tokens,
