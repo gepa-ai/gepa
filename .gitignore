@@ -213,7 +213,7 @@ gepa_terminus/
 
 
 .claude/
-.ufast_gepa/
-.ufast_gepa/** */
+.turbo_gepa/
+.turbo_gepa/** */
 AGENTS.md
 CLAUDE.md

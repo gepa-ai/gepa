@@ -1,5 +1,5 @@
 """
-Ultra-fast smoke benchmark for uFast-GEPA on a tiny AIME-style dataset.
+Ultra-fast smoke benchmark for TurboGEPA on a tiny AIME-style dataset.
 
 This script mirrors ``examples/benchmark_max_speed.py`` but trims the
 workload so it can be used as a quick health check without any external
@@ -15,9 +15,9 @@ from __future__ import annotations
 import time
 from typing import Iterable, List
 
-from ufast_gepa.archive import ArchiveEntry
-from ufast_gepa.adapters.default_adapter import DefaultAdapter, DefaultDataInst
-from ufast_gepa.config import Config
+from turbo_gepa.archive import ArchiveEntry
+from turbo_gepa.adapters.default_adapter import DefaultAdapter, DefaultDataInst
+from turbo_gepa.config import Config
 
 
 # Minimal AIME-inspired training set. These problems are adapted from public
@@ -77,7 +77,7 @@ def _best_quality(pareto_entries: Iterable[ArchiveEntry]) -> float:
 
 def main() -> None:
     print("\n" + "=" * 70)
-    print("🚀 uFast-GEPA Smoke Test - Quick Health Check")
+    print("🚀 TurboGEPA Smoke Test - Quick Health Check")
     print("=" * 70)
 
     dataset = _build_dataset()
@@ -91,8 +91,8 @@ def main() -> None:
         queue_limit=32,
         migration_period=10,  # effectively disables migration
         log_summary_interval=1,  # Show progress chart every round
-        cache_path=".ufast_gepa/smoke_cache",
-        log_path=".ufast_gepa/smoke_logs",
+        cache_path=".turbo_gepa/smoke_cache",
+        log_path=".turbo_gepa/smoke_logs",
     )
 
     print(f"\n⚙️  Config:")
@@ -103,16 +103,16 @@ def main() -> None:
     # Check if we should use real LLMs
     import os
 
-    use_real_llms = os.getenv("OPENAI_API_KEY") is not None
+    use_real_llms = os.getenv("OPENROUTER_API_KEY") is not None
 
     if use_real_llms:
-        print("\n🤖 Using REAL LLMs (OPENAI_API_KEY found):")
-        task_lm = "openai/gpt-5-nano"
-        reflection_lm = "openai/gpt-5-nano"
+        print("\n🤖 Using REAL LLMs (OPENROUTER_API_KEY found):")
+        task_lm = "openrouter/x-ai/grok-4-fast"
+        reflection_lm = "openrouter/x-ai/grok-4-fast"
         print(f"   Task LM: {task_lm}")
         print(f"   Reflection LM: {reflection_lm}")
     else:
-        print("\n🔬 Using HEURISTIC evaluation (no OPENAI_API_KEY)")
+        print("\n🔬 Using HEURISTIC evaluation (no OPENROUTER_API_KEY)")
         task_lm = None
         reflection_lm = None
 
@@ -142,7 +142,7 @@ def main() -> None:
     ]
 
     # Example: Enable temperature cycling by passing Candidate objects
-    # from ufast_gepa.interfaces import Candidate
+    # from turbo_gepa.interfaces import Candidate
     # seeds = [
     #     Candidate(text=seeds[0], meta={"temperature": 0.0}),  # Deterministic
     #     Candidate(text=seeds[0], meta={"temperature": 0.7}),  # Balanced

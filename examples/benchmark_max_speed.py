@@ -1,5 +1,5 @@
 """
-Benchmark GEPA vs uFast-GEPA - MAXIMUM SPEED comparison.
+Benchmark GEPA vs TurboGEPA - MAXIMUM SPEED comparison.
 
 Both use the same simple optimize() API.
 
@@ -12,23 +12,23 @@ import os
 import time
 
 import gepa
-import ufast_gepa
+import turbo_gepa
 
 
 def main():
     """Run max speed benchmark."""
-    if not os.getenv("OPENAI_API_KEY"):
-        print("ERROR: Set OPENAI_API_KEY environment variable")
-        print("export OPENAI_API_KEY=your_key")
+    if not os.getenv("OPENROUTER_API_KEY"):
+        print("ERROR: Set OPENROUTER_API_KEY environment variable")
+        print("export OPENROUTER_API_KEY=your_key")
         return
 
     print("\n" + "=" * 80)
-    print("🏁 MAXIMUM SPEED BENCHMARK: GEPA vs uFast-GEPA")
+    print("🏁 MAXIMUM SPEED BENCHMARK: GEPA vs TurboGEPA")
     print("=" * 80)
     print("\nBoth optimizers use the same simple API:")
     print("  - GEPA: reflection_lm=gpt-4o")
     print(
-        "  - uFast-GEPA: eval_concurrency=32, reflection_lm=gpt-4o, shards=(0.3, 1.0)"
+        "  - TurboGEPA: eval_concurrency=32, reflection_lm=gpt-4o, shards=(0.3, 1.0)"
     )
     print("\nExpected time: ~10-30 minutes total")
     print("=" * 80)
@@ -71,31 +71,31 @@ def main():
     # print(f"🏆 GEPA Prompt: {gepa_result.best_candidate['system_prompt'][:100]}...")
 
     # # ========================================================================
-    # # uFast-GEPA Benchmark
+    # # TurboGEPA Benchmark
     # # ========================================================================
     # print("\n\n" + "=" * 80)
-    # print("uFast-GEPA - MAXIMUM SPEED")
+    # print("TurboGEPA - MAXIMUM SPEED")
     # print("=" * 80)
 
-    ufast_start = time.time()
+    turbo_start = time.time()
 
-    ufast_result = ufast_gepa.optimize(
+    turbo_result = turbo_gepa.optimize(
         seed_candidate=seed_prompt,
         trainset=trainset,
         valset=valset,
-        task_lm="openai/gpt-5-nano",
+        task_lm="openrouter/x-ai/grok-4-fast",
         max_metric_calls=150,
-        reflection_lm="openai/gpt-5-nano",  # <-- LLM-based reflection
+        reflection_lm="openrouter/x-ai/grok-4-fast",  # <-- LLM-based reflection
         eval_concurrency=100,  # <-- MAX concurrency
         shards=(0.3, 1.0),  # <-- Aggressive successive halving
         display_progress=True,  # <-- Show progress
     )
 
-    ufast_duration = time.time() - ufast_start
+    turbo_duration = time.time() - turbo_start
 
-    print(f"\n⏱️  uFast Time: {ufast_duration:.2f}s ({ufast_duration/60:.2f} min)")
-    print(f"📊 uFast Score: {ufast_result.best_score:.2%}")
-    print(f"🏆 uFast Prompt: {ufast_result.best_candidate['system_prompt'][:100]}...")
+    print(f"\n⏱️  Turbo Time: {turbo_duration:.2f}s ({turbo_duration/60:.2f} min)")
+    print(f"📊 Turbo Score: {turbo_result.best_score:.2%}")
+    print(f"🏆 Turbo Prompt: {turbo_result.best_candidate['system_prompt'][:100]}...")
 
     # ========================================================================
     # Comparison
@@ -104,25 +104,25 @@ def main():
     print("COMPARISON")
     print("=" * 80)
 
-    # speedup = gepa_duration / ufast_duration
-    # time_saved = gepa_duration - ufast_duration
+    # speedup = gepa_duration / turbo_duration
+    # time_saved = gepa_duration - turbo_duration
 
     # print(f"\n⏱️  TIMING")
     # print(f"   GEPA:       {gepa_duration:.2f}s ({gepa_duration/60:.2f} min)")
-    print(f"   uFast-GEPA: {ufast_duration:.2f}s ({ufast_duration/60:.2f} min)")
+    print(f"   TurboGEPA: {turbo_duration:.2f}s ({turbo_duration/60:.2f} min)")
     # print(f"   🚀 SPEEDUP: {speedup:.2f}× FASTER")
     # print(f"   ⏰ SAVED:   {time_saved:.2f}s ({time_saved/60:.2f} min)")
 
     print(f"\n📊 QUALITY")
     # print(f"   GEPA:       {gepa_result.best_score:.2%}")
-    print(f"   uFast-GEPA: {ufast_result.best_score:.2%}")
-    # print(f"   Difference: {ufast_result.best_score - gepa_result.best_score:+.2%}")
+    print(f"   TurboGEPA: {turbo_result.best_score:.2%}")
+    # print(f"   Difference: {turbo_result.best_score - gepa_result.best_score:+.2%}")
 
     print("\n" + "=" * 80)
     # if speedup >= 5:
-    #     print("✅ SIGNIFICANT speedup - uFast-GEPA's async architecture wins!")
+    #     print("✅ SIGNIFICANT speedup - TurboGEPA's async architecture wins!")
     # elif speedup >= 2:
-    #     print("✅ Good speedup - uFast-GEPA is notably faster")
+    #     print("✅ Good speedup - TurboGEPA is notably faster")
     # else:
     #     print("⚠️  Similar performance")
 
