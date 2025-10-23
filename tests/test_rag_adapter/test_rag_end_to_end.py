@@ -1,9 +1,13 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import json
 from unittest.mock import Mock, patch
 
 import pytest
+
+from gepa.adapters.generic_rag_adapter.generic_rag_adapter import GenericRAGAdapter
+from gepa.core.data_loader import StagedDataLoader
 
 
 @pytest.fixture
@@ -16,25 +20,31 @@ def sample_ai_ml_dataset():
             query="What is machine learning?",
             ground_truth_answer="Machine learning is a subset of artificial intelligence that enables computers to learn and make decisions from data without being explicitly programmed.",
             relevant_doc_ids=["doc_ml_basics", "doc_ai_overview"],
-            metadata={"category": "fundamentals", "difficulty": "beginner"},
+            metadata={"category": "fundamentals", "difficulty": "beginner", "split": "train"},
         ),
         RAGDataInst(
             query="Explain the difference between supervised and unsupervised learning.",
             ground_truth_answer="Supervised learning uses labeled training data to learn mappings from inputs to outputs, while unsupervised learning finds patterns in data without labeled examples.",
             relevant_doc_ids=["doc_supervised_learning", "doc_unsupervised_learning"],
-            metadata={"category": "learning_types", "difficulty": "intermediate"},
+            metadata={"category": "learning_types", "difficulty": "intermediate", "split": "train"},
         ),
         RAGDataInst(
             query="What are the key components of a neural network?",
             ground_truth_answer="Key components include neurons (nodes), layers (input, hidden, output), weights, biases, and activation functions that determine how information flows through the network.",
             relevant_doc_ids=["doc_neural_networks", "doc_deep_learning"],
-            metadata={"category": "neural_networks", "difficulty": "intermediate"},
+            metadata={"category": "neural_networks", "difficulty": "intermediate", "split": "val"},
         ),
         RAGDataInst(
             query="How does gradient descent work in machine learning?",
             ground_truth_answer="Gradient descent is an optimization algorithm that iteratively adjusts model parameters by moving in the direction of steepest descent of the cost function to minimize error.",
             relevant_doc_ids=["doc_optimization", "doc_gradient_descent"],
-            metadata={"category": "optimization", "difficulty": "advanced"},
+            metadata={"category": "optimization", "difficulty": "advanced", "split": "val"},
+        ),
+        RAGDataInst(
+            query="Define reinforcement learning.",
+            ground_truth_answer="Reinforcement learning trains agents via rewards and penalties to learn optimal actions through trial and error.",
+            relevant_doc_ids=["doc_reinforcement_learning"],
+            metadata={"category": "learning_types", "difficulty": "advanced", "split": "val"},
         ),
     ]
 
@@ -116,6 +126,15 @@ def mock_chromadb_store(sample_ai_ml_dataset):
                         "source": "optimization_handbook",
                     },
                 },
+                {
+                    "id": "doc_reinforcement_learning",
+                    "content": "Reinforcement learning trains agents to take actions that maximize cumulative reward through trial-and-error interaction with an environment.",
+                    "metadata": {
+                        "doc_id": "doc_reinforcement_learning",
+                        "category": "learning_types",
+                        "source": "rl_handbook",
+                    },
+                },
             ]
 
         def similarity_search(
@@ -167,6 +186,89 @@ def mock_chromadb_store(sample_ai_ml_dataset):
     return MockChromaDBStore()
 
 
+PREFERRED_DYNAMIC_PROMPT = (
+    "Based on the provided context, give a comprehensive and accurate answer to the question '{query}'. "
+    "Structure your response clearly, include key definitions and explanations, and ensure your answer directly "
+    "addresses all aspects of the question. Context: {context}"
+)
+SEED_PROMPT = "Answer the question '{query}' using the provided context: {context}"
+
+DEFAULT_RAG_CONFIG = {"retrieval_strategy": "similarity", "top_k": 3, "retrieval_weight": 0.4, "generation_weight": 0.6}
+
+
+def simple_rag_lm(messages):
+    """Simple mock LLM that returns deterministic responses based on query content"""
+    content = str(messages)
+    content_lower = content.lower()
+    if "machine learning" in content_lower:
+        return "Machine learning is a subset of artificial intelligence that enables computers to learn from data."
+    if "supervised" in content_lower and "unsupervised" in content_lower:
+        return "Supervised learning uses labeled data while unsupervised learning finds patterns in unlabeled data."
+    if "neural network" in content_lower:
+        return "Neural networks consist of neurons, layers, weights, and activation functions."
+    if "gradient descent" in content_lower:
+        return "Gradient descent optimizes model parameters by minimizing the cost function iteratively."
+    return "This is a general AI/ML answer based on the provided context."
+
+
+def simple_reflection_lm(prompt):
+    """Simple reflection that suggests a better prompt."""
+    return json.dumps({"answer_generation": PREFERRED_DYNAMIC_PROMPT})
+
+
+class RAGTestAdapater(GenericRAGAdapter):
+    """Custom adapter for deterministic RAG testing with optional dynamic valset hooks."""
+
+    def __init__(
+        self,
+        vector_store,
+        rag_config,
+        *,
+        preferred_prompt: str | None = None,
+        boost_amount: float = 0.15,
+    ):
+        self.vector_store = vector_store
+        self.config = rag_config
+
+        from gepa.adapters.generic_rag_adapter.evaluation_metrics import RAGEvaluationMetrics
+        from gepa.adapters.generic_rag_adapter.rag_pipeline import RAGPipeline
+
+        self.rag_pipeline = RAGPipeline(vector_store, simple_rag_lm, rag_config)
+        self.evaluator = RAGEvaluationMetrics()
+        self.failure_score = 0.0
+        self.val_eval_calls = 0
+        self.preferred_prompt = preferred_prompt
+        self.boost_amount = boost_amount
+
+    def evaluate(self, batch, candidate, capture_traces: bool = False):
+        result = super().evaluate(batch, candidate, capture_traces=capture_traces)
+
+        candidate_prompt = candidate.get("answer_generation")
+        matches_preferred = (
+            self.preferred_prompt is not None
+            and isinstance(candidate_prompt, str)
+            and self.preferred_prompt in candidate_prompt
+        )
+
+        if matches_preferred and result.scores:
+            result.scores = [min(1.0, score + self.boost_amount) for score in result.scores]
+            if result.trajectories:
+                for trajectory in result.trajectories:
+                    if isinstance(trajectory, dict):
+                        meta = trajectory.get("execution_metadata")
+                        if isinstance(meta, dict) and "overall_score" in meta:
+                            meta["overall_score"] = min(1.0, meta["overall_score"] + self.boost_amount)
+
+        if batch:
+            first = batch[0]
+            if isinstance(first, dict):
+                split = first.get("metadata", {}).get("split")
+                if split == "val":
+                    self.val_eval_calls += 1
+
+        return result
+
+
 # --- The Test Function ---
 
 
@@ -188,50 +290,19 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
     # Imports for the specific test logic
 
     import gepa
-    from gepa.adapters.generic_rag_adapter.generic_rag_adapter import GenericRAGAdapter
-
-    # Create simple deterministic mock responses
-    def simple_rag_lm(messages):
-        """Simple mock LLM that returns deterministic responses based on query content"""
-        content = str(messages)
-        if "machine learning" in content.lower():
-            return "Machine learning is a subset of artificial intelligence that enables computers to learn from data."
-        elif "supervised" in content.lower() and "unsupervised" in content.lower():
-            return "Supervised learning uses labeled data while unsupervised learning finds patterns in unlabeled data."
-        elif "neural network" in content.lower():
-            return "Neural networks consist of neurons, layers, weights, and activation functions."
-        elif "gradient descent" in content.lower():
-            return "Gradient descent optimizes model parameters by minimizing the cost function iteratively."
-        else:
-            return "This is a general AI/ML answer based on the provided context."
-
-    def simple_reflection_lm(prompt):
-        """Simple reflection that suggests a better prompt"""
-        return '{"answer_generation": "Based on the provided context, give a comprehensive and accurate answer to the question \'{query}\'. Structure your response clearly, include key definitions and explanations, and ensure your answer directly addresses all aspects of the question. Context: {context}"}'
-
-    # Create a simple RAG adapter that uses our mocked LLM
-    class TestRAGAdapter(GenericRAGAdapter):
-        def __init__(self, vector_store, rag_config):
-            self.vector_store = vector_store
-            self.config = rag_config
-            from gepa.adapters.generic_rag_adapter.evaluation_metrics import RAGEvaluationMetrics
-            from gepa.adapters.generic_rag_adapter.rag_pipeline import RAGPipeline
-
-            self.rag_pipeline = RAGPipeline(vector_store, simple_rag_lm, rag_config)
-            self.evaluator = RAGEvaluationMetrics()
 
     # Create RAG configuration
-    rag_config = {"retrieval_strategy": "similarity", "top_k": 3, "retrieval_weight": 0.4, "generation_weight": 0.6}
+    rag_config = DEFAULT_RAG_CONFIG.copy()
 
     # Create the RAG adapter with our mocked LLM
-    adapter = TestRAGAdapter(vector_store=mock_chromadb_store, rag_config=rag_config)
+    adapter = RAGTestAdapater(vector_store=mock_chromadb_store, rag_config=rag_config)
 
     # Use subset for faster testing
     trainset = sample_ai_ml_dataset[:2]  # First 2 examples for training
     valset = sample_ai_ml_dataset[2:3]  # Third example for validation
 
     # Initial seed candidate with basic RAG prompts
-    seed_candidate = {"answer_generation": "Answer the question '{query}' using the provided context: {context}"}
+    seed_candidate = {"answer_generation": SEED_PROMPT}
 
     # 2. Execution: Run the core RAG optimization logic
     gepa_result = gepa.optimize(
@@ -328,7 +399,7 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
 
     # 7. Verify reproducibility - with same mock functions, results should be deterministic
     # Run a second optimization with identical setup
-    adapter2 = TestRAGAdapter(vector_store=mock_chromadb_store, rag_config=rag_config)
+    adapter2 = RAGTestAdapater(vector_store=mock_chromadb_store, rag_config=rag_config)
     gepa_result2 = gepa.optimize(
         seed_candidate=seed_candidate,
         trainset=trainset,
@@ -356,11 +427,11 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
         # These values were captured from an actual test run
         "expected_val_score": 0.6637837837837838,  # Exact score from deterministic run
         # The final prompt should match exactly - recorded from actual run
-        "seed_prompt": "Answer the question '{query}' using the provided context: {context}",
-        "expected_final_prompt": "Answer the question '{query}' using the provided context: {context}",  # No change in this deterministic case
+        "seed_prompt": SEED_PROMPT,
+        "expected_final_prompt": SEED_PROMPT,  # No change in this deterministic case
         "expected_prompt_changed": False,  # Reflection didn't improve score, so prompt wasn't changed
         # Record what the reflection LLM proposed (even though it wasn't accepted)
-        "proposed_optimized_prompt": "Based on the provided context, give a comprehensive and accurate answer to the question '{query}'. Structure your response clearly, include key definitions and explanations, and ensure your answer directly addresses all aspects of the question. Context: {context}",
+        "proposed_optimized_prompt": PREFERRED_DYNAMIC_PROMPT,
     }
 
     # Assert exact workflow values match expected
@@ -397,6 +468,83 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
     print(f"   Final prompt: {actual_final_prompt!r}")
     print(f"   Prompt was changed: {prompt_changed}")
     print("   Why unchanged: Reflection proposal didn't improve validation score")
+
+
+def test_rag_dynamic_valset_round_robin_sample(sample_ai_ml_dataset, mock_chromadb_store, tmp_path):
+    """
+    Runs the RAG end-to-end workflow with a dynamically expanding validation loader and the round-robin sampling policy.
+    """
+
+    import gepa
+
+    trainset = sample_ai_ml_dataset[:2]
+    initial_val_items = sample_ai_ml_dataset[2:3]
+    staged_val_items = sample_ai_ml_dataset[3:]
+
+    val_loader = StagedDataLoader(
+        initial_items=initial_val_items,
+        staged_items=[
+            (1, staged_val_items[:1]),
+            (6, staged_val_items[1:]),
+        ],
+    )
+    adapter_stage_one = RAGTestAdapater(
+        vector_store=mock_chromadb_store,
+        rag_config=DEFAULT_RAG_CONFIG.copy(),
+        preferred_prompt=PREFERRED_DYNAMIC_PROMPT,
+        boost_amount=0.25,
+    )
+
+    result_stage_one = gepa.optimize(
+        seed_candidate={"answer_generation": SEED_PROMPT},
+        trainset=trainset,
+        valset=val_loader,
+        adapter=adapter_stage_one,
+        reflection_lm=simple_reflection_lm,
+        candidate_selection_strategy="current_best",
+        max_metric_calls=15,
+        val_evaluation_policy="round_robin_sample",
+        val_evaluation_sample_size=1,
+        run_dir=str(tmp_path / "dynamic_val_run"),
+    )
+
+    assert val_loader.num_unlocked_stages >= 2
+
+    # Continue serving batches until the second staged unlock triggers (5 batches after the first unlock)
+    while val_loader.num_unlocked_stages < 3:
+        # Always safe to fetch using the first id because staged unlock only appends ids.
+        val_loader.fetch([0])
+
+    adapter_stage_two = RAGTestAdapater(
+        vector_store=mock_chromadb_store,
+        rag_config=DEFAULT_RAG_CONFIG.copy(),
+        preferred_prompt=PREFERRED_DYNAMIC_PROMPT,
+        boost_amount=0.25,
+    )
+
+    result_stage_two = gepa.optimize(
+        seed_candidate=result_stage_one.best_candidate,
+        trainset=trainset,
+        valset=val_loader,
+        adapter=adapter_stage_two,
+        reflection_lm=simple_reflection_lm,
+        candidate_selection_strategy="current_best",
+        max_metric_calls=12,
+        val_evaluation_policy="round_robin_sample",
+        val_evaluation_sample_size=1,
+        run_dir=str(tmp_path / "dynamic_val_run_stage2"),
+    )
+
+    assert val_loader.num_unlocked_stages == 3
+    assert val_loader.batches_served >= 6
+    assert adapter_stage_one.val_eval_calls + adapter_stage_two.val_eval_calls >= 3
+    assert len(result_stage_two.val_subscores) >= 1
+    assert result_stage_two.num_full_val_evals >= 1
+
+    covered_ids = set().union(*(scores.keys() for scores in result_stage_two.val_subscores))
+    assert covered_ids == {0, 1, 2}
+
+    assert len(result_stage_two.val_subscores[0]) == len(covered_ids)
 
 
 def test_rag_adapter_basic_functionality(mock_chromadb_store):

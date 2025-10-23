@@ -17,6 +17,7 @@ ProgramIdx = int
 
 class GEPAState(Generic[RolloutOutput, DataId]):
     """Persistent optimizer state tracking candidates, sparse validation coverage, and execution metadata."""
+
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 2
 
     program_candidates: list[dict[str, str]]
