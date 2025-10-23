@@ -175,7 +175,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         val_id: DataId,
         score: float,
         program_idx: ProgramIdx,
-        outputs: dict[DataId, RolloutOutput] | None,
+        output: RolloutOutput | None,
         run_dir: str | None,
         iteration: int,
     ) -> None:
@@ -183,7 +183,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if score > prev_score:
             self.pareto_front_valset[val_id] = score
             self.program_at_pareto_front_valset[val_id] = {program_idx}
-            output = outputs.get(val_id) if outputs is not None else None
             if self.best_outputs_valset is not None and output is not None:
                 self.best_outputs_valset[val_id] = [(program_idx, output)]
                 if run_dir is not None:
@@ -197,7 +196,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             )
             pareto_front = self.program_at_pareto_front_valset[val_id]
             pareto_front.add(program_idx)
-            output = outputs.get(val_id) if outputs is not None else None
             if self.best_outputs_valset is not None and output is not None:
                 self.best_outputs_valset[val_id].append((program_idx, output))
 
@@ -223,7 +221,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         self.prog_candidate_val_subscores.append(valset_subscores)
         for val_id, score in valset_subscores.items():
-            self._update_pareto_front_for_val_id(val_id, score, new_program_idx, valset_outputs, run_dir, self.i + 1)
+            valset_output = valset_outputs.get(val_id) if valset_outputs else None
+            self._update_pareto_front_for_val_id(val_id, score, new_program_idx, valset_output, run_dir, self.i + 1)
         return new_program_idx
 
 
