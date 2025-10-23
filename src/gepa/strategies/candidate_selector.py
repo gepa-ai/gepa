@@ -35,3 +35,6 @@ class CurrentBestCandidateSelector(CandidateSelector):
     def select_candidate_idx(self, state: GEPAState) -> int:
         assert len(state.program_full_scores_val_set) == len(state.program_candidates)
         return idxmax(state.program_full_scores_val_set)
+    
+    def supports_eval_policy(self, eval_policy: EvaluationPolicy) -> bool:
+        return True

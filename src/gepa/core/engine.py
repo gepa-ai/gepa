@@ -11,7 +11,7 @@ from gepa.gepa_utils import ensure_loader
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
-from gepa.strategies.eval_policy import EvaluationPolicy
+from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 
 from .adapter import RolloutOutput, Trajectory
 
@@ -79,14 +79,14 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.use_cloudpickle = use_cloudpickle
 
         self.raise_on_exception = raise_on_exception
-        self.val_evaluation_policy = val_evaluation_policy
+        self.val_evaluation_policy = val_evaluation_policy or FullEvaluationPolicy()
 
     def _evaluate_on_valset(
         self, program: dict[str, str], state: GEPAState
     ) -> tuple[dict[int, RolloutOutput], dict[int, float]]:
         assert self.valset is not None
 
-        val_ids = self.val_evaluation_policy.next_minibatch_ids(self.valset, state)
+        val_ids = self.val_evaluation_policy.get_eval_batch(self.valset, state)
         batch = self.valset.fetch(val_ids)
         outputs, scores = self.evaluator(batch, program)
         assert len(outputs) == len(val_ids), "Eval outputs should match length of selected validation indices"

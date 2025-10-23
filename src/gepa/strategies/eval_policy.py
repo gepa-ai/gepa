@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from typing import Generic, Protocol, runtime_checkable
 
 from gepa.core.data_loader import DataId, DataInst, DataLoader
 from gepa.core.state import GEPAState, ProgramIdx
 
-from .batch_sampler import BatchSampler
-
-
-class EvaluationPolicy(BatchSampler[DataId, DataInst]):
+@runtime_checkable
+class EvaluationPolicy(Protocol[DataId, DataInst]): # type: ignore
     """Strategy for choosing validation ids to evaluate and identifying best programs for validation instances."""
+
+    @abstractmethod
+    def get_eval_batch(
+        self, loader: DataLoader[DataId, DataInst], state: GEPAState, target_program_idx: ProgramIdx | None = None
+    ) -> list[DataId]:
+        """ Select examples for evaluation for a program """
+        ...
 
     @abstractmethod
     def get_best_program(self, state: GEPAState) -> ProgramIdx:
@@ -26,7 +32,7 @@ class EvaluationPolicy(BatchSampler[DataId, DataInst]):
 class FullEvaluationPolicy(EvaluationPolicy[DataId, DataInst]):
     """Policy that evaluates all validation instances every time."""
 
-    def next_minibatch_ids(
+    def get_eval_batch(
         self, loader: DataLoader[DataId, DataInst], state: GEPAState, target_program_idx: ProgramIdx | None = None
     ) -> list[DataId]:
         """Always return the full ordered list of validation ids."""

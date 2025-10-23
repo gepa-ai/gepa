@@ -135,7 +135,7 @@ def test_dynamic_validation(run_dir, rng):
 
     # initially only validate on first example
     class InitValidationPolicy(EvaluationPolicy):
-        def next_minibatch_ids(self, loader, state):
+        def get_eval_batch(self, loader, state, target_program_idx=None):
             return [0]
 
         def is_evaluation_sparse(self) -> bool:
@@ -167,10 +167,10 @@ def test_dynamic_validation(run_dir, rng):
     valset_ids = set(range(len(extended_valset)))
 
     class BackfillValidationPolicy(EvaluationPolicy):
-        def next_minibatch_ids(self, loader, state) -> list[DataId]:
+        def get_eval_batch(self, loader, state, target_program_idx=None) -> list[int]:
             missing_valset_ids = valset_ids.difference(state.valset_evaluations.keys())
             if missing_valset_ids:
-                return missing_valset_ids
+                return sorted(list(missing_valset_ids))
             return rng.sample(valset_ids, 1)
 
         def get_best_program(self, state: state_mod.GEPAState) -> state_mod.ProgramIdx:
@@ -214,7 +214,7 @@ def test_sparse_eval_policy_rejected_by_pareto_selector(run_dir):
             return {}
 
     class SparseEvaluationPolicy(EvaluationPolicy):
-        def next_minibatch_ids(self, loader, state, target_program_idx=None):
+        def get_eval_batch(self, loader, state, target_program_idx=None):
             ids = list(loader.all_ids())
             return ids[:1] if ids else []
 

@@ -12,8 +12,7 @@ from gepa.strategies.eval_policy import EvaluationPolicy
 class CandidateSelector(Protocol):
     def select_candidate_idx(self, state: GEPAState) -> int: ...
 
-    def supports_eval_policy(eval_policy: EvaluationPolicy) -> bool:
-        return True
+    def supports_eval_policy(self, eval_policy: EvaluationPolicy) -> bool: ...
 
 
 class ReflectionComponentSelector(Protocol):

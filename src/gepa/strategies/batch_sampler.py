@@ -63,11 +63,7 @@ class EpochShuffledBatchSampler(BatchSampler[DataId, DataInst]):
         base_idx = state.i * self.minibatch_size
         curr_epoch = 0 if self.epoch == -1 else base_idx // max(len(self.shuffled_ids), 1)
 
-        needs_refresh = (
-            not self.shuffled_ids
-            or trainset_size != self.last_trainset_size
-            or curr_epoch > self.epoch
-        )
+        needs_refresh = not self.shuffled_ids or trainset_size != self.last_trainset_size or curr_epoch > self.epoch
         if needs_refresh:
             self.epoch = curr_epoch
             self._update_shuffled(loader)
