@@ -37,6 +37,8 @@ class ExperimentTracker:
         self.mlflow_tracking_uri = mlflow_tracking_uri
         self.mlflow_experiment_name = mlflow_experiment_name
 
+        self._created_mlflow_run = False
+
     def initialize(self):
         """Initialize the logging backends."""
         if self.use_wandb:
@@ -81,7 +83,12 @@ class ExperimentTracker:
         if self.use_mlflow:
             import mlflow  # type: ignore
 
-            mlflow.start_run(nested=True)
+            # Only start a new run if there's no active run
+            if mlflow.active_run() is None:
+                mlflow.start_run()
+                self._created_mlflow_run = True
+            else:
+                self._created_mlflow_run = False
 
     def log_metrics(self, metrics: dict[str, Any], step: int | None = None):
         """Log metrics to the active backends."""
@@ -116,8 +123,9 @@ class ExperimentTracker:
             try:
                 import mlflow  # type: ignore
 
-                if mlflow.active_run() is not None:
+                if self._created_mlflow_run and mlflow.active_run() is not None:
                     mlflow.end_run()
+                    self._created_mlflow_run = False
             except Exception as e:
                 print(f"Warning: Failed to end mlflow run: {e}")
 

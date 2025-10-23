@@ -509,6 +509,52 @@ class TestExperimentTrackerIntegration:
             assert call_kwargs == expected_kwargs
 
     @pytest.mark.skipif(not has_mlflow(), reason="mlflow not available")
+    def test_mlflow_nested_run_handling(self, temp_dir):
+        import mlflow
+
+        # Start an outer mlflow run
+        mlflow.set_tracking_uri(f"file://{temp_dir}/mlflow")
+        mlflow.set_experiment("test-experiment")
+
+        with mlflow.start_run() as outer_run:
+            outer_run_id = outer_run.info.run_id
+
+            # Create tracker inside existing run
+            tracker = ExperimentTracker(
+                use_wandb=False,
+                use_mlflow=True,
+                mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+                mlflow_experiment_name="test-experiment",
+            )
+
+            tracker.initialize()
+            tracker.start_run()
+
+            # Log some metrics
+            tracker.log_metrics({"inner_metric": 1.0}, step=1)
+
+            # End the tracker
+            tracker.end_run()
+
+            # The outer run should still be active
+            assert mlflow.active_run() is not None
+            assert mlflow.active_run().info.run_id == outer_run_id
+
+            # Log more metrics to the outer run
+            mlflow.log_metric("outer_metric", 2.0)
+
+        # Now the outer run should be ended
+        assert mlflow.active_run() is None
+
+        # Verify both metrics were logged
+        from mlflow.tracking import MlflowClient
+
+        client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
+        run_data = client.get_run(outer_run_id)
+        assert "inner_metric" in run_data.data.metrics
+        assert "outer_metric" in run_data.data.metrics
+
+    @pytest.mark.skipif(not has_mlflow(), reason="mlflow not available")
     def test_metric_logging_variations_mlflow(self, temp_dir):
         """Test various metric logging scenarios with mlflow."""
         tracker = ExperimentTracker(
