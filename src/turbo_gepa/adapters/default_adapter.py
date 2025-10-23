@@ -13,14 +13,17 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from turbo_gepa.archive import Archive
 from turbo_gepa.cache import DiskCache
 from turbo_gepa.config import Config, DEFAULT_CONFIG, adaptive_config, adaptive_shards
 from turbo_gepa.evaluator import AsyncEvaluator
-from turbo_gepa.interfaces import Candidate
+from turbo_gepa.interfaces import Candidate, EvalResult
 from turbo_gepa.logging_utils import EventLogger, build_logger
+from turbo_gepa.islands import IslandContext, spawn_islands
+from turbo_gepa.multi_island_dashboard import IslandProgressAggregator, IslandDashboard
 from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
@@ -165,8 +168,14 @@ class DefaultAdapter:
         self.example_map = {
             data.id if data.id is not None else f"example-{idx}": data for idx, data in enumerate(self.dataset)
         }
-        self.sampler = InstanceSampler(list(self.example_map.keys()), seed=sampler_seed)
-        self.cache = DiskCache(cache_dir or config.cache_path)
+        self._example_ids = list(self.example_map.keys())
+        self._sampler_seed = sampler_seed
+        self.sampler = InstanceSampler(self._example_ids, seed=self._sampler_seed)
+        self.base_cache_dir = cache_dir or config.cache_path
+        self.base_log_dir = log_dir or config.log_path
+        Path(self.base_cache_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.base_log_dir).mkdir(parents=True, exist_ok=True)
+        self.cache = DiskCache(self.base_cache_dir)
         self.archive = Archive(
             bins_length=config.qd_bins_length,
             bins_bullets=config.qd_bins_bullets,
@@ -187,16 +196,18 @@ class DefaultAdapter:
         spec_induction_runner = self._create_spec_induction_runner(reflection_lm)
 
         # Pass temperature support flag to mutator
+        self._mutation_config = mutation_config or MutationConfig(
+            reflection_batch_size=config.reflection_batch_size,
+            max_mutations=config.max_mutations_per_round,
+            max_tokens=config.max_tokens,
+        )
+        self._batch_reflection_runner = batch_reflection_runner
+        self._spec_induction_runner = spec_induction_runner
         self.mutator = Mutator(
-            mutation_config
-            or MutationConfig(
-                reflection_batch_size=config.reflection_batch_size,
-                max_mutations=config.max_mutations_per_round,
-                max_tokens=config.max_tokens,
-            ),
-            batch_reflection_runner=batch_reflection_runner,
-            spec_induction_runner=spec_induction_runner,
-            temperature_mutations_enabled=self.temperature_supported,
+            self._mutation_config,
+            batch_reflection_runner=self._batch_reflection_runner,
+            spec_induction_runner=self._spec_induction_runner,
+            temperature_mutations_enabled=False,  # Disabled for Phase 1 - only optimize prompt quality
         )
         self.token_controller = TokenCostController(config.max_tokens)
         self.log_dir = log_dir or config.log_path
@@ -263,22 +274,62 @@ class DefaultAdapter:
 
                 all_parents_text = "\n".join(parent_summaries)
 
-                reflection_prompt = f"""You are optimizing prompts for a challenging task. Below are {len(parent_contexts)} successful prompts with different approaches and trade-offs:
+                example_summaries = []
+                if isinstance(getattr(self.mutator, "_reflection_examples", None), list) and self.mutator._reflection_examples:
+                    for j, ex in enumerate(self.mutator._reflection_examples[:5]):
+                        example_input = ex.get("input", "").strip()
+                        example_answer = (ex.get("expected_answer") or ex.get("answer") or "").strip()
+                        assistant_output = ex.get("assistant_output", "").strip()
+                        feedback_text = ex.get("feedback", "").strip()
+                        additional = ex.get("additional_context") or {}
+                        solution = additional.get("solution") if isinstance(additional, dict) else None
+                        example_block = [f"Example {j + 1} Input: {example_input}"]
+                        if assistant_output:
+                            example_block.append(f"Example {j + 1} Assistant Output: {assistant_output}")
+                        if example_answer:
+                            example_block.append(f"Example {j + 1} Correct Answer: {example_answer}")
+                        if feedback_text:
+                            example_block.append(f"Example {j + 1} Feedback: {feedback_text}")
+                        if solution:
+                            formatted_solution = "\n".join(str(solution).splitlines())
+                            example_block.append(
+                                f"Example {j + 1} Reference Solution:\n{formatted_solution}"
+                            )
+                        example_summaries.append("\n".join(example_block))
 
+                examples_text = "\n\n".join(example_summaries)
+
+                reflection_prompt = f"""I provided an assistant with the following instructions to perform a task:
+
+Existing high-performing instructions and their recent quality:
 {all_parents_text}
 
-Generate {num_mutations} NEW prompt variants that:
-1. Synthesize the best ideas from multiple successful prompts above
-2. Address any common weaknesses you observe
-3. Explore different quality/efficiency trade-offs
-4. Are substantially different from each other
+The following are examples of different task inputs provided to the assistant along with the assistant's response for each of them, and some feedback on how the assistant's response could be better:
 
-Output format: Return each new prompt separated by "---" (exactly {num_mutations} prompts)."""
+{examples_text if example_summaries else '(no additional examples available)'}
+
+Your task is to write {num_mutations} new instruction variants for the assistant.
+
+Read the inputs carefully and identify the input format and infer detailed task description about the task I wish to solve with the assistant.
+
+Read all the assistant responses and the corresponding feedback. Identify all niche and domain-specific factual information about the task and include it in the instruction, as a lot of it may not be available to the assistant in the future. The assistant may have utilized a generalizable strategy to solve the task; if so, include that in the instruction as well.
+
+IMPORTANT guidance:
+- Extract and include domain-specific factual knowledge, techniques, and patterns from the examples and solutions
+- Include key mathematical principles, common solution approaches, and problem-solving strategies observed in the reference solutions
+- Capture the types of problems, solution methods, and domain expertise needed to solve similar problems
+- Address common pitfalls and edge cases specific to this problem domain
+- Ensure each instruction emphasizes the required answer format
+
+You CAN and SHOULD include domain-specific terminology, solution techniques, and factual knowledge from the examples and reference solutions. The goal is to teach the assistant to solve NEW problems in the SAME DOMAIN by providing it with the domain knowledge and strategies it needs.
+
+Write {num_mutations} new instruction variants. Separate each instruction with a line containing only "---"."""
 
                 # Build kwargs, only include temperature if not None
                 completion_kwargs = {
                     "model": reflection_lm,
                     "messages": [{"role": "user", "content": reflection_prompt}],
+                    "max_tokens": 24000,
                 }
                 if self.reflection_lm_temperature is not None:
                     completion_kwargs["temperature"] = self.reflection_lm_temperature
@@ -318,36 +369,58 @@ Output format: Return each new prompt separated by "---" (exactly {num_mutations
             try:
                 from litellm import acompletion
 
-                # Build examples summary
+                # Build rich examples summary with solutions (like incremental_reflection)
                 example_summaries = []
                 for i, ex in enumerate(task_examples[:3]):  # Limit to 3 examples
                     input_text = ex.get("input", "")
                     answer_text = ex.get("answer", "")
-                    example_summaries.append(f"""Example {i+1}:
-Input: {input_text[:200]}{'...' if len(input_text) > 200 else ''}
-Expected Output: {answer_text[:100]}{'...' if len(answer_text) > 100 else ''}
-""")
+                    additional_context = ex.get("additional_context") or {}
 
-                all_examples_text = "\n".join(example_summaries)
+                    example_block = [f"Example {i+1}:"]
+                    example_block.append(f"Input: {input_text}")
+                    example_block.append(f"Expected Output: {answer_text}")
 
-                # Simple, freeform spec induction prompt
-                spec_prompt = f"""You are designing prompts for an AI system. Below are {len(task_examples)} examples of the task:
+                    # Show additional context (AIME solutions, hints, etc.)
+                    if additional_context and isinstance(additional_context, dict):
+                        for k, v in additional_context.items():
+                            # Format solution nicely
+                            formatted_value = "\n".join(str(v).splitlines())
+                            example_block.append(f"{k.title()}: {formatted_value}")
+
+                    example_summaries.append("\n".join(example_block))
+
+                all_examples_text = "\n\n".join(example_summaries)
+
+                # Spec induction prompt matching OG GEPA's philosophy
+                spec_prompt = f"""Below are {len(task_examples)} examples of a task with full context including reference solutions:
 
 {all_examples_text}
 
-Generate {num_specs} different prompt variations that would teach an AI to solve tasks like these.
+Your task is to generate {num_specs} different instruction variants that would teach an AI assistant to solve tasks like these.
 
-Each prompt should:
+Read the inputs carefully and identify the input format and infer detailed task description.
+
+Read all the reference solutions and identify all niche and domain-specific factual information about the task and include it in the instructions, as a lot of it may not be available to the assistant in the future. Extract generalizable strategies used in the solutions and include those as well.
+
+IMPORTANT guidance:
+- Extract and include domain-specific factual knowledge, techniques, and patterns from the examples and solutions
+- Include key mathematical principles, common solution approaches, and problem-solving strategies observed in the reference solutions
+- Capture the types of problems, solution methods, and domain expertise needed to solve similar problems
+- Address common pitfalls and edge cases specific to this problem domain
+- Ensure each instruction emphasizes the required answer format
+
+Each instruction should:
 - Be self-contained and clear
-- Address the key skills needed (reasoning, calculation, formatting, etc.)
+- Teach the assistant with domain knowledge and strategies from the examples
 - Be different from the others in approach or emphasis
 
-Output format: Return each prompt separated by "---" (exactly {num_specs} prompts)."""
+Output format: Return each instruction separated by "---" (exactly {num_specs} instructions)."""
 
                 # Build kwargs
                 completion_kwargs = {
                     "model": reflection_lm,
                     "messages": [{"role": "user", "content": spec_prompt}],
+                    "max_tokens": 24000,
                 }
                 if self.reflection_lm_temperature is not None:
                     completion_kwargs["temperature"] = self.reflection_lm_temperature
@@ -386,6 +459,52 @@ Output format: Return each prompt separated by "---" (exactly {num_specs} prompt
 
         return [self.example_map[eid].to_payload() for eid in sampled_ids]
 
+    def _normalize_seeds(self, seeds: Sequence[str | Candidate], *, source: str) -> List[Candidate]:
+        normalized: List[Candidate] = []
+        for seed in seeds:
+            if isinstance(seed, Candidate):
+                meta = dict(seed.meta)
+                meta["source"] = source
+                normalized.append(Candidate(text=seed.text, meta=meta))
+            else:
+                normalized.append(Candidate(text=seed, meta={"source": source}))
+        return normalized
+
+    def _make_mutator(self) -> Mutator:
+        return Mutator(
+            self._mutation_config,
+            batch_reflection_runner=self._batch_reflection_runner,
+            spec_induction_runner=self._spec_induction_runner,
+            temperature_mutations_enabled=False,  # Disabled - Phase 2 can enable via set_temperature_mutations_enabled
+        )
+
+    def _make_archive(self) -> Archive:
+        return Archive(
+            bins_length=self.config.qd_bins_length,
+            bins_bullets=self.config.qd_bins_bullets,
+            flags=self.config.qd_flags,
+        )
+
+    def _make_sampler(self, *, seed_offset: int = 0) -> InstanceSampler:
+        return InstanceSampler(self._example_ids, seed=self._sampler_seed + seed_offset)
+
+    def _make_cache(self, island_id: int | None = None) -> DiskCache:
+        if island_id is None:
+            return DiskCache(self.base_cache_dir)
+        path = Path(self.base_cache_dir)
+        island_path = path / f"island_{island_id}"
+        island_path.mkdir(parents=True, exist_ok=True)
+        return DiskCache(str(island_path))
+
+    def _make_log_dir(self, island_id: int | None = None) -> str:
+        path = Path(self.base_log_dir)
+        if island_id is None:
+            path.mkdir(parents=True, exist_ok=True)
+            return str(path)
+        island_path = path / f"island_{island_id}"
+        island_path.mkdir(parents=True, exist_ok=True)
+        return str(island_path)
+
     async def _task_runner(self, candidate: Candidate, example_id: str) -> Dict[str, float]:
         """Execute task LLM on a single example."""
         example = self.example_map[example_id].to_payload()
@@ -403,6 +522,7 @@ Output format: Return each prompt separated by "---" (exactly {num_specs} prompt
                     {"role": "system", "content": candidate.text},
                     {"role": "user", "content": example["input"]},
                 ],
+                "max_tokens": 24000,
             }
             if temperature is not None:
                 completion_kwargs["temperature"] = temperature
@@ -432,6 +552,9 @@ Output format: Return each prompt separated by "---" (exactly {num_specs} prompt
                 "response": model_output,
                 "example_id": example_id,
                 "output": model_output,
+                "input": example.get("input", ""),
+                "expected_answer": example.get("answer"),
+                "additional_context": example.get("additional_context"),
             }
             return metrics
 
@@ -444,12 +567,116 @@ Output format: Return each prompt separated by "---" (exactly {num_specs} prompt
                 "Check your API key, model name, and network connection."
             ) from e
 
-    def _build_orchestrator(self, logger: Optional[EventLogger], enable_auto_stop: bool = False, display_progress: bool = True) -> Orchestrator:
+    async def _batch_reflection_eval(
+        self,
+        candidate: Candidate,
+        example_ids: Sequence[str],
+    ) -> List[Dict[str, object]]:
+        if not example_ids:
+            return []
+
+        example_payloads = []
+        for eid in example_ids:
+            data_inst = self.example_map.get(eid)
+            if not data_inst:
+                continue
+            example_payloads.append((eid, data_inst.to_payload()))
+
+        if not example_payloads:
+            return []
+
+        temperature = candidate.meta.get("temperature", self.task_lm_temperature)
+
+        # Use batch_completion when we have a string model + litellm client
+        if isinstance(self.task_lm, str) and hasattr(self, "litellm"):
+            import asyncio
+
+            messages = [
+                [
+                    {"role": "system", "content": candidate.text},
+                    {"role": "user", "content": payload.get("input", "")},
+                ]
+                for _, payload in example_payloads
+            ]
+
+            batch_kwargs: Dict[str, object] = {
+                "model": self.task_lm,
+                "messages": messages,
+                "max_tokens": 24000,
+            }
+            if temperature is not None:
+                batch_kwargs["temperature"] = temperature
+
+            def _call_batch():
+                return self.litellm.batch_completion(**batch_kwargs)
+
+            responses = await asyncio.to_thread(_call_batch)
+
+            results: List[Dict[str, object]] = []
+            for (eid, payload), resp in zip(example_payloads, responses, strict=False):
+                if isinstance(resp, Exception) or not hasattr(resp, "choices"):
+                    content = ""
+                    tokens_used = 0
+                else:
+                    content = resp.choices[0].message.content.strip()
+                    tokens_used = getattr(getattr(resp, "usage", None), "total_tokens", 0)
+
+                quality = 1.0 if payload.get("answer") in content else 0.0
+
+                results.append(
+                    {
+                        "example_id": eid,
+                        "input": payload.get("input", ""),
+                        "response": content,
+                        "output": content,
+                        "expected_answer": payload.get("answer"),
+                        "additional_context": payload.get("additional_context"),
+                        "quality": quality,
+                        "tokens": float(tokens_used),
+                    }
+                )
+            return results
+
+        # Fallback: evaluate sequentially via task runner
+        results = []
+        for eid, _ in example_payloads:
+            results.append(await self._task_runner(candidate, eid))
+        return results
+
+
+    def _build_orchestrator(
+        self,
+        logger: Optional[EventLogger],
+        *,
+        enable_auto_stop: bool = False,
+        display_progress: bool = True,
+        temperature_mutations_enabled: bool | None = None,
+        max_rounds: int = 100,
+        island_context: Optional[IslandContext] = None,
+        cache: Optional[DiskCache] = None,
+        archive: Optional[Archive] = None,
+        sampler: Optional[InstanceSampler] = None,
+        mutator: Optional[Mutator] = None,
+        token_controller: Optional[TokenCostController] = None,
+        log_dir: Optional[str] = None,
+        dashboard: Optional[IslandDashboard] = None,
+    ) -> Orchestrator:
+        target_mutator = mutator or self.mutator
+        if temperature_mutations_enabled is not None:
+            target_mutator.set_temperature_mutations_enabled(temperature_mutations_enabled)
+        mutator = target_mutator
+
+        # Only optimize for quality, ignore token cost
+        def metrics_mapper(metrics: Dict[str, float]) -> Dict[str, float]:
+            return {"quality": metrics.get("quality", 0.0)}
+
         evaluator = AsyncEvaluator(
-            cache=self.cache,
+            cache=cache or self.cache,
             task_runner=self._task_runner,
+            metrics_mapper=metrics_mapper,
         )
-        orchestrator_logger = logger or build_logger(self.log_dir, "turbo_default", display_progress=display_progress)
+        log_path = log_dir or self.base_log_dir
+        orchestrator_logger = logger or build_logger(log_path, "turbo_default", display_progress=display_progress)
 
         # Create stop governor if auto-stop enabled
         stop_governor = StopGovernor(StopGovernorConfig()) if enable_auto_stop else None
@@ -457,16 +684,20 @@ Output format: Return each prompt separated by "---" (exactly {num_specs} prompt
         return Orchestrator(
             config=self.config,
             evaluator=evaluator,
-            archive=self.archive,
-            sampler=self.sampler,
-            mutator=self.mutator,
-            cache=self.cache,
+            archive=archive or self.archive,
+            sampler=sampler or self.sampler,
+            mutator=mutator,
+            cache=cache or self.cache,
             logger=orchestrator_logger,
-            token_controller=self.token_controller,
+            token_controller=token_controller or self.token_controller,
             stop_governor=stop_governor,
             enable_auto_stop=enable_auto_stop,
             show_progress=display_progress,
             example_sampler=self._sample_examples,
+            max_rounds=max_rounds,
+            island_context=island_context,
+            dashboard=dashboard,
+            reflection_eval_fn=self._batch_reflection_eval,
         )
 
     async def optimize_async(
@@ -482,6 +713,25 @@ Output format: Return each prompt separated by "---" (exactly {num_specs} prompt
         optimize_temperature_after_convergence: bool = False,  # Stage temperature optimization
         display_progress: bool = True,  # Show progress charts
     ) -> Dict[str, Any]:
+        if self.config.n_islands > 1:
+            if optimize_temperature_after_convergence:
+                return await self._optimize_multi_island_staged(
+                    seeds,
+                    max_rounds=max_rounds,
+                    max_evaluations=max_evaluations,
+                    enable_auto_stop=enable_auto_stop,
+                    display_progress=display_progress,
+                    logger=logger,
+                )
+            return await self._optimize_multi_island(
+                seeds,
+                max_rounds=max_rounds,
+                max_evaluations=max_evaluations,
+                enable_auto_stop=enable_auto_stop,
+                display_progress=display_progress,
+                logger=logger,
+            )
+
         # Staged temperature optimization: two-phase approach
         if optimize_temperature_after_convergence:
             return await self._optimize_staged_temperature(
@@ -489,7 +739,12 @@ Output format: Return each prompt separated by "---" (exactly {num_specs} prompt
             )
 
         # Standard integrated optimization
-        orchestrator = self._build_orchestrator(logger, enable_auto_stop=enable_auto_stop, display_progress=display_progress)
+        orchestrator = self._build_orchestrator(
+            logger,
+            enable_auto_stop=enable_auto_stop,
+            display_progress=display_progress,
+            max_rounds=max_rounds or 100,
+        )
         # Accept either strings or Candidate objects
         seed_candidates = []
         for seed in seeds:
@@ -544,7 +799,13 @@ Output format: Return each prompt separated by "---" (exactly {num_specs} prompt
         phase1_budget = int(max_evaluations * 0.7) if max_evaluations else None
         phase1_rounds = max_rounds if max_rounds else 10  # Default to 10 if unlimited
 
-        orchestrator1 = self._build_orchestrator(logger, enable_auto_stop=enable_auto_stop, display_progress=display_progress)
+        orchestrator1 = self._build_orchestrator(
+            logger,
+            enable_auto_stop=enable_auto_stop,
+            display_progress=display_progress,
+            temperature_mutations_enabled=False,
+            max_rounds=phase1_rounds,
+        )
         await orchestrator1.run(phase1_seeds, max_rounds=phase1_rounds, max_evaluations=phase1_budget)
 
         phase1_pareto = orchestrator1.archive.pareto_entries()
@@ -594,7 +855,13 @@ Output format: Return each prompt separated by "---" (exactly {num_specs} prompt
         phase2_budget = int(max_evaluations * 0.3) if max_evaluations else None
         phase2_rounds = min(5, max_rounds) if max_rounds else 5  # Shorter optimization
 
-        orchestrator2 = self._build_orchestrator(logger, enable_auto_stop=False, display_progress=display_progress)  # Short phase, no auto-stop
+        orchestrator2 = self._build_orchestrator(
+            logger,
+            enable_auto_stop=False,
+            display_progress=display_progress,
+            temperature_mutations_enabled=True,
+            max_rounds=phase2_rounds,
+        )  # Short phase, no auto-stop
         await orchestrator2.run(temp_seeds, max_rounds=phase2_rounds, max_evaluations=phase2_budget)
 
         phase2_pareto = orchestrator2.archive.pareto_entries()
@@ -606,6 +873,167 @@ Output format: Return each prompt separated by "---" (exactly {num_specs} prompt
             "qd_elites": orchestrator2.archive.sample_qd(limit=len(phase2_pareto)),
             "phase1_pareto": [e.candidate for e in phase1_pareto],  # Also return phase 1 results
         }
+
+    async def _optimize_multi_island(
+        self,
+        seeds: Sequence[str | Candidate],
+        *,
+        max_rounds: Optional[int],
+        max_evaluations: Optional[int],
+        enable_auto_stop: bool,
+        display_progress: bool,
+        temperature_mutations_enabled: bool | None = None,
+        logger: Optional[EventLogger] = None,
+    ) -> Dict[str, Any]:
+        n_islands = max(1, self.config.n_islands)
+        normalized_seeds = self._normalize_seeds(seeds, source="seed")
+
+        # Set up larger thread pool for concurrent file operations
+        import concurrent.futures
+        loop = asyncio.get_running_loop()
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=100)
+        loop.set_default_executor(executor)
+
+        # Create shared cache across all islands (better cache hits + controlled concurrency)
+        shared_cache = self._make_cache(island_id=None)
+
+        metrics_queue: asyncio.Queue | None = None
+        aggregator_task: asyncio.Task | None = None
+        aggregator: IslandProgressAggregator | None = None
+        if display_progress:
+            metrics_queue = asyncio.Queue()
+            aggregator = IslandProgressAggregator(n_islands=n_islands, max_rounds=max_rounds or 100)
+
+            async def dashboard_loop() -> None:
+                while True:
+                    payload = await metrics_queue.get()
+                    if payload is None:
+                        break
+                    aggregator.update(**payload)
+                aggregator.display()
+
+            aggregator_task = asyncio.create_task(dashboard_loop())
+
+        async def run_islands() -> List[Orchestrator | None]:
+            island_results: List[Orchestrator | None] = [None] * n_islands
+
+            async def worker(context: IslandContext) -> None:
+                # Use shared cache across islands
+                cache = shared_cache
+                archive = self._make_archive()
+                sampler = self._make_sampler(seed_offset=context.island_id)
+                mutator = self._make_mutator()
+                if temperature_mutations_enabled is not None:
+                    mutator.set_temperature_mutations_enabled(temperature_mutations_enabled)
+                token_controller = TokenCostController(self.config.max_tokens)
+                log_dir = self._make_log_dir(context.island_id)
+                orchestrator = self._build_orchestrator(
+                    logger if (display_progress and context.island_id == 0) else None,
+                    enable_auto_stop=enable_auto_stop,
+                    display_progress=False if metrics_queue else (display_progress and context.island_id == 0),
+                    temperature_mutations_enabled=temperature_mutations_enabled,
+                    max_rounds=max_rounds or 100,
+                    island_context=context,
+                    cache=cache,
+                    archive=archive,
+                    sampler=sampler,
+                    mutator=mutator,
+                    token_controller=token_controller,
+                    log_dir=log_dir,
+                    dashboard=None if metrics_queue else (aggregator.dashboard if aggregator else None),
+                )
+                island_seeds = [
+                    Candidate(text=seed.text, meta=dict(seed.meta, island=context.island_id))
+                    for seed in normalized_seeds
+                ]
+                await orchestrator.run(
+                    island_seeds,
+                    max_rounds=max_rounds,
+                    max_evaluations=max_evaluations,
+                )
+                island_results[context.island_id] = orchestrator
+
+            tasks = await spawn_islands(n_islands, worker, metrics_queue=metrics_queue)
+            await asyncio.gather(*tasks)
+            return island_results
+
+        orchestrators = await run_islands()
+
+        if metrics_queue is not None:
+            await metrics_queue.put(None)
+            if aggregator_task:
+                await aggregator_task
+
+        combined_archive = self._make_archive()
+        inserts: List[tuple[Candidate, EvalResult]] = []
+        for orchestrator in orchestrators:
+            if orchestrator is None:
+                continue
+            for entry in orchestrator.archive.pareto_entries():
+                inserts.append((entry.candidate, entry.result))
+        if inserts:
+            await combined_archive.batch_insert(inserts)
+        pareto_entries = combined_archive.pareto_entries()
+        pareto_candidates = [entry.candidate for entry in pareto_entries]
+        qd_elites = combined_archive.sample_qd(limit=len(pareto_entries)) if pareto_entries else []
+        return {
+            "pareto": pareto_candidates,
+            "pareto_entries": pareto_entries,
+            "qd_elites": qd_elites,
+        }
+
+    async def _optimize_multi_island_staged(
+        self,
+        seeds: Sequence[str | Candidate],
+        *,
+        max_rounds: Optional[int],
+        max_evaluations: Optional[int],
+        enable_auto_stop: bool,
+        display_progress: bool,
+        logger: Optional[EventLogger],
+    ) -> Dict[str, Any]:
+        phase1_budget = int(max_evaluations * 0.7) if max_evaluations else None
+        phase1_rounds = max_rounds if max_rounds else 10
+
+        phase1_result = await self._optimize_multi_island(
+            seeds,
+            max_rounds=phase1_rounds,
+            max_evaluations=phase1_budget,
+            enable_auto_stop=enable_auto_stop,
+            display_progress=display_progress,
+            temperature_mutations_enabled=False,
+            logger=logger,
+        )
+        phase1_entries = phase1_result.get("pareto_entries", [])
+        if not phase1_entries:
+            return phase1_result | {"phase1_pareto": []}
+
+        top_k = min(5, len(phase1_entries))
+        top_entries = sorted(
+            phase1_entries,
+            key=lambda e: e.result.objectives.get(self.config.promote_objective, 0.0),
+            reverse=True,
+        )[:top_k]
+
+        temp_seeds = []
+        for entry in top_entries:
+            meta = dict(entry.candidate.meta, temperature=0.5, source="phase2_seed")
+            temp_seeds.append(Candidate(text=entry.candidate.text, meta=meta))
+
+        phase2_budget = int(max_evaluations * 0.3) if max_evaluations else None
+        phase2_rounds = min(5, max_rounds) if max_rounds else 5
+
+        phase2_result = await self._optimize_multi_island(
+            temp_seeds,
+            max_rounds=phase2_rounds,
+            max_evaluations=phase2_budget,
+            enable_auto_stop=False,
+            display_progress=display_progress,
+            temperature_mutations_enabled=True,
+            logger=logger,
+        )
+        phase2_result["phase1_pareto"] = [entry.candidate for entry in phase1_entries]
+        return phase2_result
 
     def optimize(
         self,

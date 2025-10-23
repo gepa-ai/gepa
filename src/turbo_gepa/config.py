@@ -134,6 +134,7 @@ class Config:
     max_mutations_per_round: int = 16
     task_lm_temperature: float | None = 1.0
     reflection_lm_temperature: float | None = 1.0
+    target_quality: float | None = None  # Stop when best quality reaches this threshold
 
 
 DEFAULT_CONFIG = Config()

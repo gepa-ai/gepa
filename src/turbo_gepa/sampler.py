@@ -28,19 +28,15 @@ class InstanceSampler:
         """
         Return ``k`` example identifiers for the current round.
 
-        The schedule alternates between round-robin coreset coverage and
-        hardness-biased sampling.
+        Uses random sampling to ensure shards are representative of the full
+        dataset, avoiding bias from sequential selection. This is critical for
+        ASHA promotion decisions - we want partial shards to be unbiased estimates
+        of full-dataset performance.
         """
-        shard: List[str] = []
-        while len(shard) < k:
-            if self.hardness and len(shard) % 2:
-                shard.append(self.hardness[0])
-                self.hardness.rotate(-1)
-            else:
-                shard.append(self._order[self._pointer])
-                self._pointer = (self._pointer + 1) % len(self._order)
-                if self._pointer == 0:
-                    self.random.shuffle(self._order)
+        # For small k relative to dataset size, use random sampling without replacement
+        # This ensures each shard is a random representative subset
+        k = min(k, len(self.example_ids))
+        shard = self.random.sample(self.example_ids, k)
         return shard
 
     def register_hard_examples(self, example_ids: Iterable[str]) -> None:

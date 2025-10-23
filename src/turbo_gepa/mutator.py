@@ -48,6 +48,14 @@ class Mutator:
         self.batch_reflection_runner = batch_reflection_runner
         self.spec_induction_runner = spec_induction_runner
         self.temperature_mutations_enabled = temperature_mutations_enabled
+        self._reflection_examples: List[Dict[str, object]] = []
+
+    def set_reflection_examples(self, examples: List[Dict[str, object]]) -> None:
+        self._reflection_examples = examples
+
+    def set_temperature_mutations_enabled(self, enabled: bool) -> None:
+        """Toggle temperature exploration without rebuilding the mutator."""
+        self.temperature_mutations_enabled = enabled
 
     async def propose(
         self,
@@ -63,49 +71,88 @@ class Mutator:
             2. Batched reflection (preferred) or single-candidate reflection
             3. Specification induction from task examples (if available)
         """
+        import asyncio
+        import time
+
+        propose_start = time.time()
+
         if not parent_contexts:
             return []
 
-        budget = max(0, num_mutations)
+        total_budget = max(0, num_mutations)
         if self.config.max_mutations:
-            budget = min(budget, self.config.max_mutations)
-        if budget == 0:
+            total_budget = min(total_budget, self.config.max_mutations)
+        if total_budget == 0:
             return []
 
+        # Always reserve a slice of the budget for spec induction when available.
+        spec_quota = 0
+        if self.spec_induction_runner and task_examples:
+            spec_quota = max(1, total_budget // 4 or 1)
+            spec_quota = min(spec_quota, total_budget)
+
+        non_spec_budget = total_budget - spec_quota
         proposals: List[Candidate] = []
 
         # 1) Deterministic temperature exploration
-        temp_mutations = self._temperature_mutations(parent_contexts, budget)
+        temp_start = time.time()
+        temp_mutations = self._temperature_mutations(parent_contexts, non_spec_budget)
+        temp_time = time.time() - temp_start
         proposals.extend(temp_mutations)
-        budget -= len(temp_mutations)
-        if budget <= 0:
-            return self._filter(proposals)
+        non_spec_budget = max(0, non_spec_budget - len(temp_mutations))
 
-        # 2) Reflection-driven edits (batched preferred, single-runner fallback)
+        # 2 & 3) Run reflection and spec induction CONCURRENTLY for speed
+        llm_start = time.time()
         reflection_mutations: List[Candidate] = []
-        if self.batch_reflection_runner:
-            reflection_mutations = await self._generate_incremental_mutations(parent_contexts, budget)
-        elif self.single_reflection_runner:
-            reflection_mutations = await self._generate_single_reflection_mutations(parent_contexts, budget)
+        spec_mutations: List[Candidate] = []
 
-        proposals.extend(reflection_mutations)
-        budget -= len(reflection_mutations)
-        if budget <= 0:
-            return self._filter(proposals)
+        async def run_reflection() -> List[Candidate]:
+            if non_spec_budget <= 0:
+                return []
+            if self.batch_reflection_runner:
+                return await self._generate_incremental_mutations(parent_contexts, non_spec_budget)
+            if self.single_reflection_runner:
+                return await self._generate_single_reflection_mutations(parent_contexts, non_spec_budget)
+            return []
 
-        # 3) Spec induction (fresh instructions)
-        if self.spec_induction_runner and task_examples:
-            spec_mutations = await self._generate_spec_induction_mutations(
+        async def run_spec() -> List[Candidate]:
+            if not (self.spec_induction_runner and task_examples):
+                return []
+            spec_budget = spec_quota + non_spec_budget
+            spec_budget = min(spec_budget, total_budget - len(proposals))
+            if spec_budget <= 0:
+                return []
+            return await self._generate_spec_induction_mutations(
                 task_examples,
-                budget,
+                spec_budget,
                 parent_contexts,
             )
-            proposals.extend(spec_mutations)
-            budget -= len(spec_mutations)
-            if budget <= 0:
-                return self._filter(proposals)
 
-        return self._filter(proposals)[:num_mutations]
+        reflection_task = asyncio.create_task(run_reflection())
+        spec_task = asyncio.create_task(run_spec())
+
+        reflection_mutations, spec_mutations = await asyncio.gather(reflection_task, spec_task)
+        proposals.extend(reflection_mutations)
+        proposals.extend(spec_mutations)
+
+        llm_time = time.time() - llm_start
+
+        filter_start = time.time()
+        filtered = self._filter(proposals)[:num_mutations]
+        filter_time = time.time() - filter_start
+
+        propose_total = time.time() - propose_start
+
+        # Log timing breakdown
+        print(f"\n⏱️  Mutator timing breakdown:")
+        print(f"   Temperature mutations: {temp_time:.2f}s ({len(temp_mutations)} generated)")
+        print(f"   LLM calls (parallel): {llm_time:.2f}s")
+        print(f"     - Reflection: {len(reflection_mutations)} mutations")
+        print(f"     - Spec induction: {len(spec_mutations)} mutations")
+        print(f"   Filtering: {filter_time:.2f}s")
+        print(f"   Total propose: {propose_total:.2f}s")
+
+        return filtered
 
     async def _generate_incremental_mutations(
         self,
@@ -133,8 +180,11 @@ class Mutator:
                 "meta": dict(candidate.meta),
             })
 
-        # Single batched reflection call
-        mutated_texts = await self.batch_reflection_runner(reflection_contexts, num_mutations)
+        mutated_texts = await self._collect_text_batches(
+            lambda: self.batch_reflection_runner(reflection_contexts, 1),
+            num_mutations,
+            max(1, min(self.config.reflection_batch_size, num_mutations)),
+        )
 
         # Convert to Candidates with metadata tracking generation method
         proposals: List[Candidate] = []
@@ -161,8 +211,11 @@ class Mutator:
         parent_contexts: List[Dict[str, object]],
     ) -> List[Candidate]:
         """Generate fresh specifications from task I/O examples (PROMPT-MII style)."""
-        # Call spec induction runner
-        spec_texts = await self.spec_induction_runner(task_examples, num_mutations)
+        spec_texts = await self._collect_text_batches(
+            lambda: self.spec_induction_runner(task_examples, 1),
+            num_mutations,
+            max(1, min(4, num_mutations)),
+        )
 
         # Convert to Candidates with metadata tracking generation method
         proposals: List[Candidate] = []
@@ -170,10 +223,7 @@ class Mutator:
 
         for idx, text in enumerate(spec_texts):
             meta = dict(parent_candidate.meta)
-            # Remove parent-specific fields since this is a fresh spec
-            meta.pop("parent", None)
-            meta.pop("parent_objectives", None)
-
+            meta["parent"] = parent_candidate.fingerprint
             meta.update({
                 "edit": "spec_induction",  # Track generation method
                 "generation_method": "spec_induction",  # Explicit tracking for analysis
@@ -183,6 +233,81 @@ class Mutator:
             proposals.append(Candidate(text=text, meta=meta))
 
         return proposals
+
+    async def _collect_text_batches(
+        self,
+        factory: Callable[[], Awaitable[Sequence[str]]],
+        total: int,
+        max_concurrency: int,
+        early_stop_fraction: float = 0.85,  # Return after 85% of mutations complete
+    ) -> List[str]:
+        import asyncio
+        import time
+
+        if total <= 0:
+            return []
+
+        max_concurrency = max(1, min(max_concurrency, total))
+        pending: Dict[asyncio.Task[Sequence[str]], float] = {}  # task -> start_time
+        results: List[str] = []
+        started = 0
+        early_stop_target = int(total * early_stop_fraction)
+        batch_start_time = time.time()
+        mutation_durations: List[float] = []  # Track how long each individual mutation took
+
+        while len(results) < total:
+            while started < total and len(pending) < max_concurrency:
+                task = asyncio.create_task(factory())
+                pending[task] = time.time()  # Record when this task started
+                started += 1
+
+            if not pending:
+                break
+
+            # Check if we've hit early stop threshold
+            if len(results) >= early_stop_target and early_stop_fraction < 1.0 and len(mutation_durations) >= 3:
+                elapsed = time.time() - batch_start_time
+                remaining = len(pending)
+
+                # Compute average time per mutation based on completed ones
+                avg_duration = sum(mutation_durations) / len(mutation_durations)
+
+                # If we've been waiting significantly longer than expected, cut off stragglers
+                # We expect remaining mutations to take avg_duration each
+                # Add 2x buffer since stragglers can be slow
+                expected_time_for_remaining = avg_duration * 2.0
+
+                # How long have we been waiting since hitting the early stop target?
+                # We estimate when we should have hit the target based on avg duration
+                # Since tasks run concurrently, the batch should take roughly:
+                # (total_mutations / max_concurrency) * avg_duration
+                expected_time_to_target = (early_stop_target / max_concurrency) * avg_duration
+                time_since_should_have_hit_target = elapsed - expected_time_to_target
+
+                # Early stop if we've been waiting too long for stragglers
+                if time_since_should_have_hit_target > expected_time_for_remaining and remaining >= 2:
+                    print(f"   ⚡ Mutation early stop: {len(results)}/{total} generated ({len(results)/total*100:.0f}%), cancelling {remaining} stragglers")
+                    print(f"      Avg mutation duration: {avg_duration:.1f}s, waited {time_since_should_have_hit_target:.1f}s past target...")
+                    # Cancel remaining tasks - they're stragglers
+                    for task in pending:
+                        task.cancel()
+                    break
+
+            done, _ = await asyncio.wait(pending.keys(), return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                task_start_time = pending.pop(task)
+                task_duration = time.time() - task_start_time
+                try:
+                    batch = task.result()
+                    if batch:
+                        results.append(batch[0])
+                        mutation_durations.append(task_duration)  # Track individual duration
+                except asyncio.CancelledError:
+                    pass  # Expected for cancelled tasks
+                except Exception:
+                    continue
+
+        return results[:total]
 
     def _filter(self, candidates: Iterable[Candidate]) -> List[Candidate]:
         seen: Set[str] = set()

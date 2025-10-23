@@ -19,6 +19,18 @@ def test_scheduler_promotes_after_good_score():
     assert candidate in promotions
 
 
+def test_scheduler_promotes_single_candidate():
+    scheduler = BudgetedScheduler(
+        SchedulerConfig(shards=(0.1, 1.0), eps_improve=0.0, quantile=0.6)
+    )
+    candidate = Candidate(text="solo")
+    result = EvalResult(objectives={"quality": 0.3}, traces=[], n_examples=5)
+    decision = scheduler.record(candidate, result, objective_key="quality")
+    assert decision == "promoted"
+    promotions = scheduler.promote_ready()
+    assert candidate in promotions
+
+
 def test_scheduler_respects_parent_improvement():
     scheduler = BudgetedScheduler(
         SchedulerConfig(shards=(0.1, 1.0), eps_improve=0.1, quantile=0.5)

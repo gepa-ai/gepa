@@ -123,6 +123,9 @@ def optimize(
         )
         logger = build_logger(config.log_path, "optimize", display_progress=display_progress)
 
+        # Calculate max_rounds
+        max_rounds = max_metric_calls // (config.batch_size * 3)
+
         orchestrator = Orchestrator(
             config=config,
             evaluator=evaluator,
@@ -131,13 +134,11 @@ def optimize(
             mutator=mutator,
             cache=cache,
             logger=logger,
+            max_rounds=max_rounds,
         )
 
         # Create seed
         seed = Candidate(text=seed_candidate["system_prompt"])
-
-        # Run optimization
-        max_rounds = max_metric_calls // (config.batch_size * 3)
         await orchestrator.run(
             seeds=[seed],
             max_rounds=max_rounds,

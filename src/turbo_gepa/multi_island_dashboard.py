@@ -5,7 +5,27 @@ from __future__ import annotations
 import sys
 from typing import Dict, List
 
-from .progress_chart import TermColors
+
+class TermColors:
+    """ANSI color codes for terminal output."""
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+
+    # Colors
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+    GRAY = "\033[90m"
+
+    # Backgrounds
+    BG_GREEN = "\033[102m"
+    BG_BLUE = "\033[104m"
+    BG_GRAY = "\033[100m"
 
 
 class IslandDashboard:
@@ -109,12 +129,12 @@ class IslandDashboard:
             # Overall progress combines round number and within-round progress
             overall_progress = (round_num + round_internal_progress) / max(self.max_rounds, 1)
 
-            # Island header with round and eval progress
-            island_label = f"Island {island_id}"
+            # Island header with round and eval progress (1-indexed for humans)
+            island_label = f"Island {island_id + 1}"
             if evals_total > 0:
-                status = f"Round {round_num}/{self.max_rounds} ({evals_done}/{evals_total} evals)"
+                status = f"Round {round_num + 1}/{self.max_rounds} ({evals_done}/{evals_total} evals)"
             else:
-                status = f"Round {round_num}/{self.max_rounds}"
+                status = f"Round {round_num + 1}/{self.max_rounds}"
             lines.append(f"{TermColors.BOLD}{island_label}{TermColors.RESET} {TermColors.GRAY}│{TermColors.RESET} {status}")
 
             # Progress bar showing overall progress through optimization
@@ -209,6 +229,7 @@ class IslandProgressAggregator:
         self.dashboard = IslandDashboard(n_islands=n_islands, max_rounds=max_rounds)
         self.update_count = 0
         self.display_frequency = 1  # Display every N updates
+        self._initial_display = False
 
     def update(
         self,
@@ -230,7 +251,10 @@ class IslandProgressAggregator:
         # Display based on frequency
         if self.update_count % self.display_frequency == 0:
             self.dashboard.display()
+            self._initial_display = True
 
     def display(self) -> None:
         """Force display the dashboard."""
-        self.dashboard.display()
+        if not self._initial_display:
+            self.dashboard.display()
+            self._initial_display = True

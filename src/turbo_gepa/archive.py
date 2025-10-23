@@ -95,6 +95,20 @@ class Archive:
     def _maintain_pareto(self, cand_hash: str, entry: ArchiveEntry) -> None:
         dominated = []
         for key, existing in self.pareto.items():
+            # Special case: If this is the same candidate (same key), prefer larger shard
+            # This ensures full-dataset evaluations replace partial-shard evaluations
+            if key == cand_hash:
+                new_shard = entry.result.shard_fraction or 0.0
+                existing_shard = existing.result.shard_fraction or 0.0
+                if new_shard >= existing_shard:
+                    # New evaluation is on equal or larger shard - replace the old one
+                    dominated.append(key)
+                    continue
+                else:
+                    # Old evaluation was on larger shard - keep it, reject new one
+                    return
+
+            # Normal Pareto domination for different candidates
             if dominates(entry.result, existing.result):
                 dominated.append(key)
             elif dominates(existing.result, entry.result):

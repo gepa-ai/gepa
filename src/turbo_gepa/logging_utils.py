@@ -9,6 +9,7 @@ locks to remain safe under high concurrency.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import json
 import statistics
 import time
@@ -24,6 +25,13 @@ class EventLogger:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
+        self._handle = self.path.open("a", encoding="utf-8", buffering=1)
+        atexit.register(self.close)
+
+    def close(self) -> None:
+        if self._handle and not self._handle.closed:
+            self._handle.flush()
+            self._handle.close()
 
     async def log(self, event_type: str, payload: Dict[str, Any]) -> None:
         """Write a structured event."""
@@ -36,8 +44,8 @@ class EventLogger:
             await asyncio.to_thread(self._append_record, record)
 
     def _append_record(self, record: Dict[str, Any]) -> None:
-        with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record) + "\n")
+        self._handle.write(json.dumps(record) + "\n")
+        self._handle.flush()
 
 
 class SummaryLogger:
@@ -230,7 +238,7 @@ class ProgressLogger(EventLogger):
                     total_improvement = best - first_best
                     trajectory = f", Improvement {total_improvement:+.2%}"
 
-                print(f"\n📊 Round {round_num} Summary - Best: {best:.2%}, Avg: {avg:.2%}, "
+                print(f"\n📊 Round {round_num + 1} Summary - Best: {best:.2%}, Avg: {avg:.2%}, "
                       f"Evals: {self.eval_count}, Time: {elapsed:.0f}s{trajectory}\n")
 
 

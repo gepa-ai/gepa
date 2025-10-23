@@ -70,7 +70,7 @@ Think of sharding like a tournament bracket:
 
 **Why?** This saves 60-70% of evaluations by eliminating bad candidates early.
 
-**Auto-Sharding**: The system automatically picks shard sizes based on your dataset:
+**Auto-Sharding**: The system automatically picks shard sizes based on your dataset, and candidates can advance even if they are the only survivor on a rung (we promote the lone winner instead of stalling the ladder):
 - Very small (< 50 examples): `(0.30-0.50, 1.0)` → 2 stages with reliable signal
 - Small (50-100): `(0.20-0.30, 1.0)` → 2 stages
 - Medium (100-500): `(0.10-0.20, 0.30, 1.0)` → 3 stages for balanced filtering
@@ -114,7 +114,7 @@ Three mutation methods in priority order (consumes budget sequentially):
 2. **Incremental Reflection**: Batch multiple successful parents → single LLM call generates variations
 3. **Spec Induction**: Generate fresh prompts from task I/O structure (breaks local optima, uses remaining budget)
 
-**Why?** Temperature mutations are cheap (no LLM calls). Batched reflection is 3-5× faster than sequential mutations. Spec induction provides diversity when budget allows.
+**Why?** Temperature mutations are cheap (no LLM calls). Batched reflection is 3-5× faster than sequential mutations. Spec induction provides diversity when budget allows. Each mutation now carries its parent’s last shard score so ASHA only promotes children that beat the parent on the same rung.
 
 ### 📊 **Pareto Archive (Multi-Objective)**
 
@@ -273,7 +273,7 @@ adapter.optimize(seeds=[Candidate(text="You are helpful.", meta={"temperature": 
 
 #### Staged Temperature Optimization (Advanced)
 
-For tasks where temperature variance might confuse ASHA's early pruning, consider **staged optimization**:
+For tasks where temperature variance might confuse ASHA's early pruning, consider **staged optimization**. The AIME speed benchmark (`python examples/aime_turbo_benchmark.py`) now enables this mode by default so prompt search completes before temperature tuning kicks in:
 
 ```python
 from turbo_gepa.adapters.default_adapter import DefaultAdapter, DefaultDataInst

@@ -39,7 +39,37 @@ class DiskCache:
         # Use defaultdict to avoid race condition in lock creation
         self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         # Global semaphore to limit concurrent file operations (prevent "too many open files")
-        self._file_semaphore = asyncio.Semaphore(100)  # Max 100 concurrent file operations
+        # Dynamically determine safe limit based on system's file descriptor limit
+        self._file_semaphore = asyncio.Semaphore(self._get_safe_file_limit())
+
+    def _get_safe_file_limit(self) -> int:
+        """Determine a safe file descriptor limit for concurrent operations.
+
+        Returns a conservative limit that accounts for:
+        - System's soft file descriptor limit
+        - Multiple cache instances (e.g., in multi-island mode)
+        - Other file operations (logging, etc.)
+        """
+        import resource
+
+        try:
+            # Get soft limit for open files
+            soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+
+            # Conservative calculation:
+            # - Assume up to 8 cache instances (generous for multi-island)
+            # - Reserve 50% for other operations (Python internals, logging, etc.)
+            # - Divide remaining by number of potential caches
+            usable = int(soft_limit * 0.5)  # Use 50% of limit
+            per_cache = max(10, usable // 8)  # At least 10, divided by 8 potential caches
+
+            # Cap at 50 to avoid excessive concurrency even on high-limit systems
+            return min(per_cache, 50)
+
+        except (ValueError, OSError):
+            # Fallback if resource.getrlimit fails (e.g., on Windows)
+            # Use a very conservative default
+            return 20
 
     def _lock_for(self, key: str) -> asyncio.Lock:
         # defaultdict ensures atomic lock creation per key
@@ -113,27 +143,6 @@ class DiskCache:
         # Write all candidate batches in parallel
         await asyncio.gather(*(write_batch(k, v) for k, v in by_candidate.items()))
 
-    async def sample_failures(self, candidate: Candidate, limit: int = 5) -> List[Tuple[str, List[Dict]]]:
-        """
-        Return failure traces for speculative reflection.
-
-        Currently returns the most recent ``limit`` traces associated with the
-        candidate, deferring richer heuristics to future iterations.
-        """
-        cand_hash = candidate_key(candidate)
-        path = self._record_path(cand_hash)
-        if not path.exists():
-            return []
-        lock = self._lock_for(cand_hash)
-        async with lock:
-            lines = await asyncio.to_thread(self._read_tail_lines, path, limit)
-        failures: List[Tuple[str, List[Dict]]] = []
-        for line in lines:
-            record = json.loads(line)
-            if record.get("traces"):
-                failures.append((record["example_id"], record["traces"]))
-        return failures
-
     def clear(self) -> None:
         """Remove all cached records (useful for tests)."""
         if not self.cache_dir.exists():
@@ -161,18 +170,35 @@ class DiskCache:
         return None
 
     def _append_record(self, path: Path, record: Dict[str, object]) -> None:
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record) + "\n")
+        """Append a single record with retry on OSError."""
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                with path.open("a", encoding="utf-8", buffering=1) as handle:
+                    handle.write(json.dumps(record) + "\n")
+                return
+            except OSError as e:
+                if attempt < max_attempts - 1:
+                    import time
+                    time.sleep(0.1 * (2 ** attempt))
+                else:
+                    raise  # Re-raise on final attempt
 
     def _append_records(self, path: Path, records: List[Dict[str, object]]) -> None:
-        """Batch write multiple records to same file."""
-        with path.open("a", encoding="utf-8") as handle:
-            for record in records:
-                handle.write(json.dumps(record) + "\n")
-
-    def _read_tail_lines(self, path: Path, limit: int) -> List[str]:
-        lines = path.read_text(encoding="utf-8").splitlines()
-        return lines[-limit:]
+        """Batch write multiple records to same file with retry on OSError."""
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                with path.open("a", encoding="utf-8", buffering=1) as handle:
+                    for record in records:
+                        handle.write(json.dumps(record) + "\n")
+                return
+            except OSError as e:
+                if attempt < max_attempts - 1:
+                    import time
+                    time.sleep(0.1 * (2 ** attempt))
+                else:
+                    raise  # Re-raise on final attempt
 
     # State persistence for resumable optimization
 
@@ -192,6 +218,7 @@ class DiskCache:
         Save orchestrator state for resumable optimization.
 
         Atomically writes state to disk so it's safe to interrupt anytime.
+        Uses retry logic to handle temporary file system issues.
         """
         state = {
             "round": round_num,
@@ -201,34 +228,63 @@ class DiskCache:
             "queue": [self._serialize_candidate(c) for c in queue],
         }
 
-        # Atomic write: write to temp file, then rename
+        # Atomic write with retry: write to temp file, then rename
         state_path = self._state_path()
         temp_path = state_path.with_suffix(".tmp")
 
-        with temp_path.open("w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2)
-
-        temp_path.replace(state_path)
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                with temp_path.open("w", encoding="utf-8") as f:
+                    json.dump(state, f, indent=2)
+                temp_path.replace(state_path)
+                return
+            except OSError as e:
+                if attempt < max_attempts - 1:
+                    import time
+                    time.sleep(0.1 * (2 ** attempt))
+                else:
+                    # On final failure, log warning but don't crash optimization
+                    import sys
+                    print(f"Warning: Failed to save state after {max_attempts} attempts: {e}", file=sys.stderr)
 
     def load_state(self) -> Optional[Dict]:
         """
         Load saved orchestrator state, or None if no state exists.
 
         Returns dict with keys: round, evaluations, pareto, qd, queue
+        Uses retry logic to handle temporary file system issues.
         """
         state_path = self._state_path()
         if not state_path.exists():
             return None
 
-        with state_path.open("r", encoding="utf-8") as f:
-            state = json.load(f)
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                with state_path.open("r", encoding="utf-8") as f:
+                    state = json.load(f)
 
-        # Deserialize candidates
-        state["pareto"] = [self._deserialize_candidate(c) for c in state["pareto"]]
-        state["qd"] = [self._deserialize_candidate(c) for c in state["qd"]]
-        state["queue"] = [self._deserialize_candidate(c) for c in state["queue"]]
+                # Deserialize candidates
+                state["pareto"] = [self._deserialize_candidate(c) for c in state["pareto"]]
+                state["qd"] = [self._deserialize_candidate(c) for c in state["qd"]]
+                state["queue"] = [self._deserialize_candidate(c) for c in state["queue"]]
 
-        return state
+                return state
+            except OSError as e:
+                if attempt < max_attempts - 1:
+                    import time
+                    time.sleep(0.1 * (2 ** attempt))
+                else:
+                    # On final failure, log warning and return None
+                    import sys
+                    print(f"Warning: Failed to load state after {max_attempts} attempts: {e}", file=sys.stderr)
+                    return None
+            except (json.JSONDecodeError, KeyError) as e:
+                # Corrupted state file, return None to start fresh
+                import sys
+                print(f"Warning: Corrupted state file, starting fresh: {e}", file=sys.stderr)
+                return None
 
     def has_state(self) -> bool:
         """Check if saved state exists."""

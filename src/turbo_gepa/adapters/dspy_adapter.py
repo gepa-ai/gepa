@@ -451,7 +451,7 @@ class DSpyAdapter:
 
         return dataset
 
-    def _build_orchestrator(self, logger: Optional[EventLogger]) -> Orchestrator:
+    def _build_orchestrator(self, logger: Optional[EventLogger], max_rounds: int = 100) -> Orchestrator:
         """Build TurboGEPA orchestrator."""
         evaluator = AsyncEvaluator(
             cache=self.cache,
@@ -467,6 +467,7 @@ class DSpyAdapter:
             cache=self.cache,
             logger=orchestrator_logger,
             token_controller=self.token_controller,
+            max_rounds=max_rounds,
         )
 
     async def optimize_async(
@@ -498,7 +499,7 @@ class DSpyAdapter:
             self.reflection_lm = reflection_lm
         import json
 
-        orchestrator = self._build_orchestrator(logger)
+        orchestrator = self._build_orchestrator(logger, max_rounds=max_rounds or 100)
 
         # Create seed candidate (JSON-encoded instructions)
         seed_text = json.dumps(seed_instructions)

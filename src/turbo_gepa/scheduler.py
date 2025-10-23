@@ -111,8 +111,9 @@ class BudgetedScheduler:
         samples = [statistics.fmean(list(values)) for values in rung.results.values() if values]
         if not samples:
             return float("-inf")
-        if len(samples) < 2:
-            return float("-inf")
+        if len(samples) == 1:
+            # Single candidate on this rung – allow it to advance based on its own score.
+            return samples[0]
 
         # Calculate rank for quantile-based promotion (top 40% by default)
         quantile_rank = max(int(len(samples) * (1 - self.config.quantile)), 0)
