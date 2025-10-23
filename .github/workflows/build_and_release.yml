@@ -4,6 +4,8 @@
 # - PyPI: Always uses exact tag version (e.g., v1.0.0 -> 1.0.0), fails if version exists
 # - Git operations: Use original tag version for branch names and merge messages
 name: Publish Python 🐍 distributions 📦 to PyPI
+permissions:
+  contents: read
 on:
   push:
     tags:
