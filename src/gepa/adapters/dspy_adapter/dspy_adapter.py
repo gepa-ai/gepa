@@ -27,7 +27,8 @@ DSPyTrace = list[tuple[Any, dict[str, Any], Prediction]]
 
 class ScoreWithFeedback(Prediction):
     score: float
-    feedback: str
+    feedback: str | None = None
+    subscores: dict[str, float] | None = None
 
 class PredictorFeedbackFn(Protocol):
     def __call__(
@@ -98,18 +99,23 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 failure_score=self.failure_score,
                 format_failure_score=self.failure_score,
             )
-            scores = []
-            outputs = []
+            outputs: list[Prediction] = []
+            scores: list[float] = []
+            subscores: list[dict[str, float]] = []
             for t in trajs:
                 outputs.append(t["prediction"])
-                if hasattr(t["prediction"], "__class__") and t.get("score") is None:
-                    scores.append(self.failure_score)
-                else:
-                    score = t["score"]
-                    if hasattr(score, "score"):
-                        score = score["score"]
-                    scores.append(score)
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajs)
+                score_val, subscore_dict = self._extract_score_and_subscores(t.get("score"))
+                if score_val is None:
+                    score_val = self.failure_score
+                scores.append(score_val)
+                subscores.append(subscore_dict)
+            has_subscores = any(subscores)
+            return EvaluationBatch(
+                outputs=outputs,
+                scores=scores,
+                trajectories=trajs,
+                subscores=subscores if has_subscores else None,
+            )
         else:
             evaluator = Evaluate(
                 devset=batch,
@@ -123,9 +129,22 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             )
             res = evaluator(program)
             outputs = [r[1] for r in res.results]
-            scores = [r[2] for r in res.results]
-            scores = [s["score"] if hasattr(s, "score") else s for s in scores]
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=None)
+            raw_scores = [r[2] for r in res.results]
+            scores: list[float] = []
+            subscores: list[dict[str, float]] = []
+            for raw_score in raw_scores:
+                score_val, subscore_dict = self._extract_score_and_subscores(raw_score)
+                if score_val is None:
+                    score_val = self.failure_score
+                scores.append(score_val)
+                subscores.append(subscore_dict)
+            has_subscores = any(subscores)
+            return EvaluationBatch(
+                outputs=outputs,
+                scores=scores,
+                trajectories=None,
+                subscores=subscores if has_subscores else None,
+            )
 
     def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
         from dspy.teleprompt.bootstrap_trace import FailedPrediction
@@ -145,9 +164,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 trace = data["trace"]
                 example = data["example"]
                 prediction = data["prediction"]
-                module_score = data["score"]
-                if hasattr(module_score, "score"):
-                    module_score = module_score["score"]
+                module_score_obj = data.get("score")
+                module_score, _ = self._extract_score_and_subscores(module_score_obj)
 
                 trace_instances = [t for t in trace if t[0].signature.equals(module.signature)]
                 if not self.add_format_failure_as_feedback:
@@ -219,9 +237,20 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         module_outputs=prediction,
                         captured_trace=trace,
                     )
-                    d["Feedback"] = fb["feedback"]
-                    assert fb["score"] == module_score, f"Currently, GEPA only supports feedback functions that return the same score as the module's score. However, the module-level score is {module_score} and the feedback score is {fb.score}."
-                    # d['score'] = fb.score
+                    if isinstance(fb, dict):
+                        feedback_score = fb.get("score")
+                        feedback_text = fb.get("feedback", "")
+                    else:
+                        feedback_score = getattr(fb, "score", None)
+                        feedback_text = getattr(fb, "feedback", "")
+                    d["Feedback"] = feedback_text
+                    if module_score is not None and feedback_score is not None:
+                        assert (
+                            abs(feedback_score - module_score) < 1e-8
+                        ), (
+                            "Currently, GEPA only supports feedback functions that return the same score as the module's score. "
+                            f"However, the module-level score is {module_score} and the feedback score is {feedback_score}."
+                        )
                 items.append(d)
 
             if len(items) == 0:
@@ -233,6 +262,23 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             raise Exception("No valid predictions found for any module.")
 
         return ret_d
+
+    @staticmethod
+    def _extract_score_and_subscores(score_obj: Any) -> tuple[float | None, dict[str, float]]:
+        if score_obj is None:
+            return None, {}
+        if isinstance(score_obj, dict):
+            score_val = score_obj.get("score")
+            subscores = score_obj.get("subscores") or {}
+            return score_val, dict(subscores)
+        if hasattr(score_obj, "score"):
+            score_val = getattr(score_obj, "score", None)
+            subscores = getattr(score_obj, "subscores", None) or {}
+            return score_val, dict(subscores)
+        try:
+            return float(score_obj), {}
+        except Exception:
+            return None, {}
 
     # TODO: The current DSPyAdapter implementation uses the GEPA default propose_new_texts.
     # We can potentially override this, to use the instruction proposal similar to MIPROv2.

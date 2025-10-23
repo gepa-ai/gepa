@@ -25,6 +25,7 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
     outputs: list[RolloutOutput]
     scores: list[float]
     trajectories: list[Trajectory] | None = None
+    subscores: list[dict[str, float]] | None = None
 
 class ProposalFn(Protocol):
     def __call__(

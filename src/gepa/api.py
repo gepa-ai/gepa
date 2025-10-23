@@ -9,13 +9,22 @@ from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
+from gepa.core.state import GEPAState
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
-from gepa.proposer.reflective_mutation.base import LanguageModel, ReflectionComponentSelector
-from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
+from gepa.proposer.reflective_mutation.base import (
+    LanguageModel,
+    ReflectionComponentSelector,
+)
+from gepa.proposer.reflective_mutation.reflective_mutation import (
+    ReflectiveMutationProposer,
+)
 from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
-from gepa.strategies.candidate_selector import CurrentBestCandidateSelector, ParetoCandidateSelector
+from gepa.strategies.candidate_selector import (
+    CurrentBestCandidateSelector,
+    ParetoCandidateSelector,
+)
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
@@ -32,6 +41,7 @@ def optimize(
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
     candidate_selection_strategy: str = "pareto",
+    frontier_type: str = "instance",
     skip_perfect_score=True,
     reflection_minibatch_size=3,
     perfect_score=1,
@@ -40,6 +50,7 @@ def optimize(
     # Merge-based configuration
     use_merge=False,
     max_merge_invocations=5,
+    merge_val_overlap_floor: int = 5,
     # Budget and Stop Condition
     max_metric_calls=None,
     stop_callbacks: "StopperProtocol | list[StopperProtocol] | None" = None,
@@ -58,6 +69,7 @@ def optimize(
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
+    val_evaluation_policy: Callable[[GEPAState], list[int]] | None = None,
 ):
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -205,7 +217,9 @@ def optimize(
 
     rng = random.Random(seed)
     candidate_selector = (
-        ParetoCandidateSelector(rng=rng) if candidate_selection_strategy == "pareto" else CurrentBestCandidateSelector()
+        ParetoCandidateSelector(rng=rng, frontier_type=frontier_type)
+        if candidate_selection_strategy == "pareto"
+        else CurrentBestCandidateSelector()
     )
 
     if isinstance(module_selector, str):
@@ -245,8 +259,7 @@ def optimize(
     )
 
     def evaluator(inputs, prog):
-        eval_out = adapter.evaluate(inputs, prog, capture_traces=False)
-        return eval_out.outputs, eval_out.scores
+        return adapter.evaluate(inputs, prog, capture_traces=False)
 
     merge_proposer = None
     if use_merge:
@@ -257,6 +270,8 @@ def optimize(
             use_merge=use_merge,
             max_merge_invocations=max_merge_invocations,
             rng=rng,
+            val_overlap_floor=merge_val_overlap_floor,
+            frontier_type=frontier_type,
         )
 
     engine = GEPAEngine(
@@ -268,12 +283,14 @@ def optimize(
         seed=seed,
         reflective_proposer=reflective_proposer,
         merge_proposer=merge_proposer,
+        frontier_type=frontier_type,
         logger=logger,
         experiment_tracker=experiment_tracker,
         track_best_outputs=track_best_outputs,
         display_progress_bar=display_progress_bar,
         raise_on_exception=raise_on_exception,
         stop_callback=stop_callback,
+        val_evaluation_policy=val_evaluation_policy,
         use_cloudpickle=use_cloudpickle,
     )
 
