@@ -3,6 +3,7 @@
 
 import os
 import random
+from enum import Enum
 from typing import Any, Callable
 
 from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
@@ -24,6 +25,10 @@ from gepa.strategies.component_selector import (
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
+
+
+class _ValEvaluationPolicyName(str, Enum):
+    FULL_EVAL = "full_eval"
 
 
 def optimize(
@@ -62,7 +67,7 @@ def optimize(
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
-    val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
+    val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | str | None = None,
 ):
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -141,7 +146,7 @@ def optimize(
 
     # Reproducibility
     - seed: The seed to use for the random number generator.
-    - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best.
+    - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. The only supported string is "full_eval"; passing this string or None uses an eval policy that always evaluates on the full validation set.
     - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
     """
     if adapter is None:
@@ -218,7 +223,25 @@ def optimize(
         ParetoCandidateSelector(rng=rng) if candidate_selection_strategy == "pareto" else CurrentBestCandidateSelector()
     )
 
-    val_evaluation_policy = val_evaluation_policy or FullEvaluationPolicy()
+    if isinstance(val_evaluation_policy, str):
+        try:
+            val_policy_option = _ValEvaluationPolicyName(val_evaluation_policy)
+        except ValueError:
+            allowed = ", ".join(policy.value for policy in _ValEvaluationPolicyName)
+            raise ValueError(
+                f"Unknown val_evaluation_policy '{val_evaluation_policy}'. Supported values: {allowed}"
+            ) from None
+        if val_policy_option is _ValEvaluationPolicyName.FULL_EVAL:
+            val_evaluation_policy = FullEvaluationPolicy()
+    elif val_evaluation_policy is None:
+        val_evaluation_policy = FullEvaluationPolicy()
+    else:
+        if not isinstance(val_evaluation_policy, EvaluationPolicy):
+            val_policy_opts = ", ".join(policy.value for policy in _ValEvaluationPolicyName)
+            raise ValueError(
+                f"val_evaluation_policy should either be a string in ({val_policy_opts}) or an instance of EvaluationPolicy, but got {type(val_evaluation_policy)}"
+            )
+
     if not candidate_selector.supports_eval_policy(val_evaluation_policy):
         raise ValueError(
             f"Candidate selector ({type(candidate_selector)}) does not support eval_policy {type(val_evaluation_policy)}"
