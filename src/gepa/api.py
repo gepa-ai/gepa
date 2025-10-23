@@ -124,7 +124,7 @@ def optimize(
     # Merge-based configuration
     - use_merge: Whether to use the merge strategy.
     - max_merge_invocations: The maximum number of merge invocations to perform.
-    - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before attempting a merge subsample.
+    - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before attempting a merge subsample. Only relevant when using `val_evaluation_policy` other than `full_eval`.
 
     # Budget and Stop Condition
     - max_metric_calls: Optional maximum number of metric calls to perform. If not provided, stop_callbacks must be provided.
