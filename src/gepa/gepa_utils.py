@@ -2,7 +2,8 @@
 # https://github.com/gepa-ai/gepa
 
 
-from typing import Sequence
+import random
+from typing import Any, Mapping, Sequence
 
 from gepa.core.adapter import DataInst
 from gepa.core.data_loader import DataId, DataLoader, ListDataLoader
@@ -98,8 +99,10 @@ def find_dominator_programs(pareto_front_programs, train_val_weighted_agg_scores
 
 
 def select_program_candidate_from_pareto_front(
-    pareto_front_programs, train_val_weighted_agg_scores_for_all_programs, rng
-):
+    pareto_front_programs: Mapping[Any, set[int]],
+    train_val_weighted_agg_scores_for_all_programs: list[float],
+    rng: random.Random,
+) -> int:
     train_val_pareto_front_programs = pareto_front_programs
     new_program_at_pareto_front_valset = remove_dominated_programs(
         train_val_pareto_front_programs, scores=train_val_weighted_agg_scores_for_all_programs
@@ -115,6 +118,7 @@ def select_program_candidate_from_pareto_front(
         prog_idx for prog_idx, freq in program_frequency_in_validation_pareto_front.items() for _ in range(freq)
     ]
     if not sampling_list:
+        # No Pareto programs survived; fall back to the globally highest-scoring program.
         return idxmax(train_val_weighted_agg_scores_for_all_programs)
     curr_prog_id = rng.choice(sampling_list)
     return curr_prog_id
