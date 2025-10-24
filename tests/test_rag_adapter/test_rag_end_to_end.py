@@ -5,10 +5,10 @@ import json
 from unittest.mock import Mock, patch
 
 import pytest
+from test_data_loader import StagedDataLoader
 from test_incremental_eval_policy import RoundRobinSampleEvaluationPolicy
 
 from gepa.adapters.generic_rag_adapter.generic_rag_adapter import GenericRAGAdapter
-from gepa.core.data_loader import StagedDataLoader
 
 
 @pytest.fixture
