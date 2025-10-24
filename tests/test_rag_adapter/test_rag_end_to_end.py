@@ -217,7 +217,7 @@ def simple_reflection_lm(prompt):
     return json.dumps({"answer_generation": PREFERRED_DYNAMIC_PROMPT})
 
 
-class RAGTestAdapater(GenericRAGAdapter):
+class RAGTestAdapter(GenericRAGAdapter):
     """Custom adapter for deterministic RAG testing with optional dynamic valset hooks."""
 
     def __init__(
