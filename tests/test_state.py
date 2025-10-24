@@ -9,7 +9,6 @@ import pytest
 import gepa
 import gepa.core.state as state_mod
 from gepa.core.adapter import EvaluationBatch
-from gepa.core.data_loader import DataId
 from gepa.strategies.eval_policy import EvaluationPolicy
 
 
