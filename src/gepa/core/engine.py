@@ -132,7 +132,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         log_detailed_metrics_after_discovering_new_program(
             logger=self.logger,
             gepa_state=state,
-            valset_score=valset_score,
             new_program_idx=new_program_idx,
             valset_subscores=valset_subscores,
             experiment_tracker=self.experiment_tracker,

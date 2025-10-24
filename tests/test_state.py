@@ -143,6 +143,9 @@ def test_dynamic_validation(run_dir, rng):
         def get_best_program(self, state: state_mod.GEPAState) -> state_mod.ProgramIdx:
             return 0
 
+        def get_valset_score(self, program_idx: state_mod.ProgramIdx, state: state_mod.GEPAState) -> float:
+            return state.get_program_average_val_subset(program_idx)[0]
+
     init_validation_policy = InitValidationPolicy()
     gepa.optimize(
         seed_candidate=seed_candidate,
@@ -177,6 +180,9 @@ def test_dynamic_validation(run_dir, rng):
 
         def is_evaluation_sparse(self) -> bool:
             return False
+
+        def get_valset_score(self, program_idx: state_mod.ProgramIdx, state: state_mod.GEPAState) -> float:
+            return state.get_program_average_val_subset(program_idx)[0]
 
     best_stage1_candidate_idx = init_validation_policy.get_best_program(state_phase_one)
     best_stage1_candidate = state_phase_one.program_candidates[best_stage1_candidate_idx]
@@ -222,6 +228,9 @@ def test_sparse_eval_policy_rejected_by_pareto_selector(run_dir):
 
         def is_evaluation_sparse(self) -> bool:
             return True
+
+        def get_valset_score(self, program_idx: state_mod.ProgramIdx, state: state_mod.GEPAState) -> float:
+            return state.get_program_average_val_subset(program_idx)[0]
 
     adapter = DummyAdapter()
     sparse_policy = SparseEvaluationPolicy()

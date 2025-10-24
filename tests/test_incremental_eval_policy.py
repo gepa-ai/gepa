@@ -1,6 +1,8 @@
 import gepa
 from gepa.core.adapter import EvaluationBatch
-from gepa.core.data_loader import ListDataLoader
+from gepa.core.data_loader import DataId, DataInst, DataLoader, ListDataLoader
+from gepa.core.state import GEPAState, ProgramIdx
+from gepa.strategies.eval_policy import EvaluationPolicy
 
 
 class AutoExpandingListLoader(ListDataLoader):
@@ -92,8 +94,9 @@ class RoundRobinSampleEvaluationPolicy(EvaluationPolicy[DataId, DataInst]):
                 best_coverage = coverage
         return best_idx
 
-    def is_evaluation_sparse(self) -> bool:
-        return True
+    def get_valset_score(self, program_idx: ProgramIdx, state: GEPAState) -> float:
+        """Return the score of the program on the valset"""
+        return state.get_program_average_val_subset(program_idx)[0]
 
 
 def test_incremental_eval_policy_handles_dynamic_valset(tmp_path):
