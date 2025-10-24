@@ -232,7 +232,7 @@ def optimize(
     )
 
     if reflection_prompt_template is not None:
-        assert not hasattr(adapter, "propose_new_texts"), (
+        assert not (hasattr(adapter, "propose_new_texts") and adapter.propose_new_texts is not None), (
             f"Adapter {adapter!s} provides its own propose_new_texts method; reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
         )
 
