@@ -319,6 +319,7 @@ class Mutator:
             return []
 
         max_concurrency = max(1, min(max_concurrency, total))
+        print(f"🌀 Mutation batch starting: total={total}, max_concurrency={max_concurrency}, early_stop={early_stop_fraction}", flush=True)
         pending: Dict[asyncio.Task[Sequence[str]], float] = {}  # task -> start_time
         results: List[str] = []
         started = 0
@@ -329,6 +330,7 @@ class Mutator:
         while len(results) < total:
             while started < total and len(pending) < max_concurrency:
                 task = asyncio.create_task(factory())
+                print(f"   ➕ Launched mutation task {started + 1}/{total}", flush=True)
                 pending[task] = time.time()  # Record when this task started
                 started += 1
 
@@ -357,8 +359,12 @@ class Mutator:
 
                 # Early stop if we've been waiting too long for stragglers
                 if time_since_should_have_hit_target > expected_time_for_remaining and remaining >= 2:
-                    print(f"   ⚡ Mutation early stop: {len(results)}/{total} generated ({len(results)/total*100:.0f}%), cancelling {remaining} stragglers")
-                    print(f"      Avg mutation duration: {avg_duration:.1f}s, waited {time_since_should_have_hit_target:.1f}s past target...")
+                    print(
+                        f"   ⚠️ Mutation early stop: produced={len(results)}/{total} ({len(results)/total*100:.0f}%), "
+                        f"remaining={remaining}, avg_duration={avg_duration:.1f}s, "
+                        f"waited={time_since_should_have_hit_target:.1f}s",
+                        flush=True,
+                    )
                     # Cancel remaining tasks - they're stragglers
                     for task in pending:
                         task.cancel()
@@ -373,9 +379,15 @@ class Mutator:
                     if batch:
                         results.append(batch[0])
                         mutation_durations.append(task_duration)  # Track individual duration
+                        print(
+                            f"   ✅ Mutation task complete in {task_duration:.2f}s "
+                            f"(generated {len(batch)} candidates, total so far {len(results)})",
+                            flush=True,
+                        )
                 except asyncio.CancelledError:
                     pass  # Expected for cancelled tasks
 
+        print(f"✅ Mutation batch finished: generated={len(results)} (requested {total})", flush=True)
         return results[:total]
 
     def _filter(self, candidates: Iterable[Candidate]) -> List[Candidate]:

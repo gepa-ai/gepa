@@ -110,6 +110,8 @@ class Orchestrator:
             for i in range(deficit):
                 self._shard_capacity[i % num_shards] += 1
         self._shard_inflight: List[int] = [0] * num_shards
+        self._last_debug_log: float = 0.0
+        self._last_budget_log: float = 0.0
 
         # Deficit scheduler state for fair rung allocation
         import math
@@ -206,9 +208,13 @@ class Orchestrator:
 
         # Ensure mutation generation task is running
         if self._mutation_task is None or self._mutation_task.done():
-            self._mutation_task = asyncio.create_task(
-                self._spawn_mutations(callback=self._mutation_buffer.append)
-            )
+            async def _mutation_wrapper():
+                try:
+                    await self._spawn_mutations(callback=self._mutation_buffer.append)
+                except Exception as exc:  # pragma: no cover - debugging aid
+                    print(f"\n❌ Mutation task error: {type(exc).__name__}: {exc}", flush=True)
+                    raise
+            self._mutation_task = asyncio.create_task(_mutation_wrapper())
 
         # Window tracking mirrors the legacy batch counter so downstream logging stays intact
         window_size = max(1, self.config.batch_size)
@@ -274,6 +280,31 @@ class Orchestrator:
                     )
 
             # 5) Window completion => keep round-indexed metrics in sync
+            if (
+                not self.queue
+                and not self._mutation_buffer
+                and (self._mutation_task is not None or self._total_inflight > 0)
+            ):
+                import time as _time_debug
+                now = _time_debug.time()
+                if now - self._last_debug_log > 5.0:
+                    if self._mutation_task is None:
+                        task_state = "idle"
+                    elif self._mutation_task.done():
+                        try:
+                            exc = self._mutation_task.exception()
+                        except asyncio.CancelledError:
+                            exc = "cancelled"
+                        task_state = f"done({exc})"
+                    else:
+                        task_state = "running"
+                    print(
+                        f"\n🧭 Debug: queue=0 buffer=0 inflight={self._total_inflight} "
+                        f"mutation_task={task_state} pending_fp={len(self._pending_fingerprints)} "
+                        f"inflight_fp={len(self._inflight_fingerprints)}"
+                    )
+                    self._last_debug_log = now
+
             evals_in_window = self.evaluations_run - window_start_evals
 
             if evals_in_window >= window_size:
@@ -567,8 +598,6 @@ class Orchestrator:
         ):
             meta["quality"] = quality
             meta["quality_shard_fraction"] = shard_fraction
-        meta["parent_objectives"] = result.objectives
-
         candidate_with_meta = Candidate(text=candidate.text, meta=meta)
 
         cand_hash = candidate_key(candidate_with_meta)
@@ -804,14 +833,25 @@ class Orchestrator:
 
         entries = self.archive.pareto_entries()
         if not entries:
+            print("ℹ️  spawn_mutations: archive empty, skipping.", flush=True)
             return
 
         num_mutations = self._mutation_budget()
         if num_mutations <= 0:
+            print(
+                f"ℹ️  spawn_mutations: budget={num_mutations}, queue={len(self.queue)}, buffer={len(self._mutation_buffer)} — skipping.",
+                flush=True,
+            )
             return
 
+        print(
+            f"\n🧭 spawn_mutations: parents={len(entries)} budget={num_mutations} "
+            f"queue={len(self.queue)} buffer={len(self._mutation_buffer)}",
+            flush=True,
+        )
         mutations = await self._generate_mutations_batched(entries, num_mutations)
         if not mutations:
+            print("⚠️  spawn_mutations: runner returned no candidates.", flush=True)
             return
 
         if callback:
@@ -964,6 +1004,15 @@ class Orchestrator:
         target_ready = max(self._max_total_inflight, self.config.batch_size)
         deficit = target_ready - ready
         if deficit <= 0:
+            import time as _time_budget
+            now = _time_budget.time()
+            if now - self._last_budget_log > 5.0:
+                print(
+                    f"\n🧭 Debug: mutation budget 0 "
+                    f"(ready={ready} target_ready={target_ready} "
+                    f"queue={len(self.queue)} buffer={len(self._mutation_buffer)})"
+                )
+                self._last_budget_log = now
             return 0
         return max(1, min(max_mut, deficit))
 

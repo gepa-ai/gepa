@@ -376,9 +376,7 @@ Write {num_mutations} new instruction variants. Separate each instruction with a
                     completion_kwargs["reasoning_effort"] = self.reflection_model.reasoning_effort
 
                 print(f"🔵 REFLECTION CALL START: model={completion_kwargs['model']}, mutations={num_mutations}", flush=True)
-                print(f"🔵 SPEC CALL START: model={completion_kwargs['model']}, specs={num_specs}", flush=True)
                 response = await acompletion(**completion_kwargs)
-                print(f"🟢 SPEC CALL SUCCESS: specs={num_specs}", flush=True)
                 print(f"🟢 REFLECTION CALL SUCCESS: mutations={num_mutations}", flush=True)
 
                 elapsed = time.time() - start_time
@@ -395,6 +393,7 @@ Write {num_mutations} new instruction variants. Separate each instruction with a
                 elapsed = time.time() - start_time
                 error_type = type(e).__name__
                 error_msg = str(e)
+                print(f"❌ REFLECTION CALL ERROR after {elapsed:.2f}s: {error_type}: {error_msg}", flush=True)
                 raise RuntimeError(
                     f"Batched reflection LLM call failed after {elapsed:.2f}s ({error_type}: {error_msg}). "
                     "Check your API key, model name, and network connection."
@@ -472,6 +471,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                     completion_kwargs["temperature"] = self.reflection_model.temperature
                 if self.reflection_model.reasoning_effort is not None:
                     completion_kwargs["reasoning_effort"] = self.reflection_model.reasoning_effort
+                print(f"🔵 SPEC CALL START: model={completion_kwargs['model']}, specs={num_specs}", flush=True)
 
                 response = await acompletion(**completion_kwargs)
 
@@ -481,6 +481,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 specs = [s.strip() for s in content.split("---") if s.strip()]
 
                 # Log timing for diagnostics
+                print(f"🟢 SPEC CALL SUCCESS: specs={len(specs)} in {elapsed:.2f}s", flush=True)
                 print(f"   ⚡ Spec induction ({len(task_examples)} examples): {elapsed:.2f}s → {len(specs)} specs")
 
                 return specs[:num_specs]
@@ -489,6 +490,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 elapsed = time.time() - start_time
                 error_type = type(e).__name__
                 error_msg = str(e)
+                print(f"❌ SPEC CALL ERROR after {elapsed:.2f}s: {error_type}: {error_msg}", flush=True)
                 raise RuntimeError(
                     f"Spec induction LLM call failed after {elapsed:.2f}s ({error_type}: {error_msg}). "
                     "Check your API key, model name, and network connection."

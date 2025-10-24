@@ -62,7 +62,7 @@ print(
 adapter = DefaultAdapter(
     dataset=dataset,
     task_lm="openrouter/openai/gpt-oss-120b:nitro",
-    reflection_lm="openrouter/x-ai/grok-4-fast",
+    reflection_lm="openrouter/openai/gpt-oss-120b:nitro",
     auto_config=False,
 )
 adapter.config = config
@@ -83,10 +83,13 @@ except ImportError:
 import time
 
 start = time.time()
-
+SEED_PROMPT = (
+    "You are a helpful assistant. You are given a question and you need to answer it. "
+    "The answer should be given at the end of your response in exactly the format '### <final answer>'"
+)
 try:
     result = adapter.optimize(
-        seeds=["You are a helpful assistant."],
+        seeds=[SEED_PROMPT],
         max_rounds=3,
         max_evaluations=50,
         enable_auto_stop=False,
