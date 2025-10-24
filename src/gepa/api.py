@@ -33,8 +33,8 @@ def optimize(
     reflection_lm: LanguageModel | str | None = None,
     candidate_selection_strategy: str = "pareto",
     skip_perfect_score=True,
-    batch_sampler: BatchSampler | None = None,
-    reflection_minibatch_size=None,
+    batch_sampler: BatchSampler | str = "epoch_shuffled",
+    reflection_minibatch_size: int | None = None,
     perfect_score=1,
     # Component selection configuration
     module_selector: "ReflectionComponentSelector | str" = "round_robin",
@@ -106,8 +106,8 @@ def optimize(
     - reflection_lm: A `LanguageModel` instance that is used to reflect on the performance of the candidate program.
     - candidate_selection_strategy: The strategy to use for selecting the candidate to update.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
-    - batch_sampler: Optional custom BatchSampler instance for selecting training examples. If None, defaults to EpochShuffledBatchSampler with reflection_minibatch_size=3.
-    - reflection_minibatch_size: [Backwards compatibility] The number of examples to use by EpochShuffledBatchSampler for reflection in each proposal step. Defaults to 3. Cannot be used if batch_sampler is provided.
+    - batch_sampler: Strategy for selecting training examples. Can be a BatchSampler instance or a string for a predefined strategy: 'epoch_shuffled'. Defaults to 'epoch_shuffled', which creates an EpochShuffledBatchSampler.
+    - reflection_minibatch_size: [Backwards compatibility] The number of examples to use by EpochShuffledBatchSampler for reflection in each proposal step. Defaults to 3. Only valid when batch_sampler='epoch_shuffled' (default).
     - perfect_score: The perfect score to achieve.
 
     # Component selection configuration
@@ -222,13 +222,10 @@ def optimize(
 
         module_selector = module_selector_cls()
 
-    if batch_sampler and reflection_minibatch_size:
-        raise ValueError(
-            "Both 'batch_sampler' and 'reflection_minibatch_size' were provided. "
-            "Please provide only one of them."
-        )
-    if batch_sampler is None:
+    if batch_sampler == 'epoch_shuffled':
         batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size or 3, rng=rng)
+    else:
+        assert reflection_minibatch_size is None, "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"
 
     experiment_tracker = create_experiment_tracker(
         use_wandb=use_wandb,

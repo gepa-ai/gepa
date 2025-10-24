@@ -208,17 +208,17 @@ def test_batch_sampler_custom_instance(mock_proposer, mock_run, common_mocks, ba
 
 
 def test_batch_sampler_both_params_raises_error(base_optimize_kwargs):
-    """Test that providing both batch_sampler and reflection_minibatch_size raises ValueError."""
+    """Test that providing custom batch_sampler with reflection_minibatch_size raises AssertionError."""
     custom_batch_sampler = EpochShuffledBatchSampler(minibatch_size=5)
 
-    with pytest.raises(ValueError, match="Both 'batch_sampler' and 'reflection_minibatch_size' were provided"):
+    with pytest.raises(AssertionError, match="reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"):
         optimize(**base_optimize_kwargs, batch_sampler=custom_batch_sampler, reflection_minibatch_size=3)
 
 
 @patch("gepa.api.GEPAEngine.run")
 @patch("gepa.api.ReflectiveMutationProposer")
-def test_batch_sampler_neither_param_defaults_to_3(mock_proposer, mock_run, common_mocks, base_optimize_kwargs):
-    """Test that providing neither parameter defaults to minibatch_size=3."""
+def test_batch_sampler_default_epoch_shuffled(mock_proposer, mock_run, common_mocks, base_optimize_kwargs):
+    """Test that default batch_sampler='epoch_shuffled' creates EpochShuffledBatchSampler with minibatch_size=3."""
     mock_run_return, _ = common_mocks
     mock_run.return_value = mock_run_return
 
@@ -227,3 +227,31 @@ def test_batch_sampler_neither_param_defaults_to_3(mock_proposer, mock_run, comm
     sampler = mock_proposer.call_args.kwargs["batch_sampler"]
     assert isinstance(sampler, EpochShuffledBatchSampler)
     assert sampler.minibatch_size == 3
+
+
+@patch("gepa.api.GEPAEngine.run")
+@patch("gepa.api.ReflectiveMutationProposer")
+def test_batch_sampler_string_epoch_shuffled(mock_proposer, mock_run, common_mocks, base_optimize_kwargs):
+    """Test that batch_sampler='epoch_shuffled' string creates EpochShuffledBatchSampler."""
+    mock_run_return, _ = common_mocks
+    mock_run.return_value = mock_run_return
+
+    optimize(**base_optimize_kwargs, batch_sampler='epoch_shuffled', reflection_minibatch_size=5)
+
+    sampler = mock_proposer.call_args.kwargs["batch_sampler"]
+    assert isinstance(sampler, EpochShuffledBatchSampler)
+    assert sampler.minibatch_size == 5
+
+
+@patch("gepa.api.GEPAEngine.run")
+@patch("gepa.api.ReflectiveMutationProposer")
+def test_batch_sampler_reflection_minibatch_size(mock_proposer, mock_run, common_mocks, base_optimize_kwargs):
+    """Test that reflection_minibatch_size works with default batch_sampler."""
+    mock_run_return, _ = common_mocks
+    mock_run.return_value = mock_run_return
+
+    optimize(**base_optimize_kwargs, reflection_minibatch_size=7)
+
+    sampler = mock_proposer.call_args.kwargs["batch_sampler"]
+    assert isinstance(sampler, EpochShuffledBatchSampler)
+    assert sampler.minibatch_size == 7
