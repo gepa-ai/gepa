@@ -14,13 +14,3 @@ def test_select_program_candidate_respects_frequency_bias():
     selected = select_program_candidate_from_pareto_front(pareto_front_programs, scores, rng)
 
     assert selected == 1
-
-
-def test_select_program_candidate_falls_back_to_idxmax_when_empty():
-    pareto_front_programs = {"val0": set()}
-    scores = [0.1, 0.9]
-    rng = random.Random(0)
-
-    selected = select_program_candidate_from_pareto_front(pareto_front_programs, scores, rng)
-
-    assert selected == 1

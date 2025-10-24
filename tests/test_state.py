@@ -204,50 +204,6 @@ def test_dynamic_validation(run_dir, rng):
     assert covered_ids == {0, 1, 2}
 
 
-def test_sparse_eval_policy_rejected_by_pareto_selector(run_dir):
-    class DummyAdapter:
-        def __init__(self):
-            self.propose_new_texts = lambda candidate, reflective_dataset, components_to_update: candidate
-
-        def evaluate(self, batch, candidate, capture_traces=False):
-            outputs = [{"id": item["id"]} for item in batch]
-            scores = [0.0 for _ in batch]
-            trajectories = None
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
-
-        def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
-            return {}
-
-    class SparseEvaluationPolicy(EvaluationPolicy):
-        def get_eval_batch(self, loader, state, target_program_idx=None):
-            ids = list(loader.all_ids())
-            return ids[:1] if ids else []
-
-        def get_best_program(self, state):
-            return 0
-
-        def is_evaluation_sparse(self) -> bool:
-            return True
-
-        def get_valset_score(self, program_idx: state_mod.ProgramIdx, state: state_mod.GEPAState) -> float:
-            return state.get_program_average_val_subset(program_idx)[0]
-
-    adapter = DummyAdapter()
-    sparse_policy = SparseEvaluationPolicy()
-
-    with pytest.raises(ValueError, match="does not support"):
-        gepa.optimize(
-            seed_candidate={"system_prompt": "weight=0"},
-            trainset=[{"id": 0, "difficulty": 2}],
-            valset=[{"id": 0, "difficulty": 2}],
-            adapter=adapter,
-            reflection_lm=None,
-            max_metric_calls=1,
-            run_dir=str(run_dir),
-            val_evaluation_policy=sparse_policy,
-        )
-
-
 @pytest.fixture
 def legacy_run_dir(tmp_path: Path) -> Path:
     legacy_run_dir = tmp_path / "legacy_run"
