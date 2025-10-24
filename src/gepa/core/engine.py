@@ -105,8 +105,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     ) -> tuple[int, int]:
         num_metric_calls_by_discovery = state.total_num_evals
 
-        # TODO: Perhaps the val_evaluation_policy itself should be responsible for how to interpret the scores instead of us doing it here
-        # and calculating average over partial observations.
         valset_outputs, valset_subscores = self._evaluate_on_valset(new_program, state)
 
         state.num_full_ds_evals += 1

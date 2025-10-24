@@ -124,6 +124,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     @staticmethod
     def _migrate_from_legacy_state_v0(d: dict[str, Any]) -> None:
+        assert isinstance(d, dict)
+        assert "prog_candidate_val_subscores" in d
+        assert isinstance(d["prog_candidate_val_subscores"], list)
+        assert all(isinstance(scores, list) for scores in d["prog_candidate_val_subscores"])
         legacy_scores: list[list[float]] = d.pop("prog_candidate_val_subscores", [])
         # convert to sparse val subscores
         d["prog_candidate_val_subscores"] = [
@@ -145,6 +149,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     def get_program_average_val_subset(self, program_idx: int) -> tuple[float, int]:
+        # TODO: This should be only used/handled by the val_evaluation_policy, and never used directly.
         scores = self.prog_candidate_val_subscores[program_idx]
         if not scores:
             return float("-inf"), 0
@@ -166,6 +171,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     @property
     def program_full_scores_val_set(self) -> list[float]:
+        # TODO: This should be using the val_evaluation_policy instead of the get_program_average_val_subset method to calculate the scores.
         return [
             self.get_program_average_val_subset(program_idx)[0]
             for program_idx in range(len(self.prog_candidate_val_subscores))
