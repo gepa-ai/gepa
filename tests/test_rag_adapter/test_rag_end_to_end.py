@@ -8,6 +8,7 @@ import pytest
 
 from gepa.adapters.generic_rag_adapter.generic_rag_adapter import GenericRAGAdapter
 from gepa.core.data_loader import StagedDataLoader
+from tests.test_incremental_eval_policy import RoundRobinSampleEvaluationPolicy
 
 
 @pytest.fixture
@@ -503,8 +504,7 @@ def test_rag_dynamic_valset_round_robin_sample(sample_ai_ml_dataset, mock_chroma
         reflection_lm=simple_reflection_lm,
         candidate_selection_strategy="current_best",
         max_metric_calls=15,
-        val_evaluation_policy="round_robin_sample",
-        val_evaluation_sample_size=1,
+        val_evaluation_policy=RoundRobinSampleEvaluationPolicy(batch_size=1),
         run_dir=str(tmp_path / "dynamic_val_run"),
     )
 
@@ -530,8 +530,7 @@ def test_rag_dynamic_valset_round_robin_sample(sample_ai_ml_dataset, mock_chroma
         reflection_lm=simple_reflection_lm,
         candidate_selection_strategy="current_best",
         max_metric_calls=12,
-        val_evaluation_policy="round_robin_sample",
-        val_evaluation_sample_size=1,
+        val_evaluation_policy=RoundRobinSampleEvaluationPolicy(batch_size=1),
         run_dir=str(tmp_path / "dynamic_val_run_stage2"),
     )
 

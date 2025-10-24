@@ -5,9 +5,8 @@ import traceback
 from typing import Any, Callable, Generic
 
 from gepa.core.adapter import DataInst
-from gepa.core.data_loader import DataId, DataLoader
+from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState, initialize_gepa_state
-from gepa.gepa_utils import ensure_loader
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
@@ -106,10 +105,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     ) -> tuple[int, int]:
         num_metric_calls_by_discovery = state.total_num_evals
 
+        # TODO: Perhaps the val_evaluation_policy itself should be responsible for how to interpret the scores instead of us doing it here
+        # and calculating average over partial observations.
         valset_outputs, valset_subscores = self._evaluate_on_valset(new_program, state)
-        valset_score = (
-            sum(valset_subscores.values()) / len(valset_subscores) if len(valset_subscores) > 0 else float("-inf")
-        )
 
         state.num_full_ds_evals += 1
         state.total_num_evals += len(valset_subscores)
@@ -125,9 +123,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         state.full_program_trace[-1]["new_program_idx"] = new_program_idx
         state.full_program_trace[-1]["evaluated_val_indices"] = sorted(valset_subscores.keys())
 
+        valset_score = self.val_evaluation_policy.get_valset_score(new_program_idx, state)
+
         linear_pareto_front_program_idx = self.val_evaluation_policy.get_best_program(state)
         if new_program_idx == linear_pareto_front_program_idx:
-            self.logger.log(f"Iteration {state.i + 1}: New program is on the linear pareto front")
+            self.logger.log(f"Iteration {state.i + 1}: Found a better program on the valset with score {valset_score}.")
 
         log_detailed_metrics_after_discovering_new_program(
             logger=self.logger,
@@ -138,6 +138,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             experiment_tracker=self.experiment_tracker,
             linear_pareto_front_program_idx=linear_pareto_front_program_idx,
             valset_size=len(self.valset),
+            val_evaluation_policy=self.val_evaluation_policy,
         )
         return new_program_idx, linear_pareto_front_program_idx
 

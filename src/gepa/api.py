@@ -3,15 +3,13 @@
 
 import os
 import random
-from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
-from gepa.core.data_loader import DataId, DataLoader
+from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
-from gepa.gepa_utils import ensure_loader
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -23,13 +21,8 @@ from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
 )
-from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy, RoundRobinSampleEvaluationPolicy
+from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
-
-
-class _ValEvaluationPolicyName(str, Enum):
-    FULL_EVAL = "full_eval"
-    ROUND_ROBIN_SAMPLE = "round_robin_sample"
 
 
 def optimize(
@@ -69,8 +62,7 @@ def optimize(
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
-    val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | str | None = None,
-    val_evaluation_sample_size: int | None = None,
+    val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
 ):
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -150,8 +142,7 @@ def optimize(
 
     # Reproducibility
     - seed: The seed to use for the random number generator.
-    - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) and "round_robin_sample" (bounded batch coverage that prioritises unseen ids). Passing None defaults to "full_eval".
-    - val_evaluation_sample_size: Optional batch size to use with the "round_robin_sample" policy. Ignored for other policies. Defaults to 5 when unset.
+    - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
     - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
     """
     if adapter is None:
@@ -228,39 +219,11 @@ def optimize(
         ParetoCandidateSelector(rng=rng) if candidate_selection_strategy == "pareto" else CurrentBestCandidateSelector()
     )
 
-    if val_evaluation_sample_size is not None and val_evaluation_sample_size <= 0:
-        raise ValueError("val_evaluation_sample_size must be a positive integer when provided.")
-
-    if isinstance(val_evaluation_policy, str):
-        try:
-            val_policy_option = _ValEvaluationPolicyName(val_evaluation_policy)
-        except ValueError:
-            allowed = ", ".join(policy.value for policy in _ValEvaluationPolicyName)
-            raise ValueError(
-                f"Unknown val_evaluation_policy '{val_evaluation_policy}'. Supported values: {allowed}"
-            ) from None
-        if val_policy_option is _ValEvaluationPolicyName.FULL_EVAL:
-            val_evaluation_policy = FullEvaluationPolicy()
-        elif val_policy_option is _ValEvaluationPolicyName.ROUND_ROBIN_SAMPLE:
-            batch_size = val_evaluation_sample_size or 5
-            val_evaluation_policy = RoundRobinSampleEvaluationPolicy(batch_size=batch_size)
-    elif val_evaluation_policy is None:
+    if val_evaluation_policy is None or val_evaluation_policy == "full_eval":
         val_evaluation_policy = FullEvaluationPolicy()
-    else:
-        if not isinstance(val_evaluation_policy, EvaluationPolicy):
-            val_policy_opts = ", ".join(policy.value for policy in _ValEvaluationPolicyName)
-            raise ValueError(
-                f"val_evaluation_policy should either be a string in ({val_policy_opts}) or an instance of EvaluationPolicy, but got {type(val_evaluation_policy)}"
-            )
-
-    if val_evaluation_sample_size is not None and not isinstance(val_evaluation_policy, RoundRobinSampleEvaluationPolicy):
+    elif not isinstance(val_evaluation_policy, EvaluationPolicy):
         raise ValueError(
-            "val_evaluation_sample_size can only be set when using the 'round_robin_sample' validation policy."
-        )
-
-    if not candidate_selector.supports_eval_policy(val_evaluation_policy):
-        raise ValueError(
-            f"Candidate selector ({type(candidate_selector)}) does not support eval_policy {type(val_evaluation_policy)}"
+            f"val_evaluation_policy should be one of 'full_eval' or an instance of EvaluationPolicy, but got {type(val_evaluation_policy)}"
         )
 
     if isinstance(module_selector, str):

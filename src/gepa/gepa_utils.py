@@ -3,10 +3,7 @@
 
 
 import random
-from typing import Any, Mapping, Sequence
-
-from gepa.core.adapter import DataInst
-from gepa.core.data_loader import DataId, DataLoader, ListDataLoader
+from typing import Any, Mapping
 
 
 def json_default(x):
@@ -35,14 +32,6 @@ def is_dominated(y, programs, program_at_pareto_front_valset):
             return False
 
     return True
-
-
-def ensure_loader(data_or_loader: Sequence[DataInst] | DataLoader[DataId, DataInst]) -> DataLoader[DataId, DataInst]:
-    if isinstance(data_or_loader, DataLoader):
-        return data_or_loader
-    if isinstance(data_or_loader, Sequence):
-        return ListDataLoader(data_or_loader)
-    raise TypeError(f"Unable to cast to a DataLoader type: {type(data_or_loader)}")
 
 
 def remove_dominated_programs(program_at_pareto_front_valset, scores=None):
@@ -117,8 +106,12 @@ def select_program_candidate_from_pareto_front(
     sampling_list = [
         prog_idx for prog_idx, freq in program_frequency_in_validation_pareto_front.items() for _ in range(freq)
     ]
-    if not sampling_list:
-        # No Pareto programs survived; fall back to the globally highest-scoring program.
-        return idxmax(train_val_weighted_agg_scores_for_all_programs)
+
+    # TODO: Determine if we need this fallback
+    # if not sampling_list:
+    #     # No Pareto programs survived; fall back to the globally highest-scoring program.
+    #     return idxmax(train_val_weighted_agg_scores_for_all_programs)
+    assert len(sampling_list) > 0
+
     curr_prog_id = rng.choice(sampling_list)
     return curr_prog_id

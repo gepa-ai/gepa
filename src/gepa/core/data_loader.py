@@ -103,3 +103,11 @@ class StagedDataLoader(ListDataLoader):
             if self._batches_served < threshold:
                 break
             self.unlock_next_stage()
+
+
+def ensure_loader(data_or_loader: Sequence[DataInst] | DataLoader[DataId, DataInst]) -> DataLoader[DataId, DataInst]:
+    if isinstance(data_or_loader, DataLoader):
+        return data_or_loader
+    if isinstance(data_or_loader, Sequence):
+        return ListDataLoader(data_or_loader)
+    raise TypeError(f"Unable to cast to a DataLoader type: {type(data_or_loader)}")

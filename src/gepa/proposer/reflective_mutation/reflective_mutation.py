@@ -4,9 +4,8 @@
 from typing import Any
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
-from gepa.core.data_loader import DataId, DataLoader
+from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
-from gepa.gepa_utils import ensure_loader
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 from gepa.proposer.reflective_mutation.base import (
     CandidateSelector,

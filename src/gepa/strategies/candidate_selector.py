@@ -6,7 +6,6 @@ import random
 from gepa.core.state import GEPAState
 from gepa.gepa_utils import idxmax, select_program_candidate_from_pareto_front
 from gepa.proposer.reflective_mutation.base import CandidateSelector
-from gepa.strategies.eval_policy import EvaluationPolicy
 
 
 class ParetoCandidateSelector(CandidateSelector):
@@ -24,9 +23,6 @@ class ParetoCandidateSelector(CandidateSelector):
             self.rng,
         )
 
-    def supports_eval_policy(self, eval_policy: EvaluationPolicy) -> bool:
-        return not eval_policy.is_evaluation_sparse()
-
 
 class CurrentBestCandidateSelector(CandidateSelector):
     def __init__(self):
@@ -35,6 +31,3 @@ class CurrentBestCandidateSelector(CandidateSelector):
     def select_candidate_idx(self, state: GEPAState) -> int:
         assert len(state.program_full_scores_val_set) == len(state.program_candidates)
         return idxmax(state.program_full_scores_val_set)
-
-    def supports_eval_policy(self, eval_policy: EvaluationPolicy) -> bool:
-        return True

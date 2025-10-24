@@ -193,7 +193,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         evaluator: Callable[[list[DataInst], dict[str, str]], tuple[list[RolloutOutput], list[float]]],
         use_merge: bool,
         max_merge_invocations: int,
-        val_overlap_floor: int = 1,
+        val_overlap_floor: int = 5,
         rng: random.Random | None = None,
     ):
         self.logger = logger
