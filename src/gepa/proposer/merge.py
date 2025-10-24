@@ -298,7 +298,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         mini_devset = self.valset.fetch(subsample_ids)
         # below is a post condition of `select_eval_subsample_for_merged_program`
         assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id1].keys())
-        assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id2])
+        assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id2].keys())
         id1_sub_scores = [state.prog_candidate_val_subscores[id1][k] for k in subsample_ids]
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
