@@ -312,6 +312,7 @@ We encourage the community and users to help us develop adapters to allow GEPA t
     - [Optimizing a Data Analysis coding agent with GEPA, using execution-guided feedback on real-world workloads](https://medium.com/firebird-technologies/context-engineering-improving-ai-coding-agents-using-dspy-gepa-df669c632766)
     - [Generating Naruto (Anime) style dialogues with GPT-4o-mini using GEPA](https://zenn.dev/cybernetics/articles/39fb763aca746c)
     - [Augmenting RL-tuned models with GEPA: Achieving +142% student performance improvement by augmenting a RL-tuned teacher with GEPA](https://www.arc.computer/blog/supercharging-rl-with-online-optimization)
+    - [DeepResearch Agent Optimized with GEPA](https://www.rajapatnaik.com/blog/2025/10/23/langgraph-dspy-gepa-researcher)
 
 ## Reference and Citation
 
