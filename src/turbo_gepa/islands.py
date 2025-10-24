@@ -34,7 +34,6 @@ async def spawn_islands(
     Args:
         n_islands: Number of islands to spawn
         worker: Async function to run on each island
-        metrics_queue: Optional queue for islands to report metrics to dashboard
     """
     tasks: List[asyncio.Task] = []
     queues = [asyncio.Queue() for _ in range(n_islands)]

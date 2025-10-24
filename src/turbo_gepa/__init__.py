@@ -27,7 +27,6 @@ from .config import (  # noqa: F401
 )
 from .evaluator import AsyncEvaluator  # noqa: F401
 from .interfaces import Candidate, EvalResult  # noqa: F401
-from .logging_utils import EventLogger, SummaryLogger, build_logger  # noqa: F401
 from .mutator import MutationConfig, Mutator  # noqa: F401
 from .orchestrator import Orchestrator  # noqa: F401
 from .sampler import InstanceSampler  # noqa: F401

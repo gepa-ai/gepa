@@ -12,18 +12,18 @@ changes.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
+
+import litellm
 
 from turbo_gepa.archive import Archive
 from turbo_gepa.cache import DiskCache
 from turbo_gepa.config import Config, DEFAULT_CONFIG, adaptive_config, adaptive_shards
 from turbo_gepa.evaluator import AsyncEvaluator
 from turbo_gepa.interfaces import Candidate, EvalResult
-from turbo_gepa.logging_utils import EventLogger, build_logger
 from turbo_gepa.islands import IslandContext, spawn_islands
-from turbo_gepa.multi_island_dashboard import IslandProgressAggregator, IslandDashboard
 from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
@@ -52,6 +52,16 @@ class DefaultDataInst:
         if self.additional_context is not None:
             payload["additional_context"] = self.additional_context
         return payload
+
+
+@dataclass(slots=True)
+class ModelConfig:
+    """Configuration for an LLM call."""
+
+    name: str
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = 24000
+    reasoning_effort: Optional[str] = None
 
 
 class DefaultAdapter:
@@ -160,11 +170,33 @@ class DefaultAdapter:
 
         self.config = config
         self.dataset = list(dataset)
-        self.task_lm = task_lm
-        self.reflection_lm = reflection_lm
-        # Use provided temperatures or fall back to config defaults
-        self.task_lm_temperature = task_lm_temperature if task_lm_temperature is not None else config.task_lm_temperature
-        self.reflection_lm_temperature = reflection_lm_temperature if reflection_lm_temperature is not None else config.reflection_lm_temperature
+
+        # Normalise model configuration objects
+        if isinstance(task_lm, ModelConfig):
+            if task_lm_temperature is not None:
+                print("⚠️  task_lm_temperature ignored because a ModelConfig was provided for task_lm.")
+            self.task_model = task_lm
+        else:
+            assert isinstance(task_lm, str)
+            self.task_model = ModelConfig(
+                name=task_lm,
+                temperature=task_lm_temperature if task_lm_temperature is not None else config.task_lm_temperature,
+            )
+
+        if isinstance(reflection_lm, ModelConfig):
+            if reflection_lm_temperature is not None:
+                print("⚠️  reflection_lm_temperature ignored because a ModelConfig was provided for reflection_lm.")
+            self.reflection_model = reflection_lm
+        else:
+            assert isinstance(reflection_lm, str)
+            self.reflection_model = ModelConfig(
+                name=reflection_lm,
+                temperature=reflection_lm_temperature if reflection_lm_temperature is not None else config.reflection_lm_temperature,
+            )
+
+        # Convenience string attributes (backwards-compatibility)
+        self.task_lm = self.task_model.name
+        self.reflection_lm = self.reflection_model.name
         self.example_map = {
             data.id if data.id is not None else f"example-{idx}": data for idx, data in enumerate(self.dataset)
         }
@@ -181,15 +213,13 @@ class DefaultAdapter:
             bins_bullets=config.qd_bins_bullets,
             flags=config.qd_flags,
         )
-        self.logger: EventLogger | None = None
 
-        # Check if model supports temperature (quick upfront test)
-        self.temperature_supported = True  # Assume supported unless proven otherwise
-        if task_lm and task_lm_temperature is not None:
-            self.temperature_supported = self._check_temperature_support(task_lm, task_lm_temperature)
-            if not self.temperature_supported:
-                print(f"⚠️  Model {task_lm} doesn't support custom temperature - using default")
-                self.task_lm_temperature = None
+        # Expose litellm client for batch operations
+        self.litellm = litellm
+
+        # Temperature support will be checked lazily during Phase 2 (temperature optimization)
+        # No upfront LLM call needed - we optimize prompts first (Phase 1), then temperature (Phase 2)
+        self.temperature_supported = True  # Assume supported, check later if needed
 
         # Create batched reflection runner and spec induction runner
         batch_reflection_runner = self._create_batched_llm_reflection_runner(reflection_lm)
@@ -217,6 +247,10 @@ class DefaultAdapter:
 
         Uses litellm for provider-agnostic testing (OpenAI, Anthropic, etc.)
         """
+        import time
+        start = time.time()
+        print(f"🔍 Checking temperature support for {model}...")
+
         try:
             import litellm
 
@@ -227,13 +261,18 @@ class DefaultAdapter:
                 temperature=test_temp,
                 max_tokens=1,
             )
+            elapsed = time.time() - start
+            print(f"✓ Temperature check passed ({elapsed:.2f}s)")
             return True
         except Exception as e:
+            elapsed = time.time() - start
             error_msg = str(e).lower()
             # Check if error is specifically about temperature
             if "temperature" in error_msg or "does not support" in error_msg or "not supported" in error_msg:
+                print(f"✗ Temperature not supported ({elapsed:.2f}s)")
                 return False
             # Other errors (auth, network) - assume temperature works
+            print(f"⚠️  Temperature check had error but assuming support ({elapsed:.2f}s): {str(e)[:100]}")
             return True
 
     def _create_batched_llm_reflection_runner(self, reflection_lm: str):
@@ -325,16 +364,22 @@ You CAN and SHOULD include domain-specific terminology, solution techniques, and
 
 Write {num_mutations} new instruction variants. Separate each instruction with a line containing only "---"."""
 
-                # Build kwargs, only include temperature if not None
-                completion_kwargs = {
-                    "model": reflection_lm,
+                completion_kwargs: Dict[str, Any] = {
+                    "model": self.reflection_model.name,
                     "messages": [{"role": "user", "content": reflection_prompt}],
-                    "max_tokens": 24000,
                 }
-                if self.reflection_lm_temperature is not None:
-                    completion_kwargs["temperature"] = self.reflection_lm_temperature
+                if self.reflection_model.max_tokens is not None:
+                    completion_kwargs["max_tokens"] = self.reflection_model.max_tokens
+                if self.reflection_model.temperature is not None:
+                    completion_kwargs["temperature"] = self.reflection_model.temperature
+                if self.reflection_model.reasoning_effort is not None:
+                    completion_kwargs["reasoning_effort"] = self.reflection_model.reasoning_effort
 
+                print(f"🔵 REFLECTION CALL START: model={completion_kwargs['model']}, mutations={num_mutations}", flush=True)
+                print(f"🔵 SPEC CALL START: model={completion_kwargs['model']}, specs={num_specs}", flush=True)
                 response = await acompletion(**completion_kwargs)
+                print(f"🟢 SPEC CALL SUCCESS: specs={num_specs}", flush=True)
+                print(f"🟢 REFLECTION CALL SUCCESS: mutations={num_mutations}", flush=True)
 
                 elapsed = time.time() - start_time
                 content = response.choices[0].message.content
@@ -417,13 +462,16 @@ Each instruction should:
 Output format: Return each instruction separated by "---" (exactly {num_specs} instructions)."""
 
                 # Build kwargs
-                completion_kwargs = {
-                    "model": reflection_lm,
+                completion_kwargs: Dict[str, Any] = {
+                    "model": self.reflection_model.name,
                     "messages": [{"role": "user", "content": spec_prompt}],
-                    "max_tokens": 24000,
                 }
-                if self.reflection_lm_temperature is not None:
-                    completion_kwargs["temperature"] = self.reflection_lm_temperature
+                if self.reflection_model.max_tokens is not None:
+                    completion_kwargs["max_tokens"] = self.reflection_model.max_tokens
+                if self.reflection_model.temperature is not None:
+                    completion_kwargs["temperature"] = self.reflection_model.temperature
+                if self.reflection_model.reasoning_effort is not None:
+                    completion_kwargs["reasoning_effort"] = self.reflection_model.reasoning_effort
 
                 response = await acompletion(**completion_kwargs)
 
@@ -512,30 +560,43 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         try:
             from litellm import acompletion
 
-            # Determine temperature: candidate.meta > adapter config > None
-            temperature = candidate.meta.get("temperature", self.task_lm_temperature)
-
-            # Build kwargs, only include temperature if not None
-            completion_kwargs = {
-                "model": self.task_lm,
+            completion_kwargs: Dict[str, Any] = {
+                "model": self.task_model.name,
                 "messages": [
                     {"role": "system", "content": candidate.text},
                     {"role": "user", "content": example["input"]},
                 ],
-                "max_tokens": 24000,
             }
-            if temperature is not None:
-                completion_kwargs["temperature"] = temperature
+            if self.task_model.max_tokens is not None:
+                completion_kwargs["max_tokens"] = self.task_model.max_tokens
+
+            candidate_temperature = candidate.meta.get("temperature")
+            if candidate_temperature is not None:
+                completion_kwargs["temperature"] = candidate_temperature
+            elif self.task_model.temperature is not None:
+                completion_kwargs["temperature"] = self.task_model.temperature
+
+            reasoning_effort = candidate.meta.get("reasoning_effort", self.task_model.reasoning_effort)
+            if reasoning_effort is not None:
+                completion_kwargs["reasoning_effort"] = reasoning_effort
 
             # Try with temperature, fall back without it if model doesn't support it
+            import time as _time_module
+            _start_llm = _time_module.time()
+            print(f"🔵 LLM CALL START: model={completion_kwargs['model']}, example_id={example_id}")
             try:
                 response = await acompletion(**completion_kwargs)
+                _elapsed_llm = _time_module.time() - _start_llm
+                print(f"🟢 LLM CALL SUCCESS: {_elapsed_llm:.2f}s, example_id={example_id}")
             except Exception as e:
+                _elapsed_llm = _time_module.time() - _start_llm
+                print(f"🔴 LLM CALL ERROR: {_elapsed_llm:.2f}s, error={type(e).__name__}: {str(e)[:100]}")
                 # Some models don't support custom temperature (e.g., o1-preview)
-                if "temperature" in str(e).lower() and temperature is not None:
-                    # Retry without temperature
+                if "temperature" in str(e).lower() and completion_kwargs.get("temperature") is not None:
+                    print(f"🟡 RETRYING without temperature parameter...")
                     completion_kwargs.pop("temperature", None)
                     response = await acompletion(**completion_kwargs)
+                    print(f"🟢 RETRY SUCCESS")
                 else:
                     raise  # Re-raise if it's a different error
 
@@ -585,10 +646,10 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         if not example_payloads:
             return []
 
-        temperature = candidate.meta.get("temperature", self.task_lm_temperature)
+        candidate_temperature = candidate.meta.get("temperature")
 
         # Use batch_completion when we have a string model + litellm client
-        if isinstance(self.task_lm, str) and hasattr(self, "litellm"):
+        if isinstance(self.task_model.name, str) and self.litellm is not None:
             import asyncio
 
             messages = [
@@ -600,15 +661,37 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             ]
 
             batch_kwargs: Dict[str, object] = {
-                "model": self.task_lm,
+                "model": self.task_model.name,
                 "messages": messages,
-                "max_tokens": 24000,
             }
-            if temperature is not None:
-                batch_kwargs["temperature"] = temperature
+            if self.task_model.max_tokens is not None:
+                batch_kwargs["max_tokens"] = self.task_model.max_tokens
+            if candidate_temperature is not None:
+                batch_kwargs["temperature"] = candidate_temperature
+            elif self.task_model.temperature is not None:
+                batch_kwargs["temperature"] = self.task_model.temperature
+            reasoning_effort = candidate.meta.get("reasoning_effort", self.task_model.reasoning_effort)
+            if reasoning_effort is not None:
+                batch_kwargs["reasoning_effort"] = reasoning_effort
 
             def _call_batch():
-                return self.litellm.batch_completion(**batch_kwargs)
+                import time as _time_mod
+                import sys as _sys
+                _start = _time_mod.time()
+                print(f"🔵 BATCH LLM CALL START: model={batch_kwargs['model']}, batch_size={len(messages)}", flush=True)
+                _sys.stdout.flush()
+                _sys.stderr.flush()
+                try:
+                    result = self.litellm.batch_completion(**batch_kwargs)
+                    _elapsed = _time_mod.time() - _start
+                    print(f"🟢 BATCH LLM CALL SUCCESS: {_elapsed:.2f}s, batch_size={len(messages)}", flush=True)
+                    _sys.stdout.flush()
+                    return result
+                except Exception as e:
+                    _elapsed = _time_mod.time() - _start
+                    print(f"🔴 BATCH LLM CALL ERROR: {_elapsed:.2f}s, error={type(e).__name__}: {str(e)[:100]}", flush=True)
+                    _sys.stdout.flush()
+                    raise
 
             responses = await asyncio.to_thread(_call_batch)
 
@@ -646,12 +729,10 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
 
     def _build_orchestrator(
         self,
-        logger: Optional[EventLogger],
         *,
         enable_auto_stop: bool = False,
         display_progress: bool = True,
         temperature_mutations_enabled: bool | None = None,
-        max_rounds: int = 100,
         island_context: Optional[IslandContext] = None,
         cache: Optional[DiskCache] = None,
         archive: Optional[Archive] = None,
@@ -659,7 +740,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         mutator: Optional[Mutator] = None,
         token_controller: Optional[TokenCostController] = None,
         log_dir: Optional[str] = None,
-        dashboard: Optional[IslandDashboard] = None,
+        metrics_callback: Optional[Callable] = None,
     ) -> Orchestrator:
         target_mutator = mutator or self.mutator
         if temperature_mutations_enabled is not None:
@@ -676,10 +757,20 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             metrics_mapper=metrics_mapper,
         )
         log_path = log_dir or self.base_log_dir
-        orchestrator_logger = logger or build_logger(log_path, "turbo_default", display_progress=display_progress)
-
         # Create stop governor if auto-stop enabled
         stop_governor = StopGovernor(StopGovernorConfig()) if enable_auto_stop else None
+
+        # Use provided metrics_callback, or create dashboard if progress display is enabled
+        dashboard_enabled = False
+        if metrics_callback is None and display_progress:
+            try:
+                from turbo_gepa.dashboard import TerminalDashboard
+                dashboard = TerminalDashboard()
+                metrics_callback = dashboard.update
+                dashboard_enabled = True
+            except ImportError:
+                # plotext not installed, fall back to simple progress
+                pass
 
         return Orchestrator(
             config=self.config,
@@ -688,16 +779,14 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             sampler=sampler or self.sampler,
             mutator=mutator,
             cache=cache or self.cache,
-            logger=orchestrator_logger,
             token_controller=token_controller or self.token_controller,
             stop_governor=stop_governor,
             enable_auto_stop=enable_auto_stop,
-            show_progress=display_progress,
+            show_progress=display_progress and not dashboard_enabled,  # Disable inline progress when dashboard is active
             example_sampler=self._sample_examples,
-            max_rounds=max_rounds,
             island_context=island_context,
-            dashboard=dashboard,
             reflection_eval_fn=self._batch_reflection_eval,
+            metrics_callback=metrics_callback,
         )
 
     async def optimize_async(
@@ -706,12 +795,12 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         *,
         max_rounds: Optional[int] = None,
         max_evaluations: Optional[int] = None,
-        logger: Optional[EventLogger] = None,
         task_lm: Optional[str] = None,  # Accept but ignore (uses heuristic)
         reflection_lm: Optional[str] = None,  # Accept but ignore (uses heuristic)
         enable_auto_stop: bool = False,  # Enable automatic stopping
         optimize_temperature_after_convergence: bool = False,  # Stage temperature optimization
         display_progress: bool = True,  # Show progress charts
+        metrics_callback: Optional[Callable] = None,  # Callback for dashboard updates
     ) -> Dict[str, Any]:
         if self.config.n_islands > 1:
             if optimize_temperature_after_convergence:
@@ -721,7 +810,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                     max_evaluations=max_evaluations,
                     enable_auto_stop=enable_auto_stop,
                     display_progress=display_progress,
-                    logger=logger,
                 )
             return await self._optimize_multi_island(
                 seeds,
@@ -729,21 +817,19 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 max_evaluations=max_evaluations,
                 enable_auto_stop=enable_auto_stop,
                 display_progress=display_progress,
-                logger=logger,
             )
 
         # Staged temperature optimization: two-phase approach
         if optimize_temperature_after_convergence:
             return await self._optimize_staged_temperature(
-                seeds, max_rounds, max_evaluations, logger, enable_auto_stop, display_progress
+                seeds, max_rounds, max_evaluations, enable_auto_stop, display_progress
             )
 
         # Standard integrated optimization
         orchestrator = self._build_orchestrator(
-            logger,
             enable_auto_stop=enable_auto_stop,
             display_progress=display_progress,
-            max_rounds=max_rounds or 100,
+            metrics_callback=metrics_callback,
         )
         # Accept either strings or Candidate objects
         seed_candidates = []
@@ -769,7 +855,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         seeds: Sequence[str | Candidate],
         max_rounds: Optional[int],
         max_evaluations: Optional[int],
-        logger: Optional[EventLogger],
         enable_auto_stop: bool,
         display_progress: bool = True,
     ) -> Dict[str, Any]:
@@ -800,11 +885,9 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         phase1_rounds = max_rounds if max_rounds else 10  # Default to 10 if unlimited
 
         orchestrator1 = self._build_orchestrator(
-            logger,
             enable_auto_stop=enable_auto_stop,
             display_progress=display_progress,
             temperature_mutations_enabled=False,
-            max_rounds=phase1_rounds,
         )
         await orchestrator1.run(phase1_seeds, max_rounds=phase1_rounds, max_evaluations=phase1_budget)
 
@@ -856,11 +939,9 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         phase2_rounds = min(5, max_rounds) if max_rounds else 5  # Shorter optimization
 
         orchestrator2 = self._build_orchestrator(
-            logger,
             enable_auto_stop=False,
             display_progress=display_progress,
             temperature_mutations_enabled=True,
-            max_rounds=phase2_rounds,
         )  # Short phase, no auto-stop
         await orchestrator2.run(temp_seeds, max_rounds=phase2_rounds, max_evaluations=phase2_budget)
 
@@ -883,7 +964,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         enable_auto_stop: bool,
         display_progress: bool,
         temperature_mutations_enabled: bool | None = None,
-        logger: Optional[EventLogger] = None,
     ) -> Dict[str, Any]:
         n_islands = max(1, self.config.n_islands)
         normalized_seeds = self._normalize_seeds(seeds, source="seed")
@@ -904,15 +984,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             metrics_queue = asyncio.Queue()
             aggregator = IslandProgressAggregator(n_islands=n_islands, max_rounds=max_rounds or 100)
 
-            async def dashboard_loop() -> None:
-                while True:
-                    payload = await metrics_queue.get()
-                    if payload is None:
-                        break
-                    aggregator.update(**payload)
-                aggregator.display()
-
-            aggregator_task = asyncio.create_task(dashboard_loop())
+            
 
         async def run_islands() -> List[Orchestrator | None]:
             island_results: List[Orchestrator | None] = [None] * n_islands
@@ -928,7 +1000,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 token_controller = TokenCostController(self.config.max_tokens)
                 log_dir = self._make_log_dir(context.island_id)
                 orchestrator = self._build_orchestrator(
-                    logger if (display_progress and context.island_id == 0) else None,
                     enable_auto_stop=enable_auto_stop,
                     display_progress=False if metrics_queue else (display_progress and context.island_id == 0),
                     temperature_mutations_enabled=temperature_mutations_enabled,
@@ -939,8 +1010,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                     sampler=sampler,
                     mutator=mutator,
                     token_controller=token_controller,
-                    log_dir=log_dir,
-                    dashboard=None if metrics_queue else (aggregator.dashboard if aggregator else None),
+                    log_dir=log_dir
                 )
                 island_seeds = [
                     Candidate(text=seed.text, meta=dict(seed.meta, island=context.island_id))
@@ -990,7 +1060,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         max_evaluations: Optional[int],
         enable_auto_stop: bool,
         display_progress: bool,
-        logger: Optional[EventLogger],
     ) -> Dict[str, Any]:
         phase1_budget = int(max_evaluations * 0.7) if max_evaluations else None
         phase1_rounds = max_rounds if max_rounds else 10
@@ -1002,7 +1071,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             enable_auto_stop=enable_auto_stop,
             display_progress=display_progress,
             temperature_mutations_enabled=False,
-            logger=logger,
         )
         phase1_entries = phase1_result.get("pareto_entries", [])
         if not phase1_entries:
@@ -1030,7 +1098,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             enable_auto_stop=False,
             display_progress=display_progress,
             temperature_mutations_enabled=True,
-            logger=logger,
         )
         phase2_result["phase1_pareto"] = [entry.candidate for entry in phase1_entries]
         return phase2_result
@@ -1041,7 +1108,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         *,
         max_rounds: Optional[int] = None,
         max_evaluations: Optional[int] = None,
-        logger: Optional[EventLogger] = None,
         task_lm: Optional[str] = None,  # Accept for API compatibility (uses heuristic)
         reflection_lm: Optional[str] = None,  # Accept for API compatibility (uses heuristic)
         enable_auto_stop: bool = False,  # Enable automatic stopping
@@ -1049,6 +1115,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         display_progress: bool = True,  # Show progress charts
         enable_seed_initialization: bool = False,  # Use PROMPT-MII-style seed generation
         num_generated_seeds: int = 3,  # How many seeds to generate if initializing
+        metrics_callback: Optional[Callable] = None,  # Callback for dashboard updates
     ) -> Dict[str, Any]:
         """
         Optimize prompts using TurboGEPA with heuristic evaluation.
@@ -1057,7 +1124,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             seeds: Initial prompt candidates
             max_rounds: Maximum optimization rounds (None = unlimited)
             max_evaluations: Maximum evaluations (None = unlimited)
-            logger: Custom event logger
             task_lm: Task LLM (for compatibility)
             reflection_lm: Reflection LLM (for compatibility)
             enable_auto_stop: Enable automatic convergence detection
@@ -1076,8 +1142,13 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 Requires reflection_lm to be set. Can optimize user-provided seeds or generate from scratch.
             num_generated_seeds: Number of seeds to generate if enable_seed_initialization=True
         """
+        import time
+        optimize_start = time.time()
+        print(f"\n⏱️  optimize() called at {optimize_start:.2f}")
+
         # Handle seed initialization if requested
         if enable_seed_initialization:
+            print(f"🌱 Initializing seeds...")
             from ..seed_initializer import maybe_initialize_seeds
 
             # Convert user seeds to strings if provided
@@ -1098,23 +1169,24 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                     enable_seed_initialization=True,
                     num_generated_seeds=num_generated_seeds,
                     reflection_lm=self.reflection_lm,
-                    reflection_lm_temperature=self.reflection_lm_temperature,
+                    reflection_lm_temperature=self.reflection_model.temperature,
                 )
             )
         elif seeds is None:
             # No seeds provided and initialization disabled - use default
             seeds = ["You are a helpful assistant. Follow the instructions carefully."]
 
+        print(f"⏱️  Calling optimize_async() after {time.time() - optimize_start:.2f}s")
         return asyncio.run(
             self.optimize_async(
                 seeds,
                 max_rounds=max_rounds,
                 max_evaluations=max_evaluations,
-                logger=logger,
                 task_lm=task_lm,
                 reflection_lm=reflection_lm,
                 enable_auto_stop=enable_auto_stop,
                 optimize_temperature_after_convergence=optimize_temperature_after_convergence,
                 display_progress=display_progress,
+                metrics_callback=metrics_callback,
             )
         )

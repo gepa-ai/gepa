@@ -25,7 +25,8 @@ full = [
     "datasets>=2.14.6",
     "mlflow>=3.0.0",
     "wandb",
-    "tqdm>=4.66.1"
+    "tqdm>=4.66.1",
+    "plotext>=5.2.8"
 ]
 dspy = []
 test = [

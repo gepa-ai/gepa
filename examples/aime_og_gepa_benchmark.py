@@ -38,8 +38,8 @@ import gepa
 # CONFIG
 # ============================================================================
 
-TASK_LM = "openrouter/openai/gpt-oss-120b:nitro"  # Same as blitz benchmark
-REFLECTION_LM = "openrouter/x-ai/grok-4-fast"  # Faster reflection model
+TASK_LM = "openrouter/google/gemini-2.0-flash-001"  # Same as blitz benchmark
+REFLECTION_LM = "openrouter/google/x-ai/grok-4-fast"  # Faster reflection model
 
 SEED_PROMPT = {
     "system_prompt": (

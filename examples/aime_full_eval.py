@@ -68,8 +68,8 @@ CLEAR_CACHE = True  # Clear cache before starting (True = fresh run, False = res
 # Set to True for clean runs, False to resume from previous state
 
 # Model
-TASK_MODEL = "openrouter/openai/gpt-oss-120b:nitro"
-REFLECTION_MODEL = "openrouter/x-ai/grok-4-fast"
+TASK_MODEL = "openrouter/google/gemini-2.0-flash-001"
+REFLECTION_MODEL = "openrouter/google/x-ai/grok-4-fast"
 # Set REFLECTION_MODEL = None to use fast heuristic reflection (no LLM calls)
 
 # Seed prompt used by all islands

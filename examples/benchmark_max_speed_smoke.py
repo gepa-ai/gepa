@@ -102,8 +102,8 @@ def main() -> None:
 
     print("\n🤖 Using Real LLM Integration:")
     # Use better models for real AIME problems (they're hard!)
-    task_lm = "openrouter/openai/gpt-oss-120b:nitro"  # Good balance of speed/quality
-    reflection_lm = "openrouter/x-ai/grok-4-fast"  # Same for reflection
+    task_lm = "openrouter/google/gemini-2.0-flash-001"  # Good balance of speed/quality
+    reflection_lm = "openrouter/google/x-ai/grok-4-fast"  # Same for reflection
     print(f"   Task LM: {task_lm}")
     print(f"   Reflection LM: {reflection_lm}")
     task_temperature = 0.7

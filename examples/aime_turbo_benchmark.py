@@ -68,8 +68,9 @@ except ImportError:
 # CONFIG
 # ============================================================================
 
-TASK_LM = "openrouter/openai/gpt-oss-120b:nitro"
-REFLECTION_LM = "openrouter/x-ai/grok-4-fast"
+# Model configuration
+TASK_LM = "openrouter/google/gemini-2.0-flash-001"  # Fast and capable
+REFLECTION_LM = "openrouter/x-ai/grok-4-fast"  # Fast reflection model
 
 # Use the same seed prompt as OG benchmark
 SEED_PROMPT = (

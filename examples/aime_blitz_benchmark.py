@@ -41,8 +41,8 @@ from turbo_gepa.adapters.default_adapter import DefaultAdapter, DefaultDataInst
 # CONFIG
 # ============================================================================
 
-TASK_LM = "openrouter/openai/gpt-oss-120b:nitro"  # Good balance of speed/quality
-REFLECTION_LM = "openrouter/x-ai/grok-4-fast"  # Fast reasoning model
+TASK_LM = "openrouter/google/gemini-2.0-flash-001"  # Good balance of speed/quality
+REFLECTION_LM = "openrouter/google/x-ai/grok-4-fast"  # Fast reasoning model
 
 SEED_PROMPTS = [
     "You are a helpful assistant. You are given a question and you need to answer it. "

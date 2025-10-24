@@ -12,7 +12,6 @@ from .cache import DiskCache
 from .config import Config
 from .evaluator import AsyncEvaluator
 from .interfaces import Candidate
-from .logging_utils import build_logger
 from .mutator import MutationConfig, Mutator
 from .orchestrator import Orchestrator
 from .sampler import InstanceSampler
@@ -121,8 +120,6 @@ def optimize(
             reflection_runner=reflection_runner,
             seed=42,
         )
-        logger = build_logger(config.log_path, "optimize", display_progress=display_progress)
-
         # Calculate max_rounds
         max_rounds = max_metric_calls // (config.batch_size * 3)
 
@@ -133,7 +130,6 @@ def optimize(
             sampler=sampler,
             mutator=mutator,
             cache=cache,
-            logger=logger,
             max_rounds=max_rounds,
         )
 

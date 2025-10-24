@@ -46,6 +46,7 @@ class Orchestrator:
         enable_auto_stop: bool = False,
         example_sampler: Optional[Callable[[int], List[Dict[str, object]]]] = None,
         reflection_eval_fn: Optional[Callable[[Candidate, Sequence[str]], Awaitable[List[Dict[str, object]]]]] = None,
+        metrics_callback: Optional[Callable] = None,
     ) -> None:
         self.config = config
         self.evaluator = evaluator
@@ -82,6 +83,10 @@ class Orchestrator:
         self.total_tokens_spent: int = 0
         self.qd_cells_seen: set[tuple] = set()
         self._shard_cache: Dict[tuple[int, float], List[str]] = {}
+        self.metrics_callback = metrics_callback
+        self.max_rounds: Optional[int] = None
+        self.max_evaluations: Optional[int] = None
+        self.rounds_completed: int = 0
 
         # Streaming mode: buffer for mutations generated in background
         self._mutation_buffer: Deque[Candidate] = deque()
@@ -180,6 +185,10 @@ class Orchestrator:
         if not seeds:
             return
 
+        # Store budgets for metrics reporting
+        self.max_rounds = max_rounds
+        self.max_evaluations = max_evaluations
+
         # Attempt to resume from saved state
         resumed = False
         if resume and self.cache.has_state():
@@ -191,6 +200,9 @@ class Orchestrator:
 
         if not resumed:
             await self._seed_archive(seeds)
+            if self.metrics_callback is not None:
+                from .metrics import extract_metrics
+                self.metrics_callback(extract_metrics(self))
 
         # Ensure mutation generation task is running
         if self._mutation_task is None or self._mutation_task.done():
@@ -243,11 +255,19 @@ class Orchestrator:
                     best_q = self._get_best_quality_from_full_shard() if pareto else 0.0
                     print(f"\r   🔄 Evaluations: {self.evaluations_run} | Inflight: {self._total_inflight} | Queue: {len(self.queue)} | Best: {best_q:.1%}", end="", flush=True)
                     last_progress_display = self.evaluations_run
+                    if self.metrics_callback is not None:
+                        from .metrics import extract_metrics
+                        self.metrics_callback(extract_metrics(self))
 
             # 4) Refresh mutation generation if queues are running low
             if self._mutation_task and self._mutation_task.done():
                 self._mutation_task = None
-            if (len(self.queue) + len(self._mutation_buffer)) < self.config.mutation_buffer_min:
+            # Only spawn new mutations if we haven't exceeded the evaluation budget
+            should_spawn_mutations = (
+                (len(self.queue) + len(self._mutation_buffer)) < self.config.mutation_buffer_min
+                and (max_evaluations is None or self.evaluations_run < max_evaluations)
+            )
+            if should_spawn_mutations:
                 if self._mutation_task is None:
                     self._mutation_task = asyncio.create_task(
                         self._spawn_mutations(callback=self._mutation_buffer.append)
@@ -255,14 +275,19 @@ class Orchestrator:
 
             # 5) Window completion => keep round-indexed metrics in sync
             evals_in_window = self.evaluations_run - window_start_evals
-            if evals_in_window and self.dashboard is not None:
-                self._update_dashboard_progress(min(evals_in_window, window_size), window_size)
 
             if evals_in_window >= window_size:
                 window_id += 1
                 self.eval_batches_completed = window_id
                 self.round_index = window_id
+                self.rounds_completed = window_id
                 window_start_evals = self.evaluations_run
+
+                # Call metrics callback if provided
+                if self.metrics_callback is not None:
+                    from .metrics import extract_metrics
+                    metrics = extract_metrics(self)
+                    self.metrics_callback(metrics)
 
                 # Clear inline progress before showing summary
                 if self.show_progress:
@@ -312,10 +337,8 @@ class Orchestrator:
 
         # Clean up any pending mutation task
         if self._mutation_task and not self._mutation_task.done():
-            try:
-                await self._mutation_task
-            except Exception:
-                pass  # Ignore errors on cleanup
+            self._mutation_task.cancel()
+            # Don't wait for it - just let it cancel in the background
 
         # Final save
         await self._save_state()
@@ -535,6 +558,7 @@ class Orchestrator:
         if isinstance(candidate.meta, dict):
             generation_method = candidate.meta.get("generation_method")
 
+        original_fingerprint = candidate.fingerprint
         meta = dict(candidate.meta)
         prev_fraction = meta.get("quality_shard_fraction", 0.0)
         prev_quality = meta.get("quality", float("-inf"))
@@ -568,7 +592,11 @@ class Orchestrator:
             success = decision in ("promoted", "completed")
             self.mutator.report_outcome(generation_method, success)
 
-        self._inflight_fingerprints.discard(candidate_with_meta.fingerprint)
+        # Clear both the original fingerprint (added before launch) and the updated one
+        # (metadata changes can alter the fingerprint, so be defensive).
+        self._inflight_fingerprints.discard(original_fingerprint)
+        if candidate_with_meta.fingerprint != original_fingerprint:
+            self._inflight_fingerprints.discard(candidate_with_meta.fingerprint)
 
         return candidate_with_meta, decision
 
@@ -579,19 +607,13 @@ class Orchestrator:
         shard_idx: int,
         start_time: float,
     ) -> None:
-        import time
-
-        duration_ms = int((time.time() - start_time) * 1000)
-
         if isinstance(payload, Exception):
-            )
             self._inflight_fingerprints.discard(candidate.fingerprint)
             return
 
         result: EvalResult = payload
-        candidate_with_meta, decision = await self._ingest_result(candidate, result)
-
-        )
+        _ = start_time  # placeholder for potential latency calculations
+        await self._ingest_result(candidate, result)
 
     async def _stream_check_target(self, window_id: int) -> bool:
         if self.config.target_quality is None:
@@ -613,7 +635,6 @@ class Orchestrator:
         if best_quality < self.config.target_quality:
             return False
 
-        )
         if self.show_progress:
             print(
                 f"\n🎯 Target quality {self.config.target_quality:.2%} reached! Achieved: {best_quality:.2%}"
@@ -679,7 +700,6 @@ class Orchestrator:
                         shard_fraction=shard_fraction,
                     )
                 self.latest_results[compressed.fingerprint] = result
-            )
             await self.archive.insert(compressed, result)
 
         await asyncio.gather(*(process(entry) for entry in entries))
@@ -774,103 +794,31 @@ class Orchestrator:
         return best_quality
 
     def _show_inline_progress(self) -> None:
-        import sys
-
-        pareto = self.archive.pareto_entries()
-        # Show best quality from full shard only (not partial shards)
-        best_quality = self._get_best_quality_from_full_shard()
-        avg_quality = (
-            sum(e.result.objectives.get(self.config.promote_objective, 0.0) for e in pareto) / len(pareto)
-            if pareto else 0.0
-        )
-        sys.stdout.write(
-            f"\r   🔄 Batch {self.eval_batches_completed + 1} | Evals: {self.evaluations_run} | Best: {best_quality:.2%} | Avg: {avg_quality:.2%}  "
-        )
-        sys.stdout.flush()
+        return
 
     async def _spawn_mutations(self, callback: Optional[Callable[[Candidate], None]] = None) -> None:
-        """Generate mutations using batched reflection for efficiency.
-
-        Args:
-            callback: Optional function to call for each mutation as it's generated (for streaming mode)
-        """
-        import time
-        spawn_start = time.time()
+        """Generate mutations using batched reflection for efficiency."""
+        # Check if we've exceeded the evaluation budget before spawning mutations
+        if self.max_evaluations is not None and self.evaluations_run >= self.max_evaluations:
+            return
 
         entries = self.archive.pareto_entries()
         if not entries:
-            # Archive is empty - likely waiting for seed to complete full evaluation
-            if self.show_progress and self._total_inflight > 0:
             return
 
         num_mutations = self._mutation_budget()
         if num_mutations <= 0:
-            })
             return
 
-        gen_start = time.time()
         mutations = await self._generate_mutations_batched(entries, num_mutations)
-        gen_time = time.time() - gen_start
+        if not mutations:
+            return
 
-        if mutations:
-            # Log prompts to file in background (fire-and-forget) to avoid blocking
-            # This saves 20-100ms per round by not waiting for disk I/O
-            asyncio.create_task(self._log_prompts_to_file(mutations))
-
-            if self.show_progress:
-                # Compute mutation statistics for debugging
-                gen_methods = {}
-                for m in mutations:
-                    method = m.meta.get("generation_method", "unknown")
-                    gen_methods[method] = gen_methods.get(method, 0) + 1
-
-                # Find parent qualities from latest_results
-                parent_qualities = []
-                for m in mutations:
-                    parent_fp = m.meta.get("parent")
-                    if parent_fp and parent_fp in self.latest_results:
-                        parent_result = self.latest_results[parent_fp]
-                        parent_quality = parent_result.objectives.get(self.config.promote_objective, 0.0)
-                        parent_qualities.append(parent_quality)
-
-                print("\n" + "=" * 80)
-                print(f"   Generation methods: {dict(gen_methods)}")
-                if parent_qualities:
-                    avg_parent_quality = sum(parent_qualities) / len(parent_qualities)
-                    print(f"   Parent qualities: avg={avg_parent_quality:.2%}, min={min(parent_qualities):.2%}, max={max(parent_qualities):.2%}")
-                print("=" * 80)
-
-                for idx, candidate in enumerate(mutations, start=1):
-                    # Show generation method and parent info
-                    gen_method = candidate.meta.get("generation_method", "unknown")
-                    parent_quality = candidate.meta.get("parent_objectives", {}).get("quality", "N/A")
-
-                    if parent_quality != "N/A":
-                    print("   " + "-" * 76)
-
-                    # Show full prompt text, nicely formatted
-                    for line in candidate.text.strip().splitlines():
-                        print(f"   {line}")
-
-                    print("   " + "-" * 76)
-
-                print("=" * 80 + "\n")
-
-            # Let user know evaluations are starting
-            if self.show_progress and mutations:
-
-
-            # Stream mutations via callback (for streaming mode) or enqueue directly (for round mode)
-            if callback:
-                for candidate in mutations:
-                    callback(candidate)
-            else:
-                self.enqueue(mutations)
-
-            )
-
-        spawn_total = time.time() - spawn_start
-        })
+        if callback:
+            for candidate in mutations:
+                callback(candidate)
+        else:
+            self.enqueue(mutations)
 
     async def _generate_mutations_batched(
         self,
@@ -1004,17 +952,6 @@ class Orchestrator:
 
         batch_total_time = time.time() - batch_start
 
-        # Log detailed timing breakdown
-        if self.show_progress:
-            print(f"   Parent selection:    {parent_select_time:.2f}s")
-            print(f"   Cache lookup:        {cache_time:.2f}s (reusing {len(reflection_examples)} failures from ASHA)")
-            print(f"   Mutator.propose():   {mutator_time:.2f}s (LLM calls)")
-            print(f"   Total:               {batch_total_time:.2f}s\n")
-
-        )
-
-        })
-
         return mutations
 
     def _mutation_budget(self) -> int:
@@ -1080,14 +1017,12 @@ class Orchestrator:
         shard_fraction: float,
         show_progress: bool = False,
     ) -> EvalResult:
-        )
         result = await self.evaluator.eval_on_shard(
             candidate,
             shard,
             concurrency=self._effective_concurrency,
             shard_fraction=shard_fraction,
             show_progress=show_progress,
-        )
         )
         return result
 
@@ -1109,99 +1044,11 @@ class Orchestrator:
         return min(size, total)
 
     def _update_dashboard_progress(self, evals_done: int, evals_total: int) -> None:
-        """Update dashboard with real-time eval progress during a round."""
-        pareto = self.archive.pareto_entries()
-        if not pareto:
-            return
-
-        # Show best quality from full shard only (not partial shards)
-        best_quality = self._get_best_quality_from_full_shard()
-        current_quality = sum(
-            entry.result.objectives.get(self.config.promote_objective, 0.0)
-            for entry in pareto
-        ) / len(pareto)
-
-        # Update dashboard with eval progress
-        )
-
-        # Display if we have meaningful data
-        has_meaningful_data = best_quality > 0.001 or self.round_index > 0
-        if has_meaningful_data:
-
+        """Dashboard removed; no-op."""
+        return
     async def _maybe_log_summary(self) -> None:
-        interval = max(self.config.log_summary_interval, 0)
-        if interval == 0:
-            return
-
-        # Adaptive display frequency: More frequent early, less frequent later
-        # Batch 0: Always show (baseline)
-        # Batches 1-5: Every batch (rapid iteration feedback)
-        # Batches 6-20: Every 3 batches (still learning fast)
-        # Batches 21+: Every interval batches (config default: 10)
-        should_display = False
-        if self.eval_batches_completed == 0:
-            should_display = True  # Always show seed baseline
-        elif self.eval_batches_completed <= 5:
-            should_display = True  # Show every batch early on
-        elif self.eval_batches_completed <= 20:
-            should_display = (self.eval_batches_completed % 3 == 0)  # Every 3 batches
-        else:
-            should_display = ((self.eval_batches_completed + 1) % interval == 0)  # Normal interval
-
-        if not should_display:
-            return
-
-        hardness_size = self.sampler.hardness_size() if hasattr(self.sampler, "hardness_size") else 0
-
-        # Calculate metrics (needed for both chart display and island dashboard)
-        pareto = self.archive.pareto_entries()
-        if pareto:
-            # Get best quality from full shard only (not partial shards)
-            best_quality = self._get_best_quality_from_full_shard()
-            # Get current average quality
-            current_quality = sum(
-                entry.result.objectives.get(self.config.promote_objective, 0.0)
-                for entry in pareto
-            ) / len(pareto)
-
-            # Update and display IslandDashboard if enabled
-            metrics_queue = None
-            if self.island_context is not None:
-                metrics_queue = self.island_context.metrics_queue
-
-            if metrics_queue is not None:
-                try:
-                    metrics_queue.put_nowait({
-                        "island_id": self.island_id,
-                        "round_num": self.eval_batches_completed,  # Use eval_batches for streaming mode
-                        "best_quality": best_quality,
-                        "avg_quality": current_quality,
-                        "pareto_size": len(pareto),
-                        "evals_done": self.evaluations_run,
-                        "evals_total": 0,
-                    })
-                except asyncio.QueueFull:
-                    pass
-
-            should_show_local = (
-                and (metrics_queue is None)
-            )
-
-            if should_show_local:
-                )
-
-                # Skip display if we have no meaningful data yet (all zeros)
-                # This happens when task returns 0 quality for all examples
-                has_meaningful_data = best_quality > 0.001 or self.round_index > 0
-
-                if has_meaningful_data:
-                    # Clear inline progress and show dashboard
-                    print()  # Newline to clear inline progress
-                elif self.round_index == 0:
-                    # First round with zeros - inform user
-                    print()
-
-        )
+        """Placeholder summary logger (dashboard removed)."""
+        return
 
     def _check_stop_governor(self) -> tuple[bool, Dict]:
         """Update stop governor with current metrics and check if we should stop."""

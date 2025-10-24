@@ -375,8 +375,6 @@ class Mutator:
                         mutation_durations.append(task_duration)  # Track individual duration
                 except asyncio.CancelledError:
                     pass  # Expected for cancelled tasks
-                except Exception:
-                    continue
 
         return results[:total]
 

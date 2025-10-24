@@ -54,7 +54,6 @@ from turbo_gepa.cache import DiskCache
 from turbo_gepa.config import Config, DEFAULT_CONFIG
 from turbo_gepa.evaluator import AsyncEvaluator
 from turbo_gepa.interfaces import Candidate
-from turbo_gepa.logging_utils import EventLogger, build_logger
 from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
@@ -451,13 +450,12 @@ class DSpyAdapter:
 
         return dataset
 
-    def _build_orchestrator(self, logger: Optional[EventLogger], max_rounds: int = 100) -> Orchestrator:
+    def _build_orchestrator(self, max_rounds: int = 100) -> Orchestrator:
         """Build TurboGEPA orchestrator."""
         evaluator = AsyncEvaluator(
             cache=self.cache,
             task_runner=self._task_runner,
         )
-        orchestrator_logger = logger or build_logger(self.log_dir, "dspy_opt")
         return Orchestrator(
             config=self.config,
             evaluator=evaluator,
@@ -465,7 +463,6 @@ class DSpyAdapter:
             sampler=self.sampler,
             mutator=self.mutator,
             cache=self.cache,
-            logger=orchestrator_logger,
             token_controller=self.token_controller,
             max_rounds=max_rounds,
         )
@@ -476,7 +473,6 @@ class DSpyAdapter:
         *,
         max_rounds: Optional[int] = None,
         max_evaluations: Optional[int] = None,
-        logger: Optional[EventLogger] = None,
         reflection_lm: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """
@@ -486,7 +482,6 @@ class DSpyAdapter:
             seed_instructions: Initial instructions for each predictor
             max_rounds: Maximum optimization rounds
             max_evaluations: Maximum evaluations budget
-            logger: Optional event logger
             reflection_lm: Optional async LLM function for reflection
                           (prompt: str) -> str. If provided with feedback_map,
                           enables LLM-based instruction proposal.
@@ -545,7 +540,6 @@ class DSpyAdapter:
         *,
         max_rounds: Optional[int] = None,
         max_evaluations: Optional[int] = None,
-        logger: Optional[EventLogger] = None,
         reflection_lm: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """
@@ -555,7 +549,6 @@ class DSpyAdapter:
             seed_instructions: Initial instructions for each predictor
             max_rounds: Maximum optimization rounds
             max_evaluations: Maximum evaluations budget
-            logger: Optional event logger
             reflection_lm: Optional async LLM function for reflection
 
         Returns:
@@ -566,7 +559,6 @@ class DSpyAdapter:
                 seed_instructions,
                 max_rounds=max_rounds,
                 max_evaluations=max_evaluations,
-                logger=logger,
                 reflection_lm=reflection_lm,
             )
         )
