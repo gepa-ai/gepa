@@ -39,7 +39,7 @@ import gepa
 # ============================================================================
 
 TASK_LM = "openrouter/openai/gpt-oss-120b:nitro"  # Same as blitz benchmark
-REFLECTION_LM = "openrouter/x-ai/grok-4-fast"  # Same as blitz benchmark
+REFLECTION_LM = "openrouter/x-ai/grok-4-fast"  # Faster reflection model
 
 SEED_PROMPT = {
     "system_prompt": (
@@ -176,8 +176,8 @@ def main():
     parser.add_argument(
         "--max-calls",
         type=int,
-        default=150,
-        help="Maximum metric calls budget (default: 150)",
+        default=40,
+        help="Maximum metric calls budget (default: 40 for quick runs)",
     )
 
     args = parser.parse_args()

@@ -181,24 +181,16 @@ def create_speed_config(
     """
     # Scale config based on dataset size
     if dataset_size <= 20:
-        # Quick test mode - minimal settings
-        concurrency = 16
-        batch_size = concurrency  # Match batch size to concurrency for max throughput!
-        # Generate batch_size mutations to keep queue fed with fresh candidates
-        # (ASHA prunes ~60%, but we need constant flow of new ideas)
-        mutations = batch_size
+        concurrency = 24
+        batch_size = concurrency
+        mutations = max(12, batch_size // 2)
         reflection_batch = 3
-        # Use (0.3, 1.0) for small datasets - 5% shard is too noisy
         shards = (0.3, 1.0)
     else:
-        # Full benchmark - aggressive settings
-        concurrency = 64
-        batch_size = concurrency  # Match batch size to concurrency for max throughput!
-        # Generate batch_size mutations to keep queue fed with fresh candidates
-        # (ASHA prunes ~60%, but we need constant flow of new ideas)
-        mutations = batch_size
-        reflection_batch = 6
-        # Use standard 3-rung ASHA for larger datasets
+        concurrency = 48
+        batch_size = concurrency
+        mutations = max(24, batch_size // 2)
+        reflection_batch = 4
         shards = (0.3, 1.0)
 
     print(f"🔧 Configuration:")
@@ -216,6 +208,7 @@ def create_speed_config(
         batch_size=batch_size,
         max_mutations_per_round=mutations,
         eval_concurrency=concurrency,
+        max_total_inflight=concurrency,
         n_islands=n_islands,
         migration_period=2 if n_islands > 1 else 999,
         migration_k=min(3, n_islands),

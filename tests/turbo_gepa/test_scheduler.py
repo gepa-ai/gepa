@@ -44,3 +44,49 @@ def test_scheduler_respects_parent_improvement():
     assert decision == "pruned"
     promotions = scheduler.promote_ready()
     assert child not in promotions
+
+
+def test_scheduler_cleans_up_rung_on_promotion():
+    """Test that when a candidate promotes, its results are removed from the previous rung.
+
+    This test simulates the streaming scenario where multiple candidates have already
+    been evaluated on a rung (bypassing the sequential single-candidate promotion issue),
+    then a new strong candidate comes in and promotes.
+    """
+    from collections import deque
+    from turbo_gepa.cache import candidate_key
+
+    scheduler = BudgetedScheduler(
+        SchedulerConfig(shards=(0.3, 1.0), eps_improve=0.0, quantile=0.5)
+    )
+
+    # Manually populate the rung with multiple candidates to establish threshold
+    # This simulates async evaluation where multiple candidates finish around the same time
+    weak = Candidate(text="weak")
+    baseline = Candidate(text="baseline")
+    candidate = Candidate(text="good")
+
+    rung_0 = scheduler.rungs[0]
+
+    # Directly add results to rung to bypass sequential single-candidate promotions
+    weak_hash = candidate_key(weak)
+    baseline_hash = candidate_key(baseline)
+    cand_hash = candidate_key(candidate)
+
+    rung_0.results[weak_hash] = deque([0.3], maxlen=64)
+    rung_0.results[baseline_hash] = deque([0.5], maxlen=64)
+    rung_0.results[cand_hash] = deque([0.9], maxlen=64)
+
+    # Now when we record a new result for the good candidate, it should promote and clean up
+    result = EvalResult(objectives={"quality": 0.95}, traces=[], n_examples=5, shard_fraction=0.3)
+    decision = scheduler.record(candidate, result, objective_key="quality")
+
+    # The good candidate should promote
+    assert decision == "promoted"
+
+    # The promoted candidate should NOT be in the first rung anymore
+    assert cand_hash not in rung_0.results
+
+    # But baseline and weak should still be there
+    assert baseline_hash in rung_0.results
+    assert weak_hash in rung_0.results

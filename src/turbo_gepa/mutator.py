@@ -1,6 +1,9 @@
 """Mutation utilities for LLM-driven candidate generation."""
 
 from __future__ import annotations
+import hashlib
+import json
+from collections import deque
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Sequence, Set
 
@@ -17,6 +20,16 @@ def _default_token_validator(max_tokens: int) -> Validator:
             raise ValueError("candidate exceeds token budget")
 
     return _validate
+
+
+def _describe_callable(func: Any) -> str:
+    if func is None:
+        return "none"
+    name = getattr(func, "__qualname__", None) or getattr(func, "__name__", None)
+    module = getattr(func, "__module__", None)
+    if name:
+        return f"{module}.{name}" if module else name
+    return repr(func)
 
 
 @dataclass
@@ -49,6 +62,15 @@ class Mutator:
         self.spec_induction_runner = spec_induction_runner
         self.temperature_mutations_enabled = temperature_mutations_enabled
         self._reflection_examples: List[Dict[str, object]] = []
+        self._operator_stats: Dict[str, Dict[str, int]] = {
+            "temperature_shift": {"wins": 0, "trials": 0},
+            "incremental_reflection": {"wins": 0, "trials": 0},
+            "reflection": {"wins": 0, "trials": 0},
+            "spec_induction": {"wins": 0, "trials": 0},
+        }
+        self._spec_cache: Dict[str, deque[str]] = {}
+        self._spec_cache_limit = max(4, config.max_mutations or 8)
+        self._spec_runner_signature = _describe_callable(spec_induction_runner)
 
     def set_reflection_examples(self, examples: List[Dict[str, object]]) -> None:
         self._reflection_examples = examples
@@ -56,6 +78,18 @@ class Mutator:
     def set_temperature_mutations_enabled(self, enabled: bool) -> None:
         """Toggle temperature exploration without rebuilding the mutator."""
         self.temperature_mutations_enabled = enabled
+
+    def report_outcome(self, generation_method: str, success: bool) -> None:
+        stats = self._operator_stats.setdefault(generation_method, {"wins": 0, "trials": 0})
+        stats["trials"] += 1
+        if success:
+            stats["wins"] += 1
+
+    def _operator_weight(self, generation_method: str) -> float:
+        stats = self._operator_stats.get(generation_method)
+        if not stats:
+            return 1.0
+        return (stats["wins"] + 1.0) / (stats["trials"] + 1.0)
 
     async def propose(
         self,
@@ -85,18 +119,30 @@ class Mutator:
         if total_budget == 0:
             return []
 
-        # Always reserve a slice of the budget for spec induction when available.
+        reflection_weight = max(
+            self._operator_weight("incremental_reflection"),
+            self._operator_weight("reflection"),
+        )
+        spec_weight = self._operator_weight("spec_induction") if (self.spec_induction_runner and task_examples) else 0.0
+        temp_weight = self._operator_weight("temperature_shift") if self.temperature_mutations_enabled else 0.0
+
         spec_quota = 0
-        if self.spec_induction_runner and task_examples:
-            spec_quota = max(1, total_budget // 4 or 1)
-            spec_quota = min(spec_quota, total_budget)
+        if spec_weight > 0.0:
+            total_rs = reflection_weight + spec_weight
+            spec_share = spec_weight / total_rs if total_rs > 0 else 0.0
+            spec_quota = min(total_budget, max(1, int(round(total_budget * spec_share))))
 
         non_spec_budget = total_budget - spec_quota
         proposals: List[Candidate] = []
 
         # 1) Deterministic temperature exploration
         temp_start = time.time()
-        temp_mutations = self._temperature_mutations(parent_contexts, non_spec_budget)
+        temp_quota = 0
+        if non_spec_budget > 0 and self.temperature_mutations_enabled:
+            total_tr = temp_weight + reflection_weight
+            temp_share = temp_weight / total_tr if total_tr > 0 else 0.0
+            temp_quota = min(non_spec_budget, int(round(non_spec_budget * temp_share)))
+        temp_mutations = self._temperature_mutations(parent_contexts, temp_quota)
         temp_time = time.time() - temp_start
         proposals.extend(temp_mutations)
         non_spec_budget = max(0, non_spec_budget - len(temp_mutations))
@@ -118,8 +164,7 @@ class Mutator:
         async def run_spec() -> List[Candidate]:
             if not (self.spec_induction_runner and task_examples):
                 return []
-            spec_budget = spec_quota + non_spec_budget
-            spec_budget = min(spec_budget, total_budget - len(proposals))
+            spec_budget = min(spec_quota, total_budget - len(proposals))
             if spec_budget <= 0:
                 return []
             return await self._generate_spec_induction_mutations(
@@ -211,11 +256,37 @@ class Mutator:
         parent_contexts: List[Dict[str, object]],
     ) -> List[Candidate]:
         """Generate fresh specifications from task I/O examples (PROMPT-MII style)."""
-        spec_texts = await self._collect_text_batches(
-            lambda: self.spec_induction_runner(task_examples, 1),
-            num_mutations,
-            max(1, min(4, num_mutations)),
-        )
+        if num_mutations <= 0 or not self.spec_induction_runner:
+            return []
+
+        serialized_examples = sorted(json.dumps(ex, sort_keys=True) for ex in task_examples)
+        parent_fingerprints = sorted(ctx["candidate"].fingerprint for ctx in parent_contexts) if parent_contexts else []
+        cache_payload = {
+            "runner": self._spec_runner_signature,
+            "examples": serialized_examples,
+            "parents": parent_fingerprints,
+        }
+        cache_key = hashlib.blake2s(json.dumps(cache_payload, sort_keys=True).encode("utf-8")).hexdigest()
+        cache_queue = self._spec_cache.setdefault(cache_key, deque())
+
+        spec_texts: List[str] = []
+        while cache_queue and len(spec_texts) < num_mutations:
+            spec_texts.append(cache_queue.popleft())
+
+        remaining = num_mutations - len(spec_texts)
+        if remaining > 0:
+            prefetch = min(self._spec_cache_limit, max(remaining, remaining * 2))
+            new_specs = await self._collect_text_batches(
+                lambda: self.spec_induction_runner(task_examples, 1),
+                prefetch,
+                max(1, min(4, prefetch)),
+            )
+            for text in new_specs:
+                cache_queue.append(text)
+            while len(cache_queue) > self._spec_cache_limit:
+                cache_queue.popleft()
+            while cache_queue and len(spec_texts) < num_mutations:
+                spec_texts.append(cache_queue.popleft())
 
         # Convert to Candidates with metadata tracking generation method
         proposals: List[Candidate] = []

@@ -136,6 +136,11 @@ class Config:
     reflection_lm_temperature: float | None = 1.0
     target_quality: float | None = None  # Stop when best quality reaches this threshold
 
+    # Streaming mode config
+    streaming_mode: bool = True  # Enable continuous launch/drain (no batch barriers)
+    mutation_buffer_min: int = 4  # Minimum mutations to trigger generation
+    max_total_inflight: int | None = None  # Override total concurrent evaluations (defaults to eval_concurrency)
+
 
 DEFAULT_CONFIG = Config()
 

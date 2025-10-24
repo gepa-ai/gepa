@@ -86,6 +86,13 @@ class BudgetedScheduler:
             self._candidate_levels[cand_hash] = idx + 1
             self._pending_promotions.append(candidate)
             self._parent_scores[cand_hash] = score
+
+            # Rung cleanup: Remove this candidate's results from the previous rung
+            # to keep ASHA signal clean and avoid confusion about which shard's
+            # results are current. The candidate will be re-evaluated on the next shard.
+            if cand_hash in rung.results:
+                del rung.results[cand_hash]
+
             decision = "promoted"
         else:
             decision = "pruned"

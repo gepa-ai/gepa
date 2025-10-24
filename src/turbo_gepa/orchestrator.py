@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from typing import Awaitable, Callable, Deque, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Awaitable, Callable, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from .archive import Archive, ArchiveEntry
 from .cache import DiskCache
@@ -19,19 +19,12 @@ from .config import Config
 from .evaluator import AsyncEvaluator
 from .interfaces import Candidate, EvalResult
 from .islands import IslandContext, integrate_in, migrate_out
-from .logging_utils import EventLogger
 # Merge functionality removed - reflection LLM handles combining prompt ideas
-from .multi_island_dashboard import IslandDashboard
 from .mutator import Mutator
 from .sampler import InstanceSampler
 from .scheduler import BudgetedScheduler, SchedulerConfig
 from .stop_governor import StopGovernor, StopGovernorConfig, EpochMetrics, compute_hypervolume_2d
 from .token_controller import TokenCostController
-
-
-class _NoopLogger:
-    async def log(self, _event_type: str, _payload: Dict[str, object]) -> None:  # pragma: no cover - noop logger
-        return
 
 
 class Orchestrator:
@@ -46,15 +39,12 @@ class Orchestrator:
         mutator: Mutator,
         cache: DiskCache,
         *,
-        logger: Optional[EventLogger] = None,
         token_controller: Optional[TokenCostController] = None,
         island_context: Optional[IslandContext] = None,
         show_progress: bool = True,
         stop_governor: Optional[StopGovernor] = None,
         enable_auto_stop: bool = False,
         example_sampler: Optional[Callable[[int], List[Dict[str, object]]]] = None,
-        max_rounds: int = 100,  # For progress calculation
-        dashboard: Optional[IslandDashboard] = None,
         reflection_eval_fn: Optional[Callable[[Candidate, Sequence[str]], Awaitable[List[Dict[str, object]]]]] = None,
     ) -> None:
         self.config = config
@@ -75,21 +65,17 @@ class Orchestrator:
         )
         # Merge manager removed - reflection LLM handles combining ideas
         self.token_controller = token_controller or TokenCostController(config.max_tokens)
-        self.logger: EventLogger | _NoopLogger = logger or _NoopLogger()
         self.queue: Deque[Candidate] = deque(maxlen=config.queue_limit)
+        self._per_shard_queue: List[Deque[Candidate]] = [deque() for _ in range(len(config.shards))]
+        self._pending_fingerprints: Set[str] = set()
+        self._inflight_fingerprints: Set[str] = set()
+        self._next_shard: int = 0
         self.latest_results: Dict[str, EvalResult] = {}
         self.evaluations_run: int = 0
         self.round_index: int = 0
         # Merge tracking removed
         self.show_progress = show_progress
-        # Use IslandDashboard for all cases (single or multi-island)
         island_id = island_context.island_id if island_context else 0
-        if dashboard is not None:
-            self.dashboard = dashboard
-        elif show_progress:
-            self.dashboard = IslandDashboard(n_islands=config.n_islands, max_rounds=max_rounds)
-        else:
-            self.dashboard = None
         self.island_id = island_id
         self.stop_governor = stop_governor if enable_auto_stop else None
         self.enable_auto_stop = enable_auto_stop
@@ -102,13 +88,76 @@ class Orchestrator:
         self._mutation_task: Optional[asyncio.Task] = None
         self.eval_batches_completed: int = 0  # For migration timing
 
+        # Streaming evaluation infrastructure
+        self._inflight_tasks: Dict[str, asyncio.Task] = {}  # cand_hash -> task
+        self._result_queue: asyncio.Queue[Tuple[Candidate, EvalResult | Exception, int, float]] = asyncio.Queue()
+        self._total_inflight: int = 0  # Total evaluations in flight across all shards
+        total_cap = self.config.max_total_inflight or self.config.eval_concurrency
+        self._effective_concurrency: int = max(1, total_cap)
+        self._max_total_inflight: int = self._effective_concurrency
+        num_shards = max(1, len(self.config.shards))
+        base = max(1, self._max_total_inflight // num_shards)
+        remainder = max(0, self._max_total_inflight - base * num_shards)
+        self._shard_capacity = [base + (1 if i < remainder else 0) for i in range(num_shards)]
+        # Ensure we always honour the total budget even if integer division truncates
+        if sum(self._shard_capacity) < self._max_total_inflight:
+            deficit = self._max_total_inflight - sum(self._shard_capacity)
+            for i in range(deficit):
+                self._shard_capacity[i % num_shards] += 1
+        self._shard_inflight: List[int] = [0] * num_shards
+
+        # Deficit scheduler state for fair rung allocation
+        import math
+        self._rung_keys: List[str] = [str(shard) for shard in self.config.shards]
+        n_rungs = len(self._rung_keys)
+        # Equal shares: each rung gets 1/n of launch opportunities
+        self._rung_shares: Dict[str, float] = {
+            key: 1.0 / n_rungs for key in self._rung_keys
+        }
+        # Deficit accumulates when a rung doesn't get scheduled
+        self._rung_deficit: Dict[str, float] = {
+            key: 0.0 for key in self._rung_keys
+        }
+        # Track inflight per rung (in addition to per-shard tracking)
+        self._inflight_by_rung: Dict[str, int] = {
+            key: 0 for key in self._rung_keys
+        }
+        # Per-rung inflight capacity (hard cap to prevent oversubscription)
+        self._rung_capacity: Dict[str, int] = {
+            key: math.ceil(self._rung_shares[key] * self._max_total_inflight)
+            for key in self._rung_keys
+        }
+
     def enqueue(self, candidates: Iterable[Candidate]) -> None:
         for candidate in candidates:
             if not candidate.text.strip():
                 continue
-            if len(self.queue) == self.queue.maxlen:
-                self.queue.popleft()
+            fingerprint = candidate.fingerprint
+            if fingerprint in self._pending_fingerprints or fingerprint in self._inflight_fingerprints:
+                continue
+            if len(self.queue) == self.queue.maxlen and self.queue:
+                evicted = self.queue.popleft()
+                self._pending_fingerprints.discard(evicted.fingerprint)
+                for dq in self._per_shard_queue:
+                    try:
+                        dq.remove(evicted)
+                        break
+                    except ValueError:
+                        continue
+            idx = self.scheduler.current_shard_index(candidate)
+            shard_idx = min(idx, len(self._per_shard_queue) - 1)
+            self._per_shard_queue[shard_idx].append(candidate)
             self.queue.append(candidate)
+            self._pending_fingerprints.add(fingerprint)
+
+    def _get_rung_key(self, candidate: Candidate) -> str:
+        """Get rung key string for a candidate based on its current shard.
+
+        Uses scheduler.current_shard_index to ensure consistency with enqueue logic.
+        """
+        idx = self.scheduler.current_shard_index(candidate)
+        shard_fraction = self.config.shards[min(idx, len(self.config.shards) - 1)]
+        return str(shard_fraction)
 
     async def run(
         self,
@@ -143,153 +192,436 @@ class Orchestrator:
         if not resumed:
             await self._seed_archive(seeds)
 
-        # STREAMING MODE: Start first mutation task immediately after seed evaluation
-        # Mutations will be generated in background and streamed into the buffer
-        self._mutation_task = asyncio.create_task(
-            self._spawn_mutations(callback=self._mutation_buffer.append)
-        )
+        # Ensure mutation generation task is running
+        if self._mutation_task is None or self._mutation_task.done():
+            self._mutation_task = asyncio.create_task(
+                self._spawn_mutations(callback=self._mutation_buffer.append)
+            )
 
-        # Main streaming loop - runs until convergence
+        # Window tracking mirrors the legacy batch counter so downstream logging stays intact
+        window_size = max(1, self.config.batch_size)
+        self.eval_batches_completed = max(self.eval_batches_completed, self.round_index)
+        window_id = self.eval_batches_completed
+        window_start_evals = self.evaluations_run
+
+        # Simple progress tracking for streaming mode
+        loop_iter = 0
+        last_progress_display = self.evaluations_run
+
         while True:
-            batch_start_time = time.time()
-
-            # Stop conditions
-            if max_rounds is not None and self.eval_batches_completed >= max_rounds:
+            if max_rounds is not None and window_id >= max_rounds:
                 break
             if max_evaluations is not None and self.evaluations_run >= max_evaluations:
                 break
 
-            # 1. Drain mutation buffer into queue
+            # 1) Move freshly generated mutations into the ready queue
             while self._mutation_buffer:
-                candidate = self._mutation_buffer.popleft()
-                self.enqueue([candidate])
+                self.enqueue([self._mutation_buffer.popleft()])
 
-            # 2. Try to select a batch
-            batch = self._select_batch()
+            # 2) Launch as many evaluations as capacity allows
+            launched = await self._stream_launch_ready(window_id, max_evaluations)
 
-            # 3. If queue is empty, wait for mutations to refill it
-            if not batch:
-                if self._mutation_task and not self._mutation_task.done():
-                    # Wait for current mutation task to complete
-                    await self._mutation_task
-                    # Drain buffer again after mutations complete
-                    while self._mutation_buffer:
-                        candidate = self._mutation_buffer.popleft()
-                        self.enqueue([candidate])
-                    # Try selecting again
-                    batch = self._select_batch()
+            # 3) Drain completed results and update bookkeeping
+            drained = await self._stream_drain_results()
 
-                # If still no batch, we're done (queue empty + no mutations running)
-                if not batch:
-                    break
-
-            # 4. Evaluate batch
-            select_time = time.time() - batch_start_time
-            race_start = time.time()
-            await self._race_batch(batch)
-            race_time = time.time() - race_start
-            self.eval_batches_completed += 1
-
-            # 5. Start next mutation task (if previous one finished)
-            if self._mutation_task is None or self._mutation_task.done():
-                self._mutation_task = asyncio.create_task(
-                    self._spawn_mutations(callback=self._mutation_buffer.append)
-                )
-
-            # 6. Migration (based on eval batches instead of rounds)
-            migrate_start = time.time()
-            await self._maybe_migrate()
-            migrate_time = time.time() - migrate_start
-
-            # 7. Logging
-            log_start = time.time()
-            await self._maybe_log_summary()
-            log_time = time.time() - log_start
-
-            self._shard_cache.clear()
-
-            # Log timing breakdown
-            batch_total_time = time.time() - batch_start_time
-            await self._log("timing_breakdown", {
-                "batch": self.eval_batches_completed,
-                "total_time": batch_total_time,
-                "select_batch_time": select_time,
-                "race_batch_time": race_time,
-                "migrate_time": migrate_time,
-                "log_summary_time": log_time,
-            })
-
-            # Print timing summary
+            # Simple progress indicator: show activity frequently
+            loop_iter += 1
             if self.show_progress:
-                print(f"\n{'='*80}")
-                print(f"⏱️  BATCH {self.eval_batches_completed} TIMING BREAKDOWN")
-                print(f"{'='*80}")
-                print(f"  Select batch:          {select_time:>8.2f}s")
-                print(f"  Race batch:           {race_time:>8.2f}s")
-                print(f"  Migration:            {migrate_time:>8.2f}s")
-                print(f"  Logging:              {log_time:>8.2f}s")
-                print(f"  {'-'*80}")
-                print(f"  TOTAL BATCH TIME:     {batch_total_time:>8.2f}s")
-                print(f"  💡 Mutations generating in background...")
-                print(f"{'='*80}\n")
+                # Show update every 5 completions OR every 20 loop iterations (whichever comes first)
+                # This ensures we see activity even when evaluations are launching but not yet completing
+                should_update = False
+                if drained > 0:
+                    evals_since_display = self.evaluations_run - last_progress_display
+                    if evals_since_display >= 5:
+                        should_update = True
+                elif loop_iter % 20 == 0 and self._total_inflight > 0:
+                    # Show activity indicator even if nothing completed yet
+                    should_update = True
 
-            # 8. Check target quality threshold
-            if self.config.target_quality is not None:
-                pareto = self.archive.pareto_entries()
-                if pareto:
-                    full_shard = self.config.shards[-1]
-                    full_eval_entries = [
-                        entry for entry in pareto
-                        if entry.result.shard_fraction == full_shard
-                    ]
+                if should_update:
+                    pareto = self.archive.pareto_entries()
+                    best_q = self._get_best_quality_from_full_shard() if pareto else 0.0
+                    print(f"\r   🔄 Evaluations: {self.evaluations_run} | Inflight: {self._total_inflight} | Queue: {len(self.queue)} | Best: {best_q:.1%}", end="", flush=True)
+                    last_progress_display = self.evaluations_run
 
-                    if full_eval_entries:
-                        best_quality = max(
-                            entry.result.objectives.get(self.config.promote_objective, 0.0)
-                            for entry in full_eval_entries
-                        )
-                        if best_quality >= self.config.target_quality:
-                            await self._log("target_quality_reached", {
-                                "target": self.config.target_quality,
-                                "achieved": best_quality,
-                                "batch": self.eval_batches_completed,
-                            })
-                            if self.show_progress:
-                                print(f"\n🎯 Target quality {self.config.target_quality:.2%} reached! Achieved: {best_quality:.2%}")
-                                print(f"   (Verified on full dataset: {full_shard:.0%} of examples)")
-                            break
+            # 4) Refresh mutation generation if queues are running low
+            if self._mutation_task and self._mutation_task.done():
+                self._mutation_task = None
+            if (len(self.queue) + len(self._mutation_buffer)) < self.config.mutation_buffer_min:
+                if self._mutation_task is None:
+                    self._mutation_task = asyncio.create_task(
+                        self._spawn_mutations(callback=self._mutation_buffer.append)
+                    )
 
-            # 9. Check stop governor
-            if self.enable_auto_stop and self.stop_governor is not None:
-                should_stop, debug_info = self._check_stop_governor()
-                if should_stop:
-                    await self._log("auto_stop", debug_info)
-                    if self.show_progress:
-                        print(f"\n🛑 Auto-stopping: {debug_info['reason']}")
+            # 5) Window completion => keep round-indexed metrics in sync
+            evals_in_window = self.evaluations_run - window_start_evals
+            if evals_in_window and self.dashboard is not None:
+                self._update_dashboard_progress(min(evals_in_window, window_size), window_size)
+
+            if evals_in_window >= window_size:
+                window_id += 1
+                self.eval_batches_completed = window_id
+                self.round_index = window_id
+                window_start_evals = self.evaluations_run
+
+                # Clear inline progress before showing summary
+                if self.show_progress:
+                    print()  # Newline to clear the inline progress indicator
+
+                await self._maybe_log_summary()
+                self._shard_cache.clear()
+
+                if self.config.migration_period and window_id % self.config.migration_period == 0:
+                    await self._maybe_migrate()
+
+                await self._save_state()
+
+                if self.enable_auto_stop and self.stop_governor is not None:
+                    should_stop, debug_info = self._check_stop_governor()
+                    if should_stop:
+                        if self.show_progress:
+                            print(f"\n🛑 Auto-stopping: {debug_info['reason']}")
+                        break
+
+            # 6) Target quality guard
+            if await self._stream_check_target(window_id):
+                break
+
+            # 7) Idle detection – nothing running, nothing queued, mutations finished
+            if (
+                launched == 0
+                and drained == 0
+                and self._total_inflight == 0
+                and not self.queue
+                and not self._mutation_buffer
+            ):
+                if self._mutation_task is None:
                     break
 
-            # Keep round_index in sync for compatibility with existing code
-            self.round_index = self.eval_batches_completed
+            # Avoid busy spinning if we neither launched nor drained work
+            if launched == 0 and drained == 0:
+                await asyncio.sleep(0.01)
 
-        # Clean up any pending mutation task before exiting
-        if self._mutation_task:
+        # === Cleanup ===
+        # Wait for all inflight evaluations to complete
+        if self._inflight_tasks:
+            await asyncio.gather(*self._inflight_tasks.values(), return_exceptions=True)
+
+        # Drain any straggling results that finished during cleanup
+        await self._stream_drain_results(timeout=0.0)
+
+        # Clean up any pending mutation task
+        if self._mutation_task and not self._mutation_task.done():
             try:
                 await self._mutation_task
             except Exception:
                 pass  # Ignore errors on cleanup
 
-            # Save state after each round for resumability
-            await self._save_state()
+        # Final save
+        await self._save_state()
 
         await self.finalize()
 
         # Clear state only if we reached completion (not if stopped early)
         completed = (
-            (max_rounds is not None and self.round_index >= max_rounds) or
+            (max_rounds is not None and window_id >= max_rounds) or
             (max_evaluations is not None and self.evaluations_run >= max_evaluations)
         )
         if completed:
             self.cache.clear_state()
+
+    # === Streaming helpers ===
+
+    def _stream_can_launch(self, candidate: Candidate, max_evaluations: Optional[int]) -> bool:
+        if max_evaluations is not None and self.evaluations_run >= max_evaluations:
+            return False
+
+        shard_count = len(self._shard_capacity)
+        if shard_count == 0:
+            return False
+
+        shard_idx = min(self.scheduler.current_shard_index(candidate), shard_count - 1)
+        if self._shard_inflight[shard_idx] >= self._shard_capacity[shard_idx]:
+            return False
+        if self._total_inflight >= self._max_total_inflight:
+            return False
+        return True
+
+    async def _stream_launch_ready(self, window_id: int, max_evaluations: Optional[int]) -> int:
+        """Launch ready candidates using deficit-based scheduling for fair rung allocation."""
+        launched = 0
+        shard_count = len(self._per_shard_queue)
+        if shard_count == 0:
+            return launched
+
+        # Try launching until we can't launch anymore
+        max_attempts = shard_count * 10  # Prevent infinite loops
+        attempts = 0
+
+        while attempts < max_attempts:
+            attempts += 1
+
+            # Accumulate deficit for all rungs (every tick)
+            # Clamp deficit for empty queues to prevent infinite credit buildup
+            for shard_idx, key in enumerate(self._rung_keys):
+                if shard_idx < len(self._per_shard_queue):
+                    queue = self._per_shard_queue[shard_idx]
+                    if queue:
+                        # Queue has work: accumulate deficit normally
+                        self._rung_deficit[key] += self._rung_shares[key]
+                    else:
+                        # Queue empty: reset deficit to non-negative share baseline
+                        self._rung_deficit[key] = max(0.0, min(self._rung_deficit[key], self._rung_shares[key]))
+
+            # Calculate total inflight for normalization
+            total_inflight = max(1, sum(self._inflight_by_rung.values()))
+
+            # Find best rung by deficit score
+            best_score = float('-inf')
+            best_shard_idx = None
+            best_rung_key = None
+
+            for shard_idx in range(shard_count):
+                queue = self._per_shard_queue[shard_idx]
+                if not queue:
+                    continue
+
+                # Get rung key for this shard (consistent with scheduler)
+                shard_fraction = self.config.shards[min(shard_idx, len(self.config.shards) - 1)]
+                rung_key = str(shard_fraction)
+
+                # Check per-rung inflight cap before considering this rung
+                if self._inflight_by_rung[rung_key] >= self._rung_capacity[rung_key]:
+                    continue  # Rung at capacity, skip
+
+                # Calculate deficit score: deficit - (inflight_fraction)
+                # Higher score = more "starved" and deserves priority
+                inflight_penalty = self._inflight_by_rung[rung_key] / total_inflight
+                score = self._rung_deficit[rung_key] - inflight_penalty
+
+                if score > best_score:
+                    best_score = score
+                    best_shard_idx = shard_idx
+                    best_rung_key = rung_key
+
+            # No eligible rung found
+            if best_shard_idx is None:
+                break
+
+            # Try to launch from best rung
+            queue = self._per_shard_queue[best_shard_idx]
+            candidate = queue[0]
+
+            if self._stream_can_launch(candidate, max_evaluations):
+                # Remove from queue
+                queue.popleft()
+                try:
+                    self.queue.remove(candidate)
+                except ValueError:
+                    pass
+
+                fingerprint = candidate.fingerprint
+                self._pending_fingerprints.discard(fingerprint)
+                self._inflight_fingerprints.add(fingerprint)
+
+                # Launch the evaluation
+                launched_successfully = await self._stream_launch(candidate, window_id)
+
+                if launched_successfully:
+                    # Subtract from deficit (rung got its turn)
+                    self._rung_deficit[best_rung_key] -= 1.0
+                    launched += 1
+                    continue
+                else:
+                    # Launch failed, put candidate back
+                    self._inflight_fingerprints.discard(fingerprint)
+                    self._pending_fingerprints.add(fingerprint)
+                    queue.appendleft(candidate)
+                    if candidate not in self.queue:
+                        self.queue.append(candidate)
+                    break
+            else:
+                # Can't launch this candidate (capacity or eval limit reached)
+                break
+
+        return launched
+
+    async def _stream_launch(self, candidate: Candidate, window_id: int) -> bool:
+        from .cache import candidate_key
+        import time
+
+        if len(self._shard_capacity) == 0:
+            return False
+
+        shard_idx = min(self.scheduler.current_shard_index(candidate), len(self._shard_capacity) - 1)
+        if self._shard_inflight[shard_idx] >= self._shard_capacity[shard_idx]:
+            return False
+        if self._total_inflight >= self._max_total_inflight:
+            return False
+
+        shard_fraction = self.scheduler.shard_fraction_for_index(shard_idx)
+        shard_key = (window_id, shard_fraction)
+        shard_ids = self._shard_cache.get(shard_key)
+        if shard_ids is None:
+            shard_size = self._shard_size(shard_fraction)
+            shard_ids = self.sampler.sample_shard(window_id, shard_size)
+            self._shard_cache[shard_key] = shard_ids
+
+        start_time = time.time()
+        cand_hash = candidate_key(candidate)
+        self._total_inflight += 1
+        self._shard_inflight[shard_idx] += 1
+        # Track inflight per rung for deficit scheduler
+        rung_key = self._get_rung_key(candidate)
+        self._inflight_by_rung[rung_key] += 1
+
+        async def runner() -> None:
+            try:
+                result = await self.evaluator.eval_on_shard(
+                    candidate,
+                    shard_ids,
+                    concurrency=self._effective_concurrency,
+                    shard_fraction=shard_fraction,
+                    show_progress=self.show_progress,  # Show progress for all evaluations
+                )
+                await self._result_queue.put((candidate, result, shard_idx, start_time))
+            except Exception as exc:  # pragma: no cover - defensive logging path
+                await self._result_queue.put((candidate, exc, shard_idx, start_time))
+            finally:
+                self._shard_inflight[shard_idx] -= 1
+                self._total_inflight -= 1
+                # Decrement rung inflight for deficit scheduler
+                rung_key_inner = self._get_rung_key(candidate)
+                self._inflight_by_rung[rung_key_inner] -= 1
+
+        task = asyncio.create_task(runner())
+        self._inflight_tasks[cand_hash] = task
+        task.add_done_callback(lambda _: self._inflight_tasks.pop(cand_hash, None))
+        return True
+
+    async def _stream_drain_results(self, timeout: float = 0.1) -> int:
+        import asyncio as _asyncio
+        import time as _time
+
+        count = 0
+        deadline = _time.time() + timeout
+
+        while True:
+            try:
+                candidate, payload, shard_idx, start_time = self._result_queue.get_nowait()
+            except _asyncio.QueueEmpty:
+                remaining = deadline - _time.time()
+                if remaining <= 0:
+                    break
+                try:
+                    candidate, payload, shard_idx, start_time = await _asyncio.wait_for(
+                        self._result_queue.get(), timeout=remaining
+                    )
+                except _asyncio.TimeoutError:
+                    break
+            await self._stream_process_result(candidate, payload, shard_idx, start_time)
+            count += 1
+
+        return count
+
+    async def _ingest_result(self, candidate: Candidate, result: EvalResult) -> Tuple[Candidate, str]:
+        """Update internal state with a freshly evaluated result."""
+        from .cache import candidate_key
+
+        shard_fraction = result.shard_fraction or 0.0
+        quality = result.objectives.get(self.config.promote_objective, 0.0)
+
+        generation_method = None
+        if isinstance(candidate.meta, dict):
+            generation_method = candidate.meta.get("generation_method")
+
+        meta = dict(candidate.meta)
+        prev_fraction = meta.get("quality_shard_fraction", 0.0)
+        prev_quality = meta.get("quality", float("-inf"))
+        if shard_fraction > prev_fraction or (
+            shard_fraction == prev_fraction and quality >= prev_quality
+        ):
+            meta["quality"] = quality
+            meta["quality_shard_fraction"] = shard_fraction
+        meta["parent_objectives"] = result.objectives
+
+        candidate_with_meta = Candidate(text=candidate.text, meta=meta)
+
+        cand_hash = candidate_key(candidate_with_meta)
+        self.latest_results[cand_hash] = result
+        self.evaluations_run += 1
+
+        decision = self.scheduler.record(
+            candidate_with_meta, result, self.config.promote_objective
+        )
+
+        if decision in ("promoted", "completed"):
+            await self.archive.insert(candidate_with_meta, result)
+
+        self._register_failures(result)
+
+        promotions = self.scheduler.promote_ready()
+        if promotions:
+            self.enqueue(promotions)
+
+        if generation_method and hasattr(self.mutator, "report_outcome"):
+            success = decision in ("promoted", "completed")
+            self.mutator.report_outcome(generation_method, success)
+
+        self._inflight_fingerprints.discard(candidate_with_meta.fingerprint)
+
+        return candidate_with_meta, decision
+
+    async def _stream_process_result(
+        self,
+        candidate: Candidate,
+        payload: EvalResult | Exception,
+        shard_idx: int,
+        start_time: float,
+    ) -> None:
+        import time
+
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        if isinstance(payload, Exception):
+            )
+            self._inflight_fingerprints.discard(candidate.fingerprint)
+            return
+
+        result: EvalResult = payload
+        candidate_with_meta, decision = await self._ingest_result(candidate, result)
+
+        )
+
+    async def _stream_check_target(self, window_id: int) -> bool:
+        if self.config.target_quality is None:
+            return False
+
+        pareto = self.archive.pareto_entries()
+        if not pareto:
+            return False
+
+        full_shard = self.config.shards[-1]
+        full_entries = [entry for entry in pareto if entry.result.shard_fraction == full_shard]
+        if not full_entries:
+            return False
+
+        best_quality = max(
+            entry.result.objectives.get(self.config.promote_objective, 0.0)
+            for entry in full_entries
+        )
+        if best_quality < self.config.target_quality:
+            return False
+
+        )
+        if self.show_progress:
+            print(
+                f"\n🎯 Target quality {self.config.target_quality:.2%} reached! Achieved: {best_quality:.2%}"
+            )
+            print(f"   (Verified on full dataset: {full_shard:.0%} of examples)")
+        return True
+
+    # === Streaming Launch Helpers ===
 
     async def finalize(self, delta: Optional[float] = None) -> None:
         """Run token-cost pruning on the Pareto frontier."""
@@ -324,7 +656,7 @@ class Orchestrator:
                 result = await self.evaluator.eval_on_shard(
                     candidate,
                     shard,
-                    concurrency=self.config.eval_concurrency,
+                    concurrency=self._effective_concurrency,
                     shard_fraction=shard_fraction,
                 )
             self.latest_results[candidate.fingerprint] = result
@@ -343,16 +675,10 @@ class Orchestrator:
                     result = await self.evaluator.eval_on_shard(
                         compressed,
                         shard,
-                        concurrency=self.config.eval_concurrency,
+                        concurrency=self._effective_concurrency,
                         shard_fraction=shard_fraction,
                     )
                 self.latest_results[compressed.fingerprint] = result
-            await self._log(
-                "compression_applied",
-                {
-                    "candidate": compressed.fingerprint,
-                    "objective": result.objectives,
-                },
             )
             await self.archive.insert(compressed, result)
 
@@ -377,11 +703,12 @@ class Orchestrator:
         if self.show_progress:
             print(f"   ✓ Seed evaluation complete!\n")
 
-        for pair in results:
-            await self._handle_result(pair)
-        promotions = self.scheduler.promote_ready()
-        self.enqueue(promotions)
-        self.enqueue(seeds)
+        enriched: List[Candidate] = []
+        for seed, result in zip(seeds, results):
+            candidate_with_meta, _ = await self._ingest_result(seed, result)
+            enriched.append(candidate_with_meta)
+
+        self.enqueue(enriched)
 
     def _select_batch(self) -> List[Candidate]:
         batch: List[Candidate] = []
@@ -410,73 +737,6 @@ class Orchestrator:
                 batch.append(candidate)
                 seen.add(candidate.fingerprint)
         return batch
-
-    async def _race_batch(self, batch: Sequence[Candidate]) -> None:
-        # Show progress for Round 1 (seed full evaluation)
-        if self.show_progress and self.round_index == 0 and len(batch) == 1:
-            print(f"🔄 Evaluating seed on full dataset (100%)...")
-
-        tasks: set[asyncio.Task] = set()
-        for candidate in batch:
-            idx = self.scheduler.current_shard_index(candidate)
-            shard_fraction = self.scheduler.shard_fraction_for_index(idx)
-            shard_size = self._shard_size(shard_fraction)
-            cache_key = (self.round_index, shard_fraction)
-            shard = self._shard_cache.get(cache_key)
-            if shard is None:
-                shard = self.sampler.sample_shard(self.round_index, shard_size)
-                self._shard_cache[cache_key] = shard
-
-            # Show progress for seed baseline evaluation (Round 1)
-            show_eval_progress = self.show_progress and self.round_index == 0 and len(batch) == 1
-            task = asyncio.create_task(self._evaluate_candidate(candidate, shard, shard_fraction, show_progress=show_eval_progress))
-            tasks.add(task)
-
-        # Track progress for dashboard updates
-        evals_total = len(tasks)
-        evals_done = 0
-
-        while tasks:
-            done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            for task in done:
-                try:
-                    pair = await task
-                except Exception as exc:  # pragma: no cover - defensive logging
-                    await self._log(
-                        "evaluation_error",
-                        {
-                            "error": str(exc),
-                        },
-                    )
-                    continue
-                await self._handle_result(pair)
-                promotions = self.scheduler.promote_ready()
-                if promotions:
-                    await self._log("promote", {"count": len(promotions)})
-                    self.enqueue(promotions)
-
-                # Update dashboard with eval progress and current scores
-                evals_done += 1
-                self._update_dashboard_progress(evals_done, evals_total)
-
-        # Show completion for Round 1 seed evaluation
-        if self.show_progress and self.round_index == 0 and len(batch) == 1:
-            print(f"   ✓ Seed evaluation on full dataset complete!\n")
-
-        # Flush any remaining promotions
-        promotions = self.scheduler.promote_ready()
-        if promotions:
-            await self._log("promote", {"count": len(promotions)})
-            if self.show_progress:
-                print(f"\n   🚀 Promoted {len(promotions)} candidate(s) to next shard for evaluation")
-            self.enqueue(promotions)
-
-        # Show batch quality summary during early optimization (first 10 batches)
-        if self.show_progress and self.eval_batches_completed < 10 and len(batch) > 1:
-            self._log_batch_quality_summary(batch)
-
-        if self.show_progress:
-            self._show_inline_progress()
 
     def _get_best_quality_from_full_shard(self) -> float:
         """Get best quality from candidates evaluated on the longest/full shard only.
@@ -528,72 +788,6 @@ class Orchestrator:
         )
         sys.stdout.flush()
 
-    async def _handle_result(self, pair: Tuple[Candidate, EvalResult, str]) -> None:
-        candidate, result, decision = pair
-        quality = result.objectives.get(self.config.promote_objective, 0.0)
-
-        # Only update stored quality when this evaluation covers an equal or larger shard
-        shard_fraction = result.shard_fraction or 0.0
-        meta = dict(candidate.meta)
-        prev_fraction = meta.get("quality_shard_fraction", 0.0)
-        prev_quality = meta.get("quality", float("-inf"))
-
-        if shard_fraction > prev_fraction or (
-            shard_fraction == prev_fraction and quality >= prev_quality
-        ):
-            meta["quality"] = quality
-            meta["quality_shard_fraction"] = shard_fraction
-
-        meta["parent_objectives"] = result.objectives
-        candidate = Candidate(text=candidate.text, meta=meta)
-        self.latest_results[candidate.fingerprint] = result
-        await self._log(
-            "archive_update",
-            {
-                "candidate": candidate.fingerprint,
-                "objectives": result.objectives,
-                "n_examples": result.n_examples,
-            },
-        )
-
-        # Check if it's in Pareto before insertion
-        was_in_pareto = any(e.candidate.fingerprint == candidate.fingerprint for e in self.archive.pareto_entries())
-
-        await self.archive.insert(candidate, result)
-
-        # Check if it made it to Pareto after insertion
-        is_in_pareto = any(e.candidate.fingerprint == candidate.fingerprint for e in self.archive.pareto_entries())
-
-        # Log if a new candidate joined the Pareto frontier
-        if is_in_pareto and not was_in_pareto and self.show_progress:
-            display_quality = candidate.meta.get("quality", quality)
-            print("\n" + "🌟" * 40)
-            print(f"   ⭐ NEW PARETO-OPTIMAL CANDIDATE! (Quality: {display_quality:.2%})")
-            print("   " + "-" * 78)
-            for line in candidate.text.strip().splitlines():
-                print(f"   {line}")
-            print("   " + "-" * 78)
-            print("🌟" * 40 + "\n")
-
-        self._register_failures(result)
-        if decision == "pruned":
-            await self._log(
-                "prune",
-                {
-                    "candidate": candidate.fingerprint,
-                    "shard_fraction": result.shard_fraction,
-                    "objective": result.objectives.get(self.config.promote_objective),
-                },
-            )
-        if decision == "promoted":
-            await self._log(
-                "promotion_recorded",
-                {
-                    "candidate": candidate.fingerprint,
-                    "next_shard_fraction": self.scheduler.current_shard_fraction(candidate),
-                },
-            )
-
     async def _spawn_mutations(self, callback: Optional[Callable[[Candidate], None]] = None) -> None:
         """Generate mutations using batched reflection for efficiency.
 
@@ -605,10 +799,13 @@ class Orchestrator:
 
         entries = self.archive.pareto_entries()
         if not entries:
+            # Archive is empty - likely waiting for seed to complete full evaluation
+            if self.show_progress and self._total_inflight > 0:
             return
 
-        num_mutations = self.config.max_mutations_per_round
+        num_mutations = self._mutation_budget()
         if num_mutations <= 0:
+            })
             return
 
         gen_start = time.time()
@@ -637,7 +834,6 @@ class Orchestrator:
                         parent_qualities.append(parent_quality)
 
                 print("\n" + "=" * 80)
-                print(f"   ✨ NEW PROMPTS GENERATED ({len(mutations)} total)")
                 print(f"   Generation methods: {dict(gen_methods)}")
                 if parent_qualities:
                     avg_parent_quality = sum(parent_qualities) / len(parent_qualities)
@@ -649,9 +845,7 @@ class Orchestrator:
                     gen_method = candidate.meta.get("generation_method", "unknown")
                     parent_quality = candidate.meta.get("parent_objectives", {}).get("quality", "N/A")
 
-                    print(f"\n   Prompt #{idx} [{gen_method}]")
                     if parent_quality != "N/A":
-                        print(f"   Parent quality: {parent_quality:.2%}")
                     print("   " + "-" * 76)
 
                     # Show full prompt text, nicely formatted
@@ -662,7 +856,9 @@ class Orchestrator:
 
                 print("=" * 80 + "\n")
 
-            await self._log("mutation_proposed", {"count": len(mutations)})
+            # Let user know evaluations are starting
+            if self.show_progress and mutations:
+
 
             # Stream mutations via callback (for streaming mode) or enqueue directly (for round mode)
             if callback:
@@ -671,18 +867,9 @@ class Orchestrator:
             else:
                 self.enqueue(mutations)
 
-            await self._log(
-                "mutation_accepted",
-                {
-                    "candidates": [candidate.fingerprint for candidate in mutations],
-                },
             )
 
         spawn_total = time.time() - spawn_start
-        await self._log("spawn_mutations_timing", {
-            "total_time": spawn_total,
-            "generation_time": gen_time,
-            "num_mutations": len(mutations) if mutations else 0,
         })
 
     async def _generate_mutations_batched(
@@ -819,29 +1006,29 @@ class Orchestrator:
 
         # Log detailed timing breakdown
         if self.show_progress:
-            print(f"\n⏱️  Mutation generation timing:")
             print(f"   Parent selection:    {parent_select_time:.2f}s")
             print(f"   Cache lookup:        {cache_time:.2f}s (reusing {len(reflection_examples)} failures from ASHA)")
             print(f"   Mutator.propose():   {mutator_time:.2f}s (LLM calls)")
             print(f"   Total:               {batch_total_time:.2f}s\n")
 
-        await self._log(
-            "batch_reflection",
-            {
-                "num_parents": len(parent_contexts),
-                "num_mutations_requested": num_mutations,
-                "num_mutations_generated": len(mutations),
-            },
         )
 
-        await self._log("mutation_generation_timing", {
-            "total_time": batch_total_time,
-            "parent_selection_time": parent_select_time,
-            "cache_time": cache_time,
-            "mutator_propose_time": mutator_time,
         })
 
         return mutations
+
+    def _mutation_budget(self) -> int:
+        """Compute how many new mutations we should request this cycle."""
+        max_mut = self.config.max_mutations_per_round
+        if max_mut <= 0:
+            return 0
+
+        ready = len(self.queue) + len(self._mutation_buffer)
+        target_ready = max(self._max_total_inflight, self.config.batch_size)
+        deficit = target_ready - ready
+        if deficit <= 0:
+            return 0
+        return max(1, min(max_mut, deficit))
 
     def _sample_task_examples_for_spec_induction(self, num_examples: int = 3) -> List[Dict[str, object]]:
         """Sample a few task examples for spec induction (PROMPT-MII style)."""
@@ -869,10 +1056,21 @@ class Orchestrator:
         )
         if elites:
             migrate_out(self.island_context, elites)
-            await self._log("migrate_out", {"count": len(elites)})
+
+        pareto_entries = self.archive.pareto_entries()
+        if pareto_entries:
+            share_count = min(self.config.migration_k or 1, len(pareto_entries))
+            top_candidates = sorted(
+                pareto_entries,
+                key=lambda entry: entry.result.objectives.get(self.config.promote_objective, float("-inf")),
+                reverse=True,
+            )[:share_count]
+            shared = [entry.candidate for entry in top_candidates]
+            if shared:
+                self.enqueue(shared)
+
         incoming = integrate_in(self.island_context)
         if incoming:
-            await self._log("migrate_in", {"count": len(incoming)})
             self.enqueue(incoming)
 
     async def _evaluate_candidate(
@@ -881,66 +1079,17 @@ class Orchestrator:
         shard: Sequence[str],
         shard_fraction: float,
         show_progress: bool = False,
-    ) -> Tuple[Candidate, EvalResult, str]:
-        await self._log(
-            "eval_start",
-            {
-                "candidate": candidate.fingerprint,
-                "shard_fraction": shard_fraction,
-                "shard_size": len(shard),
-            },
+    ) -> EvalResult:
         )
         result = await self.evaluator.eval_on_shard(
             candidate,
             shard,
-            concurrency=self.config.eval_concurrency,
+            concurrency=self._effective_concurrency,
             shard_fraction=shard_fraction,
             show_progress=show_progress,
         )
-        self.evaluations_run += result.n_examples
-        decision = self.scheduler.record(candidate, result, objective_key=self.config.promote_objective)
-
-        # Debug: Log promotion decisions and mutation quality during early batches
-        if self.show_progress and self.eval_batches_completed < 10:
-            quality = result.objectives.get(self.config.promote_objective, 0.0)
-            current_shard = result.shard_fraction or 0.0
-
-            # Extract metadata for detailed logging
-            generation_method = candidate.meta.get("generation_method", "unknown")
-            parent_fp = candidate.meta.get("parent", "none")
-
-            # Check if this is a promoted evaluation (candidate was on smaller shard before)
-            prev_result = self.latest_results.get(candidate.fingerprint)
-            if prev_result and prev_result.shard_fraction:
-                prev_shard = prev_result.shard_fraction
-                if current_shard > prev_shard:
-                    import sys
-                    prev_quality = prev_result.objectives.get(self.config.promote_objective, 0.0)
-                    sys.stderr.write(f"   🔼 [Batch {self.eval_batches_completed}] PROMOTION EVAL: {prev_shard:.0%}→{current_shard:.0%}, quality: {prev_quality:.2%}→{quality:.2%}, decision: {decision}\n")
-                    sys.stderr.flush()
-                    return candidate, result, decision
-
-            # Log mutation quality with generation method
-            parent_quality = "N/A"
-            if parent_fp != "none":
-                parent_result = self.latest_results.get(parent_fp)
-                if parent_result:
-                    parent_quality = f"{parent_result.objectives.get(self.config.promote_objective, 0.0):.2%}"
-
-            import sys
-            sys.stderr.write(f"   [Batch {self.eval_batches_completed}] {generation_method}: quality={quality:.2%}, parent_quality={parent_quality}, shard={current_shard:.0%}, decision={decision}\n")
-            sys.stderr.flush()
-
-        await self._log(
-            "eval_done",
-            {
-                "candidate": candidate.fingerprint,
-                "objectives": result.objectives,
-                "n_examples": result.n_examples,
-                "shard_fraction": shard_fraction,
-            },
         )
-        return candidate, result, decision
+        return result
 
     def _register_failures(self, result: EvalResult) -> None:
         hard_examples: List[str] = []
@@ -954,146 +1103,13 @@ class Orchestrator:
         if hard_examples:
             self.sampler.register_hard_examples(hard_examples)
 
-    def _log_batch_quality_summary(self, batch: List[Candidate]) -> None:
-        """Log quality distribution summary for a batch of evaluated candidates."""
-        import sys
-
-        # Collect qualities by generation method
-        qualities_by_method: Dict[str, List[float]] = {}
-        for candidate in batch:
-            result = self.latest_results.get(candidate.fingerprint)
-            if not result:
-                continue
-            quality = result.objectives.get(self.config.promote_objective, 0.0)
-            method = candidate.meta.get("generation_method", "unknown")
-            if method not in qualities_by_method:
-                qualities_by_method[method] = []
-            qualities_by_method[method].append(quality)
-
-        # Print summary
-        sys.stderr.write(f"\n   📊 [Batch {self.eval_batches_completed}] Quality Summary:\n")
-        for method, qualities in sorted(qualities_by_method.items()):
-            if not qualities:
-                continue
-            avg = sum(qualities) / len(qualities)
-            min_q = min(qualities)
-            max_q = max(qualities)
-            zero_count = sum(1 for q in qualities if q == 0.0)
-            sys.stderr.write(f"      {method:25s}: avg={avg:5.2%}, min={min_q:5.2%}, max={max_q:5.2%}, zeros={zero_count}/{len(qualities)}\n")
-        sys.stderr.write("\n")
-        sys.stderr.flush()
-
     def _shard_size(self, shard_fraction: float) -> int:
         total = max(len(self.sampler.example_ids), 1)
         size = max(1, int(total * shard_fraction))
         return min(size, total)
 
-    async def _log(self, event_type: str, payload: Dict[str, object]) -> None:
-        await self.logger.log(event_type, payload)
-
-    async def _log_prompts_to_file(self, mutations: List[Candidate]) -> None:
-        """Write all prompts to a dedicated file for easy inspection.
-
-        Uses retries and proper file handling to avoid "too many open files" errors.
-        """
-        from pathlib import Path
-        import time
-
-        # Create prompts log directory
-        # Handle both EventLogger (has path) and _NoopLogger (no path)
-        if isinstance(self.logger, _NoopLogger):
-            # Use default location for noop logger
-            log_base = Path(".turbo_gepa/logs")
-        else:
-            # Get parent directory of the log file
-            log_base = Path(self.logger.path).parent
-
-        prompts_dir = log_base / "prompts"
-        prompts_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create a file for this round
-        island_suffix = f"_island{self.island_id + 1}" if hasattr(self, 'island_id') else ""
-        filename = f"round_{self.round_index + 1:03d}{island_suffix}.txt"
-        filepath = prompts_dir / filename
-
-        lines = []
-        lines.append("=" * 80)
-        lines.append(f"PROMPTS GENERATED - Round {self.round_index + 1}")
-        lines.append(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        lines.append(f"Count: {len(mutations)}")
-        lines.append("=" * 80)
-        lines.append("")
-
-        for idx, candidate in enumerate(mutations, start=1):
-            gen_method = candidate.meta.get("generation_method", "unknown")
-            parent_quality = candidate.meta.get("parent_objectives", {}).get("quality", "N/A")
-
-            lines.append(f"Prompt #{idx} [{gen_method}]")
-            if parent_quality != "N/A":
-                lines.append(f"Parent quality: {parent_quality:.2%}")
-            lines.append("-" * 80)
-            lines.append(candidate.text.strip())
-            lines.append("-" * 80)
-            lines.append("")
-
-        content = "\n".join(lines)
-
-        # Write with retries and proper cleanup
-        def write_with_retry(path: Path, text: str) -> None:
-            """Write to file with exponential backoff retry on OSError."""
-            import time as time_module
-            max_attempts = 3
-            for attempt in range(max_attempts):
-                try:
-                    # Use context manager to ensure file is closed
-                    with path.open("w", encoding="utf-8") as f:
-                        f.write(text)
-                    return  # Success
-                except OSError as e:
-                    if attempt < max_attempts - 1:
-                        # Exponential backoff: 0.1s, 0.2s, 0.4s
-                        wait = 0.1 * (2 ** attempt)
-                        time_module.sleep(wait)
-                    else:
-                        # Last attempt failed, log error but don't crash
-                        import sys
-                        print(f"Warning: Failed to write {path} after {max_attempts} attempts: {e}", file=sys.stderr)
-
-        def append_with_retry(path: Path, text: str) -> None:
-            """Append to file with exponential backoff retry on OSError."""
-            import time as time_module
-            max_attempts = 3
-            for attempt in range(max_attempts):
-                try:
-                    # Use context manager to ensure file is closed
-                    with path.open("a", encoding="utf-8") as f:
-                        f.write(text)
-                        f.write("\n\n")
-                    return  # Success
-                except OSError as e:
-                    if attempt < max_attempts - 1:
-                        wait = 0.1 * (2 ** attempt)
-                        time_module.sleep(wait)
-                    else:
-                        import sys
-                        print(f"Warning: Failed to append to {path} after {max_attempts} attempts: {e}", file=sys.stderr)
-
-        # Write files in thread pool to avoid blocking
-        try:
-            await asyncio.to_thread(write_with_retry, filepath, content)
-            combined_log = prompts_dir / f"all_prompts{island_suffix}.txt"
-            await asyncio.to_thread(append_with_retry, combined_log, content)
-        except Exception as e:
-            # Catch any remaining errors to prevent task exceptions
-            import sys
-            print(f"Warning: Error in _log_prompts_to_file: {e}", file=sys.stderr)
-
     def _update_dashboard_progress(self, evals_done: int, evals_total: int) -> None:
         """Update dashboard with real-time eval progress during a round."""
-        if self.dashboard is None:
-            return
-
-        # Get current metrics from archive
         pareto = self.archive.pareto_entries()
         if not pareto:
             return
@@ -1106,20 +1122,11 @@ class Orchestrator:
         ) / len(pareto)
 
         # Update dashboard with eval progress
-        self.dashboard.update_island(
-            island_id=self.island_id,
-            round_num=self.round_index,
-            best_quality=best_quality,
-            avg_quality=current_quality,
-            pareto_size=len(pareto),
-            evals_done=evals_done,
-            evals_total=evals_total,
         )
 
         # Display if we have meaningful data
         has_meaningful_data = best_quality > 0.001 or self.round_index > 0
         if has_meaningful_data:
-            self.dashboard.display()
 
     async def _maybe_log_summary(self) -> None:
         interval = max(self.config.log_summary_interval, 0)
@@ -1177,17 +1184,10 @@ class Orchestrator:
                     pass
 
             should_show_local = (
-                self.dashboard is not None
                 and (metrics_queue is None)
             )
 
             if should_show_local:
-                self.dashboard.update_island(
-                    island_id=self.island_id,
-                    round_num=self.round_index,
-                    best_quality=best_quality,
-                    avg_quality=current_quality,
-                    pareto_size=len(pareto),
                 )
 
                 # Skip display if we have no meaningful data yet (all zeros)
@@ -1197,22 +1197,10 @@ class Orchestrator:
                 if has_meaningful_data:
                     # Clear inline progress and show dashboard
                     print()  # Newline to clear inline progress
-                    self.dashboard.display()
                 elif self.round_index == 0:
                     # First round with zeros - inform user
                     print()
-                    print(f"\n   ℹ️  Baseline: {best_quality:.2%} quality on seeds (round 1)")
-                    print(f"   Starting optimization to improve performance...\n")
 
-        await self._log(
-            "summary",
-            {
-                "round": self.round_index,
-                "queue_depth": len(self.queue),
-                "pareto_size": len(self.archive.pareto_candidates()),
-                "evaluations": self.evaluations_run,
-                "hardness_size": hardness_size,
-            },
         )
 
     def _check_stop_governor(self) -> tuple[bool, Dict]:
@@ -1330,7 +1318,7 @@ class Orchestrator:
                 result = await self.evaluator.eval_on_shard(
                     candidate,
                     shard,
-                    concurrency=self.config.eval_concurrency,
+                    concurrency=self._effective_concurrency,
                     shard_fraction=1.0,
                 )
                 await self.archive.insert(candidate, result)

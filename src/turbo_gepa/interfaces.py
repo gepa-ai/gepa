@@ -7,8 +7,10 @@ orchestrator loop, allowing the rest of the system to remain loosely coupled.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Sequence
+from typing import Any, Dict, Iterable, List, Sequence
 
 
 @dataclass(frozen=True)
@@ -26,14 +28,41 @@ class Candidate:
 
     @property
     def fingerprint(self) -> str:
-        """Stable identifier derived from the candidate text and temperature."""
+        """Stable identifier derived from canonicalised prompt + metadata."""
         import hashlib
 
-        # Include temperature in fingerprint so same prompt with different temps
-        # are treated as distinct candidates for caching and evaluation
-        temp = self.meta.get("temperature", "default")
-        key = f"{self.text}::temp={temp}"
-        return hashlib.sha256(key.encode("utf-8")).hexdigest()
+        def _normalize(value: Any) -> Any:
+            if value is None:
+                return None
+            if isinstance(value, str):
+                return " ".join(value.split())
+            if isinstance(value, Candidate):  # pragma: no cover - defensive
+                return value.fingerprint
+            if isinstance(value, Mapping):
+                return {k: _normalize(value[k]) for k in sorted(value)}
+            if isinstance(value, (list, tuple)):
+                return [_normalize(v) for v in value]
+            if isinstance(value, set):
+                normalised = [_normalize(v) for v in value]
+                return sorted(normalised, key=lambda x: repr(x))
+            return value
+
+        canonical = {
+            "text": _normalize(self.text),
+            "meta": _normalize({k: self.meta[k] for k in sorted(self.meta)}),
+        }
+
+        try:
+            payload = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        except TypeError:
+            # Fallback: stringify non-serialisable objects deterministically
+            fallback = {
+                "text": canonical["text"],
+                "meta": {k: repr(v) for k, v in canonical["meta"].items()} if isinstance(canonical["meta"], dict) else repr(canonical["meta"]),
+            }
+            payload = json.dumps(fallback, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+        return hashlib.sha256(payload).hexdigest()
 
 
 @dataclass
