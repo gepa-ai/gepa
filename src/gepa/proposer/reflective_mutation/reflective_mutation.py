@@ -14,6 +14,7 @@ from gepa.proposer.reflective_mutation.base import (
     ReflectionComponentSelector,
 )
 from gepa.strategies.batch_sampler import BatchSampler
+from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 
 class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
@@ -40,6 +41,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         skip_perfect_score: bool,
         experiment_tracker: Any,
         reflection_lm: LanguageModel | None = None,
+        reflection_prompt_template: str | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -52,6 +54,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.experiment_tracker = experiment_tracker
         self.reflection_lm = reflection_lm
 
+        InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
+        self.reflection_prompt_template = reflection_prompt_template
+
     def propose_new_texts(
         self,
         candidate: dict[str, str],
@@ -60,8 +65,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
     ) -> dict[str, str]:
         if self.adapter.propose_new_texts is not None:
             return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update)
-
-        from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
         new_texts: dict[str, str] = {}
         for name in components_to_update:
@@ -72,6 +75,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 input_dict={
                     "current_instruction_doc": base_instruction,
                     "dataset_with_feedback": dataset_with_feedback,
+                    "prompt_template": self.reflection_prompt_template,
                 },
             )["new_instruction"]
         return new_texts
