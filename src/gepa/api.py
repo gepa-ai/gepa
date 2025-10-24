@@ -35,6 +35,7 @@ def optimize(
     skip_perfect_score=True,
     reflection_minibatch_size=3,
     perfect_score=1,
+    reflection_prompt_template: str | None = None,
     # Component selection configuration
     module_selector: "ReflectionComponentSelector | str" = "round_robin",
     # Merge-based configuration
@@ -107,6 +108,7 @@ def optimize(
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
     - reflection_minibatch_size: The number of examples to use for reflection in each proposal step.
     - perfect_score: The perfect score to achieve.
+    - reflection_prompt_template: The prompt template to use for reflection. If not provided, GEPA will use the default prompt template (see [InstructionProposalSignature](src/gepa/strategies/instruction_proposal.py)). The prompt template must contain the following placeholders, which will be replaced with actual values: `<curr_instructions>` (will be replaced by the instructions to evolve) and `<inputs_outputs_feedback>` (replaced with the inputs, outputs, and feedback generated with current instruction). This will be ignored if the adapter provides its own `propose_new_texts` method.
 
     # Component selection configuration
     - module_selector: Component selection strategy. Can be a ReflectionComponentSelector instance or a string ('round_robin', 'all'). Defaults to 'round_robin'. The 'round_robin' strategy cycles through components in order. The 'all' strategy selects all components for modification in every GEPA iteration.
@@ -231,6 +233,11 @@ def optimize(
         mlflow_experiment_name=mlflow_experiment_name,
     )
 
+    if reflection_prompt_template is not None:
+        assert not (hasattr(adapter, "propose_new_texts") and adapter.propose_new_texts is not None), (
+            f"Adapter {adapter!s} provides its own propose_new_texts method; reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
+        )
+
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
         trainset=trainset,
@@ -242,6 +249,7 @@ def optimize(
         skip_perfect_score=skip_perfect_score,
         experiment_tracker=experiment_tracker,
         reflection_lm=reflection_lm,
+        reflection_prompt_template=reflection_prompt_template,
     )
 
     def evaluator(inputs, prog):
