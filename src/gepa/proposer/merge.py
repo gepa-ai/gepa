@@ -206,6 +206,8 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         else:
             self.rng = rng
 
+        if val_overlap_floor <= 0:
+            raise ValueError("val_overlap_floor should be a positive integer")
         self.val_overlap_floor = val_overlap_floor
         # Internal counters matching original behavior
         self.merges_due = 0
@@ -261,8 +263,6 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             return None
 
         def has_val_support_overlap(id1: ProgramIdx, id2: ProgramIdx) -> bool:
-            if self.val_overlap_floor <= 0:
-                return True
             common_ids = set(state.prog_candidate_val_subscores[id1].keys()) & set(
                 state.prog_candidate_val_subscores[id2].keys()
             )
