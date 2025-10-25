@@ -13,9 +13,9 @@ from gepa.core.result import GEPAResult
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
-from gepa.proposer.reflective_mutation.base import BatchSampler, LanguageModel, ReflectionComponentSelector
+from gepa.proposer.reflective_mutation.base import LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
-from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
+from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import CurrentBestCandidateSelector, ParetoCandidateSelector
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
