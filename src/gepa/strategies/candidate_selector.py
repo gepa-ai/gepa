@@ -16,17 +16,18 @@ class ParetoCandidateSelector(CandidateSelector):
             self.rng = rng
 
     def select_candidate_idx(self, state: GEPAState) -> int:
-        assert len(state.per_program_tracked_scores) == len(state.program_candidates)
+        assert len(state.program_full_scores_val_set) == len(state.program_candidates)
         return select_program_candidate_from_pareto_front(
             state.program_at_pareto_front_valset,
-            state.per_program_tracked_scores,
+            state.program_full_scores_val_set,
             self.rng,
         )
+
 
 class CurrentBestCandidateSelector(CandidateSelector):
     def __init__(self):
         pass
 
     def select_candidate_idx(self, state: GEPAState) -> int:
-        assert len(state.per_program_tracked_scores) == len(state.program_candidates)
-        return idxmax(state.per_program_tracked_scores)
+        assert len(state.program_full_scores_val_set) == len(state.program_candidates)
+        return idxmax(state.program_full_scores_val_set)

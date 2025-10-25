@@ -150,8 +150,10 @@ class ChromaVectorStore(VectorStoreInterface):
                 return float(distance)
         except (TypeError, ValueError, IndexError) as e:
             import logging
+
             logging.warning(f"Unexpected distance format: {type(distance)}, value: {distance}, error: {e}")
             return 0.0  # Default fallback
+
     @classmethod
     def create_local(cls, persist_directory: str, collection_name: str, embedding_function=None) -> "ChromaVectorStore":
         """
