@@ -157,7 +157,7 @@ def optimize(
 
     # cast data to DataLoader
     trainset = ensure_loader(trainset)
-    valset = ensure_loader(valset or trainset)
+    valset = ensure_loader(valset if valset is not None else trainset)
 
     # Comprehensive stop_callback logic
     # Convert stop_callbacks to a list if it's not already
