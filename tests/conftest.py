@@ -1,5 +1,6 @@
 import json
 import os
+import random
 
 import pytest
 
@@ -79,3 +80,8 @@ def mocked_lms(recorder_dir):
             return cache[key]
 
         yield task_lm, reflection_lm
+
+
+@pytest.fixture
+def rng():
+    return random.Random(42)

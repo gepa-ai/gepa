@@ -16,8 +16,8 @@ def common_mocks():
         program_candidates=[{"test": "value"}],
         parent_program_for_candidate=[None],
         program_full_scores_val_set=[0.5],
-        prog_candidate_val_subscores=[[]],
-        program_at_pareto_front_valset=[set()],
+        prog_candidate_val_subscores=[{}],
+        program_at_pareto_front_valset={0: {}},
         num_metric_calls_by_discovery=[1],
     )
 
@@ -36,7 +36,6 @@ def test_module_selector_default_round_robin(mock_proposer, mock_run, common_moc
 
     # Create mock data instances
     mock_data = [Mock() for _ in range(3)]
-
     result = optimize(
         seed_candidate={"test": "value"},
         trainset=mock_data,
@@ -63,7 +62,6 @@ def test_module_selector_string_round_robin(mock_proposer, mock_run, common_mock
 
     # Create mock data instances
     mock_data = [Mock() for _ in range(3)]
-
     result = optimize(
         seed_candidate={"test": "value"},
         trainset=mock_data,
@@ -90,7 +88,6 @@ def test_module_selector_string_all(mock_proposer, mock_run, common_mocks):
 
     # Create mock data instances to avoid empty trainset concern
     mock_data = [Mock() for _ in range(3)]
-
     result = optimize(
         seed_candidate={"test": "value"},
         trainset=mock_data,
@@ -122,7 +119,6 @@ def test_module_selector_custom_instance(mock_proposer, mock_run, common_mocks):
 
     # Create mock data instances
     mock_data = [Mock() for _ in range(3)]
-
     result = optimize(
         seed_candidate={"test": "value"},
         trainset=mock_data,

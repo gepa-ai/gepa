@@ -50,7 +50,8 @@ seed_prompt = {
 # Let's run GEPA optimization process.
 gepa_result = gepa.optimize(
     seed_candidate=seed_prompt,
-    trainset=trainset, valset=valset,
+    trainset=trainset,
+    valset=valset,
     task_lm="openai/gpt-4.1-mini", # <-- This is the model being optimized
     max_metric_calls=150, # <-- Set a budget
     reflection_lm="openai/gpt-5", # <-- Use a strong model to reflect on mistakes and propose better prompts

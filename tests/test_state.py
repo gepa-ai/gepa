@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -7,6 +8,8 @@ import pytest
 
 import gepa
 import gepa.core.state as state_mod
+from gepa.core.adapter import EvaluationBatch
+from gepa.strategies.eval_policy import EvaluationPolicy
 
 
 @pytest.fixture
@@ -18,7 +21,7 @@ def run_dir(tmp_path):
 def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
     """With a run dir but no state, the state is initialized from scratch and the eval output is written to the run dir."""
     seed = {"model": "m"}
-    valset_out = (["out0", {"k": "out1"}], [0.1, 0.2])
+    valset_out = ({0: "out0", 1: {"k": "out1"}}, {0: 0.1, 1: 0.2})
 
     fake_logger = MagicMock()
     valset_evaluator = MagicMock(return_value=valset_out)
@@ -49,7 +52,7 @@ def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
 def test_initialize_gepa_state_no_run_dir():
     """Without a run dir, the state is initialized from scratch and not saved."""
     seed = {"model": "m"}
-    valset_out = (["out"], [0.5])
+    valset_out = ({0: "out"}, {0: 0.5})
     fake_logger = MagicMock()
     valset_evaluator = MagicMock(return_value=valset_out)
 
@@ -71,7 +74,7 @@ def test_initialize_gepa_state_no_run_dir():
 def test_gepa_state_save_and_initialize(run_dir):
     """With a run dir that contains a saved state, the state is saved and initialized from it."""
     seed = {"model": "m"}
-    valset_out = ([{"x": 1}, {"y": 2}], [0.3, 0.7])
+    valset_out = ({0: {"x": 1}, 1: {"y": 2}}, {0: 0.3, 1: 0.7})
     fake_logger = MagicMock()
     valset_evaluator = MagicMock(return_value=valset_out)
 
@@ -103,6 +106,123 @@ def test_gepa_state_save_and_initialize(run_dir):
     assert state.__dict__ == result.__dict__
 
 
+def test_dynamic_validation(run_dir, rng):
+    trainset = [{"id": i, "difficulty": i + 2} for i in range(3)]
+    valset_initial = [{"id": i, "difficulty": i + 2} for i in range(2)]
+    seed_candidate = {"system_prompt": "weight=0"}
+
+    class DummyAdapter:
+        def __init__(self):
+            self.propose_new_texts = self._propose_new_texts
+
+        def evaluate(self, batch, candidate, capture_traces=False):
+            weight = int(candidate["system_prompt"].split("=")[-1])
+            outputs = [{"id": item["id"], "weight": weight} for item in batch]
+            scores = [min(1.0, (weight + 1) / (item["difficulty"])) for item in batch]
+            trajectories = [{"score": score} for score in scores] if capture_traces else None
+            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
+
+        def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+            records = [{"score": score} for score in eval_batch.scores]
+            return dict.fromkeys(components_to_update, records)
+
+        def _propose_new_texts(self, candidate, reflective_dataset, components_to_update):
+            weight = int(candidate["system_prompt"].split("=")[-1])
+            return dict.fromkeys(components_to_update, f"weight={weight + 1}")
+
+    adapter = DummyAdapter()
+
+    # initially only validate on first example
+    class InitValidationPolicy(EvaluationPolicy):
+        def get_eval_batch(self, loader, state, target_program_idx=None):
+            return [0]
+
+        def is_evaluation_sparse(self) -> bool:
+            return False
+
+        def get_best_program(self, state: state_mod.GEPAState) -> state_mod.ProgramIdx:
+            return 0
+
+        def get_valset_score(self, program_idx: state_mod.ProgramIdx, state: state_mod.GEPAState) -> float:
+            return state.get_program_average_val_subset(program_idx)[0]
+
+    init_validation_policy = InitValidationPolicy()
+    gepa.optimize(
+        seed_candidate=seed_candidate,
+        trainset=trainset,
+        valset=valset_initial,
+        adapter=adapter,
+        reflection_lm=None,
+        max_metric_calls=6,
+        run_dir=run_dir,
+        val_evaluation_policy=init_validation_policy,
+    )
+
+    state_phase_one = state_mod.GEPAState.load(str(run_dir))
+    assert len(state_phase_one.program_candidates) >= 2
+    assert 0 in state_phase_one.prog_candidate_val_subscores[-1]
+    assert 1 not in state_phase_one.prog_candidate_val_subscores[-1]
+    assert state_phase_one.valset_evaluations.keys() == {0, 1}
+
+    extended_valset = valset_initial + [{"id": 2, "difficulty": 4}]
+
+    valset_ids = set(range(len(extended_valset)))
+
+    class BackfillValidationPolicy(EvaluationPolicy):
+        def get_eval_batch(self, loader, state, target_program_idx=None) -> list[int]:
+            missing_valset_ids = valset_ids.difference(state.valset_evaluations.keys())
+            if missing_valset_ids:
+                return sorted(list(missing_valset_ids))
+            return rng.sample(valset_ids, 1)
+
+        def get_best_program(self, state: state_mod.GEPAState) -> state_mod.ProgramIdx:
+            return 0
+
+        def is_evaluation_sparse(self) -> bool:
+            return False
+
+        def get_valset_score(self, program_idx: state_mod.ProgramIdx, state: state_mod.GEPAState) -> float:
+            return state.get_program_average_val_subset(program_idx)[0]
+
+    best_stage1_candidate_idx = init_validation_policy.get_best_program(state_phase_one)
+    best_stage1_candidate = state_phase_one.program_candidates[best_stage1_candidate_idx]
+    gepa.optimize(
+        seed_candidate=best_stage1_candidate,
+        trainset=trainset,
+        valset=extended_valset,
+        adapter=adapter,
+        reflection_lm=None,
+        max_metric_calls=10,
+        run_dir=run_dir,
+        val_evaluation_policy=BackfillValidationPolicy(),
+    )
+
+    resumed_state = state_mod.GEPAState.load(str(run_dir))
+    assert resumed_state.valset_evaluations.keys() == valset_ids
+    assert set(resumed_state.prog_candidate_val_subscores[0].keys()) == {0, 1}
+    covered_ids = set().union(*[scores.keys() for scores in resumed_state.prog_candidate_val_subscores])
+    assert covered_ids == {0, 1, 2}
+
+
+@pytest.fixture
+def legacy_run_dir(tmp_path: Path) -> Path:
+    legacy_run_dir = tmp_path / "legacy_run"
+    legacy_run_dir.mkdir(parents=True, exist_ok=True)
+    legacy_resource_path = Path(__file__).parent / "legacy_test_state.bin"
+    shutil.copy2(legacy_resource_path, legacy_run_dir / "gepa_state.bin")
+    return legacy_run_dir
+
+
+def test_load_legacy_state(legacy_run_dir):
+    """Ensure legacy gepa_state.bin files migrate correctly when loaded."""
+    state = state_mod.GEPAState.load(str(legacy_run_dir))
+
+    assert isinstance(state.prog_candidate_val_subscores, list)
+    assert all(isinstance(scores, dict) for scores in state.prog_candidate_val_subscores)
+    assert state.validation_schema_version == state_mod.GEPAState._VALIDATION_SCHEMA_VERSION
+    assert state.valset_evaluations.keys() == set(range(45))
+
+
 @pytest.fixture(scope="module")
 def recorder_dir() -> Path:
     """Use the cached mocked LLM aime prompt optimization"""
@@ -113,6 +233,7 @@ def recorder_dir() -> Path:
 
 def test_e2e_resume_run(mocked_lms, run_dir):
     """E2E tests for resuming a previous run from a run_dir."""
+    import gepa
     from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
 
     # 1. Setup: Unpack fixtures and load data

@@ -4,18 +4,19 @@
 from typing import Any
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 from gepa.proposer.reflective_mutation.base import (
-    BatchSampler,
     CandidateSelector,
     LanguageModel,
     ReflectionComponentSelector,
 )
+from gepa.strategies.batch_sampler import BatchSampler
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 
-class ReflectiveMutationProposer(ProposeNewCandidate):
+class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
     """
     Implements current reflective mutation flow:
     - Select candidate via selector
@@ -30,11 +31,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
     def __init__(
         self,
         logger: Any,
-        trainset: list[DataInst],
+        trainset: list[DataInst] | DataLoader[DataId, DataInst],
         adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput],
         candidate_selector: CandidateSelector,
         module_selector: ReflectionComponentSelector,
-        batch_sampler: BatchSampler,
+        batch_sampler: BatchSampler[DataId, DataInst],
         perfect_score: float,
         skip_perfect_score: bool,
         experiment_tracker: Any,
@@ -42,7 +43,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
         reflection_prompt_template: str | None = None,
     ):
         self.logger = logger
-        self.trainset = trainset
+        self.trainset = ensure_loader(trainset)
         self.adapter = adapter
         self.candidate_selector = candidate_selector
         self.module_selector = module_selector
@@ -85,14 +86,14 @@ class ReflectiveMutationProposer(ProposeNewCandidate):
         curr_prog = state.program_candidates[curr_prog_id]
         state.full_program_trace[-1]["selected_program_candidate"] = curr_prog_id
         self.logger.log(
-            f"Iteration {i}: Selected program {curr_prog_id} score: {state.per_program_tracked_scores[curr_prog_id]}"
+            f"Iteration {i}: Selected program {curr_prog_id} score: {state.program_full_scores_val_set[curr_prog_id]}"
         )
 
         self.experiment_tracker.log_metrics({"iteration": i, "selected_program_candidate": curr_prog_id}, step=i)
 
-        subsample_ids = self.batch_sampler.next_minibatch_indices(len(self.trainset), i - 1)
+        subsample_ids = self.batch_sampler.next_minibatch_ids(self.trainset, state)
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
-        minibatch = [self.trainset[j] for j in subsample_ids]
+        minibatch = self.trainset.fetch(subsample_ids)
 
         # 1) Evaluate current program with traces
         eval_curr = self.adapter.evaluate(minibatch, curr_prog, capture_traces=True)

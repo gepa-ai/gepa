@@ -23,10 +23,6 @@ class ReflectionComponentSelector(Protocol):
     ) -> list[str]: ...
 
 
-class BatchSampler(Protocol):
-    def next_minibatch_indices(self, trainset_size: int, iteration: int) -> list[int]: ...
-
-
 class LanguageModel(Protocol):
     def __call__(self, prompt: str) -> str: ...
 
