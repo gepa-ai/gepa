@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from gepa import optimize
+from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
@@ -25,6 +26,19 @@ def common_mocks():
     mock_adapter.evaluate.return_value = Mock(outputs=[], scores=[])
 
     return mock_run_return, mock_adapter
+
+
+@pytest.fixture
+def base_optimize_kwargs(common_mocks):
+    """Base kwargs for optimize() in batch_sampler tests."""
+    _, mock_adapter = common_mocks
+    return {
+        "seed_candidate": {"test": "value"},
+        "trainset": [Mock() for _ in range(10)],
+        "adapter": mock_adapter,
+        "reflection_lm": lambda x: "test response",
+        "max_metric_calls": 1,
+    }
 
 
 @patch("gepa.api.GEPAEngine.run")
@@ -173,3 +187,45 @@ def test_module_selector_invalid_string_raises_error(common_mocks):
             module_selector="invalid_strategy",
             max_metric_calls=1,
         )
+
+
+@patch("gepa.api.GEPAEngine.run")
+@patch("gepa.api.ReflectiveMutationProposer")
+def test_batch_sampler_configuration(mock_proposer, mock_run, common_mocks, base_optimize_kwargs):
+    """Test various batch_sampler configuration options."""
+    mock_run_return, _ = common_mocks
+    mock_run.return_value = mock_run_return
+
+    # Test 1: Default behavior (defaults to minibatch_size=3)
+    optimize(**base_optimize_kwargs)
+    sampler = mock_proposer.call_args.kwargs["batch_sampler"]
+    assert isinstance(sampler, EpochShuffledBatchSampler)
+    assert sampler.minibatch_size == 3
+
+    # Test 2: Using reflection_minibatch_size parameter
+    mock_proposer.reset_mock()
+    optimize(**base_optimize_kwargs, reflection_minibatch_size=7)
+    sampler = mock_proposer.call_args.kwargs["batch_sampler"]
+    assert isinstance(sampler, EpochShuffledBatchSampler)
+    assert sampler.minibatch_size == 7
+
+    # Test 3: Explicit string 'epoch_shuffled' with custom minibatch_size
+    mock_proposer.reset_mock()
+    optimize(**base_optimize_kwargs, batch_sampler="epoch_shuffled", reflection_minibatch_size=5)
+    sampler = mock_proposer.call_args.kwargs["batch_sampler"]
+    assert isinstance(sampler, EpochShuffledBatchSampler)
+    assert sampler.minibatch_size == 5
+
+    # Test 4: Custom BatchSampler instance
+    mock_proposer.reset_mock()
+    custom_batch_sampler = EpochShuffledBatchSampler(minibatch_size=10)
+    optimize(**base_optimize_kwargs, batch_sampler=custom_batch_sampler)
+    assert mock_proposer.call_args.kwargs["batch_sampler"] is custom_batch_sampler
+
+
+def test_batch_sampler_invalid_configuration(base_optimize_kwargs):
+    """Test that invalid batch_sampler configurations raise appropriate errors."""
+    custom_batch_sampler = EpochShuffledBatchSampler(minibatch_size=5)
+
+    with pytest.raises(AssertionError, match="reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"):
+        optimize(**base_optimize_kwargs, batch_sampler=custom_batch_sampler, reflection_minibatch_size=3)

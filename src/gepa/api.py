@@ -15,7 +15,7 @@ from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
-from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
+from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import CurrentBestCandidateSelector, ParetoCandidateSelector
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
@@ -35,7 +35,8 @@ def optimize(
     reflection_lm: LanguageModel | str | None = None,
     candidate_selection_strategy: str = "pareto",
     skip_perfect_score=True,
-    reflection_minibatch_size=3,
+    batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
+    reflection_minibatch_size: int | None = None,
     perfect_score=1,
     reflection_prompt_template: str | None = None,
     # Component selection configuration
@@ -110,7 +111,8 @@ def optimize(
     - reflection_lm: A `LanguageModel` instance that is used to reflect on the performance of the candidate program.
     - candidate_selection_strategy: The strategy to use for selecting the candidate to update.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
-    - reflection_minibatch_size: The number of examples to use for reflection in each proposal step.
+    - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](src/gepa/strategies/batch_sampler.py) instance or a string for a predefined strategy from ['epoch_shuffled']. Defaults to 'epoch_shuffled', which creates an [EpochShuffledBatchSampler](src/gepa/strategies/batch_sampler.py).
+    - reflection_minibatch_size: The number of examples to use for reflection in each proposal step. Defaults to 3. Only valid when batch_sampler='epoch_shuffled' (default), and is ignored otherwise.
     - perfect_score: The perfect score to achieve.
     - reflection_prompt_template: The prompt template to use for reflection. If not provided, GEPA will use the default prompt template (see [InstructionProposalSignature](src/gepa/strategies/instruction_proposal.py)). The prompt template must contain the following placeholders, which will be replaced with actual values: `<curr_instructions>` (will be replaced by the instructions to evolve) and `<inputs_outputs_feedback>` (replaced with the inputs, outputs, and feedback generated with current instruction). This will be ignored if the adapter provides its own `propose_new_texts` method.
 
@@ -238,7 +240,12 @@ def optimize(
 
         module_selector = module_selector_cls()
 
-    batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size, rng=rng)
+    if batch_sampler == "epoch_shuffled":
+        batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size or 3, rng=rng)
+    else:
+        assert reflection_minibatch_size is None, (
+            "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"
+        )
 
     experiment_tracker = create_experiment_tracker(
         use_wandb=use_wandb,
