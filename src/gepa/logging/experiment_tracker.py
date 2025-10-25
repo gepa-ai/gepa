@@ -37,6 +37,8 @@ class ExperimentTracker:
         self.mlflow_tracking_uri = mlflow_tracking_uri
         self.mlflow_experiment_name = mlflow_experiment_name
 
+        self._created_mlflow_run = False
+
     def initialize(self):
         """Initialize the logging backends."""
         if self.use_wandb:
@@ -48,6 +50,7 @@ class ExperimentTracker:
         """Initialize wandb."""
         try:
             import wandb  # type: ignore
+
             if self.wandb_api_key:
                 wandb.login(key=self.wandb_api_key, verify=True)
             else:
@@ -61,6 +64,7 @@ class ExperimentTracker:
         """Initialize mlflow."""
         try:
             import mlflow  # type: ignore
+
             if self.mlflow_tracking_uri:
                 mlflow.set_tracking_uri(self.mlflow_tracking_uri)
             if self.mlflow_experiment_name:
@@ -74,16 +78,24 @@ class ExperimentTracker:
         """Start a new run."""
         if self.use_wandb:
             import wandb  # type: ignore
+
             wandb.init(**self.wandb_init_kwargs)
         if self.use_mlflow:
             import mlflow  # type: ignore
-            mlflow.start_run(nested=True)
+
+            # Only start a new run if there's no active run
+            if mlflow.active_run() is None:
+                mlflow.start_run()
+                self._created_mlflow_run = True
+            else:
+                self._created_mlflow_run = False
 
     def log_metrics(self, metrics: dict[str, Any], step: int | None = None):
         """Log metrics to the active backends."""
         if self.use_wandb:
             try:
                 import wandb  # type: ignore
+
                 wandb.log(metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log to wandb: {e}")
@@ -91,6 +103,7 @@ class ExperimentTracker:
         if self.use_mlflow:
             try:
                 import mlflow  # type: ignore
+
                 mlflow.log_metrics(metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log to mlflow: {e}")
@@ -100,6 +113,7 @@ class ExperimentTracker:
         if self.use_wandb:
             try:
                 import wandb  # type: ignore
+
                 if wandb.run is not None:
                     wandb.finish()
             except Exception as e:
@@ -108,8 +122,10 @@ class ExperimentTracker:
         if self.use_mlflow:
             try:
                 import mlflow  # type: ignore
-                if mlflow.active_run() is not None:
+
+                if self._created_mlflow_run and mlflow.active_run() is not None:
                     mlflow.end_run()
+                    self._created_mlflow_run = False
             except Exception as e:
                 print(f"Warning: Failed to end mlflow run: {e}")
 
@@ -118,6 +134,7 @@ class ExperimentTracker:
         if self.use_wandb:
             try:
                 import wandb  # type: ignore
+
                 if wandb.run is not None:
                     return True
             except Exception:
@@ -126,6 +143,7 @@ class ExperimentTracker:
         if self.use_mlflow:
             try:
                 import mlflow  # type: ignore
+
                 if mlflow.active_run() is not None:
                     return True
             except Exception:

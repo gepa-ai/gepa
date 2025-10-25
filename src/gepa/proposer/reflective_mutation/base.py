@@ -2,12 +2,13 @@
 # https://github.com/gepa-ai/gepa
 
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Callable, Protocol, runtime_checkable
 
 from gepa.core.adapter import Trajectory
 from gepa.core.state import GEPAState
 
 
+@runtime_checkable
 class CandidateSelector(Protocol):
     def select_candidate_idx(self, state: GEPAState) -> int: ...
 
@@ -21,10 +22,6 @@ class ReflectionComponentSelector(Protocol):
         candidate_idx: int,
         candidate: dict[str, str],
     ) -> list[str]: ...
-
-
-class BatchSampler(Protocol):
-    def next_minibatch_indices(self, trainset_size: int, iteration: int) -> list[int]: ...
 
 
 class LanguageModel(Protocol):

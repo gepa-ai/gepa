@@ -17,9 +17,10 @@ from gepa.strategies.candidate_selector import (
 def mock_state():
     """Create a mock GEPAState with 3 candidates for testing."""
     seed_candidate = {"system_prompt": "test"}
+    # GEPAState expects dicts for outputs and scores keyed by data IDs
     base_valset_eval_output = (
-        ["out1", "out2", "out3"],
-        [0.5, 0.3, 0.7],
+        {0: "out1", 1: "out2", 2: "out3"},
+        {0: 0.5, 1: 0.3, 2: 0.7},
     )
     state = GEPAState(seed_candidate, base_valset_eval_output, track_best_outputs=False)
 
@@ -27,20 +28,15 @@ def mock_state():
     state.program_candidates.append({"system_prompt": "test2"})
     state.program_candidates.append({"system_prompt": "test3"})
 
-    state.program_full_scores_val_set.append(0.6)
-    state.program_full_scores_val_set.append(0.8)
-
-    state.per_program_tracked_scores.append(0.6)
-    state.per_program_tracked_scores.append(0.8)  # This is the best
+    # prog_candidate_val_subscores should be dicts, not lists
+    state.prog_candidate_val_subscores.append({0: 0.6, 1: 0.6, 2: 0.6})
+    state.prog_candidate_val_subscores.append({0: 0.8, 1: 0.8, 2: 0.8})
 
     state.parent_program_for_candidate.append([0])
     state.parent_program_for_candidate.append([1])
 
     state.named_predictor_id_to_update_next_for_program_candidate.append(0)
     state.named_predictor_id_to_update_next_for_program_candidate.append(0)
-
-    state.prog_candidate_val_subscores.append([0.6, 0.6, 0.6])
-    state.prog_candidate_val_subscores.append([0.8, 0.8, 0.8])
 
     state.num_metric_calls_by_discovery.append(0)
     state.num_metric_calls_by_discovery.append(0)
@@ -61,7 +57,7 @@ class TestCurrentBestCandidateSelector:
         # Best candidate is at index 2 with score 0.8
         selected_idx = selector.select_candidate_idx(mock_state)
         assert selected_idx == 2
-        assert mock_state.per_program_tracked_scores[selected_idx] == 0.8
+        assert mock_state.program_full_scores_val_set[selected_idx] == pytest.approx(0.8)
 
     def test_deterministic(self, mock_state):
         """Test that CurrentBestCandidateSelector is deterministic."""

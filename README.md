@@ -50,7 +50,8 @@ seed_prompt = {
 # Let's run GEPA optimization process.
 gepa_result = gepa.optimize(
     seed_candidate=seed_prompt,
-    trainset=trainset, valset=valset,
+    trainset=trainset,
+    valset=valset,
     task_lm="openai/gpt-4.1-mini", # <-- This is the model being optimized
     max_metric_calls=150, # <-- Set a budget
     reflection_lm="openai/gpt-5", # <-- Use a strong model to reflect on mistakes and propose better prompts
@@ -289,6 +290,7 @@ We encourage the community and users to help us develop adapters to allow GEPA t
 - **GEPA Integrations:**  
   Want to use GEPA in other frameworks?  
   - [DSPy Adapter Code](https://github.com/stanfordnlp/dspy/tree/main/dspy/teleprompt/gepa/gepa_utils.py) (integrates GEPA with [DSPy](https://dspy.ai/)),  
+  - [MLflow Prompt Optimization](https://mlflow.org/docs/latest/genai/prompt-registry/optimize-prompts/) - GEPA is integrated into MLflow's `mlflow.genai.optimize_prompts()` API for automatic prompt improvement using evaluation metrics and training data. Works with any agent framework and supports multi-prompt optimization.
   - [Contributed Adapters](src/gepa/adapters/) – see our adapter templates and issue tracker to request new integrations.
     - [DefaultAdapter](src/gepa/adapters/default_adapter/) - System Prompt Optimization for a single-turn task.
     - [DSPy Full Program Adapter](src/gepa/adapters/dspy_full_program_adapter/) - Evolves entire DSPy programs including signatures, modules, and control flow. Achieves **93% accuracy** on MATH benchmark (vs 67% with basic DSPy ChainOfThought).
@@ -306,6 +308,12 @@ We encourage the community and users to help us develop adapters to allow GEPA t
     - [Teaching LLMs to Diagnose Production Incidents with ATLAS+GEPA](https://www.arc.computer/blog/atlas-sre-diagnosis)
     - [DataBricks: Building State-of-the-Art Enterprise Agents 90x Cheaper with GEPA](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization)
     - [comet-ml/opik adds support for GEPA](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer)
+    - [Tuning small models (Gemma3-1B) for writing fiction](https://meandnotes.substack.com/p/i-taught-a-small-llm-to-write-fiction?triedRedirect=true)
+    - [Cut OCR Error Rates by upto 38% across model classes (Gemini 2.5 Pro, 2.5 Flash, 2.0 Flash)](https://www.intrinsic-labs.ai/research/ocr-gepa-v1.pdf)
+    - [Optimizing a Data Analysis coding agent with GEPA, using execution-guided feedback on real-world workloads](https://medium.com/firebird-technologies/context-engineering-improving-ai-coding-agents-using-dspy-gepa-df669c632766)
+    - [Generating Naruto (Anime) style dialogues with GPT-4o-mini using GEPA](https://zenn.dev/cybernetics/articles/39fb763aca746c)
+    - [Augmenting RL-tuned models with GEPA: Achieving +142% student performance improvement by augmenting a RL-tuned teacher with GEPA](https://www.arc.computer/blog/supercharging-rl-with-online-optimization)
+    - [DeepResearch Agent Optimized with GEPA](https://www.rajapatnaik.com/blog/2025/10/23/langgraph-dspy-gepa-researcher)
 
 ## Reference and Citation
 

@@ -3,10 +3,11 @@
 
 import os
 import random
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.logging.experiment_tracker import create_experiment_tracker
@@ -14,7 +15,7 @@ from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
-from gepa.strategies.batch_sampler import EpochShuffledBatchSampler
+from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import (
     CurrentBestCandidateSelector,
     EpsilonGreedyCandidateSelector,
@@ -24,26 +25,30 @@ from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
 )
+from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
 
 
 def optimize(
     seed_candidate: dict[str, str],
-    trainset: list[DataInst],
-    valset: list[DataInst] | None = None,
+    trainset: list[DataInst] | DataLoader[DataId, DataInst],
+    valset: list[DataInst] | DataLoader[DataId, DataInst] | None = None,
     adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None,
     task_lm: str | Callable | None = None,
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
     candidate_selection_strategy: CandidateSelector | str = "pareto",
     skip_perfect_score=True,
-    reflection_minibatch_size=3,
+    batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
+    reflection_minibatch_size: int | None = None,
     perfect_score=1,
+    reflection_prompt_template: str | None = None,
     # Component selection configuration
     module_selector: "ReflectionComponentSelector | str" = "round_robin",
     # Merge-based configuration
     use_merge=False,
     max_merge_invocations=5,
+    merge_val_overlap_floor: int = 5,
     # Budget and Stop Condition
     max_metric_calls=None,
     stop_callbacks: "StopperProtocol | list[StopperProtocol] | None" = None,
@@ -58,9 +63,11 @@ def optimize(
     mlflow_experiment_name: str | None = None,
     track_best_outputs: bool = False,
     display_progress_bar: bool = False,
+    use_cloudpickle: bool = False,
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
+    val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
 ):
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -99,8 +106,8 @@ def optimize(
 
     Parameters:
     - seed_candidate: The initial candidate to start with.
-    - trainset: The training set to use for reflective updates.
-    - valset: The validation set to use for tracking Pareto scores. If not provided, GEPA will use the trainset for both.
+    - trainset: Training data supplied as an in-memory sequence or a `DataLoader` yielding batches for reflective updates.
+    - valset: Validation data source (sequence or `DataLoader`) used for tracking Pareto scores. If not provided, GEPA reuses the trainset.
     - adapter: A `GEPAAdapter` instance that implements the adapter interface. This allows GEPA to plug into your system's environment. If not provided, GEPA will use a default adapter: `gepa.adapters.default_adapter.default_adapter.DefaultAdapter`, with model defined by `task_lm`.
     - task_lm: Optional. The model to use for the task. This is only used if `adapter` is not provided, and is used to initialize the default adapter.
 
@@ -108,8 +115,10 @@ def optimize(
     - reflection_lm: A `LanguageModel` instance that is used to reflect on the performance of the candidate program.
     - candidate_selection_strategy: The strategy to use for selecting the candidate to update.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
-    - reflection_minibatch_size: The number of examples to use for reflection in each proposal step.
+    - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](src/gepa/strategies/batch_sampler.py) instance or a string for a predefined strategy from ['epoch_shuffled']. Defaults to 'epoch_shuffled', which creates an [EpochShuffledBatchSampler](src/gepa/strategies/batch_sampler.py).
+    - reflection_minibatch_size: The number of examples to use for reflection in each proposal step. Defaults to 3. Only valid when batch_sampler='epoch_shuffled' (default), and is ignored otherwise.
     - perfect_score: The perfect score to achieve.
+    - reflection_prompt_template: The prompt template to use for reflection. If not provided, GEPA will use the default prompt template (see [InstructionProposalSignature](src/gepa/strategies/instruction_proposal.py)). The prompt template must contain the following placeholders, which will be replaced with actual values: `<curr_instructions>` (will be replaced by the instructions to evolve) and `<inputs_outputs_feedback>` (replaced with the inputs, outputs, and feedback generated with current instruction). This will be ignored if the adapter provides its own `propose_new_texts` method.
 
     # Component selection configuration
     - module_selector: Component selection strategy. Can be a ReflectionComponentSelector instance or a string ('round_robin', 'all'). Defaults to 'round_robin'. The 'round_robin' strategy cycles through components in order. The 'all' strategy selects all components for modification in every GEPA iteration.
@@ -117,6 +126,7 @@ def optimize(
     # Merge-based configuration
     - use_merge: Whether to use the merge strategy.
     - max_merge_invocations: The maximum number of merge invocations to perform.
+    - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before attempting a merge subsample. Only relevant when using `val_evaluation_policy` other than `full_eval`.
 
     # Budget and Stop Condition
     - max_metric_calls: Optional maximum number of metric calls to perform. If not provided, stop_callbacks must be provided.
@@ -133,9 +143,13 @@ def optimize(
     - mlflow_tracking_uri: The tracking URI to use for MLflow.
     - mlflow_experiment_name: The experiment name to use for MLflow.
     - track_best_outputs: Whether to track the best outputs on the validation set. If True, GEPAResult will contain the best outputs obtained for each task in the validation set.
+    - display_progress_bar: Show a tqdm progress bar over metric calls when enabled.
+    - use_cloudpickle: Use cloudpickle instead of pickle. This can be helpful when the serialized state contains dynamically generated DSPy signatures.
 
     # Reproducibility
     - seed: The seed to use for the random number generator.
+    - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
+    - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
     """
     if adapter is None:
         assert task_lm is not None, (
@@ -146,6 +160,10 @@ def optimize(
         assert task_lm is None, (
             "Since an adapter is provided, GEPA does not require a task LM to be provided. Please set the `task_lm` parameter to None."
         )
+
+    # cast data to DataLoader
+    trainset = ensure_loader(trainset)
+    valset = ensure_loader(valset if valset is not None else trainset)
 
     # Comprehensive stop_callback logic
     # Convert stop_callbacks to a list if it's not already
@@ -202,26 +220,31 @@ def optimize(
     if logger is None:
         logger = StdOutLogger()
 
-    if valset is None:
-        valset = trainset
-
     rng = random.Random(seed)
 
     if isinstance(candidate_selection_strategy, str):
         candidate_selector_cls = {
             "pareto": ParetoCandidateSelector(rng=rng),
             "best": CurrentBestCandidateSelector(),
+            "current_best": CurrentBestCandidateSelector(),  # Alias for 'best'
             "epsilon_greedy": EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
         }.get(candidate_selection_strategy)
 
         assert candidate_selector_cls is not None, (
-            f"Unknown candidate_selector strategy: {candidate_selection_strategy}. Supported strategies: 'pareto', 'best', 'epsilon_greedy'"
+            f"Unknown candidate_selector strategy: {candidate_selection_strategy}. Supported strategies: 'pareto', 'best', 'current_best', 'epsilon_greedy'"
         )
 
         candidate_selector = candidate_selector_cls
 
     if isinstance(candidate_selection_strategy, CandidateSelector):
         candidate_selector = candidate_selection_strategy
+
+    if val_evaluation_policy is None or val_evaluation_policy == "full_eval":
+        val_evaluation_policy = FullEvaluationPolicy()
+    elif not isinstance(val_evaluation_policy, EvaluationPolicy):
+        raise ValueError(
+            f"val_evaluation_policy should be one of 'full_eval' or an instance of EvaluationPolicy, but got {type(val_evaluation_policy)}"
+        )
 
     if isinstance(module_selector, str):
         module_selector_cls = {
@@ -235,7 +258,12 @@ def optimize(
 
         module_selector = module_selector_cls()
 
-    batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size, rng=rng)
+    if batch_sampler == "epoch_shuffled":
+        batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size or 3, rng=rng)
+    else:
+        assert reflection_minibatch_size is None, (
+            "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"
+        )
 
     experiment_tracker = create_experiment_tracker(
         use_wandb=use_wandb,
@@ -245,6 +273,11 @@ def optimize(
         mlflow_tracking_uri=mlflow_tracking_uri,
         mlflow_experiment_name=mlflow_experiment_name,
     )
+
+    if reflection_prompt_template is not None:
+        assert not (hasattr(adapter, "propose_new_texts") and adapter.propose_new_texts is not None), (
+            f"Adapter {adapter!s} provides its own propose_new_texts method; reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
+        )
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
@@ -257,6 +290,7 @@ def optimize(
         skip_perfect_score=skip_perfect_score,
         experiment_tracker=experiment_tracker,
         reflection_lm=reflection_lm,
+        reflection_prompt_template=reflection_prompt_template,
     )
 
     def evaluator(inputs, prog):
@@ -272,6 +306,7 @@ def optimize(
             use_merge=use_merge,
             max_merge_invocations=max_merge_invocations,
             rng=rng,
+            val_overlap_floor=merge_val_overlap_floor,
         )
 
     engine = GEPAEngine(
@@ -289,6 +324,8 @@ def optimize(
         display_progress_bar=display_progress_bar,
         raise_on_exception=raise_on_exception,
         stop_callback=stop_callback,
+        val_evaluation_policy=val_evaluation_policy,
+        use_cloudpickle=use_cloudpickle,
     )
 
     with experiment_tracker:

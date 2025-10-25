@@ -1,4 +1,6 @@
 name: Lint, Test, and Build
+permissions:
+  contents: read
 
 on:
   push:
