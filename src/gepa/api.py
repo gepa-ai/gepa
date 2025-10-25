@@ -3,7 +3,7 @@
 
 import os
 import random
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
@@ -33,8 +33,8 @@ def optimize(
     reflection_lm: LanguageModel | str | None = None,
     candidate_selection_strategy: str = "pareto",
     skip_perfect_score=True,
-    batch_sampler: BatchSampler | str = "epoch_shuffled",
-    reflection_minibatch_size: int | None = None,
+    batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
+    reflection_minibatch_size: int | None = 3,
     perfect_score=1,
     # Component selection configuration
     module_selector: "ReflectionComponentSelector | str" = "round_robin",
@@ -106,8 +106,8 @@ def optimize(
     - reflection_lm: A `LanguageModel` instance that is used to reflect on the performance of the candidate program.
     - candidate_selection_strategy: The strategy to use for selecting the candidate to update.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
-    - batch_sampler: Strategy for selecting training examples. Can be a BatchSampler instance or a string for a predefined strategy: 'epoch_shuffled'. Defaults to 'epoch_shuffled', which creates an EpochShuffledBatchSampler.
-    - reflection_minibatch_size: [Backwards compatibility] The number of examples to use by EpochShuffledBatchSampler for reflection in each proposal step. Defaults to 3. Only valid when batch_sampler='epoch_shuffled' (default).
+    - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](src/gepa/strategies/batch_sampler.py) instance or a string for a predefined strategy from ['epoch_shuffled']. Defaults to 'epoch_shuffled', which creates an [EpochShuffledBatchSampler](src/gepa/strategies/batch_sampler.py).
+    - reflection_minibatch_size: The number of examples to use for reflection in each proposal step. Defaults to 3. Only valid when batch_sampler='epoch_shuffled' (default), and is ignored otherwise.
     - perfect_score: The perfect score to achieve.
 
     # Component selection configuration
@@ -225,7 +225,9 @@ def optimize(
     if batch_sampler == "epoch_shuffled":
         batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size or 3, rng=rng)
     else:
-        assert reflection_minibatch_size is None, "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"
+        assert reflection_minibatch_size is None, (
+            "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"
+        )
 
     experiment_tracker = create_experiment_tracker(
         use_wandb=use_wandb,
