@@ -34,7 +34,7 @@ def optimize(
     candidate_selection_strategy: str = "pareto",
     skip_perfect_score=True,
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
-    reflection_minibatch_size: int | None = 3,
+    reflection_minibatch_size: int | None = None,
     perfect_score=1,
     # Component selection configuration
     module_selector: "ReflectionComponentSelector | str" = "round_robin",
