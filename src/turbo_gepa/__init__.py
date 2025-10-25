@@ -30,7 +30,6 @@ from .interfaces import Candidate, EvalResult  # noqa: F401
 from .mutator import MutationConfig, Mutator  # noqa: F401
 from .orchestrator import Orchestrator  # noqa: F401
 from .sampler import InstanceSampler  # noqa: F401
-from .token_controller import TokenCostController  # noqa: F401
 
 # High-level API
 from .optimize import optimize  # noqa: F401

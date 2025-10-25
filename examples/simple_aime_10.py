@@ -38,31 +38,37 @@ dataset = [
         id=f"aime_{i}",
         additional_context=ex.get("additional_context"),
     )
-    for i, ex in enumerate(trainset[:5])
+    for i, ex in enumerate(trainset[:10])
 ]
 print(f"✓ Loaded {len(dataset)} problems\n")
 
-# Simple config
+# Simple config knobs
+MAX_ROUNDS = 1
+BATCH_SIZE = 10
+MAX_MUTATIONS_PER_ROUND = 5
+MAX_EXAMPLES_INFLIGHT = 64
+
 config = Config(
     shards=(1.0,),
-    batch_size=10,
-    max_mutations_per_round=5,
-    eval_concurrency=64,
-    max_total_inflight=64,
+    batch_size=BATCH_SIZE,
+    max_mutations_per_round=MAX_MUTATIONS_PER_ROUND,
+    eval_concurrency=MAX_EXAMPLES_INFLIGHT,
+    max_total_inflight=MAX_EXAMPLES_INFLIGHT,
     n_islands=1,
     reflection_batch_size=3,
     target_quality=0.3,  # Stop at 30% (3/10 correct)
 )
 
 print(
-    f"🔧 Config: {len(dataset)} problems, {config.max_mutations_per_round} mutations/round\n"
+    f"🔧 Config: {len(dataset)} problems | batch_size={BATCH_SIZE} | "
+    f"mutations/round={MAX_MUTATIONS_PER_ROUND} | max_examples_inflight={MAX_EXAMPLES_INFLIGHT}\n"
 )
 
 # Create adapter
 adapter = DefaultAdapter(
     dataset=dataset,
     task_lm="openrouter/openai/gpt-oss-120b:nitro",
-    reflection_lm="openrouter/openai/gpt-oss-120b:nitro",
+    reflection_lm="openrouter/x-ai/grok-4-fast",
     auto_config=False,
 )
 adapter.config = config
@@ -90,10 +96,10 @@ SEED_PROMPT = (
 try:
     result = adapter.optimize(
         seeds=[SEED_PROMPT],
-        max_rounds=3,
-        max_evaluations=50,
+        max_rounds=MAX_ROUNDS,
         enable_auto_stop=False,
         display_progress=True,
+        optimize_temperature_after_convergence=False,
         metrics_callback=metrics_callback,
     )
 except KeyboardInterrupt:
@@ -102,12 +108,26 @@ except KeyboardInterrupt:
 
 elapsed = time.time() - start
 
+mutation_trials = 0
+if hasattr(adapter, "mutator"):
+    try:
+        mutation_trials = sum(
+            stats.get("trials", 0) for stats in adapter.mutator._operator_stats.values()
+        )
+    except AttributeError:
+        mutation_trials = 0
+
 # Get best result
 if "pareto" in result and result["pareto"]:
     best = max(result["pareto"], key=lambda c: c.meta.get("quality", 0))
     best_quality = best.meta.get("quality", 0)
+    mutations_on_pareto = [
+        c for c in result["pareto"] if c.meta.get("source") != "seed"
+    ]
 else:
     best_quality = 0.0
+    best = None
+    mutations_on_pareto = []
 
 print(f"\n{'='*70}")
 print(f"  RESULTS")
@@ -115,6 +135,15 @@ print(f"{'='*70}")
 print(f"\n⏱️  Time: {elapsed:.1f} seconds")
 print(f"📊 Best quality: {best_quality:.0%}")
 print(f"🎯 Target was: 30%\n")
+print(f"🧪 Mutations evaluated: {mutation_trials}")
+print(f"🧬 Mutations on Pareto: {len(mutations_on_pareto)}")
+if best is not None:
+    print("\n" + "=" * 70)
+    print("BEST PROMPT (FULL TEXT):")
+    print("=" * 70)
+    print(best.text)
+    print("=" * 70)
+    print(f"\nPrompt length: {len(best.text)} characters")
 
 if best_quality > 0:
     print(f"✅ SUCCESS! Achieved {best_quality:.0%} quality")

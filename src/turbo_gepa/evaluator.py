@@ -35,6 +35,8 @@ class AsyncEvaluator:
         self.validators = list(validators or [])
         self.metrics_mapper = metrics_mapper or (lambda metrics: metrics)
         self.verbose_errors = verbose_errors
+        self._inflight_examples: int = 0
+        self._max_observed_inflight: int = 0
 
     async def eval_on_shard(
         self,
@@ -79,7 +81,12 @@ class AsyncEvaluator:
 
             try:
                 async with semaphore:
+                    self._inflight_examples += 1
+                    if self._inflight_examples > self._max_observed_inflight:
+                        self._max_observed_inflight = self._inflight_examples
                     metrics = await self.task_runner(candidate, example_id)
+                # Ensure inflight counter is decremented even if mapper raises
+                self._inflight_examples = max(0, self._inflight_examples - 1)
                 mapped = self.metrics_mapper(metrics)
                 trace = dict(metrics)
                 trace["example_id"] = example_id
@@ -103,6 +110,7 @@ class AsyncEvaluator:
                     sys.stdout.write(f"\r   Progress: {completed}/{total} examples ({completed/total*100:.0f}%)")
                     sys.stdout.flush()
             except Exception as e:
+                self._inflight_examples = max(0, self._inflight_examples - 1)
                 # Handle task runner failures gracefully
                 # Return zero scores to avoid crashing the entire batch
                 if self.verbose_errors:
@@ -196,6 +204,16 @@ class AsyncEvaluator:
             shard_fraction=shard_fraction,
             example_ids=example_trace_ids,
         )
+
+    @property
+    def inflight_examples(self) -> int:
+        """Current number of example-level evaluations running."""
+        return self._inflight_examples
+
+    @property
+    def max_observed_inflight(self) -> int:
+        """Highest concurrent example-level evaluations seen since instantiation."""
+        return self._max_observed_inflight
 
 
 def _accumulate(

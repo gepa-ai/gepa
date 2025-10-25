@@ -24,7 +24,6 @@ from .mutator import Mutator
 from .sampler import InstanceSampler
 from .scheduler import BudgetedScheduler, SchedulerConfig
 from .stop_governor import StopGovernor, StopGovernorConfig, EpochMetrics, compute_hypervolume_2d
-from .token_controller import TokenCostController
 
 
 class Orchestrator:
@@ -39,13 +38,11 @@ class Orchestrator:
         mutator: Mutator,
         cache: DiskCache,
         *,
-        token_controller: Optional[TokenCostController] = None,
         island_context: Optional[IslandContext] = None,
         show_progress: bool = True,
         stop_governor: Optional[StopGovernor] = None,
         enable_auto_stop: bool = False,
         example_sampler: Optional[Callable[[int], List[Dict[str, object]]]] = None,
-        reflection_eval_fn: Optional[Callable[[Candidate, Sequence[str]], Awaitable[List[Dict[str, object]]]]] = None,
         metrics_callback: Optional[Callable] = None,
     ) -> None:
         self.config = config
@@ -56,7 +53,6 @@ class Orchestrator:
         self.cache = cache
         self.island_context = island_context
         self.example_sampler = example_sampler
-        self.reflection_eval_fn = reflection_eval_fn
         self.scheduler = BudgetedScheduler(
             SchedulerConfig(
                 shards=config.shards,
@@ -65,7 +61,6 @@ class Orchestrator:
             )
         )
         # Merge manager removed - reflection LLM handles combining ideas
-        self.token_controller = token_controller or TokenCostController(config.max_tokens)
         self.queue: Deque[Candidate] = deque(maxlen=config.queue_limit)
         self._per_shard_queue: List[Deque[Candidate]] = [deque() for _ in range(len(config.shards))]
         self._pending_fingerprints: Set[str] = set()
@@ -112,6 +107,8 @@ class Orchestrator:
         self._shard_inflight: List[int] = [0] * num_shards
         self._last_debug_log: float = 0.0
         self._last_budget_log: float = 0.0
+        # Global example-level inflight budget (hard cap across candidates)
+        self._examples_inflight: int = 0
 
         # Deficit scheduler state for fair rung allocation
         import math
@@ -259,7 +256,13 @@ class Orchestrator:
                 if should_update:
                     pareto = self.archive.pareto_entries()
                     best_q = self._get_best_quality_from_full_shard() if pareto else 0.0
-                    print(f"\r   🔄 Evaluations: {self.evaluations_run} | Inflight: {self._total_inflight} | Queue: {len(self.queue)} | Best: {best_q:.1%}", end="", flush=True)
+                    print(
+                        f"\r   🔄 Evaluations: {self.evaluations_run} | Inflight: {self._total_inflight} | "
+                        f"ExInflight: {self._examples_inflight}/{self._effective_concurrency} | "
+                        f"Queue: {len(self.queue)} | Best: {best_q:.1%}",
+                        end="",
+                        flush=True,
+                    )
                     last_progress_display = self.evaluations_run
                     if self.metrics_callback is not None:
                         from .metrics import extract_metrics
@@ -300,6 +303,7 @@ class Orchestrator:
                         task_state = "running"
                     print(
                         f"\n🧭 Debug: queue=0 buffer=0 inflight={self._total_inflight} "
+                        f"examples_inflight={self._examples_inflight}/{self._effective_concurrency} "
                         f"mutation_task={task_state} pending_fp={len(self._pending_fingerprints)} "
                         f"inflight_fp={len(self._inflight_fingerprints)}"
                     )
@@ -529,12 +533,25 @@ class Orchestrator:
         rung_key = self._get_rung_key(candidate)
         self._inflight_by_rung[rung_key] += 1
 
+        # Compute fair per-candidate evaluator concurrency so total example-level
+        # work stays near the global target without oversubscription.
+        # Note: _total_inflight has already been incremented to include this candidate.
+        active_candidates = max(1, self._total_inflight)
+        per_cand_concurrency = max(1, int(self._effective_concurrency // active_candidates))
+        # Never exceed the shard size for this candidate
+        per_cand_concurrency = min(per_cand_concurrency, len(shard_ids))
+        # Respect hard global example-level cap; if not enough budget, don't launch yet
+        if self._examples_inflight + per_cand_concurrency > self._effective_concurrency:
+            return False
+        # Reserve budget for this candidate
+        self._examples_inflight += per_cand_concurrency
+
         async def runner() -> None:
             try:
                 result = await self.evaluator.eval_on_shard(
                     candidate,
                     shard_ids,
-                    concurrency=self._effective_concurrency,
+                    concurrency=per_cand_concurrency,
                     shard_fraction=shard_fraction,
                     show_progress=self.show_progress,  # Show progress for all evaluations
                 )
@@ -547,6 +564,8 @@ class Orchestrator:
                 # Decrement rung inflight for deficit scheduler
                 rung_key_inner = self._get_rung_key(candidate)
                 self._inflight_by_rung[rung_key_inner] -= 1
+                # Release global example-level budget
+                self._examples_inflight = max(0, self._examples_inflight - per_cand_concurrency)
 
         task = asyncio.create_task(runner())
         self._inflight_tasks[cand_hash] = task
@@ -672,66 +691,6 @@ class Orchestrator:
         return True
 
     # === Streaming Launch Helpers ===
-
-    async def finalize(self, delta: Optional[float] = None) -> None:
-        """Run token-cost pruning on the Pareto frontier."""
-
-        # Wait for any pending state save to complete before finalizing
-        if hasattr(self, '_save_task') and not self._save_task.done():
-            try:
-                await self._save_task
-            except asyncio.CancelledError:
-                pass  # Task was cancelled, that's okay
-
-        entries = self.archive.pareto_entries()
-        if not entries:
-            return
-
-        delta = self.config.prune_delta if delta is None else delta
-        # Use separate compression concurrency for better finalization throughput
-        limit = max(
-            1,
-            min(
-                int(self.config.compression_concurrency or 16),
-                len(entries),
-            ),
-        )
-        compression_sem = asyncio.Semaphore(limit)
-
-        async def evaluate(candidate: Candidate) -> float:
-            shard_fraction = self.config.compression_shard_fraction
-            shard_size = self._shard_size(shard_fraction)
-            shard = self.sampler.sample_shard(self.round_index, shard_size)
-            async with compression_sem:
-                result = await self.evaluator.eval_on_shard(
-                    candidate,
-                    shard,
-                    concurrency=self._effective_concurrency,
-                    shard_fraction=shard_fraction,
-                )
-            self.latest_results[candidate.fingerprint] = result
-            return result.objectives.get(self.config.compression_objective, 0.0)
-
-        async def process(entry: ArchiveEntry) -> None:
-            compressed = await self.token_controller.compress(entry.candidate, delta, evaluate)
-            if compressed.text == entry.candidate.text:
-                return
-            result = self.latest_results.get(compressed.fingerprint)
-            if result is None:
-                shard_fraction = self.config.shards[-1]
-                shard_size = self._shard_size(shard_fraction)
-                shard = self.sampler.sample_shard(self.round_index, shard_size)
-                async with compression_sem:
-                    result = await self.evaluator.eval_on_shard(
-                        compressed,
-                        shard,
-                        concurrency=self._effective_concurrency,
-                        shard_fraction=shard_fraction,
-                    )
-                self.latest_results[compressed.fingerprint] = result
-            await self.archive.insert(compressed, result)
-
-        await asyncio.gather(*(process(entry) for entry in entries))
 
     async def _seed_archive(self, seeds: Sequence[Candidate]) -> None:
         shard_fraction = self.config.shards[0]
@@ -994,6 +953,7 @@ class Orchestrator:
 
         return mutations
 
+
     def _mutation_budget(self) -> int:
         """Compute how many new mutations we should request this cycle."""
         max_mut = self.config.max_mutations_per_round
@@ -1169,6 +1129,14 @@ class Orchestrator:
 
         self.stop_governor.update(metrics)
         return self.stop_governor.should_stop()
+
+    async def finalize(self, delta: Optional[float] = None) -> None:
+        """Finalize the run before returning results."""
+        if hasattr(self, "_save_task") and not self._save_task.done():
+            try:
+                await self._save_task
+            except asyncio.CancelledError:
+                pass
 
     # State persistence for resumable optimization
 

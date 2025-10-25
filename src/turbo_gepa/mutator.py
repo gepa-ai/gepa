@@ -68,6 +68,9 @@ class Mutator:
             "reflection": {"wins": 0, "trials": 0},
             "spec_induction": {"wins": 0, "trials": 0},
         }
+        self._operator_history: Dict[str, deque[int]] = {
+            key: deque(maxlen=20) for key in self._operator_stats
+        }
         self._spec_cache: Dict[str, deque[str]] = {}
         self._spec_cache_limit = max(4, config.max_mutations or 8)
         self._spec_runner_signature = _describe_callable(spec_induction_runner)
@@ -79,17 +82,26 @@ class Mutator:
         """Toggle temperature exploration without rebuilding the mutator."""
         self.temperature_mutations_enabled = enabled
 
+
     def report_outcome(self, generation_method: str, success: bool) -> None:
         stats = self._operator_stats.setdefault(generation_method, {"wins": 0, "trials": 0})
         stats["trials"] += 1
         if success:
             stats["wins"] += 1
+        history = self._operator_history.setdefault(generation_method, deque(maxlen=20))
+        history.append(1 if success else 0)
 
     def _operator_weight(self, generation_method: str) -> float:
+        history = self._operator_history.get(generation_method)
+        if history and len(history) > 0:
+            successes = sum(history)
+            trials = len(history)
+            # Simple moving-average with Laplace smoothing
+            return (successes + 1.0) / (trials + 2.0)
         stats = self._operator_stats.get(generation_method)
-        if not stats:
-            return 1.0
-        return (stats["wins"] + 1.0) / (stats["trials"] + 1.0)
+        if stats and stats["trials"] > 0:
+            return (stats["wins"] + 1.0) / (stats["trials"] + 2.0)
+        return 1.0
 
     async def propose(
         self,

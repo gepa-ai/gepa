@@ -27,8 +27,6 @@ from turbo_gepa.islands import IslandContext, spawn_islands
 from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
-from turbo_gepa.stop_governor import StopGovernor, StopGovernorConfig
-from turbo_gepa.token_controller import TokenCostController
 from turbo_gepa.user_plugs_in import batch_reflect_lm_call, spec_induction_lm_call, task_lm_call
 
 
@@ -214,9 +212,6 @@ class DefaultAdapter:
             flags=config.qd_flags,
         )
 
-        # Expose litellm client for batch operations
-        self.litellm = litellm
-
         # Temperature support will be checked lazily during Phase 2 (temperature optimization)
         # No upfront LLM call needed - we optimize prompts first (Phase 1), then temperature (Phase 2)
         self.temperature_supported = True  # Assume supported, check later if needed
@@ -239,7 +234,6 @@ class DefaultAdapter:
             spec_induction_runner=self._spec_induction_runner,
             temperature_mutations_enabled=False,  # Disabled for Phase 1 - only optimize prompt quality
         )
-        self.token_controller = TokenCostController(config.max_tokens)
         self.log_dir = log_dir or config.log_path
 
     def _check_temperature_support(self, model: str, test_temp: float) -> bool:
@@ -630,105 +624,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 "Check your API key, model name, and network connection."
             ) from e
 
-    async def _batch_reflection_eval(
-        self,
-        candidate: Candidate,
-        example_ids: Sequence[str],
-    ) -> List[Dict[str, object]]:
-        if not example_ids:
-            return []
-
-        example_payloads = []
-        for eid in example_ids:
-            data_inst = self.example_map.get(eid)
-            if not data_inst:
-                continue
-            example_payloads.append((eid, data_inst.to_payload()))
-
-        if not example_payloads:
-            return []
-
-        candidate_temperature = candidate.meta.get("temperature")
-
-        # Use batch_completion when we have a string model + litellm client
-        if isinstance(self.task_model.name, str) and self.litellm is not None:
-            import asyncio
-
-            messages = [
-                [
-                    {"role": "system", "content": candidate.text},
-                    {"role": "user", "content": payload.get("input", "")},
-                ]
-                for _, payload in example_payloads
-            ]
-
-            batch_kwargs: Dict[str, object] = {
-                "model": self.task_model.name,
-                "messages": messages,
-            }
-            if self.task_model.max_tokens is not None:
-                batch_kwargs["max_tokens"] = self.task_model.max_tokens
-            if candidate_temperature is not None:
-                batch_kwargs["temperature"] = candidate_temperature
-            elif self.task_model.temperature is not None:
-                batch_kwargs["temperature"] = self.task_model.temperature
-            reasoning_effort = candidate.meta.get("reasoning_effort", self.task_model.reasoning_effort)
-            if reasoning_effort is not None:
-                batch_kwargs["reasoning_effort"] = reasoning_effort
-
-            def _call_batch():
-                import time as _time_mod
-                import sys as _sys
-                _start = _time_mod.time()
-                print(f"🔵 BATCH LLM CALL START: model={batch_kwargs['model']}, batch_size={len(messages)}", flush=True)
-                _sys.stdout.flush()
-                _sys.stderr.flush()
-                try:
-                    result = self.litellm.batch_completion(**batch_kwargs)
-                    _elapsed = _time_mod.time() - _start
-                    print(f"🟢 BATCH LLM CALL SUCCESS: {_elapsed:.2f}s, batch_size={len(messages)}", flush=True)
-                    _sys.stdout.flush()
-                    return result
-                except Exception as e:
-                    _elapsed = _time_mod.time() - _start
-                    print(f"🔴 BATCH LLM CALL ERROR: {_elapsed:.2f}s, error={type(e).__name__}: {str(e)[:100]}", flush=True)
-                    _sys.stdout.flush()
-                    raise
-
-            responses = await asyncio.to_thread(_call_batch)
-
-            results: List[Dict[str, object]] = []
-            for (eid, payload), resp in zip(example_payloads, responses, strict=False):
-                if isinstance(resp, Exception) or not hasattr(resp, "choices"):
-                    content = ""
-                    tokens_used = 0
-                else:
-                    content = resp.choices[0].message.content.strip()
-                    tokens_used = getattr(getattr(resp, "usage", None), "total_tokens", 0)
-
-                quality = 1.0 if payload.get("answer") in content else 0.0
-
-                results.append(
-                    {
-                        "example_id": eid,
-                        "input": payload.get("input", ""),
-                        "response": content,
-                        "output": content,
-                        "expected_answer": payload.get("answer"),
-                        "additional_context": payload.get("additional_context"),
-                        "quality": quality,
-                        "tokens": float(tokens_used),
-                    }
-                )
-            return results
-
-        # Fallback: evaluate sequentially via task runner
-        results = []
-        for eid, _ in example_payloads:
-            results.append(await self._task_runner(candidate, eid))
-        return results
-
-
     def _build_orchestrator(
         self,
         *,
@@ -740,7 +635,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         archive: Optional[Archive] = None,
         sampler: Optional[InstanceSampler] = None,
         mutator: Optional[Mutator] = None,
-        token_controller: Optional[TokenCostController] = None,
         log_dir: Optional[str] = None,
         metrics_callback: Optional[Callable] = None,
     ) -> Orchestrator:
@@ -760,8 +654,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         )
         log_path = log_dir or self.base_log_dir
         # Create stop governor if auto-stop enabled
-        stop_governor = StopGovernor(StopGovernorConfig()) if enable_auto_stop else None
-
         # Use provided metrics_callback, or create dashboard if progress display is enabled
         dashboard_enabled = False
         if metrics_callback is None and display_progress:
@@ -781,13 +673,10 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             sampler=sampler or self.sampler,
             mutator=mutator,
             cache=cache or self.cache,
-            token_controller=token_controller or self.token_controller,
-            stop_governor=stop_governor,
             enable_auto_stop=enable_auto_stop,
             show_progress=display_progress and not dashboard_enabled,  # Disable inline progress when dashboard is active
             example_sampler=self._sample_examples,
             island_context=island_context,
-            reflection_eval_fn=self._batch_reflection_eval,
             metrics_callback=metrics_callback,
         )
 
@@ -968,6 +857,19 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         temperature_mutations_enabled: bool | None = None,
     ) -> Dict[str, Any]:
         n_islands = max(1, self.config.n_islands)
+        if n_islands > 1:
+            tuned_period = max(1, n_islands // 2)
+            tuned_k = max(1, min(n_islands, self.config.migration_k or n_islands))
+            if (
+                self.config.migration_period != tuned_period
+                or self.config.migration_k != tuned_k
+            ):
+                print(
+                    f"🔁 Multi-island tuning: migration_period {self.config.migration_period}→{tuned_period}, "
+                    f"migration_k {self.config.migration_k}→{tuned_k}"
+                )
+                self.config.migration_period = tuned_period
+                self.config.migration_k = tuned_k
         normalized_seeds = self._normalize_seeds(seeds, source="seed")
 
         # Set up larger thread pool for concurrent file operations
@@ -999,19 +901,16 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 mutator = self._make_mutator()
                 if temperature_mutations_enabled is not None:
                     mutator.set_temperature_mutations_enabled(temperature_mutations_enabled)
-                token_controller = TokenCostController(self.config.max_tokens)
                 log_dir = self._make_log_dir(context.island_id)
                 orchestrator = self._build_orchestrator(
                     enable_auto_stop=enable_auto_stop,
                     display_progress=False if metrics_queue else (display_progress and context.island_id == 0),
                     temperature_mutations_enabled=temperature_mutations_enabled,
-                    max_rounds=max_rounds or 100,
                     island_context=context,
                     cache=cache,
                     archive=archive,
                     sampler=sampler,
                     mutator=mutator,
-                    token_controller=token_controller,
                     log_dir=log_dir
                 )
                 island_seeds = [

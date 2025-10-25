@@ -57,7 +57,6 @@ from turbo_gepa.interfaces import Candidate
 from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
-from turbo_gepa.token_controller import TokenCostController
 
 
 DSPyTrace = list[tuple[Any, dict[str, Any], Prediction]]
@@ -133,7 +132,6 @@ class DSpyAdapter:
             bins_bullets=config.qd_bins_bullets,
             flags=config.qd_flags,
         )
-        self.token_controller = TokenCostController(config.max_tokens)
         self.log_dir = log_dir or config.log_path
 
         # Reflection runner
@@ -463,8 +461,6 @@ class DSpyAdapter:
             sampler=self.sampler,
             mutator=self.mutator,
             cache=self.cache,
-            token_controller=self.token_controller,
-            max_rounds=max_rounds,
         )
 
     async def optimize_async(
