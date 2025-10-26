@@ -90,26 +90,65 @@ class TerminalDashboard:
         print("=" * 80)
 
     def _render_quality_chart(self) -> None:
-        """Render line chart of quality over time."""
-        if len(self.history) < 2:
+        """Render scatter plot of generation vs quality showing evolutionary branching."""
+        if not self.history:
             return
 
-        # Extract data
-        rounds = [m.round for m in self.history]
-        best_qualities = [m.best_quality * 100 for m in self.history]  # Convert to %
-        avg_qualities = [m.avg_quality * 100 for m in self.history]
+        latest = self.history[-1]
+        if not latest.lineage_data:
+            return
+
+        # Organize data by generation and status
+        gen_qual_by_status = {
+            "promoted": {"generations": [], "qualities": []},
+            "evaluated": {"generations": [], "qualities": []},
+            "in_flight": {"generations": [], "qualities": []},
+        }
+
+        for item in latest.lineage_data:
+            status = item["status"]
+            if status in gen_qual_by_status:
+                gen_qual_by_status[status]["generations"].append(item["generation"])
+                gen_qual_by_status[status]["qualities"].append(item["quality"] * 100)
 
         # Configure plot with dark theme
         plt.clf()
-        plt.theme("dark")  # Black background theme
+        plt.theme("dark")
         plt.plot_size(width=70, height=15)
-        plt.title("Quality Over Time")
-        plt.xlabel("Round")
+        plt.title("Evolutionary Lineage: Generation vs Quality")
+        plt.xlabel("Generation")
         plt.ylabel("Quality (%)")
 
-        # Plot lines with vibrant colors
-        plt.plot(rounds, best_qualities, label="Best", marker="braille", color="cyan")
-        plt.plot(rounds, avg_qualities, label="Avg", marker="braille", color="magenta")
+        # Plot each status with different colors and markers
+        # Promoted (on Pareto) = Cyan with high-definition dots
+        if gen_qual_by_status["promoted"]["generations"]:
+            plt.scatter(
+                gen_qual_by_status["promoted"]["generations"],
+                gen_qual_by_status["promoted"]["qualities"],
+                label="Promoted",
+                marker="hd",
+                color="cyan",
+            )
+
+        # Evaluated but not promoted = Magenta with standard dots
+        if gen_qual_by_status["evaluated"]["generations"]:
+            plt.scatter(
+                gen_qual_by_status["evaluated"]["generations"],
+                gen_qual_by_status["evaluated"]["qualities"],
+                label="Evaluated",
+                marker="sd",
+                color="magenta",
+            )
+
+        # In-flight = Yellow with braille dots
+        if gen_qual_by_status["in_flight"]["generations"]:
+            plt.scatter(
+                gen_qual_by_status["in_flight"]["generations"],
+                gen_qual_by_status["in_flight"]["qualities"],
+                label="In-flight",
+                marker="braille",
+                color="yellow",
+            )
 
         # Show legend and render
         plt.show()
@@ -124,6 +163,21 @@ class TerminalDashboard:
         print(f"    Total Candidates: {metrics.total_candidates}".ljust(40), end="")
         print(f"Best: {metrics.best_quality:.1%}".ljust(40))
         print(f"    Average Quality: {metrics.avg_quality:.1%}".ljust(80))
+        print("-" * 80)
+        print("  Evolution Dynamics:".ljust(80))
+        print(f"    Mutations Requested: {metrics.mutations_requested}".ljust(40), end="")
+        print(f"Generated: {metrics.mutations_generated}".ljust(40))
+        print(f"    Enqueued: {metrics.mutations_enqueued}".ljust(40), end="")
+        print(f"Promoted: {metrics.mutations_promoted}".ljust(40))
+        success_rate = (
+            (metrics.mutations_promoted / metrics.mutations_generated)
+            if metrics.mutations_generated
+            else 0.0
+        )
+        print(f"    Promotion Rate: {success_rate:.1%}".ljust(40), end="")
+        print(f"Evolution Edges: {metrics.evolution_edges}".ljust(40))
+        print(f"    Unique Parents: {metrics.unique_parents}".ljust(40), end="")
+        print(f"Unique Children: {metrics.unique_children}".ljust(40))
         print("-" * 80)
         print()
 

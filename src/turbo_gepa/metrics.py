@@ -7,8 +7,8 @@ Simple, lightweight metrics extracted from orchestrator state.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Dict, List, Any
 
 if TYPE_CHECKING:
     from .orchestrator import Orchestrator
@@ -29,6 +29,14 @@ class Metrics:
     rung_activity: Dict[str, int]  # rung_key -> inflight count
     max_rounds: int | None = None
     max_evaluations: int | None = None
+    mutations_requested: int = 0
+    mutations_generated: int = 0
+    mutations_enqueued: int = 0
+    mutations_promoted: int = 0
+    unique_parents: int = 0
+    unique_children: int = 0
+    evolution_edges: int = 0
+    lineage_data: List[Dict[str, Any]] = field(default_factory=list)  # List of {fingerprint, generation, quality, status}
 
 
 def extract_metrics(orchestrator: Orchestrator) -> Metrics:
@@ -59,6 +67,11 @@ def extract_metrics(orchestrator: Orchestrator) -> Metrics:
     # Get rung activity (inflight counts per rung)
     rung_activity = orchestrator._inflight_by_rung.copy()
 
+    evo = orchestrator.evolution_snapshot()
+
+    # Get lineage data for visualization
+    lineage_data = orchestrator.get_candidate_lineage_data()
+
     return Metrics(
         timestamp=time.time(),
         round=orchestrator.rounds_completed,
@@ -71,4 +84,12 @@ def extract_metrics(orchestrator: Orchestrator) -> Metrics:
         rung_activity=rung_activity,
         max_rounds=orchestrator.max_rounds,
         max_evaluations=orchestrator.max_evaluations,
+        mutations_requested=evo["mutations_requested"],
+        mutations_generated=evo["mutations_generated"],
+        mutations_enqueued=evo["mutations_enqueued"],
+        mutations_promoted=evo["mutations_promoted"],
+        unique_parents=evo["unique_parents"],
+        unique_children=evo["unique_children"],
+        evolution_edges=evo["evolution_edges"],
+        lineage_data=lineage_data,
     )

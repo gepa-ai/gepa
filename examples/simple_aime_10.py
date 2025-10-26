@@ -38,25 +38,26 @@ dataset = [
         id=f"aime_{i}",
         additional_context=ex.get("additional_context"),
     )
-    for i, ex in enumerate(trainset[:10])
+    for i, ex in enumerate(trainset[:50])
 ]
 print(f"✓ Loaded {len(dataset)} problems\n")
 
 # Simple config knobs
-MAX_ROUNDS = 1
+MAX_ROUNDS = 4
 BATCH_SIZE = 10
 MAX_MUTATIONS_PER_ROUND = 5
 MAX_EXAMPLES_INFLIGHT = 64
 
 config = Config(
-    shards=(1.0,),
+    shards=(
+        0.3,
+        1.0,
+    ),
     batch_size=BATCH_SIZE,
     max_mutations_per_round=MAX_MUTATIONS_PER_ROUND,
     eval_concurrency=MAX_EXAMPLES_INFLIGHT,
     max_total_inflight=MAX_EXAMPLES_INFLIGHT,
-    n_islands=1,
-    reflection_batch_size=3,
-    target_quality=0.3,  # Stop at 30% (3/10 correct)
+    n_islands=2,
 )
 
 print(
@@ -67,7 +68,7 @@ print(
 # Create adapter
 adapter = DefaultAdapter(
     dataset=dataset,
-    task_lm="openrouter/openai/gpt-oss-120b:nitro",
+    task_lm="openrouter/openai/gpt-oss-20b:nitro",
     reflection_lm="openrouter/x-ai/grok-4-fast",
     auto_config=False,
 )
@@ -107,27 +108,35 @@ except KeyboardInterrupt:
     sys.exit(1)
 
 elapsed = time.time() - start
+evolution_stats = result.get("evolution_stats", {}) or {}
+mutations_requested = evolution_stats.get("mutations_requested", 0)
+mutations_generated = evolution_stats.get("mutations_generated", 0)
+mutations_enqueued = evolution_stats.get("mutations_enqueued", 0)
+mutations_promoted = evolution_stats.get("mutations_promoted", 0)
+unique_parents = evolution_stats.get("unique_parents", 0)
+unique_children = evolution_stats.get("unique_children", 0)
+evolution_edges = evolution_stats.get("evolution_edges", 0)
+promotion_rate = (
+    mutations_promoted / mutations_generated if mutations_generated else 0.0
+)
+avg_branching = evolution_edges / unique_parents if unique_parents else 0.0
 
-mutation_trials = 0
-if hasattr(adapter, "mutator"):
-    try:
-        mutation_trials = sum(
-            stats.get("trials", 0) for stats in adapter.mutator._operator_stats.values()
-        )
-    except AttributeError:
-        mutation_trials = 0
-
-# Get best result
-if "pareto" in result and result["pareto"]:
-    best = max(result["pareto"], key=lambda c: c.meta.get("quality", 0))
-    best_quality = best.meta.get("quality", 0)
-    mutations_on_pareto = [
-        c for c in result["pareto"] if c.meta.get("source") != "seed"
-    ]
+# Analyse pareto results
+pareto_entries = result.get("pareto_entries", []) or []
+if pareto_entries:
+    promote_objective = adapter.config.promote_objective
+    best_entry = max(
+        pareto_entries,
+        key=lambda e: e.result.objectives.get(promote_objective, 0.0),
+    )
+    best = best_entry.candidate
+    best_quality = best_entry.result.objectives.get(
+        promote_objective, best.meta.get("quality", 0.0)
+    )
 else:
-    best_quality = 0.0
+    best_entry = None
     best = None
-    mutations_on_pareto = []
+    best_quality = 0.0
 
 print(f"\n{'='*70}")
 print(f"  RESULTS")
@@ -135,8 +144,34 @@ print(f"{'='*70}")
 print(f"\n⏱️  Time: {elapsed:.1f} seconds")
 print(f"📊 Best quality: {best_quality:.0%}")
 print(f"🎯 Target was: 30%\n")
-print(f"🧪 Mutations evaluated: {mutation_trials}")
-print(f"🧬 Mutations on Pareto: {len(mutations_on_pareto)}")
+print(f"🧪 Mutations requested: {mutations_requested}")
+print(f"🧬 Mutations generated: {mutations_generated}")
+print(f"📦 Mutations enqueued: {mutations_enqueued}")
+print(f"🏆 Mutations promoted to Pareto: {mutations_promoted}")
+if mutations_generated:
+    print(f"📈 Promotion rate: {promotion_rate:.0%}")
+print(f"🌱 Unique parents mutated: {unique_parents}")
+print(f"🌳 Unique children discovered: {unique_children}")
+print(f"🔁 Evolution edges explored: {evolution_edges}")
+if unique_parents:
+    print(f"🔀 Avg children per parent: {avg_branching:.2f}")
+island_stats = evolution_stats.get("islands") or []
+if island_stats:
+    print("\n🏝️  Island Breakdown:")
+    for idx, snapshot in enumerate(island_stats, start=1):
+        island_requested = snapshot.get("mutations_requested", 0)
+        island_generated = snapshot.get("mutations_generated", 0)
+        island_promoted = snapshot.get("mutations_promoted", 0)
+        island_rate = (
+            island_promoted / island_generated if island_generated else 0.0
+        )
+        island_parents = snapshot.get("unique_parents", 0)
+        island_children = snapshot.get("unique_children", 0)
+        print(
+            f"   • Island {idx}: requested={island_requested}, generated={island_generated}, "
+            f"promoted={island_promoted} ({island_rate:.0%}), parents={island_parents}, "
+            f"children={island_children}"
+        )
 if best is not None:
     print("\n" + "=" * 70)
     print("BEST PROMPT (FULL TEXT):")

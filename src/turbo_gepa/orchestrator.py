@@ -10,8 +10,8 @@ instances of the loop in parallel.
 from __future__ import annotations
 
 import asyncio
-from collections import deque
-from typing import Awaitable, Callable, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from collections import defaultdict, deque
+from typing import Any, Awaitable, Callable, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from .archive import Archive, ArchiveEntry
 from .cache import DiskCache
@@ -109,6 +109,16 @@ class Orchestrator:
         self._last_budget_log: float = 0.0
         # Global example-level inflight budget (hard cap across candidates)
         self._examples_inflight: int = 0
+        self._last_shared: Dict[str, float] = {}
+        # Evolution tracking
+        self._mutations_requested: int = 0
+        self._mutations_generated: int = 0
+        self._mutations_enqueued: int = 0
+        self._parent_children: defaultdict[str, set[str]] = defaultdict(set)
+        self._children_seen: Set[str] = set()
+        self._promoted_children: Set[str] = set()
+        # Track generation depth for each candidate (fingerprint -> generation number)
+        self._candidate_generations: Dict[str, int] = {}
 
         # Deficit scheduler state for fair rung allocation
         import math
@@ -629,6 +639,8 @@ class Orchestrator:
 
         if decision in ("promoted", "completed"):
             await self.archive.insert(candidate_with_meta, result)
+            self._record_candidate_promotion(candidate_with_meta)
+            await self._maybe_share(candidate_with_meta)
 
         self._register_failures(result)
 
@@ -647,6 +659,30 @@ class Orchestrator:
             self._inflight_fingerprints.discard(candidate_with_meta.fingerprint)
 
         return candidate_with_meta, decision
+
+    async def _maybe_share(self, candidate: Candidate) -> None:
+        if not self.island_context:
+            return
+        import time
+        now = time.time()
+        shard_fraction = candidate.meta.get("quality_shard_fraction", 0.0)
+        key = (candidate.fingerprint, shard_fraction)
+        last = self._last_shared.get(key)
+        if last is not None and now - last < 10.0:
+            return
+        elites = [candidate]
+        migrate_out(self.island_context, elites)
+        if self.show_progress:
+            print(
+                f"\n🌍 Island {self.island_id}: promoting candidate {candidate.fingerprint[:8]} on shard {shard_fraction:.2f}"
+            )
+        self._last_shared[key] = now
+        incoming = integrate_in(self.island_context)
+        if incoming:
+            if self.show_progress:
+                ids = ", ".join(c.fingerprint[:8] for c in incoming)
+                print(f"\n🌐 Island {self.island_id}: received {len(incoming)} candidate(s): {ids}")
+            self.enqueue(incoming)
 
     async def _stream_process_result(
         self,
@@ -715,6 +751,8 @@ class Orchestrator:
         for seed, result in zip(seeds, results):
             candidate_with_meta, _ = await self._ingest_result(seed, result)
             enriched.append(candidate_with_meta)
+            # Mark seeds as generation 0
+            self._candidate_generations[candidate_with_meta.fingerprint] = 0
 
         self.enqueue(enriched)
 
@@ -813,6 +851,13 @@ class Orchestrator:
             print("⚠️  spawn_mutations: runner returned no candidates.", flush=True)
             return
 
+        self._record_mutation_enqueued(len(mutations))
+        if self.show_progress:
+            print(
+                f"   ↳ generated {len(mutations)} mutation(s) "
+                f"(total generated={self._mutations_generated}, promoted={len(self._promoted_children)})",
+                flush=True,
+            )
         if callback:
             for candidate in mutations:
                 callback(candidate)
@@ -948,10 +993,118 @@ class Orchestrator:
         mutator_start = time.time()
         mutations = await self.mutator.propose(parent_contexts, num_mutations, task_examples=task_examples)
         mutator_time = time.time() - mutator_start
+        self._record_mutation_generation(num_mutations, mutations)
 
         batch_total_time = time.time() - batch_start
 
         return mutations
+
+    def _record_mutation_generation(self, requested: int, mutations: Sequence[Candidate]) -> None:
+        if requested > 0:
+            self._mutations_requested += requested
+        generated = len(mutations)
+        self._mutations_generated += generated
+        for candidate in mutations:
+            fingerprint = candidate.fingerprint
+            self._children_seen.add(fingerprint)
+            parent_fp: Optional[str] = None
+            if isinstance(candidate.meta, dict):
+                parent_fp = candidate.meta.get("parent")
+            if parent_fp:
+                self._parent_children[parent_fp].add(fingerprint)
+                # Track generation: parent's generation + 1
+                parent_gen = self._candidate_generations.get(parent_fp, 0)
+                self._candidate_generations[fingerprint] = parent_gen + 1
+            else:
+                # No parent info, assume generation 1 (first mutation)
+                self._candidate_generations[fingerprint] = self._candidate_generations.get(fingerprint, 1)
+
+    def _record_mutation_enqueued(self, count: int) -> None:
+        if count <= 0:
+            return
+        self._mutations_enqueued += count
+
+    def _record_candidate_promotion(self, candidate: Candidate) -> None:
+        if not isinstance(candidate.meta, dict):
+            return
+        parent_fp = candidate.meta.get("parent")
+        if not parent_fp:
+            return
+        child_fp = candidate.fingerprint
+        self._children_seen.add(child_fp)
+        self._parent_children[parent_fp].add(child_fp)
+        # Track generation if not already tracked
+        if child_fp not in self._candidate_generations:
+            parent_gen = self._candidate_generations.get(parent_fp, 0)
+            self._candidate_generations[child_fp] = parent_gen + 1
+        if child_fp in self.archive.pareto and child_fp not in self._promoted_children:
+            self._promoted_children.add(child_fp)
+
+    def evolution_snapshot(self, include_edges: bool = False) -> Dict[str, Any]:
+        edges = sum(len(children) for children in self._parent_children.values())
+        snapshot: Dict[str, Any] = {
+            "mutations_requested": self._mutations_requested,
+            "mutations_generated": self._mutations_generated,
+            "mutations_enqueued": self._mutations_enqueued,
+            "mutations_promoted": len(self._promoted_children),
+            "unique_parents": len(self._parent_children),
+            "unique_children": len(self._children_seen),
+            "evolution_edges": edges,
+        }
+        if include_edges:
+            snapshot["parent_children"] = {
+                parent: list(children) for parent, children in self._parent_children.items()
+            }
+            snapshot["children"] = list(self._children_seen)
+            snapshot["promoted_children"] = list(self._promoted_children)
+        return snapshot
+
+    def get_candidate_lineage_data(self) -> List[Dict[str, Any]]:
+        """Return list of all candidates with generation, quality, and status for visualization."""
+        from typing import List, Dict, Any
+
+        data: List[Dict[str, Any]] = []
+        promote_objective = self.config.promote_objective
+
+        # Get all pareto candidates
+        for entry in self.archive.pareto_entries():
+            fp = entry.candidate.fingerprint
+            data.append({
+                "fingerprint": fp,
+                "generation": self._candidate_generations.get(fp, 0),
+                "quality": entry.result.objectives.get(promote_objective, 0.0),
+                "status": "promoted",
+            })
+
+        # Get all QD grid candidates
+        for entry in self.archive.qd_grid.values():
+            fp = entry.candidate.fingerprint
+            # Skip if already in pareto
+            if fp in self.archive.pareto:
+                continue
+            data.append({
+                "fingerprint": fp,
+                "generation": self._candidate_generations.get(fp, 0),
+                "quality": entry.result.objectives.get(promote_objective, 0.0),
+                "status": "evaluated",
+            })
+
+        # Get in-flight candidates (in queue)
+        for candidate in self.queue:
+            fp = candidate.fingerprint
+            # Get quality from archive if available
+            quality = 0.0
+            if fp in self.archive.pareto:
+                quality = self.archive.pareto[fp].result.objectives.get(promote_objective, 0.0)
+
+            data.append({
+                "fingerprint": fp,
+                "generation": self._candidate_generations.get(fp, 0),
+                "quality": quality,
+                "status": "in_flight",
+            })
+
+        return data
 
 
     def _mutation_budget(self) -> int:
@@ -1001,6 +1154,9 @@ class Orchestrator:
             objective=self.config.promote_objective,
         )
         if elites:
+            if self.show_progress:
+                ids = ", ".join(candidate.fingerprint[:8] for candidate in elites)
+                print(f"\n🌍 Island {self.island_id}: migrating out {len(elites)} candidate(s): {ids}")
             migrate_out(self.island_context, elites)
 
         pareto_entries = self.archive.pareto_entries()
@@ -1017,6 +1173,9 @@ class Orchestrator:
 
         incoming = integrate_in(self.island_context)
         if incoming:
+            if self.show_progress:
+                ids = ", ".join(candidate.fingerprint[:8] for candidate in incoming)
+                print(f"\n🌐 Island {self.island_id}: received {len(incoming)} candidate(s): {ids}")
             self.enqueue(incoming)
 
     async def _evaluate_candidate(

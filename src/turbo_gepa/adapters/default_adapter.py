@@ -12,6 +12,7 @@ changes.
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
@@ -549,6 +550,63 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         island_path.mkdir(parents=True, exist_ok=True)
         return str(island_path)
 
+    def _combine_evolution_snapshots(self, snapshots: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+        combined = {
+            "mutations_requested": 0,
+            "mutations_generated": 0,
+            "mutations_enqueued": 0,
+            "mutations_promoted": 0,
+            "unique_parents": 0,
+            "unique_children": 0,
+            "evolution_edges": 0,
+            "islands": [],
+        }
+        parent_children: defaultdict[str, set[str]] = defaultdict(set)
+        promoted_children: set[str] = set()
+        all_children: set[str] = set()
+        promoted_total = 0
+
+        for snapshot in snapshots:
+            if not snapshot:
+                continue
+            combined["mutations_requested"] += snapshot.get("mutations_requested", 0)
+            combined["mutations_generated"] += snapshot.get("mutations_generated", 0)
+            combined["mutations_enqueued"] += snapshot.get("mutations_enqueued", 0)
+            promoted_total += snapshot.get("mutations_promoted", 0)
+
+            detail_sources = snapshot.get("islands")
+            if detail_sources:
+                combined["islands"].extend(detail_sources)
+            else:
+                combined["islands"].append(snapshot)
+
+            for detail in (detail_sources or [snapshot]):
+                parent_map = detail.get("parent_children") or {}
+                for parent, children in parent_map.items():
+                    parent_children[parent].update(children)
+                promoted_children.update(detail.get("promoted_children") or [])
+                all_children.update(detail.get("children") or [])
+
+        if parent_children:
+            combined["unique_parents"] = len(parent_children)
+            combined["evolution_edges"] = sum(len(children) for children in parent_children.values())
+        if all_children:
+            combined["unique_children"] = len(all_children)
+        if promoted_children:
+            combined["mutations_promoted"] = len(promoted_children)
+        else:
+            combined["mutations_promoted"] = promoted_total
+
+        return combined
+
+    def _aggregate_evolution_stats(self, orchestrators: Sequence[Optional[Orchestrator]]) -> Dict[str, Any]:
+        snapshots: List[Dict[str, Any]] = []
+        for orchestrator in orchestrators:
+            if orchestrator is None:
+                continue
+            snapshots.append(orchestrator.evolution_snapshot(include_edges=True))
+        return self._combine_evolution_snapshots(snapshots)
+
     async def _task_runner(self, candidate: Candidate, example_id: str) -> Dict[str, float]:
         """Execute task LLM on a single example."""
         example = self.example_map[example_id].to_payload()
@@ -739,6 +797,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             "pareto": pareto,
             "pareto_entries": orchestrator.archive.pareto_entries(),
             "qd_elites": qd,
+            "evolution_stats": orchestrator.evolution_snapshot(include_edges=True),
         }
 
     async def _optimize_staged_temperature(
@@ -783,6 +842,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         await orchestrator1.run(phase1_seeds, max_rounds=phase1_rounds, max_evaluations=phase1_budget)
 
         phase1_pareto = orchestrator1.archive.pareto_entries()
+        phase1_stats = orchestrator1.evolution_snapshot(include_edges=True)
         print(f"   ✓ Phase 1 complete: {len(phase1_pareto)} candidates on Pareto frontier")
 
         # Early exit if temperature not supported
@@ -793,6 +853,8 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 "pareto_entries": phase1_pareto,
                 "qd_elites": orchestrator1.archive.sample_qd(limit=len(phase1_pareto)),
                 "phase1_pareto": [e.candidate for e in phase1_pareto],
+                "phase1_evolution_stats": phase1_stats,
+                "evolution_stats": self._combine_evolution_snapshots([phase1_stats]),
             }
 
         # Early exit if no pareto frontier
@@ -803,6 +865,8 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 "pareto_entries": [],
                 "qd_elites": [],
                 "phase1_pareto": [],
+                "phase1_evolution_stats": phase1_stats,
+                "evolution_stats": self._combine_evolution_snapshots([phase1_stats]),
             }
 
         print("\n🌡️  PHASE 2: Temperature optimization for top prompts...")
@@ -837,13 +901,19 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         await orchestrator2.run(temp_seeds, max_rounds=phase2_rounds, max_evaluations=phase2_budget)
 
         phase2_pareto = orchestrator2.archive.pareto_entries()
+        phase2_stats = orchestrator2.evolution_snapshot(include_edges=True)
         print(f"   ✓ Phase 2 complete: {len(phase2_pareto)} best (prompt, temperature) combinations")
+
+        combined_stats = self._combine_evolution_snapshots([phase1_stats, phase2_stats])
 
         return {
             "pareto": [e.candidate for e in phase2_pareto],
             "pareto_entries": phase2_pareto,
             "qd_elites": orchestrator2.archive.sample_qd(limit=len(phase2_pareto)),
             "phase1_pareto": [e.candidate for e in phase1_pareto],  # Also return phase 1 results
+            "phase1_evolution_stats": phase1_stats,
+            "phase2_evolution_stats": phase2_stats,
+            "evolution_stats": combined_stats,
         }
 
     async def _optimize_multi_island(
@@ -881,15 +951,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         # Create shared cache across all islands (better cache hits + controlled concurrency)
         shared_cache = self._make_cache(island_id=None)
 
-        metrics_queue: asyncio.Queue | None = None
-        aggregator_task: asyncio.Task | None = None
-        aggregator: IslandProgressAggregator | None = None
-        if display_progress:
-            metrics_queue = asyncio.Queue()
-            aggregator = IslandProgressAggregator(n_islands=n_islands, max_rounds=max_rounds or 100)
-
-            
-
         async def run_islands() -> List[Orchestrator | None]:
             island_results: List[Orchestrator | None] = [None] * n_islands
 
@@ -902,9 +963,10 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 if temperature_mutations_enabled is not None:
                     mutator.set_temperature_mutations_enabled(temperature_mutations_enabled)
                 log_dir = self._make_log_dir(context.island_id)
+                display_local = display_progress and context.island_id == 0
                 orchestrator = self._build_orchestrator(
                     enable_auto_stop=enable_auto_stop,
-                    display_progress=False if metrics_queue else (display_progress and context.island_id == 0),
+                    display_progress=display_local,
                     temperature_mutations_enabled=temperature_mutations_enabled,
                     island_context=context,
                     cache=cache,
@@ -924,16 +986,11 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 )
                 island_results[context.island_id] = orchestrator
 
-            tasks = await spawn_islands(n_islands, worker, metrics_queue=metrics_queue)
+            tasks = await spawn_islands(n_islands, worker, metrics_queue=None)
             await asyncio.gather(*tasks)
             return island_results
 
         orchestrators = await run_islands()
-
-        if metrics_queue is not None:
-            await metrics_queue.put(None)
-            if aggregator_task:
-                await aggregator_task
 
         combined_archive = self._make_archive()
         inserts: List[tuple[Candidate, EvalResult]] = []
@@ -947,10 +1004,12 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         pareto_entries = combined_archive.pareto_entries()
         pareto_candidates = [entry.candidate for entry in pareto_entries]
         qd_elites = combined_archive.sample_qd(limit=len(pareto_entries)) if pareto_entries else []
+        evolution_stats = self._aggregate_evolution_stats(orchestrators)
         return {
             "pareto": pareto_candidates,
             "pareto_entries": pareto_entries,
             "qd_elites": qd_elites,
+            "evolution_stats": evolution_stats,
         }
 
     async def _optimize_multi_island_staged(
@@ -974,8 +1033,14 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             temperature_mutations_enabled=False,
         )
         phase1_entries = phase1_result.get("pareto_entries", [])
+        phase1_stats = phase1_result.get("evolution_stats", {})
         if not phase1_entries:
-            return phase1_result | {"phase1_pareto": []}
+            return {
+                **phase1_result,
+                "phase1_pareto": [],
+                "phase1_evolution_stats": phase1_stats,
+                "evolution_stats": phase1_stats,
+            }
 
         top_k = min(5, len(phase1_entries))
         top_entries = sorted(
@@ -1000,7 +1065,15 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             display_progress=display_progress,
             temperature_mutations_enabled=True,
         )
+        phase2_stats = phase2_result.get("evolution_stats", {})
+        combined_stats = self._combine_evolution_snapshots(
+            (phase1_stats.get("islands", []) if phase1_stats else [])
+            + (phase2_stats.get("islands", []) if phase2_stats else [])
+        )
         phase2_result["phase1_pareto"] = [entry.candidate for entry in phase1_entries]
+        phase2_result["phase1_evolution_stats"] = phase1_stats
+        phase2_result["phase2_evolution_stats"] = phase2_stats
+        phase2_result["evolution_stats"] = combined_stats
         return phase2_result
 
     def optimize(
