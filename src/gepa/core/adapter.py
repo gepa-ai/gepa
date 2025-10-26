@@ -7,7 +7,7 @@ from typing import Any, Generic, Protocol, TypeVar
 # Generic type aliases matching your original
 RolloutOutput = TypeVar("RolloutOutput")
 Trajectory = TypeVar("Trajectory")
-DataInst = TypeVar("DataInst", covariant=True)
+DataInst = TypeVar("DataInst")
 
 
 @dataclass

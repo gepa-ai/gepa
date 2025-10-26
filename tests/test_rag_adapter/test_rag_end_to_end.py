@@ -5,10 +5,10 @@ import json
 from unittest.mock import Mock, patch
 
 import pytest
+from test_data_loader import StagedDataLoader
 from test_incremental_eval_policy import RoundRobinSampleEvaluationPolicy
 
 from gepa.adapters.generic_rag_adapter.generic_rag_adapter import GenericRAGAdapter
-from gepa.core.data_loader import StagedDataLoader
 
 
 @pytest.fixture
@@ -217,7 +217,7 @@ def simple_reflection_lm(prompt):
     return json.dumps({"answer_generation": PREFERRED_DYNAMIC_PROMPT})
 
 
-class RAGTestAdapater(GenericRAGAdapter):
+class RAGTestAdapter(GenericRAGAdapter):
     """Custom adapter for deterministic RAG testing with optional dynamic valset hooks."""
 
     def __init__(
@@ -296,7 +296,7 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
     rag_config = DEFAULT_RAG_CONFIG.copy()
 
     # Create the RAG adapter with our mocked LLM
-    adapter = RAGTestAdapater(vector_store=mock_chromadb_store, rag_config=rag_config)
+    adapter = RAGTestAdapter(vector_store=mock_chromadb_store, rag_config=rag_config)
 
     # Use subset for faster testing
     trainset = sample_ai_ml_dataset[:2]  # First 2 examples for training
@@ -400,7 +400,7 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
 
     # 7. Verify reproducibility - with same mock functions, results should be deterministic
     # Run a second optimization with identical setup
-    adapter2 = RAGTestAdapater(vector_store=mock_chromadb_store, rag_config=rag_config)
+    adapter2 = RAGTestAdapter(vector_store=mock_chromadb_store, rag_config=rag_config)
     gepa_result2 = gepa.optimize(
         seed_candidate=seed_candidate,
         trainset=trainset,
@@ -489,7 +489,7 @@ def test_rag_dynamic_valset_round_robin_sample(sample_ai_ml_dataset, mock_chroma
             (6, staged_val_items[1:]),
         ],
     )
-    adapter_stage_one = RAGTestAdapater(
+    adapter_stage_one = RAGTestAdapter(
         vector_store=mock_chromadb_store,
         rag_config=DEFAULT_RAG_CONFIG.copy(),
         preferred_prompt=PREFERRED_DYNAMIC_PROMPT,
@@ -515,7 +515,7 @@ def test_rag_dynamic_valset_round_robin_sample(sample_ai_ml_dataset, mock_chroma
         # Always safe to fetch using the first id because staged unlock only appends ids.
         val_loader.fetch([0])
 
-    adapter_stage_two = RAGTestAdapater(
+    adapter_stage_two = RAGTestAdapter(
         vector_store=mock_chromadb_store,
         rag_config=DEFAULT_RAG_CONFIG.copy(),
         preferred_prompt=PREFERRED_DYNAMIC_PROMPT,
