@@ -99,11 +99,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             return (
                 evaluation_result.outputs,
                 evaluation_result.scores,
-                evaluation_result.subscores,
+                evaluation_result.objective_scores,
             )
         if len(evaluation_result) == 3:
-            outputs, scores, subscores = evaluation_result
-            return outputs, scores, subscores
+            outputs, scores, objective_scores = evaluation_result
+            return outputs, scores, objective_scores
         if len(evaluation_result) == 2:
             outputs, scores = evaluation_result
             return outputs, scores, None
@@ -114,13 +114,15 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         val_ids = self.val_evaluation_policy.get_eval_batch(self.valset, state)
         batch = self.valset.fetch(val_ids)
-        outputs, scores, subscores = self._coerce_evaluation_result(self.evaluator(batch, program))
+        outputs, scores, objective_scores = self._coerce_evaluation_result(self.evaluator(batch, program))
         assert len(outputs) == len(val_ids), "Eval outputs should match length of selected validation indices"
         assert len(scores) == len(val_ids), "Eval scores should match length of selected validation indices"
 
         outputs_by_val_idx = dict(zip(val_ids, outputs, strict=False))
         scores_by_val_idx = dict(zip(val_ids, scores, strict=False))
-        objective_by_val_idx = dict(zip(val_ids, subscores, strict=False)) if subscores is not None else None
+        objective_by_val_idx = (
+            dict(zip(val_ids, objective_scores, strict=False)) if objective_scores is not None else None
+        )
         return ValsetEvaluation(
             outputs_by_val_id=outputs_by_val_idx,
             scores_by_val_id=scores_by_val_idx,
@@ -205,11 +207,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         def valset_evaluator(program: dict[str, str]):
             all_ids = list(self.valset.all_ids())
             eval_result = self.evaluator(self.valset.fetch(all_ids), program)
-            outputs, scores, subscores = self._coerce_evaluation_result(eval_result)
+            outputs, scores, objective_scores = self._coerce_evaluation_result(eval_result)
             outputs_dict = dict(zip(all_ids, outputs, strict=False))
             scores_dict = dict(zip(all_ids, scores, strict=False))
-            subscores_dict = dict(zip(all_ids, subscores, strict=False)) if subscores is not None else None
-            return outputs_dict, scores_dict, subscores_dict
+            objective_scores_dict = (
+                dict(zip(all_ids, objective_scores, strict=False)) if objective_scores is not None else None
+            )
+            return outputs_dict, scores_dict, objective_scores_dict
 
         # Initialize state
         state = initialize_gepa_state(

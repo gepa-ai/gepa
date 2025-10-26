@@ -115,11 +115,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 scores.append(score_val)
                 subscores.append(subscore_dict)
             has_subscores = any(subscores)
+            # Map DSPy "subscores" into GEPA objective score payloads.
             return EvaluationBatch(
                 outputs=outputs,
                 scores=scores,
                 trajectories=trajs,
-                subscores=subscores if has_subscores else None,
+                objective_scores=subscores if has_subscores else None,
             )
         else:
             evaluator = Evaluate(
@@ -144,11 +145,12 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 scores.append(score_val)
                 subscores.append(subscore_dict)
             has_subscores = any(subscores)
+            # Map DSPy "subscores" into GEPA objective score payloads.
             return EvaluationBatch(
                 outputs=outputs,
                 scores=scores,
                 trajectories=None,
-                subscores=subscores if has_subscores else None,
+                objective_scores=subscores if has_subscores else None,
             )
 
     def make_reflective_dataset(self, candidate, eval_batch, components_to_update):

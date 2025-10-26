@@ -22,12 +22,14 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
     - trajectories: optional per-example traces used by make_reflective_dataset to build
       a reflective dataset (See `GEPAAdapter.make_reflective_dataset`). If capture_traces=True is passed to `evaluate`, trajectories
       should be provided and align one-to-one with `outputs` and `scores`.
+    - objective_scores: optional per-example maps of objective name -> score. Leave None when
+      the evaluator does not expose multi-objective metrics.
     """
 
     outputs: list[RolloutOutput]
     scores: list[float]
     trajectories: list[Trajectory] | None = None
-    subscores: list[dict[str, float]] | None = None
+    objective_scores: list[dict[str, float]] | None = None
 
 
 class ProposalFn(Protocol):
