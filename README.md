@@ -31,6 +31,50 @@ pip install git+https://github.com/gepa-ai/gepa.git
 
 ## Using GEPA
 
+### 🚀 NEW: Optimize Anything API
+
+**The simplest way to use GEPA** - evolve any system with string components in just a few lines:
+
+```python
+from gepa import optimize_anything
+
+# 1. Define what to evolve
+seed_candidate = {
+    "my_prompt": "You are a helpful assistant."
+}
+
+# 2. Your workload
+trainset = [
+    {"input": "What is 2+2?", "expected": "4"},
+    # ... more examples
+]
+
+# 3. Evaluation function
+def evaluate(candidate, batch):
+    results = []
+    for item in batch:
+        output = run_your_system(candidate["my_prompt"], item["input"])
+        score = 1.0 if output == item["expected"] else 0.0
+        context = {"feedback": f"Expected {item['expected']}, got {output}"}
+        results.append((score, context))
+    return results
+
+# 4. Evolve!
+result = optimize_anything(
+    seed_candidate=seed_candidate,
+    trainset=trainset,
+    evaluate=evaluate,
+    reflection_lm="gpt-4",
+    max_metric_calls=100
+)
+
+print(f"Best: {result.best_candidate}")
+```
+
+**Works for**: Prompts, code, configurations, documents, or any text. See [examples/evolve_anything/](examples/evolve_anything/) for complete examples.
+
+---
+
 ### The Easiest Path: DSPy Integration
 
 > **The easiest and most powerful way to use GEPA for prompt optimization is within [DSPy](https://dspy.ai/), where the GEPA algorithm is directly available through the `dspy.GEPA` API. Directly executable tutorial notebooks are at [dspy.GEPA Tutorials](https://dspy.ai/tutorials/gepa_ai_program/).**

@@ -6,7 +6,7 @@ import random
 from typing import Any, Callable, Literal
 
 from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
-from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
@@ -22,7 +22,7 @@ from gepa.strategies.component_selector import (
     RoundRobinReflectionComponentSelector,
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
-from gepa.utils import FileStopper, StopperProtocol
+from gepa.utils.stop_condition import FileStopper, StopperProtocol
 
 
 def optimize(
@@ -178,7 +178,7 @@ def optimize(
 
     # Add max_metric_calls stopper if provided
     if max_metric_calls is not None:
-        from gepa.utils import MaxMetricCallsStopper
+        from gepa.utils.stop_condition import MaxMetricCallsStopper
 
         max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
         stop_callbacks_list.append(max_calls_stopper)
@@ -193,7 +193,7 @@ def optimize(
     if len(stop_callbacks_list) == 1:
         stop_callback = stop_callbacks_list[0]
     else:
-        from gepa.utils import CompositeStopper
+        from gepa.utils.stop_condition import CompositeStopper
 
         stop_callback = CompositeStopper(*stop_callbacks_list)
 
@@ -315,3 +315,270 @@ def optimize(
 
     result = GEPAResult.from_state(state)
     return result
+
+
+class FunctionAdapter(GEPAAdapter):  # type: ignore
+    """
+    Adapter that wraps a simple evaluate function into a full GEPAAdapter.
+
+    This adapter bridges the gap between the simplified optimize_anything API
+    and the full GEPAAdapter protocol, handling both simple (scores only) and
+    advanced (scores + context) evaluation returns.
+    """
+
+    evaluate_fn: Callable
+    context_to_feedback_fn: Callable[[dict[str, str], Any, Any, float], dict[str, str]]
+    failure_score: float
+
+    def __init__(
+        self,
+        evaluate_fn: Callable,
+        context_to_feedback_fn: Callable[[dict[str, str], Any, Any, float], dict[str, str]] | None = None,
+        failure_score: float = 0.0,
+    ):
+        """
+        Parameters:
+        -----------
+        evaluate_fn : Callable[[dict[str, str], list], list[float] | list[tuple[float, Any]]]
+            Function that evaluates a candidate on a batch of workload instances.
+
+            Simple form:
+                evaluate(candidate, batch) -> list[float]
+                Returns just scores (one per batch instance).
+
+            Advanced form:
+                evaluate(candidate, batch) -> list[tuple[float, Any]]
+                Returns (score, context) pairs where context contains arbitrary
+                data/feedback for reflection (e.g., execution traces, error messages,
+                correct answers, intermediate outputs, etc.).
+
+        context_to_feedback_fn : Optional callable
+            Function that converts context into component-specific feedback for reflection.
+            Signature: (candidate, workload_instance, context, score) -> dict[component_name -> feedback_text]
+
+            If None, uses a default implementation that converts context to string representation.
+
+        failure_score : float
+            Score to return when evaluation fails. Default: 0.0.
+        """
+        self.evaluate_fn = evaluate_fn
+        self.context_to_feedback_fn = context_to_feedback_fn or self._default_context_to_feedback
+        self.failure_score = failure_score
+
+    def _default_context_to_feedback(
+        self,
+        candidate: dict[str, str],
+        workload_instance: Any,
+        context: Any,
+        score: float,
+    ) -> dict[str, str]:
+        """
+        Default context-to-feedback converter that creates generic feedback.
+
+        Users can provide their own implementation for domain-specific feedback.
+        """
+        feedback = {}
+        for component_name in candidate.keys():
+            if isinstance(context, dict) and "feedback" in context:
+                feedback[component_name] = str(context["feedback"])
+            elif isinstance(context, dict) and "error" in context:
+                feedback[component_name] = f"Error: {context['error']}"
+            elif isinstance(context, str):
+                feedback[component_name] = context
+            else:
+                # Generic feedback based on score
+                if score > 0.5:
+                    feedback[component_name] = f"Achieved score {score:.2f}. Consider refining to improve further."
+                else:
+                    feedback[component_name] = f"Low score ({score:.2f}). Significant improvements needed."
+        return feedback
+
+    def evaluate(
+        self,
+        batch: list,
+        candidate: dict[str, str],
+        capture_traces: bool = False,
+    ) -> EvaluationBatch:
+        """Execute the user's evaluate function and wrap results in EvaluationBatch."""
+        try:
+            results = self.evaluate_fn(candidate, batch)
+
+            # Handle both simple (scores only) and advanced (scores + context) returns
+            if results and isinstance(results[0], tuple):
+                # Advanced form: list of (score, context) tuples
+                scores = [r[0] for r in results]
+                contexts = [r[1] for r in results] if capture_traces else None
+                outputs = contexts  # Use contexts as outputs
+            else:
+                # Simple form: list of scores
+                scores = results
+                contexts = None
+                outputs = [{"score": s} for s in scores]
+
+            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=contexts if capture_traces else None)
+
+        except Exception as e:
+            # Gracefully handle evaluation failures
+            import traceback
+
+            error_msg = f"Evaluation failed: {e!s}\n{traceback.format_exc()}"
+            return EvaluationBatch(
+                outputs=[{"error": error_msg} for _ in batch],
+                scores=[self.failure_score for _ in batch],
+                trajectories=[{"error": error_msg} for _ in batch] if capture_traces else None,
+            )
+
+    def make_reflective_dataset(
+        self,
+        candidate: dict[str, str],
+        eval_batch: EvaluationBatch,
+        components_to_update: list[str],
+    ) -> dict[str, list[dict[str, Any]]]:
+        """
+        Build reflective dataset from evaluation contexts.
+
+        This extracts feedback from the contexts returned by evaluate_fn and
+        structures it for the reflection LLM.
+        """
+        reflective_dataset = {name: [] for name in components_to_update}
+
+        if eval_batch.trajectories is None:
+            raise ValueError("No trajectories captured. This shouldn't happen.")
+
+        for idx, (traj, score) in enumerate(zip(eval_batch.trajectories, eval_batch.scores, strict=False)):
+            # Convert context to feedback using user's function or default
+            # We don't have the original workload instance here, so pass None
+            feedback_dict = self.context_to_feedback_fn(candidate, None, traj, score)
+
+            for component_name in components_to_update:
+                if component_name in feedback_dict:
+                    reflective_dataset[component_name].append(
+                        {
+                            "Inputs": {"workload_index": idx},
+                            "Generated Outputs": candidate[component_name],
+                            "Feedback": feedback_dict[component_name],
+                            "score": score,
+                        }
+                    )
+
+        return reflective_dataset
+
+
+def optimize_anything(
+    seed_candidate: dict[str, str],
+    trainset: list,
+    evaluate: Callable,
+    valset: list | None = None,
+    context_to_feedback: Callable[[dict[str, str], Any, Any, float], dict[str, str]] | None = None,
+    failure_score: float = 0.0,
+    # Reflection-based configuration
+    reflection_lm: LanguageModel | str | None = None,
+    candidate_selection_strategy: str = "pareto",
+    skip_perfect_score: bool = True,
+    batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
+    reflection_minibatch_size: int | None = None,
+    perfect_score: int | float = 1.0,
+    reflection_prompt_template: str | None = None,
+    # Component selection configuration
+    module_selector: "ReflectionComponentSelector | str" = "round_robin",
+    # Merge-based configuration
+    use_merge: bool = False,
+    max_merge_invocations: int = 5,
+    merge_val_overlap_floor: int = 5,
+    # Budget and Stop Condition
+    max_metric_calls: int | None = None,
+    stop_callbacks: "StopperProtocol | list[StopperProtocol] | None" = None,
+    # Logging
+    logger: LoggerProtocol | None = None,
+    run_dir: str | None = None,
+    use_wandb: bool = False,
+    wandb_api_key: str | None = None,
+    wandb_init_kwargs: dict[str, Any] | None = None,
+    use_mlflow: bool = False,
+    mlflow_tracking_uri: str | None = None,
+    mlflow_experiment_name: str | None = None,
+    track_best_outputs: bool = False,
+    display_progress_bar: bool = False,
+    use_cloudpickle: bool = False,
+    # Reproducibility
+    seed: int = 0,
+    raise_on_exception: bool = True,
+    val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] | None = None,
+) -> GEPAResult:
+    """
+    Simplified API to evolve any system with string components using GEPA.
+
+    See OPTIMIZE_ANYTHING.md for complete documentation and examples.
+
+    This is a user-friendly alternative to implementing a full GEPAAdapter. Just provide:
+    1. seed_candidate: Dict mapping component names to initial string values
+    2. trainset/valset: Lists of workload instances your system processes
+    3. evaluate: Function that runs your system and returns scores (and optionally context)
+
+    Quick Example:
+    ```python
+    from gepa import optimize_anything
+
+    seed_candidate = {"my_prompt": "Initial prompt..."}
+    trainset = [{"input": "...", "expected": "..."}, ...]
+
+    def evaluate(candidate, batch):
+        results = []
+        for item in batch:
+            output = your_system(candidate["my_prompt"], item["input"])
+            score = compute_score(output, item["expected"])
+            context = {"feedback": "What went wrong..."}
+            results.append((score, context))
+        return results
+
+    result = optimize_anything(
+        seed_candidate=seed_candidate,
+        trainset=trainset,
+        evaluate=evaluate,
+        reflection_lm="gpt-4",
+        max_metric_calls=100
+    )
+    ```
+
+    Returns:
+        GEPAResult with best_candidate, best_score, pareto_frontier, and history.
+    """
+    # Create the adapter from user's evaluate function
+    adapter = FunctionAdapter(
+        evaluate_fn=evaluate, context_to_feedback_fn=context_to_feedback, failure_score=failure_score
+    )
+
+    # Delegate to main optimize() function
+    return optimize(
+        seed_candidate=seed_candidate,
+        trainset=trainset,
+        valset=valset,
+        adapter=adapter,
+        reflection_lm=reflection_lm,
+        candidate_selection_strategy=candidate_selection_strategy,
+        skip_perfect_score=skip_perfect_score,
+        batch_sampler=batch_sampler,
+        reflection_minibatch_size=reflection_minibatch_size,
+        perfect_score=perfect_score,
+        reflection_prompt_template=reflection_prompt_template,
+        module_selector=module_selector,
+        use_merge=use_merge,
+        max_merge_invocations=max_merge_invocations,
+        merge_val_overlap_floor=merge_val_overlap_floor,
+        max_metric_calls=max_metric_calls,
+        stop_callbacks=stop_callbacks,
+        logger=logger,
+        run_dir=run_dir,
+        use_wandb=use_wandb,
+        wandb_api_key=wandb_api_key,
+        wandb_init_kwargs=wandb_init_kwargs,
+        use_mlflow=use_mlflow,
+        mlflow_tracking_uri=mlflow_tracking_uri,
+        mlflow_experiment_name=mlflow_experiment_name,
+        track_best_outputs=track_best_outputs,
+        display_progress_bar=display_progress_bar,
+        use_cloudpickle=use_cloudpickle,
+        seed=seed,
+        raise_on_exception=raise_on_exception,
+        val_evaluation_policy=val_evaluation_policy,
+    )
