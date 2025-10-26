@@ -126,12 +126,20 @@ class _OptimizeAdapter(GEPAAdapter[Any, Any, Any]):
 
         return ret_d
 
-    def get_reflection_prompt_template(self) -> str | None:
-        """Return the custom reflection prompt template if provided."""
-        # For now, we assume a single prompt for all components
-        # TODO: Support per-component prompts
+    def get_reflection_prompt_template(self, component_name: str | None = None) -> str | None:
+        """Return the custom reflection prompt template if provided.
+
+        Args:
+            component_name: Optional component name to get specific prompt for
+
+        Returns:
+            Reflection prompt template for the component, or default prompt
+        """
         if isinstance(self.reflection_prompt, dict):
-            # Use the first prompt or a 'default' key
+            # If component name provided, try to get its specific prompt
+            if component_name and component_name in self.reflection_prompt:
+                return self.reflection_prompt[component_name]
+            # Otherwise use 'default' key or first prompt
             return self.reflection_prompt.get("default", next(iter(self.reflection_prompt.values()), None))
         return self.reflection_prompt
 
@@ -401,7 +409,7 @@ def evolve(
         reflection_lm=teacher_lm,
         skip_perfect_score=True,
         reflection_minibatch_size=minibatch_size,
-        perfect_score=1.0,
+        perfect_score=1,  # Integer as expected by the API
         reflection_prompt_template=adapter.get_reflection_prompt_template(),
         seed=random_seed if random_seed is not None else 0,
         run_dir=output_dir,
