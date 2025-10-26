@@ -27,7 +27,9 @@ class LanceDBVectorStore(VectorStoreInterface):
         import importlib.util
 
         if importlib.util.find_spec("lancedb") is None:
-            raise ImportError("LanceDB is required for LanceDBVectorStore. Install with: pip install litellm lancedb pyarrow")
+            raise ImportError(
+                "LanceDB is required for LanceDBVectorStore. Install with: pip install litellm lancedb pyarrow"
+            )
 
         self.db = db
         self.table_name = table_name

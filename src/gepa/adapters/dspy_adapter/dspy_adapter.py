@@ -23,12 +23,15 @@ class LoggerAdapter:
     def log(self, x: str):
         self.logger.info(x)
 
+
 DSPyTrace = list[tuple[Any, dict[str, Any], Prediction]]
+
 
 class ScoreWithFeedback(Prediction):
     score: float
     feedback: str | None = None
     subscores: dict[str, float] | None = None
+
 
 class PredictorFeedbackFn(Protocol):
     def __call__(
@@ -53,6 +56,7 @@ class PredictorFeedbackFn(Protocol):
         The feedback is a string that is used to guide the evolution of the predictor.
         """
         ...
+
 
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def __init__(
@@ -89,6 +93,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
             from dspy.teleprompt.bootstrap_trace import bootstrap_trace_data
+
             trajs = bootstrap_trace_data(
                 program=program,
                 dataset=batch,
@@ -125,7 +130,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 return_outputs=True,
                 failure_score=self.failure_score,
                 provide_traceback=True,
-                max_errors=len(batch) * 100
+                max_errors=len(batch) * 100,
             )
             res = evaluator(program)
             outputs = [r[1] for r in res.results]
@@ -148,6 +153,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
     def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
         from dspy.teleprompt.bootstrap_trace import FailedPrediction
+
         program = self.build_program(candidate)
 
         ret_d: dict[str, list[dict[str, Any]]] = {}
@@ -245,9 +251,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                         feedback_text = getattr(fb, "feedback", "")
                     d["Feedback"] = feedback_text
                     if module_score is not None and feedback_score is not None:
-                        assert (
-                            abs(feedback_score - module_score) < 1e-8
-                        ), (
+                        assert abs(feedback_score - module_score) < 1e-8, (
                             "Currently, GEPA only supports feedback functions that return the same score as the module's score. "
                             f"However, the module-level score is {module_score} and the feedback score is {feedback_score}."
                         )

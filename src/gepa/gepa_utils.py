@@ -2,6 +2,9 @@
 # https://github.com/gepa-ai/gepa
 
 
+import random
+from typing import Any, Mapping
+
 
 def json_default(x):
     """Default JSON encoder for objects that are not serializable by default."""
@@ -10,10 +13,12 @@ def json_default(x):
     except Exception:
         return repr(x)
 
+
 def idxmax(lst: list[float]) -> int:
     """Return the index of the maximum value in a list."""
     max_val = max(lst)
     return lst.index(max_val)
+
 
 def is_dominated(y, programs, program_at_pareto_front_valset):
     y_fronts = [front for front in program_at_pareto_front_valset.values() if y in front]
@@ -27,6 +32,7 @@ def is_dominated(y, programs, program_at_pareto_front_valset):
             return False
 
     return True
+
 
 def remove_dominated_programs(program_at_pareto_front_valset, scores=None):
     freq = {}
@@ -55,6 +61,8 @@ def remove_dominated_programs(program_at_pareto_front_valset, scores=None):
 
     dominators = [p for p in programs if p not in dominated]
     for front in program_at_pareto_front_valset.values():
+        if not front:
+            continue
         assert any(p in front for p in dominators)
 
     new_program_at_pareto_front_valset = {
@@ -65,6 +73,7 @@ def remove_dominated_programs(program_at_pareto_front_valset, scores=None):
         assert front_new.issubset(program_at_pareto_front_valset[val_id])
 
     return new_program_at_pareto_front_valset
+
 
 def find_dominator_programs(pareto_front_programs, train_val_weighted_agg_scores_for_all_programs):
     train_val_pareto_front_programs = pareto_front_programs
@@ -77,7 +86,12 @@ def find_dominator_programs(pareto_front_programs, train_val_weighted_agg_scores
     uniq_progs = set(uniq_progs)
     return list(uniq_progs)
 
-def select_program_candidate_from_pareto_front(pareto_front_programs, train_val_weighted_agg_scores_for_all_programs, rng):
+
+def select_program_candidate_from_pareto_front(
+    pareto_front_programs: Mapping[Any, set[int]],
+    train_val_weighted_agg_scores_for_all_programs: list[float],
+    rng: random.Random,
+) -> int:
     train_val_pareto_front_programs = pareto_front_programs
     new_program_at_pareto_front_valset = remove_dominated_programs(
         train_val_pareto_front_programs, scores=train_val_weighted_agg_scores_for_all_programs
@@ -89,8 +103,15 @@ def select_program_candidate_from_pareto_front(pareto_front_programs, train_val_
                 program_frequency_in_validation_pareto_front[prog_idx] = 0
             program_frequency_in_validation_pareto_front[prog_idx] += 1
 
-    sampling_list = [prog_idx for prog_idx, freq in program_frequency_in_validation_pareto_front.items() for _ in range(freq)]
-    if not sampling_list:
-        return idxmax(train_val_weighted_agg_scores_for_all_programs)
+    sampling_list = [
+        prog_idx for prog_idx, freq in program_frequency_in_validation_pareto_front.items() for _ in range(freq)
+    ]
+
+    # TODO: Determine if we need this fallback
+    # if not sampling_list:
+    #     # No Pareto programs survived; fall back to the globally highest-scoring program.
+    #     return idxmax(train_val_weighted_agg_scores_for_all_programs)
+    assert len(sampling_list) > 0
+
     curr_prog_id = rng.choice(sampling_list)
     return curr_prog_id

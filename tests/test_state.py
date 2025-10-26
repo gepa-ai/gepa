@@ -1,6 +1,5 @@
 import json
 import os
-import random
 import shutil
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -10,6 +9,7 @@ import pytest
 import gepa
 import gepa.core.state as state_mod
 from gepa.core.adapter import EvaluationBatch
+from gepa.strategies.eval_policy import EvaluationPolicy
 
 
 @pytest.fixture
@@ -106,12 +106,7 @@ def test_gepa_state_save_and_initialize(run_dir):
     assert state.__dict__ == result.__dict__
 
 
-@pytest.fixture
-def rng():
-    return random.Random(42)
-
-
-def test_dynamic_validation(run_dir):
+def test_dynamic_validation(run_dir, rng):
     trainset = [{"id": i, "difficulty": i + 2} for i in range(3)]
     valset_initial = [{"id": i, "difficulty": i + 2} for i in range(2)]
     seed_candidate = {"system_prompt": "weight=0"}
@@ -138,8 +133,20 @@ def test_dynamic_validation(run_dir):
     adapter = DummyAdapter()
 
     # initially only validate on first example
-    init_validation_policy = lambda state: [0]
+    class InitValidationPolicy(EvaluationPolicy):
+        def get_eval_batch(self, loader, state, target_program_idx=None):
+            return [0]
 
+        def is_evaluation_sparse(self) -> bool:
+            return False
+
+        def get_best_program(self, state: state_mod.GEPAState) -> state_mod.ProgramIdx:
+            return 0
+
+        def get_valset_score(self, program_idx: state_mod.ProgramIdx, state: state_mod.GEPAState) -> float:
+            return state.get_program_average_val_subset(program_idx)[0]
+
+    init_validation_policy = InitValidationPolicy()
     gepa.optimize(
         seed_candidate=seed_candidate,
         trainset=trainset,
@@ -161,13 +168,23 @@ def test_dynamic_validation(run_dir):
 
     valset_ids = set(range(len(extended_valset)))
 
-    def backfill_validation_policy(state: state_mod.GEPAState):
-        missing_valset_ids = valset_ids.difference(state.valset_evaluations.keys())
-        if missing_valset_ids:
-            return missing_valset_ids
-        return rng.sample(valset_ids, 1)
+    class BackfillValidationPolicy(EvaluationPolicy):
+        def get_eval_batch(self, loader, state, target_program_idx=None) -> list[int]:
+            missing_valset_ids = valset_ids.difference(state.valset_evaluations.keys())
+            if missing_valset_ids:
+                return sorted(list(missing_valset_ids))
+            return rng.sample(valset_ids, 1)
 
-    best_stage1_candidate_idx = state_phase_one._best_program_idx()
+        def get_best_program(self, state: state_mod.GEPAState) -> state_mod.ProgramIdx:
+            return 0
+
+        def is_evaluation_sparse(self) -> bool:
+            return False
+
+        def get_valset_score(self, program_idx: state_mod.ProgramIdx, state: state_mod.GEPAState) -> float:
+            return state.get_program_average_val_subset(program_idx)[0]
+
+    best_stage1_candidate_idx = init_validation_policy.get_best_program(state_phase_one)
     best_stage1_candidate = state_phase_one.program_candidates[best_stage1_candidate_idx]
     gepa.optimize(
         seed_candidate=best_stage1_candidate,
@@ -177,7 +194,7 @@ def test_dynamic_validation(run_dir):
         reflection_lm=None,
         max_metric_calls=10,
         run_dir=run_dir,
-        val_evaluation_policy=backfill_validation_policy,
+        val_evaluation_policy=BackfillValidationPolicy(),
     )
 
     resumed_state = state_mod.GEPAState.load(str(run_dir))

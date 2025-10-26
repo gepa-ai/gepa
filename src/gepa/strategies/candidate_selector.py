@@ -17,7 +17,7 @@ class ParetoCandidateSelector(CandidateSelector):
         self.frontier_type = frontier_type
 
     def select_candidate_idx(self, state: GEPAState) -> int:
-        assert len(state.per_program_tracked_scores) == len(state.program_candidates)
+        assert len(state.program_full_scores_val_set) == len(state.program_candidates)
         return select_program_candidate_from_pareto_front(
             state.get_pareto_front_mapping(self.frontier_type),
             state.per_program_tracked_scores,
@@ -30,5 +30,5 @@ class CurrentBestCandidateSelector(CandidateSelector):
         pass
 
     def select_candidate_idx(self, state: GEPAState) -> int:
-        assert len(state.per_program_tracked_scores) == len(state.program_candidates)
-        return idxmax(state.per_program_tracked_scores)
+        assert len(state.program_full_scores_val_set) == len(state.program_candidates)
+        return idxmax(state.program_full_scores_val_set)

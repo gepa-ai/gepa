@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10, <3.14"
 resolution-markers = [
     "python_full_version >= '3.12' and sys_platform == 'linux'",
@@ -860,7 +860,7 @@ http = [
 
 [[package]]
 name = "gepa"
-version = "0.0.16"
+version = "0.0.17"
 source = { editable = "." }
 
 [package.optional-dependencies]

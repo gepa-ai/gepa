@@ -2,16 +2,15 @@
 # https://github.com/gepa-ai/gepa
 
 import traceback
-from typing import Any, Callable, Generic
+from typing import Any, Callable, Generic, Sequence
 
+from gepa.core.adapter import DataInst, EvaluationBatch, RolloutOutput, Trajectory
+from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState, initialize_gepa_state
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.merge import MergeProposer
-from gepa.proposer.reflective_mutation.reflective_mutation import (
-    ReflectiveMutationProposer,
-)
-
-from .adapter import DataInst, EvaluationBatch, RolloutOutput, Trajectory
+from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
+from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 
 # Import tqdm for progress bar functionality
 try:
@@ -20,7 +19,7 @@ except ImportError:
     tqdm = None
 
 
-class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
+class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     """
     Orchestrates the optimization loop. It uses pluggable ProposeNewCandidate strategies.
     """
@@ -28,8 +27,13 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
     def __init__(
         self,
         run_dir: str | None,
-        evaluator: Callable[[list[DataInst], dict[str, str]], EvaluationBatch[Trajectory, RolloutOutput]],
-        valset: list[DataInst] | None,
+        evaluator: Callable[
+            [list[DataInst], dict[str, str]],
+            EvaluationBatch[Trajectory, RolloutOutput]
+            | tuple[list[RolloutOutput], list[float]]
+            | tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None],
+        ],
+        valset: list[DataInst] | DataLoader[DataId, DataInst] | None,
         seed_candidate: dict[str, str],
         # Controls
         perfect_score: float,
@@ -48,7 +52,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         use_cloudpickle: bool = False,
         # Budget and Stop Condition
         stop_callback: Callable[[Any], bool] | None = None,
-        val_evaluation_policy: Callable[[GEPAState], list[int]] | None = None,
+        val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -59,7 +63,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         # Set up stopping mechanism
         self.stop_callback = stop_callback
         self.evaluator = evaluator
-        self.valset = valset
+        self.valset = ensure_loader(valset)
         self.seed_candidate = seed_candidate
 
         self.perfect_score = perfect_score
@@ -79,29 +83,41 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         self.use_cloudpickle = use_cloudpickle
 
         self.raise_on_exception = raise_on_exception
-        self.val_evaluation_policy = val_evaluation_policy
+        self.val_evaluation_policy = val_evaluation_policy or FullEvaluationPolicy()
+
+    @staticmethod
+    def _coerce_evaluation_result(
+        evaluation_result: EvaluationBatch[Trajectory, RolloutOutput]
+        | tuple[list[RolloutOutput], list[float]]
+        | tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None],
+    ) -> tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None]:
+        if isinstance(evaluation_result, EvaluationBatch):
+            return evaluation_result.outputs, evaluation_result.scores, evaluation_result.subscores
+        if len(evaluation_result) == 3:
+            outputs, scores, subscores = evaluation_result
+            return outputs, scores, subscores
+        if len(evaluation_result) == 2:
+            outputs, scores = evaluation_result
+            return outputs, scores, None
+        raise ValueError("Unexpected evaluator return signature")
 
     def _evaluate_on_valset(
         self, program: dict[str, str], state: GEPAState
-    ) -> tuple[dict[int, RolloutOutput], dict[int, float], dict[int, dict[str, float]] | None]:
+    ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, dict[str, float]] | None]:
         assert self.valset is not None
 
-        indices = self.val_evaluation_policy(state) if self.val_evaluation_policy else range(len(self.valset))
-        indices = indices or []
-        batch = [self.valset[idx] for idx in indices]
-        eval_batch = self.evaluator(batch, program)
-        outputs = eval_batch.outputs
-        scores = eval_batch.scores
-        assert len(outputs) == len(indices), "Eval outputs should match length of selected validation indices"
+        val_ids = self.val_evaluation_policy.get_eval_batch(self.valset, state)
+        batch = self.valset.fetch(val_ids)
+        outputs, scores, subscores = self._coerce_evaluation_result(self.evaluator(batch, program))
+        assert len(outputs) == len(val_ids), "Eval outputs should match length of selected validation indices"
+        assert len(scores) == len(val_ids), "Eval scores should match length of selected validation indices"
 
-        outputs_by_val_idx = dict(zip(indices, outputs, strict=False))
-        scores_by_val_idx = dict(zip(indices, scores, strict=False))
-        objective_by_val_idx: dict[int, dict[str, float]] | None = None
-        if eval_batch.subscores:
-            objective_by_val_idx = dict(zip(indices, eval_batch.subscores, strict=False))
+        outputs_by_val_idx = dict(zip(val_ids, outputs, strict=False))
+        scores_by_val_idx = dict(zip(val_ids, scores, strict=False))
+        objective_by_val_idx = dict(zip(val_ids, subscores, strict=False)) if subscores is not None else None
         return outputs_by_val_idx, scores_by_val_idx, objective_by_val_idx
 
-    def _get_pareto_front_programs(self, state: GEPAState) -> list:
+    def _get_pareto_front_programs(self, state: GEPAState) -> dict[Any, set[int]]:
         return state.get_pareto_front_mapping(self.frontier_type)
 
     def _run_full_eval_and_add(
@@ -113,14 +129,11 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         num_metric_calls_by_discovery = state.total_num_evals
 
         valset_outputs, valset_subscores, valset_objective_subscores = self._evaluate_on_valset(new_program, state)
-        valset_score = (
-            sum(valset_subscores.values()) / len(valset_subscores) if len(valset_subscores) > 0 else float("-inf")
-        )
 
         state.num_full_ds_evals += 1
         state.total_num_evals += len(valset_subscores)
 
-        new_program_idx, linear_pareto_front_program_idx = state.update_state_with_new_program(
+        new_program_idx = state.update_state_with_new_program(
             parent_program_idx=parent_program_idx,
             new_program=new_program,
             valset_outputs=valset_outputs,
@@ -132,19 +145,22 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         state.full_program_trace[-1]["new_program_idx"] = new_program_idx
         state.full_program_trace[-1]["evaluated_val_indices"] = sorted(valset_subscores.keys())
 
+        valset_score = self.val_evaluation_policy.get_valset_score(new_program_idx, state)
+
+        linear_pareto_front_program_idx = self.val_evaluation_policy.get_best_program(state)
         if new_program_idx == linear_pareto_front_program_idx:
-            self.logger.log(f"Iteration {state.i + 1}: New program is on the linear pareto front")
+            self.logger.log(f"Iteration {state.i + 1}: Found a better program on the valset with score {valset_score}.")
 
         log_detailed_metrics_after_discovering_new_program(
             logger=self.logger,
             gepa_state=state,
-            valset_score=valset_score,
             new_program_idx=new_program_idx,
             valset_subscores=valset_subscores,
             objective_scores=state.prog_candidate_objective_scores[new_program_idx],
             experiment_tracker=self.experiment_tracker,
             linear_pareto_front_program_idx=linear_pareto_front_program_idx,
             valset_size=len(self.valset),
+            val_evaluation_policy=self.val_evaluation_policy,
         )
         return new_program_idx, linear_pareto_front_program_idx
 
@@ -179,15 +195,13 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
             raise ValueError("valset must be provided to GEPAEngine.run()")
 
         def valset_evaluator(program: dict[str, str]):
-            eval_batch = self.evaluator(self.valset, program)
-            outputs = {val_idx: output for val_idx, output in enumerate(eval_batch.outputs)}
-            scores = {val_idx: score for val_idx, score in enumerate(eval_batch.scores)}
-            subscores = (
-                {val_idx: subscore for val_idx, subscore in enumerate(eval_batch.subscores)}
-                if eval_batch.subscores
-                else None
-            )
-            return outputs, scores, subscores
+            all_ids = list(self.valset.all_ids())
+            eval_result = self.evaluator(self.valset.fetch(all_ids), program)
+            outputs, scores, subscores = self._coerce_evaluation_result(eval_result)
+            outputs_dict = dict(zip(all_ids, outputs, strict=False))
+            scores_dict = dict(zip(all_ids, scores, strict=False))
+            subscores_dict = dict(zip(all_ids, subscores, strict=False)) if subscores is not None else None
+            return outputs_dict, scores_dict, subscores_dict
 
         # Initialize state
         state = initialize_gepa_state(
@@ -199,7 +213,7 @@ class GEPAEngine(Generic[DataInst, Trajectory, RolloutOutput]):
         )
 
         # Log base program score
-        base_val_avg, base_val_coverage = state.get_program_average(0)
+        base_val_avg, base_val_coverage = state.get_program_average_val_subset(0)
         self.experiment_tracker.log_metrics(
             {
                 "base_program_full_valset_score": base_val_avg,
