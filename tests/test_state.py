@@ -21,7 +21,7 @@ def run_dir(tmp_path):
 def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
     """With a run dir but no state, the state is initialized from scratch and the eval output is written to the run dir."""
     seed = {"model": "m"}
-    valset_out = ({0: "out0", 1: {"k": "out1"}}, {0: 0.1, 1: 0.2})
+    valset_out = ({0: "out0", 1: {"k": "out1"}}, {0: 0.1, 1: 0.2}, None)
 
     fake_logger = MagicMock()
     valset_evaluator = MagicMock(return_value=valset_out)
@@ -52,7 +52,7 @@ def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
 def test_initialize_gepa_state_no_run_dir():
     """Without a run dir, the state is initialized from scratch and not saved."""
     seed = {"model": "m"}
-    valset_out = ({0: "out"}, {0: 0.5})
+    valset_out = ({0: "out"}, {0: 0.5}, None)
     fake_logger = MagicMock()
     valset_evaluator = MagicMock(return_value=valset_out)
 
@@ -74,7 +74,7 @@ def test_initialize_gepa_state_no_run_dir():
 def test_gepa_state_save_and_initialize(run_dir):
     """With a run dir that contains a saved state, the state is saved and initialized from it."""
     seed = {"model": "m"}
-    valset_out = ({0: {"x": 1}, 1: {"y": 2}}, {0: 0.3, 1: 0.7})
+    valset_out = ({0: {"x": 1}, 1: {"y": 2}}, {0: 0.3, 1: 0.7}, None)
     fake_logger = MagicMock()
     valset_evaluator = MagicMock(return_value=valset_out)
 
