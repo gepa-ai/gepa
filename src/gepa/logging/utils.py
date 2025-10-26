@@ -4,7 +4,7 @@
 
 from gepa.core.adapter import DataInst
 from gepa.core.data_loader import DataId
-from gepa.core.state import GEPAState
+from gepa.core.state import GEPAState, ValsetEvaluation
 from gepa.strategies.eval_policy import EvaluationPolicy
 
 
@@ -12,7 +12,7 @@ def log_detailed_metrics_after_discovering_new_program(
     logger,
     gepa_state: GEPAState,
     new_program_idx,
-    valset_subscores,
+    valset_evaluation: ValsetEvaluation,
     objective_scores,
     experiment_tracker,
     linear_pareto_front_program_idx,
@@ -25,7 +25,8 @@ def log_detailed_metrics_after_discovering_new_program(
 
     # avg, coverage = gepa_state.get_program_average_val_subset(new_program_idx)
     valset_score = val_evaluation_policy.get_valset_score(new_program_idx, gepa_state)
-    coverage = len(valset_subscores)
+    valset_scores = valset_evaluation.scores_by_val_id
+    coverage = len(valset_scores)
     logger.log(
         f"Iteration {gepa_state.i + 1}: Valset score for new program: {valset_score}"
         f" (coverage {coverage} / {valset_size})"
@@ -34,9 +35,14 @@ def log_detailed_metrics_after_discovering_new_program(
     agg_valset_score_new_program = val_evaluation_policy.get_valset_score(new_program_idx, gepa_state)
 
     logger.log(f"Iteration {gepa_state.i + 1}: Val aggregate for new program: {agg_valset_score_new_program}")
-    logger.log(f"Iteration {gepa_state.i + 1}: Individual valset scores for new program: {valset_subscores}")
+    logger.log(f"Iteration {gepa_state.i + 1}: Individual valset scores for new program: {valset_scores}")
     if objective_scores:
         logger.log(f"Iteration {gepa_state.i + 1}: Objective aggregate scores for new program: {objective_scores}")
+    if valset_evaluation.objective_scores_by_val_id:
+        logger.log(
+            f"Iteration {gepa_state.i + 1}: Objective scores by validation id for new program: "
+            f"{valset_evaluation.objective_scores_by_val_id}"
+        )
     logger.log(f"Iteration {gepa_state.i + 1}: New valset pareto front scores: {gepa_state.pareto_front_valset}")
     if gepa_state.objective_pareto_front:
         logger.log(f"Iteration {gepa_state.i + 1}: Objective pareto front scores: {gepa_state.objective_pareto_front}")
@@ -70,7 +76,7 @@ def log_detailed_metrics_after_discovering_new_program(
         "iteration": gepa_state.i + 1,
         "new_program_idx": new_program_idx,
         "valset_pareto_front_scores": dict(gepa_state.pareto_front_valset),
-        "individual_valset_score_new_program": dict(valset_subscores),
+        "individual_valset_score_new_program": dict(valset_scores),
         "valset_pareto_front_agg": pareto_avg,
         "valset_pareto_front_programs": {k: list(v) for k, v in gepa_state.program_at_pareto_front_valset.items()},
         "best_valset_agg_score": best_score_on_valset,
@@ -83,6 +89,10 @@ def log_detailed_metrics_after_discovering_new_program(
     }
     if objective_scores:
         metrics["objective_scores_new_program"] = dict(objective_scores)
+    if valset_evaluation.objective_scores_by_val_id:
+        metrics["objective_scores_by_val_new_program"] = {
+            val_id: dict(scores) for val_id, scores in valset_evaluation.objective_scores_by_val_id.items()
+        }
     if gepa_state.objective_pareto_front:
         metrics["objective_pareto_front_scores"] = dict(gepa_state.objective_pareto_front)
         metrics["objective_pareto_front_programs"] = {

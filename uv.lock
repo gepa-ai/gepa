@@ -860,7 +860,7 @@ http = [
 
 [[package]]
 name = "gepa"
-version = "0.0.17"
+version = "0.0.18"
 source = { editable = "." }
 
 [package.optional-dependencies]

@@ -4,6 +4,7 @@
 import json
 import os
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any, Callable, ClassVar, Generic, TypeAlias
 
 from gepa.core.adapter import RolloutOutput
@@ -16,6 +17,14 @@ ValId = DataId
 ValScores: TypeAlias = dict[ValId, float]
 ValOutputs: TypeAlias = dict[ValId, RolloutOutput]
 ObjectiveScores: TypeAlias = dict[str, float]
+ValObjectiveScores: TypeAlias = dict[ValId, ObjectiveScores]
+
+
+@dataclass(slots=True)
+class ValsetEvaluation(Generic[RolloutOutput, ValId]):
+    outputs_by_val_id: ValOutputs
+    scores_by_val_id: ValScores
+    objective_scores_by_val_id: ValObjectiveScores | None = None
 
 
 class GEPAState(Generic[RolloutOutput, ValId]):
@@ -51,21 +60,22 @@ class GEPAState(Generic[RolloutOutput, ValId]):
     def __init__(
         self,
         seed_candidate: dict[str, str],
-        base_valset_eval_output: tuple[ValOutputs, ValScores]
-        | tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None],
+        base_valset_eval_output: (
+            tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None]
+        ),
         track_best_outputs: bool = False,
     ):
-        base_outputs, base_scores, base_objective_scores = self._normalize_base_eval_output(base_valset_eval_output)
+        base_evaluation = self._normalize_base_eval_output(base_valset_eval_output)
 
         self.program_candidates = [dict(seed_candidate)]
-        self.prog_candidate_val_subscores = [dict(base_scores)]
+        self.prog_candidate_val_subscores = [dict(base_evaluation.scores_by_val_id)]
 
-        base_objective_aggregates = self._aggregate_objective_scores(base_objective_scores)
+        base_objective_aggregates = self._aggregate_objective_scores(base_evaluation.objective_scores_by_val_id)
         self.prog_candidate_objective_scores = [base_objective_aggregates]
 
-        self.pareto_front_valset = {val_id: score for val_id, score in base_scores.items()}
+        self.pareto_front_valset = {val_id: score for val_id, score in base_evaluation.scores_by_val_id.items()}
         self.parent_program_for_candidate = [[None]]
-        self.program_at_pareto_front_valset = {val_id: {0} for val_id in base_scores.keys()}
+        self.program_at_pareto_front_valset = {val_id: {0} for val_id in base_evaluation.scores_by_val_id.keys()}
         self.objective_pareto_front = dict(base_objective_aggregates)
         self.program_at_pareto_front_objectives = {objective: {0} for objective in base_objective_aggregates.keys()}
 
@@ -76,7 +86,9 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         self.num_metric_calls_by_discovery = [0]
 
         self.best_outputs_valset = (
-            {val_id: [(0, output)] for val_id, output in base_outputs.items()} if track_best_outputs else None
+            {val_id: [(0, output)] for val_id, output in base_evaluation.outputs_by_val_id.items()}
+            if track_best_outputs
+            else None
         )
 
         self.full_program_trace = []
@@ -179,20 +191,33 @@ class GEPAState(Generic[RolloutOutput, ValId]):
 
     @staticmethod
     def _normalize_base_eval_output(
-        base_valset_eval_output: tuple[ValOutputs, ValScores]
-        | tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None],
-    ) -> tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None]:
+        base_valset_eval_output: (
+            tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None]
+        ),
+    ) -> ValsetEvaluation:
         if len(base_valset_eval_output) == 3:
             outputs, scores, objective_scores = base_valset_eval_output
-            return outputs, scores, objective_scores
+            return ValsetEvaluation(
+                outputs_by_val_id=dict(outputs),
+                scores_by_val_id=dict(scores),
+                objective_scores_by_val_id=(
+                    dict((val_id, dict(obj_scores)) for val_id, obj_scores in objective_scores.items())
+                    if objective_scores is not None
+                    else None
+                ),
+            )
         if len(base_valset_eval_output) == 2:
             outputs, scores = base_valset_eval_output
-            return outputs, scores, None
+            return ValsetEvaluation(
+                outputs_by_val_id=dict(outputs),
+                scores_by_val_id=dict(scores),
+                objective_scores_by_val_id=None,
+            )
         raise ValueError("Unexpected base_valset_eval_output tuple size")
 
     @staticmethod
     def _aggregate_objective_scores(
-        val_objective_scores: dict[ValId, ObjectiveScores] | None,
+        val_objective_scores: ValObjectiveScores | None,
     ) -> ObjectiveScores:
         if not val_objective_scores:
             return {}
@@ -293,9 +318,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         self,
         parent_program_idx: list[ProgramIdx],
         new_program: dict[str, str],
-        valset_subscores: ValScores,
-        valset_outputs: ValOutputs | None,
-        valset_objective_subscores: dict[ValId, ObjectiveScores] | None,
+        valset_evaluation: ValsetEvaluation,
         run_dir: str | None,
         num_metric_calls_by_discovery_of_new_program: int,
     ) -> ProgramIdx:
@@ -310,12 +333,20 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         self.named_predictor_id_to_update_next_for_program_candidate.append(max_predictor_id)
         self.parent_program_for_candidate.append(list(parent_program_idx))
 
-        self.prog_candidate_val_subscores.append(dict(valset_subscores))
-        objective_scores = self._aggregate_objective_scores(valset_objective_subscores)
+        valset_scores = dict(valset_evaluation.scores_by_val_id)
+        self.prog_candidate_val_subscores.append(valset_scores)
+        objective_scores = self._aggregate_objective_scores(valset_evaluation.objective_scores_by_val_id)
         self.prog_candidate_objective_scores.append(objective_scores)
 
-        for val_id, score in valset_subscores.items():
-            self._update_pareto_front_for_val_id(val_id, score, new_program_idx, valset_outputs, run_dir, self.i + 1)
+        for val_id, score in valset_scores.items():
+            self._update_pareto_front_for_val_id(
+                val_id,
+                score,
+                new_program_idx,
+                valset_evaluation.outputs_by_val_id,
+                run_dir,
+                self.i + 1,
+            )
 
         self._update_objective_pareto_front(objective_scores, new_program_idx)
 
@@ -369,13 +400,24 @@ def initialize_gepa_state(
         else:
             raise ValueError("Unexpected valset_evaluator return value length")
 
+        seed_valset_evaluation = GEPAState._normalize_base_eval_output(
+            (seed_val_outputs, seed_val_scores, seed_objective_scores)
+        )
+
         if run_dir is not None:
-            write_eval_scores_to_directory(seed_val_scores, os.path.join(run_dir, "generated_best_outputs_valset"))
-        num_evals_run += len(seed_val_scores)
+            write_eval_scores_to_directory(
+                seed_valset_evaluation.scores_by_val_id,
+                os.path.join(run_dir, "generated_best_outputs_valset"),
+            )
+        num_evals_run += len(seed_valset_evaluation.scores_by_val_id)
 
         gepa_state = GEPAState(
             seed_candidate,
-            (seed_val_outputs, seed_val_scores, seed_objective_scores),
+            (
+                seed_valset_evaluation.outputs_by_val_id,
+                seed_valset_evaluation.scores_by_val_id,
+                seed_valset_evaluation.objective_scores_by_val_id,
+            ),
             track_best_outputs=track_best_outputs,
         )
 
