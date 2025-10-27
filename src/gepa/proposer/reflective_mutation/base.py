@@ -2,12 +2,13 @@
 # https://github.com/gepa-ai/gepa
 
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Callable, Protocol, runtime_checkable
 
 from gepa.core.adapter import Trajectory
 from gepa.core.state import GEPAState
 
 
+@runtime_checkable
 class CandidateSelector(Protocol):
     def select_candidate_idx(self, state: GEPAState) -> int: ...
 

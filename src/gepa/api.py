@@ -13,10 +13,14 @@ from gepa.core.result import GEPAResult
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
-from gepa.proposer.reflective_mutation.base import LanguageModel, ReflectionComponentSelector
+from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
-from gepa.strategies.candidate_selector import CurrentBestCandidateSelector, ParetoCandidateSelector
+from gepa.strategies.candidate_selector import (
+    CurrentBestCandidateSelector,
+    EpsilonGreedyCandidateSelector,
+    ParetoCandidateSelector,
+)
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
@@ -33,7 +37,7 @@ def optimize(
     task_lm: str | Callable | None = None,
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
-    candidate_selection_strategy: str = "pareto",
+    candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto",
     skip_perfect_score=True,
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
     reflection_minibatch_size: int | None = None,
@@ -109,7 +113,7 @@ def optimize(
 
     # Reflection-based configuration
     - reflection_lm: A `LanguageModel` instance that is used to reflect on the performance of the candidate program.
-    - candidate_selection_strategy: The strategy to use for selecting the candidate to update.
+    - candidate_selection_strategy: The strategy to use for selecting the candidate to update. Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'. Defaults to 'pareto'.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
     - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](src/gepa/strategies/batch_sampler.py) instance or a string for a predefined strategy from ['epoch_shuffled']. Defaults to 'epoch_shuffled', which creates an [EpochShuffledBatchSampler](src/gepa/strategies/batch_sampler.py).
     - reflection_minibatch_size: The number of examples to use for reflection in each proposal step. Defaults to 3. Only valid when batch_sampler='epoch_shuffled' (default), and is ignored otherwise.
@@ -217,9 +221,24 @@ def optimize(
         logger = StdOutLogger()
 
     rng = random.Random(seed)
-    candidate_selector = (
-        ParetoCandidateSelector(rng=rng) if candidate_selection_strategy == "pareto" else CurrentBestCandidateSelector()
-    )
+
+    if isinstance(candidate_selection_strategy, str):
+        factories = {
+            "pareto": lambda: ParetoCandidateSelector(rng=rng),
+            "current_best": lambda: CurrentBestCandidateSelector(),
+            "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
+        }
+
+        try:
+            candidate_selector = factories[candidate_selection_strategy]()
+        except KeyError:
+            raise ValueError(
+                f"Unknown candidate_selector strategy: {candidate_selection_strategy}. "
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
+            )
+
+    if isinstance(candidate_selection_strategy, CandidateSelector):
+        candidate_selector = candidate_selection_strategy
 
     if val_evaluation_policy is None or val_evaluation_policy == "full_eval":
         val_evaluation_policy = FullEvaluationPolicy()
