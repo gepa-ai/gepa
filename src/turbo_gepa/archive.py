@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import random
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Iterable, Sequence
 
 from .cache import candidate_key
 from .interfaces import Candidate, EvalResult
@@ -26,8 +26,8 @@ class Archive:
     """Hybrid archive exposing Pareto- and QD-based sampling utilities."""
 
     def __init__(self, bins_length: int, bins_bullets: int, *, flags: Sequence[str] | None = None) -> None:
-        self.pareto: Dict[str, ArchiveEntry] = {}
-        self.qd_grid: Dict[Tuple[int, int, frozenset[str]], ArchiveEntry] = {}
+        self.pareto: dict[str, ArchiveEntry] = {}
+        self.qd_grid: dict[tuple[int, int, frozenset[str]], ArchiveEntry] = {}
         self.bins_length = bins_length
         self.bins_bullets = bins_bullets
         self.flags = tuple(flags or ())
@@ -44,23 +44,23 @@ class Archive:
         async with self._qd_lock:
             self._maintain_qd(entry)
 
-    async def batch_insert(self, pairs: Iterable[Tuple[Candidate, EvalResult]]) -> None:
+    async def batch_insert(self, pairs: Iterable[tuple[Candidate, EvalResult]]) -> None:
         """Insert multiple candidates concurrently."""
         tasks = [self.insert(candidate, result) for candidate, result in pairs]
         await asyncio.gather(*tasks)
 
-    def pareto_candidates(self) -> List[Candidate]:
+    def pareto_candidates(self) -> list[Candidate]:
         return [entry.candidate for entry in self.pareto.values()]
 
-    def pareto_entries(self) -> List[ArchiveEntry]:
+    def pareto_entries(self) -> list[ArchiveEntry]:
         return list(self.pareto.values())
 
-    def sample_qd(self, limit: int) -> List[Candidate]:
+    def sample_qd(self, limit: int) -> list[Candidate]:
         elites = list(self.qd_grid.values())
         random.shuffle(elites)
         return [entry.candidate for entry in elites[:limit]]
 
-    def select_for_generation(self, k_exploit: int, k_explore: int, objective: str = "quality") -> List[Candidate]:
+    def select_for_generation(self, k_exploit: int, k_explore: int, objective: str = "quality") -> list[Candidate]:
         """Return a mixed batch of exploit/explore candidates."""
         pareto_sorted = sorted(
             self.pareto.values(),
@@ -74,9 +74,9 @@ class Archive:
             explore.extend([entry.candidate for entry in pareto_sorted[len(exploit) : len(exploit) + missing]])
         return exploit + explore
 
-    def top_modules(self, limit: int = 3) -> List[str]:
+    def top_modules(self, limit: int = 3) -> list[str]:
         """Extract representative modules/sections from top Pareto candidates."""
-        sections: List[str] = []
+        sections: list[str] = []
         for entry in self.pareto.values():
             parts = [segment.strip() for segment in entry.candidate.text.split("\n\n") if segment.strip()]
             sections.extend(parts[:limit])
@@ -140,7 +140,7 @@ def qd_cell(
     bins_length: int,
     bins_bullets: int,
     flags: Sequence[str],
-) -> Tuple[int, int, frozenset[str]]:
+) -> tuple[int, int, frozenset[str]]:
     """Bucket the candidate into a QD cell based on cheap textual features."""
     length = len(candidate.text.split())
     bullets = candidate.text.count("- ")

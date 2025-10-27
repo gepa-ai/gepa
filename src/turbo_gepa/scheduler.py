@@ -10,7 +10,7 @@ from __future__ import annotations
 import statistics
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Deque, Dict, List, Sequence
+from typing import Sequence
 
 from .cache import candidate_key
 from .interfaces import Candidate, EvalResult
@@ -21,7 +21,7 @@ class Rung:
     """Tracks candidates evaluated on a specific shard."""
 
     shard_fraction: float
-    results: Dict[str, Deque[float]] = field(default_factory=dict)
+    results: dict[str, deque[float]] = field(default_factory=dict)
     max_history: int = 64
 
     def update(self, candidate: Candidate, score: float) -> None:
@@ -47,9 +47,9 @@ class BudgetedScheduler:
     def __init__(self, config: SchedulerConfig) -> None:
         self.config = config
         self.rungs = [Rung(shard) for shard in config.shards]
-        self._candidate_levels: Dict[str, int] = {}
-        self._pending_promotions: List[Candidate] = []
-        self._parent_scores: Dict[str, float] = {}
+        self._candidate_levels: dict[str, int] = {}
+        self._pending_promotions: list[Candidate] = []
+        self._parent_scores: dict[str, float] = {}
 
     def current_shard_index(self, candidate: Candidate) -> int:
         return self._candidate_levels.get(candidate_hash(candidate), 0)
@@ -102,7 +102,7 @@ class BudgetedScheduler:
         index = max(0, min(index, len(self.rungs) - 1))
         return self.rungs[index].shard_fraction
 
-    def promote_ready(self) -> List[Candidate]:
+    def promote_ready(self) -> list[Candidate]:
         """Return candidates ready for the next shard."""
         ready = list(self._pending_promotions)
         self._pending_promotions.clear()
@@ -119,7 +119,7 @@ class BudgetedScheduler:
         if not samples:
             return float("-inf")
         if len(samples) == 1:
-            # Single candidate on this rung – allow it to advance based on its own score.
+            # Single candidate on this rung - allow it to advance based on its own score.
             return samples[0]
 
         # Calculate rank for quantile-based promotion (top 40% by default)

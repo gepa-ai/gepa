@@ -15,7 +15,6 @@ import json
 import os
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
 
 from .interfaces import Candidate, EvalResult
 
@@ -54,7 +53,7 @@ class DiskCache:
 
         try:
             # Get soft limit for open files
-            soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+            soft_limit, _hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
 
             # Conservative calculation:
             # - Assume up to 8 cache instances (generous for multi-island)
@@ -81,7 +80,7 @@ class DiskCache:
         shard_dir.mkdir(parents=True, exist_ok=True)
         return shard_dir / f"{cand_hash}.jsonl"
 
-    async def get(self, candidate: Candidate, example_id: str) -> Optional[EvalResult]:
+    async def get(self, candidate: Candidate, example_id: str) -> EvalResult | None:
         """Fetch a cached result if present."""
         cand_hash = candidate_key(candidate)
         path = self._record_path(cand_hash)
@@ -111,12 +110,12 @@ class DiskCache:
             async with self._file_semaphore:
                 await asyncio.to_thread(self._append_record, path, record)
 
-    async def batch_set(self, writes: List[Tuple[Candidate, str, EvalResult]]) -> None:
+    async def batch_set(self, writes: list[tuple[Candidate, str, EvalResult]]) -> None:
         """Batch write multiple results, grouping by candidate for efficiency."""
         from collections import defaultdict
 
         # Group writes by candidate hash to minimize lock contention
-        by_candidate: defaultdict[str, List[Tuple[Path, Dict[str, object]]]] = defaultdict(list)
+        by_candidate: defaultdict[str, list[tuple[Path, dict[str, object]]]] = defaultdict(list)
 
         for candidate, example_id, result in writes:
             cand_hash = candidate_key(candidate)
@@ -130,7 +129,7 @@ class DiskCache:
             }
             by_candidate[cand_hash].append((path, record))
 
-        async def write_batch(cand_hash: str, records: List[Tuple[Path, Dict]]) -> None:
+        async def write_batch(cand_hash: str, records: list[tuple[Path, dict]]) -> None:
             # All records for same candidate go to same file
             path = records[0][0]
             record_objs = [r[1] for r in records]
@@ -153,7 +152,7 @@ class DiskCache:
         for root, _dirs, _files in os.walk(self.cache_dir, topdown=False):
             Path(root).rmdir()
 
-    def _read_record(self, path: Path, example_id: str) -> Optional[EvalResult]:
+    def _read_record(self, path: Path, example_id: str) -> EvalResult | None:
         if not path.exists():
             return None
         with path.open("r", encoding="utf-8") as handle:
@@ -169,7 +168,7 @@ class DiskCache:
                     )
         return None
 
-    def _append_record(self, path: Path, record: Dict[str, object]) -> None:
+    def _append_record(self, path: Path, record: dict[str, object]) -> None:
         """Append a single record with retry on OSError."""
         max_attempts = 3
         for attempt in range(max_attempts):
@@ -177,14 +176,15 @@ class DiskCache:
                 with path.open("a", encoding="utf-8", buffering=1) as handle:
                     handle.write(json.dumps(record) + "\n")
                 return
-            except OSError as e:
+            except OSError:
                 if attempt < max_attempts - 1:
                     import time
-                    time.sleep(0.1 * (2 ** attempt))
+
+                    time.sleep(0.1 * (2**attempt))
                 else:
                     raise  # Re-raise on final attempt
 
-    def _append_records(self, path: Path, records: List[Dict[str, object]]) -> None:
+    def _append_records(self, path: Path, records: list[dict[str, object]]) -> None:
         """Batch write multiple records to same file with retry on OSError."""
         max_attempts = 3
         for attempt in range(max_attempts):
@@ -193,10 +193,11 @@ class DiskCache:
                     for record in records:
                         handle.write(json.dumps(record) + "\n")
                 return
-            except OSError as e:
+            except OSError:
                 if attempt < max_attempts - 1:
                     import time
-                    time.sleep(0.1 * (2 ** attempt))
+
+                    time.sleep(0.1 * (2**attempt))
                 else:
                     raise  # Re-raise on final attempt
 
@@ -210,9 +211,9 @@ class DiskCache:
         self,
         round_num: int,
         evaluations: int,
-        pareto_candidates: List[Candidate],
-        qd_candidates: List[Candidate],
-        queue: List[Candidate],
+        pareto_candidates: list[Candidate],
+        qd_candidates: list[Candidate],
+        queue: list[Candidate],
     ) -> None:
         """
         Save orchestrator state for resumable optimization.
@@ -242,13 +243,15 @@ class DiskCache:
             except OSError as e:
                 if attempt < max_attempts - 1:
                     import time
-                    time.sleep(0.1 * (2 ** attempt))
+
+                    time.sleep(0.1 * (2**attempt))
                 else:
                     # On final failure, log warning but don't crash optimization
                     import sys
+
                     print(f"Warning: Failed to save state after {max_attempts} attempts: {e}", file=sys.stderr)
 
-    def load_state(self) -> Optional[Dict]:
+    def load_state(self) -> dict | None:
         """
         Load saved orchestrator state, or None if no state exists.
 
@@ -274,15 +277,18 @@ class DiskCache:
             except OSError as e:
                 if attempt < max_attempts - 1:
                     import time
-                    time.sleep(0.1 * (2 ** attempt))
+
+                    time.sleep(0.1 * (2**attempt))
                 else:
                     # On final failure, log warning and return None
                     import sys
+
                     print(f"Warning: Failed to load state after {max_attempts} attempts: {e}", file=sys.stderr)
                     return None
             except (json.JSONDecodeError, KeyError) as e:
                 # Corrupted state file, return None to start fresh
                 import sys
+
                 print(f"Warning: Corrupted state file, starting fresh: {e}", file=sys.stderr)
                 return None
 
@@ -296,14 +302,14 @@ class DiskCache:
         if state_path.exists():
             state_path.unlink()
 
-    def _serialize_candidate(self, candidate: Candidate) -> Dict:
+    def _serialize_candidate(self, candidate: Candidate) -> dict:
         """Convert Candidate to JSON-serializable dict."""
         return {
             "text": candidate.text,
             "meta": dict(candidate.meta),
         }
 
-    def _deserialize_candidate(self, data: Dict) -> Candidate:
+    def _deserialize_candidate(self, data: dict) -> Candidate:
         """Reconstruct Candidate from dict."""
         return Candidate(
             text=data["text"],

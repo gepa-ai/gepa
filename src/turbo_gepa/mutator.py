@@ -1,17 +1,19 @@
 """Mutation utilities for LLM-driven candidate generation."""
 
 from __future__ import annotations
+
 import hashlib
 import json
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Sequence, Set
+from typing import Any, Awaitable, Callable, Iterable, Sequence
+
 from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
 
 from .interfaces import Candidate
 
-BatchReflectionRunner = Callable[[Sequence[Dict[str, object]], int], Awaitable[Sequence[str]]]
-SpecInductionRunner = Callable[[Sequence[Dict[str, object]], int], Awaitable[Sequence[str]]]
+BatchReflectionRunner = Callable[[Sequence[dict[str, object]], int], Awaitable[Sequence[str]]]
+SpecInductionRunner = Callable[[Sequence[dict[str, object]], int], Awaitable[Sequence[str]]]
 Validator = Callable[[Candidate], None]
 
 
@@ -48,7 +50,8 @@ class Mutator:
         config: MutationConfig,
         *,
         validators: Iterable[Validator] | None = None,
-        reflection_runner: Callable[[Sequence[Dict[str, Any]], str, Dict[str, Any] | None], Awaitable[Sequence[str]]] | None = None,
+        reflection_runner: Callable[[Sequence[dict[str, Any]], str, dict[str, Any] | None], Awaitable[Sequence[str]]]
+        | None = None,
         batch_reflection_runner: BatchReflectionRunner | None = None,
         spec_induction_runner: SpecInductionRunner | None = None,
         seed: int | None = None,
@@ -63,28 +66,25 @@ class Mutator:
         self.batch_reflection_runner = batch_reflection_runner
         self.spec_induction_runner = spec_induction_runner
         self.temperature_mutations_enabled = temperature_mutations_enabled
-        self._reflection_examples: List[Dict[str, object]] = []
-        self._operator_stats: Dict[str, Dict[str, int]] = {
+        self._reflection_examples: list[dict[str, object]] = []
+        self._operator_stats: dict[str, dict[str, int]] = {
             "temperature_shift": {"wins": 0, "trials": 0},
             "incremental_reflection": {"wins": 0, "trials": 0},
             "reflection": {"wins": 0, "trials": 0},
             "spec_induction": {"wins": 0, "trials": 0},
         }
-        self._operator_history: Dict[str, deque[int]] = {
-            key: deque(maxlen=20) for key in self._operator_stats
-        }
-        self._spec_cache: Dict[str, deque[str]] = {}
+        self._operator_history: dict[str, deque[int]] = {key: deque(maxlen=20) for key in self._operator_stats}
+        self._spec_cache: dict[str, deque[str]] = {}
         self._spec_cache_limit = max(4, config.max_mutations or 8)
         self._spec_runner_signature = _describe_callable(spec_induction_runner)
         self.logger: LoggerProtocol = logger or StdOutLogger()
 
-    def set_reflection_examples(self, examples: List[Dict[str, object]]) -> None:
+    def set_reflection_examples(self, examples: list[dict[str, object]]) -> None:
         self._reflection_examples = examples
 
     def set_temperature_mutations_enabled(self, enabled: bool) -> None:
         """Toggle temperature exploration without rebuilding the mutator."""
         self.temperature_mutations_enabled = enabled
-
 
     def report_outcome(self, generation_method: str, success: bool) -> None:
         stats = self._operator_stats.setdefault(generation_method, {"wins": 0, "trials": 0})
@@ -108,10 +108,10 @@ class Mutator:
 
     async def propose(
         self,
-        parent_contexts: List[Dict[str, object]],
+        parent_contexts: list[dict[str, object]],
         num_mutations: int,
-        task_examples: List[Dict[str, object]] | None = None,
-    ) -> List[Candidate]:
+        task_examples: list[dict[str, object]] | None = None,
+    ) -> list[Candidate]:
         """
         Generate mutated candidates given parent contexts and optional task examples.
 
@@ -145,10 +145,10 @@ class Mutator:
         if spec_weight > 0.0:
             total_rs = reflection_weight + spec_weight
             spec_share = spec_weight / total_rs if total_rs > 0 else 0.0
-            spec_quota = min(total_budget, max(1, int(round(total_budget * spec_share))))
+            spec_quota = min(total_budget, max(1, round(total_budget * spec_share)))
 
         non_spec_budget = total_budget - spec_quota
-        proposals: List[Candidate] = []
+        proposals: list[Candidate] = []
 
         # 1) Deterministic temperature exploration
         temp_start = time.time()
@@ -156,7 +156,7 @@ class Mutator:
         if non_spec_budget > 0 and self.temperature_mutations_enabled:
             total_tr = temp_weight + reflection_weight
             temp_share = temp_weight / total_tr if total_tr > 0 else 0.0
-            temp_quota = min(non_spec_budget, int(round(non_spec_budget * temp_share)))
+            temp_quota = min(non_spec_budget, round(non_spec_budget * temp_share))
         temp_mutations = self._temperature_mutations(parent_contexts, temp_quota)
         temp_time = time.time() - temp_start
         proposals.extend(temp_mutations)
@@ -164,10 +164,10 @@ class Mutator:
 
         # 2 & 3) Run reflection and spec induction CONCURRENTLY for speed
         llm_start = time.time()
-        reflection_mutations: List[Candidate] = []
-        spec_mutations: List[Candidate] = []
+        reflection_mutations: list[Candidate] = []
+        spec_mutations: list[Candidate] = []
 
-        async def run_reflection() -> List[Candidate]:
+        async def run_reflection() -> list[Candidate]:
             if non_spec_budget <= 0:
                 return []
             if self.batch_reflection_runner:
@@ -176,7 +176,7 @@ class Mutator:
                 return await self._generate_single_reflection_mutations(parent_contexts, non_spec_budget)
             return []
 
-        async def run_spec() -> List[Candidate]:
+        async def run_spec() -> list[Candidate]:
             if not (self.spec_induction_runner and task_examples):
                 return []
             spec_budget = min(spec_quota, total_budget - len(proposals))
@@ -216,9 +216,9 @@ class Mutator:
 
     async def _generate_incremental_mutations(
         self,
-        parent_contexts: List[Dict[str, object]],
+        parent_contexts: list[dict[str, object]],
         num_mutations: int,
-    ) -> List[Candidate]:
+    ) -> list[Candidate]:
         """Generate mutations by synthesizing ideas from successful parent prompts."""
         # Build contexts for batch reflection
         reflection_contexts = []
@@ -234,11 +234,13 @@ class Mutator:
             # Limit traces per parent to avoid token explosion
             traces = traces[: self.config.reflection_batch_size]
 
-            reflection_contexts.append({
-                "prompt": candidate.text,
-                "traces": traces,
-                "meta": dict(candidate.meta),
-            })
+            reflection_contexts.append(
+                {
+                    "prompt": candidate.text,
+                    "traces": traces,
+                    "meta": dict(candidate.meta),
+                }
+            )
 
         mutated_texts = await self._collect_text_batches(
             lambda: self.batch_reflection_runner(reflection_contexts, 1),
@@ -247,29 +249,31 @@ class Mutator:
         )
 
         # Convert to Candidates with metadata tracking generation method
-        proposals: List[Candidate] = []
+        proposals: list[Candidate] = []
         for idx, text in enumerate(mutated_texts):
             # Use the best parent's metadata as base
             parent_candidate = self._best_parent_candidate(parent_contexts)
 
             meta = dict(parent_candidate.meta)
-            meta.update({
-                "edit": "incremental_reflection",  # Track generation method
-                "generation_method": "incremental_reflection",  # Explicit tracking for analysis
-                "parent": parent_candidate.fingerprint,
-                "proposal_idx": idx,
-                "num_parents_seen": len(parent_contexts),
-            })
+            meta.update(
+                {
+                    "edit": "incremental_reflection",  # Track generation method
+                    "generation_method": "incremental_reflection",  # Explicit tracking for analysis
+                    "parent": parent_candidate.fingerprint,
+                    "proposal_idx": idx,
+                    "num_parents_seen": len(parent_contexts),
+                }
+            )
             proposals.append(Candidate(text=text, meta=meta))
 
         return proposals
 
     async def _generate_spec_induction_mutations(
         self,
-        task_examples: List[Dict[str, object]],
+        task_examples: list[dict[str, object]],
         num_mutations: int,
-        parent_contexts: List[Dict[str, object]],
-    ) -> List[Candidate]:
+        parent_contexts: list[dict[str, object]],
+    ) -> list[Candidate]:
         """Generate fresh specifications from task I/O examples (PROMPT-MII style)."""
         if num_mutations <= 0 or not self.spec_induction_runner:
             return []
@@ -289,11 +293,13 @@ class Mutator:
             # Limit traces per parent to avoid token explosion
             traces = traces[: self.config.reflection_batch_size]
 
-            reflection_contexts.append({
-                "prompt": candidate.text,
-                "traces": traces,
-                "meta": dict(candidate.meta),
-            })
+            reflection_contexts.append(
+                {
+                    "prompt": candidate.text,
+                    "traces": traces,
+                    "meta": dict(candidate.meta),
+                }
+            )
 
         # Cache key based on contexts + examples
         serialized_examples = sorted(json.dumps(ex, sort_keys=True) for ex in task_examples)
@@ -306,7 +312,7 @@ class Mutator:
         cache_key = hashlib.blake2s(json.dumps(cache_payload, sort_keys=True).encode("utf-8")).hexdigest()
         cache_queue = self._spec_cache.setdefault(cache_key, deque())
 
-        spec_texts: List[str] = []
+        spec_texts: list[str] = []
         while cache_queue and len(spec_texts) < num_mutations:
             spec_texts.append(cache_queue.popleft())
 
@@ -327,18 +333,20 @@ class Mutator:
                 spec_texts.append(cache_queue.popleft())
 
         # Convert to Candidates with metadata tracking generation method
-        proposals: List[Candidate] = []
+        proposals: list[Candidate] = []
         parent_candidate = self._best_parent_candidate(parent_contexts)
 
         for idx, text in enumerate(spec_texts):
             meta = dict(parent_candidate.meta)
             meta["parent"] = parent_candidate.fingerprint
-            meta.update({
-                "edit": "spec_induction",  # Track generation method
-                "generation_method": "spec_induction",  # Explicit tracking for analysis
-                "proposal_idx": idx,
-                "num_examples_seen": len(task_examples),
-            })
+            meta.update(
+                {
+                    "edit": "spec_induction",  # Track generation method
+                    "generation_method": "spec_induction",  # Explicit tracking for analysis
+                    "proposal_idx": idx,
+                    "num_examples_seen": len(task_examples),
+                }
+            )
             proposals.append(Candidate(text=text, meta=meta))
 
         return proposals
@@ -349,7 +357,7 @@ class Mutator:
         total: int,
         max_concurrency: int,
         early_stop_fraction: float = 0.85,  # Return after 85% of mutations complete
-    ) -> List[str]:
+    ) -> list[str]:
         import asyncio
         import time
 
@@ -360,17 +368,17 @@ class Mutator:
         self.logger.log(
             f"🌀 Mutation batch starting: total={total}, max_concurrency={max_concurrency}, early_stop={early_stop_fraction}"
         )
-        pending: Dict[asyncio.Task[Sequence[str]], float] = {}  # task -> start_time
-        results: List[str] = []
+        pending: dict[asyncio.Task[Sequence[str]], float] = {}  # task -> start_time
+        results: list[str] = []
         started = 0
         early_stop_target = int(total * early_stop_fraction)
         batch_start_time = time.time()
-        mutation_durations: List[float] = []  # Track how long each individual mutation took
+        mutation_durations: list[float] = []  # Track how long each individual mutation took
 
         while len(results) < total:
             while started < total and len(pending) < max_concurrency:
                 task = asyncio.create_task(factory())
-                self.logger.log(f"   ➕ Launched mutation task {started + 1}/{total}")
+                self.logger.log(f"   + Launched mutation task {started + 1}/{total}")
                 pending[task] = time.time()  # Record when this task started
                 started += 1
 
@@ -400,7 +408,7 @@ class Mutator:
                 # Early stop if we've been waiting too long for stragglers
                 if time_since_should_have_hit_target > expected_time_for_remaining and remaining >= 2:
                     self.logger.log(
-                        f"   ⚠️ Mutation early stop: produced={len(results)}/{total} ({len(results)/total*100:.0f}%), "
+                        f"   ⚠️ Mutation early stop: produced={len(results)}/{total} ({len(results) / total * 100:.0f}%), "
                         f"remaining={remaining}, avg_duration={avg_duration:.1f}s, "
                         f"waited={time_since_should_have_hit_target:.1f}s"
                     )
@@ -425,14 +433,12 @@ class Mutator:
                 except asyncio.CancelledError:
                     pass  # Expected for cancelled tasks
 
-        self.logger.log(
-            f"✅ Mutation batch finished: generated={len(results)} (requested {total})"
-        )
+        self.logger.log(f"✅ Mutation batch finished: generated={len(results)} (requested {total})")
         return results[:total]
 
-    def _filter(self, candidates: Iterable[Candidate]) -> List[Candidate]:
-        seen: Set[str] = set()
-        valid: List[Candidate] = []
+    def _filter(self, candidates: Iterable[Candidate]) -> list[Candidate]:
+        seen: set[str] = set()
+        valid: list[Candidate] = []
         for candidate in candidates:
             fingerprint = candidate.fingerprint
             if fingerprint in seen:
@@ -446,11 +452,11 @@ class Mutator:
             valid.append(candidate)
         return valid
 
-    def _best_parent_candidate(self, parent_contexts: Sequence[Dict[str, object]]) -> Candidate:
+    def _best_parent_candidate(self, parent_contexts: Sequence[dict[str, object]]) -> Candidate:
         if not parent_contexts:
             raise ValueError("parent_contexts must not be empty")
 
-        def score(ctx: Dict[str, object]) -> float:
+        def score(ctx: dict[str, object]) -> float:
             candidate = ctx["candidate"]
             meta = candidate.meta or {}
             if isinstance(meta.get("quality"), (int, float)):
@@ -464,17 +470,17 @@ class Mutator:
 
         return max(parent_contexts, key=score)["candidate"]
 
-    def _temperature_mutations(self, parent_contexts: Sequence[Dict[str, object]], limit: int) -> List[Candidate]:
+    def _temperature_mutations(self, parent_contexts: Sequence[dict[str, object]], limit: int) -> list[Candidate]:
         if not self.temperature_mutations_enabled or limit <= 0:
             return []
         anchors = [0.0, 0.3, 0.5, 0.7, 1.0]
-        mutations: List[Candidate] = []
+        mutations: list[Candidate] = []
         for ctx in parent_contexts:
             if len(mutations) >= limit:
                 break
             candidate = ctx["candidate"]
             current_temp = candidate.meta.get("temperature")
-            temps_to_try: List[float] = []
+            temps_to_try: list[float] = []
             if current_temp is None:
                 # Seed variants across anchors when no temperature set yet
                 temps_to_try.extend(anchors)
@@ -483,12 +489,14 @@ class Mutator:
                 for anchor in anchors:
                     if abs(anchor - baseline_temp) > 0.15:
                         temps_to_try.append(anchor)
-                temps_to_try.extend([
-                    max(0.0, min(1.0, baseline_temp - 0.2)),
-                    max(0.0, min(1.0, baseline_temp + 0.2)),
-                ])
+                temps_to_try.extend(
+                    [
+                        max(0.0, min(1.0, baseline_temp - 0.2)),
+                        max(0.0, min(1.0, baseline_temp + 0.2)),
+                    ]
+                )
 
-            seen: Set[float] = set()
+            seen: set[float] = set()
             for temp in temps_to_try:
                 if len(mutations) >= limit:
                     break
@@ -497,30 +505,32 @@ class Mutator:
                     continue
                 seen.add(temp)
                 meta = dict(candidate.meta)
-                meta.update({
-                    "temperature": temp,
-                    "edit": "temperature_shift",
-                    "generation_method": "temperature_shift",
-                    "parent": candidate.fingerprint,
-                })
+                meta.update(
+                    {
+                        "temperature": temp,
+                        "edit": "temperature_shift",
+                        "generation_method": "temperature_shift",
+                        "parent": candidate.fingerprint,
+                    }
+                )
                 mutations.append(Candidate(text=candidate.text, meta=meta))
         return mutations[:limit]
 
     async def _generate_single_reflection_mutations(
         self,
-        parent_contexts: Sequence[Dict[str, object]],
+        parent_contexts: Sequence[dict[str, object]],
         limit: int,
-    ) -> List[Candidate]:
+    ) -> list[Candidate]:
         if not self.single_reflection_runner or limit <= 0:
             return []
 
-        proposals: List[Candidate] = []
+        proposals: list[Candidate] = []
         for ctx in parent_contexts:
             if len(proposals) >= limit:
                 break
             candidate = ctx["candidate"]
             failures = ctx.get("failures", []) or []
-            traces: List[Dict[str, object]] = []
+            traces: list[dict[str, object]] = []
             for _example_id, trace_list in failures:
                 traces.extend(trace_list)
             traces = traces[: self.config.reflection_batch_size]
@@ -536,12 +546,14 @@ class Mutator:
 
             for idx, text in enumerate(mutated_texts):
                 meta = dict(candidate.meta)
-                meta.update({
-                    "edit": "reflection",
-                    "generation_method": "reflection",
-                    "parent": candidate.fingerprint,
-                    "proposal_idx": idx,
-                })
+                meta.update(
+                    {
+                        "edit": "reflection",
+                        "generation_method": "reflection",
+                        "parent": candidate.fingerprint,
+                        "proposal_idx": idx,
+                    }
+                )
                 proposals.append(Candidate(text=text, meta=meta))
                 if len(proposals) >= limit:
                     break

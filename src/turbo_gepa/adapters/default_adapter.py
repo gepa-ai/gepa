@@ -2,33 +2,33 @@
 Drop-in default adapter for TurboGEPA mirroring the classic GEPA prompt flow.
 
 This adapter expects data instances with `input`, `additional_context`, and
-`answer` fields (matching `gepa.adapters.default_adapter`). Users supply their
-own `task_lm_call` / `reflect_lm_call` implementations via
-``turbo_gepa.user_plugs_in``. The adapter wires those hooks into the
-high-throughput orchestrator so existing GEPA workflows can migrate with minimal
-changes.
+`answer` fields (similar to `gepa.adapters.default_adapter`). It uses LiteLLM
+for provider-agnostic LLM calls given model names (e.g., OpenAI, Anthropic,
+OpenRouter providers). Pass `task_lm` and `reflection_lm` model IDs to the
+constructor; the adapter performs real LLM calls for evaluation and reflection.
+
+Projects that need custom LLM plumbing can fork the adapter or pass model
+settings via ModelConfig; DefaultAdapter uses LiteLLM directly by default.
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from dataclasses import dataclass, replace
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
-
-import litellm
+from typing import Any, Sequence
 
 from turbo_gepa.archive import Archive
 from turbo_gepa.cache import DiskCache
-from turbo_gepa.config import Config, DEFAULT_CONFIG, adaptive_config, adaptive_shards
+from turbo_gepa.config import DEFAULT_CONFIG, Config, adaptive_config
 from turbo_gepa.evaluator import AsyncEvaluator
 from turbo_gepa.interfaces import Candidate, EvalResult
 from turbo_gepa.islands import IslandContext, spawn_islands
 from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
-from turbo_gepa.user_plugs_in import batch_reflect_lm_call, spec_induction_lm_call, task_lm_call
 
 
 @dataclass(slots=True)
@@ -37,11 +37,11 @@ class DefaultDataInst:
 
     input: str
     answer: str
-    additional_context: Dict[str, str] | None = None
+    additional_context: dict[str, str] | None = None
     id: str | None = None
     difficulty: float | None = None
 
-    def to_payload(self) -> Dict[str, Any]:
+    def to_payload(self) -> dict[str, Any]:
         payload = {
             "input": self.input,
             "answer": self.answer,
@@ -58,9 +58,9 @@ class ModelConfig:
     """Configuration for an LLM call."""
 
     name: str
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = 24000
-    reasoning_effort: Optional[str] = None
+    temperature: float | None = None
+    max_tokens: int | None = 24000
+    reasoning_effort: str | None = None
 
 
 class DefaultAdapter:
@@ -129,13 +129,13 @@ class DefaultAdapter:
         *,
         config: Config = DEFAULT_CONFIG,
         mutation_config: MutationConfig | None = None,
-        cache_dir: Optional[str] = None,
-        log_dir: Optional[str] = None,
+        cache_dir: str | None = None,
+        log_dir: str | None = None,
         sampler_seed: int = 42,
-        task_lm: Optional[str] = None,
-        reflection_lm: Optional[str] = None,
-        task_lm_temperature: Optional[float] = None,
-        reflection_lm_temperature: Optional[float] = None,
+        task_lm: str | None = None,
+        reflection_lm: str | None = None,
+        task_lm_temperature: float | None = None,
+        reflection_lm_temperature: float | None = None,
         auto_config: bool = True,
         shard_strategy: str = "balanced",
         available_compute: str = "laptop",
@@ -157,11 +157,7 @@ class DefaultAdapter:
 
         # Apply adaptive configuration if enabled and using default config
         if auto_config and config == DEFAULT_CONFIG:
-            config = adaptive_config(
-                len(dataset),
-                strategy=shard_strategy,
-                available_compute=available_compute
-            )
+            config = adaptive_config(len(dataset), strategy=shard_strategy, available_compute=available_compute)
 
         self.config = config
         self.dataset = list(dataset)
@@ -182,7 +178,9 @@ class DefaultAdapter:
             assert isinstance(reflection_lm, str)
             self.reflection_model = ModelConfig(
                 name=reflection_lm,
-                temperature=reflection_lm_temperature if reflection_lm_temperature is not None else config.reflection_lm_temperature,
+                temperature=reflection_lm_temperature
+                if reflection_lm_temperature is not None
+                else config.reflection_lm_temperature,
             )
 
         # Convenience string attributes (backwards-compatibility)
@@ -210,8 +208,8 @@ class DefaultAdapter:
         self.temperature_supported = True  # Assume supported, check later if needed
 
         # Create batched reflection runner and spec induction runner
-        batch_reflection_runner = self._create_batched_llm_reflection_runner(reflection_lm)
-        spec_induction_runner = self._create_spec_induction_runner(reflection_lm)
+        batch_reflection_runner = self._create_batched_llm_reflection_runner()
+        spec_induction_runner = self._create_spec_induction_runner()
 
         # Pass temperature support flag to mutator
         self._mutation_config = mutation_config or MutationConfig(
@@ -238,7 +236,7 @@ class DefaultAdapter:
             import litellm
 
             # Quick test call with minimal tokens
-            response = litellm.completion(
+            litellm.completion(
                 model=model,
                 messages=[{"role": "user", "content": "Hi"}],
                 temperature=test_temp,
@@ -253,13 +251,15 @@ class DefaultAdapter:
             # Other errors (auth, network) - assume temperature works
             return True
 
-    def _create_batched_llm_reflection_runner(self, reflection_lm: str):
+    def _create_batched_llm_reflection_runner(self):
         """Create a batched reflection runner that calls a real LLM with multiple parents."""
+
         async def batched_llm_reflection_runner(parent_contexts: list, num_mutations: int) -> list[str]:
             if not parent_contexts:
                 return []
 
             import time
+
             start_time = time.time()
 
             try:
@@ -285,14 +285,17 @@ class DefaultAdapter:
                     else:
                         perf_summary = f"Quality: {quality:.1%}"
 
-                    parent_summaries.append(f"""PROMPT {chr(65+i)} ({perf_summary}{temp_info}):
+                    parent_summaries.append(f"""PROMPT {chr(65 + i)} ({perf_summary}{temp_info}):
 "{prompt_text}"
 """)
 
                 all_parents_text = "\n".join(parent_summaries)
 
                 example_summaries = []
-                if isinstance(getattr(self.mutator, "_reflection_examples", None), list) and self.mutator._reflection_examples:
+                if (
+                    isinstance(getattr(self.mutator, "_reflection_examples", None), list)
+                    and self.mutator._reflection_examples
+                ):
                     for j, ex in enumerate(self.mutator._reflection_examples[:5]):
                         example_input = ex.get("input", "").strip()
                         example_answer = (ex.get("expected_answer") or ex.get("answer") or "").strip()
@@ -309,9 +312,7 @@ class DefaultAdapter:
                             example_block.append(f"Example {j + 1} Feedback: {feedback_text}")
                         if solution:
                             formatted_solution = "\n".join(str(solution).splitlines())
-                            example_block.append(
-                                f"Example {j + 1} Reference Solution:\n{formatted_solution}"
-                            )
+                            example_block.append(f"Example {j + 1} Reference Solution:\n{formatted_solution}")
                         example_summaries.append("\n".join(example_block))
 
                 examples_text = "\n\n".join(example_summaries)
@@ -323,7 +324,7 @@ Existing high-performing instructions and their recent quality:
 
 The following are examples of different task inputs provided to the assistant along with the assistant's response for each of them, and some feedback on how the assistant's response could be better:
 
-{examples_text if example_summaries else '(no additional examples available)'}
+{examples_text if example_summaries else "(no additional examples available)"}
 
 Your task is to write {num_mutations} new instruction variants for the assistant.
 
@@ -342,7 +343,7 @@ You CAN and SHOULD include domain-specific terminology, solution techniques, and
 
 Write {num_mutations} new instruction variants. Separate each instruction with a line containing only "---"."""
 
-                completion_kwargs: Dict[str, Any] = {
+                completion_kwargs: dict[str, Any] = {
                     "model": self.reflection_model.name,
                     "messages": [{"role": "user", "content": reflection_prompt}],
                 }
@@ -375,13 +376,15 @@ Write {num_mutations} new instruction variants. Separate each instruction with a
 
         return batched_llm_reflection_runner
 
-    def _create_spec_induction_runner(self, reflection_lm: str):
+    def _create_spec_induction_runner(self):
         """Create a spec induction runner that generates fresh prompts from task examples."""
+
         async def spec_induction_runner(task_examples: list, num_specs: int) -> list[str]:
             if not task_examples:
                 return []
 
             import time
+
             start_time = time.time()
 
             try:
@@ -394,7 +397,7 @@ Write {num_mutations} new instruction variants. Separate each instruction with a
                     answer_text = ex.get("answer", "")
                     additional_context = ex.get("additional_context") or {}
 
-                    example_block = [f"Example {i+1}:"]
+                    example_block = [f"Example {i + 1}:"]
                     example_block.append(f"Input: {input_text}")
                     example_block.append(f"Expected Output: {answer_text}")
 
@@ -435,7 +438,7 @@ Each instruction should:
 Output format: Return each instruction separated by "---" (exactly {num_specs} instructions)."""
 
                 # Build kwargs
-                completion_kwargs: Dict[str, Any] = {
+                completion_kwargs: dict[str, Any] = {
                     "model": self.reflection_model.name,
                     "messages": [{"role": "user", "content": spec_prompt}],
                 }
@@ -471,6 +474,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
     def _sample_examples(self, num_examples: int) -> list[dict]:
         """Sample random examples for spec induction."""
         import random
+
         example_ids = list(self.example_map.keys())
         if len(example_ids) <= num_examples:
             sampled_ids = example_ids
@@ -479,8 +483,8 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
 
         return [self.example_map[eid].to_payload() for eid in sampled_ids]
 
-    def _normalize_seeds(self, seeds: Sequence[str | Candidate], *, source: str) -> List[Candidate]:
-        normalized: List[Candidate] = []
+    def _normalize_seeds(self, seeds: Sequence[str | Candidate], *, source: str) -> list[Candidate]:
+        normalized: list[Candidate] = []
         for seed in seeds:
             if isinstance(seed, Candidate):
                 meta = dict(seed.meta)
@@ -525,7 +529,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         island_path.mkdir(parents=True, exist_ok=True)
         return str(island_path)
 
-    def _combine_evolution_snapshots(self, snapshots: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    def _combine_evolution_snapshots(self, snapshots: Sequence[dict[str, Any]]) -> dict[str, Any]:
         combined = {
             "mutations_requested": 0,
             "mutations_generated": 0,
@@ -555,7 +559,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             else:
                 combined["islands"].append(snapshot)
 
-            for detail in (detail_sources or [snapshot]):
+            for detail in detail_sources or [snapshot]:
                 parent_map = detail.get("parent_children") or {}
                 for parent, children in parent_map.items():
                     parent_children[parent].update(children)
@@ -574,22 +578,22 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
 
         return combined
 
-    def _aggregate_evolution_stats(self, orchestrators: Sequence[Optional[Orchestrator]]) -> Dict[str, Any]:
-        snapshots: List[Dict[str, Any]] = []
+    def _aggregate_evolution_stats(self, orchestrators: Sequence[Orchestrator | None]) -> dict[str, Any]:
+        snapshots: list[dict[str, Any]] = []
         for orchestrator in orchestrators:
             if orchestrator is None:
                 continue
             snapshots.append(orchestrator.evolution_snapshot(include_edges=True))
         return self._combine_evolution_snapshots(snapshots)
 
-    async def _task_runner(self, candidate: Candidate, example_id: str) -> Dict[str, float]:
+    async def _task_runner(self, candidate: Candidate, example_id: str) -> dict[str, float]:
         """Execute task LLM on a single example."""
         example = self.example_map[example_id].to_payload()
 
         try:
             from litellm import acompletion
 
-            completion_kwargs: Dict[str, Any] = {
+            completion_kwargs: dict[str, Any] = {
                 "model": self.task_model.name,
                 "messages": [
                     {"role": "system", "content": candidate.text},
@@ -611,6 +615,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
 
             # Try with temperature, fall back without it if model doesn't support it
             import time as _time_module
+
             _start_llm = _time_module.time()
             try:
                 response = await acompletion(**completion_kwargs)
@@ -658,13 +663,13 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         enable_auto_stop: bool = False,
         display_progress: bool = True,
         temperature_mutations_enabled: bool | None = None,
-        island_context: Optional[IslandContext] = None,
-        cache: Optional[DiskCache] = None,
-        archive: Optional[Archive] = None,
-        sampler: Optional[InstanceSampler] = None,
-        mutator: Optional[Mutator] = None,
-        log_dir: Optional[str] = None,
-        metrics_callback: Optional[Callable] = None,
+        island_context: IslandContext | None = None,
+        cache: DiskCache | None = None,
+        archive: Archive | None = None,
+        sampler: InstanceSampler | None = None,
+        mutator: Mutator | None = None,
+        log_dir: str | None = None,
+        metrics_callback: Callable | None = None,
     ) -> Orchestrator:
         target_mutator = mutator or self.mutator
         if temperature_mutations_enabled is not None:
@@ -672,7 +677,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         mutator = target_mutator
 
         # Only optimize for quality, ignore token cost
-        def metrics_mapper(metrics: Dict[str, float]) -> Dict[str, float]:
+        def metrics_mapper(metrics: dict[str, float]) -> dict[str, float]:
             return {"quality": metrics.get("quality", 0.0)}
 
         evaluator = AsyncEvaluator(
@@ -680,13 +685,13 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             task_runner=self._task_runner,
             metrics_mapper=metrics_mapper,
         )
-        log_path = log_dir or self.base_log_dir
         # Create stop governor if auto-stop enabled
         # Use provided metrics_callback, or create dashboard if progress display is enabled
         dashboard_enabled = False
         if metrics_callback is None and display_progress:
             try:
                 from turbo_gepa.dashboard import TerminalDashboard
+
                 dashboard = TerminalDashboard()
                 metrics_callback = dashboard.update
                 dashboard_enabled = True
@@ -702,7 +707,8 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             mutator=mutator,
             cache=cache or self.cache,
             enable_auto_stop=enable_auto_stop,
-            show_progress=display_progress and not dashboard_enabled,  # Disable inline progress when dashboard is active
+            show_progress=display_progress
+            and not dashboard_enabled,  # Disable inline progress when dashboard is active
             example_sampler=self._sample_examples,
             island_context=island_context,
             metrics_callback=metrics_callback,
@@ -712,15 +718,15 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         self,
         seeds: Sequence[str | Candidate],
         *,
-        max_rounds: Optional[int] = None,
-        max_evaluations: Optional[int] = None,
-        task_lm: Optional[str] = None,  # Accept but ignore (uses heuristic)
-        reflection_lm: Optional[str] = None,  # Accept but ignore (uses heuristic)
+        max_rounds: int | None = None,
+        max_evaluations: int | None = None,
+        task_lm: str | None = None,  # Kept for API compatibility; models come from adapter init
+        reflection_lm: str | None = None,  # Kept for API compatibility; models come from adapter init
         enable_auto_stop: bool = False,  # Enable automatic stopping
         optimize_temperature_after_convergence: bool = False,  # Stage temperature optimization
         display_progress: bool = True,  # Show progress charts
-        metrics_callback: Optional[Callable] = None,  # Callback for dashboard updates
-    ) -> Dict[str, Any]:
+        metrics_callback: Callable | None = None,  # Callback for dashboard updates
+    ) -> dict[str, Any]:
         if self.config.n_islands > 1:
             if optimize_temperature_after_convergence:
                 return await self._optimize_multi_island_staged(
@@ -773,11 +779,11 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
     async def _optimize_staged_temperature(
         self,
         seeds: Sequence[str | Candidate],
-        max_rounds: Optional[int],
-        max_evaluations: Optional[int],
+        max_rounds: int | None,
+        max_evaluations: int | None,
         enable_auto_stop: bool,
         display_progress: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Two-phase optimization: prompts first, then temperature.
 
         Phase 1: Optimize prompts WITHOUT temperature (seeds have no temperature)
@@ -835,13 +841,10 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 "evolution_stats": self._combine_evolution_snapshots([phase1_stats]),
             }
 
-
         # Take top K prompts sorted by quality
         top_k = min(5, len(phase1_pareto))
         top_entries = sorted(
-            phase1_pareto,
-            key=lambda e: e.result.objectives.get(self.config.promote_objective, 0.0),
-            reverse=True
+            phase1_pareto, key=lambda e: e.result.objectives.get(self.config.promote_objective, 0.0), reverse=True
         )[:top_k]
 
         # Create temperature-enabled seeds from top prompts
@@ -852,12 +855,11 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             meta = dict(entry.candidate.meta, temperature=0.5, source="phase2_seed")
             temp_seeds.append(Candidate(text=entry.candidate.text, meta=meta))
 
-
         # Run Phase 2 optimization (30% of remaining budget, single round)
         # Safety: Always enforce round limit to prevent infinite loops
-        MAX_PHASE2_ROUNDS = 1  # Single round of temperature exploration
+        max_phase2_rounds = 1  # Single round of temperature exploration
         phase2_budget = int(max_evaluations * 0.3) if max_evaluations else None
-        phase2_rounds = min(MAX_PHASE2_ROUNDS, max_rounds) if max_rounds else MAX_PHASE2_ROUNDS
+        phase2_rounds = min(max_phase2_rounds, max_rounds) if max_rounds else max_phase2_rounds
 
         orchestrator2 = self._build_orchestrator(
             enable_auto_stop=False,  # Temperature phase runs for fixed duration
@@ -885,26 +887,24 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         self,
         seeds: Sequence[str | Candidate],
         *,
-        max_rounds: Optional[int],
-        max_evaluations: Optional[int],
+        max_rounds: int | None,
+        max_evaluations: int | None,
         enable_auto_stop: bool,
         display_progress: bool,
         temperature_mutations_enabled: bool | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         n_islands = max(1, self.config.n_islands)
         if n_islands > 1:
             tuned_period = max(1, n_islands // 2)
             tuned_k = max(1, min(n_islands, self.config.migration_k or n_islands))
-            if (
-                self.config.migration_period != tuned_period
-                or self.config.migration_k != tuned_k
-            ):
+            if self.config.migration_period != tuned_period or self.config.migration_k != tuned_k:
                 self.config.migration_period = tuned_period
                 self.config.migration_k = tuned_k
         normalized_seeds = self._normalize_seeds(seeds, source="seed")
 
         # Set up larger thread pool for concurrent file operations
         import concurrent.futures
+
         loop = asyncio.get_running_loop()
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=100)
         loop.set_default_executor(executor)
@@ -912,8 +912,8 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         # Create shared cache across all islands (better cache hits + controlled concurrency)
         shared_cache = self._make_cache(island_id=None)
 
-        async def run_islands() -> List[Orchestrator | None]:
-            island_results: List[Orchestrator | None] = [None] * n_islands
+        async def run_islands() -> list[Orchestrator | None]:
+            island_results: list[Orchestrator | None] = [None] * n_islands
 
             async def worker(context: IslandContext) -> None:
                 # Use shared cache across islands
@@ -934,7 +934,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                     archive=archive,
                     sampler=sampler,
                     mutator=mutator,
-                    log_dir=log_dir
+                    log_dir=log_dir,
                 )
                 island_seeds = [
                     Candidate(text=seed.text, meta=dict(seed.meta, island=context.island_id))
@@ -954,7 +954,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         orchestrators = await run_islands()
 
         combined_archive = self._make_archive()
-        inserts: List[tuple[Candidate, EvalResult]] = []
+        inserts: list[tuple[Candidate, EvalResult]] = []
         for orchestrator in orchestrators:
             if orchestrator is None:
                 continue
@@ -977,11 +977,11 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         self,
         seeds: Sequence[str | Candidate],
         *,
-        max_rounds: Optional[int],
-        max_evaluations: Optional[int],
+        max_rounds: int | None,
+        max_evaluations: int | None,
         enable_auto_stop: bool,
         display_progress: bool,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         phase1_budget = int(max_evaluations * 0.7) if max_evaluations else None
         phase1_rounds = max_rounds if max_rounds else 10
 
@@ -1041,44 +1041,37 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         self,
         seeds: Sequence[str | Candidate] | None = None,
         *,
-        max_rounds: Optional[int] = None,
-        max_evaluations: Optional[int] = None,
-        task_lm: Optional[str] = None,  # Accept for API compatibility (uses heuristic)
-        reflection_lm: Optional[str] = None,  # Accept for API compatibility (uses heuristic)
+        max_rounds: int | None = None,
+        max_evaluations: int | None = None,
+        task_lm: str | None = None,  # Kept for API compatibility; models come from adapter init
+        reflection_lm: str | None = None,  # Kept for API compatibility; models come from adapter init
         enable_auto_stop: bool = False,  # Enable automatic stopping
         optimize_temperature_after_convergence: bool = False,  # Stage temperature optimization
         display_progress: bool = True,  # Show progress charts
         enable_seed_initialization: bool = False,  # Use PROMPT-MII-style seed generation
         num_generated_seeds: int = 3,  # How many seeds to generate if initializing
-        metrics_callback: Optional[Callable] = None,  # Callback for dashboard updates
-    ) -> Dict[str, Any]:
+        metrics_callback: Callable | None = None,  # Callback for dashboard updates
+    ) -> dict[str, Any]:
         """
-        Optimize prompts using TurboGEPA with heuristic evaluation.
+        Optimize prompts using TurboGEPA with real LLM evaluation via LiteLLM.
 
         Parameters:
             seeds: Initial prompt candidates
             max_rounds: Maximum optimization rounds (None = unlimited)
             max_evaluations: Maximum evaluations (None = unlimited)
-            task_lm: Task LLM (for compatibility)
-            reflection_lm: Reflection LLM (for compatibility)
+            task_lm: Kept for compatibility; adapter uses model set at construction
+            reflection_lm: Kept for compatibility; adapter uses model set at construction
             enable_auto_stop: Enable automatic convergence detection
             optimize_temperature_after_convergence: Stage temperature optimization after
                 prompt optimization (Phase 1: optimize prompts, Phase 2: optimize temperature)
-
-        Note: task_lm and reflection_lm are accepted for API compatibility with
-        benchmark scripts but are not used by DefaultAdapter. This adapter uses
-        deterministic heuristic evaluation instead of calling real LLMs.
-
-        For actual LLM-based optimization, use turbo_gepa.optimize() instead.
-
-        Parameters:
             enable_seed_initialization: If True, use PROMPT-MII-style spec induction to
                 generate smart initial seeds from task examples instead of using generic prompts.
-                Requires reflection_lm to be set. Can optimize user-provided seeds or generate from scratch.
+                Requires a reflection model to be set. Can optimize user-provided seeds or generate from scratch.
             num_generated_seeds: Number of seeds to generate if enable_seed_initialization=True
         """
         import time
-        optimize_start = time.time()
+
+        time.time()
 
         # Handle seed initialization if requested
         if enable_seed_initialization:

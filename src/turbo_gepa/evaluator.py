@@ -9,15 +9,16 @@ we can run quickly in constrained environments.
 from __future__ import annotations
 
 import asyncio
-from typing import Awaitable, Callable, Dict, Iterable, List, Sequence
+from typing import Awaitable, Callable, Iterable, Sequence
+
 from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
 
 from .cache import DiskCache
 from .interfaces import Candidate, EvalResult
 
 Validator = Callable[[Candidate], None]
-MetricsMapper = Callable[[Dict[str, float]], Dict[str, float]]
-TaskRunner = Callable[[Candidate, str], Awaitable[Dict[str, float]]]
+MetricsMapper = Callable[[dict[str, float]], dict[str, float]]
+TaskRunner = Callable[[Candidate, str], Awaitable[dict[str, float]]]
 
 
 class AsyncEvaluator:
@@ -62,12 +63,12 @@ class AsyncEvaluator:
         import time
 
         semaphore = asyncio.Semaphore(max(concurrency, 1))
-        results: List[EvalResult] = []
+        results: list[EvalResult] = []
         completed = 0
         total = len(example_ids)
         early_stop_target = int(total * early_stop_fraction)
         batch_start_time = time.time()
-        eval_durations: List[float] = []  # Track how long each eval took (excluding cached)
+        eval_durations: list[float] = []  # Track how long each eval took (excluding cached)
 
         async def eval_one(example_id: str, task_start_time: float) -> None:
             nonlocal completed
@@ -77,9 +78,7 @@ class AsyncEvaluator:
                 results.append(cached)
                 completed += 1
                 if show_progress:
-                    self.logger.log(
-                        f"Progress: {completed}/{total} examples ({completed/total*100:.0f}%)"
-                    )
+                    self.logger.log(f"Progress: {completed}/{total} examples ({completed / total * 100:.0f}%)")
                 return
 
             try:
@@ -109,9 +108,7 @@ class AsyncEvaluator:
                 eval_durations.append(eval_duration)
 
                 if show_progress:
-                    self.logger.log(
-                        f"Progress: {completed}/{total} examples ({completed/total*100:.0f}%)"
-                    )
+                    self.logger.log(f"Progress: {completed}/{total} examples ({completed / total * 100:.0f}%)")
             except Exception as e:
                 self._inflight_examples = max(0, self._inflight_examples - 1)
                 # Handle task runner failures gracefully
@@ -165,7 +162,7 @@ class AsyncEvaluator:
                 if time_since_should_have_hit_target > expected_time_for_remaining and remaining >= 2:
                     if show_progress:
                         self.logger.log(
-                            f"⚡ Early stop: {completed}/{total} complete ({completed/total*100:.0f}%), cancelling {remaining} stragglers"
+                            f"⚡ Early stop: {completed}/{total} complete ({completed / total * 100:.0f}%), cancelling {remaining} stragglers"
                         )
                         self.logger.log(
                             f"      Avg eval duration: {avg_duration:.1f}s, waited {time_since_should_have_hit_target:.1f}s past target..."
@@ -187,9 +184,9 @@ class AsyncEvaluator:
 
         # No explicit progress bar cleanup when using logger
 
-        totals: Dict[str, float] = {}
-        traces: List[Dict[str, float]] = []
-        example_trace_ids: List[str] = []
+        totals: dict[str, float] = {}
+        traces: list[dict[str, float]] = []
+        example_trace_ids: list[str] = []
         n_examples = 0
         for result in results:
             totals = _accumulate(totals, result.objectives, weight=result.n_examples)
@@ -219,10 +216,10 @@ class AsyncEvaluator:
 
 
 def _accumulate(
-    base: Dict[str, float],
-    update: Dict[str, float],
+    base: dict[str, float],
+    update: dict[str, float],
     weight: int = 1,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     merged = dict(base)
     for key, value in update.items():
         # Skip non-numeric values (e.g., example_id, output strings)

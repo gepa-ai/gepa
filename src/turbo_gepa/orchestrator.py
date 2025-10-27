@@ -2,16 +2,18 @@
 High-level orchestrator coordinating selection, evaluation, and mutation.
 
 This module stitches together archive, scheduler, evaluator, and mutator
-components. The orchestrator operates within a single island; multi-process
-execution is handled by ``islands.spawn_islands`` which can launch several
-instances of the loop in parallel.
+components. The orchestrator operates within a single island; multi-island
+concurrency is achieved via ``islands.spawn_islands`` using asyncio tasks
+in the same process (async ring topology), not separate OS processes.
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections import defaultdict, deque
-from typing import Any, Awaitable, Callable, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Iterable, Sequence
+
+from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
 
 from .archive import Archive, ArchiveEntry
 from .cache import DiskCache
@@ -19,11 +21,10 @@ from .config import Config
 from .evaluator import AsyncEvaluator
 from .interfaces import Candidate, EvalResult
 from .islands import IslandContext, integrate_in, migrate_out
-from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
 from .mutator import Mutator
 from .sampler import InstanceSampler
 from .scheduler import BudgetedScheduler, SchedulerConfig
-from .stop_governor import StopGovernor, StopGovernorConfig, EpochMetrics, compute_hypervolume_2d
+from .stop_governor import EpochMetrics, StopGovernor, compute_hypervolume_2d
 
 
 class Orchestrator:
@@ -38,13 +39,13 @@ class Orchestrator:
         mutator: Mutator,
         cache: DiskCache,
         *,
-        island_context: Optional[IslandContext] = None,
+        island_context: IslandContext | None = None,
         show_progress: bool = True,
-        stop_governor: Optional[StopGovernor] = None,
+        stop_governor: StopGovernor | None = None,
         enable_auto_stop: bool = False,
-        example_sampler: Optional[Callable[[int], List[Dict[str, object]]]] = None,
-        metrics_callback: Optional[Callable] = None,
-        logger: Optional[LoggerProtocol] = None,
+        example_sampler: Callable[[int], list[dict[str, object]]] | None = None,
+        metrics_callback: Callable | None = None,
+        logger: LoggerProtocol | None = None,
     ) -> None:
         self.config = config
         self.evaluator = evaluator
@@ -61,12 +62,12 @@ class Orchestrator:
                 quantile=config.cohort_quantile,
             )
         )
-        self.queue: Deque[Candidate] = deque(maxlen=config.queue_limit)
-        self._per_shard_queue: List[Deque[Candidate]] = [deque() for _ in range(len(config.shards))]
-        self._pending_fingerprints: Set[str] = set()
-        self._inflight_fingerprints: Set[str] = set()
+        self.queue: deque[Candidate] = deque(maxlen=config.queue_limit)
+        self._per_shard_queue: list[deque[Candidate]] = [deque() for _ in range(len(config.shards))]
+        self._pending_fingerprints: set[str] = set()
+        self._inflight_fingerprints: set[str] = set()
         self._next_shard: int = 0
-        self.latest_results: Dict[str, EvalResult] = {}
+        self.latest_results: dict[str, EvalResult] = {}
         self.evaluations_run: int = 0
         self.round_index: int = 0
         self.show_progress = show_progress
@@ -76,21 +77,21 @@ class Orchestrator:
         self.enable_auto_stop = enable_auto_stop
         self.total_tokens_spent: int = 0
         self.qd_cells_seen: set[tuple] = set()
-        self._shard_cache: Dict[tuple[int, float], List[str]] = {}
+        self._shard_cache: dict[tuple[int, float], list[str]] = {}
         self.metrics_callback = metrics_callback
         self.logger: LoggerProtocol = logger or StdOutLogger()
-        self.max_rounds: Optional[int] = None
-        self.max_evaluations: Optional[int] = None
+        self.max_rounds: int | None = None
+        self.max_evaluations: int | None = None
         self.rounds_completed: int = 0
 
         # Streaming mode: buffer for mutations generated in background
-        self._mutation_buffer: Deque[Candidate] = deque()
-        self._mutation_task: Optional[asyncio.Task] = None
+        self._mutation_buffer: deque[Candidate] = deque()
+        self._mutation_task: asyncio.Task | None = None
         self.eval_batches_completed: int = 0  # For migration timing
 
         # Streaming evaluation infrastructure
-        self._inflight_tasks: Dict[str, asyncio.Task] = {}  # cand_hash -> task
-        self._result_queue: asyncio.Queue[Tuple[Candidate, EvalResult | Exception, int, float]] = asyncio.Queue()
+        self._inflight_tasks: dict[str, asyncio.Task] = {}  # cand_hash -> task
+        self._result_queue: asyncio.Queue[tuple[Candidate, EvalResult | Exception, int]] = asyncio.Queue()
         self._total_inflight: int = 0  # Total evaluations in flight across all shards
         total_cap = self.config.max_total_inflight or self.config.eval_concurrency
         self._effective_concurrency: int = max(1, total_cap)
@@ -104,42 +105,36 @@ class Orchestrator:
             deficit = self._max_total_inflight - sum(self._shard_capacity)
             for i in range(deficit):
                 self._shard_capacity[i % num_shards] += 1
-        self._shard_inflight: List[int] = [0] * num_shards
+        self._shard_inflight: list[int] = [0] * num_shards
         self._last_debug_log: float = 0.0
         self._last_budget_log: float = 0.0
         # Global example-level inflight budget (hard cap across candidates)
         self._examples_inflight: int = 0
-        self._last_shared: Dict[str, float] = {}
+        self._last_shared: dict[str, float] = {}
         # Evolution tracking
         self._mutations_requested: int = 0
         self._mutations_generated: int = 0
         self._mutations_enqueued: int = 0
         self._parent_children: defaultdict[str, set[str]] = defaultdict(set)
-        self._children_seen: Set[str] = set()
-        self._promoted_children: Set[str] = set()
+        self._children_seen: set[str] = set()
+        self._promoted_children: set[str] = set()
         # Track generation depth for each candidate (fingerprint -> generation number)
-        self._candidate_generations: Dict[str, int] = {}
+        self._candidate_generations: dict[str, int] = {}
 
         # Deficit scheduler state for fair rung allocation
         import math
-        self._rung_keys: List[str] = [str(shard) for shard in self.config.shards]
+
+        self._rung_keys: list[str] = [str(shard) for shard in self.config.shards]
         n_rungs = len(self._rung_keys)
         # Equal shares: each rung gets 1/n of launch opportunities
-        self._rung_shares: Dict[str, float] = {
-            key: 1.0 / n_rungs for key in self._rung_keys
-        }
+        self._rung_shares: dict[str, float] = dict.fromkeys(self._rung_keys, 1.0 / n_rungs)
         # Deficit accumulates when a rung doesn't get scheduled
-        self._rung_deficit: Dict[str, float] = {
-            key: 0.0 for key in self._rung_keys
-        }
+        self._rung_deficit: dict[str, float] = dict.fromkeys(self._rung_keys, 0.0)
         # Track inflight per rung (in addition to per-shard tracking)
-        self._inflight_by_rung: Dict[str, int] = {
-            key: 0 for key in self._rung_keys
-        }
+        self._inflight_by_rung: dict[str, int] = dict.fromkeys(self._rung_keys, 0)
         # Per-rung inflight capacity (hard cap to prevent oversubscription)
-        self._rung_capacity: Dict[str, int] = {
-            key: math.ceil(self._rung_shares[key] * self._max_total_inflight)
-            for key in self._rung_keys
+        self._rung_capacity: dict[str, int] = {
+            key: math.ceil(self._rung_shares[key] * self._max_total_inflight) for key in self._rung_keys
         }
 
     def enqueue(self, candidates: Iterable[Candidate]) -> None:
@@ -177,8 +172,8 @@ class Orchestrator:
         self,
         seeds: Sequence[Candidate],
         *,
-        max_rounds: Optional[int] = None,
-        max_evaluations: Optional[int] = None,
+        max_rounds: int | None = None,
+        max_evaluations: int | None = None,
         resume: bool = True,  # Enable automatic resume from cache
     ) -> None:
         """Execute the orchestration loop until budgets are exhausted.
@@ -189,7 +184,6 @@ class Orchestrator:
             max_evaluations: Maximum evaluations (None = unlimited)
             resume: If True, automatically resume from saved state if available
         """
-        import time
 
         if not seeds:
             return
@@ -214,16 +208,19 @@ class Orchestrator:
             await self._seed_archive(seeds)
             if self.metrics_callback is not None:
                 from .metrics import extract_metrics
+
                 self.metrics_callback(extract_metrics(self))
 
         # Ensure mutation generation task is running
         if self._mutation_task is None or self._mutation_task.done():
+
             async def _mutation_wrapper():
                 try:
                     await self._spawn_mutations(callback=self._mutation_buffer.append)
                 except Exception as exc:  # pragma: no cover - debugging aid
                     self.logger.log(f"❌ Mutation task error: {type(exc).__name__}: {exc}")
                     raise
+
             self._mutation_task = asyncio.create_task(_mutation_wrapper())
 
         # Window tracking mirrors the legacy batch counter so downstream logging stays intact
@@ -277,6 +274,7 @@ class Orchestrator:
                     last_progress_display = self.evaluations_run
                     if self.metrics_callback is not None:
                         from .metrics import extract_metrics
+
                         self.metrics_callback(extract_metrics(self))
 
             # 4) Refresh mutation generation if queues are running low
@@ -284,9 +282,8 @@ class Orchestrator:
                 self._mutation_task = None
             # Only spawn new mutations if we haven't exceeded the evaluation budget
             should_spawn_mutations = (
-                (len(self.queue) + len(self._mutation_buffer)) < self.config.mutation_buffer_min
-                and (max_evaluations is None or self.evaluations_run < max_evaluations)
-            )
+                len(self.queue) + len(self._mutation_buffer)
+            ) < self.config.mutation_buffer_min and (max_evaluations is None or self.evaluations_run < max_evaluations)
             if should_spawn_mutations:
                 if self._mutation_task is None:
                     self._mutation_task = asyncio.create_task(
@@ -300,6 +297,7 @@ class Orchestrator:
                 and (self._mutation_task is not None or self._total_inflight > 0)
             ):
                 import time as _time_debug
+
                 now = _time_debug.time()
                 if now - self._last_debug_log > 5.0:
                     if self._mutation_task is None:
@@ -332,6 +330,7 @@ class Orchestrator:
                 # Call metrics callback if provided
                 if self.metrics_callback is not None:
                     from .metrics import extract_metrics
+
                     metrics = extract_metrics(self)
                     self.metrics_callback(metrics)
 
@@ -358,7 +357,7 @@ class Orchestrator:
             if await self._stream_check_target(window_id):
                 break
 
-            # 7) Idle detection – nothing running, nothing queued, mutations finished
+            # 7) Idle detection - nothing running, nothing queued, mutations finished
             if (
                 launched == 0
                 and drained == 0
@@ -392,16 +391,15 @@ class Orchestrator:
         await self.finalize()
 
         # Clear state only if we reached completion (not if stopped early)
-        completed = (
-            (max_rounds is not None and window_id >= max_rounds) or
-            (max_evaluations is not None and self.evaluations_run >= max_evaluations)
+        completed = (max_rounds is not None and window_id >= max_rounds) or (
+            max_evaluations is not None and self.evaluations_run >= max_evaluations
         )
         if completed:
             self.cache.clear_state()
 
     # === Streaming helpers ===
 
-    def _stream_can_launch(self, candidate: Candidate, max_evaluations: Optional[int]) -> bool:
+    def _stream_can_launch(self, candidate: Candidate, max_evaluations: int | None) -> bool:
         if max_evaluations is not None and self.evaluations_run >= max_evaluations:
             return False
 
@@ -416,7 +414,7 @@ class Orchestrator:
             return False
         return True
 
-    async def _stream_launch_ready(self, window_id: int, max_evaluations: Optional[int]) -> int:
+    async def _stream_launch_ready(self, window_id: int, max_evaluations: int | None) -> int:
         """Launch ready candidates using deficit-based scheduling for fair rung allocation."""
         launched = 0
         shard_count = len(self._per_shard_queue)
@@ -446,7 +444,7 @@ class Orchestrator:
             total_inflight = max(1, sum(self._inflight_by_rung.values()))
 
             # Find best rung by deficit score
-            best_score = float('-inf')
+            best_score = float("-inf")
             best_shard_idx = None
             best_rung_key = None
 
@@ -516,8 +514,9 @@ class Orchestrator:
         return launched
 
     async def _stream_launch(self, candidate: Candidate, window_id: int) -> bool:
-        from .cache import candidate_key
         import time
+
+        from .cache import candidate_key
 
         if len(self._shard_capacity) == 0:
             return False
@@ -536,7 +535,7 @@ class Orchestrator:
             shard_ids = self.sampler.sample_shard(window_id, shard_size)
             self._shard_cache[shard_key] = shard_ids
 
-        start_time = time.time()
+        time.time()
         cand_hash = candidate_key(candidate)
         self._total_inflight += 1
         self._shard_inflight[shard_idx] += 1
@@ -566,9 +565,9 @@ class Orchestrator:
                     shard_fraction=shard_fraction,
                     show_progress=self.show_progress,  # Show progress for all evaluations
                 )
-                await self._result_queue.put((candidate, result, shard_idx, start_time))
+                await self._result_queue.put((candidate, result, shard_idx))
             except Exception as exc:  # pragma: no cover - defensive logging path
-                await self._result_queue.put((candidate, exc, shard_idx, start_time))
+                await self._result_queue.put((candidate, exc, shard_idx))
             finally:
                 self._shard_inflight[shard_idx] -= 1
                 self._total_inflight -= 1
@@ -592,23 +591,21 @@ class Orchestrator:
 
         while True:
             try:
-                candidate, payload, shard_idx, start_time = self._result_queue.get_nowait()
+                candidate, payload, shard_idx = self._result_queue.get_nowait()
             except _asyncio.QueueEmpty:
                 remaining = deadline - _time.time()
                 if remaining <= 0:
                     break
                 try:
-                    candidate, payload, shard_idx, start_time = await _asyncio.wait_for(
-                        self._result_queue.get(), timeout=remaining
-                    )
+                    candidate, payload, shard_idx = await _asyncio.wait_for(self._result_queue.get(), timeout=remaining)
                 except _asyncio.TimeoutError:
                     break
-            await self._stream_process_result(candidate, payload, shard_idx, start_time)
+            await self._stream_process_result(candidate, payload, shard_idx)
             count += 1
 
         return count
 
-    async def _ingest_result(self, candidate: Candidate, result: EvalResult) -> Tuple[Candidate, str]:
+    async def _ingest_result(self, candidate: Candidate, result: EvalResult) -> tuple[Candidate, str]:
         """Update internal state with a freshly evaluated result."""
         from .cache import candidate_key
 
@@ -623,9 +620,7 @@ class Orchestrator:
         meta = dict(candidate.meta)
         prev_fraction = meta.get("quality_shard_fraction", 0.0)
         prev_quality = meta.get("quality", float("-inf"))
-        if shard_fraction > prev_fraction or (
-            shard_fraction == prev_fraction and quality >= prev_quality
-        ):
+        if shard_fraction > prev_fraction or (shard_fraction == prev_fraction and quality >= prev_quality):
             meta["quality"] = quality
             meta["quality_shard_fraction"] = shard_fraction
         candidate_with_meta = Candidate(text=candidate.text, meta=meta)
@@ -634,9 +629,7 @@ class Orchestrator:
         self.latest_results[cand_hash] = result
         self.evaluations_run += 1
 
-        decision = self.scheduler.record(
-            candidate_with_meta, result, self.config.promote_objective
-        )
+        decision = self.scheduler.record(candidate_with_meta, result, self.config.promote_objective)
 
         if decision in ("promoted", "completed"):
             await self.archive.insert(candidate_with_meta, result)
@@ -665,6 +658,7 @@ class Orchestrator:
         if not self.island_context:
             return
         import time
+
         now = time.time()
         shard_fraction = candidate.meta.get("quality_shard_fraction", 0.0)
         key = (candidate.fingerprint, shard_fraction)
@@ -690,14 +684,12 @@ class Orchestrator:
         candidate: Candidate,
         payload: EvalResult | Exception,
         shard_idx: int,
-        start_time: float,
     ) -> None:
         if isinstance(payload, Exception):
             self._inflight_fingerprints.discard(candidate.fingerprint)
             return
 
         result: EvalResult = payload
-        _ = start_time  # placeholder for potential latency calculations
         await self._ingest_result(candidate, result)
 
     async def _stream_check_target(self, window_id: int) -> bool:
@@ -713,17 +705,12 @@ class Orchestrator:
         if not full_entries:
             return False
 
-        best_quality = max(
-            entry.result.objectives.get(self.config.promote_objective, 0.0)
-            for entry in full_entries
-        )
+        best_quality = max(entry.result.objectives.get(self.config.promote_objective, 0.0) for entry in full_entries)
         if best_quality < self.config.target_quality:
             return False
 
         if self.show_progress:
-            self.logger.log(
-                f"🎯 Target quality {self.config.target_quality:.2%} reached! Achieved: {best_quality:.2%}"
-            )
+            self.logger.log(f"🎯 Target quality {self.config.target_quality:.2%} reached! Achieved: {best_quality:.2%}")
             self.logger.log(f"   (Verified on full dataset: {full_shard:.0%} of examples)")
         return True
 
@@ -741,17 +728,14 @@ class Orchestrator:
             self.logger.log("   This establishes the baseline for optimization.")
 
         results = await asyncio.gather(
-            *[
-                self._evaluate_candidate(seed, shard, shard_fraction, show_progress=self.show_progress)
-                for seed in seeds
-            ]
+            *[self._evaluate_candidate(seed, shard, shard_fraction, show_progress=self.show_progress) for seed in seeds]
         )
 
         if self.show_progress:
             self.logger.log("   ✓ Seed evaluation complete!")
 
-        enriched: List[Candidate] = []
-        for seed, result in zip(seeds, results):
+        enriched: list[Candidate] = []
+        for seed, result in zip(seeds, results, strict=False):
             candidate_with_meta, _ = await self._ingest_result(seed, result)
             enriched.append(candidate_with_meta)
             # Mark seeds as generation 0
@@ -759,8 +743,8 @@ class Orchestrator:
 
         self.enqueue(enriched)
 
-    def _select_batch(self) -> List[Candidate]:
-        batch: List[Candidate] = []
+    def _select_batch(self) -> list[Candidate]:
+        batch: list[Candidate] = []
         seen: set[str] = set()
         while self.queue and len(batch) < self.config.batch_size:
             candidate = self.queue.popleft()
@@ -816,13 +800,10 @@ class Orchestrator:
 
         # Fallback: Return best quality from ANY shard
         # This ensures we always show something meaningful during early optimization
-        best_quality = max(
-            entry.result.objectives.get(self.config.promote_objective, 0.0)
-            for entry in pareto
-        )
+        best_quality = max(entry.result.objectives.get(self.config.promote_objective, 0.0) for entry in pareto)
         return best_quality
 
-    async def _spawn_mutations(self, callback: Optional[Callable[[Candidate], None]] = None) -> None:
+    async def _spawn_mutations(self, callback: Callable[[Candidate], None] | None = None) -> None:
         """Generate mutations using batched reflection for efficiency."""
         # Check if we've exceeded the evaluation budget before spawning mutations
         if self.max_evaluations is not None and self.evaluations_run >= self.max_evaluations:
@@ -830,13 +811,13 @@ class Orchestrator:
 
         entries = self.archive.pareto_entries()
         if not entries:
-            self.logger.log("ℹ️  spawn_mutations: archive empty, skipping.")
+            self.logger.log("INFO: spawn_mutations: archive empty, skipping.")
             return
 
         num_mutations = self._mutation_budget()
         if num_mutations <= 0:
             self.logger.log(
-                f"ℹ️  spawn_mutations: budget={num_mutations}, queue={len(self.queue)}, buffer={len(self._mutation_buffer)} — skipping."
+                f"INFO: spawn_mutations: budget={num_mutations}, queue={len(self.queue)}, buffer={len(self._mutation_buffer)} - skipping."
             )
             return
 
@@ -863,11 +844,12 @@ class Orchestrator:
 
     async def _generate_mutations_batched(
         self,
-        entries: List[ArchiveEntry],
+        entries: list[ArchiveEntry],
         num_mutations: int,
-    ) -> List[Candidate]:
+    ) -> list[Candidate]:
         """Generate mutations using batched reflection."""
         import time
+
         batch_start = time.time()
 
         # Smart parent selection: mix of top quality + QD diversity
@@ -900,12 +882,12 @@ class Orchestrator:
                 if len(selected_entries) >= num_parents:
                     break
 
-        parent_select_time = time.time() - parent_select_start
+        time.time() - parent_select_start
 
         # Use cached evaluation results instead of fresh eval (saves 3-5s per round!)
         # We already have traces from the ASHA evaluation that just ran
         reflection_minibatch_size = 5
-        reflection_examples: List[Dict[str, object]] = []
+        reflection_examples: list[dict[str, object]] = []
 
         # Sample task examples for spec induction
         task_examples = self._sample_task_examples_for_spec_induction(num_examples=reflection_minibatch_size)
@@ -940,28 +922,36 @@ class Orchestrator:
                     if quality >= 1.0:
                         feedback = f"The generated response is correct. The response includes the correct answer '{expected_answer}'"
                     else:
-                        feedback_parts = [f"The generated response is incorrect. The correct answer is '{expected_answer}'."]
-                        feedback_parts.append("Ensure that the correct answer is included in the response exactly as it is.")
+                        feedback_parts = [
+                            f"The generated response is incorrect. The correct answer is '{expected_answer}'."
+                        ]
+                        feedback_parts.append(
+                            "Ensure that the correct answer is included in the response exactly as it is."
+                        )
                         if additional_context and isinstance(additional_context, dict):
                             context_lines = [f"{k}: {v}" for k, v in additional_context.items()]
                             if context_lines:
-                                feedback_parts.append(f"Here is some additional context that might be helpful:\n{chr(10).join(context_lines)}")
+                                feedback_parts.append(
+                                    f"Here is some additional context that might be helpful:\n{chr(10).join(context_lines)}"
+                                )
                         feedback = " ".join(feedback_parts)
 
-                    reflection_examples.append({
-                        "input": example_input,
-                        "assistant_output": assistant_output,
-                        "expected_answer": expected_answer,
-                        "feedback": feedback,
-                        "additional_context": additional_context,
-                    })
+                    reflection_examples.append(
+                        {
+                            "input": example_input,
+                            "assistant_output": assistant_output,
+                            "expected_answer": expected_answer,
+                            "feedback": feedback,
+                            "additional_context": additional_context,
+                        }
+                    )
 
-        cache_time = time.time() - cache_start
+        time.time() - cache_start
 
         # Build parent contexts for mutation (all selected parents)
         # IMPORTANT: Use latest_results instead of entry.result to get the most recent
         # (and typically full-dataset) evaluation, not the archived partial-shard result
-        parent_contexts: List[Dict[str, object]] = []
+        parent_contexts: list[dict[str, object]] = []
         for entry in selected_entries:
             # Prefer latest_results (most recent eval, usually full dataset)
             # Fall back to entry.result if not found in latest_results
@@ -971,10 +961,12 @@ class Orchestrator:
             candidate_with_parent = entry.candidate.with_meta(
                 parent_objectives=parent_objectives,
             )
-            parent_contexts.append({
-                "candidate": candidate_with_parent,
-                "failures": [],  # Not used anymore, we have fresh reflection_examples
-            })
+            parent_contexts.append(
+                {
+                    "candidate": candidate_with_parent,
+                    "failures": [],  # Not used anymore, we have fresh reflection_examples
+                }
+            )
 
         if not parent_contexts:
             return []
@@ -989,10 +981,10 @@ class Orchestrator:
 
         mutator_start = time.time()
         mutations = await self.mutator.propose(parent_contexts, num_mutations, task_examples=task_examples)
-        mutator_time = time.time() - mutator_start
+        time.time() - mutator_start
         self._record_mutation_generation(num_mutations, mutations)
 
-        batch_total_time = time.time() - batch_start
+        time.time() - batch_start
 
         return mutations
 
@@ -1004,7 +996,7 @@ class Orchestrator:
         for candidate in mutations:
             fingerprint = candidate.fingerprint
             self._children_seen.add(fingerprint)
-            parent_fp: Optional[str] = None
+            parent_fp: str | None = None
             if isinstance(candidate.meta, dict):
                 parent_fp = candidate.meta.get("parent")
             if parent_fp:
@@ -1037,9 +1029,9 @@ class Orchestrator:
         if child_fp in self.archive.pareto and child_fp not in self._promoted_children:
             self._promoted_children.add(child_fp)
 
-    def evolution_snapshot(self, include_edges: bool = False) -> Dict[str, Any]:
+    def evolution_snapshot(self, include_edges: bool = False) -> dict[str, Any]:
         edges = sum(len(children) for children in self._parent_children.values())
-        snapshot: Dict[str, Any] = {
+        snapshot: dict[str, Any] = {
             "mutations_requested": self._mutations_requested,
             "mutations_generated": self._mutations_generated,
             "mutations_enqueued": self._mutations_enqueued,
@@ -1049,29 +1041,28 @@ class Orchestrator:
             "evolution_edges": edges,
         }
         if include_edges:
-            snapshot["parent_children"] = {
-                parent: list(children) for parent, children in self._parent_children.items()
-            }
+            snapshot["parent_children"] = {parent: list(children) for parent, children in self._parent_children.items()}
             snapshot["children"] = list(self._children_seen)
             snapshot["promoted_children"] = list(self._promoted_children)
         return snapshot
 
-    def get_candidate_lineage_data(self) -> List[Dict[str, Any]]:
+    def get_candidate_lineage_data(self) -> list[dict[str, Any]]:
         """Return list of all candidates with generation, quality, and status for visualization."""
-        from typing import List, Dict, Any
 
-        data: List[Dict[str, Any]] = []
+        data: list[dict[str, Any]] = []
         promote_objective = self.config.promote_objective
 
         # Get all pareto candidates
         for entry in self.archive.pareto_entries():
             fp = entry.candidate.fingerprint
-            data.append({
-                "fingerprint": fp,
-                "generation": self._candidate_generations.get(fp, 0),
-                "quality": entry.result.objectives.get(promote_objective, 0.0),
-                "status": "promoted",
-            })
+            data.append(
+                {
+                    "fingerprint": fp,
+                    "generation": self._candidate_generations.get(fp, 0),
+                    "quality": entry.result.objectives.get(promote_objective, 0.0),
+                    "status": "promoted",
+                }
+            )
 
         # Get all QD grid candidates
         for entry in self.archive.qd_grid.values():
@@ -1079,12 +1070,14 @@ class Orchestrator:
             # Skip if already in pareto
             if fp in self.archive.pareto:
                 continue
-            data.append({
-                "fingerprint": fp,
-                "generation": self._candidate_generations.get(fp, 0),
-                "quality": entry.result.objectives.get(promote_objective, 0.0),
-                "status": "evaluated",
-            })
+            data.append(
+                {
+                    "fingerprint": fp,
+                    "generation": self._candidate_generations.get(fp, 0),
+                    "quality": entry.result.objectives.get(promote_objective, 0.0),
+                    "status": "evaluated",
+                }
+            )
 
         # Get in-flight candidates (in queue)
         for candidate in self.queue:
@@ -1094,15 +1087,16 @@ class Orchestrator:
             if fp in self.archive.pareto:
                 quality = self.archive.pareto[fp].result.objectives.get(promote_objective, 0.0)
 
-            data.append({
-                "fingerprint": fp,
-                "generation": self._candidate_generations.get(fp, 0),
-                "quality": quality,
-                "status": "in_flight",
-            })
+            data.append(
+                {
+                    "fingerprint": fp,
+                    "generation": self._candidate_generations.get(fp, 0),
+                    "quality": quality,
+                    "status": "in_flight",
+                }
+            )
 
         return data
-
 
     def _mutation_budget(self) -> int:
         """Compute how many new mutations we should request this cycle."""
@@ -1115,6 +1109,7 @@ class Orchestrator:
         deficit = target_ready - ready
         if deficit <= 0:
             import time as _time_budget
+
             now = _time_budget.time()
             if now - self._last_budget_log > 5.0:
                 self.logger.log(
@@ -1126,7 +1121,7 @@ class Orchestrator:
             return 0
         return max(1, min(max_mut, deficit))
 
-    def _sample_task_examples_for_spec_induction(self, num_examples: int = 3) -> List[Dict[str, object]]:
+    def _sample_task_examples_for_spec_induction(self, num_examples: int = 3) -> list[dict[str, object]]:
         """Sample a few task examples for spec induction (PROMPT-MII style)."""
         if self.example_sampler:
             # Use adapter-provided sampler (has access to actual example data)
@@ -1190,7 +1185,7 @@ class Orchestrator:
         return result
 
     def _register_failures(self, result: EvalResult) -> None:
-        hard_examples: List[str] = []
+        hard_examples: list[str] = []
         for trace in result.traces:
             example_id = trace.get("example_id") if isinstance(trace, dict) else None
             quality = trace.get("quality") if isinstance(trace, dict) else None
@@ -1206,7 +1201,7 @@ class Orchestrator:
         size = max(1, int(total * shard_fraction))
         return min(size, total)
 
-    def _check_stop_governor(self) -> tuple[bool, Dict]:
+    def _check_stop_governor(self) -> tuple[bool, dict]:
         """Update stop governor with current metrics and check if we should stop."""
         if self.stop_governor is None:
             return False, {}
@@ -1233,7 +1228,7 @@ class Orchestrator:
             pareto_entries,
             key=lambda e: (
                 e.result.objectives.get(self.config.promote_objective, 0.0),
-                e.result.objectives.get("neg_cost", float('-inf')),
+                e.result.objectives.get("neg_cost", float("-inf")),
             ),
         )
 
@@ -1265,19 +1260,18 @@ class Orchestrator:
             hypervolume=hypervolume,
             new_evaluations=self.evaluations_run,
             best_quality=best_entry.result.objectives.get(self.config.promote_objective, 0.0),
-            best_cost=best_entry.result.objectives.get("neg_cost", float('-inf')),
+            best_cost=best_entry.result.objectives.get("neg_cost", float("-inf")),
             frontier_ids={e.candidate.fingerprint for e in pareto_entries},
             qd_filled_cells=len(current_cells),
             qd_total_cells=self.config.qd_bins_length * self.config.qd_bins_bullets * len(self.config.qd_flags),
             qd_novelty_rate=qd_novelty_rate,
             total_tokens_spent=self.total_tokens_spent,
-            shadow_significant=True,  # Shadow shard testing not implemented (optional v2 feature)
         )
 
         self.stop_governor.update(metrics)
         return self.stop_governor.should_stop()
 
-    async def finalize(self, delta: Optional[float] = None) -> None:
+    async def finalize(self, delta: float | None = None) -> None:
         """Finalize the run before returning results."""
         if hasattr(self, "_save_task") and not self._save_task.done():
             try:
@@ -1290,7 +1284,7 @@ class Orchestrator:
     async def _save_state(self) -> None:
         """Save current orchestrator state to cache for resumability (non-blocking)."""
         # Cancel any previous save that's still running to avoid queue buildup
-        if hasattr(self, '_save_task') and not self._save_task.done():
+        if hasattr(self, "_save_task") and not self._save_task.done():
             self._save_task.cancel()
 
         pareto_candidates = self.archive.pareto_candidates()
@@ -1308,7 +1302,7 @@ class Orchestrator:
             )
         )
 
-    async def _restore_state(self, state: Dict) -> None:
+    async def _restore_state(self, state: dict) -> None:
         """Restore orchestrator state from saved checkpoint."""
         self.round_index = state["round"]
         self.evaluations_run = state["evaluations"]

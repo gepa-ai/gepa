@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import collections
 import random
-from typing import Deque, Iterable, List, Sequence
+from typing import Iterable, Sequence
 
 
 class InstanceSampler:
@@ -21,10 +21,10 @@ class InstanceSampler:
             raise ValueError("InstanceSampler requires at least one example id")
         self._order = list(self.example_ids)
         self._pointer = 0
-        self.hardness: Deque[str] = collections.deque(maxlen=128)
+        self.hardness: collections.deque[str] = collections.deque(maxlen=128)
         self.random = random.Random(seed)
 
-    def sample_shard(self, round_id: int, k: int) -> List[str]:
+    def sample_shard(self, round_id: int, k: int) -> list[str]:
         """
         Return ``k`` example identifiers for the current round.
 

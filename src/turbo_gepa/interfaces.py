@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Sequence
+from typing import Any, Iterable, Sequence
 
 
 @dataclass(frozen=True)
@@ -18,9 +18,9 @@ class Candidate:
     """Represents an optimizer candidate (e.g., a prompt string)."""
 
     text: str
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
-    def with_meta(self, **updates: Any) -> "Candidate":
+    def with_meta(self, **updates: Any) -> Candidate:
         """Return a new candidate with additional metadata merged in."""
         merged = dict(self.meta)
         merged.update(updates)
@@ -58,7 +58,9 @@ class Candidate:
             # Fallback: stringify non-serialisable objects deterministically
             fallback = {
                 "text": canonical["text"],
-                "meta": {k: repr(v) for k, v in canonical["meta"].items()} if isinstance(canonical["meta"], dict) else repr(canonical["meta"]),
+                "meta": {k: repr(v) for k, v in canonical["meta"].items()}
+                if isinstance(canonical["meta"], dict)
+                else repr(canonical["meta"]),
             }
             payload = json.dumps(fallback, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
@@ -73,8 +75,8 @@ class EvalResult:
     All objectives are maximized; callers can negate costs upstream.
     """
 
-    objectives: Dict[str, float]
-    traces: List[Dict[str, Any]]
+    objectives: dict[str, float]
+    traces: list[dict[str, Any]]
     n_examples: int
     shard_fraction: float | None = None
     example_ids: Sequence[str] | None = None
@@ -85,14 +87,14 @@ class EvalResult:
             return self.objectives[key]
         return self.objectives.get(key, default)
 
-    def merge(self, other: "EvalResult") -> "EvalResult":
+    def merge(self, other: EvalResult) -> EvalResult:
         """Combine two evaluation results by summing objectives and traces."""
         combined = dict(self.objectives)
         for key, value in other.objectives.items():
             combined[key] = combined.get(key, 0.0) + value
         traces = list(self.traces)
         traces.extend(other.traces)
-        example_ids: List[str] = []
+        example_ids: list[str] = []
         if self.example_ids:
             example_ids.extend(self.example_ids)
         if other.example_ids:
@@ -108,7 +110,7 @@ class EvalResult:
         )
 
 
-TraceIterable = Iterable[Dict[str, Any]]
+TraceIterable = Iterable[dict[str, Any]]
 
 
 class AsyncEvaluatorProtocol:

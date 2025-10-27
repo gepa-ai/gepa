@@ -5,7 +5,7 @@ Adapted from GEPA's InstructionProposalSignature for TurboGEPA's async architect
 """
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 
 class InstructionProposalPrompt:
@@ -35,7 +35,7 @@ Read all the assistant responses and the corresponding feedback. Identify all ni
 Provide the new instructions within ``` blocks."""
 
     @staticmethod
-    def format_dataset(samples: List[Dict[str, Any]]) -> str:
+    def format_dataset(samples: list[dict[str, Any]]) -> str:
         """
         Format a list of feedback samples into markdown.
 
@@ -67,7 +67,7 @@ Provide the new instructions within ``` blocks."""
             else:
                 return f"{str(value).strip()}\n\n"
 
-        def convert_sample_to_markdown(sample: Dict[str, Any], examplenum: int) -> str:
+        def convert_sample_to_markdown(sample: dict[str, Any], examplenum: int) -> str:
             """Convert a single sample to markdown."""
             s = f"# Example {examplenum}\n"
             for key, val in sample.items():
@@ -75,12 +75,10 @@ Provide the new instructions within ``` blocks."""
                 s += render_value(val, level=3)
             return s
 
-        return "\n\n".join(
-            convert_sample_to_markdown(sample, i + 1) for i, sample in enumerate(samples)
-        )
+        return "\n\n".join(convert_sample_to_markdown(sample, i + 1) for i, sample in enumerate(samples))
 
     @staticmethod
-    def build_prompt(current_instruction: str, dataset_with_feedback: List[Dict[str, Any]]) -> str:
+    def build_prompt(current_instruction: str, dataset_with_feedback: list[dict[str, Any]]) -> str:
         """
         Build the full LLM prompt for instruction proposal.
 

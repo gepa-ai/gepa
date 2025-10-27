@@ -15,7 +15,6 @@ It stops when all signals indicate plateau, with hysteresis to avoid premature s
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set
 
 
 @dataclass
@@ -27,14 +26,11 @@ class EpochMetrics:
     new_evaluations: int
     best_quality: float
     best_cost: float  # negative tokens
-    frontier_ids: Set[str]
+    frontier_ids: set[str]
     qd_filled_cells: int
     qd_total_cells: int
     qd_novelty_rate: float  # fraction landing in new cells
     total_tokens_spent: int
-
-    # Optional shadow shard testing
-    shadow_significant: bool = True
 
 
 @dataclass
@@ -68,7 +64,6 @@ class StopGovernorConfig:
     weight_cost: float = 0.6  # Reduced from 0.8 (care less about cost)
     weight_qd: float = 0.7  # Increased from 0.6 (care more about exploration)
     weight_roi: float = 0.5  # Reduced from 0.7
-    weight_significance: float = 1.0
 
     # Stability penalty exponent
     stability_penalty_beta: float = 0.5  # Reduced from 0.7 (less harsh penalty)
@@ -85,12 +80,12 @@ class StopGovernor:
     combined with EWMA smoothing and hysteresis to avoid premature stopping.
     """
 
-    def __init__(self, config: Optional[StopGovernorConfig] = None):
+    def __init__(self, config: StopGovernorConfig | None = None):
         self.config = config or StopGovernorConfig()
 
         # History tracking
-        self.epochs: List[EpochMetrics] = []
-        self.prev_metrics: Optional[EpochMetrics] = None
+        self.epochs: list[EpochMetrics] = []
+        self.prev_metrics: EpochMetrics | None = None
 
         # EWMA state
         self.ewma_hv_rate: float = 0.0
@@ -104,7 +99,7 @@ class StopGovernor:
 
         # Last best values
         self.last_best_quality: float = 0.0
-        self.last_best_cost: float = float('-inf')
+        self.last_best_cost: float = float("-inf")
 
     def update(self, metrics: EpochMetrics) -> None:
         """Record new epoch metrics and update EWMA state."""
@@ -144,7 +139,7 @@ class StopGovernor:
         self.last_best_quality = metrics.best_quality
         self.last_best_cost = metrics.best_cost
 
-    def compute_signals(self) -> Dict[str, float]:
+    def compute_signals(self) -> dict[str, float]:
         """Compute normalized 0-1 signals for each stopping criterion."""
         if len(self.epochs) < 2:
             # Not enough data yet
@@ -154,7 +149,6 @@ class StopGovernor:
                 "s_cost": 1.0,
                 "s_qd": 1.0,
                 "s_roi": 1.0,
-                "s_significance": 1.0,
                 "s_stability": 0.0,
                 "jaccard": 0.0,
             }
@@ -170,7 +164,9 @@ class StopGovernor:
             # Absolute improvement signal
             absolute_signal = self.ewma_quality_delta / self.config.tau_quality
             # Relative improvement signal (avoid division by zero)
-            relative_signal = (self.ewma_quality_delta / max(0.01, self.last_best_quality)) / self.config.tau_quality_relative
+            relative_signal = (
+                self.ewma_quality_delta / max(0.01, self.last_best_quality)
+            ) / self.config.tau_quality_relative
             # Use the more lenient of the two (higher signal = more improvement detected)
             s_quality = min(1.0, max(absolute_signal, relative_signal))
         elif self.config.tau_quality > 0:
@@ -187,10 +183,7 @@ class StopGovernor:
         # Signal 5: ROI
         s_roi = min(1.0, self.ewma_roi / self.config.tau_roi) if self.config.tau_roi > 0 else 1.0
 
-        # Signal 6: Statistical significance (shadow shard)
-        s_significance = 1.0 if curr.shadow_significant else 0.0
-
-        # Signal 7: Frontier stability (inverse - high stability = low score)
+        # Signal 6: Frontier stability (inverse - high stability = low score)
         jaccard = self._compute_jaccard(prev.frontier_ids, curr.frontier_ids)
         s_stability = jaccard if jaccard > self.config.min_jaccard_for_stable else 0.0
 
@@ -200,12 +193,11 @@ class StopGovernor:
             "s_cost": s_cost,
             "s_qd": s_qd,
             "s_roi": s_roi,
-            "s_significance": s_significance,
             "s_stability": s_stability,
             "jaccard": jaccard,
         }
 
-    def compute_stop_score(self) -> tuple[float, Dict[str, float]]:
+    def compute_stop_score(self) -> tuple[float, dict[str, float]]:
         """
         Compute overall stop score (0-1) and individual signals.
 
@@ -225,7 +217,6 @@ class StopGovernor:
             self.config.weight_cost * signals["s_cost"],
             self.config.weight_qd * signals["s_qd"],
             self.config.weight_roi * signals["s_roi"],
-            self.config.weight_significance * signals["s_significance"],
         )
 
         # Penalize by stability (if frontier is very stable and max_signal is low, reduce score)
@@ -239,7 +230,7 @@ class StopGovernor:
 
         return stop_score, signals
 
-    def should_stop(self) -> tuple[bool, Dict[str, any]]:
+    def should_stop(self) -> tuple[bool, dict[str, any]]:
         """
         Determine if optimization should stop.
 
@@ -279,11 +270,13 @@ class StopGovernor:
             if hard_stop:
                 debug_info["reason"] = f"no_improvement_for_{self.epochs_no_improvement}_epochs"
             else:
-                debug_info["reason"] = f"score_below_{self.config.stop_threshold}_for_{self.epochs_below_threshold}_epochs"
+                debug_info["reason"] = (
+                    f"score_below_{self.config.stop_threshold}_for_{self.epochs_below_threshold}_epochs"
+                )
 
         return should_stop, debug_info
 
-    def _compute_jaccard(self, set1: Set[str], set2: Set[str]) -> float:
+    def _compute_jaccard(self, set1: set[str], set2: set[str]) -> float:
         """Compute Jaccard similarity between two sets."""
         if not set1 and not set2:
             return 1.0
@@ -308,7 +301,7 @@ class StopGovernor:
 
 
 def compute_hypervolume_2d(
-    points: List[tuple[float, float]],
+    points: list[tuple[float, float]],
     reference: tuple[float, float] = (0.0, 0.0),
 ) -> float:
     """

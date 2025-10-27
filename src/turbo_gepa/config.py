@@ -122,11 +122,11 @@ class Config:
     migration_k: int = 3
     cache_path: str = ".turbo_gepa/cache"
     log_path: str = ".turbo_gepa/logs"
-    batch_size: int = 8
-    queue_limit: int = 128
+    batch_size: int | None = None  # Auto-scaled to eval_concurrency if None
+    queue_limit: int | None = None  # Auto-scaled to 2x eval_concurrency if None
     promote_objective: str = "quality"
     log_summary_interval: int = 10
-    max_mutations_per_round: int = 16
+    max_mutations_per_round: int | None = None  # Auto-scaled to eval_concurrency if None
     task_lm_temperature: float | None = 1.0
     reflection_lm_temperature: float | None = 1.0
     target_quality: float | None = None  # Stop when best quality reaches this threshold
@@ -135,6 +135,28 @@ class Config:
     streaming_mode: bool = True  # Enable continuous launch/drain (no batch barriers)
     mutation_buffer_min: int = 4  # Minimum mutations to trigger generation
     max_total_inflight: int | None = None  # Override total concurrent evaluations (defaults to eval_concurrency)
+
+    def __post_init__(self):
+        """Auto-scale parameters based on eval_concurrency if not explicitly set."""
+        # Auto-scale batch_size to utilize concurrency efficiently
+        if self.batch_size is None:
+            # Scale batch_size to ~25% of eval_concurrency (capped between 8-64)
+            self.batch_size = max(8, min(64, self.eval_concurrency // 4))
+
+        # Ensure batch_size doesn't exceed eval_concurrency
+        if self.batch_size > self.eval_concurrency:
+            self.batch_size = self.eval_concurrency
+
+        # Auto-scale queue_limit to prevent candidate starvation
+        if self.queue_limit is None:
+            # Queue should hold at least 2x concurrency worth of candidates
+            self.queue_limit = max(128, self.eval_concurrency * 2)
+
+        # Auto-scale max_mutations_per_round to match throughput needs
+        if self.max_mutations_per_round is None:
+            # Generate enough mutations to keep pipeline fed
+            # Scale with eval_concurrency (capped between 16-64)
+            self.max_mutations_per_round = max(16, min(64, self.eval_concurrency // 4))
 
 
 DEFAULT_CONFIG = Config()
@@ -151,12 +173,12 @@ def adaptive_config(
     Automatically configure TurboGEPA based on dataset size and available resources.
 
     This function adjusts all key parameters to optimize for the dataset size:
-    - Shards: ASHA successive halving rungs
-    - Batch size: Candidates per round
-    - Mutations: New variants generated per round
-    - Concurrency: Parallel evaluations
-    - Queue: Working set size
-    - Islands: Parallel optimization processes
+        - Shards: ASHA successive halving rungs
+        - Batch size: Candidates per round
+        - Mutations: New variants generated per round
+        - Concurrency: Parallel evaluations
+        - Queue: Working set size
+        - Islands: Concurrent islands (async ring within a single process)
 
     Parameters:
         dataset_size: Number of examples in dataset
@@ -475,15 +497,10 @@ def get_lightning_config(
         "blitz": blitz_config,
         "lightning": lightning_config,
         "sprint": sprint_config,
-        "balanced": lambda ds, base_config=None: adaptive_config(
-            ds, base_config=base_config, strategy="balanced"
-        ),
+        "balanced": lambda ds, base_config=None: adaptive_config(ds, base_config=base_config, strategy="balanced"),
     }
 
     if mode not in modes:
-        raise ValueError(
-            f"Unknown lightning mode: '{mode}'. "
-            f"Choose from: {', '.join(modes.keys())}"
-        )
+        raise ValueError(f"Unknown lightning mode: '{mode}'. Choose from: {', '.join(modes.keys())}")
 
     return modes[mode](dataset_size, base_config=base_config)

@@ -17,8 +17,9 @@
 **TurboGEPA** is a high-performance fork of the [GEPA (Genetic-Pareto) framework](https://github.com/gepa-ai/gepa) designed for **maximum speed of prompt evolution**. While preserving GEPA's core innovation of LLM-based reflection for text evolution, TurboGEPA introduces:
 
 - ⚡ **Maximized Concurrency**: Adaptive async orchestration scales to available compute resources (64-256+ per island, multi-island parallelism)
-- 🏝️ **Island-Based Parallelism**: Multi-process islands with ring topology for population diversity
+- 🏝️ **Island-Based Parallelism**: Concurrent islands with an async ring topology for population diversity
 - 📊 **ASHA Successive Halving**: Prunes 60%+ of candidates early, reducing wasted evaluations
+- 🧬 **Dual Mutation Strategy**: Combines GEPA reflection (60-70%) with Prompt-MII spec induction (30-40%) for balanced exploration/exploitation
 - 🌡️ **Two-Phase Optimization**: Phase 1 optimizes prompts, Phase 2 cycles through temperature variations for final tuning
 - 🛑 **Auto-Stop Convergence**: Automatically terminates when no improvement detected, saving compute on converged runs
 - 🔧 **Adaptive Configuration**: Auto-tunes concurrency, batch sizes, and shards based on dataset size
@@ -42,12 +43,6 @@ All credit for the core GEPA algorithm, reflective mutation strategy, and Pareto
 
 Modern LLMs have advanced to where even **small, fast models** are capable of sophisticated prompt reflection and generation. Recent research shows that **prompt optimizations transfer effectively** from cheaper models to more expensive ones.
 
-**Our recommended setup:**
-
-- **Reflection LM** (prompt optimizer): `x-ai/grok-4-fast` - Fast, cheap, excellent at prompt reasoning
-- **Task LM** (student being optimized): `openai/gpt-oss-120b` - Extremely fast, great quality/cost ratio
-- **Production deployment**: Transfer optimized prompts to your target model (e.g., `gpt-4o`, `claude-sonnet-4`)
-
 **Recommended workflow:**
 
 1. **Optimize with fast models**: Use TurboGEPA with `grok-4-fast` (reflection) + `gpt-oss-120b` (task) for rapid exploration
@@ -67,12 +62,16 @@ Modern LLMs have advanced to where even **small, fast models** are capable of so
 # Optimize with cheap, fast models
 adapter = DefaultAdapter(
     dataset=trainset,
-    task_lm="openrouter/openai/gpt-oss-120b",     # Student model (fast, cheap)
-    reflection_lm="openrouter/x-ai/grok-4-fast"    # Optimizer model (fast, smart)
+    task_lm="openrouter/openai/gpt-oss-120b:nitro",     # Student model (fast, cheap)
+    reflection_lm="openrouter/x-ai/grok-4-fast"          # Optimizer model (fast, smart)
 )
 
 result = adapter.optimize(seeds=["You are a helpful assistant."], max_rounds=10)
-optimized_prompt = result['best_text']
+
+# Extract best prompt from Pareto entries
+entries = result.get("pareto_entries", [])
+best = max(entries, key=lambda e: e.result.objectives.get("quality", 0.0)) if entries else None
+optimized_prompt = best.candidate.text if best else ""
 
 # Deploy to production with expensive model
 production_result = expensive_model.run(optimized_prompt, production_data)
@@ -127,8 +126,8 @@ from turbo_gepa.adapters import DefaultAdapter
 # Create adapter with automatic configuration
 adapter = DefaultAdapter(
     dataset=trainset,
-    task_lm="openrouter/google/gemini-flash-1.5",
-    reflection_lm="openrouter/google/gemini-flash-1.5"
+    task_lm="openrouter/openai/gpt-oss-120b:nitro",     # Student model (fast, cheap)
+    reflection_lm="openrouter/x-ai/grok-4-fast"          # Optimizer model (fast, smart)
 )
 
 # Optimize with multi-island parallelism
@@ -137,14 +136,21 @@ result = adapter.optimize(
     max_rounds=10
 )
 
-print(f"Best prompt: {result['best_text']}")
-print(f"Quality: {result['best_quality']:.2%}")
-print(f"Pareto frontier: {len(result['pareto'])} candidates")
+# Extract the best candidate from the Pareto entries
+entries = result.get("pareto_entries", [])
+if entries:
+    best = max(entries, key=lambda e: e.result.objectives.get("quality", 0.0))
+    best_text = best.candidate.text
+    best_quality = best.result.objectives.get("quality", 0.0)
+    print(f"Best prompt: {best_text}")
+    print(f"Quality: {best_quality:.2%}")
+print(f"Pareto frontier: {len(result.get('pareto', []))} candidates")
 ```
 
 ### TurboGEPA: DSPy Program Optimization
 
 ```python
+import asyncio
 from turbo_gepa.adapters.dspy_adapter import DSpyAdapter
 import dspy
 
@@ -156,20 +162,23 @@ class QAModule(dspy.Module):
     def forward(self, question):
         return self.predictor(question=question)
 
-# Configure DSPy
-dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+# Configure DSPy with fast, cheap model
+dspy.configure(lm=dspy.LM("openrouter/openai/gpt-oss-120b:nitro"))
 
-# Create adapter
+# Create adapter with reflection model
 adapter = DSpyAdapter(
     student_module=QAModule(),
     metric_fn=lambda ex, pred, trace: ex.answer in str(pred.answer),
-    trainset=trainset
+    trainset=trainset,
+    reflection_lm="openrouter/x-ai/grok-4-fast"
 )
 
 # Optimize asynchronously
-result = await adapter.optimize_async(
-    seed_instructions={"predictor": "Answer precisely."},
-    max_rounds=10
+result = asyncio.run(
+    adapter.optimize_async(
+        seed_instructions={"predictor": "Answer precisely."},
+        max_rounds=10,
+    )
 )
 
 best_program = result['best_program']
@@ -184,10 +193,10 @@ best_program = result['best_program']
 TurboGEPA is a high-throughput production fork of GEPA with:
 
 - **Async/await architecture** - Non-blocking I/O for maximum concurrency
-- **Multi-island parallelism** - Distributed optimization across process boundaries
-- **ASHA successive halving** - Early stopping to reduce wasted evaluations
-- **Quality-Diversity archives** - Maintains diverse solutions beyond Pareto frontier
-- **Adaptive configuration** - Auto-tunes based on dataset size and hardware
+ - **Multi-island parallelism** - Concurrent islands within a single process (async ring)
+ - **ASHA successive halving** - Early stopping to reduce wasted evaluations
+ - **Quality-Diversity archives** - Maintains diverse solutions beyond Pareto frontier
+ - **Adaptive configuration** - Auto-tunes based on dataset size and hardware
 
 **Best for**: Production deployments, large-scale optimization, maximum throughput
 
@@ -225,12 +234,12 @@ TurboGEPA is a high-throughput production fork of GEPA with:
 
   - Location: `src/turbo_gepa/adapters/default_adapter.py`
   - Features: Async evaluation, multi-island, ASHA pruning
-  - [Example](examples/benchmark_max_speed.py)
+  - Example: see the Quick Start snippet above
 
 - **`DSpyAdapter`**: DSPy program instruction optimization
   - Location: `src/turbo_gepa/adapters/dspy_adapter.py`
   - Features: Trace capture, feedback functions, LLM reflection
-  - [Example](examples/dspy_adapter_example.py) | [Documentation](src/turbo_gepa/adapters/README.md)
+  - [Documentation](src/turbo_gepa/adapters/README.md)
 
 ---
 
@@ -322,85 +331,89 @@ graph TD
 - **Diversity**: Ring topology prevents premature convergence
 - **Robustness**: Different islands may discover different high-quality regions
 
-### Original GEPA Algorithm
-
-GEPA optimizes text components using:
-
-1. **LLM-based Reflection**: Analyzes execution traces to propose improvements
-2. **Pareto Selection**: Maintains candidates on quality-cost frontier
-3. **Evolutionary Mutation**: Generates variants through reflection and merging
-4. **Adaptive Sampling**: Focuses on hard examples during optimization
-
-See the [GEPA paper](https://arxiv.org/abs/2507.19457) for core algorithmic details.
-
-### TurboGEPA Mutation Strategy
+### TurboGEPA Two-Phase Optimization
 
 ```mermaid
-graph TD
-    Start[Parent Contexts<br/>prompt + traces + failures] --> Allocate{Adaptive Budget<br/>Allocation}
+graph TB
+    subgraph Phase1["Phase 1: Prompt Evolution (70% of budget)"]
+        Start[Parent Contexts<br/>prompt + traces + failures] --> Allocate{Adaptive Budget<br/>Allocation}
 
-    Allocate -->|60-70%| Reflection[Incremental Reflection]
-    Allocate -->|30-40%| SpecInd[Spec Induction<br/>Prompt-MII]
+        Allocate -->|60-70%| Reflection[Incremental Reflection]
+        Allocate -->|30-40%| SpecInd[Spec Induction<br/>Prompt-MII]
 
-    Reflection --> RefPrompt["LLM Prompt:<br/>'Edit this prompt to fix failures'"]
-    SpecInd --> SpecPrompt["LLM Prompt:<br/>'Generate FRESH spec from patterns'"]
+        Reflection --> RefPrompt["LLM Prompt:<br/>'Edit this prompt to fix failures'"]
+        SpecInd --> SpecPrompt["LLM Prompt:<br/>'Generate FRESH spec from patterns'"]
 
-    RefPrompt --> RefLLM[Reflection LLM]
-    SpecPrompt --> RefLLM
+        RefPrompt --> RefLLM[Reflection LLM]
+        SpecPrompt --> RefLLM
 
-    RefLLM --> RefOut[Edited prompts<br/>incremental changes]
-    RefLLM --> SpecOut[Fresh specifications<br/>novel approaches]
+        RefLLM --> RefOut[Edited prompts<br/>incremental changes]
+        RefLLM --> SpecOut[Fresh specifications<br/>novel approaches]
 
-    RefOut --> Pool[Candidate Pool]
-    SpecOut --> Pool
+        RefOut --> Pool[Candidate Pool]
+        SpecOut --> Pool
 
-    Pool --> Validate{Pass<br/>Validators?}
-    Validate -->|Yes| ASHA[ASHA Evaluation]
-    Validate -->|No| Discard[Discard]
+        Pool --> Validate{Pass<br/>Validators?}
+        Validate -->|Yes| ASHA1[ASHA Evaluation]
+        Validate -->|No| Discard[Discard]
 
-    ASHA --> Archive[Archive<br/>Pareto + QD]
+        ASHA1 --> Archive1[Archive<br/>Pareto + QD]
+    end
 
-    Archive --> Track[Track Success Rate<br/>per Operator]
-    Track --> Allocate
+    Archive1 --> Convergence{Converged?<br/>Auto-Stop}
+    Convergence -->|Yes| Phase2Start[Phase 2 Begins]
+    Convergence -->|No| Start
 
+    subgraph Phase2["Phase 2: Temperature Cycling (30% of budget)"]
+        Phase2Start --> TopPrompts[Select Top Prompts<br/>from Phase 1]
+        TopPrompts --> TempRange[Generate Temperature Variants<br/>0.0, 0.3, 0.5, 0.7, 1.0 and ±0.2 around baseline (clamped)]
+        TempRange --> ASHA2[ASHA Evaluation<br/>Temperature Grid]
+        ASHA2 --> Archive2[Final Archive<br/>Best prompt + temperature]
+    end
+
+    Archive2 --> Results[Optimized Prompt<br/>+ Optimal Temperature]
+
+    style Phase1 fill:#e3f2fd
+    style Phase2 fill:#fff3e0
     style Start fill:#e1f5ff
     style Reflection fill:#d4edda
     style SpecInd fill:#fff3cd
-    style Archive fill:#d1ecf1
-    style Track fill:#ffeaa7
+    style Archive1 fill:#d1ecf1
+    style Archive2 fill:#d1ecf1
+    style Results fill:#c8e6c9
+    style Convergence fill:#ffeaa7
 ```
 
-**Key Features**:
+**Phase 1: Prompt Evolution (70% of budget)**
 
-- **Same Input Data**: All operators receive parent prompts + execution traces + failures
-- **Different Strategies**: Each operator uses different prompting to generate mutations
-- **Adaptive Weighting**: Success rates tracked per operator, budget allocated dynamically
-- **Quality Control**: Validators filter invalid mutations before expensive evaluation
+TurboGEPA uses two complementary mutation strategies that both receive the same context (parent prompts + execution traces + failures):
 
-TurboGEPA extends GEPA with **multiple mutation operators** that receive the same context (parent prompts + execution traces + failures) but use different strategies:
-
-#### 1. **Incremental Reflection** (Batch Reflect)
+#### 1. **Incremental Reflection** (60-70% of Phase 1)
 
 - **Strategy**: Iteratively improve existing prompts by analyzing failures
-- **Input**: Parent prompt text, execution traces, failure examples
 - **Approach**: "Here's what failed. Edit the prompt to fix these specific issues."
 - **Best for**: Fine-tuning and debugging existing prompts
 
-#### 2. **Spec Induction** ([Prompt-MII](https://arxiv.org/abs/2510.16932) Style)
+#### 2. **Spec Induction** (30-40% of Phase 1) - [Prompt-MII](https://arxiv.org/abs/2510.16932) Style
 
 - **Strategy**: Generate fresh prompt specifications using meta-learning
-- **Input**: Same as reflection (parent prompt, traces, failures)
 - **Approach**: "Looking at this prompt and what failed, generate a FRESH specification that solves the task differently."
 - **Best for**: Exploration, escaping local optima, discovering novel approaches
 
-#### 3. **Temperature Mutations**
+**Adaptive Weighting**: Success rates tracked per operator; budget allocated dynamically to the most effective strategies.
 
-- **Strategy**: Explore variations by adjusting LLM sampling temperature
-- **Best for**: Diversity and exploration in early stages
+**Auto-Stop**: Phase 1 automatically terminates when convergence is detected (no improvement across multiple rounds), saving compute.
 
-**Key Innovation**: Unlike traditional approaches where spec induction operates blindly, TurboGEPA's spec induction receives full context about parent prompts and failures. This enables **informed exploration** - generating fresh approaches while learning from what didn't work, rather than starting from scratch each time.
+---
 
-**Adaptive Weighting**: The mutation system tracks success rates of each operator and dynamically allocates budget based on recent performance, ensuring the most effective strategies get more opportunities.
+**Phase 2: Temperature Cycling (30% of budget)**
+
+After prompt optimization converges, TurboGEPA explores temperature variations:
+
+- **Select top prompts** from Phase 1 Pareto frontier
+- **Generate temperature grid**: 0.0, 0.3, 0.5, 0.7, 1.0 and ±0.2 around baseline (clamped to [0.0, 1.0])
+- **Evaluate with ASHA**: Find optimal temperature for final deployment
+- **Output**: Best prompt + optimal temperature setting
 
 ### TurboGEPA Enhancements
 
@@ -559,7 +572,7 @@ We welcome contributions! Areas of interest:
 - **Testing**: Expand test coverage for TurboGEPA
 - **Documentation**: Examples, tutorials, use cases
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions welcome! Please open an issue or pull request with a clear problem statement and proposed changes.
 
 ---
 

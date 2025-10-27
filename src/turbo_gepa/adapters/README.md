@@ -30,8 +30,7 @@ The `DSpyAdapter` allows TurboGEPA to optimize DSPy programs by evolving their i
 - ✅ Async evaluation with trace capture
 - ✅ Integration with DSPy's `bootstrap_trace_data` for reflection
 - ✅ Optional feedback functions for per-predictor improvements
-- ✅ LLM-based reflection via `InstructionProposalPrompt`
-- ✅ Fallback to rule-based mutations when LLM reflection unavailable
+- ✅ LLM-based reflection via `InstructionProposalPrompt` (requires feedback + LLM)
 - ✅ Pareto frontier + Quality-Diversity optimization
 
 **Location**: `src/turbo_gepa/adapters/dspy_adapter.py`
@@ -105,7 +104,7 @@ result = await adapter.optimize_async(
 )
 ```
 
-**Full Example**: See `examples/dspy_adapter_example.py`
+**Full Example**: See the inline example above. A standalone example script will be added under `examples/` in a future update.
 
 ## Creating Custom Adapters
 
@@ -170,9 +169,8 @@ See `DSpyAdapter` or `DefaultAdapter` for complete examples.
 
 ## Best Practices
 
-1. **Start with rule-based mutations**: The adapters work without LLM reflection using simple rule-based mutations
-2. **Add feedback functions**: For complex tasks, define feedback functions to guide reflection
-3. **Use LLM reflection**: For best results, provide a `reflection_lm` function with a capable model
-4. **Tune configuration**: Adjust `Config` parameters based on your dataset size and compute budget
-5. **Monitor cache hit rates**: Check logs to see if caching is effective
-6. **Inspect Pareto frontier**: Don't just use the "best" - explore the quality-diversity tradeoffs
+1. **Provide feedback functions**: For complex tasks, define feedback functions to guide reflection per predictor
+2. **Use LLM reflection**: Provide a `reflection_lm` function with a capable model
+3. **Tune configuration**: Adjust `Config` parameters based on your dataset size and compute budget
+4. **Monitor cache hit rates**: Check logs to see if caching is effective
+5. **Inspect Pareto frontier**: Don't just use the "best" - explore the quality-diversity tradeoffs

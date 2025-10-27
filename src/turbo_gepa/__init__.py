@@ -2,22 +2,23 @@
 TurboGEPA package initialization.
 
 This package provides a high-throughput, GEPA-inspired optimization engine
-designed for async, multi-process evaluation and diversity-aware search.
+designed for async, multi-island evaluation (single-process, asyncio-based)
+and diversity-aware search.
 """
 
-from .adapters import DefaultAdapter, DefaultDataInst  # noqa: F401
+from .adapters import DefaultAdapter, DefaultDataInst
 
 # Optional imports - only available if dependencies are installed
 try:
-    from .adapters import DSpyAdapter, ScoreWithFeedback  # noqa: F401
+    from .adapters import DSpyAdapter, ScoreWithFeedback
 except ImportError:
     # dspy not installed
     pass
-from .archive import Archive  # noqa: F401
-from .cache import DiskCache  # noqa: F401
-from .config import (  # noqa: F401
-    Config,
+from .archive import Archive
+from .cache import DiskCache
+from .config import (
     DEFAULT_CONFIG,
+    Config,
     adaptive_config,
     adaptive_shards,
     blitz_config,
@@ -25,11 +26,11 @@ from .config import (  # noqa: F401
     lightning_config,
     sprint_config,
 )
-from .evaluator import AsyncEvaluator  # noqa: F401
-from .interfaces import Candidate, EvalResult  # noqa: F401
-from .mutator import MutationConfig, Mutator  # noqa: F401
-from .orchestrator import Orchestrator  # noqa: F401
-from .sampler import InstanceSampler  # noqa: F401
+from .evaluator import AsyncEvaluator
+from .interfaces import Candidate, EvalResult
+from .mutator import MutationConfig, Mutator
+from .orchestrator import Orchestrator
+from .sampler import InstanceSampler
 
 # High-level API
-from .optimize import optimize  # noqa: F401
+# High-level optimize() API removed to avoid half-baked rule-based path

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List, Any
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .orchestrator import Orchestrator
@@ -26,7 +26,7 @@ class Metrics:
     pareto_size: int
     qd_size: int
     total_candidates: int
-    rung_activity: Dict[str, int]  # rung_key -> inflight count
+    rung_activity: dict[str, int]  # rung_key -> inflight count
     max_rounds: int | None = None
     max_evaluations: int | None = None
     mutations_requested: int = 0
@@ -36,7 +36,9 @@ class Metrics:
     unique_parents: int = 0
     unique_children: int = 0
     evolution_edges: int = 0
-    lineage_data: List[Dict[str, Any]] = field(default_factory=list)  # List of {fingerprint, generation, quality, status}
+    lineage_data: list[dict[str, Any]] = field(
+        default_factory=list
+    )  # List of {fingerprint, generation, quality, status}
 
 
 def extract_metrics(orchestrator: Orchestrator) -> Metrics:
@@ -54,12 +56,8 @@ def extract_metrics(orchestrator: Orchestrator) -> Metrics:
     # Calculate best and average quality from pareto frontier
     promote_objective = orchestrator.config.promote_objective
     if pareto:
-        best_quality = max(
-            e.result.objectives.get(promote_objective, 0.0) for e in pareto
-        )
-        avg_quality = sum(
-            e.result.objectives.get(promote_objective, 0.0) for e in pareto
-        ) / len(pareto)
+        best_quality = max(e.result.objectives.get(promote_objective, 0.0) for e in pareto)
+        avg_quality = sum(e.result.objectives.get(promote_objective, 0.0) for e in pareto) / len(pareto)
     else:
         best_quality = 0.0
         avg_quality = 0.0

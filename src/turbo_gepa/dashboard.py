@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import sys
 import time
-from typing import List
 
 try:
     import plotext as plt
@@ -33,13 +32,11 @@ class TerminalDashboard:
             refresh_interval: Minimum seconds between redraws (default: 0.1s = 100ms)
         """
         if plt is None:
-            raise ImportError(
-                "plotext is required for the dashboard. Install with: pip install plotext"
-            )
+            raise ImportError("plotext is required for the dashboard. Install with: pip install plotext")
 
         self.refresh_interval = refresh_interval
         self.last_refresh = 0.0
-        self.history: List[Metrics] = []
+        self.history: list[Metrics] = []
         self._first_render = True
 
     def update(self, metrics: Metrics) -> None:
@@ -170,9 +167,7 @@ class TerminalDashboard:
         print(f"    Enqueued: {metrics.mutations_enqueued}".ljust(40), end="")
         print(f"Promoted: {metrics.mutations_promoted}".ljust(40))
         success_rate = (
-            (metrics.mutations_promoted / metrics.mutations_generated)
-            if metrics.mutations_generated
-            else 0.0
+            (metrics.mutations_promoted / metrics.mutations_generated) if metrics.mutations_generated else 0.0
         )
         print(f"    Promotion Rate: {success_rate:.1%}".ljust(40), end="")
         print(f"Evolution Edges: {metrics.evolution_edges}".ljust(40))

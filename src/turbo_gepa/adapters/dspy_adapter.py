@@ -43,21 +43,19 @@ import asyncio
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Sequence
 
 import dspy
-from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Prediction
 
 from turbo_gepa.archive import Archive
 from turbo_gepa.cache import DiskCache
-from turbo_gepa.config import Config, DEFAULT_CONFIG
+from turbo_gepa.config import DEFAULT_CONFIG, Config
 from turbo_gepa.evaluator import AsyncEvaluator
 from turbo_gepa.interfaces import Candidate
 from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
-
 
 DSPyTrace = list[tuple[Any, dict[str, Any], Prediction]]
 
@@ -84,14 +82,14 @@ class DSpyAdapter:
         metric_fn: Callable,
         trainset: Sequence[Example],
         *,
-        feedback_map: Optional[Dict[str, Callable]] = None,
+        feedback_map: dict[str, Callable] | None = None,
         failure_score: float = 0.0,
-        num_threads: Optional[int] = None,
+        num_threads: int | None = None,
         config: Config = DEFAULT_CONFIG,
-        cache_dir: Optional[str] = None,
-        log_dir: Optional[str] = None,
+        cache_dir: str | None = None,
+        log_dir: str | None = None,
         sampler_seed: int = 42,
-        rng: Optional[random.Random] = None,
+        rng: random.Random | None = None,
     ) -> None:
         """
         Initialize DSPy adapter.
@@ -147,7 +145,7 @@ class DSpyAdapter:
             reflection_runner=self.reflection_runner,
         )
 
-    def build_program(self, instructions: Dict[str, str]) -> dspy.Module:
+    def build_program(self, instructions: dict[str, str]) -> dspy.Module:
         """Build a DSPy program with updated instructions."""
         new_prog = self.student.deepcopy()
         for name, pred in new_prog.named_predictors():
@@ -161,7 +159,7 @@ class DSpyAdapter:
         example: Example,
         example_id: str,
         capture_traces: bool = False,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Evaluate program on a single example (async)."""
         # Run in thread pool since DSPy evaluation is sync
         loop = asyncio.get_event_loop()
@@ -208,7 +206,7 @@ class DSpyAdapter:
 
         return await loop.run_in_executor(None, _eval)
 
-    async def _task_runner(self, candidate: Candidate, example_id: str) -> Dict[str, float]:
+    async def _task_runner(self, candidate: Candidate, example_id: str) -> dict[str, float]:
         """
         Task runner for TurboGEPA evaluator.
 
@@ -254,14 +252,15 @@ class DSpyAdapter:
         return result
 
     def _create_reflection_runner(self):
-        """Create async reflection runner for DSPy feedback."""
+        """Create async reflection runner for DSPy feedback.
 
-        async def reflect(traces: List[Dict], parent_prompt: str) -> List[str]:
+        Requires both a feedback_map and a reflection_lm to be provided;
+        no rule-based fallback is implemented.
+        """
+
+        async def reflect(traces: list[dict], parent_prompt: str) -> list[str]:
             """
-            Generate improved instructions based on feedback.
-
-            If feedback_map is provided and reflection_lm is set, uses LLM-based
-            reflection. Otherwise falls back to rule-based mutations.
+            Generate improved instructions based on feedback using LLM-based reflection.
             """
             if not traces:
                 return []
@@ -278,58 +277,29 @@ class DSpyAdapter:
                 else:
                     current_instructions = {"default": parent_prompt}
 
-            # Check if we can use LLM-based reflection
+            # Require feedback_map and reflection_lm
             has_feedback_map = bool(self.feedback_map)
             has_reflection_lm = hasattr(self, "reflection_lm") and self.reflection_lm is not None
+            if not (has_feedback_map and has_reflection_lm):
+                raise RuntimeError(
+                    "DSpyAdapter requires both feedback_map and reflection_lm to perform reflection. "
+                    "Provide a feedback_map for predictors and an async reflection_lm callable."
+                )
 
-            if has_feedback_map and has_reflection_lm:
-                # LLM-based reflection with feedback
-                try:
-                    mutations = await self._llm_reflection(
-                        traces, current_instructions, parent_prompt
-                    )
-                    if mutations:
-                        return mutations
-                except Exception as e:
-                    logging.warning(f"LLM reflection failed: {e}, falling back to rule-based")
-
-            # Fallback: Rule-based mutations
-            return self._rule_based_mutations(traces, current_instructions)
+            # LLM-based reflection with feedback
+            mutations = await self._llm_reflection(traces, current_instructions, parent_prompt)
+            return mutations or []
 
         return reflect
 
-    def _rule_based_mutations(
-        self, traces: List[Dict], current_instructions: Dict[str, str]
-    ) -> List[str]:
-        """Generate rule-based mutations (fallback)."""
-        import json
-
-        failures = [t for t in traces if t.get("quality", 0) < 0.5]
-        if not failures:
-            return []
-
-        mutations = []
-        for pred_name, inst in current_instructions.items():
-            mutations.append(
-                json.dumps({**current_instructions, pred_name: inst + " Be more precise."})
-            )
-            mutations.append(
-                json.dumps(
-                    {
-                        **current_instructions,
-                        pred_name: inst + " Show your reasoning step by step.",
-                    }
-                )
-            )
-
-        return mutations[:3]
+    # Removed rule-based fallback: reflection requires an LLM
 
     async def _llm_reflection(
         self,
-        traces: List[Dict],
-        current_instructions: Dict[str, str],
+        traces: list[dict],
+        current_instructions: dict[str, str],
         parent_prompt: str,
-    ) -> List[str]:
+    ) -> list[str]:
         """
         Generate mutations using LLM-based reflection.
 
@@ -373,8 +343,8 @@ class DSpyAdapter:
         return mutations
 
     def _build_reflective_dataset(
-        self, traces: List[Dict], current_instructions: Dict[str, str]
-    ) -> Dict[str, List[Dict]]:
+        self, traces: list[dict], current_instructions: dict[str, str]
+    ) -> dict[str, list[dict]]:
         """
         Build reflective dataset from traces using feedback functions.
 
@@ -388,7 +358,7 @@ class DSpyAdapter:
             dspy_trace = trace.get("trace", [])
             prediction = trace.get("prediction")
             example_id = trace.get("example_id", "unknown")
-            quality = trace.get("quality", 0.0)
+            trace.get("quality", 0.0)
 
             if not dspy_trace or not prediction:
                 continue
@@ -405,8 +375,7 @@ class DSpyAdapter:
 
                 # Find trace instances for this predictor
                 trace_instances = [
-                    t for t in dspy_trace if hasattr(t[0], "signature") and
-                    t[0].signature.equals(pred.signature)
+                    t for t in dspy_trace if hasattr(t[0], "signature") and t[0].signature.equals(pred.signature)
                 ]
 
                 if not trace_instances:
@@ -437,12 +406,10 @@ class DSpyAdapter:
                     # Build dataset entry
                     dataset[pred_name].append(
                         {
-                            "Inputs": {
-                                k: str(v) for k, v in predictor_inputs.items()
-                            },
-                            "Generated Outputs": {
-                                k: str(v) for k, v in predictor_output.items()
-                            } if hasattr(predictor_output, "items") else str(predictor_output),
+                            "Inputs": {k: str(v) for k, v in predictor_inputs.items()},
+                            "Generated Outputs": {k: str(v) for k, v in predictor_output.items()}
+                            if hasattr(predictor_output, "items")
+                            else str(predictor_output),
                             "Feedback": fb.feedback if hasattr(fb, "feedback") else str(fb),
                         }
                     )
@@ -469,12 +436,12 @@ class DSpyAdapter:
 
     async def optimize_async(
         self,
-        seed_instructions: Dict[str, str],
+        seed_instructions: dict[str, str],
         *,
-        max_rounds: Optional[int] = None,
-        max_evaluations: Optional[int] = None,
-        reflection_lm: Optional[Callable] = None,
-    ) -> Dict[str, Any]:
+        max_rounds: int | None = None,
+        max_evaluations: int | None = None,
+        reflection_lm: Callable | None = None,
+    ) -> dict[str, Any]:
         """
         Optimize DSPy program instructions asynchronously.
 
@@ -536,12 +503,12 @@ class DSpyAdapter:
 
     def optimize(
         self,
-        seed_instructions: Dict[str, str],
+        seed_instructions: dict[str, str],
         *,
-        max_rounds: Optional[int] = None,
-        max_evaluations: Optional[int] = None,
-        reflection_lm: Optional[Callable] = None,
-    ) -> Dict[str, Any]:
+        max_rounds: int | None = None,
+        max_evaluations: int | None = None,
+        reflection_lm: Callable | None = None,
+    ) -> dict[str, Any]:
         """
         Optimize DSPy program instructions (sync wrapper).
 

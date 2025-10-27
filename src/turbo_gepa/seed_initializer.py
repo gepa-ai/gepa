@@ -8,19 +8,19 @@ structured, task-specific starting prompts.
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from .interfaces import Candidate
 
 
 async def initialize_seeds_from_examples(
-    examples: List[Dict[str, Any]],
+    examples: list[dict[str, Any]],
     *,
     num_seeds: int = 3,
     reflection_lm: str,
-    user_seed: Optional[str] = None,
-    reflection_lm_temperature: Optional[float] = None,
-) -> List[Candidate]:
+    user_seed: str | None = None,
+    reflection_lm_temperature: float | None = None,
+) -> list[Candidate]:
     """Generate optimized seed prompts from task examples using PROMPT-MII approach.
 
     Instead of starting with generic prompts like "You are a helpful assistant",
@@ -94,14 +94,14 @@ async def initialize_seeds_from_examples(
                     "generation_method": "prompt_mii_seed_initialization",
                     "seed_index": idx,
                     "from_user_seed": user_seed is not None,
-                }
+                },
             )
         )
 
     return candidates
 
 
-def _format_examples_for_induction(examples: List[Dict[str, Any]]) -> str:
+def _format_examples_for_induction(examples: list[dict[str, Any]]) -> str:
     """Format task examples for the meta-prompt."""
     formatted = []
     for i, ex in enumerate(examples, 1):
@@ -185,7 +185,7 @@ Separate each with "---SPEC---" on its own line.
 """
 
 
-def _parse_generated_specs(content: str, expected_count: int) -> List[str]:
+def _parse_generated_specs(content: str, expected_count: int) -> list[str]:
     """Parse the generated specifications from LLM output."""
     # Split by separator
     specs = [s.strip() for s in content.split("---SPEC---") if s.strip()]
@@ -193,7 +193,7 @@ def _parse_generated_specs(content: str, expected_count: int) -> List[str]:
     # If LLM didn't use separator, try other common patterns
     if len(specs) < expected_count:
         # Try numbered sections
-        numbered = re.split(r'\n(?:Specification|Version|Prompt)\s+\d+:?\s*\n', content)
+        numbered = re.split(r"\n(?:Specification|Version|Prompt)\s+\d+:?\s*\n", content)
         if len(numbered) > len(specs):
             specs = [s.strip() for s in numbered if s.strip()]
 
@@ -201,7 +201,9 @@ def _parse_generated_specs(content: str, expected_count: int) -> List[str]:
     cleaned = []
     for spec in specs:
         # Remove common preambles
-        spec = re.sub(r'^(?:Here is|This is|Specification|Version|Prompt)\s+(?:\d+|[A-Z]):?\s*', '', spec, flags=re.IGNORECASE)
+        spec = re.sub(
+            r"^(?:Here is|This is|Specification|Version|Prompt)\s+(?:\d+|[A-Z]):?\s*", "", spec, flags=re.IGNORECASE
+        )
         spec = spec.strip()
         if len(spec) > 50:  # Reasonable minimum length
             cleaned.append(spec)
@@ -213,7 +215,8 @@ def _parse_generated_specs(content: str, expected_count: int) -> List[str]:
     # If we got fewer, warn but return what we have
     if len(cleaned) < expected_count:
         import warnings
-        warnings.warn(f"Requested {expected_count} specs but only generated {len(cleaned)}")
+
+        warnings.warn(f"Requested {expected_count} specs but only generated {len(cleaned)}", stacklevel=2)
 
     return cleaned if cleaned else [_fallback_spec()]
 
@@ -240,14 +243,14 @@ VALIDATION_CHECKS:
 
 # Convenience function for DefaultAdapter integration
 async def maybe_initialize_seeds(
-    dataset: List[Any],
-    user_seeds: Optional[List[str]],
+    dataset: list[Any],
+    user_seeds: list[str] | None,
     *,
     enable_seed_initialization: bool = False,
     num_generated_seeds: int = 3,
-    reflection_lm: Optional[str] = None,
-    reflection_lm_temperature: Optional[float] = None,
-) -> List[Candidate]:
+    reflection_lm: str | None = None,
+    reflection_lm_temperature: float | None = None,
+) -> list[Candidate]:
     """Optionally generate smart seeds from task examples, or use user-provided seeds.
 
     Args:
@@ -286,10 +289,12 @@ async def maybe_initialize_seeds(
             return [Candidate(text=seed, meta={}) for seed in user_seeds]
         else:
             # Return default generic seed
-            return [Candidate(
-                text="You are a helpful assistant. Follow the instructions carefully.",
-                meta={"generation_method": "default"}
-            )]
+            return [
+                Candidate(
+                    text="You are a helpful assistant. Follow the instructions carefully.",
+                    meta={"generation_method": "default"},
+                )
+            ]
 
     # Seed initialization enabled - need reflection_lm
     if not reflection_lm:
@@ -300,19 +305,22 @@ async def maybe_initialize_seeds(
 
     # Sample a few examples from dataset for spec induction
     import random
+
     examples = []
     for item in random.sample(dataset, min(5, len(dataset))):
-        if hasattr(item, 'to_payload'):
+        if hasattr(item, "to_payload"):
             payload = item.to_payload()
         elif isinstance(item, dict):
             payload = item
         else:
             continue
 
-        examples.append({
-            "input": payload.get("input", ""),
-            "output": payload.get("output", payload.get("answer", "")),
-        })
+        examples.append(
+            {
+                "input": payload.get("input", ""),
+                "output": payload.get("output", payload.get("answer", "")),
+            }
+        )
 
     if not examples:
         raise ValueError("Could not extract examples from dataset for seed initialization")
