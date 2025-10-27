@@ -1,80 +1,95 @@
-# This CITATION.cff file was generated with cffinit.
-# Visit https://bit.ly/cffinit to generate yours today!
+# This CITATION.cff file was generated for TurboGEPA
+# Visit https://bit.ly/cffinit to regenerate
 
 cff-version: 1.2.0
-title: >-
-  GEPA: Reflective Prompt Evolution Can Outperform
-  Reinforcement Learning
+title: 'TurboGEPA: High-Throughput Prompt Evolution Framework'
 message: >-
-  If you use this work, please cite it using the metadata
-  from this file.
+  If you use TurboGEPA in your research, please cite both this
+  work and the original GEPA paper.
 type: software
 authors:
-  - given-names: Lakshya A
-    family-names: Agrawal
-  - given-names: Shangyin
-    family-names: Tan
-  - given-names: Dilara
-    family-names: Soylu
-  - given-names: Noah
-    family-names: Ziems
-  - given-names: Rishi
-    family-names: Khare
-  - given-names: Krista
-    family-names: Opsahl-Ong
-  - given-names: Arnav
-    family-names: Singhvi
-  - given-names: Herumb
-    family-names: Shandilya
-  - given-names: Michael J
-    family-names: Ryan
-  - given-names: Meng
-    family-names: Jiang
-  - given-names: Christopher
-    family-names: Potts
-  - given-names: Koushik
-    family-names: Sen
-  - given-names: Alexandros G.
-    family-names: Dimakis
-  - given-names: Ion
-    family-names: Stoica
-  - given-names: Dan
-    family-names: Klein
-  - given-names: Matei
-    family-names: Zaharia
-  - given-names: Omar
-    family-names: Khattab
-identifiers:
-  - type: url
-    value: 'https://arxiv.org/abs/2507.19457'
+  - given-names: Greg
+    family-names: Miller
+    email: greg@intrinsic-labs.ai
+repository-code: 'https://github.com/Studio-Intrinsic/turbo-gepa'
 abstract: >-
-  Large language models (LLMs) are increasingly adapted to
-  downstream tasks via reinforcement learning (RL) methods
-  like Group Relative Policy Optimization (GRPO), which
-  often require thousands of rollouts to learn new tasks. We
-  argue that the interpretable nature of language can often
-  provide a much richer learning medium for LLMs, compared
-  with policy gradients derived from sparse, scalar rewards.
-  To test this, we introduce GEPA (Genetic-Pareto), a prompt
-  optimizer that thoroughly incorporates natural language
-  reflection to learn high-level rules from trial and error.
-  Given any AI system containing one or more LLM prompts,
-  GEPA samples system-level trajectories (e.g., reasoning,
-  tool calls, and tool outputs) and reflects on them in
-  natural language to diagnose problems, propose and test
-  prompt updates, and combine complementary lessons from the
-  Pareto frontier of its own attempts. As a result of GEPA's
-  design, it can often turn even just a few rollouts into a
-  large quality gain. Across four tasks, GEPA outperforms
-  GRPO by 10% on average and by up to 20%, while using up to
-  35x fewer rollouts. GEPA also outperforms the leading
-  prompt optimizer, MIPROv2, by over 10% across two LLMs,
-  and demonstrates promising results as an inference-time
-  search strategy for code optimization.
+  TurboGEPA is a high-performance fork of the GEPA (Genetic-Pareto)
+  framework designed for maximum speed of prompt evolution. It extends
+  GEPA's core algorithm with island-based parallelism, async orchestration,
+  ASHA successive halving, disk caching, and adaptive configuration to
+  achieve 3-10x speedups over the original implementation. TurboGEPA
+  preserves GEPA's core innovation of LLM-based reflective mutation with
+  Pareto selection while focusing on performance engineering for
+  production deployments.
 keywords:
-  - language models
   - prompt optimization
-  - reinforcement learning
+  - language models
   - LLMs
+  - evolutionary algorithms
+  - high-performance computing
+  - async orchestration
   - natural language processing
 license: MIT
+version: 0.1.0
+date-released: '2025-01-27'
+references:
+  - type: software
+    title: 'GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning'
+    authors:
+      - family-names: Agrawal
+        given-names: Lakshya A
+      - family-names: Tan
+        given-names: Shangyin
+      - family-names: Soylu
+        given-names: Dilara
+      - family-names: Ziems
+        given-names: Noah
+      - family-names: Khare
+        given-names: Rishi
+      - family-names: Opsahl-Ong
+        given-names: Krista
+      - family-names: Singhvi
+        given-names: Arnav
+      - family-names: Shandilya
+        given-names: Herumb
+      - family-names: Ryan
+        given-names: Michael J
+      - family-names: Jiang
+        given-names: Meng
+      - family-names: Potts
+        given-names: Christopher
+      - family-names: Sen
+        given-names: Koushik
+      - family-names: Dimakis
+        given-names: Alexandros G.
+      - family-names: Stoica
+        given-names: Ion
+      - family-names: Klein
+        given-names: Dan
+      - family-names: Zaharia
+        given-names: Matei
+      - family-names: Khattab
+        given-names: Omar
+    repository-code: 'https://github.com/gepa-ai/gepa'
+    url: 'https://arxiv.org/abs/2507.19457'
+    notes: >-
+      TurboGEPA is built on the GEPA algorithm. Please cite the original
+      GEPA paper when using TurboGEPA.
+  - type: article
+    title: 'Prompt-MII: Meta-Learning Instruction Induction for LLMs'
+    authors:
+      - family-names: Xiao
+        given-names: Emily
+      - family-names: Zeng
+        given-names: Yixiao
+      - family-names: Chen
+        given-names: Ada
+      - family-names: Li
+        given-names: Chin-Jou
+      - family-names: Bertsch
+        given-names: Amanda
+      - family-names: Neubig
+        given-names: Graham
+    url: 'https://arxiv.org/abs/2510.16932'
+    notes: >-
+      TurboGEPA's spec induction mutation operator is inspired by Prompt-MII.

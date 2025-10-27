@@ -19,7 +19,7 @@ from .config import Config
 from .evaluator import AsyncEvaluator
 from .interfaces import Candidate, EvalResult
 from .islands import IslandContext, integrate_in, migrate_out
-from gepa.logging.logger import LoggerProtocol, StdOutLogger
+from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
 from .mutator import Mutator
 from .sampler import InstanceSampler
 from .scheduler import BudgetedScheduler, SchedulerConfig

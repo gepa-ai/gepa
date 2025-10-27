@@ -1,9 +1,0 @@
-Instruction:
-{instruction}
-
-Your response must be a JSON object that matches this schema:
-
-{response_schema}
-
-The current terminal state is:
-{terminal_state}

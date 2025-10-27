@@ -2,15 +2,15 @@
   <img src="assets/turbo_gepa_logo_transparent.png" alt="TurboGEPA Logo" width="400">
 </p>
 
-<h1 align="center">TurboGEPA: High-Throughput System Optimization</h1>
+<h1 align="center">TurboGEPA: High-Throughput Prompt Evolution</h1>
 
 <p align="center">
-  <em>Production-ready fork of GEPA with island-based parallelism, aggressive async orchestration, and 64x concurrent evaluation throughput.</em>
+  <em>Production-ready fork of GEPA with island-based parallelism, aggressive async orchestration, and maximized concurrent evaluation throughput.</em>
 </p>
 
 ## 🚀 What is TurboGEPA?
 
-**TurboGEPA** is a high-performance fork of the [GEPA (Genetic-Pareto) framework](https://github.com/gepa-ai/gepa) designed for **production deployments** requiring maximum throughput and efficiency. While preserving GEPA's core innovation of LLM-based reflection for text evolution, TurboGEPA introduces:
+**TurboGEPA** is a high-performance fork of the [GEPA (Genetic-Pareto) framework](https://github.com/gepa-ai/gepa) designed for **maximum speed of prompt evolution**. While preserving GEPA's core innovation of LLM-based reflection for text evolution, TurboGEPA introduces:
 
 - ⚡ **Maximized Concurrency**: Adaptive async orchestration scales to available compute resources (64-256+ per island, multi-island parallelism)
 - 🏝️ **Island-Based Parallelism**: Multi-process islands with ring topology for population diversity
@@ -34,29 +34,37 @@ All credit for the core GEPA algorithm, reflective mutation strategy, and Pareto
 
 ## 📦 Installation
 
+### Install TurboGEPA
+
 ```bash
-pip install gepa
+pip install turbo-gepa
 ```
 
-To install from source (for TurboGEPA-specific features):
+### Install from Source
 
 ```bash
-git clone https://github.com/[your-org]/gepa.git
-cd gepa
+git clone https://github.com/Studio-Intrinsic/turbo-gepa.git
+cd turbo-gepa
 pip install -e .
 ```
 
-**Optional Dependencies:**
+### Optional Dependencies
 
 ```bash
 # For DSPy integration
-pip install gepa[dspy]
+pip install turbo-gepa[dspy]
 
 # For development
-pip install gepa[dev]
+pip install turbo-gepa[dev]
 
-# For everything
-pip install gepa[full]
+# For everything (all features)
+pip install turbo-gepa[full]
+```
+
+### Verify Installation
+
+```bash
+python -c "import turbo_gepa; print('✅ TurboGEPA installed successfully')"
 ```
 
 ---
@@ -119,53 +127,24 @@ result = await adapter.optimize_async(
 best_program = result['best_program']
 ```
 
-### Original GEPA: Compatibility Mode
-
-TurboGEPA maintains **full backward compatibility** with the original GEPA API:
-
-```python
-import gepa
-
-# Original GEPA API works unchanged
-trainset, valset, _ = gepa.examples.aime.init_dataset()
-
-result = gepa.optimize(
-    seed_candidate={"system_prompt": "You are a helpful assistant."},
-    trainset=trainset,
-    valset=valset,
-    task_lm="openai/gpt-4o-mini",
-    max_metric_calls=150,
-    reflection_lm="openai/gpt-4o"
-)
-
-print(result.best_candidate['system_prompt'])
-```
-
 ---
 
 ## 🏗️ Architecture
 
-### Dual Implementation
+### TurboGEPA Implementation (`src/turbo_gepa/`)
 
-This repository contains **two implementations**:
+TurboGEPA is a high-throughput production fork of GEPA with:
 
-#### 1. **Original GEPA** (`src/gepa/`)
-- Reference implementation from the paper
-- DSPy integration (canonical version in [DSPy repo](https://github.com/stanfordnlp/dspy))
-- Thread-based concurrency
-- Simple Pareto selection
-- Best for: Research, reproducibility, DSPy integration
+- **Async/await architecture** - Non-blocking I/O for maximum concurrency
+- **Multi-island parallelism** - Distributed optimization across process boundaries
+- **ASHA successive halving** - Early stopping to reduce wasted evaluations
+- **Disk caching** - 20%+ hit rate, persistent across runs
+- **Quality-Diversity archives** - Maintains diverse solutions beyond Pareto frontier
+- **Adaptive configuration** - Auto-tunes based on dataset size and hardware
 
-#### 2. **TurboGEPA** (`src/turbo_gepa/`)
-- High-throughput production fork
-- Async/await architecture
-- Multi-island parallelism
-- ASHA successive halving
-- Disk caching with 20%+ hit rate
-- Quality-Diversity archives
-- Best for: Production deployments, large-scale optimization
+**Best for**: Production deployments, large-scale optimization, maximum throughput
 
-### Performance Comparison
+### Performance vs Original GEPA
 
 | Metric | Original GEPA | TurboGEPA |
 |--------|---------------|-----------|
@@ -201,21 +180,10 @@ This repository contains **two implementations**:
   - Features: Async evaluation, multi-island, ASHA pruning
   - [Example](examples/benchmark_max_speed.py)
 
-- **`DSpyAdapter`** ✨ *Recently Fixed*: DSPy program instruction optimization
+- **`DSpyAdapter`**: DSPy program instruction optimization
   - Location: `src/turbo_gepa/adapters/dspy_adapter.py`
   - Features: Trace capture, feedback functions, LLM reflection
   - [Example](examples/dspy_adapter_example.py) | [Documentation](src/turbo_gepa/adapters/README.md)
-
-#### Original GEPA Adapters
-
-- **`DefaultAdapter`**: System prompt optimization (single-turn)
-- **`DspyAdapter`**: DSPy signature optimization (canonical version in [DSPy repo](https://github.com/stanfordnlp/dspy))
-- **`DspyFullProgramAdapter`**: Evolves complete DSPy programs (93% on MATH benchmark)
-- **`GenericRAGAdapter`**: Vector store-agnostic RAG optimization
-- **`TerminalBenchAdapter`**: Terminal agent optimization
-- **`AnyMathsAdapter`**: Mathematical reasoning tasks
-
-See [src/gepa/adapters/](src/gepa/adapters/) for full documentation.
 
 ---
 
@@ -232,79 +200,108 @@ export OPENAI_API_KEY="your-key"
 python examples/dspy_adapter_example.py
 ```
 
-### Original GEPA Examples
-
-```bash
-# Simple prompt optimization (AIME)
-python -c "
-import gepa
-trainset, valset, _ = gepa.examples.aime.init_dataset()
-result = gepa.optimize(
-    seed_candidate={'system_prompt': 'You are a helpful assistant.'},
-    trainset=trainset, valset=valset,
-    task_lm='openai/gpt-4o-mini',
-    max_metric_calls=150,
-    reflection_lm='openai/gpt-4o'
-)
-print(result.best_candidate['system_prompt'])
-"
-
-# Terminal agent optimization
-pip install terminal-bench
-python src/gepa/examples/terminal-bench/train_terminus.py --model_name=gpt-4o-mini
-```
-
-**Full Tutorials:** [dspy.GEPA Tutorials](https://dspy.ai/tutorials/gepa_ai_program/) with executable notebooks
+**Original GEPA Examples**: For examples using the original GEPA implementation, see the [GEPA repository](https://github.com/gepa-ai/gepa) and [dspy.GEPA Tutorials](https://dspy.ai/tutorials/gepa_ai_program/)
 
 ---
 
 ## 🔬 How It Works
 
-### High-Level Architecture
+### High-Level Architecture (Single Island)
 
 ```mermaid
 graph TB
-    User[User Input<br/>Dataset + Seed Prompts] --> Islands[Island Orchestrators<br/>4 parallel processes]
+    Start[Input<br/>Dataset + Seed Prompts] --> Phase1{Phase 1<br/>Optimization Loop}
 
-    Islands --> Island1[Island 1]
-    Islands --> Island2[Island 2]
-    Islands --> Island3[Island 3]
-    Islands --> Island4[Island 4]
+    Phase1 --> Mutate[Generate Mutations<br/>Reflection + Spec Induction]
+    Mutate --> Eval[ASHA Evaluation<br/>Concurrent async]
+    Eval --> Archive[Update Archive<br/>Pareto + QD]
+    Archive --> Check1{Quality<br/>Target Met?}
 
-    Island1 --> Orch1[Orchestrator]
-    Island2 --> Orch2[Orchestrator]
-    Island3 --> Orch3[Orchestrator]
-    Island4 --> Orch4[Orchestrator]
+    Check1 -->|No| Phase1
+    Check1 -->|Yes| Phase2{Phase 2<br/>Temperature Cycling}
 
-    Orch1 --> Loop1[Optimization Loop]
-    Orch2 --> Loop2[Optimization Loop]
-    Orch3 --> Loop3[Optimization Loop]
-    Orch4 --> Loop4[Optimization Loop]
+    Phase2 --> TempExplore[Temperature Exploration<br/>±0.2 variations]
+    TempExplore --> EvalTemp[Evaluate Variants]
+    EvalTemp --> ArchiveTemp[Update Archive]
+    ArchiveTemp --> Check2{Auto-Stop<br/>Criteria?}
 
-    Loop1 --> Eval1[Async Evaluator<br/>64-256 concurrent]
-    Loop1 --> Mut1[Mutator<br/>3 strategies]
-    Loop1 --> Arch1[Archive<br/>Pareto + QD]
+    Check2 -->|No improvement| Phase2
+    Check2 -->|Converged| Results[Output<br/>Best Candidate<br/>Pareto Frontier<br/>QD Archive]
 
-    Eval1 --> Cache[Disk Cache<br/>20%+ hits]
-    Eval1 --> TaskLLM[Task LLM<br/>Execute candidates]
-
-    Mut1 --> RefLLM[Reflection LLM<br/>Generate mutations]
-
-    Arch1 --> Migration{Periodic<br/>Migration}
-
-    Migration -->|Top-K Elites| Island2
-    Migration -->|Top-K Elites| Island3
-    Migration -->|Top-K Elites| Island4
-
-    Arch1 --> Results[Results<br/>Pareto Frontier<br/>QD Archive<br/>Best Candidate]
-
-    style User fill:#e1f5ff
+    style Start fill:#e1f5ff
+    style Phase1 fill:#fff3cd
+    style Mutate fill:#d4edda
+    style Eval fill:#d1ecf1
+    style Archive fill:#ffeaa7
+    style Phase2 fill:#fdcb6e
+    style TempExplore fill:#fab1a0
     style Results fill:#d4edda
-    style Islands fill:#fff3cd
-    style Cache fill:#f8d7da
-    style TaskLLM fill:#d1ecf1
-    style RefLLM fill:#d1ecf1
 ```
+
+**Two-Phase Process**:
+- **Phase 1**: Main optimization with LLM-based mutations (reflection + spec induction) and ASHA pruning
+- **Phase 2**: Temperature cycling for final exploration once quality target is reached
+- **Auto-Stop**: Exits when no improvement detected (convergence)
+
+---
+
+### Multi-Island Parallelism (N Islands)
+
+Each island runs the **same loop above independently**, but with periodic information sharing:
+
+```mermaid
+graph TB
+    subgraph Island1[" Island 1 "]
+        Loop1[Core Optimization Loop<br/>as shown above]
+        Best1[Local Best<br/>Candidates]
+    end
+
+    subgraph Island2[" Island 2 "]
+        Loop2[Core Optimization Loop<br/>as shown above]
+        Best2[Local Best<br/>Candidates]
+    end
+
+    subgraph Island3[" Island 3 "]
+        Loop3[Core Optimization Loop<br/>as shown above]
+        Best3[Local Best<br/>Candidates]
+    end
+
+    subgraph Island4[" Island 4 "]
+        Loop4[Core Optimization Loop<br/>as shown above]
+        Best4[Local Best<br/>Candidates]
+    end
+
+    Loop1 --> Best1
+    Loop2 --> Best2
+    Loop3 --> Best3
+    Loop4 --> Best4
+
+    Best1 -.->|Every N rounds<br/>Top-K elites| Loop2
+    Best2 -.->|Every N rounds<br/>Top-K elites| Loop3
+    Best3 -.->|Every N rounds<br/>Top-K elites| Loop4
+    Best4 -.->|Every N rounds<br/>Top-K elites| Loop1
+
+    Loop1 --> Final[Combined Results<br/>Best from all islands]
+    Loop2 --> Final
+    Loop3 --> Final
+    Loop4 --> Final
+
+    style Island1 fill:#e3f2fd
+    style Island2 fill:#f3e5f5
+    style Island3 fill:#e8f5e9
+    style Island4 fill:#fff3e0
+    style Final fill:#d4edda
+```
+
+**Key Benefits**:
+- **Same Core Loop**: Each island runs the exact same optimization process independently
+- **Parallel Exploration**: 4 islands = 4× throughput, exploring different regions simultaneously
+- **Information Sharing**: Periodically share top-K elite candidates between islands (ring topology)
+- **Diversity Maintenance**: Each island maintains its own population, preventing premature convergence
+- **Fault Tolerance**: If one island gets stuck in local optimum, others continue exploring
+- **Final Merge**: Combine best candidates from all islands at the end
+
+**Configuration**: Set `n_islands=4` (or any number) - each runs as an independent process with the same core loop.
 
 ### Original GEPA Algorithm
 
@@ -394,46 +391,56 @@ TurboGEPA adds **performance engineering** without changing core algorithm:
 #### 1. ASHA Successive Halving
 
 ```mermaid
-graph LR
-    subgraph " "
-    Start[100 Candidates] --> S1[Shard 1: 5% data]
+graph TD
+    Start[100 Candidates Start] --> Rung1
+
+    subgraph Rung1[" Rung 1: 5% Dataset "]
+        direction TB
+        Eval1[Evaluate ALL 100 Candidates<br/>on 5% of data]
+        Eval1 --> Results1[Rank by Performance]
+        Results1 --> Keep1[✅ Keep Top 40<br/>40%]
+        Results1 --> Drop1[❌ Drop Bottom 60<br/>60%]
     end
 
-    S1 --> Eval1{Evaluate All<br/>100 candidates}
+    Keep1 --> Rung2
 
-    Eval1 --> Prune1[Prune Bottom 60%<br/>Keep Top 40]
+    subgraph Rung2[" Rung 2: 20% Dataset "]
+        direction TB
+        Eval2[Evaluate Top 40 Candidates<br/>on 20% of data]
+        Eval2 --> Results2[Rank by Performance]
+        Results2 --> Keep2[✅ Keep Top 16<br/>40%]
+        Results2 --> Drop2[❌ Drop Bottom 24<br/>60%]
+    end
 
-    Prune1 --> S2[Shard 2: 20% data]
+    Keep2 --> Rung3
 
-    S2 --> Eval2{Evaluate Top 40}
-
-    Eval2 --> Prune2[Prune Bottom 60%<br/>Keep Top 16]
-
-    Prune2 --> S3[Shard 3: 100% data]
-
-    S3 --> Eval3{Evaluate Top 16}
-
-    Eval3 --> Final[16 Fully Evaluated<br/>Candidates]
+    subgraph Rung3[" Rung 3: 100% Dataset "]
+        direction TB
+        Eval3[Evaluate Top 16 Candidates<br/>on 100% of data]
+        Eval3 --> Results3[Final Ranking]
+        Results3 --> Final[🏆 16 Elite Candidates<br/>Fully Evaluated]
+    end
 
     Final --> Archive[Add to Archive]
 
     style Start fill:#e1f5ff
-    style S1 fill:#fff3cd
-    style S2 fill:#ffeaa7
-    style S3 fill:#fdcb6e
-    style Eval1 fill:#d1ecf1
-    style Eval2 fill:#d1ecf1
-    style Eval3 fill:#d1ecf1
-    style Prune1 fill:#f8d7da
-    style Prune2 fill:#f8d7da
-    style Archive fill:#d4edda
+    style Rung1 fill:#fff3cd
+    style Rung2 fill:#ffeaa7
+    style Rung3 fill:#d4edda
+    style Keep1 fill:#b2fab4
+    style Keep2 fill:#b2fab4
+    style Drop1 fill:#fab1a0
+    style Drop2 fill:#fab1a0
+    style Final fill:#55efc4
+    style Archive fill:#74b9ff
 ```
 
-**Efficiency Gain**: Evaluates 100×5% + 40×20% + 16×100% = **29 full dataset equivalents** instead of 100.
+**Efficiency Gain**:
+- **Without ASHA**: 100 candidates × 100% data = **100 full evaluations**
+- **With ASHA**: (100 × 5%) + (40 × 20%) + (16 × 100%) = **29 full evaluation equivalents**
+- **Savings**: ~**71% fewer evaluations** while keeping the best candidates
 
-- **Without ASHA**: 100 candidates × 100% data = 100 full evaluations
-- **With ASHA**: 5 + 8 + 16 = 29 full evaluation equivalents
-- **Savings**: ~71% fewer evaluations while keeping the best candidates
+**How It Works**: Start with many candidates on cheap evaluations (5% data), progressively promote only the top performers to more expensive evaluations (20%, then 100%). Most poor candidates are eliminated early before wasting compute.
 
 #### 2. Island-Based Parallelism
 
@@ -480,78 +487,19 @@ graph TD
 - **Diversity**: Ring topology prevents premature convergence
 - **Robustness**: Different islands may discover different high-quality regions
 
-#### 3. Optimization Loop (Single Round)
-
-```mermaid
-sequenceDiagram
-    participant O as Orchestrator
-    participant S as Sampler
-    participant E as Evaluator
-    participant C as Cache
-    participant T as Task LLM
-    participant A as Archive
-    participant M as Mutator
-    participant R as Reflection LLM
-
-    Note over O: Round N begins
-
-    O->>S: Select hard examples
-    S-->>O: Example batch
-
-    O->>E: Evaluate candidates (ASHA)
-
-    loop For each candidate
-        E->>C: Check cache
-        alt Cache hit
-            C-->>E: Cached result
-        else Cache miss
-            E->>T: Execute on examples
-            T-->>E: Quality + traces
-            E->>C: Store result
-        end
-    end
-
-    E-->>O: Evaluation results
-
-    O->>A: Update archive
-    A->>A: Pareto filtering
-    A->>A: QD grid insertion
-    A-->>O: Updated frontier
-
-    O->>A: Select parents
-    A-->>O: Parent contexts<br/>(prompts + traces)
-
-    O->>M: Generate mutations
-    M->>M: Adaptive budget allocation
-    M->>R: Reflection mutations
-    M->>R: Spec induction mutations
-    M->>M: Temperature mutations
-    R-->>M: New prompt texts
-    M-->>O: New candidates
-
-    Note over O: Round N+1 begins
-```
-
-**Key Steps**:
-1. **Sampling**: Select challenging examples (hardness-aware)
-2. **Evaluation**: ASHA successive halving with disk caching
-3. **Selection**: Update Pareto frontier and QD archive
-4. **Mutation**: Generate new candidates using adaptive strategy
-5. **Repeat**: Next round with new candidates
-
-#### 4. Async Orchestration
+#### 3. Async Orchestration
    - Scales to available compute resources automatically
    - Adaptive per-island concurrency based on dataset size and hardware
    - Multi-island parallelism for population diversity
    - Non-blocking I/O for LLM API calls
    - Thread pool executor for DSPy/sync operations
 
-#### 5. Disk Caching
+#### 4. Disk Caching
    - Fingerprint-based cache for candidate evaluations
    - Persists across runs and islands
    - 20%+ hit rate in typical workloads after warm-up
 
-#### 6. Adaptive Configuration
+#### 5. Adaptive Configuration
    - Auto-tunes based on dataset size:
      - Small (<50): Conservative shards, low concurrency
      - Medium (50-500): Balanced settings
@@ -615,22 +563,6 @@ adapter = DefaultAdapter(
 )
 ```
 
-### Original GEPA Config
-
-```python
-import gepa
-
-result = gepa.optimize(
-    seed_candidate={"system_prompt": "..."},
-    trainset=trainset,
-    valset=valset,
-    task_lm="openai/gpt-4o-mini",
-    reflection_lm="openai/gpt-4o",
-    max_metric_calls=150,                    # Evaluation budget
-    reflection_minibatch_size=3,             # Examples per reflection
-    candidate_selection_strategy="pareto",   # "pareto" | "current_best"
-)
-```
 
 ---
 
@@ -677,10 +609,11 @@ If you use TurboGEPA's performance enhancements, please cite both this fork and 
 
 ```bibtex
 @software{turbogepa2025,
-  title={TurboGEPA: High-Throughput GEPA with Island Parallelism},
-  author={[Your Name/Organization]},
+  title={TurboGEPA: High-Throughput Prompt Evolution Framework},
+  author={Miller, Greg},
   year={2025},
-  url={https://github.com/[your-org]/gepa}
+  url={https://github.com/Studio-Intrinsic/turbo-gepa},
+  note={Performance-optimized fork of GEPA with island parallelism and async orchestration}
 }
 ```
 
@@ -731,7 +664,7 @@ If you use TurboGEPA's spec induction mutation operator, **please also cite Prom
 
 - **Discord**: [Join the #gepa channel](https://discord.gg/A7dABbtmFw)
 - **Twitter**: [@LakshyAAAgrawal](https://x.com/LakshyAAAgrawal) (original GEPA)
-- **Issues**: [GitHub Issues](https://github.com/[your-org]/gepa/issues)
+- **Issues**: [GitHub Issues](https://github.com/Studio-Intrinsic/turbo-gepa/issues)
 
 ### Talks & Tutorials
 
@@ -757,12 +690,27 @@ This project maintains the same license as the original GEPA repository.
 
 ## 🙏 Acknowledgments
 
-**TurboGEPA is built on the shoulders of giants.** All algorithmic credit goes to the original GEPA authors:
+**TurboGEPA is built on the shoulders of giants.**
 
-- Lakshya A Agrawal (UC Berkeley)
-- Omar Khattab (Stanford / Databricks)
-- Matei Zaharia (UC Berkeley / Databricks)
-- And the full GEPA author team
+### GEPA: Core Algorithm
+
+All algorithmic credit for the core GEPA framework goes to the original authors:
+
+**Lakshya A Agrawal¹, Shangyin Tan¹, Dilara Soylu², Noah Ziems⁴, Rishi Khare¹, Krista Opsahl-Ong⁵, Arnav Singhvi²⁵, Herumb Shandilya², Michael J Ryan², Meng Jiang⁴, Christopher Potts², Koushik Sen¹, Alexandros G. Dimakis¹³, Ion Stoica¹, Dan Klein¹, Matei Zaharia¹⁵, Omar Khattab⁶**
+
+¹UC Berkeley, ²Stanford University, ³BespokeLabs.ai, ⁴Notre Dame, ⁵Databricks, ⁶MIT
+
+The **core innovation**—LLM-based reflective mutation with Pareto selection—is entirely from the original GEPA paper.
+
+### Prompt-MII: Spec Induction
+
+TurboGEPA's spec induction mutation operator is inspired by the Prompt-MII work from:
+
+**Emily Xiao, Yixiao Zeng, Ada Chen, Chin-Jou Li, Amanda Bertsch, Graham Neubig**
+
+Carnegie Mellon University Language Technologies Institute
+
+### TurboGEPA: Performance Engineering
 
 TurboGEPA's contributions are limited to **performance engineering**:
 - Async/await orchestration
@@ -770,8 +718,6 @@ TurboGEPA's contributions are limited to **performance engineering**:
 - ASHA successive halving
 - Disk caching infrastructure
 - Adaptive configuration
-
-The **core innovation**—LLM-based reflective mutation with Pareto selection—is entirely from the original GEPA paper.
 
 ---
 

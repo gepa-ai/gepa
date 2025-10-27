@@ -1,26 +1,38 @@
-# Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
-# https://github.com/gepa-ai/gepa
+"""Logger classes for TurboGEPA.
+
+Copied from original GEPA implementation to maintain independence.
+"""
 
 import sys
 from typing import Protocol
 
 
 class LoggerProtocol(Protocol):
+    """Protocol for logger implementations."""
+
     def log(self, message: str):
+        """Log a message."""
         ...
 
 
 class StdOutLogger(LoggerProtocol):
+    """Simple logger that prints to stdout."""
+
     def log(self, message: str):
+        """Log a message to stdout."""
         print(message)
 
 
 class Tee:
+    """Write to multiple file-like objects simultaneously."""
+
     def __init__(self, *files):
         self.files = files
+
     def write(self, obj):
         for f in self.files:
             f.write(obj)
+
     def flush(self):
         for f in self.files:
             if hasattr(f, "flush"):
@@ -41,7 +53,10 @@ class Tee:
                 return f.fileno()
         raise OSError("No underlying file object with fileno")
 
+
 class Logger(LoggerProtocol):
+    """Logger that writes to both stdout and a file."""
+
     def __init__(self, filename, mode="a"):
         self.file_handle = open(filename, mode)
         self.file_handle_stderr = open(filename.replace("run_log.", "run_log_stderr."), mode)

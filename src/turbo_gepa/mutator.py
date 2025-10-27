@@ -6,7 +6,7 @@ import json
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Sequence, Set
-from gepa.logging.logger import LoggerProtocol, StdOutLogger
+from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
 
 from .interfaces import Candidate
 

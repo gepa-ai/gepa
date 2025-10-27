@@ -6,13 +6,13 @@ build-backend = "setuptools.build_meta"
 # Do not add spaces around the '=' sign for any of the fields
 # preceded by a marker comment as it affects the publish workflow.
 #replace_package_name_marker
-name="gepa"
+name="turbo-gepa"
 #replace_package_version_marker
-version="0.0.17"
-description = "A framework for optimizing textual system components (AI prompts, code snippets, etc.) using LLM-based reflection and Pareto-efficient evolutionary search."
+version="0.1.0"
+description = "High-throughput prompt evolution framework - production fork of GEPA with island-based parallelism, async orchestration, and ASHA successive halving."
 readme = "README.md"
 authors = [
-  { name = "Lakshya A Agrawal", email = "lakshyaaagrawal@berkeley.edu" }
+  { name = "Greg Miller", email = "greg@intrinsic-labs.ai" }
 ]
 license = { text = "MIT" }
 requires-python = ">=3.10, <3.14"
@@ -30,7 +30,7 @@ full = [
 ]
 dspy = []
 test = [
-    "gepa[full]",
+    "turbo-gepa[full]",
     "pytest"
 ]
 build = [
@@ -43,16 +43,18 @@ build = [
     "requests"
 ]
 dev = [
-    "gepa[test]",
-    "gepa[build]",
+    "turbo-gepa[test]",
+    "turbo-gepa[build]",
     "pre-commit",
     "build>=1.0.3",
     "ruff>=0.3.0"
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/gepa-ai/gepa"
-"Bug Tracker" = "https://github.com/gepa-ai/gepa/issues"
+"Homepage" = "https://github.com/Studio-Intrinsic/turbo-gepa"
+"Bug Tracker" = "https://github.com/Studio-Intrinsic/turbo-gepa/issues"
+"Documentation" = "https://github.com/Studio-Intrinsic/turbo-gepa#readme"
+"Original GEPA" = "https://github.com/gepa-ai/gepa"
 
 [tool.setuptools.packages.find]
 where = ["src"]

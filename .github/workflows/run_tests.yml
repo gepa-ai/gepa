@@ -150,9 +150,9 @@ jobs:
         run: uv run -p .venv python -m build
       - name: Install built package
         run: uv pip install dist/*.whl -p .venv
-      - name: Test import gepa
-        run: uv run -p .venv python -c "import gepa"
-      # Ensure gepa[dspy] does not bring in new packages
+      - name: Test import turbo_gepa
+        run: uv run -p .venv python -c "import turbo_gepa"
+      # Ensure turbo-gepa[dspy] does not bring in new packages
       - name: Install dependencies
         run: |
-          uv run --isolated --extra dspy python tests/ensure_gepa_dspy_dependency.py
+          uv run --isolated --extra dspy python tests/ensure_turbo_gepa_dspy_dependency.py

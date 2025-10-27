@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Awaitable, Callable, Dict, Iterable, List, Sequence
-from gepa.logging.logger import LoggerProtocol, StdOutLogger
+from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
 
 from .cache import DiskCache
 from .interfaces import Candidate, EvalResult

@@ -166,7 +166,7 @@ See `DSpyAdapter` or `DefaultAdapter` for complete examples.
 ## Dependencies
 
 - **DefaultAdapter**: litellm (required)
-- **DSpyAdapter**: dspy-ai (optional, installed via `pip install gepa[dspy]`)
+- **DSpyAdapter**: dspy-ai (optional, installed via `pip install turbo-gepa[dspy]`)
 
 ## Best Practices
 
