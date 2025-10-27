@@ -162,18 +162,12 @@ class DefaultAdapter:
                 strategy=shard_strategy,
                 available_compute=available_compute
             )
-            print(f"🔧 Auto-configured for {len(dataset)} examples ({available_compute}, {shard_strategy}):")
-            print(f"   Shards: {config.shards}")
-            print(f"   Batch size: {config.batch_size}, Mutations/round: {config.max_mutations_per_round}")
-            print(f"   Eval concurrency: {config.eval_concurrency}, Islands: {config.n_islands}")
 
         self.config = config
         self.dataset = list(dataset)
 
         # Normalise model configuration objects
         if isinstance(task_lm, ModelConfig):
-            if task_lm_temperature is not None:
-                print("⚠️  task_lm_temperature ignored because a ModelConfig was provided for task_lm.")
             self.task_model = task_lm
         else:
             assert isinstance(task_lm, str)
@@ -183,8 +177,6 @@ class DefaultAdapter:
             )
 
         if isinstance(reflection_lm, ModelConfig):
-            if reflection_lm_temperature is not None:
-                print("⚠️  reflection_lm_temperature ignored because a ModelConfig was provided for reflection_lm.")
             self.reflection_model = reflection_lm
         else:
             assert isinstance(reflection_lm, str)
@@ -242,10 +234,6 @@ class DefaultAdapter:
 
         Uses litellm for provider-agnostic testing (OpenAI, Anthropic, etc.)
         """
-        import time
-        start = time.time()
-        print(f"🔍 Checking temperature support for {model}...")
-
         try:
             import litellm
 
@@ -256,18 +244,13 @@ class DefaultAdapter:
                 temperature=test_temp,
                 max_tokens=1,
             )
-            elapsed = time.time() - start
-            print(f"✓ Temperature check passed ({elapsed:.2f}s)")
             return True
         except Exception as e:
-            elapsed = time.time() - start
             error_msg = str(e).lower()
             # Check if error is specifically about temperature
             if "temperature" in error_msg or "does not support" in error_msg or "not supported" in error_msg:
-                print(f"✗ Temperature not supported ({elapsed:.2f}s)")
                 return False
             # Other errors (auth, network) - assume temperature works
-            print(f"⚠️  Temperature check had error but assuming support ({elapsed:.2f}s): {str(e)[:100]}")
             return True
 
     def _create_batched_llm_reflection_runner(self, reflection_lm: str):
@@ -370,9 +353,7 @@ Write {num_mutations} new instruction variants. Separate each instruction with a
                 if self.reflection_model.reasoning_effort is not None:
                     completion_kwargs["reasoning_effort"] = self.reflection_model.reasoning_effort
 
-                print(f"🔵 REFLECTION CALL START: model={completion_kwargs['model']}, mutations={num_mutations}", flush=True)
                 response = await acompletion(**completion_kwargs)
-                print(f"🟢 REFLECTION CALL SUCCESS: mutations={num_mutations}", flush=True)
 
                 elapsed = time.time() - start_time
                 content = response.choices[0].message.content
@@ -380,7 +361,6 @@ Write {num_mutations} new instruction variants. Separate each instruction with a
                 mutations = [m.strip() for m in content.split("---") if m.strip()]
 
                 # Log timing for diagnostics
-                print(f"   ⚡ Batched reflection ({len(parent_contexts)} parents): {elapsed:.2f}s → {len(mutations)} mutations")
 
                 return mutations[:num_mutations]
 
@@ -388,7 +368,6 @@ Write {num_mutations} new instruction variants. Separate each instruction with a
                 elapsed = time.time() - start_time
                 error_type = type(e).__name__
                 error_msg = str(e)
-                print(f"❌ REFLECTION CALL ERROR after {elapsed:.2f}s: {error_type}: {error_msg}", flush=True)
                 raise RuntimeError(
                     f"Batched reflection LLM call failed after {elapsed:.2f}s ({error_type}: {error_msg}). "
                     "Check your API key, model name, and network connection."
@@ -466,7 +445,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                     completion_kwargs["temperature"] = self.reflection_model.temperature
                 if self.reflection_model.reasoning_effort is not None:
                     completion_kwargs["reasoning_effort"] = self.reflection_model.reasoning_effort
-                print(f"🔵 SPEC CALL START: model={completion_kwargs['model']}, specs={num_specs}", flush=True)
 
                 response = await acompletion(**completion_kwargs)
 
@@ -476,8 +454,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 specs = [s.strip() for s in content.split("---") if s.strip()]
 
                 # Log timing for diagnostics
-                print(f"🟢 SPEC CALL SUCCESS: specs={len(specs)} in {elapsed:.2f}s", flush=True)
-                print(f"   ⚡ Spec induction ({len(task_examples)} examples): {elapsed:.2f}s → {len(specs)} specs")
 
                 return specs[:num_specs]
 
@@ -485,7 +461,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 elapsed = time.time() - start_time
                 error_type = type(e).__name__
                 error_msg = str(e)
-                print(f"❌ SPEC CALL ERROR after {elapsed:.2f}s: {error_type}: {error_msg}", flush=True)
                 raise RuntimeError(
                     f"Spec induction LLM call failed after {elapsed:.2f}s ({error_type}: {error_msg}). "
                     "Check your API key, model name, and network connection."
@@ -637,20 +612,15 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             # Try with temperature, fall back without it if model doesn't support it
             import time as _time_module
             _start_llm = _time_module.time()
-            print(f"🔵 LLM CALL START: model={completion_kwargs['model']}, example_id={example_id}")
             try:
                 response = await acompletion(**completion_kwargs)
                 _elapsed_llm = _time_module.time() - _start_llm
-                print(f"🟢 LLM CALL SUCCESS: {_elapsed_llm:.2f}s, example_id={example_id}")
             except Exception as e:
                 _elapsed_llm = _time_module.time() - _start_llm
-                print(f"🔴 LLM CALL ERROR: {_elapsed_llm:.2f}s, error={type(e).__name__}: {str(e)[:100]}")
                 # Some models don't support custom temperature (e.g., o1-preview)
                 if "temperature" in str(e).lower() and completion_kwargs.get("temperature") is not None:
-                    print(f"🟡 RETRYING without temperature parameter...")
                     completion_kwargs.pop("temperature", None)
                     response = await acompletion(**completion_kwargs)
-                    print(f"🟢 RETRY SUCCESS")
                 else:
                     raise  # Re-raise if it's a different error
 
@@ -816,7 +786,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         This approach avoids variance issues by separating "what to say" from
         "how stochastic to be".
         """
-        print("\n🔄 PHASE 1: Optimizing prompts (no temperature cycling)...")
 
         # Phase 1: Ensure seeds have NO temperature (so mutator won't create temp variants)
         phase1_seeds = []
@@ -843,11 +812,9 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
 
         phase1_pareto = orchestrator1.archive.pareto_entries()
         phase1_stats = orchestrator1.evolution_snapshot(include_edges=True)
-        print(f"   ✓ Phase 1 complete: {len(phase1_pareto)} candidates on Pareto frontier")
 
         # Early exit if temperature not supported
         if not self.temperature_supported:
-            print("   ⚠️  Skipping Phase 2 (temperature not supported by model)")
             return {
                 "pareto": [e.candidate for e in phase1_pareto],
                 "pareto_entries": phase1_pareto,
@@ -859,7 +826,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
 
         # Early exit if no pareto frontier
         if not phase1_pareto:
-            print("   ⚠️  Skipping Phase 2 (no candidates from Phase 1)")
             return {
                 "pareto": [],
                 "pareto_entries": [],
@@ -869,7 +835,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 "evolution_stats": self._combine_evolution_snapshots([phase1_stats]),
             }
 
-        print("\n🌡️  PHASE 2: Temperature optimization for top prompts...")
 
         # Take top K prompts sorted by quality
         top_k = min(5, len(phase1_pareto))
@@ -887,7 +852,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             meta = dict(entry.candidate.meta, temperature=0.5, source="phase2_seed")
             temp_seeds.append(Candidate(text=entry.candidate.text, meta=meta))
 
-        print(f"   Starting with {len(temp_seeds)} temperature-enabled seeds from top prompts")
 
         # Run Phase 2 optimization (30% of remaining budget, shorter rounds)
         phase2_budget = int(max_evaluations * 0.3) if max_evaluations else None
@@ -902,7 +866,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
 
         phase2_pareto = orchestrator2.archive.pareto_entries()
         phase2_stats = orchestrator2.evolution_snapshot(include_edges=True)
-        print(f"   ✓ Phase 2 complete: {len(phase2_pareto)} best (prompt, temperature) combinations")
 
         combined_stats = self._combine_evolution_snapshots([phase1_stats, phase2_stats])
 
@@ -934,10 +897,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 self.config.migration_period != tuned_period
                 or self.config.migration_k != tuned_k
             ):
-                print(
-                    f"🔁 Multi-island tuning: migration_period {self.config.migration_period}→{tuned_period}, "
-                    f"migration_k {self.config.migration_k}→{tuned_k}"
-                )
                 self.config.migration_period = tuned_period
                 self.config.migration_k = tuned_k
         normalized_seeds = self._normalize_seeds(seeds, source="seed")
@@ -1118,11 +1077,9 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         """
         import time
         optimize_start = time.time()
-        print(f"\n⏱️  optimize() called at {optimize_start:.2f}")
 
         # Handle seed initialization if requested
         if enable_seed_initialization:
-            print(f"🌱 Initializing seeds...")
             from ..seed_initializer import maybe_initialize_seeds
 
             # Convert user seeds to strings if provided
@@ -1150,7 +1107,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             # No seeds provided and initialization disabled - use default
             seeds = ["You are a helpful assistant. Follow the instructions carefully."]
 
-        print(f"⏱️  Calling optimize_async() after {time.time() - optimize_start:.2f}s")
         return asyncio.run(
             self.optimize_async(
                 seeds,

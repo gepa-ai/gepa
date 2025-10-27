@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Awaitable, Callable, Dict, Iterable, List, Sequence
+from gepa.logging.logger import LoggerProtocol, StdOutLogger
 
 from .cache import DiskCache
 from .interfaces import Candidate, EvalResult
@@ -29,6 +30,7 @@ class AsyncEvaluator:
         validators: Iterable[Validator] | None = None,
         metrics_mapper: MetricsMapper | None = None,
         verbose_errors: bool = False,
+        logger: LoggerProtocol | None = None,
     ) -> None:
         self.cache = cache
         self.task_runner = task_runner
@@ -37,6 +39,7 @@ class AsyncEvaluator:
         self.verbose_errors = verbose_errors
         self._inflight_examples: int = 0
         self._max_observed_inflight: int = 0
+        self.logger: LoggerProtocol = logger or StdOutLogger()
 
     async def eval_on_shard(
         self,
@@ -74,9 +77,9 @@ class AsyncEvaluator:
                 results.append(cached)
                 completed += 1
                 if show_progress:
-                    import sys
-                    sys.stdout.write(f"\r   Progress: {completed}/{total} examples ({completed/total*100:.0f}%)")
-                    sys.stdout.flush()
+                    self.logger.log(
+                        f"Progress: {completed}/{total} examples ({completed/total*100:.0f}%)"
+                    )
                 return
 
             try:
@@ -106,15 +109,15 @@ class AsyncEvaluator:
                 eval_durations.append(eval_duration)
 
                 if show_progress:
-                    import sys
-                    sys.stdout.write(f"\r   Progress: {completed}/{total} examples ({completed/total*100:.0f}%)")
-                    sys.stdout.flush()
+                    self.logger.log(
+                        f"Progress: {completed}/{total} examples ({completed/total*100:.0f}%)"
+                    )
             except Exception as e:
                 self._inflight_examples = max(0, self._inflight_examples - 1)
                 # Handle task runner failures gracefully
                 # Return zero scores to avoid crashing the entire batch
                 if self.verbose_errors:
-                    print(f"Warning: Evaluation failed for example {example_id}: {e}")
+                    self.logger.log(f"Warning: Evaluation failed for example {example_id}: {e}")
                 fallback_metrics = {
                     "quality": 0.0,
                     "neg_cost": 0.0,
@@ -161,10 +164,12 @@ class AsyncEvaluator:
                 # Early stop if we've been waiting too long for stragglers
                 if time_since_should_have_hit_target > expected_time_for_remaining and remaining >= 2:
                     if show_progress:
-                        import sys
-                        sys.stdout.write(f"\n   ⚡ Early stop: {completed}/{total} complete ({completed/total*100:.0f}%), cancelling {remaining} stragglers\n")
-                        sys.stdout.write(f"      Avg eval duration: {avg_duration:.1f}s, waited {time_since_should_have_hit_target:.1f}s past target...\n")
-                        sys.stdout.flush()
+                        self.logger.log(
+                            f"⚡ Early stop: {completed}/{total} complete ({completed/total*100:.0f}%), cancelling {remaining} stragglers"
+                        )
+                        self.logger.log(
+                            f"      Avg eval duration: {avg_duration:.1f}s, waited {time_since_should_have_hit_target:.1f}s past target..."
+                        )
                     # Cancel remaining tasks - they're stragglers
                     for task in pending:
                         task.cancel()
@@ -180,10 +185,7 @@ class AsyncEvaluator:
                 except Exception:
                     pass  # Already handled in eval_one
 
-        if show_progress:
-            import sys
-            sys.stdout.write("\n")  # Newline after progress bar
-            sys.stdout.flush()
+        # No explicit progress bar cleanup when using logger
 
         totals: Dict[str, float] = {}
         traces: List[Dict[str, float]] = []

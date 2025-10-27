@@ -6,6 +6,7 @@ import json
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Sequence, Set
+from gepa.logging.logger import LoggerProtocol, StdOutLogger
 
 from .interfaces import Candidate
 
@@ -52,6 +53,7 @@ class Mutator:
         spec_induction_runner: SpecInductionRunner | None = None,
         seed: int | None = None,
         temperature_mutations_enabled: bool = True,
+        logger: LoggerProtocol | None = None,
     ) -> None:
         self.config = config
         extra_validators = list(validators or [])
@@ -74,6 +76,7 @@ class Mutator:
         self._spec_cache: Dict[str, deque[str]] = {}
         self._spec_cache_limit = max(4, config.max_mutations or 8)
         self._spec_runner_signature = _describe_callable(spec_induction_runner)
+        self.logger: LoggerProtocol = logger or StdOutLogger()
 
     def set_reflection_examples(self, examples: List[Dict[str, object]]) -> None:
         self._reflection_examples = examples
@@ -201,13 +204,13 @@ class Mutator:
         propose_total = time.time() - propose_start
 
         # Log timing breakdown
-        print(f"\n⏱️  Mutator timing breakdown:")
-        print(f"   Temperature mutations: {temp_time:.2f}s ({len(temp_mutations)} generated)")
-        print(f"   LLM calls (parallel): {llm_time:.2f}s")
-        print(f"     - Reflection: {len(reflection_mutations)} mutations")
-        print(f"     - Spec induction: {len(spec_mutations)} mutations")
-        print(f"   Filtering: {filter_time:.2f}s")
-        print(f"   Total propose: {propose_total:.2f}s")
+        self.logger.log("⏱️  Mutator timing breakdown:")
+        self.logger.log(f"   Temperature mutations: {temp_time:.2f}s ({len(temp_mutations)} generated)")
+        self.logger.log(f"   LLM calls (parallel): {llm_time:.2f}s")
+        self.logger.log(f"     - Reflection: {len(reflection_mutations)} mutations")
+        self.logger.log(f"     - Spec induction: {len(spec_mutations)} mutations")
+        self.logger.log(f"   Filtering: {filter_time:.2f}s")
+        self.logger.log(f"   Total propose: {propose_total:.2f}s")
 
         return filtered
 
@@ -271,6 +274,28 @@ class Mutator:
         if num_mutations <= 0 or not self.spec_induction_runner:
             return []
 
+        # Build reflection contexts similar to incremental mutations
+        # but the spec_induction_runner will use a different prompt template
+        reflection_contexts = []
+        for ctx in parent_contexts:
+            candidate = ctx["candidate"]
+            failures = ctx.get("failures", []) or []
+
+            # Collect failure traces
+            traces = []
+            for _example_id, trace_list in failures:
+                traces.extend(trace_list)
+
+            # Limit traces per parent to avoid token explosion
+            traces = traces[: self.config.reflection_batch_size]
+
+            reflection_contexts.append({
+                "prompt": candidate.text,
+                "traces": traces,
+                "meta": dict(candidate.meta),
+            })
+
+        # Cache key based on contexts + examples
         serialized_examples = sorted(json.dumps(ex, sort_keys=True) for ex in task_examples)
         parent_fingerprints = sorted(ctx["candidate"].fingerprint for ctx in parent_contexts) if parent_contexts else []
         cache_payload = {
@@ -288,8 +313,9 @@ class Mutator:
         remaining = num_mutations - len(spec_texts)
         if remaining > 0:
             prefetch = min(self._spec_cache_limit, max(remaining, remaining * 2))
+            # Pass reflection_contexts (with prompts + traces) instead of just task_examples
             new_specs = await self._collect_text_batches(
-                lambda: self.spec_induction_runner(task_examples, 1),
+                lambda: self.spec_induction_runner(reflection_contexts, 1),
                 prefetch,
                 max(1, min(4, prefetch)),
             )
@@ -331,7 +357,9 @@ class Mutator:
             return []
 
         max_concurrency = max(1, min(max_concurrency, total))
-        print(f"🌀 Mutation batch starting: total={total}, max_concurrency={max_concurrency}, early_stop={early_stop_fraction}", flush=True)
+        self.logger.log(
+            f"🌀 Mutation batch starting: total={total}, max_concurrency={max_concurrency}, early_stop={early_stop_fraction}"
+        )
         pending: Dict[asyncio.Task[Sequence[str]], float] = {}  # task -> start_time
         results: List[str] = []
         started = 0
@@ -342,7 +370,7 @@ class Mutator:
         while len(results) < total:
             while started < total and len(pending) < max_concurrency:
                 task = asyncio.create_task(factory())
-                print(f"   ➕ Launched mutation task {started + 1}/{total}", flush=True)
+                self.logger.log(f"   ➕ Launched mutation task {started + 1}/{total}")
                 pending[task] = time.time()  # Record when this task started
                 started += 1
 
@@ -371,11 +399,10 @@ class Mutator:
 
                 # Early stop if we've been waiting too long for stragglers
                 if time_since_should_have_hit_target > expected_time_for_remaining and remaining >= 2:
-                    print(
+                    self.logger.log(
                         f"   ⚠️ Mutation early stop: produced={len(results)}/{total} ({len(results)/total*100:.0f}%), "
                         f"remaining={remaining}, avg_duration={avg_duration:.1f}s, "
-                        f"waited={time_since_should_have_hit_target:.1f}s",
-                        flush=True,
+                        f"waited={time_since_should_have_hit_target:.1f}s"
                     )
                     # Cancel remaining tasks - they're stragglers
                     for task in pending:
@@ -391,15 +418,16 @@ class Mutator:
                     if batch:
                         results.append(batch[0])
                         mutation_durations.append(task_duration)  # Track individual duration
-                        print(
+                        self.logger.log(
                             f"   ✅ Mutation task complete in {task_duration:.2f}s "
-                            f"(generated {len(batch)} candidates, total so far {len(results)})",
-                            flush=True,
+                            f"(generated {len(batch)} candidates, total so far {len(results)})"
                         )
                 except asyncio.CancelledError:
                     pass  # Expected for cancelled tasks
 
-        print(f"✅ Mutation batch finished: generated={len(results)} (requested {total})", flush=True)
+        self.logger.log(
+            f"✅ Mutation batch finished: generated={len(results)} (requested {total})"
+        )
         return results[:total]
 
     def _filter(self, candidates: Iterable[Candidate]) -> List[Candidate]:

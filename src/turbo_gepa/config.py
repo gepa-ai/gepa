@@ -117,7 +117,6 @@ class Config:
     qd_bins_bullets: int = 6
     qd_flags: Sequence[str] = field(default_factory=lambda: ("cot", "format", "fewshot"))
     reflection_batch_size: int = 6
-    # merge_period and merge_uplift_min removed - merge functionality removed
     max_tokens: int = 2048
     migration_period: int = 2
     migration_k: int = 3

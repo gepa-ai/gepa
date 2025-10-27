@@ -19,7 +19,7 @@ from .config import Config
 from .evaluator import AsyncEvaluator
 from .interfaces import Candidate, EvalResult
 from .islands import IslandContext, integrate_in, migrate_out
-# Merge functionality removed - reflection LLM handles combining prompt ideas
+from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from .mutator import Mutator
 from .sampler import InstanceSampler
 from .scheduler import BudgetedScheduler, SchedulerConfig
@@ -44,6 +44,7 @@ class Orchestrator:
         enable_auto_stop: bool = False,
         example_sampler: Optional[Callable[[int], List[Dict[str, object]]]] = None,
         metrics_callback: Optional[Callable] = None,
+        logger: Optional[LoggerProtocol] = None,
     ) -> None:
         self.config = config
         self.evaluator = evaluator
@@ -60,7 +61,6 @@ class Orchestrator:
                 quantile=config.cohort_quantile,
             )
         )
-        # Merge manager removed - reflection LLM handles combining ideas
         self.queue: Deque[Candidate] = deque(maxlen=config.queue_limit)
         self._per_shard_queue: List[Deque[Candidate]] = [deque() for _ in range(len(config.shards))]
         self._pending_fingerprints: Set[str] = set()
@@ -69,7 +69,6 @@ class Orchestrator:
         self.latest_results: Dict[str, EvalResult] = {}
         self.evaluations_run: int = 0
         self.round_index: int = 0
-        # Merge tracking removed
         self.show_progress = show_progress
         island_id = island_context.island_id if island_context else 0
         self.island_id = island_id
@@ -79,6 +78,7 @@ class Orchestrator:
         self.qd_cells_seen: set[tuple] = set()
         self._shard_cache: Dict[tuple[int, float], List[str]] = {}
         self.metrics_callback = metrics_callback
+        self.logger: LoggerProtocol = logger or StdOutLogger()
         self.max_rounds: Optional[int] = None
         self.max_evaluations: Optional[int] = None
         self.rounds_completed: int = 0
@@ -205,7 +205,10 @@ class Orchestrator:
             if state:
                 await self._restore_state(state)
                 resumed = True
-                print(f"🔄 Resumed from round {self.round_index + 1} ({self.evaluations_run} evaluations)")
+                if self.show_progress:
+                    self.logger.log(
+                        f"🔄 Resumed from round {self.round_index + 1} ({self.evaluations_run} evaluations)"
+                    )
 
         if not resumed:
             await self._seed_archive(seeds)
@@ -219,7 +222,7 @@ class Orchestrator:
                 try:
                     await self._spawn_mutations(callback=self._mutation_buffer.append)
                 except Exception as exc:  # pragma: no cover - debugging aid
-                    print(f"\n❌ Mutation task error: {type(exc).__name__}: {exc}", flush=True)
+                    self.logger.log(f"❌ Mutation task error: {type(exc).__name__}: {exc}")
                     raise
             self._mutation_task = asyncio.create_task(_mutation_wrapper())
 
@@ -266,12 +269,10 @@ class Orchestrator:
                 if should_update:
                     pareto = self.archive.pareto_entries()
                     best_q = self._get_best_quality_from_full_shard() if pareto else 0.0
-                    print(
-                        f"\r   🔄 Evaluations: {self.evaluations_run} | Inflight: {self._total_inflight} | "
+                    self.logger.log(
+                        f"🔄 Evaluations: {self.evaluations_run} | Inflight: {self._total_inflight} | "
                         f"ExInflight: {self._examples_inflight}/{self._effective_concurrency} | "
-                        f"Queue: {len(self.queue)} | Best: {best_q:.1%}",
-                        end="",
-                        flush=True,
+                        f"Queue: {len(self.queue)} | Best: {best_q:.1%}"
                     )
                     last_progress_display = self.evaluations_run
                     if self.metrics_callback is not None:
@@ -311,8 +312,8 @@ class Orchestrator:
                         task_state = f"done({exc})"
                     else:
                         task_state = "running"
-                    print(
-                        f"\n🧭 Debug: queue=0 buffer=0 inflight={self._total_inflight} "
+                    self.logger.log(
+                        f"🧭 Debug: queue=0 buffer=0 inflight={self._total_inflight} "
                         f"examples_inflight={self._examples_inflight}/{self._effective_concurrency} "
                         f"mutation_task={task_state} pending_fp={len(self._pending_fingerprints)} "
                         f"inflight_fp={len(self._inflight_fingerprints)}"
@@ -336,9 +337,9 @@ class Orchestrator:
 
                 # Clear inline progress before showing summary
                 if self.show_progress:
-                    print()  # Newline to clear the inline progress indicator
+                    # logger prints discrete lines; no inline clearing needed
+                    pass
 
-                await self._maybe_log_summary()
                 self._shard_cache.clear()
 
                 if self.config.migration_period and window_id % self.config.migration_period == 0:
@@ -350,7 +351,7 @@ class Orchestrator:
                     should_stop, debug_info = self._check_stop_governor()
                     if should_stop:
                         if self.show_progress:
-                            print(f"\n🛑 Auto-stopping: {debug_info['reason']}")
+                            self.logger.log(f"🛑 Auto-stopping: {debug_info['reason']}")
                         break
 
             # 6) Target quality guard
@@ -673,15 +674,15 @@ class Orchestrator:
         elites = [candidate]
         migrate_out(self.island_context, elites)
         if self.show_progress:
-            print(
-                f"\n🌍 Island {self.island_id}: promoting candidate {candidate.fingerprint[:8]} on shard {shard_fraction:.2f}"
+            self.logger.log(
+                f"🌍 Island {self.island_id}: promoting candidate {candidate.fingerprint[:8]} on shard {shard_fraction:.2f}"
             )
         self._last_shared[key] = now
         incoming = integrate_in(self.island_context)
         if incoming:
             if self.show_progress:
                 ids = ", ".join(c.fingerprint[:8] for c in incoming)
-                print(f"\n🌐 Island {self.island_id}: received {len(incoming)} candidate(s): {ids}")
+                self.logger.log(f"🌐 Island {self.island_id}: received {len(incoming)} candidate(s): {ids}")
             self.enqueue(incoming)
 
     async def _stream_process_result(
@@ -720,10 +721,10 @@ class Orchestrator:
             return False
 
         if self.show_progress:
-            print(
-                f"\n🎯 Target quality {self.config.target_quality:.2%} reached! Achieved: {best_quality:.2%}"
+            self.logger.log(
+                f"🎯 Target quality {self.config.target_quality:.2%} reached! Achieved: {best_quality:.2%}"
             )
-            print(f"   (Verified on full dataset: {full_shard:.0%} of examples)")
+            self.logger.log(f"   (Verified on full dataset: {full_shard:.0%} of examples)")
         return True
 
     # === Streaming Launch Helpers ===
@@ -734,8 +735,10 @@ class Orchestrator:
         shard = self.sampler.sample_shard(self.round_index, shard_size)
 
         if self.show_progress:
-            print(f"\n🌱 Evaluating {len(seeds)} seed prompt(s) on {shard_size} examples ({shard_fraction:.0%} of dataset)...")
-            print(f"   This establishes the baseline for optimization.")
+            self.logger.log(
+                f"🌱 Evaluating {len(seeds)} seed prompt(s) on {shard_size} examples ({shard_fraction:.0%} of dataset)..."
+            )
+            self.logger.log("   This establishes the baseline for optimization.")
 
         results = await asyncio.gather(
             *[
@@ -745,7 +748,7 @@ class Orchestrator:
         )
 
         if self.show_progress:
-            print(f"   ✓ Seed evaluation complete!\n")
+            self.logger.log("   ✓ Seed evaluation complete!")
 
         enriched: List[Candidate] = []
         for seed, result in zip(seeds, results):
@@ -819,9 +822,6 @@ class Orchestrator:
         )
         return best_quality
 
-    def _show_inline_progress(self) -> None:
-        return
-
     async def _spawn_mutations(self, callback: Optional[Callable[[Candidate], None]] = None) -> None:
         """Generate mutations using batched reflection for efficiency."""
         # Check if we've exceeded the evaluation budget before spawning mutations
@@ -830,33 +830,30 @@ class Orchestrator:
 
         entries = self.archive.pareto_entries()
         if not entries:
-            print("ℹ️  spawn_mutations: archive empty, skipping.", flush=True)
+            self.logger.log("ℹ️  spawn_mutations: archive empty, skipping.")
             return
 
         num_mutations = self._mutation_budget()
         if num_mutations <= 0:
-            print(
-                f"ℹ️  spawn_mutations: budget={num_mutations}, queue={len(self.queue)}, buffer={len(self._mutation_buffer)} — skipping.",
-                flush=True,
+            self.logger.log(
+                f"ℹ️  spawn_mutations: budget={num_mutations}, queue={len(self.queue)}, buffer={len(self._mutation_buffer)} — skipping."
             )
             return
 
-        print(
-            f"\n🧭 spawn_mutations: parents={len(entries)} budget={num_mutations} "
-            f"queue={len(self.queue)} buffer={len(self._mutation_buffer)}",
-            flush=True,
+        self.logger.log(
+            f"🧭 spawn_mutations: parents={len(entries)} budget={num_mutations} "
+            f"queue={len(self.queue)} buffer={len(self._mutation_buffer)}"
         )
         mutations = await self._generate_mutations_batched(entries, num_mutations)
         if not mutations:
-            print("⚠️  spawn_mutations: runner returned no candidates.", flush=True)
+            self.logger.log("⚠️  spawn_mutations: runner returned no candidates.")
             return
 
         self._record_mutation_enqueued(len(mutations))
         if self.show_progress:
-            print(
+            self.logger.log(
                 f"   ↳ generated {len(mutations)} mutation(s) "
-                f"(total generated={self._mutations_generated}, promoted={len(self._promoted_children)})",
-                flush=True,
+                f"(total generated={self._mutations_generated}, promoted={len(self._promoted_children)})"
             )
         if callback:
             for candidate in mutations:
@@ -1120,8 +1117,8 @@ class Orchestrator:
             import time as _time_budget
             now = _time_budget.time()
             if now - self._last_budget_log > 5.0:
-                print(
-                    f"\n🧭 Debug: mutation budget 0 "
+                self.logger.log(
+                    f"🧭 Debug: mutation budget 0 "
                     f"(ready={ready} target_ready={target_ready} "
                     f"queue={len(self.queue)} buffer={len(self._mutation_buffer)})"
                 )
@@ -1137,8 +1134,6 @@ class Orchestrator:
         else:
             # Fallback: return empty list (spec induction won't run)
             return []
-
-    # _maybe_merge method removed - reflection LLM handles combining ideas from multiple prompts
 
     async def _maybe_migrate(self) -> None:
         if not self.island_context:
@@ -1156,7 +1151,7 @@ class Orchestrator:
         if elites:
             if self.show_progress:
                 ids = ", ".join(candidate.fingerprint[:8] for candidate in elites)
-                print(f"\n🌍 Island {self.island_id}: migrating out {len(elites)} candidate(s): {ids}")
+                self.logger.log(f"🌍 Island {self.island_id}: migrating out {len(elites)} candidate(s): {ids}")
             migrate_out(self.island_context, elites)
 
         pareto_entries = self.archive.pareto_entries()
@@ -1175,7 +1170,7 @@ class Orchestrator:
         if incoming:
             if self.show_progress:
                 ids = ", ".join(candidate.fingerprint[:8] for candidate in incoming)
-                print(f"\n🌐 Island {self.island_id}: received {len(incoming)} candidate(s): {ids}")
+                self.logger.log(f"🌐 Island {self.island_id}: received {len(incoming)} candidate(s): {ids}")
             self.enqueue(incoming)
 
     async def _evaluate_candidate(
@@ -1210,13 +1205,6 @@ class Orchestrator:
         total = max(len(self.sampler.example_ids), 1)
         size = max(1, int(total * shard_fraction))
         return min(size, total)
-
-    def _update_dashboard_progress(self, evals_done: int, evals_total: int) -> None:
-        """Dashboard removed; no-op."""
-        return
-    async def _maybe_log_summary(self) -> None:
-        """Placeholder summary logger (dashboard removed)."""
-        return
 
     def _check_stop_governor(self) -> tuple[bool, Dict]:
         """Update stop governor with current metrics and check if we should stop."""
@@ -1283,7 +1271,7 @@ class Orchestrator:
             qd_total_cells=self.config.qd_bins_length * self.config.qd_bins_bullets * len(self.config.qd_flags),
             qd_novelty_rate=qd_novelty_rate,
             total_tokens_spent=self.total_tokens_spent,
-            shadow_significant=True,  # TODO: implement shadow shard testing
+            shadow_significant=True,  # Shadow shard testing not implemented (optional v2 feature)
         )
 
         self.stop_governor.update(metrics)

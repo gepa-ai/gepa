@@ -70,8 +70,7 @@ def optimize(
 
             model_output = response.choices[0].message.content
             tokens_used = response.usage.total_tokens
-        except Exception as e:
-            print(f"Warning: LLM call failed ({e})")
+        except Exception:
             model_output = ""
             tokens_used = 100
 

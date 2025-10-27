@@ -238,14 +238,18 @@ class DSpyAdapter:
         # Get example
         example = self.example_map[example_id]
 
-        # Evaluate
-        result = await self._evaluate_single(program, example, example_id, capture_traces=False)
+        # Evaluate (always capture traces for reflection)
+        result = await self._evaluate_single(program, example, example_id, capture_traces=True)
 
         # Add token cost (approximate from instruction length)
         tokens = sum(len(inst.split()) for inst in instructions.values())
         result["tokens"] = float(tokens)
         result["neg_cost"] = -float(tokens)
         result["example_id"] = example_id
+
+        # Add example inputs for reflection
+        result["input"] = str(example.inputs())
+        result["expected_output"] = str(example.labels()) if hasattr(example, "labels") else ""
 
         return result
 
@@ -490,7 +494,7 @@ class DSpyAdapter:
             self.reflection_lm = reflection_lm
         import json
 
-        orchestrator = self._build_orchestrator(logger, max_rounds=max_rounds or 100)
+        orchestrator = self._build_orchestrator(max_rounds=max_rounds or 100)
 
         # Create seed candidate (JSON-encoded instructions)
         seed_text = json.dumps(seed_instructions)

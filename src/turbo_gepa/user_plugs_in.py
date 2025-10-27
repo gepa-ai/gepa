@@ -66,19 +66,24 @@ async def batch_reflect_lm_call(
 
 
 async def spec_induction_lm_call(
-    task_examples: List[Dict[str, Any]],
+    reflection_contexts: List[Dict[str, Any]],
     num_specs: int,
 ) -> List[str]:
-    """Generate fresh prompt specifications from task I/O examples.
+    """Generate fresh prompt specifications using Prompt-MII style induction.
 
-    This implements the PROMPT-MII concept: instead of editing existing prompts,
-    induce a new specification from scratch by looking at what the task requires.
+    This implements the PROMPT-MII concept: given parent prompts, execution traces,
+    and task examples, generate fresh prompt specifications that capture the task
+    requirements in a different way than incremental editing.
+
+    Unlike batch_reflect_lm_call which iteratively improves existing prompts, this
+    uses a meta-learning approach to induce new specifications from scratch based on
+    observed task patterns.
 
     Args:
-        task_examples: List of task examples, each containing:
-            - "input": The task input
-            - "answer": The expected output
-            - (optional) other fields like "difficulty", "additional_context"
+        reflection_contexts: List of contexts, each containing:
+            - "prompt": The parent prompt text
+            - "traces": Execution traces (inputs, outputs, failures)
+            - "meta": Metadata dict with additional context
         num_specs: Number of fresh specs to generate
 
     Returns:

@@ -318,13 +318,7 @@ async def maybe_initialize_seeds(
         raise ValueError("Could not extract examples from dataset for seed initialization")
 
     # If user provided seed(s), optimize the first one and generate variants
-    if user_seeds:
-        user_seed = user_seeds[0]  # Use first as base
-        print(f"\n🌱 Optimizing user seed with PROMPT-MII approach...")
-        print(f"   Original: \"{user_seed[:60]}...\"")
-    else:
-        user_seed = None
-        print(f"\n🌱 Generating {num_generated_seeds} seeds from task examples using PROMPT-MII...")
+    user_seed = user_seeds[0] if user_seeds else None
 
     # Generate specs
     generated = await initialize_seeds_from_examples(
@@ -334,20 +328,5 @@ async def maybe_initialize_seeds(
         user_seed=user_seed,
         reflection_lm_temperature=reflection_lm_temperature,
     )
-
-    if user_seed:
-        print(f"   ✓ Generated {len(generated)} optimized variants")
-    else:
-        print(f"   ✓ Generated {len(generated)} task-specific seeds")
-
-    # Log the generated seeds so users can see them
-    print(f"\n📋 Generated Seeds:")
-    for i, candidate in enumerate(generated, 1):
-        # Show full seed text
-        print(f"\n{'='*70}")
-        print(f"Seed {i}:")
-        print(f"{'='*70}")
-        print(candidate.text)
-        print(f"{'='*70}")
 
     return generated
