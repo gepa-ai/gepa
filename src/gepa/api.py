@@ -223,17 +223,19 @@ def optimize(
     rng = random.Random(seed)
 
     if isinstance(candidate_selection_strategy, str):
-        candidate_selector_cls = {
-            "pareto": ParetoCandidateSelector(rng=rng),
-            "current_best": CurrentBestCandidateSelector(),
-            "epsilon_greedy": EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
-        }.get(candidate_selection_strategy)
+        factories = {
+            "pareto": lambda: ParetoCandidateSelector(rng=rng),
+            "current_best": lambda: CurrentBestCandidateSelector(),
+            "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
+        }
 
-        assert candidate_selector_cls is not None, (
-            f"Unknown candidate_selector strategy: {candidate_selection_strategy}. Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
-        )
-
-        candidate_selector = candidate_selector_cls
+        try:
+            candidate_selector = factories[candidate_selection_strategy]()
+        except KeyError:
+            raise ValueError(
+                f"Unknown candidate_selector strategy: {candidate_selection_strategy}. "
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
+            )
 
     if isinstance(candidate_selection_strategy, CandidateSelector):
         candidate_selector = candidate_selection_strategy
