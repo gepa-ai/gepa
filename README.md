@@ -19,7 +19,6 @@
 - ⚡ **Maximized Concurrency**: Adaptive async orchestration scales to available compute resources (64-256+ per island, multi-island parallelism)
 - 🏝️ **Island-Based Parallelism**: Multi-process islands with ring topology for population diversity
 - 📊 **ASHA Successive Halving**: Prunes 60%+ of candidates early, reducing wasted evaluations
-- 🎯 **Quality-Diversity Archive**: Maintains diverse solutions beyond just Pareto frontier
 - 🌡️ **Two-Phase Optimization**: Phase 1 optimizes prompts, Phase 2 cycles through temperature variations for final tuning
 - 🛑 **Auto-Stop Convergence**: Automatically terminates when no improvement detected, saving compute on converged runs
 - 🔧 **Adaptive Configuration**: Auto-tunes concurrency, batch sizes, and shards based on dataset size
@@ -33,7 +32,7 @@ TurboGEPA extends the GEPA algorithm proposed in:
 > arXiv:2507.19457
 > [Paper](https://arxiv.org/abs/2507.19457) | [Original Repository](https://github.com/gepa-ai/gepa)
 
-All credit for the core GEPA algorithm, reflective mutation strategy, and Pareto-aware selection goes to the original authors. TurboGEPA focuses purely on **performance engineering** and **production readiness**.
+All credit for the core GEPA algorithm, reflective mutation strategy, and Pareto-aware selection goes to the original authors. TurboGEPA focuses on **maximizing speed to evolution** by trading token efficiency for aggressive parallelism and early pruning.
 
 ---
 
@@ -44,29 +43,32 @@ All credit for the core GEPA algorithm, reflective mutation strategy, and Pareto
 Modern LLMs have advanced to where even **small, fast models** are capable of sophisticated prompt reflection and generation. Recent research shows that **prompt optimizations transfer effectively** from cheaper models to more expensive ones.
 
 **Our recommended setup:**
-- **Reflection LM** (prompt optimizer): `x-ai/grok-beta` - Fast, cheap, excellent at prompt reasoning
+
+- **Reflection LM** (prompt optimizer): `x-ai/grok-4-fast` - Fast, cheap, excellent at prompt reasoning
 - **Task LM** (student being optimized): `openai/gpt-oss-120b` - Extremely fast, great quality/cost ratio
 - **Production deployment**: Transfer optimized prompts to your target model (e.g., `gpt-4o`, `claude-sonnet-4`)
 
 **Recommended workflow:**
 
-1. **Optimize with fast models**: Use TurboGEPA with `grok-beta` (reflection) + `gpt-oss-120b` (task) for rapid exploration
+1. **Optimize with fast models**: Use TurboGEPA with `grok-4-fast` (reflection) + `gpt-oss-120b` (task) for rapid exploration
 2. **Validate on target model**: Test the optimized prompts on your production model
 3. **Deploy with confidence**: Optimized prompts typically transfer well, giving you the best of both worlds—fast optimization + production quality
 
 **Why this works:**
+
 - Small models understand prompt optimization patterns (structure, specificity, examples)
 - These patterns generalize across model families
 - You save 10-100x on optimization costs while maintaining quality
 - TurboGEPA's speed amplifies these savings—optimize in minutes instead of hours
 
 **Example:**
+
 ```python
 # Optimize with cheap, fast models
 adapter = DefaultAdapter(
     dataset=trainset,
     task_lm="openrouter/openai/gpt-oss-120b",     # Student model (fast, cheap)
-    reflection_lm="openrouter/x-ai/grok-beta"      # Optimizer model (fast, smart)
+    reflection_lm="openrouter/x-ai/grok-4-fast"    # Optimizer model (fast, smart)
 )
 
 result = adapter.optimize(seeds=["You are a helpful assistant."], max_rounds=10)
@@ -191,13 +193,13 @@ TurboGEPA is a high-throughput production fork of GEPA with:
 
 ### Performance vs Original GEPA
 
-| Metric | Original GEPA | TurboGEPA |
-|--------|---------------|-----------|
-| **Concurrency Model** | Thread pool (~4-8) | Adaptive async (scales to available compute) |
-| **Parallelism** | Single-threaded | Multi-island (1-8+ islands, adaptive) |
-| **Early Stopping** | None | ASHA successive halving (60%+ pruning) |
-| **Diversity** | Pareto frontier only | Pareto + Quality-Diversity grid |
-| **Typical Speedup** | 1x baseline | **3-10x faster** wall time |
+| Metric                | Original GEPA        | TurboGEPA                                    |
+| --------------------- | -------------------- | -------------------------------------------- |
+| **Concurrency Model** | Thread pool (~4-8)   | Adaptive async (scales to available compute) |
+| **Parallelism**       | Single-threaded      | Multi-island (1-8+ islands, adaptive)        |
+| **Early Stopping**    | None                 | ASHA successive halving (60%+ pruning)       |
+| **Diversity**         | Pareto frontier only | Pareto + Quality-Diversity grid              |
+| **Typical Speedup**   | 1x baseline          | **3-10x faster** wall time                   |
 
 ---
 
@@ -220,6 +222,7 @@ TurboGEPA is a high-throughput production fork of GEPA with:
 #### TurboGEPA Adapters
 
 - **`DefaultAdapter`**: Single-component prompt optimization with auto-config
+
   - Location: `src/turbo_gepa/adapters/default_adapter.py`
   - Features: Async evaluation, multi-island, ASHA pruning
   - [Example](examples/benchmark_max_speed.py)
@@ -228,23 +231,6 @@ TurboGEPA is a high-throughput production fork of GEPA with:
   - Location: `src/turbo_gepa/adapters/dspy_adapter.py`
   - Features: Trace capture, feedback functions, LLM reflection
   - [Example](examples/dspy_adapter_example.py) | [Documentation](src/turbo_gepa/adapters/README.md)
-
----
-
-## 🎓 Examples
-
-### TurboGEPA Examples
-
-```bash
-# Single-island benchmark
-python examples/benchmark_max_speed.py
-
-# DSPy adapter example (requires API key)
-export OPENAI_API_KEY="your-key"
-python examples/dspy_adapter_example.py
-```
-
-**Original GEPA Examples**: For examples using the original GEPA implementation, see the [GEPA repository](https://github.com/gepa-ai/gepa) and [dspy.GEPA Tutorials](https://dspy.ai/tutorials/gepa_ai_program/)
 
 ---
 
@@ -283,6 +269,7 @@ graph TB
 ```
 
 **Two-Phase Process**:
+
 - **Phase 1**: Main optimization with LLM-based mutations (reflection + spec induction) and ASHA pruning (70% of budget)
 - **Phase 2**: Single round of temperature exploration to find optimal stochasticity (30% of budget)
 - **Auto-Stop**: Exits Phase 1 when no improvement detected (convergence)
@@ -313,10 +300,10 @@ graph TD
     Arch4[Local Archive]
     end
 
-    Arch1 -->|Every 2 rounds<br/>Top-3 elites| Pop2
-    Arch2 -->|Every 2 rounds<br/>Top-3 elites| Pop3
-    Arch3 -->|Every 2 rounds<br/>Top-3 elites| Pop4
-    Arch4 -->|Every 2 rounds<br/>Top-3 elites| Pop1
+    Arch1 -->|Continuously<br/>Top-3 elites| Pop2
+    Arch2 -->|Continuously<br/>Top-3 elites| Pop3
+    Arch3 -->|Continuously<br/>Top-3 elites| Pop4
+    Arch4 -->|Continuously<br/>Top-3 elites| Pop1
 
     Pop1 -.->|Concurrent<br/>Optimization| Process1[Process 1]
     Pop2 -.->|Concurrent<br/>Optimization| Process2[Process 2]
@@ -330,6 +317,7 @@ graph TD
 ```
 
 **Benefits**:
+
 - **Parallelism**: 4 islands explore simultaneously (4× throughput)
 - **Diversity**: Ring topology prevents premature convergence
 - **Robustness**: Different islands may discover different high-quality regions
@@ -351,24 +339,20 @@ See the [GEPA paper](https://arxiv.org/abs/2507.19457) for core algorithmic deta
 graph TD
     Start[Parent Contexts<br/>prompt + traces + failures] --> Allocate{Adaptive Budget<br/>Allocation}
 
-    Allocate -->|40-60%| Reflection[Incremental Reflection]
-    Allocate -->|20-40%| SpecInd[Spec Induction<br/>Prompt-MII]
-    Allocate -->|10-20%| Temp[Temperature<br/>Mutations]
+    Allocate -->|60-70%| Reflection[Incremental Reflection]
+    Allocate -->|30-40%| SpecInd[Spec Induction<br/>Prompt-MII]
 
     Reflection --> RefPrompt["LLM Prompt:<br/>'Edit this prompt to fix failures'"]
     SpecInd --> SpecPrompt["LLM Prompt:<br/>'Generate FRESH spec from patterns'"]
-    Temp --> TempOp[Adjust sampling<br/>temperature ±0.2]
 
     RefPrompt --> RefLLM[Reflection LLM]
     SpecPrompt --> RefLLM
 
     RefLLM --> RefOut[Edited prompts<br/>incremental changes]
     RefLLM --> SpecOut[Fresh specifications<br/>novel approaches]
-    TempOp --> TempOut[Temperature variants<br/>exploration]
 
     RefOut --> Pool[Candidate Pool]
     SpecOut --> Pool
-    TempOut --> Pool
 
     Pool --> Validate{Pass<br/>Validators?}
     Validate -->|Yes| ASHA[ASHA Evaluation]
@@ -382,12 +366,12 @@ graph TD
     style Start fill:#e1f5ff
     style Reflection fill:#d4edda
     style SpecInd fill:#fff3cd
-    style Temp fill:#f8d7da
     style Archive fill:#d1ecf1
     style Track fill:#ffeaa7
 ```
 
 **Key Features**:
+
 - **Same Input Data**: All operators receive parent prompts + execution traces + failures
 - **Different Strategies**: Each operator uses different prompting to generate mutations
 - **Adaptive Weighting**: Success rates tracked per operator, budget allocated dynamically
@@ -396,18 +380,21 @@ graph TD
 TurboGEPA extends GEPA with **multiple mutation operators** that receive the same context (parent prompts + execution traces + failures) but use different strategies:
 
 #### 1. **Incremental Reflection** (Batch Reflect)
+
 - **Strategy**: Iteratively improve existing prompts by analyzing failures
 - **Input**: Parent prompt text, execution traces, failure examples
 - **Approach**: "Here's what failed. Edit the prompt to fix these specific issues."
 - **Best for**: Fine-tuning and debugging existing prompts
 
 #### 2. **Spec Induction** ([Prompt-MII](https://arxiv.org/abs/2510.16932) Style)
+
 - **Strategy**: Generate fresh prompt specifications using meta-learning
 - **Input**: Same as reflection (parent prompt, traces, failures)
 - **Approach**: "Looking at this prompt and what failed, generate a FRESH specification that solves the task differently."
 - **Best for**: Exploration, escaping local optima, discovering novel approaches
 
 #### 3. **Temperature Mutations**
+
 - **Strategy**: Explore variations by adjusting LLM sampling temperature
 - **Best for**: Diversity and exploration in early stages
 
@@ -467,6 +454,7 @@ graph TD
 ```
 
 **Efficiency Gain**:
+
 - **Without ASHA**: 100 candidates × 100% data = **100 full evaluations**
 - **With ASHA**: (100 × 5%) + (40 × 20%) + (16 × 100%) = **29 full evaluation equivalents**
 - **Savings**: ~**71% fewer evaluations** while keeping the best candidates
@@ -474,17 +462,19 @@ graph TD
 **How It Works**: Start with many candidates on cheap evaluations (5% data), progressively promote only the top performers to more expensive evaluations (20%, then 100%). Most poor candidates are eliminated early before wasting compute.
 
 #### 2. Async Orchestration
-   - Scales to available compute resources automatically
-   - Adaptive per-island concurrency based on dataset size and hardware
-   - Multi-island parallelism for population diversity
-   - Non-blocking I/O for LLM API calls
-   - Thread pool executor for DSPy/sync operations
+
+- Scales to available compute resources automatically
+- Adaptive per-island concurrency based on dataset size and hardware
+- Multi-island parallelism for population diversity
+- Non-blocking I/O for LLM API calls
+- Thread pool executor for DSPy/sync operations
 
 #### 3. Adaptive Configuration
-   - Auto-tunes based on dataset size:
-     - Small (<50): Conservative shards, low concurrency
-     - Medium (50-500): Balanced settings
-     - Large (500+): Aggressive shards, high concurrency
+
+- Auto-tunes based on dataset size:
+  - Small (<50): Conservative shards, low concurrency
+  - Medium (50-500): Balanced settings
+  - Large (500+): Aggressive shards, high concurrency
 
 ### Practical Considerations
 
@@ -509,7 +499,7 @@ config = Config(
     eval_concurrency=64,        # Concurrent evaluations per island (64-128 default)
     n_islands=4,                # Number of parallel islands (1-4 default)
     shards=(0.05, 0.2, 1.0),    # ASHA evaluation shards
-    migration_period=2,         # Rounds between island migrations
+    migration_period=1,         # Evaluation batches between migrations (default: 1 = every batch)
     qd_bins_length=8,           # QD grid dimensions
     reflection_batch_size=6,    # Examples per reflection
     batch_size=8,               # Evaluation batch size
@@ -544,20 +534,19 @@ adapter = DefaultAdapter(
 )
 ```
 
-
 ---
 
 ## 📊 Benchmarks
 
 ### TurboGEPA Performance
 
-| Dataset Size | Original GEPA | TurboGEPA (1 island) | TurboGEPA (4 islands) |
-|-------------|---------------|----------------------|----------------------|
-| 50 examples | 45 min | 18 min (2.5x) | 12 min (3.75x) |
-| 200 examples | 180 min | 52 min (3.5x) | 36 min (5x) |
-| 1000 examples | 900 min | 240 min (3.75x) | 180 min (5x) |
+| Dataset Size  | Original GEPA | TurboGEPA (1 island) | TurboGEPA (4 islands) |
+| ------------- | ------------- | -------------------- | --------------------- |
+| 50 examples   | 45 min        | 18 min (2.5x)        | 12 min (3.75x)        |
+| 200 examples  | 180 min       | 52 min (3.5x)        | 36 min (5x)           |
+| 1000 examples | 900 min       | 240 min (3.75x)      | 180 min (5x)          |
 
-*Benchmarks: AIME dataset, gpt-4o-mini task LM, 10 optimization rounds, 8-core machine*
+_Benchmarks: AIME dataset, gpt-4o-mini task LM, 10 optimization rounds, 8-core machine_
 
 ---
 
@@ -655,6 +644,7 @@ Carnegie Mellon University Language Technologies Institute
 ### TurboGEPA: Performance Engineering
 
 TurboGEPA's contributions are limited to **performance engineering**:
+
 - Async/await orchestration
 - Island-based parallelism
 - ASHA successive halving
@@ -667,3 +657,7 @@ TurboGEPA's contributions are limited to **performance engineering**:
   <strong>TurboGEPA:</strong> Production-ready performance engineering<br>
   <em>Better together. 🚀</em>
 </p>
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Studio-Intrinsic/turbo-gepa&type=date&legend=top-left)](https://www.star-history.com/#Studio-Intrinsic/turbo-gepa&type=date&legend=top-left)

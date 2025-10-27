@@ -118,7 +118,7 @@ class Config:
     qd_flags: Sequence[str] = field(default_factory=lambda: ("cot", "format", "fewshot"))
     reflection_batch_size: int = 6
     max_tokens: int = 2048
-    migration_period: int = 2
+    migration_period: int = 1  # Migrate every evaluation batch by default
     migration_k: int = 3
     cache_path: str = ".turbo_gepa/cache"
     log_path: str = ".turbo_gepa/logs"
@@ -260,13 +260,13 @@ def adaptive_config(
         config.batch_size = min(24, int(config.batch_size * 1.5))
 
     # Ensure migration_period scales with dataset size
-    # Smaller datasets need more frequent migration to avoid local optima
+    # Default is 1 (every evaluation batch) for maximum information sharing
     if dataset_size < 100:
-        config.migration_period = 1  # Migrate every round
+        config.migration_period = 1  # Frequent migration for small datasets
     elif dataset_size < 500:
-        config.migration_period = 2  # Default
+        config.migration_period = 1  # Default - every evaluation batch
     else:
-        config.migration_period = 3  # Less frequent for large datasets
+        config.migration_period = 2  # Less frequent only for large datasets
 
     # Scale migration_k with number of islands
     config.migration_k = min(config.n_islands, max(2, config.n_islands // 2))
