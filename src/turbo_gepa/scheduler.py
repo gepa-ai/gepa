@@ -7,6 +7,7 @@ promotion heuristics while keeping default behavior light-weight.
 
 from __future__ import annotations
 
+import logging
 import statistics
 from collections import deque
 from dataclasses import dataclass, field
@@ -14,6 +15,8 @@ from typing import Sequence
 
 from .cache import candidate_key
 from .interfaces import Candidate, EvalResult
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -74,15 +77,55 @@ class BudgetedScheduler:
             parent_score = parent_objectives.get(objective_key)
         elif "parent_score" in candidate.meta:
             parent_score = candidate.meta.get("parent_score")
+
+        # Check parent comparison pruning
         if parent_score is not None and score < parent_score + self.config.eps_improve:
             self._parent_scores[cand_hash] = score
+            logger.debug(
+                "   ❌ ASHA: Pruned (worse than parent: %s < %s + %s)",
+                f"{score:.1%}",
+                f"{parent_score:.1%}",
+                f"{self.config.eps_improve:.2%}",
+            )
             return "pruned"
+
         if idx >= len(self.rungs) - 1:
+            logger.debug("   ✅ ASHA: Completed at final rung (score=%s)", f"{score:.1%}")
             return "completed"  # already at max shard
-        threshold = self._promotion_threshold(rung)
-        if threshold == float("-inf"):
-            return decision
-        if score >= threshold:
+
+        # Always promote perfect scores (1.0) to verify on full dataset
+        # This ensures we don't claim 100% accuracy based on a small shard
+        should_promote = score >= 1.0
+
+        if not should_promote:
+            threshold = self._promotion_threshold(rung)
+            if threshold == float("-inf"):
+                logger.debug(
+                    "   ⏸️  ASHA: Pending (no threshold yet, rung has %s candidates)",
+                    len(rung.results),
+                )
+                return decision
+            should_promote = score >= threshold
+
+            # Log promotion decision details
+            if should_promote:
+                logger.debug(
+                    "   ⬆️  ASHA: PROMOTED! (score=%s >= threshold=%s, rung %s -> %s)",
+                    f"{score:.1%}",
+                    f"{threshold:.1%}",
+                    idx,
+                    idx + 1,
+                )
+            else:
+                logger.debug(
+                    "   ❌ ASHA: Pruned (score=%s < threshold=%s, rung=%s, %s candidates)",
+                    f"{score:.1%}",
+                    f"{threshold:.1%}",
+                    idx,
+                    len(rung.results),
+                )
+
+        if should_promote:
             self._candidate_levels[cand_hash] = idx + 1
             self._pending_promotions.append(candidate)
             self._parent_scores[cand_hash] = score

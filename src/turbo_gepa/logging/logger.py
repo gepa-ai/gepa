@@ -4,23 +4,51 @@ Copied from original GEPA implementation to maintain independence.
 """
 
 import sys
+from enum import IntEnum
 from typing import Protocol
+
+
+class LogLevel(IntEnum):
+    """Log levels for filtering messages."""
+    DEBUG = 10
+    INFO = 20
+    WARNING = 30
+    ERROR = 40
+    CRITICAL = 50
 
 
 class LoggerProtocol(Protocol):
     """Protocol for logger implementations."""
 
-    def log(self, message: str):
-        """Log a message."""
+    def log(self, message: str, level: LogLevel = LogLevel.INFO):
+        """Log a message at the specified level."""
         ...
 
 
 class StdOutLogger(LoggerProtocol):
-    """Simple logger that prints to stdout."""
+    """Logger with configurable log levels."""
 
-    def log(self, message: str):
-        """Log a message to stdout."""
-        print(message)
+    def __init__(self, min_level: LogLevel = LogLevel.WARNING):
+        """Initialize logger with minimum level to display.
+
+        Args:
+            min_level: Minimum log level to display. Defaults to WARNING,
+                      which only shows important messages and the dashboard.
+        """
+        self.min_level = min_level
+
+    def log(self, message: str, level: LogLevel = LogLevel.INFO):
+        """Log a message if it meets the minimum level threshold."""
+        if level >= self.min_level:
+            print(message)
+
+
+class QuietLogger(LoggerProtocol):
+    """Logger that suppresses all output (for dashboard-only mode)."""
+
+    def log(self, message: str, level: LogLevel = LogLevel.INFO):
+        """Suppress log message."""
+        pass
 
 
 class Tee:
@@ -57,10 +85,11 @@ class Tee:
 class Logger(LoggerProtocol):
     """Logger that writes to both stdout and a file."""
 
-    def __init__(self, filename, mode="a"):
+    def __init__(self, filename, mode="a", min_level: LogLevel = LogLevel.WARNING):
         self.file_handle = open(filename, mode)
         self.file_handle_stderr = open(filename.replace("run_log.", "run_log_stderr."), mode)
         self.modified_sys = False
+        self.min_level = min_level
 
     def __enter__(self):
         self.original_stdout = sys.stdout
@@ -77,12 +106,17 @@ class Logger(LoggerProtocol):
         self.file_handle_stderr.close()
         self.modified_sys = False
 
-    def log(self, *args, **kwargs):
+    def log(self, message: str, level: LogLevel = LogLevel.INFO):
+        # Always write to file, but filter stdout by level
         if self.modified_sys:
-            print(*args, **kwargs)
+            if level >= self.min_level:
+                print(message)
+            # Always write to file regardless of level
+            print(message, file=self.file_handle)
         else:
-            # Emulate print(*args, **kwargs) behavior but write to the file
-            print(*args, **kwargs)
-            print(*args, file=self.file_handle_stderr, **kwargs)
+            # Emulate print behavior but respect level filtering
+            if level >= self.min_level:
+                print(message)
+            print(message, file=self.file_handle_stderr)
         self.file_handle.flush()
         self.file_handle_stderr.flush()

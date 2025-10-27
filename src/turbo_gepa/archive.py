@@ -100,6 +100,7 @@ class Archive:
             if key == cand_hash:
                 new_shard = entry.result.shard_fraction or 0.0
                 existing_shard = existing.result.shard_fraction or 0.0
+
                 if new_shard >= existing_shard:
                     # New evaluation is on equal or larger shard - replace the old one
                     dominated.append(key)

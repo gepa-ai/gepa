@@ -22,7 +22,9 @@ class Metrics:
     round: int
     evaluations: int
     best_quality: float
+    best_quality_shard: float  # Shard fraction where best quality was achieved
     avg_quality: float
+    avg_quality_shard: float  # Average shard fraction across Pareto frontier
     pareto_size: int
     qd_size: int
     total_candidates: int
@@ -54,13 +56,20 @@ def extract_metrics(orchestrator: Orchestrator) -> Metrics:
     total = len(orchestrator.archive.pareto) + len(orchestrator.archive.qd_grid)
 
     # Calculate best and average quality from pareto frontier
+    # Track which shard the best quality came from
     promote_objective = orchestrator.config.promote_objective
     if pareto:
-        best_quality = max(e.result.objectives.get(promote_objective, 0.0) for e in pareto)
+        best_entry = max(pareto, key=lambda e: e.result.objectives.get(promote_objective, 0.0))
+        best_quality = best_entry.result.objectives.get(promote_objective, 0.0)
+        best_quality_shard = best_entry.result.shard_fraction or 0.0
         avg_quality = sum(e.result.objectives.get(promote_objective, 0.0) for e in pareto) / len(pareto)
+        # Calculate average shard across all pareto entries
+        avg_quality_shard = sum(e.result.shard_fraction or 0.0 for e in pareto) / len(pareto)
     else:
         best_quality = 0.0
+        best_quality_shard = 0.0
         avg_quality = 0.0
+        avg_quality_shard = 0.0
 
     # Get rung activity (inflight counts per rung)
     rung_activity = orchestrator._inflight_by_rung.copy()
@@ -75,7 +84,9 @@ def extract_metrics(orchestrator: Orchestrator) -> Metrics:
         round=orchestrator.rounds_completed,
         evaluations=orchestrator.evaluations_run,
         best_quality=best_quality,
+        best_quality_shard=best_quality_shard,
         avg_quality=avg_quality,
+        avg_quality_shard=avg_quality_shard,
         pareto_size=len(pareto),
         qd_size=len(qd_elites),
         total_candidates=total,

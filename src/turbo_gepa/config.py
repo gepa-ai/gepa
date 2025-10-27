@@ -130,11 +130,21 @@ class Config:
     task_lm_temperature: float | None = 1.0
     reflection_lm_temperature: float | None = 1.0
     target_quality: float | None = None  # Stop when best quality reaches this threshold
+    eval_timeout_seconds: float | None = 120.0  # Max time to wait for a single LLM evaluation
 
     # Streaming mode config
     streaming_mode: bool = True  # Enable continuous launch/drain (no batch barriers)
     mutation_buffer_min: int = 4  # Minimum mutations to trigger generation
     max_total_inflight: int | None = None  # Override total concurrent evaluations (defaults to eval_concurrency)
+
+    # Logging config
+    # Log levels control verbosity:
+    #   - DEBUG: All messages including detailed traces (very verbose)
+    #   - INFO: Progress updates and mutation generation (verbose)
+    #   - WARNING: Important milestones, target reached, auto-stop (dashboard + key events - default)
+    #   - ERROR: Only errors
+    #   - CRITICAL: Only critical failures
+    log_level: str = "WARNING"  # Minimum log level (default: WARNING for clean dashboard output)
 
     def __post_init__(self):
         """Auto-scale parameters based on eval_concurrency if not explicitly set."""

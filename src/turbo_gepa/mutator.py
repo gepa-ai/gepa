@@ -8,7 +8,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Iterable, Sequence
 
-from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
+from turbo_gepa.logging.logger import LogLevel, LoggerProtocol, StdOutLogger
 
 from .interfaces import Candidate
 
@@ -250,9 +250,13 @@ class Mutator:
 
         # Convert to Candidates with metadata tracking generation method
         proposals: list[Candidate] = []
+        parent_candidates = [ctx["candidate"] for ctx in parent_contexts]
         for idx, text in enumerate(mutated_texts):
-            # Use the best parent's metadata as base
-            parent_candidate = self._best_parent_candidate(parent_contexts)
+            # Rotate through available parents to maintain lineage diversity
+            if not parent_candidates:
+                parent_candidate = self._best_parent_candidate(parent_contexts)
+            else:
+                parent_candidate = parent_candidates[idx % len(parent_candidates)]
 
             meta = dict(parent_candidate.meta)
             meta.update(
@@ -334,9 +338,14 @@ class Mutator:
 
         # Convert to Candidates with metadata tracking generation method
         proposals: list[Candidate] = []
-        parent_candidate = self._best_parent_candidate(parent_contexts)
+        parent_candidates = [ctx["candidate"] for ctx in parent_contexts]
 
         for idx, text in enumerate(spec_texts):
+            if not parent_candidates:
+                parent_candidate = self._best_parent_candidate(parent_contexts)
+            else:
+                parent_candidate = parent_candidates[idx % len(parent_candidates)]
+
             meta = dict(parent_candidate.meta)
             meta["parent"] = parent_candidate.fingerprint
             meta.update(

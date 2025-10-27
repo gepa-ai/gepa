@@ -32,7 +32,16 @@ Read the inputs carefully and identify the input format and infer detailed task 
 
 Read all the assistant responses and the corresponding feedback. Identify all niche and domain specific factual information about the task and include it in the instruction, as a lot of it may not be available to the assistant in the future. The assistant may have utilized a generalizable strategy to solve the task, if so, include that in the instruction as well.
 
-Provide the new instructions within ``` blocks."""
+Provide the new instruction wrapped in XML tags:
+
+<PROMPT>
+Your new instruction text here...
+</PROMPT>
+
+IMPORTANT:
+- Wrap your instruction in <PROMPT></PROMPT> tags
+- Do NOT include example answers or solutions
+- Create a clear, complete instruction for solving similar problems"""
 
     @staticmethod
     def format_dataset(samples: list[dict[str, Any]]) -> str:
@@ -97,20 +106,34 @@ Provide the new instructions within ``` blocks."""
     @staticmethod
     def extract_instruction(lm_output: str) -> str:
         """
-        Extract the instruction from LLM output.
-
-        Handles various formats:
-        - Text between ``` blocks
-        - Text with opening ``` but no closing
-        - Text with closing ``` but no opening
-        - Plain text
+        Extract the instruction from LLM output using <PROMPT> tags.
 
         Args:
             lm_output: Raw LLM response
 
         Returns:
-            Extracted instruction text
+            Extracted instruction text, or empty string if no valid prompt found
         """
+        # Extract from <PROMPT>...</PROMPT> tags
+        prompt_pattern = r'<PROMPT>\s*(.*?)\s*</PROMPT>'
+        matches = re.findall(prompt_pattern, lm_output, re.DOTALL | re.IGNORECASE)
+
+        if matches:
+            # Take the first valid prompt
+            for match in matches:
+                cleaned = match.strip()
+
+                # Validate
+                if len(cleaned) < 50:
+                    continue
+                if cleaned.startswith("###"):
+                    continue
+                if len(cleaned) < 100 and re.match(r'^[#\s\d]+$', cleaned):
+                    continue
+
+                return cleaned
+
+        # Fallback to old behavior if no XML tags found (backward compatibility)
         # Find the first and last backtick positions
         start = lm_output.find("```") + 3
         end = lm_output.rfind("```")

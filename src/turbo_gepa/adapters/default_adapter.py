@@ -262,6 +262,25 @@ class DefaultAdapter:
 
             start_time = time.time()
 
+            # Log what we're receiving for reflection
+            print(f"\n{'='*80}")
+            print(f"🔬 REFLECTION RUNNER CALLED")
+            print(f"{'='*80}")
+            print(f"   Num mutations requested: {num_mutations}")
+            print(f"   Num parent contexts: {len(parent_contexts)}")
+
+            # Check if we have reflection examples
+            reflection_examples = getattr(self.mutator, "_reflection_examples", [])
+            print(f"   Reflection examples available: {len(reflection_examples)}")
+            if reflection_examples:
+                num_with_feedback = sum(1 for ex in reflection_examples if ex.get("feedback"))
+                num_with_output = sum(1 for ex in reflection_examples if ex.get("assistant_output"))
+                num_with_solution = sum(1 for ex in reflection_examples if (ex.get("additional_context") or {}).get("solution"))
+                print(f"      → {num_with_feedback} with feedback")
+                print(f"      → {num_with_output} with assistant_output")
+                print(f"      → {num_with_solution} with reference solution")
+            print(f"{'='*80}\n")
+
             try:
                 from litellm import acompletion
 
@@ -270,7 +289,16 @@ class DefaultAdapter:
                 for i, ctx in enumerate(parent_contexts[:5]):  # Limit to 5 parents for token efficiency
                     prompt_text = ctx.get("prompt", "")
                     meta = ctx.get("meta", {})
-                    quality = meta.get("quality", 0.0)
+
+                    # CRITICAL: Check what quality we're showing
+                    parent_objectives = meta.get("parent_objectives", {})
+                    if isinstance(parent_objectives, dict):
+                        quality = parent_objectives.get("quality", 0.0)
+                        print(f"   Parent {i+1} quality from parent_objectives: {quality:.1%}")
+                    else:
+                        quality = meta.get("quality", 0.0)
+                        print(f"   Parent {i+1} quality from meta: {quality:.1%}")
+
                     traces = ctx.get("traces", [])
 
                     # Temperature context if available
@@ -341,7 +369,27 @@ IMPORTANT guidance:
 
 You CAN and SHOULD include domain-specific terminology, solution techniques, and factual knowledge from the examples and reference solutions. The goal is to teach the assistant to solve NEW problems in the SAME DOMAIN by providing it with the domain knowledge and strategies it needs.
 
-Write {num_mutations} new instruction variants. Separate each instruction with a line containing only "---"."""
+Write {num_mutations} new instruction variants. Each instruction MUST be wrapped in XML tags like this:
+
+<PROMPT>
+Your new instruction text here...
+</PROMPT>
+
+IMPORTANT:
+- Each prompt must be wrapped in <PROMPT></PROMPT> tags
+- Do NOT include example answers like "### 242" in your prompts
+- Do NOT copy reference solutions - create NEW instructions
+- Each prompt should be a complete instruction for solving problems in this domain"""
+
+                # Log the actual prompt being sent (truncated for readability)
+                print(f"\n📝 REFLECTION PROMPT PREVIEW:")
+                print(f"{'='*80}")
+                prompt_preview = reflection_prompt[:1000] + "..." if len(reflection_prompt) > 1000 else reflection_prompt
+                print(prompt_preview)
+                print(f"{'='*80}")
+                print(f"   Total prompt length: {len(reflection_prompt)} chars")
+                print(f"   Example summaries count: {len(example_summaries)}")
+                print(f"{'='*80}\n")
 
                 completion_kwargs: dict[str, Any] = {
                     "model": self.reflection_model.name,
@@ -358,10 +406,49 @@ Write {num_mutations} new instruction variants. Separate each instruction with a
 
                 elapsed = time.time() - start_time
                 content = response.choices[0].message.content
-                # Split by --- and clean up
-                mutations = [m.strip() for m in content.split("---") if m.strip()]
 
-                # Log timing for diagnostics
+                # Extract prompts from <PROMPT>...</PROMPT> tags
+                import re
+                prompt_pattern = r'<PROMPT>\s*(.*?)\s*</PROMPT>'
+                matches = re.findall(prompt_pattern, content, re.DOTALL | re.IGNORECASE)
+
+                # Validate and clean mutations
+                mutations = []
+                for i, match in enumerate(matches):
+                    cleaned = match.strip()
+
+                    # Validation checks
+                    if len(cleaned) < 50:
+                        print(f"   ⚠️ Skipping mutation {i+1}: Too short ({len(cleaned)} chars)")
+                        continue
+
+                    if cleaned.startswith("###"):
+                        print(f"   ⚠️ Skipping mutation {i+1}: Looks like an answer, not a prompt")
+                        continue
+
+                    # Check if it's mostly just a number (like "220" or "### 242")
+                    if len(cleaned) < 100 and re.match(r'^[#\s\d]+$', cleaned):
+                        print(f"   ⚠️ Skipping mutation {i+1}: Appears to be a number, not a prompt")
+                        continue
+
+                    mutations.append(cleaned)
+
+                if not mutations:
+                    print(f"   ⚠️ WARNING: No valid prompts extracted! Check reflection LM output.")
+                    print(f"   Raw content preview: {content[:500]}")
+
+                # Log mutations generated
+                print(f"\n✅ REFLECTION COMPLETE:")
+                print(f"   Generated {len(mutations)} mutations in {elapsed:.1f}s")
+                print(f"\n{'='*80}")
+                print(f"📝 GENERATED MUTATIONS (FULL TEXT):")
+                print(f"{'='*80}")
+                for i, mut in enumerate(mutations):
+                    print(f"\n[Mutation {i+1}/{len(mutations)}]")
+                    print(f"{'-'*80}")
+                    print(mut)
+                    print(f"{'-'*80}")
+                print(f"\n{'='*80}\n")
 
                 return mutations[:num_mutations]
 
@@ -538,6 +625,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             "unique_parents": 0,
             "unique_children": 0,
             "evolution_edges": 0,
+            "total_evaluations": 0,
             "islands": [],
         }
         parent_children: defaultdict[str, set[str]] = defaultdict(set)
@@ -551,6 +639,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             combined["mutations_requested"] += snapshot.get("mutations_requested", 0)
             combined["mutations_generated"] += snapshot.get("mutations_generated", 0)
             combined["mutations_enqueued"] += snapshot.get("mutations_enqueued", 0)
+            combined["total_evaluations"] += snapshot.get("total_evaluations", 0)
             promoted_total += snapshot.get("mutations_promoted", 0)
 
             detail_sources = snapshot.get("islands")
@@ -966,11 +1055,14 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         pareto_candidates = [entry.candidate for entry in pareto_entries]
         qd_elites = combined_archive.sample_qd(limit=len(pareto_entries)) if pareto_entries else []
         evolution_stats = self._aggregate_evolution_stats(orchestrators)
+        # Calculate total unique candidates (Pareto + QD grid)
+        total_candidates = len(combined_archive.pareto) + len(combined_archive.qd_grid)
         return {
             "pareto": pareto_candidates,
             "pareto_entries": pareto_entries,
             "qd_elites": qd_elites,
             "evolution_stats": evolution_stats,
+            "total_candidates": total_candidates,
         }
 
     async def _optimize_multi_island_staged(
