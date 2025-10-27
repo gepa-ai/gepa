@@ -5,7 +5,11 @@
 <h1 align="center">TurboGEPA: High-Throughput Prompt Evolution</h1>
 
 <p align="center">
-  <em>Production-ready fork of GEPA with island-based parallelism, aggressive async orchestration, and maximized concurrent evaluation throughput.</em>
+  <em>The fastest way to reflectively evolve through the prompt space.</em>
+</p>
+
+<p align="center">
+  <strong>Goal:</strong> Take GEPA's core reflective optimization approach and, trading token efficiency for speed, reach optimal prompts and temperature settings as rapidly as possible.
 </p>
 
 ## 🚀 What is TurboGEPA?
@@ -15,8 +19,9 @@
 - ⚡ **Maximized Concurrency**: Adaptive async orchestration scales to available compute resources (64-256+ per island, multi-island parallelism)
 - 🏝️ **Island-Based Parallelism**: Multi-process islands with ring topology for population diversity
 - 📊 **ASHA Successive Halving**: Prunes 60%+ of candidates early, reducing wasted evaluations
-- 💾 **Disk-Based Caching**: 20%+ cache hit rate after warm-up, persists across runs
 - 🎯 **Quality-Diversity Archive**: Maintains diverse solutions beyond just Pareto frontier
+- 🌡️ **Two-Phase Optimization**: Phase 1 optimizes prompts, Phase 2 cycles through temperature variations for final tuning
+- 🛑 **Auto-Stop Convergence**: Automatically terminates when no improvement detected, saving compute on converged runs
 - 🔧 **Adaptive Configuration**: Auto-tunes concurrency, batch sizes, and shards based on dataset size
 
 ### Built on GEPA
@@ -29,6 +34,47 @@ TurboGEPA extends the GEPA algorithm proposed in:
 > [Paper](https://arxiv.org/abs/2507.19457) | [Original Repository](https://github.com/gepa-ai/gepa)
 
 All credit for the core GEPA algorithm, reflective mutation strategy, and Pareto-aware selection goes to the original authors. TurboGEPA focuses purely on **performance engineering** and **production readiness**.
+
+---
+
+## 💡 Best Practices
+
+### Optimize Cheap, Deploy Expensive
+
+Modern LLMs have advanced to where even **small, fast models** are capable of sophisticated prompt reflection and generation. Recent research shows that **prompt optimizations transfer effectively** from cheaper models to more expensive ones.
+
+**Our recommended setup:**
+- **Reflection LM** (prompt optimizer): `x-ai/grok-beta` - Fast, cheap, excellent at prompt reasoning
+- **Task LM** (student being optimized): `openai/gpt-oss-120b` - Extremely fast, great quality/cost ratio
+- **Production deployment**: Transfer optimized prompts to your target model (e.g., `gpt-4o`, `claude-sonnet-4`)
+
+**Recommended workflow:**
+
+1. **Optimize with fast models**: Use TurboGEPA with `grok-beta` (reflection) + `gpt-oss-120b` (task) for rapid exploration
+2. **Validate on target model**: Test the optimized prompts on your production model
+3. **Deploy with confidence**: Optimized prompts typically transfer well, giving you the best of both worlds—fast optimization + production quality
+
+**Why this works:**
+- Small models understand prompt optimization patterns (structure, specificity, examples)
+- These patterns generalize across model families
+- You save 10-100x on optimization costs while maintaining quality
+- TurboGEPA's speed amplifies these savings—optimize in minutes instead of hours
+
+**Example:**
+```python
+# Optimize with cheap, fast models
+adapter = DefaultAdapter(
+    dataset=trainset,
+    task_lm="openrouter/openai/gpt-oss-120b",     # Student model (fast, cheap)
+    reflection_lm="openrouter/x-ai/grok-beta"      # Optimizer model (fast, smart)
+)
+
+result = adapter.optimize(seeds=["You are a helpful assistant."], max_rounds=10)
+optimized_prompt = result['best_text']
+
+# Deploy to production with expensive model
+production_result = expensive_model.run(optimized_prompt, production_data)
+```
 
 ---
 
@@ -138,7 +184,6 @@ TurboGEPA is a high-throughput production fork of GEPA with:
 - **Async/await architecture** - Non-blocking I/O for maximum concurrency
 - **Multi-island parallelism** - Distributed optimization across process boundaries
 - **ASHA successive halving** - Early stopping to reduce wasted evaluations
-- **Disk caching** - 20%+ hit rate, persistent across runs
 - **Quality-Diversity archives** - Maintains diverse solutions beyond Pareto frontier
 - **Adaptive configuration** - Auto-tunes based on dataset size and hardware
 
@@ -150,7 +195,6 @@ TurboGEPA is a high-throughput production fork of GEPA with:
 |--------|---------------|-----------|
 | **Concurrency Model** | Thread pool (~4-8) | Adaptive async (scales to available compute) |
 | **Parallelism** | Single-threaded | Multi-island (1-8+ islands, adaptive) |
-| **Caching** | None | Disk-based, persistent across runs |
 | **Early Stopping** | None | ASHA successive halving (60%+ pruning) |
 | **Diversity** | Pareto frontier only | Pareto + Quality-Diversity grid |
 | **Typical Speedup** | 1x baseline | **3-10x faster** wall time |
@@ -239,69 +283,56 @@ graph TB
 ```
 
 **Two-Phase Process**:
-- **Phase 1**: Main optimization with LLM-based mutations (reflection + spec induction) and ASHA pruning
-- **Phase 2**: Temperature cycling for final exploration once quality target is reached
-- **Auto-Stop**: Exits when no improvement detected (convergence)
+- **Phase 1**: Main optimization with LLM-based mutations (reflection + spec induction) and ASHA pruning (70% of budget)
+- **Phase 2**: Single round of temperature exploration to find optimal stochasticity (30% of budget)
+- **Auto-Stop**: Exits Phase 1 when no improvement detected (convergence)
 
 ---
 
-### Multi-Island Parallelism (N Islands)
-
-Each island runs the **same loop above independently**, but with periodic information sharing:
+### Island-Based Parallelism
 
 ```mermaid
-graph TB
-    subgraph Island1[" Island 1 "]
-        Loop1[Core Optimization Loop<br/>as shown above]
-        Best1[Local Best<br/>Candidates]
+graph TD
+    subgraph Island1[Island 1]
+    Pop1[Population 1<br/>25 candidates]
+    Arch1[Local Archive]
     end
 
-    subgraph Island2[" Island 2 "]
-        Loop2[Core Optimization Loop<br/>as shown above]
-        Best2[Local Best<br/>Candidates]
+    subgraph Island2[Island 2]
+    Pop2[Population 2<br/>25 candidates]
+    Arch2[Local Archive]
     end
 
-    subgraph Island3[" Island 3 "]
-        Loop3[Core Optimization Loop<br/>as shown above]
-        Best3[Local Best<br/>Candidates]
+    subgraph Island3[Island 3]
+    Pop3[Population 3<br/>25 candidates]
+    Arch3[Local Archive]
     end
 
-    subgraph Island4[" Island 4 "]
-        Loop4[Core Optimization Loop<br/>as shown above]
-        Best4[Local Best<br/>Candidates]
+    subgraph Island4[Island 4]
+    Pop4[Population 4<br/>25 candidates]
+    Arch4[Local Archive]
     end
 
-    Loop1 --> Best1
-    Loop2 --> Best2
-    Loop3 --> Best3
-    Loop4 --> Best4
+    Arch1 -->|Every 2 rounds<br/>Top-3 elites| Pop2
+    Arch2 -->|Every 2 rounds<br/>Top-3 elites| Pop3
+    Arch3 -->|Every 2 rounds<br/>Top-3 elites| Pop4
+    Arch4 -->|Every 2 rounds<br/>Top-3 elites| Pop1
 
-    Best1 -.->|Every N rounds<br/>Top-K elites| Loop2
-    Best2 -.->|Every N rounds<br/>Top-K elites| Loop3
-    Best3 -.->|Every N rounds<br/>Top-K elites| Loop4
-    Best4 -.->|Every N rounds<br/>Top-K elites| Loop1
-
-    Loop1 --> Final[Combined Results<br/>Best from all islands]
-    Loop2 --> Final
-    Loop3 --> Final
-    Loop4 --> Final
+    Pop1 -.->|Concurrent<br/>Optimization| Process1[Process 1]
+    Pop2 -.->|Concurrent<br/>Optimization| Process2[Process 2]
+    Pop3 -.->|Concurrent<br/>Optimization| Process3[Process 3]
+    Pop4 -.->|Concurrent<br/>Optimization| Process4[Process 4]
 
     style Island1 fill:#e3f2fd
     style Island2 fill:#f3e5f5
     style Island3 fill:#e8f5e9
     style Island4 fill:#fff3e0
-    style Final fill:#d4edda
 ```
 
-**Key Benefits**:
-- **Same Core Loop**: Each island runs the exact same optimization process independently
-- **Parallel Exploration**: 4 islands = 4× throughput, exploring different regions simultaneously
-- **Information Sharing**: Periodically share top-K elite candidates between islands (ring topology)
-- **Diversity Maintenance**: Each island maintains its own population, preventing premature convergence
-- **Fault Tolerance**: If one island gets stuck in local optimum, others continue exploring
-- **Final Merge**: Combine best candidates from all islands at the end
-
-**Configuration**: Set `n_islands=4` (or any number) - each runs as an independent process with the same core loop.
+**Benefits**:
+- **Parallelism**: 4 islands explore simultaneously (4× throughput)
+- **Diversity**: Ring topology prevents premature convergence
+- **Robustness**: Different islands may discover different high-quality regions
 
 ### Original GEPA Algorithm
 
@@ -442,64 +473,14 @@ graph TD
 
 **How It Works**: Start with many candidates on cheap evaluations (5% data), progressively promote only the top performers to more expensive evaluations (20%, then 100%). Most poor candidates are eliminated early before wasting compute.
 
-#### 2. Island-Based Parallelism
-
-```mermaid
-graph TD
-    subgraph Island1[Island 1]
-    Pop1[Population 1<br/>25 candidates]
-    Arch1[Local Archive]
-    end
-
-    subgraph Island2[Island 2]
-    Pop2[Population 2<br/>25 candidates]
-    Arch2[Local Archive]
-    end
-
-    subgraph Island3[Island 3]
-    Pop3[Population 3<br/>25 candidates]
-    Arch3[Local Archive]
-    end
-
-    subgraph Island4[Island 4]
-    Pop4[Population 4<br/>25 candidates]
-    Arch4[Local Archive]
-    end
-
-    Arch1 -->|Every 2 rounds<br/>Top-3 elites| Pop2
-    Arch2 -->|Every 2 rounds<br/>Top-3 elites| Pop3
-    Arch3 -->|Every 2 rounds<br/>Top-3 elites| Pop4
-    Arch4 -->|Every 2 rounds<br/>Top-3 elites| Pop1
-
-    Pop1 -.->|Concurrent<br/>Optimization| Process1[Process 1]
-    Pop2 -.->|Concurrent<br/>Optimization| Process2[Process 2]
-    Pop3 -.->|Concurrent<br/>Optimization| Process3[Process 3]
-    Pop4 -.->|Concurrent<br/>Optimization| Process4[Process 4]
-
-    style Island1 fill:#e3f2fd
-    style Island2 fill:#f3e5f5
-    style Island3 fill:#e8f5e9
-    style Island4 fill:#fff3e0
-```
-
-**Benefits**:
-- **Parallelism**: 4 islands explore simultaneously (4× throughput)
-- **Diversity**: Ring topology prevents premature convergence
-- **Robustness**: Different islands may discover different high-quality regions
-
-#### 3. Async Orchestration
+#### 2. Async Orchestration
    - Scales to available compute resources automatically
    - Adaptive per-island concurrency based on dataset size and hardware
    - Multi-island parallelism for population diversity
    - Non-blocking I/O for LLM API calls
    - Thread pool executor for DSPy/sync operations
 
-#### 4. Disk Caching
-   - Fingerprint-based cache for candidate evaluations
-   - Persists across runs and islands
-   - 20%+ hit rate in typical workloads after warm-up
-
-#### 5. Adaptive Configuration
+#### 3. Adaptive Configuration
    - Auto-tunes based on dataset size:
      - Small (<50): Conservative shards, low concurrency
      - Medium (50-500): Balanced settings
@@ -578,14 +559,6 @@ adapter = DefaultAdapter(
 
 *Benchmarks: AIME dataset, gpt-4o-mini task LM, 10 optimization rounds, 8-core machine*
 
-### Cache Hit Rates
-
-| Round | Cache Hits | Evaluations Saved |
-|-------|-----------|------------------|
-| 1-2 | 0-5% | Warming up |
-| 3-5 | 15-25% | ~20% speedup |
-| 6-10 | 25-35% | ~30% speedup |
-
 ---
 
 ## 🤝 Contributing
@@ -651,37 +624,6 @@ If you use TurboGEPA's spec induction mutation operator, **please also cite Prom
 
 ---
 
-## 🔗 Resources
-
-### Original GEPA
-
-- **Paper**: [GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning](https://arxiv.org/abs/2507.19457)
-- **Original Repository**: [gepa-ai/gepa](https://github.com/gepa-ai/gepa)
-- **Reproduction Artifact**: [gepa-artifact](https://github.com/gepa-ai/gepa-artifact)
-- **DSPy Integration**: [dspy.GEPA Tutorials](https://dspy.ai/tutorials/gepa_ai_program/)
-
-### Community
-
-- **Discord**: [Join the #gepa channel](https://discord.gg/A7dABbtmFw)
-- **Twitter**: [@LakshyAAAgrawal](https://x.com/LakshyAAAgrawal) (original GEPA)
-- **Issues**: [GitHub Issues](https://github.com/Studio-Intrinsic/turbo-gepa/issues)
-
-### Talks & Tutorials
-
-- [GEPA Talk Slides](https://docs.google.com/presentation/d/1vIauqn55WfdgJjwU0IDjvaqpv1QHhvhPaLAKdrCFAEg/edit?usp=sharing)
-- [Matei Zaharia - Reflective Optimization with GEPA and DSPy](https://www.youtube.com/watch?v=rrtxyZ4Vnv8)
-- [Weaviate Tutorial: Optimizing Rerankers with GEPA](https://www.youtube.com/watch?v=H4o7h6ZbA4o)
-
-### Use Cases
-
-See the [original GEPA README](README_og_gepa.md) for extensive use case list, including:
-
-- [Databricks: 90x cheaper enterprise agents](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization)
-- [ARC Computer: +142% student performance](https://www.arc.computer/blog/supercharging-rl-with-online-optimization)
-- [Intrinsic Labs: 38% OCR error reduction](https://www.intrinsic-labs.ai/research/ocr-gepa-v1.pdf)
-
----
-
 ## 📝 License
 
 This project maintains the same license as the original GEPA repository.
@@ -716,7 +658,6 @@ TurboGEPA's contributions are limited to **performance engineering**:
 - Async/await orchestration
 - Island-based parallelism
 - ASHA successive halving
-- Disk caching infrastructure
 - Adaptive configuration
 
 ---

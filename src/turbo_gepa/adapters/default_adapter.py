@@ -853,15 +853,17 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             temp_seeds.append(Candidate(text=entry.candidate.text, meta=meta))
 
 
-        # Run Phase 2 optimization (30% of remaining budget, shorter rounds)
+        # Run Phase 2 optimization (30% of remaining budget, single round)
+        # Safety: Always enforce round limit to prevent infinite loops
+        MAX_PHASE2_ROUNDS = 1  # Single round of temperature exploration
         phase2_budget = int(max_evaluations * 0.3) if max_evaluations else None
-        phase2_rounds = min(5, max_rounds) if max_rounds else 5  # Shorter optimization
+        phase2_rounds = min(MAX_PHASE2_ROUNDS, max_rounds) if max_rounds else MAX_PHASE2_ROUNDS
 
         orchestrator2 = self._build_orchestrator(
-            enable_auto_stop=False,
+            enable_auto_stop=False,  # Temperature phase runs for fixed duration
             display_progress=display_progress,
             temperature_mutations_enabled=True,
-        )  # Short phase, no auto-stop
+        )
         await orchestrator2.run(temp_seeds, max_rounds=phase2_rounds, max_evaluations=phase2_budget)
 
         phase2_pareto = orchestrator2.archive.pareto_entries()
