@@ -174,7 +174,7 @@ class DSpyAdapter:
                         program=program,
                         dataset=[example],
                         metric=self.metric_fn,
-                        num_threads=1,
+                        num_threads=self.num_threads or 1,
                         raise_on_error=False,
                         capture_failed_parses=True,
                         failure_score=self.failure_score,

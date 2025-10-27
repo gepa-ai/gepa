@@ -366,7 +366,7 @@ graph TB
 
     subgraph Phase2["Phase 2: Temperature Cycling (30% of budget)"]
         Phase2Start --> TopPrompts[Select Top Prompts<br/>from Phase 1]
-        TopPrompts --> TempRange[Generate Temperature Variants<br/>0.0, 0.3, 0.5, 0.7, 1.0 and ±0.2 around baseline (clamped)]
+        TopPrompts --> TempRange["Generate Temperature Variants<br/>0.0, 0.3, 0.5, 0.7, 1.0<br/>±0.2 around baseline"]
         TempRange --> ASHA2[ASHA Evaluation<br/>Temperature Grid]
         ASHA2 --> Archive2[Final Archive<br/>Best prompt + temperature]
     end
