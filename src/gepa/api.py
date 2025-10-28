@@ -290,7 +290,7 @@ def optimize(
     else:
         if reflection_minibatch_size is not None:
             raise AssertionError(
-                "reflection_minibatch_size only accepted if batch_sampler is the literal 'epoch_shuffled'."
+                "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'."
             )
         batch_sampler_instance = batch_sampler
 
