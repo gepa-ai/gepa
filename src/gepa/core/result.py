@@ -182,7 +182,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
 
         return GEPAResult(
             candidates=list(state.program_candidates),
-            parents=[list(parent_row) for parent_row in state.parent_program_for_candidate],
+            parents=list(state.parent_program_for_candidate),
             val_aggregate_scores=list(state.program_full_scores_val_set),
             best_outputs_valset=getattr(state, "best_outputs_valset", None),
             val_subscores=[dict(scores) for scores in state.prog_candidate_val_subscores],
