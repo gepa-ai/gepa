@@ -65,8 +65,8 @@ def optimize(
     track_best_outputs: bool = False,
     display_progress_bar: bool = False,
     use_cloudpickle: bool = False,
-    seed: int = 0,
     # Reproducibility
+    seed: int = 0,
     raise_on_exception: bool = True,
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
 ) -> GEPAResult[RolloutOutput]:
