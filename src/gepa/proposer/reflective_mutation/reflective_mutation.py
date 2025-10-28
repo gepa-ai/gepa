@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
@@ -59,12 +60,14 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
     def propose_new_texts(
         self,
         candidate: dict[str, str],
-        reflective_dataset: dict[str, list[dict[str, Any]]],
+        reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
         components_to_update: list[str],
     ) -> dict[str, str]:
         if self.adapter.propose_new_texts is not None:
             return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update)
 
+        if self.reflection_lm is None:
+            raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
         new_texts: dict[str, str] = {}
         for name in components_to_update:
             base_instruction = candidate[name]

@@ -2,6 +2,8 @@
 # https://github.com/gepa-ai/gepa
 
 import re
+from collections.abc import Mapping
+from typing import Any, ClassVar
 
 from gepa.proposer.reflective_mutation.base import Signature
 
@@ -25,15 +27,17 @@ Read all the assistant responses and the corresponding feedback. Identify all ni
 
 Provide the new instructions within ``` blocks."""
 
-    input_keys = ["current_instruction_doc", "dataset_with_feedback", "prompt_template"]
-    output_keys = ["new_instruction"]
+    input_keys: ClassVar[list[str]] = ["current_instruction_doc", "dataset_with_feedback", "prompt_template"]
+    output_keys: ClassVar[list[str]] = ["new_instruction"]
 
     @classmethod
-    def validate_prompt_template(cls, prompt_template: str | None):
+    def validate_prompt_template(cls, prompt_template: str | None) -> None:
         if prompt_template is None:
             return
         missing_placeholders = [
-            p for p in ["<curr_instructions>", "<inputs_outputs_feedback>"] if p not in prompt_template
+            placeholder
+            for placeholder in ("<curr_instructions>", "<inputs_outputs_feedback>")
+            if placeholder not in prompt_template
         ]
         if missing_placeholders:
             raise ValueError(
@@ -41,7 +45,14 @@ Provide the new instructions within ``` blocks."""
             )
 
     @classmethod
-    def prompt_renderer(cls, input_dict: dict[str, str]) -> str:
+    def prompt_renderer(cls, input_dict: Mapping[str, Any]) -> str:
+        current_instruction = input_dict.get("current_instruction_doc")
+        if not isinstance(current_instruction, str):
+            raise TypeError("current_instruction_doc must be a string")
+
+        dataset = input_dict.get("dataset_with_feedback")
+        if not isinstance(dataset, list):
+            raise TypeError("dataset_with_feedback must be a list of records")
         def format_samples(samples):
             def render_value(value, level=3):
                 # level controls markdown header depth (###, ####, etc.)
@@ -53,7 +64,7 @@ Provide the new instructions within ``` blocks."""
                     if not value:
                         s += "\n"
                     return s
-                elif isinstance(value, (list, tuple)):
+                elif isinstance(value, list | tuple):
                     s = ""
                     for i, item in enumerate(value):
                         s += f"{'#' * level} Item {i + 1}\n"
@@ -73,15 +84,19 @@ Provide the new instructions within ``` blocks."""
 
             return "\n\n".join(convert_sample_to_markdown(sample, i + 1) for i, sample in enumerate(samples))
 
-        prompt_template = input_dict.get("prompt_template", None) or cls.default_prompt_template
+        prompt_template = input_dict.get("prompt_template")
+        if prompt_template is None:
+            prompt_template = cls.default_prompt_template
+
         cls.validate_prompt_template(prompt_template)
-        prompt = prompt_template.replace("<curr_instructions>", input_dict["current_instruction_doc"])
-        prompt = prompt.replace("<inputs_outputs_feedback>", format_samples(input_dict["dataset_with_feedback"]))
+
+        prompt = prompt_template.replace("<curr_instructions>", current_instruction)
+        prompt = prompt.replace("<inputs_outputs_feedback>", format_samples(dataset))
 
         return prompt
 
-    @classmethod
-    def output_extractor(cls, lm_out: str) -> dict[str, str]:
+    @staticmethod
+    def output_extractor(lm_out: str) -> dict[str, str]:
         def extract_instruction_text() -> str:
             # Find the first and last backtick positions (if any)
             start = lm_out.find("```") + 3

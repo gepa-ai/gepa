@@ -2,11 +2,14 @@
 # https://github.com/gepa-ai/gepa
 
 from dataclasses import dataclass
-from typing import Any, ClassVar, Generic
+from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
 from gepa.core.state import ProgramIdx
+
+if TYPE_CHECKING:
+    from gepa.core.state import GEPAState
 
 
 @dataclass(frozen=True)
@@ -82,24 +85,26 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     def to_dict(self) -> dict[str, Any]:
         cands = [dict(cand.items()) for cand in self.candidates]
 
-        return dict(
-            candidates=cands,
-            parents=self.parents,
-            val_aggregate_scores=self.val_aggregate_scores,
-            val_subscores=self.val_subscores,
-            best_outputs_valset=self.best_outputs_valset,
-            per_val_instance_best_candidates={k: list(v) for k, v in self.per_val_instance_best_candidates.items()},
-            discovery_eval_counts=self.discovery_eval_counts,
-            total_metric_calls=self.total_metric_calls,
-            num_full_val_evals=self.num_full_val_evals,
-            run_dir=self.run_dir,
-            seed=self.seed,
-            best_idx=self.best_idx,
-            validation_schema_version=GEPAResult._VALIDATION_SCHEMA_VERSION,
-        )
+        return {
+            "candidates": cands,
+            "parents": self.parents,
+            "val_aggregate_scores": self.val_aggregate_scores,
+            "val_subscores": self.val_subscores,
+            "best_outputs_valset": self.best_outputs_valset,
+            "per_val_instance_best_candidates": {
+                val_id: list(front) for val_id, front in self.per_val_instance_best_candidates.items()
+            },
+            "discovery_eval_counts": self.discovery_eval_counts,
+            "total_metric_calls": self.total_metric_calls,
+            "num_full_val_evals": self.num_full_val_evals,
+            "run_dir": self.run_dir,
+            "seed": self.seed,
+            "best_idx": self.best_idx,
+            "validation_schema_version": GEPAResult._VALIDATION_SCHEMA_VERSION,
+        }
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> "GEPAResult":
+    def from_dict(d: dict[str, Any]) -> "GEPAResult[RolloutOutput, DataId]":
         version = d.get("validation_schema_version") or 0
         if version > GEPAResult._VALIDATION_SCHEMA_VERSION:
             raise ValueError(
@@ -126,7 +131,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         }
 
     @staticmethod
-    def _migrate_from_dict_v0(d: dict[str, Any]) -> "GEPAResult":
+    def _migrate_from_dict_v0(d: dict[str, Any]) -> "GEPAResult[RolloutOutput, DataId]":
         kwargs = GEPAResult._common_kwargs_from_dict(d)
         kwargs["val_subscores"] = [
             {idx: score for idx, score in enumerate(scores)} for scores in d.get("val_subscores", [])
@@ -146,7 +151,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         return GEPAResult(**kwargs)
 
     @staticmethod
-    def _from_dict_v2(d: dict[str, Any]) -> "GEPAResult":
+    def _from_dict_v2(d: dict[str, Any]) -> "GEPAResult[RolloutOutput, DataId]":
         kwargs = GEPAResult._common_kwargs_from_dict(d)
         kwargs["val_subscores"] = [dict(scores) for scores in d.get("val_subscores", [])]
         per_val_instance_best_candidates_data = d.get("per_val_instance_best_candidates", {})
@@ -167,13 +172,16 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         return GEPAResult(**kwargs)
 
     @staticmethod
-    def from_state(state: Any, run_dir: str | None = None, seed: int | None = None) -> "GEPAResult":
-        """
-        Build a GEPAResult from a GEPAState.
-        """
+    def from_state(
+        state: "GEPAState[RolloutOutput]",
+        run_dir: str | None = None,
+        seed: int | None = None,
+    ) -> "GEPAResult[RolloutOutput, DataId]":
+        """Build a GEPAResult from a GEPAState."""
+
         return GEPAResult(
             candidates=list(state.program_candidates),
-            parents=list(state.parent_program_for_candidate),
+            parents=[list(parent_row) for parent_row in state.parent_program_for_candidate],
             val_aggregate_scores=list(state.program_full_scores_val_set),
             best_outputs_valset=getattr(state, "best_outputs_valset", None),
             val_subscores=[dict(scores) for scores in state.prog_candidate_val_subscores],
