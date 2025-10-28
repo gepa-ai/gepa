@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
@@ -173,7 +174,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
 
     @staticmethod
     def from_state(
-        state: "GEPAState[RolloutOutput]",
+        state: "GEPAState[RolloutOutput, DataId]",
         run_dir: str | None = None,
         seed: int | None = None,
     ) -> "GEPAResult[RolloutOutput, DataId]":

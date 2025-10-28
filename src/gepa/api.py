@@ -69,7 +69,7 @@ def optimize(
     seed: int = 0,
     raise_on_exception: bool = True,
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
-) -> GEPAResult[RolloutOutput]:
+) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
     GEPA can also leverage rich textual feedback obtained from the system's execution environment, evaluation,
@@ -163,9 +163,9 @@ def optimize(
         )
         active_adapter = adapter
 
-    # cast data to DataLoader
-    trainset = ensure_loader(trainset)
-    valset = ensure_loader(valset if valset is not None else trainset)
+    # Normalize datasets to DataLoader instances
+    train_loader = ensure_loader(trainset)
+    val_loader = ensure_loader(valset) if valset is not None else train_loader
 
     # Comprehensive stop_callback logic
     # Convert stop_callbacks to a list if it's not already
@@ -305,12 +305,13 @@ def optimize(
 
     if reflection_prompt_template is not None:
         assert not (hasattr(adapter, "propose_new_texts") and adapter.propose_new_texts is not None), (
-            f"Adapter {adapter!s} provides its own propose_new_texts method; reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
+            f"Adapter {adapter!s} provides its own propose_new_texts method; reflection_prompt_template will be ignored. "
+            "Set reflection_prompt_template to None."
         )
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
-        trainset=trainset,
+        trainset=train_loader,
         adapter=active_adapter,
         candidate_selector=candidate_selector,
         module_selector=module_selector_instance,
@@ -330,7 +331,7 @@ def optimize(
     if use_merge:
         merge_proposer = MergeProposer(
             logger=logger,
-            valset=valset,
+            valset=val_loader,
             evaluator=evaluator,
             use_merge=use_merge,
             max_merge_invocations=max_merge_invocations,
@@ -341,7 +342,7 @@ def optimize(
     engine = GEPAEngine(
         run_dir=run_dir,
         evaluator=evaluator,
-        valset=valset,
+        valset=val_loader,
         seed_candidate=seed_candidate,
         perfect_score=perfect_score,
         seed=seed,

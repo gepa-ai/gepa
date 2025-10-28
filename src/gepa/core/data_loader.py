@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Hashable, Protocol, Sequence, TypeVar, runtime_checkable
+from typing import Hashable, Protocol, Sequence, TypeVar, cast, runtime_checkable
 
 from gepa.core.adapter import DataInst
 
@@ -57,5 +57,5 @@ def ensure_loader(data_or_loader: Sequence[DataInst] | DataLoader[DataId, DataIn
     if isinstance(data_or_loader, DataLoader):
         return data_or_loader
     if isinstance(data_or_loader, Sequence):
-        return ListDataLoader(data_or_loader)
+        return cast(DataLoader[DataId, DataInst], ListDataLoader(data_or_loader))
     raise TypeError(f"Unable to cast to a DataLoader type: {type(data_or_loader)}")
