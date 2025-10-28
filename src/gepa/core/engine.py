@@ -127,7 +127,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             num_metric_calls_by_discovery_of_new_program=num_metric_calls_by_discovery,
         )
         state.full_program_trace[-1]["new_program_idx"] = new_program_idx
-        state.full_program_trace[-1]["evaluated_val_indices"] = sorted(valset_subscores.keys())
+        state.full_program_trace[-1]["evaluated_val_indices"] = sorted(valset_subscores.keys(), key=str)
 
         valset_score = self.val_evaluation_policy.get_valset_score(new_program_idx, state)
 
