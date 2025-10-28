@@ -151,7 +151,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     def run(self) -> GEPAState[RolloutOutput]:
         # Check tqdm availability if progress bar is enabled
         progress_bar = None
-        last_pbar_val = 0
         if self.display_progress_bar:
             if tqdm is None:
                 raise ImportError("tqdm must be installed when display_progress_bar is enabled")
@@ -218,6 +217,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.merge_proposer.last_iter_found_new_program = False
 
         # Main loop
+        last_pbar_val = 0
         while not self._should_stop(state):
             if self.display_progress_bar and progress_bar is not None:
                 delta = state.total_num_evals - last_pbar_val
@@ -265,9 +265,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 # 2) Reflective mutation proposer
                 proposal = self.reflective_proposer.propose(state)
                 if proposal is None:
-                    self.logger.log(
-                        f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate"
-                    )
+                    self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
                     continue
 
                 # Acceptance: require strict improvement on subsample
