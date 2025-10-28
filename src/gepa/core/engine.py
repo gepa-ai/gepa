@@ -2,7 +2,7 @@
 # https://github.com/gepa-ai/gepa
 
 import traceback
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from typing import Generic
 
 from gepa.core.adapter import DataInst
@@ -14,7 +14,7 @@ from gepa.logging.utils import log_detailed_metrics_after_discovering_new_progra
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
-from gepa.utils import CompositeStopper, StopperProtocol
+from gepa.utils import CompositeStopper, MaxMetricCallsStopper, StopperProtocol
 
 from .adapter import RolloutOutput, Trajectory
 
@@ -156,18 +156,19 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 raise ImportError("tqdm must be installed when display_progress_bar is enabled")
 
             total_calls: int | None = None
-            if self.stop_callback is not None:
-                stopper_iter: Iterable[StopperProtocol]
-                if isinstance(self.stop_callback, CompositeStopper):
-                    stopper_iter = self.stop_callback.stoppers
-                else:
-                    stopper_iter = (self.stop_callback,)
-
-                for stopper in stopper_iter:
-                    max_calls = getattr(stopper, "max_metric_calls", None)
-                    if isinstance(max_calls, int):
-                        total_calls = max_calls
+            stop_cb = self.stop_callback
+            if isinstance(stop_cb, MaxMetricCallsStopper):
+                total_calls = stop_cb.max_metric_calls
+            elif isinstance(stop_cb, CompositeStopper):
+                for stopper in stop_cb.stoppers:
+                    if isinstance(stopper, MaxMetricCallsStopper):
+                        total_calls = stopper.max_metric_calls
                         break
+
+            if total_calls is None and stop_cb is not None:
+                max_calls_attr = getattr(stop_cb, "max_metric_calls", None)
+                if isinstance(max_calls_attr, int):
+                    total_calls = max_calls_attr
 
             if total_calls is not None:
                 progress_bar = tqdm(total=total_calls, desc="GEPA Optimization", unit="rollouts")
