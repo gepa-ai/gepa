@@ -182,20 +182,27 @@ if RUN_TURBO:
 
     print(f"📊 Loaded {len(turbo_dataset)} AIME problems (matching GEPA trainset)")
 
-    # Create config for QUICK DEBUGGING (reduced concurrency, simpler ASHA)
+    # Create config optimized for SPEED (faster racing to full dataset)
     config = Config(
         shards=(
-            0.1,  # First shard: 30% of data (3 examples)
-            0.25,
-            1.0,  # Final shard: 100% of data (10 examples)
-        ),  # 2-tier ASHA for faster debugging
-        eval_concurrency=24,  # Lower parallelism for easier debugging
-        n_islands=1,  # Single island for simpler logs
-        # batch_size=4,  # Small batches
-        # max_mutations_per_round=4,  # Fewer mutations per round
-        # reflection_batch_size=3,  # Fewer traces per reflection
-        log_level="WARNING",  # Verbose logging to see what's happening
-        # Note: TurboGEPA now automatically stops at 100% on terminal shard
+            0.3,  # Small first shard for quick signal
+            1.0,  # Immediately verify promising candidates on the full dataset
+        ),
+        eval_concurrency=64,
+        max_total_inflight=64,
+        n_islands=1,
+        batch_size=4,
+        queue_limit=64,
+        mutation_buffer_min=2,
+        max_mutations_per_round=4,
+        reflection_batch_size=3,
+        cohort_quantile=0.4,  # Promote top 60% to keep the full shard busy
+        eps_improve=0.0,  # Immediately promote ties; 100% partial runs always advance
+        enable_rung_convergence=True,
+        lineage_patience=3,
+        lineage_min_improve=0.005,
+        target_quality=0.80,  # Stop once we hit 80% quality on the full dataset
+        log_level="WARNING",
     )
 
     # Create adapter
@@ -214,8 +221,8 @@ if RUN_TURBO:
     start_time = time.time()
     turbo_result = adapter.optimize(
         seeds=[seed_turbo],
-        # max_rounds=5,  # Limited rounds for quick debugging
-        enable_auto_stop=True,  # Disable auto-stop to see full 5 rounds
+        # max_rounds=5,  # Optional cap for debugging
+        enable_auto_stop=True,  # Stop automatically once target_quality is achieved
         display_progress=True,
         optimize_temperature_after_convergence=False,  # Skip temp phase for pure speed test
     )

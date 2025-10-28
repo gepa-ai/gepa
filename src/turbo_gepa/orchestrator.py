@@ -60,6 +60,9 @@ class Orchestrator:
                 shards=config.shards,
                 eps_improve=config.eps_improve,
                 quantile=config.cohort_quantile,
+                enable_convergence=config.enable_rung_convergence,
+                lineage_patience=config.lineage_patience,
+                lineage_min_improve=config.lineage_min_improve,
             )
         )
         self.queue: deque[Candidate] = deque(maxlen=config.queue_limit)
@@ -120,6 +123,7 @@ class Orchestrator:
         self._promoted_children: set[str] = set()
         # Track generation depth for each candidate (fingerprint -> generation number)
         self._candidate_generations: dict[str, int] = {}
+        self._lineage_history: defaultdict[str, deque] = defaultdict(lambda: deque(maxlen=8))
 
         # Deficit scheduler state for fair rung allocation
         import math
@@ -631,6 +635,11 @@ class Orchestrator:
 
         decision = self.scheduler.record(candidate_with_meta, result, self.config.promote_objective)
 
+        if isinstance(candidate_with_meta.meta, dict):
+            parent_fp = candidate_with_meta.meta.get("parent")
+            if parent_fp:
+                self._update_lineage_history(parent_fp, candidate_with_meta, result)
+
         if decision in ("promoted", "completed"):
             await self.archive.insert(candidate_with_meta, result)
             self._record_candidate_promotion(candidate_with_meta)
@@ -961,10 +970,12 @@ class Orchestrator:
             candidate_with_parent = entry.candidate.with_meta(
                 parent_objectives=parent_objectives,
             )
+            lineage = list(self._lineage_history.get(entry.candidate.fingerprint, ()))
             parent_contexts.append(
                 {
                     "candidate": candidate_with_parent,
                     "failures": [],  # Not used anymore, we have fresh reflection_examples
+                    "lineage": lineage,
                 }
             )
 
@@ -1195,6 +1206,52 @@ class Orchestrator:
                 hard_examples.append(example_id)
         if hard_examples:
             self.sampler.register_hard_examples(hard_examples)
+
+    def _update_lineage_history(self, parent_fp: str, child: Candidate, result: EvalResult) -> None:
+        history = self._lineage_history[parent_fp]
+        promote_obj = self.config.promote_objective
+        child_quality = result.objectives.get(promote_obj, 0.0)
+        parent_quality: float | None = None
+        meta = child.meta if isinstance(child.meta, dict) else {}
+        if isinstance(meta, dict):
+            parent_quality = meta.get("parent_score")
+            if parent_quality is None:
+                parent_obj = meta.get("parent_objectives")
+                if isinstance(parent_obj, dict):
+                    parent_raw = parent_obj.get(promote_obj)
+                    if isinstance(parent_raw, (int, float)):
+                        parent_quality = float(parent_raw)
+
+        failure_summaries: list[dict[str, object]] = []
+        for trace in result.traces:
+            if not isinstance(trace, dict):
+                continue
+            example_id = trace.get("example_id")
+            if example_id is None:
+                continue
+            trace_quality = trace.get("quality")
+            if isinstance(trace_quality, (int, float)) and trace_quality >= child_quality:
+                continue
+            failure_summaries.append(
+                {
+                    "example_id": example_id,
+                    "quality": trace_quality,
+                }
+            )
+            if len(failure_summaries) >= 3:
+                break
+
+        entry = {
+            "child_fingerprint": child.fingerprint,
+            "child_text": child.text,
+            "quality": child_quality,
+            "shard_fraction": result.shard_fraction or 0.0,
+            "tokens": result.objectives.get("tokens", 0),
+            "parent_quality": parent_quality,
+            "generation_method": meta.get("generation_method") if isinstance(meta, dict) else None,
+            "failures": failure_summaries,
+        }
+        history.appendleft(entry)
 
     def _shard_size(self, shard_fraction: float) -> int:
         total = max(len(self.sampler.example_ids), 1)

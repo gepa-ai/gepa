@@ -146,6 +146,11 @@ class Config:
     #   - CRITICAL: Only critical failures
     log_level: str = "WARNING"  # Minimum log level (default: WARNING for clean dashboard output)
 
+    # Scheduler options
+    enable_rung_convergence: bool = False  # Promote stagnating candidates automatically
+    lineage_patience: int = 0  # Number of stagnant children before forcing promotion (0 disables)
+    lineage_min_improve: float = 0.01  # Minimum improvement over parent to reset lineage counter
+
     def __post_init__(self):
         """Auto-scale parameters based on eval_concurrency if not explicitly set."""
         # Auto-scale batch_size to utilize concurrency efficiently

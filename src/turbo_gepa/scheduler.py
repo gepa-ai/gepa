@@ -10,11 +10,12 @@ from __future__ import annotations
 import logging
 import statistics
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Sequence
+from dataclasses import dataclass, field, replace
+from typing import Any, Sequence
 
 from .cache import candidate_key
 from .interfaces import Candidate, EvalResult
+from .stop_governor import EpochMetrics, StopGovernor, StopGovernorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,17 @@ class SchedulerConfig:
     shards: Sequence[float]
     eps_improve: float
     quantile: float
+    enable_convergence: bool = False
+    lineage_patience: int = 0
+    lineage_min_improve: float = 0.01
+
+
+@dataclass
+class _ConvergenceState:
+    governor: StopGovernor
+    evals: int = 0
+    tokens: float = 0.0
+    last_debug: dict[str, Any] | None = None
 
 
 class BudgetedScheduler:
@@ -53,9 +65,71 @@ class BudgetedScheduler:
         self._candidate_levels: dict[str, int] = {}
         self._pending_promotions: list[Candidate] = []
         self._parent_scores: dict[str, float] = {}
+        self._convergence: dict[str, dict[int, _ConvergenceState]] = {}
+        self._convergence_config = StopGovernorConfig(
+            alpha=0.5,
+            hysteresis_window=3,
+            stop_threshold=0.2,
+            max_no_improvement_epochs=4,
+        )
+        self._lineage_failures: dict[tuple[str, int], int] = {}
+        self._lineage_seen_children: set[tuple[str, int]] = set()
 
     def current_shard_index(self, candidate: Candidate) -> int:
         return self._candidate_levels.get(candidate_hash(candidate), 0)
+
+    def _get_convergence_state(self, cand_hash: str, rung_idx: int) -> _ConvergenceState:
+        cand_states = self._convergence.setdefault(cand_hash, {})
+        state = cand_states.get(rung_idx)
+        if state is None:
+            state = _ConvergenceState(governor=StopGovernor(replace(self._convergence_config)))
+            cand_states[rung_idx] = state
+        return state
+
+    def _clear_convergence(self, cand_hash: str, rung_idx: int | None = None) -> None:
+        states = self._convergence.get(cand_hash)
+        if not states:
+            return
+        if rung_idx is None:
+            self._convergence.pop(cand_hash, None)
+            return
+        states.pop(rung_idx, None)
+        if not states:
+            self._convergence.pop(cand_hash, None)
+
+    def _apply_convergence(
+        self,
+        candidate: Candidate,
+        rung_idx: int,
+        final_rung_index: int,
+        score: float,
+        result: EvalResult,
+    ) -> tuple[bool, dict[str, Any] | None]:
+        """Update convergence tracker and decide whether to promote."""
+        cand_hash = candidate_hash(candidate)
+        state = self._get_convergence_state(cand_hash, rung_idx)
+        state.evals += 1
+        state.tokens += result.objectives.get("tokens", 0.0)
+
+        metrics = EpochMetrics(
+            round_num=state.evals,
+            hypervolume=score,
+            new_evaluations=state.evals,
+            best_quality=score,
+            best_cost=result.objectives.get("neg_cost", float("-inf")),
+            frontier_ids={f"{cand_hash}:{rung_idx}"},
+            qd_filled_cells=1,
+            qd_total_cells=1,
+            qd_novelty_rate=0.0,
+            total_tokens_spent=int(state.tokens),
+        )
+        state.governor.update(metrics)
+        should_stop, debug = state.governor.should_stop()
+        if should_stop:
+            state.last_debug = debug
+        if should_stop and rung_idx < final_rung_index:
+            return True, debug
+        return False, debug
 
     def current_shard_fraction(self, candidate: Candidate) -> float:
         idx = self.current_shard_index(candidate)
@@ -67,16 +141,76 @@ class BudgetedScheduler:
         score = result.objective(objective_key, default=None)
         if score is None:
             return decision
+
         idx = self.current_shard_index(candidate)
+        final_rung_index = len(self.rungs) - 1
         rung = self.rungs[idx]
         rung.update(candidate, score)
         cand_hash = candidate_hash(candidate)
+
+        force_promote = False
+        force_reason: str | None = None
+        convergence_debug: dict[str, Any] | None = None
+        if self.config.enable_convergence:
+            force_promote, convergence_debug = self._apply_convergence(
+                candidate,
+                idx,
+                final_rung_index,
+                score,
+                result,
+            )
+            if force_promote and convergence_debug and convergence_debug.get("reason"):
+                force_reason = f"convergence:{convergence_debug['reason']}"
+
         parent_objectives = candidate.meta.get("parent_objectives") if isinstance(candidate.meta, dict) else None
         parent_score = None
         if isinstance(parent_objectives, dict):
             parent_score = parent_objectives.get(objective_key)
         elif "parent_score" in candidate.meta:
             parent_score = candidate.meta.get("parent_score")
+        parent_fp = candidate.meta.get("parent") if isinstance(candidate.meta, dict) else None
+
+        if (
+            parent_fp
+            and self.config.lineage_patience > 0
+            and parent_score is not None
+            and idx < final_rung_index
+        ):
+            child_seen_key = (cand_hash, idx)
+            if child_seen_key not in self._lineage_seen_children:
+                self._lineage_seen_children.add(child_seen_key)
+                lineage_key = (parent_fp, idx)
+                delta = score - parent_score
+                if delta >= self.config.lineage_min_improve:
+                    self._lineage_failures.pop(lineage_key, None)
+                else:
+                    failures = self._lineage_failures.get(lineage_key, 0) + 1
+                    self._lineage_failures[lineage_key] = failures
+                    if failures >= self.config.lineage_patience and not force_promote:
+                        force_promote = True
+                        force_reason = f"lineage:{failures}"
+                        self._lineage_failures.pop(lineage_key, None)
+
+        if force_promote:
+            if force_reason:
+                logger.debug("   ⚡ ASHA: Promoted via %s", force_reason)
+            elif convergence_debug and convergence_debug.get("reason"):
+                logger.debug(
+                    "   ⚡ ASHA: Promoted via convergence (%s)",
+                    convergence_debug["reason"],
+                )
+            else:
+                logger.debug("   ⚡ ASHA: Promoted via convergence")
+            self._candidate_levels[cand_hash] = min(idx + 1, final_rung_index)
+            self._pending_promotions.append(candidate)
+            self._parent_scores[cand_hash] = score
+            if cand_hash in rung.results:
+                del rung.results[cand_hash]
+            self._clear_convergence(cand_hash, idx)
+            if parent_fp and self.config.lineage_patience > 0:
+                self._lineage_failures.pop((parent_fp, idx), None)
+            self._lineage_seen_children.discard((cand_hash, idx))
+            return "promoted"
 
         # Check parent comparison pruning
         if parent_score is not None and score < parent_score + self.config.eps_improve:
@@ -87,14 +221,19 @@ class BudgetedScheduler:
                 f"{parent_score:.1%}",
                 f"{self.config.eps_improve:.2%}",
             )
+            self._clear_convergence(cand_hash)
+            self._lineage_seen_children.discard((cand_hash, idx))
             return "pruned"
 
-        if idx >= len(self.rungs) - 1:
+        if idx >= final_rung_index:
             logger.debug("   ✅ ASHA: Completed at final rung (score=%s)", f"{score:.1%}")
+            self._clear_convergence(cand_hash, idx)
+            if parent_fp and self.config.lineage_patience > 0:
+                self._lineage_failures.pop((parent_fp, idx), None)
+            self._lineage_seen_children.discard((cand_hash, idx))
             return "completed"  # already at max shard
 
         # Always promote perfect scores (1.0) to verify on full dataset
-        # This ensures we don't claim 100% accuracy based on a small shard
         should_promote = score >= 1.0
 
         if not should_promote:
@@ -107,7 +246,6 @@ class BudgetedScheduler:
                 return decision
             should_promote = score >= threshold
 
-            # Log promotion decision details
             if should_promote:
                 logger.debug(
                     "   ⬆️  ASHA: PROMOTED! (score=%s >= threshold=%s, rung %s -> %s)",
@@ -129,16 +267,17 @@ class BudgetedScheduler:
             self._candidate_levels[cand_hash] = idx + 1
             self._pending_promotions.append(candidate)
             self._parent_scores[cand_hash] = score
-
-            # Rung cleanup: Remove this candidate's results from the previous rung
-            # to keep ASHA signal clean and avoid confusion about which shard's
-            # results are current. The candidate will be re-evaluated on the next shard.
             if cand_hash in rung.results:
                 del rung.results[cand_hash]
-
+            self._clear_convergence(cand_hash, idx)
+            if parent_fp and self.config.lineage_patience > 0:
+                self._lineage_failures.pop((parent_fp, idx), None)
+            self._lineage_seen_children.discard((cand_hash, idx))
             decision = "promoted"
         else:
             decision = "pruned"
+            self._clear_convergence(cand_hash)
+            self._lineage_seen_children.discard((cand_hash, idx))
         return decision
 
     def shard_fraction_for_index(self, index: int) -> float:
