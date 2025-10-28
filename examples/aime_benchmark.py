@@ -12,18 +12,51 @@ from turbo_gepa.config import Config
 Speed Benchmarking Notes:
 Gepa: 640.3s for 3 evolutions
 
+================================================================================
+BENCHMARK RESULTS
+================================================================================
+
+⚡ TurboGEPA:
+   Time: 310.7s
+   Quality: 83.3% (evaluated on 100.0% of dataset)
+   Total evaluations: 0
+   Time per evaluation: 0.00s
+
+   Evolution:
+   └─ Seeds → 3 parents → 116 children (116 edges)
+   └─ Generated 96 mutations, 5 promoted to Pareto
+   └─ Final Pareto size: 2, Total candidates: 2
+
+================================================================================
+BEST PROMPTS
+================================================================================
+
+⚡ TurboGEPA Best Prompt:
+You are an expert in solving American Invitational Mathematics Examination (AIME) problems, which are advanced high school competition math problems typically requiring answers as integers from 0 to 999, presented in three digits with leading zeros if necessary. Your goal is to solve the given problem step-by-step using rigorous mathematical reasoning and provide the final numerical answer in the exact format '### <answer>', where <answer> is the three-digit integer (padded with leading zeros, e.g., 073 for 73, 033 for 33, 000 for 0) without any additional text, explanation, or symbols after the triple hashes. Always verify the answer is within 000-999 and format it precisely to avoid errors.
+
+Key strategies and techniques for AIME problems:
+- For probability and counting with constraints (e.g., even number of blocks between pairs of identical items like colors in arrangements), use parity of positions (odd/even slots) to separate pairs into two independent permutations: for 12 positions with 6 pairs, even arrangements often yield 6! × 6! favorable cases out of total multinomial 12! / (2!)^6. Alternatively, employ constructive counting by placing pairs sequentially, halving choices for even separations (e.g., 12×6 for first pair, 10×5 for second, etc.), simplifying to fractions like 16/231 where m+n=247. Watch for overcounting and ensure even parity condition holds for all pairs simultaneously.
+- In inclusion-exclusion or set problems with mandatory items (e.g., all own candy hearts, plus subsets owning rings/clubs/spades with given exactly k overlaps), define variables for exactly 1,2,3,4 items total (including mandatory): total people equation w + x + y + z = n (e.g., 900), given x=437 (exactly 2), y=234 (exactly 3), so w + z = 229. Total items equation (sum of individual counts, e.g., 195+367+562+900=2024) gives w + 2x + 3y + 4z = total. Solve system for z (e.g., 073). Adjust for mandatory by counting "effective" items excluding it, but include in totals; common pitfall: misclassifying exactly k including/excluding mandatory.
+- For systems of logarithmic equations (e.g., log2(x/(yz))=1/2, etc., solve for |log2(x^4 y^3 z^2)| as m/n with m+n), assign a=log2 x, b=log2 y, c=log2 z, form linear system a-b-c=1/2, -a+b-c=1/3, -a-b+c=1/4. Add all for - (a+b+c) = 13/12, subtract pairwise to isolate (e.g., 2a = -7/12 so a=-7/24). Compute 4a+3b+2c (e.g., -25/8), take absolute value 25/8, m+n=033. Alternative: add pairs to get -2 log x = sum, etc. Pitfall: ensure positive reals imply logs can be negative; verify by substitution.
+- In number theory problems on repeating decimals (e.g., 0.abcd-bar as fraction in lowest terms, count distinct numerators modulo 1000), express as k/9999 where k=abcd (1≤k≤9998, nonzero digits). Factor 9999=3²×11×101; after reduction gcd(d)=g, numerator x=k/g, denominator y=9999/g. Use inclusion-exclusion over prime factors: coprime case φ(9999)=6000 (multiple of 1000, ≡0 mod 1000). Cases: divisible by 3 but not 11/101 (x multiples of 3 up to 1111/3=370.333, subtract subcases: 370-33-3=334); by 11 not 3/101 (82-27-0=55); by 33 not 101 (3-0=3); by 101 (0). Total 6392 ≡392 mod 1000. Pitfall: handle 3² carefully (cancel 9 for one 3 left in denom), ensure x≥1 and distinct across denominators; no overcounting as numerators unique per reduced fraction.
+- For proportion/ratio problems with arrivals (e.g., adults 5/12 initially, become 11/25 after +50 people, min final adults), let initial total x (multiple of 12), adults (5/12)x integer. Final total x+50 multiple of 25, so x ≡ -50 ≡0 mod 25 (since 50=2×25). Solve Chinese Remainder: x ≡0 mod 12 and mod 25, lcm(12,25)=300, minimal x=300. Final adults= (300+50)×11/25=154. General: ensure integers via moduli, minimize by smallest positive solution; pitfall: forget integrality of adults or non-negative bus adults.
+- Broader AIME tips: For systems with roots/constraints, try trig subs (x=2sin²θ). Floor/sums: modular residues, sum formulas. Geometry/polygons: symmetry, parallel chords, binomial for counts. Circles/3D: power of point, similar triangles, projections to trapezoids. Verify positives/uniqueness, check mod cycles, avoid extraneous roots from squaring.
+
+Domain-specific facts:
+- AIME answers: always 000-999, three digits, no units.
+- Repeating decimals period 4: denom 9999=3²×11×101, divisors limited.
+- Parity in linear arrangements: even separations force same-parity positions for pairs.
+- Mandatory items in Venn: shift "exactly k" to include it, total items include all.
+- Log systems: pairwise sums isolate variables efficiently.
+- Proportions: simultaneous congruences for minimal integers.
+
+Always compute carefully (squares/roots/mods), ensure fraction simplest (gcd=1), and output only reasoning + exact '### XXX' format.
+
+================================================================================
+(.venv) gmiller@Greg-Millers-M1-MackBook-Pro-3 gepa % 
 
 
 """
-
-# Wipe the cache using shutil for safer cross-platform removal
-cache_dir = Path(".turbo_gepa/cache")
-print(f"🧹 Cache directory check: {cache_dir.resolve()}")
-if cache_dir.exists():
-    shutil.rmtree(cache_dir)
-    print(f"   ✅ Cleared existing cache")
-else:
-    print(f"   ℹ️  No existing cache to clear")
 
 
 def _ensure_fd_limit(min_soft: int = 4096) -> Tuple[bool, Optional[int], Optional[int]]:
@@ -87,7 +120,7 @@ if limit_changed and new_limit is not None and previous_limit is not None:
 trainset, valset, _ = gepa.examples.aime.init_dataset()
 
 # # Use smaller subset for faster benchmark
-BENCHMARK_SIZE = 12  # Use small subset for quick debugging
+BENCHMARK_SIZE = 45  # Use small subset for quick debugging
 trainset = trainset[:BENCHMARK_SIZE]
 valset = valset[: min(BENCHMARK_SIZE, len(valset))]
 
@@ -165,6 +198,14 @@ mutations_generated = 0
 mutations_promoted = 0
 
 if RUN_TURBO:
+    # Wipe the cache using shutil for safer cross-platform removal
+    cache_dir = Path(".turbo_gepa/")
+    print(f"🧹 Cache directory check: {cache_dir.resolve()}")
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)
+        print(f"   ✅ Cleared existing cache")
+    else:
+        print(f"   ℹ️  No existing cache to clear")
     print("\n" + "=" * 80)
     print("TURBOGEPA OPTIMIZATION")
     print("=" * 80 + "\n")
@@ -182,27 +223,30 @@ if RUN_TURBO:
 
     print(f"📊 Loaded {len(turbo_dataset)} AIME problems (matching GEPA trainset)")
 
-    # Create config optimized for SPEED (faster racing to full dataset)
+    # Create config optimized for DEBUGGING (fast iterations, verbose output)
     config = Config(
         shards=(
-            0.3,  # Small first shard for quick signal
+            0.05,  # Small first shard for quick signal
+            0.1,  # Small first shard for quick signal
+            0.2,  # Small first shard for quick signal
+            0.5,  # Small first shard for quick signal
             1.0,  # Immediately verify promising candidates on the full dataset
         ),
-        eval_concurrency=64,
-        max_total_inflight=64,
+        eval_concurrency=248,
+        # max_total_inflight=64,
         n_islands=1,
-        batch_size=4,
-        queue_limit=64,
-        mutation_buffer_min=2,
-        max_mutations_per_round=4,
-        reflection_batch_size=3,
-        cohort_quantile=0.4,  # Promote top 60% to keep the full shard busy
-        eps_improve=0.0,  # Immediately promote ties; 100% partial runs always advance
-        enable_rung_convergence=True,
-        lineage_patience=3,
-        lineage_min_improve=0.005,
-        target_quality=0.80,  # Stop once we hit 80% quality on the full dataset
-        log_level="WARNING",
+        # batch_size=4,
+        # queue_limit=64,
+        # mutation_buffer_min=2,  # Keep generating mutations when queue < 2
+        # max_mutations_per_round=4,  # Generate 4 mutations per round
+        # reflection_batch_size=3,
+        # cohort_quantile=0.4,  # Promote top 60%
+        # eps_improve=0.0,  # Immediately promote ties
+        # enable_rung_convergence=False,  # Disable convergence checks for debugging
+        # lineage_patience=10,  # Allow more rounds without improvement
+        # lineage_min_improve=0.01,
+        target_quality=0.75,  # Lower target (50%) for faster completion during debugging
+        log_level="INFO",
     )
 
     # Create adapter
@@ -221,10 +265,9 @@ if RUN_TURBO:
     start_time = time.time()
     turbo_result = adapter.optimize(
         seeds=[seed_turbo],
-        # max_rounds=5,  # Optional cap for debugging
-        enable_auto_stop=True,  # Stop automatically once target_quality is achieved
+        enable_auto_stop=False,  # Disable auto-stop to force full 10 rounds
         display_progress=True,
-        optimize_temperature_after_convergence=False,  # Skip temp phase for pure speed test
+        optimize_temperature_after_convergence=False,  # Skip temp phase for debugging
     )
     turbo_elapsed = time.time() - start_time
 

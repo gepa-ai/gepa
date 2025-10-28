@@ -82,11 +82,21 @@ class AsyncEvaluator:
                 return
 
             try:
+                # Log when we're about to start an API call
+                if show_progress:
+                    self.logger.log(f"🔄 Starting eval for example {example_id} (inflight: {self._inflight_examples})")
+
                 async with semaphore:
                     self._inflight_examples += 1
                     if self._inflight_examples > self._max_observed_inflight:
                         self._max_observed_inflight = self._inflight_examples
+
+                    _start_api = time.time()
                     metrics = await self.task_runner(candidate, example_id)
+                    _elapsed_api = time.time() - _start_api
+
+                    if show_progress:
+                        self.logger.log(f"✅ Completed eval for example {example_id} in {_elapsed_api:.1f}s")
                 # Ensure inflight counter is decremented even if mapper raises
                 self._inflight_examples = max(0, self._inflight_examples - 1)
                 mapped = self.metrics_mapper(metrics)
@@ -113,8 +123,12 @@ class AsyncEvaluator:
                 self._inflight_examples = max(0, self._inflight_examples - 1)
                 # Handle task runner failures gracefully
                 # Return zero scores to avoid crashing the entire batch
+                error_msg = f"⚠️  Evaluation failed for example {example_id}: {type(e).__name__}: {str(e)[:100]}"
                 if self.verbose_errors:
-                    self.logger.log(f"Warning: Evaluation failed for example {example_id}: {e}")
+                    self.logger.log(error_msg)
+                elif show_progress:
+                    # Always log failures when show_progress is on
+                    self.logger.log(error_msg)
                 fallback_metrics = {
                     "quality": 0.0,
                     "neg_cost": 0.0,
@@ -172,8 +186,16 @@ class AsyncEvaluator:
                         task.cancel()
                     break
 
-            # Wait for next batch to complete
-            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            # Wait for next batch to complete (with timeout to prevent indefinite blocking)
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED, timeout=5.0)
+
+            # If nothing completed in 5 seconds, log status
+            if not done and show_progress:
+                self.logger.log(
+                    f"⏳ Waiting for tasks: {len(pending)} pending, {completed}/{total} completed"
+                )
+                continue
+
             for task in done:
                 try:
                     await task  # Collect result (already added to results by eval_one)

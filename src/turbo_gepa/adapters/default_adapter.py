@@ -402,7 +402,8 @@ IMPORTANT:
                 if self.reflection_model.reasoning_effort is not None:
                     completion_kwargs["reasoning_effort"] = self.reflection_model.reasoning_effort
 
-                response = await acompletion(**completion_kwargs)
+                import asyncio
+                response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=180.0)
 
                 elapsed = time.time() - start_time
                 content = response.choices[0].message.content
@@ -452,10 +453,21 @@ IMPORTANT:
 
                 return mutations[:num_mutations]
 
+            except asyncio.TimeoutError:
+                elapsed = time.time() - start_time
+                print(f"❌ Reflection LLM call TIMEOUT after {elapsed:.1f}s")
+                print(f"   Model: {self.reflection_model.name}")
+                print(f"   Requested {num_mutations} mutations from {len(parent_contexts)} parents")
+                raise RuntimeError(
+                    f"Reflection LLM call timed out after {elapsed:.1f}s. "
+                    "This may indicate API rate limits or a very complex reflection task."
+                )
             except Exception as e:
                 elapsed = time.time() - start_time
                 error_type = type(e).__name__
                 error_msg = str(e)
+                print(f"❌ Reflection LLM call FAILED after {elapsed:.1f}s: {error_type}: {error_msg}")
+                print(f"   Model: {self.reflection_model.name}")
                 raise RuntimeError(
                     f"Batched reflection LLM call failed after {elapsed:.2f}s ({error_type}: {error_msg}). "
                     "Check your API key, model name, and network connection."
@@ -536,7 +548,8 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 if self.reflection_model.reasoning_effort is not None:
                     completion_kwargs["reasoning_effort"] = self.reflection_model.reasoning_effort
 
-                response = await acompletion(**completion_kwargs)
+                import asyncio
+                response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=180.0)
 
                 elapsed = time.time() - start_time
                 content = response.choices[0].message.content
@@ -547,10 +560,21 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
 
                 return specs[:num_specs]
 
+            except asyncio.TimeoutError:
+                elapsed = time.time() - start_time
+                print(f"❌ Spec induction LLM call TIMEOUT after {elapsed:.1f}s")
+                print(f"   Model: {self.reflection_model.name}")
+                print(f"   Requested {num_specs} specs from {len(task_examples)} examples")
+                raise RuntimeError(
+                    f"Spec induction LLM call timed out after {elapsed:.1f}s. "
+                    "This may indicate API rate limits or a very complex task."
+                )
             except Exception as e:
                 elapsed = time.time() - start_time
                 error_type = type(e).__name__
                 error_msg = str(e)
+                print(f"❌ Spec induction LLM call FAILED after {elapsed:.1f}s: {error_type}: {error_msg}")
+                print(f"   Model: {self.reflection_model.name}")
                 raise RuntimeError(
                     f"Spec induction LLM call failed after {elapsed:.2f}s ({error_type}: {error_msg}). "
                     "Check your API key, model name, and network connection."
@@ -707,14 +731,27 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
 
             _start_llm = _time_module.time()
             try:
-                response = await acompletion(**completion_kwargs)
+                # Add timeout to prevent hanging on slow API calls
+                import asyncio
+                response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=120.0)
                 _elapsed_llm = _time_module.time() - _start_llm
+                if _elapsed_llm > 60.0:
+                    print(f"⚠️  Slow task LLM call: {_elapsed_llm:.1f}s for example {example_id}")
+            except asyncio.TimeoutError:
+                _elapsed_llm = _time_module.time() - _start_llm
+                print(f"❌ Task LLM call TIMEOUT after {_elapsed_llm:.1f}s for example {example_id}")
+                print(f"   Model: {self.task_model.name}")
+                print(f"   This may indicate API rate limits or a very long response.")
+                raise RuntimeError(
+                    f"Task LLM call timed out after {_elapsed_llm:.1f}s for example {example_id}. "
+                    "This may indicate API rate limits or a very long response. Consider using a faster model."
+                )
             except Exception as e:
                 _elapsed_llm = _time_module.time() - _start_llm
                 # Some models don't support custom temperature (e.g., o1-preview)
                 if "temperature" in str(e).lower() and completion_kwargs.get("temperature") is not None:
                     completion_kwargs.pop("temperature", None)
-                    response = await acompletion(**completion_kwargs)
+                    response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=120.0)
                 else:
                     raise  # Re-raise if it's a different error
 
@@ -741,6 +778,9 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             # No heuristic fallback - raise the error with clear message
             error_type = type(e).__name__
             error_msg = str(e)
+            print(f"❌ Task LLM call FAILED: {error_type}: {error_msg}")
+            print(f"   Example ID: {example_id}")
+            print(f"   Model: {self.task_model.name}")
             raise RuntimeError(
                 f"Task LLM call failed ({error_type}: {error_msg}). "
                 "Check your API key, model name, and network connection."

@@ -16,7 +16,7 @@ from typing import Any, Callable, Iterable, Sequence
 from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
 
 from .archive import Archive, ArchiveEntry
-from .cache import DiskCache
+from .cache import DiskCache, candidate_key
 from .config import Config
 from .evaluator import AsyncEvaluator
 from .interfaces import Candidate, EvalResult
@@ -124,6 +124,9 @@ class Orchestrator:
         # Track generation depth for each candidate (fingerprint -> generation number)
         self._candidate_generations: dict[str, int] = {}
         self._lineage_history: defaultdict[str, deque] = defaultdict(lambda: deque(maxlen=8))
+        self._sched_to_fingerprint: dict[str, str] = {}
+        self._promotion_pending: set[str] = set()
+        self._last_mutation_attempt: float = 0.0
 
         # Deficit scheduler state for fair rung allocation
         import math
@@ -215,17 +218,8 @@ class Orchestrator:
 
                 self.metrics_callback(extract_metrics(self))
 
-        # Ensure mutation generation task is running
-        if self._mutation_task is None or self._mutation_task.done():
-
-            async def _mutation_wrapper():
-                try:
-                    await self._spawn_mutations(callback=self._mutation_buffer.append)
-                except Exception as exc:  # pragma: no cover - debugging aid
-                    self.logger.log(f"❌ Mutation task error: {type(exc).__name__}: {exc}")
-                    raise
-
-            self._mutation_task = asyncio.create_task(_mutation_wrapper())
+        # DON'T start mutation task here - archive is empty!
+        # Let the main loop start it naturally after seeds are evaluated
 
         # Window tracking mirrors the legacy batch counter so downstream logging stays intact
         window_size = max(1, self.config.batch_size)
@@ -236,6 +230,26 @@ class Orchestrator:
         # Simple progress tracking for streaming mode
         loop_iter = 0
         last_progress_display = self.evaluations_run
+        last_heartbeat = 0  # Track last heartbeat for hung detection
+
+        # Create debug log file for diagnostics
+        import time
+        _debug_log_path = f".turbo_gepa/debug_{int(time.time())}.log"
+        import os
+        os.makedirs(os.path.dirname(_debug_log_path), exist_ok=True)
+        _debug_log_file = open(_debug_log_path, "w", buffering=1)  # Line buffered
+
+        def _debug_log(msg: str):
+            """Log to both logger and debug file."""
+            timestamp = time.strftime("%H:%M:%S")
+            full_msg = f"[{timestamp}] {msg}"
+            _debug_log_file.write(full_msg + "\n")
+            _debug_log_file.flush()
+            if self.show_progress:
+                self.logger.log(msg)
+
+        _debug_log(f"🚀 Starting main optimization loop (max_evaluations={max_evaluations})")
+        _debug_log(f"   Debug log: {_debug_log_path}")
 
         while True:
             if max_rounds is not None and window_id >= max_rounds:
@@ -247,11 +261,39 @@ class Orchestrator:
             while self._mutation_buffer:
                 self.enqueue([self._mutation_buffer.popleft()])
 
+            # DEBUG: Log critical state before launch attempt
+            if loop_iter % 10 == 0 and len(self.queue) > 0 and self._total_inflight == 0:
+                _debug_log(f"🔍 MAIN LOOP: queue={len(self.queue)}, inflight={self._total_inflight}, buffer={len(self._mutation_buffer)}")
+                _debug_log(f"   Per-shard queues: {[len(q) for q in self._per_shard_queue]}")
+
+            # DEBUG: Log before potentially blocking await
+            if loop_iter % 20 == 0:
+                _debug_log(f"🔄 Loop iteration {loop_iter}: About to call _stream_launch_ready")
+
             # 2) Launch as many evaluations as capacity allows
             launched = await self._stream_launch_ready(window_id, max_evaluations)
+            if launched > 0 and loop_iter % 5 == 0:
+                _debug_log(f"🚀 Launched {launched} candidate(s), total inflight: {self._total_inflight}")
+
+            # DEBUG: Log before drain
+            if loop_iter % 20 == 0:
+                _debug_log(f"🔄 Loop iteration {loop_iter}: About to call _stream_drain_results")
 
             # 3) Drain completed results and update bookkeeping
             drained = await self._stream_drain_results()
+            if drained > 0 and loop_iter % 5 == 0:
+                _debug_log(f"✅ Drained {drained} result(s), total inflight: {self._total_inflight}")
+
+            # Heartbeat: log every 30 seconds even if nothing is happening
+            # This proves the system is alive and not hung
+            now = time.time()
+            if now - last_heartbeat >= 30.0:
+                _debug_log(
+                    f"💓 HEARTBEAT: Inflight={self._total_inflight}, "
+                    f"Queue={len(self.queue)}, ExInflight={self._examples_inflight}, "
+                    f"Evals={self.evaluations_run}, LoopIter={loop_iter}"
+                )
+                last_heartbeat = now
 
             # Simple progress indicator: show activity frequently
             loop_iter += 1
@@ -282,14 +324,39 @@ class Orchestrator:
                         self.metrics_callback(extract_metrics(self))
 
             # 4) Refresh mutation generation if queues are running low
-            if self._mutation_task and self._mutation_task.done():
-                self._mutation_task = None
             # Only spawn new mutations if we haven't exceeded the evaluation budget
             should_spawn_mutations = (
                 len(self.queue) + len(self._mutation_buffer)
             ) < self.config.mutation_buffer_min and (max_evaluations is None or self.evaluations_run < max_evaluations)
+
+            # Debug mutation spawning logic
+            if loop_iter % 100 == 0 and len(self.queue) == 0 and self._total_inflight == 0:
+                task_status = 'None' if self._mutation_task is None else ('done' if self._mutation_task.done() else 'running')
+                _debug_log(
+                    f"🔍 MUTATION CHECK: queue={len(self.queue)}, buffer={len(self._mutation_buffer)}, "
+                    f"min={self.config.mutation_buffer_min}, should_spawn={should_spawn_mutations}, "
+                    f"task={task_status}"
+                )
+
+            # Mutation task management with spam prevention
+            # Only spawn if: (1) no task exists OR (2) existing task is running
+            # Never spawn right after a task completes - wait for cooldown
             if should_spawn_mutations:
-                if self._mutation_task is None:
+                import time as _time_mut
+                now = _time_mut.time()
+
+                # If task exists and is done, clear it but record the completion time
+                if self._mutation_task is not None and self._mutation_task.done():
+                    _debug_log("🔄 Mutation task completed, clearing it")
+                    self._mutation_task = None
+                    self._last_mutation_attempt = now  # Record completion time to enforce cooldown
+
+                # Only spawn if no task AND cooldown has passed
+                elif self._mutation_task is None and (now - self._last_mutation_attempt > 1.0):
+                    self._last_mutation_attempt = now
+                    _debug_log(
+                        f"🧬 Starting mutation generation task (queue+buffer={len(self.queue) + len(self._mutation_buffer)} < {self.config.mutation_buffer_min})"
+                    )
                     self._mutation_task = asyncio.create_task(
                         self._spawn_mutations(callback=self._mutation_buffer.append)
                     )
@@ -370,7 +437,16 @@ class Orchestrator:
                 and not self._mutation_buffer
             ):
                 if self._mutation_task is None:
+                    _debug_log("🛑 IDLE DETECTION: All work complete, exiting loop")
                     break
+                elif self._mutation_task.done():
+                    _debug_log("🛑 IDLE DETECTION: Mutation task done, exiting loop")
+                    self._mutation_task = None
+                    break
+                else:
+                    # Mutation task still running, wait for it
+                    if loop_iter % 100 == 0:
+                        _debug_log(f"⏳ IDLE: Waiting for mutation task to complete (loop_iter={loop_iter})")
 
             # Avoid busy spinning if we neither launched nor drained work
             if launched == 0 and drained == 0:
@@ -429,6 +505,17 @@ class Orchestrator:
         max_attempts = shard_count * 10  # Prevent infinite loops
         attempts = 0
 
+        # Debug: Log queue state on first attempt
+        if attempts == 0 and len(self.queue) > 0 and self._total_inflight == 0:
+            self.logger.log(f"🔍 DEBUG _stream_launch_ready: queue={len(self.queue)} total_inflight={self._total_inflight}")
+            for i, q in enumerate(self._per_shard_queue):
+                if q:
+                    self.logger.log(f"   Per-shard queue[{i}]: {len(q)} candidates")
+                    if q:
+                        cand = q[0]
+                        sched_rung = self.scheduler.current_shard_index(cand)
+                        self.logger.log(f"      First candidate rung: {sched_rung}, fp: {cand.fingerprint[:12]}...")
+
         while attempts < max_attempts:
             attempts += 1
 
@@ -452,9 +539,15 @@ class Orchestrator:
             best_shard_idx = None
             best_rung_key = None
 
+            # Debug: Track evaluation of each shard
+            debug_info = []
+
             for shard_idx in range(shard_count):
                 queue = self._per_shard_queue[shard_idx]
+                queue_len = len(queue) if queue else 0
+
                 if not queue:
+                    debug_info.append(f"shard[{shard_idx}]: empty")
                     continue
 
                 # Get rung key for this shard (consistent with scheduler)
@@ -462,18 +555,34 @@ class Orchestrator:
                 rung_key = str(shard_fraction)
 
                 # Check per-rung inflight cap before considering this rung
-                if self._inflight_by_rung[rung_key] >= self._rung_capacity[rung_key]:
+                inflight = self._inflight_by_rung.get(rung_key, 0)
+                capacity = self._rung_capacity.get(rung_key, 0)
+
+                if inflight >= capacity:
+                    debug_info.append(f"shard[{shard_idx}]: queue={queue_len}, key={rung_key}, at_capacity({inflight}/{capacity})")
                     continue  # Rung at capacity, skip
 
                 # Calculate deficit score: deficit - (inflight_fraction)
                 # Higher score = more "starved" and deserves priority
-                inflight_penalty = self._inflight_by_rung[rung_key] / total_inflight
-                score = self._rung_deficit[rung_key] - inflight_penalty
+                inflight_penalty = inflight / total_inflight
+                deficit = self._rung_deficit.get(rung_key, 0.0)
+                score = deficit - inflight_penalty
+
+                debug_info.append(f"shard[{shard_idx}]: queue={queue_len}, key={rung_key}, score={score:.3f}, deficit={deficit:.3f}, inflight={inflight}/{capacity}")
 
                 if score > best_score:
                     best_score = score
                     best_shard_idx = shard_idx
                     best_rung_key = rung_key
+
+            # Log debug info if we have queued items but found no eligible rung
+            if len(self.queue) > 0 and best_shard_idx is None and attempts == 1:
+                self.logger.log(f"❌ DEBUG: No eligible rung found despite queue={len(self.queue)}")
+                for info in debug_info:
+                    self.logger.log(f"   {info}")
+                self.logger.log(f"   _rung_keys: {self._rung_keys}")
+                self.logger.log(f"   _rung_capacity: {self._rung_capacity}")
+                self.logger.log(f"   _inflight_by_rung: {self._inflight_by_rung}")
 
             # No eligible rung found
             if best_shard_idx is None:
@@ -515,12 +624,14 @@ class Orchestrator:
                 # Can't launch this candidate (capacity or eval limit reached)
                 break
 
+        # DEBUG: Log if we couldn't launch anything despite having queue items
+        if launched == 0 and len(self.queue) > 0 and attempts >= max_attempts:
+            self.logger.log(f"⚠️  _stream_launch_ready: launched=0 despite queue={len(self.queue)} after {attempts} attempts")
+
         return launched
 
     async def _stream_launch(self, candidate: Candidate, window_id: int) -> bool:
         import time
-
-        from .cache import candidate_key
 
         if len(self._shard_capacity) == 0:
             return False
@@ -562,6 +673,13 @@ class Orchestrator:
 
         async def runner() -> None:
             try:
+                if self.show_progress:
+                    generation = self._get_generation(candidate)
+                    source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
+                    self.logger.log(
+                        f"🔬 Evaluating {source} on shard {shard_idx} ({shard_fraction:.0%} = {len(shard_ids)} examples) "
+                        f"[fp={candidate.fingerprint[:12]}... concurrency={per_cand_concurrency}]"
+                    )
                 result = await self.evaluator.eval_on_shard(
                     candidate,
                     shard_ids,
@@ -569,8 +687,21 @@ class Orchestrator:
                     shard_fraction=shard_fraction,
                     show_progress=self.show_progress,  # Show progress for all evaluations
                 )
+                if self.show_progress:
+                    quality = result.objectives.get(self.config.promote_objective, 0.0)
+                    generation = self._get_generation(candidate)
+                    source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
+                    self.logger.log(
+                        f"✅ Completed {source} on shard {shard_idx} ({shard_fraction:.0%}): "
+                        f"{quality:.1%} quality [fp={candidate.fingerprint[:12]}...]"
+                    )
                 await self._result_queue.put((candidate, result, shard_idx))
             except Exception as exc:  # pragma: no cover - defensive logging path
+                if self.show_progress:
+                    self.logger.log(
+                        f"❌ Evaluation failed for candidate {candidate.fingerprint[:12]}... "
+                        f"on shard {shard_fraction}: {type(exc).__name__}"
+                    )
                 await self._result_queue.put((candidate, exc, shard_idx))
             finally:
                 self._shard_inflight[shard_idx] -= 1
@@ -611,8 +742,6 @@ class Orchestrator:
 
     async def _ingest_result(self, candidate: Candidate, result: EvalResult) -> tuple[Candidate, str]:
         """Update internal state with a freshly evaluated result."""
-        from .cache import candidate_key
-
         shard_fraction = result.shard_fraction or 0.0
         quality = result.objectives.get(self.config.promote_objective, 0.0)
 
@@ -622,6 +751,8 @@ class Orchestrator:
 
         original_fingerprint = candidate.fingerprint
         meta = dict(candidate.meta)
+        if "_sched_key" not in meta:
+            meta["_sched_key"] = original_fingerprint
         prev_fraction = meta.get("quality_shard_fraction", 0.0)
         prev_quality = meta.get("quality", float("-inf"))
         if shard_fraction > prev_fraction or (shard_fraction == prev_fraction and quality >= prev_quality):
@@ -630,6 +761,12 @@ class Orchestrator:
         candidate_with_meta = Candidate(text=candidate.text, meta=meta)
 
         cand_hash = candidate_key(candidate_with_meta)
+        sched_key = candidate_with_meta.meta.get("_sched_key") if isinstance(candidate_with_meta.meta, dict) else None
+        if isinstance(sched_key, str):
+            self._promotion_pending.discard(sched_key)
+            self._sched_to_fingerprint[sched_key] = candidate_with_meta.fingerprint
+        else:
+            self._promotion_pending.discard(candidate_with_meta.fingerprint)
         self.latest_results[cand_hash] = result
         self.evaluations_run += 1
 
@@ -637,8 +774,9 @@ class Orchestrator:
 
         if isinstance(candidate_with_meta.meta, dict):
             parent_fp = candidate_with_meta.meta.get("parent")
-            if parent_fp:
-                self._update_lineage_history(parent_fp, candidate_with_meta, result)
+            parent_key = candidate_with_meta.meta.get("parent_sched_key", parent_fp)
+            if parent_key:
+                self._update_lineage_history(parent_key, candidate_with_meta, result)
 
         if decision in ("promoted", "completed"):
             await self.archive.insert(candidate_with_meta, result)
@@ -649,7 +787,23 @@ class Orchestrator:
 
         promotions = self.scheduler.promote_ready()
         if promotions:
+            self.logger.log(f"🔍 Got {len(promotions)} promotion(s) from scheduler, enqueuing for next shard...")
+            for p in promotions:
+                rung = self.scheduler.current_shard_index(p)
+                shard_frac = self.config.shards[rung] if rung < len(self.config.shards) else 1.0
+                generation = self._get_generation(p)
+                source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
+                self.logger.log(
+                    f"   ⬆️  {source} promoted to shard {rung} ({shard_frac:.0%}) [fp={p.fingerprint[:12]}...]"
+                )
             self.enqueue(promotions)
+            self.logger.log(f"   📋 Queue after promotion: total={len(self.queue)}, per-shard={[len(q) for q in self._per_shard_queue]}")
+
+        if decision == "promoted":
+            if isinstance(sched_key, str):
+                self._promotion_pending.add(sched_key)
+            else:
+                self._promotion_pending.add(candidate_with_meta.fingerprint)
 
         if generation_method and hasattr(self.mutator, "report_outcome"):
             success = decision in ("promoted", "completed")
@@ -695,6 +849,11 @@ class Orchestrator:
         shard_idx: int,
     ) -> None:
         if isinstance(payload, Exception):
+            meta = candidate.meta if isinstance(candidate.meta, dict) else {}
+            sched_key = meta.get("_sched_key")
+            if isinstance(sched_key, str):
+                self._promotion_pending.discard(sched_key)
+            self._promotion_pending.discard(candidate.fingerprint)
             self._inflight_fingerprints.discard(candidate.fingerprint)
             return
 
@@ -745,12 +904,41 @@ class Orchestrator:
 
         enriched: list[Candidate] = []
         for seed, result in zip(seeds, results, strict=False):
-            candidate_with_meta, _ = await self._ingest_result(seed, result)
+            quality = result.objectives.get(self.config.promote_objective, 0.0)
+            if self.show_progress:
+                self.logger.log(
+                    f"   📊 Seed quality on shard 0: {quality:.1%} "
+                    f"(fp={seed.fingerprint[:12]}...)"
+                )
+
+            candidate_with_meta, decision = await self._ingest_result(seed, result)
             enriched.append(candidate_with_meta)
+
+            if self.show_progress:
+                current_rung = self.scheduler.current_shard_index(candidate_with_meta)
+                if decision == "promoted":
+                    self.logger.log(
+                        f"   ✅ Seed PROMOTED to shard {current_rung} ({self.config.shards[current_rung]:.0%}) "
+                        f"for full evaluation"
+                    )
+                else:
+                    self.logger.log(
+                        f"   ⏸️  Seed decision: {decision}, current_rung={current_rung}"
+                    )
+
             # Mark seeds as generation 0
-            self._candidate_generations[candidate_with_meta.fingerprint] = 0
+            seed_key = candidate_with_meta.meta.get("_sched_key") if isinstance(candidate_with_meta.meta, dict) else None
+            if not isinstance(seed_key, str):
+                seed_key = candidate_with_meta.fingerprint
+            self._candidate_generations[seed_key] = 0
 
         self.enqueue(enriched)
+
+        if self.show_progress:
+            self.logger.log(
+                f"   🎯 Seeds ready for next evaluation: queue={len(self.queue)}, "
+                f"per_shard={[len(q) for q in self._per_shard_queue]}"
+            )
 
     def _select_batch(self) -> list[Candidate]:
         batch: list[Candidate] = []
@@ -812,29 +1000,57 @@ class Orchestrator:
         best_quality = max(entry.result.objectives.get(self.config.promote_objective, 0.0) for entry in pareto)
         return best_quality
 
+    def _get_generation(self, candidate: Candidate) -> int | None:
+        meta = candidate.meta if isinstance(candidate.meta, dict) else {}
+        key = meta.get("_sched_key") if isinstance(meta, dict) else None
+        lookup_key = key if isinstance(key, str) else candidate.fingerprint
+        return self._candidate_generations.get(lookup_key)
+
     async def _spawn_mutations(self, callback: Callable[[Candidate], None] | None = None) -> None:
         """Generate mutations using batched reflection for efficiency."""
         # Check if we've exceeded the evaluation budget before spawning mutations
         if self.max_evaluations is not None and self.evaluations_run >= self.max_evaluations:
+            print(f"[SPAWN_MUTATIONS] eval budget exceeded ({self.evaluations_run} >= {self.max_evaluations})", flush=True)
             return
 
         entries = self.archive.pareto_entries()
         if not entries:
-            self.logger.log("INFO: spawn_mutations: archive empty, skipping.")
+            print(f"[SPAWN_MUTATIONS] archive empty, skipping", flush=True)
             return
 
         num_mutations = self._mutation_budget()
         if num_mutations <= 0:
-            self.logger.log(
-                f"INFO: spawn_mutations: budget={num_mutations}, queue={len(self.queue)}, buffer={len(self._mutation_buffer)} - skipping."
-            )
+            print(f"[SPAWN_MUTATIONS] budget={num_mutations}, queue={len(self.queue)}, buffer={len(self._mutation_buffer)} - skipping", flush=True)
             return
+
+        print(f"[SPAWN_MUTATIONS] WILL GENERATE {num_mutations} mutations from {len(entries)} parents", flush=True)
+
+        # Log that we're actually going to try generating
+        self.logger.log(
+            f"🔬 spawn_mutations: WILL GENERATE {num_mutations} mutations from {len(entries)} parents"
+        )
 
         self.logger.log(
             f"🧭 spawn_mutations: parents={len(entries)} budget={num_mutations} "
             f"queue={len(self.queue)} buffer={len(self._mutation_buffer)}"
         )
-        mutations = await self._generate_mutations_batched(entries, num_mutations)
+
+        # Catch timeouts and other RuntimeErrors from LLM calls gracefully
+        try:
+            mutations = await self._generate_mutations_batched(entries, num_mutations)
+        except RuntimeError as e:
+            if "timeout" in str(e).lower():
+                self.logger.log(f"⚠️  spawn_mutations: LLM timeout - {e}")
+                self.logger.log("   Continuing without mutations from this batch")
+                return
+            # Re-raise if not a timeout error
+            raise
+        except Exception as e:
+            # Log any other unexpected errors but don't crash the mutation task
+            self.logger.log(f"⚠️  spawn_mutations: Unexpected error - {type(e).__name__}: {e}")
+            self.logger.log("   Continuing without mutations from this batch")
+            return
+
         if not mutations:
             self.logger.log("⚠️  spawn_mutations: runner returned no candidates.")
             return
@@ -961,7 +1177,28 @@ class Orchestrator:
         # IMPORTANT: Use latest_results instead of entry.result to get the most recent
         # (and typically full-dataset) evaluation, not the archived partial-shard result
         parent_contexts: list[dict[str, object]] = []
+
+        # Determine minimum shard for mutation eligibility
+        # Don't mutate from candidates only evaluated on the tiny first shard.
+        # If no parent has reached the higher shard yet (e.g., full evaluation failed),
+        # temporarily fall back to the first shard so optimization continues.
+        if len(self.config.shards) <= 1:
+            min_shard_for_mutation = self.config.shards[0]
+        else:
+            min_shard_for_mutation = self.config.shards[1]
+
+        has_eligible_parent = any(
+            (entry.result.shard_fraction or 0.0) >= min_shard_for_mutation for entry in selected_entries
+        )
+        effective_min_shard = min_shard_for_mutation if has_eligible_parent else self.config.shards[0]
+
         for entry in selected_entries:
+            # Skip parents that haven't been evaluated on a meaningful shard yet
+            # This prevents mutating from 100% scores on tiny samples before seeing real failures
+            current_shard = entry.result.shard_fraction or 0.0
+            if current_shard < effective_min_shard:
+                continue
+
             # Prefer latest_results (most recent eval, usually full dataset)
             # Fall back to entry.result if not found in latest_results
             latest_result = self.latest_results.get(entry.candidate.fingerprint)
@@ -970,7 +1207,16 @@ class Orchestrator:
             candidate_with_parent = entry.candidate.with_meta(
                 parent_objectives=parent_objectives,
             )
-            lineage = list(self._lineage_history.get(entry.candidate.fingerprint, ()))
+            parent_meta = candidate_with_parent.meta if isinstance(candidate_with_parent.meta, dict) else {}
+            parent_key = parent_meta.get("_sched_key") if isinstance(parent_meta, dict) else None
+            if not isinstance(parent_key, str):
+                parent_key = entry.candidate.fingerprint
+            if (
+                parent_key in self._promotion_pending
+                or entry.candidate.fingerprint in self._promotion_pending
+            ):
+                continue
+            lineage = list(self._lineage_history.get(parent_key, ()))
             parent_contexts.append(
                 {
                     "candidate": candidate_with_parent,
@@ -980,6 +1226,10 @@ class Orchestrator:
             )
 
         if not parent_contexts:
+            if self.show_progress:
+                self.logger.log(
+                    "⏹️  spawn_mutations: no parents past shard threshold yet; will retry after more evaluations"
+                )
             return []
 
         # Set reflection examples for the mutator
@@ -1005,19 +1255,24 @@ class Orchestrator:
         generated = len(mutations)
         self._mutations_generated += generated
         for candidate in mutations:
-            fingerprint = candidate.fingerprint
-            self._children_seen.add(fingerprint)
-            parent_fp: str | None = None
-            if isinstance(candidate.meta, dict):
-                parent_fp = candidate.meta.get("parent")
-            if parent_fp:
-                self._parent_children[parent_fp].add(fingerprint)
-                # Track generation: parent's generation + 1
-                parent_gen = self._candidate_generations.get(parent_fp, 0)
-                self._candidate_generations[fingerprint] = parent_gen + 1
+            meta = candidate.meta if isinstance(candidate.meta, dict) else {}
+            child_key = meta.get("_sched_key") if isinstance(meta, dict) else None
+            if not isinstance(child_key, str):
+                child_key = candidate.fingerprint
+            self._children_seen.add(child_key)
+            self._sched_to_fingerprint[child_key] = candidate.fingerprint
+
+            parent_key = meta.get("parent_sched_key") if isinstance(meta, dict) else None
+            if not parent_key:
+                parent_key = meta.get("parent") if isinstance(meta, dict) else None
+
+            if parent_key:
+                self._parent_children[parent_key].add(child_key)
+                parent_gen = self._candidate_generations.get(parent_key, 0)
+                self._candidate_generations[child_key] = parent_gen + 1
             else:
                 # No parent info, assume generation 1 (first mutation)
-                self._candidate_generations[fingerprint] = self._candidate_generations.get(fingerprint, 1)
+                self._candidate_generations[child_key] = self._candidate_generations.get(child_key, 1)
 
     def _record_mutation_enqueued(self, count: int) -> None:
         if count <= 0:
@@ -1028,17 +1283,21 @@ class Orchestrator:
         if not isinstance(candidate.meta, dict):
             return
         parent_fp = candidate.meta.get("parent")
-        if not parent_fp:
+        parent_key = candidate.meta.get("parent_sched_key", parent_fp)
+        if not parent_key:
             return
         child_fp = candidate.fingerprint
-        self._children_seen.add(child_fp)
-        self._parent_children[parent_fp].add(child_fp)
+        child_key = candidate.meta.get("_sched_key", child_fp)
+        self._children_seen.add(child_key)
+        self._sched_to_fingerprint[child_key] = child_fp
+        self._parent_children[parent_key].add(child_key)
         # Track generation if not already tracked
-        if child_fp not in self._candidate_generations:
-            parent_gen = self._candidate_generations.get(parent_fp, 0)
-            self._candidate_generations[child_fp] = parent_gen + 1
-        if child_fp in self.archive.pareto and child_fp not in self._promoted_children:
-            self._promoted_children.add(child_fp)
+        if child_key not in self._candidate_generations:
+            parent_gen = self._candidate_generations.get(parent_key, 0)
+            self._candidate_generations[child_key] = parent_gen + 1
+        archive_key = candidate_key(candidate)
+        if archive_key in self.archive.pareto and child_key not in self._promoted_children:
+            self._promoted_children.add(child_key)
 
     def evolution_snapshot(self, include_edges: bool = False) -> dict[str, Any]:
         edges = sum(len(children) for children in self._parent_children.values())
@@ -1050,26 +1309,36 @@ class Orchestrator:
             "unique_parents": len(self._parent_children),
             "unique_children": len(self._children_seen),
             "evolution_edges": edges,
+            "total_evaluations": self.evaluations_run,
         }
         if include_edges:
-            snapshot["parent_children"] = {parent: list(children) for parent, children in self._parent_children.items()}
-            snapshot["children"] = list(self._children_seen)
-            snapshot["promoted_children"] = list(self._promoted_children)
+            snapshot["parent_children"] = {
+                self._sched_to_fingerprint.get(parent, parent): [self._sched_to_fingerprint.get(child, child) for child in children]
+                for parent, children in self._parent_children.items()
+            }
+            snapshot["children"] = [self._sched_to_fingerprint.get(child, child) for child in self._children_seen]
+            snapshot["promoted_children"] = [self._sched_to_fingerprint.get(child, child) for child in self._promoted_children]
         return snapshot
 
     def get_candidate_lineage_data(self) -> list[dict[str, Any]]:
         """Return list of all candidates with generation, quality, and status for visualization."""
 
         data: list[dict[str, Any]] = []
+        seen_keys: set[str] = set()
         promote_objective = self.config.promote_objective
 
         # Get all pareto candidates
         for entry in self.archive.pareto_entries():
-            fp = entry.candidate.fingerprint
+            meta = entry.candidate.meta if isinstance(entry.candidate.meta, dict) else {}
+            key = meta.get("_sched_key") if isinstance(meta, dict) else None
+            if not isinstance(key, str):
+                key = entry.candidate.fingerprint
+            fp = self._sched_to_fingerprint.get(key, entry.candidate.fingerprint)
+            seen_keys.add(key)
             data.append(
                 {
                     "fingerprint": fp,
-                    "generation": self._candidate_generations.get(fp, 0),
+                    "generation": self._candidate_generations.get(key, 0),
                     "quality": entry.result.objectives.get(promote_objective, 0.0),
                     "status": "promoted",
                 }
@@ -1077,14 +1346,19 @@ class Orchestrator:
 
         # Get all QD grid candidates
         for entry in self.archive.qd_grid.values():
-            fp = entry.candidate.fingerprint
+            meta = entry.candidate.meta if isinstance(entry.candidate.meta, dict) else {}
+            key = meta.get("_sched_key") if isinstance(meta, dict) else None
+            if not isinstance(key, str):
+                key = entry.candidate.fingerprint
+            fp = self._sched_to_fingerprint.get(key, entry.candidate.fingerprint)
             # Skip if already in pareto
-            if fp in self.archive.pareto:
+            if key in seen_keys:
                 continue
+            seen_keys.add(key)
             data.append(
                 {
                     "fingerprint": fp,
-                    "generation": self._candidate_generations.get(fp, 0),
+                    "generation": self._candidate_generations.get(key, 0),
                     "quality": entry.result.objectives.get(promote_objective, 0.0),
                     "status": "evaluated",
                 }
@@ -1092,16 +1366,22 @@ class Orchestrator:
 
         # Get in-flight candidates (in queue)
         for candidate in self.queue:
-            fp = candidate.fingerprint
+            meta = candidate.meta if isinstance(candidate.meta, dict) else {}
+            key = meta.get("_sched_key") if isinstance(meta, dict) else None
+            if not isinstance(key, str):
+                key = candidate.fingerprint
+            fp = self._sched_to_fingerprint.get(key, candidate.fingerprint)
             # Get quality from archive if available
             quality = 0.0
-            if fp in self.archive.pareto:
-                quality = self.archive.pareto[fp].result.objectives.get(promote_objective, 0.0)
+            cache_key = candidate_key(candidate)
+            latest = self.latest_results.get(cache_key)
+            if latest:
+                quality = latest.objectives.get(promote_objective, 0.0)
 
             data.append(
                 {
                     "fingerprint": fp,
-                    "generation": self._candidate_generations.get(fp, 0),
+                    "generation": self._candidate_generations.get(key, 0),
                     "quality": quality,
                     "status": "in_flight",
                 }
@@ -1207,8 +1487,10 @@ class Orchestrator:
         if hard_examples:
             self.sampler.register_hard_examples(hard_examples)
 
-    def _update_lineage_history(self, parent_fp: str, child: Candidate, result: EvalResult) -> None:
-        history = self._lineage_history[parent_fp]
+    def _update_lineage_history(self, parent_key: str, child: Candidate, result: EvalResult) -> None:
+        if not parent_key:
+            return
+        history = self._lineage_history[parent_key]
         promote_obj = self.config.promote_objective
         child_quality = result.objectives.get(promote_obj, 0.0)
         parent_quality: float | None = None
@@ -1221,6 +1503,12 @@ class Orchestrator:
                     parent_raw = parent_obj.get(promote_obj)
                     if isinstance(parent_raw, (int, float)):
                         parent_quality = float(parent_raw)
+
+        child_sched = None
+        if isinstance(meta, dict):
+            child_sched = meta.get("_sched_key")
+            if isinstance(child_sched, str):
+                self._sched_to_fingerprint[child_sched] = child.fingerprint
 
         failure_summaries: list[dict[str, object]] = []
         for trace in result.traces:
@@ -1243,6 +1531,7 @@ class Orchestrator:
 
         entry = {
             "child_fingerprint": child.fingerprint,
+            "child_sched_key": child_sched,
             "child_text": child.text,
             "quality": child_quality,
             "shard_fraction": result.shard_fraction or 0.0,

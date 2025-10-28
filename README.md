@@ -16,13 +16,14 @@
 
 **TurboGEPA** is a high-performance fork of the [GEPA (Genetic-Pareto) framework](https://github.com/gepa-ai/gepa) designed for **maximum speed of prompt evolution**. While preserving GEPA's core innovation of LLM-based reflection for text evolution, TurboGEPA introduces:
 
-- ⚡ **Maximized Concurrency**: Adaptive async orchestration scales to available compute resources (64-256+ per island, multi-island parallelism)
-- 🏝️ **Island-Based Parallelism**: Concurrent islands with an async ring topology for population diversity
-- 📊 **ASHA Successive Halving**: Prunes 60%+ of candidates early, reducing wasted evaluations
-- 🧬 **Dual Mutation Strategy**: Combines GEPA reflection (60-70%) with Prompt-MII spec induction (30-40%) for balanced exploration/exploitation
-- 🌡️ **Two-Phase Optimization**: Phase 1 optimizes prompts, Phase 2 cycles through temperature variations for final tuning
-- 🛑 **Auto-Stop Convergence**: Automatically terminates when no improvement detected, saving compute on converged runs
-- 🔧 **Adaptive Configuration**: Auto-tunes concurrency, batch sizes, and shards based on dataset size
+- ⚡ **Maximized Concurrency**: Async orchestration scales to available compute (bounded by shard size + `max_total_inflight` per island)
+- 🏝️ **Island-Based Parallelism**: Concurrent islands with an async ring topology preserve diversity without extra processes
+- 📊 **ASHA Successive Halving**: Prunes most underperformers early to reduce wasted evaluations
+- 🧬 **Dual Mutation Strategy**: Blends reflection edits with Prompt-MII-style spec induction for exploration vs. exploitation
+- 🌡️ **Two-Phase Optimization**: Prompt evolution first, optional temperature sweep second
+- 🚦 **Convergence & Lineage Guards**: Per-candidate auto-stop and lineage fast-tracks keep stagnating prompts moving forward
+- 🧾 **Lineage-Aware Mutations**: Mutators receive parent/child score history and failure summaries to guide the next edits
+- 🔧 **Adaptive Configuration**: Auto-tunes concurrency, batch sizes, and shard settings based on dataset size
 
 ### Built on GEPA
 
@@ -81,31 +82,45 @@ production_result = expensive_model.run(optimized_prompt, production_data)
 
 ## 📦 Installation
 
-### Install TurboGEPA
+### Recommended (Developer) Setup
+
+```bash
+git clone https://github.com/Studio-Intrinsic/turbo-gepa.git
+cd turbo-gepa
+uv sync --extra dev --python 3.11
+```
+
+This creates a local `.venv` with all runtime and development tooling (ruff, pytest, pre-commit). Activate it with
+`source .venv/bin/activate` (macOS/Linux) or `.\.venv\Scripts\activate` (Windows) before running commands.
+
+### Install from Source (pip/virtualenv)
+
+```bash
+git clone https://github.com/Studio-Intrinsic/turbo-gepa.git
+cd turbo-gepa
+pip install -e ".[dev]"
+```
+
+### PyPI (if published)
 
 ```bash
 pip install turbo-gepa
 ```
 
-### Install from Source
-
-```bash
-git clone https://github.com/Studio-Intrinsic/turbo-gepa.git
-cd turbo-gepa
-pip install -e .
-```
+> The package name on PyPI is `turbo-gepa`. If you are working from this repository and want reproducible builds,
+> prefer the source installation above.
 
 ### Optional Dependencies
 
 ```bash
-# For DSPy integration
-pip install turbo-gepa[dspy]
+# For DSPy integration (source install)
+pip install -e ".[dspy]"
 
-# For development
-pip install turbo-gepa[dev]
+# For development tooling
+pip install -e ".[dev]"
 
-# For everything (all features)
-pip install turbo-gepa[full]
+# For everything (runtime + extras)
+pip install -e ".[full]"
 ```
 
 ### Verify Installation
@@ -143,8 +158,29 @@ if entries:
     best_text = best.candidate.text
     best_quality = best.result.objectives.get("quality", 0.0)
     print(f"Best prompt: {best_text}")
-    print(f"Quality: {best_quality:.2%}")
-print(f"Pareto frontier: {len(result.get('pareto', []))} candidates")
+print(f"Quality: {best_quality:.2%}")
+print(f"Pareto frontier: {len(result.get('pareto_entries', []))} candidates")
+```
+
+### Turbo speed configuration example
+
+```python
+from turbo_gepa.config import Config
+
+config = Config(
+    shards=(0.3, 1.0),            # Fast scout shard + full verification
+    eval_concurrency=64,
+    max_total_inflight=64,
+    enable_rung_convergence=True, # Promote stalled prompts automatically
+    lineage_patience=3,            # Force parent promotion after 3 flat children
+    lineage_min_improve=0.005,     # Require >=0.5pp gain to reset the counter
+    target_quality=0.80,
+)
+
+adapter = DefaultAdapter(dataset=trainset, task_lm=task_lm, reflection_lm=reflection_lm, auto_config=False)
+adapter.config = config
+seed_prompt = "You are a helpful assistant. Provide your final answer as '### <answer>'."
+result = adapter.optimize(seeds=[seed_prompt])
 ```
 
 ### TurboGEPA: DSPy Program Optimization
@@ -193,10 +229,10 @@ best_program = result['best_program']
 TurboGEPA is a high-throughput production fork of GEPA with:
 
 - **Async/await architecture** - Non-blocking I/O for maximum concurrency
- - **Multi-island parallelism** - Concurrent islands within a single process (async ring)
- - **ASHA successive halving** - Early stopping to reduce wasted evaluations
- - **Quality-Diversity archives** - Maintains diverse solutions beyond Pareto frontier
- - **Adaptive configuration** - Auto-tunes based on dataset size and hardware
+- **Multi-island parallelism** - Concurrent islands within a single process (async ring)
+- **ASHA successive halving** - Early stopping to reduce wasted evaluations
+- **Quality-Diversity archives** - Maintains diverse solutions beyond Pareto frontier
+- **Adaptive configuration** - Auto-tunes based on dataset size and hardware
 
 **Best for**: Production deployments, large-scale optimization, maximum throughput
 
@@ -546,6 +582,36 @@ adapter = DefaultAdapter(
     shard_strategy="aggressive"     # More aggressive ASHA pruning
 )
 ```
+
+---
+
+### Lineage-aware mutations
+
+Each parent context passed to the mutator now includes a `lineage` list summarizing recent child attempts:
+
+```python
+{
+    "candidate": Candidate(...),
+    "lineage": [
+        {
+            "child_fingerprint": "...",
+            "quality": 0.82,
+            "shard_fraction": 0.3,
+            "tokens": 412,
+            "parent_quality": 0.81,
+            "generation_method": "reflection",
+            "failures": [
+                {"example_id": "aime_007", "quality": 0.0},
+                {"example_id": "aime_011", "quality": 0.5},
+            ],
+        },
+        # Most recent entries first (max 8)
+    ],
+}
+```
+
+Use this metadata to bias operator choices, mine the hardest failures, or sidestep flat lineages without re-querying the
+archive.
 
 ---
 

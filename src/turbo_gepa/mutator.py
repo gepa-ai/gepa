@@ -259,11 +259,13 @@ class Mutator:
                 parent_candidate = parent_candidates[idx % len(parent_candidates)]
 
             meta = dict(parent_candidate.meta)
+            meta.pop("_sched_key", None)
             meta.update(
                 {
                     "edit": "incremental_reflection",  # Track generation method
                     "generation_method": "incremental_reflection",  # Explicit tracking for analysis
                     "parent": parent_candidate.fingerprint,
+                    "parent_sched_key": parent_candidate.meta.get("_sched_key", parent_candidate.fingerprint),
                     "proposal_idx": idx,
                     "num_parents_seen": len(parent_contexts),
                 }
@@ -347,7 +349,9 @@ class Mutator:
                 parent_candidate = parent_candidates[idx % len(parent_candidates)]
 
             meta = dict(parent_candidate.meta)
+            meta.pop("_sched_key", None)
             meta["parent"] = parent_candidate.fingerprint
+            meta["parent_sched_key"] = parent_candidate.meta.get("_sched_key", parent_candidate.fingerprint)
             meta.update(
                 {
                     "edit": "spec_induction",  # Track generation method
@@ -366,6 +370,7 @@ class Mutator:
         total: int,
         max_concurrency: int,
         early_stop_fraction: float = 0.85,  # Return after 85% of mutations complete
+        result_callback: Callable[[str], None] | None = None,  # Stream results as they arrive
     ) -> list[str]:
         import asyncio
         import time
@@ -433,12 +438,16 @@ class Mutator:
                 try:
                     batch = task.result()
                     if batch:
-                        results.append(batch[0])
+                        text_result = batch[0]
+                        results.append(text_result)
                         mutation_durations.append(task_duration)  # Track individual duration
                         self.logger.log(
                             f"   ✅ Mutation task complete in {task_duration:.2f}s "
                             f"(generated {len(batch)} candidates, total so far {len(results)})"
                         )
+                        # Stream result immediately via callback if provided
+                        if result_callback:
+                            result_callback(text_result)
                 except asyncio.CancelledError:
                     pass  # Expected for cancelled tasks
 
@@ -514,12 +523,14 @@ class Mutator:
                     continue
                 seen.add(temp)
                 meta = dict(candidate.meta)
+                meta.pop("_sched_key", None)
                 meta.update(
                     {
                         "temperature": temp,
                         "edit": "temperature_shift",
                         "generation_method": "temperature_shift",
                         "parent": candidate.fingerprint,
+                        "parent_sched_key": candidate.meta.get("_sched_key", candidate.fingerprint),
                     }
                 )
                 mutations.append(Candidate(text=candidate.text, meta=meta))
@@ -555,11 +566,13 @@ class Mutator:
 
             for idx, text in enumerate(mutated_texts):
                 meta = dict(candidate.meta)
+                meta.pop("_sched_key", None)
                 meta.update(
                     {
                         "edit": "reflection",
                         "generation_method": "reflection",
                         "parent": candidate.fingerprint,
+                        "parent_sched_key": candidate.meta.get("_sched_key", candidate.fingerprint),
                         "proposal_idx": idx,
                     }
                 )

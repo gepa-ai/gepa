@@ -111,7 +111,7 @@ class Config:
     eval_concurrency: int = 64
     n_islands: int = 4
     shards: Sequence[float] = field(default_factory=lambda: (0.05, 0.2, 1.0))
-    eps_improve: float = 0.01
+    eps_improve: float = 0.0  # Children must match or beat parent score before quantile pruning
     cohort_quantile: float = 0.6
     qd_bins_length: int = 8
     qd_bins_bullets: int = 6
