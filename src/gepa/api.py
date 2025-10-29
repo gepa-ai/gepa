@@ -257,10 +257,8 @@ def optimize(
         )
 
     if val_evaluation_policy is None or val_evaluation_policy == "full_eval":
-        val_evaluation_policy_instance: EvaluationPolicy[DataId, DataInst] = FullEvaluationPolicy()
-    elif isinstance(val_evaluation_policy, EvaluationPolicy):
-        val_evaluation_policy_instance = val_evaluation_policy
-    else:
+        val_evaluation_policy = FullEvaluationPolicy()
+    elif not isinstance(val_evaluation_policy, EvaluationPolicy):
         raise ValueError(
             f"val_evaluation_policy should be one of 'full_eval' or an instance of EvaluationPolicy, but got {type(val_evaluation_policy)}"
         )
@@ -346,7 +344,7 @@ def optimize(
         display_progress_bar=display_progress_bar,
         raise_on_exception=raise_on_exception,
         stop_callback=stop_callback,
-        val_evaluation_policy=val_evaluation_policy_instance,
+        val_evaluation_policy=val_evaluation_policy,
         use_cloudpickle=use_cloudpickle,
     )
 
