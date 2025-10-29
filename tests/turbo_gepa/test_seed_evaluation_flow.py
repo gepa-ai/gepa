@@ -6,6 +6,7 @@ Run with: python tests/turbo_gepa/test_seed_evaluation_flow.py
 
 import sys
 from pathlib import Path
+import pytest
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
@@ -22,6 +23,7 @@ from turbo_gepa.cache import DiskCache
 import asyncio
 
 
+@pytest.mark.asyncio
 async def test_seed_flow_minimal():
     """Minimal reproduction of seed evaluation → promotion → re-queue flow."""
     print("\n" + "=" * 80)
@@ -95,6 +97,7 @@ async def test_seed_flow_minimal():
         return None, scheduler
 
 
+@pytest.mark.asyncio
 async def test_orchestrator_enqueue():
     """Test that promoted seed gets enqueued correctly."""
     print("\n" + "=" * 80)
@@ -165,6 +168,7 @@ async def test_orchestrator_enqueue():
         print(f"   ❌ Queue is empty!")
 
 
+@pytest.mark.asyncio
 async def test_launch_conditions():
     """Test if promoted seed can be launched."""
     print("\n" + "=" * 80)

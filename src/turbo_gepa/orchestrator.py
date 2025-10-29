@@ -234,22 +234,28 @@ class Orchestrator:
 
         # Create debug log file for diagnostics
         import time
-        _debug_log_path = f".turbo_gepa/debug_{int(time.time())}.log"
-        import os
-        os.makedirs(os.path.dirname(_debug_log_path), exist_ok=True)
-        _debug_log_file = open(_debug_log_path, "w", buffering=1)  # Line buffered
+        _debug_log_path: str | None = None
+        _debug_log_file = None
+        if self.config.enable_debug_log:
+            import os
+
+            _debug_log_path = f".turbo_gepa/debug_{int(time.time())}.log"
+            os.makedirs(os.path.dirname(_debug_log_path), exist_ok=True)
+            _debug_log_file = open(_debug_log_path, "w", buffering=1)  # Line buffered
 
         def _debug_log(msg: str):
             """Log to both logger and debug file."""
-            timestamp = time.strftime("%H:%M:%S")
-            full_msg = f"[{timestamp}] {msg}"
-            _debug_log_file.write(full_msg + "\n")
-            _debug_log_file.flush()
+            if _debug_log_file is not None:
+                timestamp = time.strftime("%H:%M:%S")
+                full_msg = f"[{timestamp}] {msg}"
+                _debug_log_file.write(full_msg + "\n")
+                _debug_log_file.flush()
             if self.show_progress:
                 self.logger.log(msg)
 
         _debug_log(f"🚀 Starting main optimization loop (max_evaluations={max_evaluations})")
-        _debug_log(f"   Debug log: {_debug_log_path}")
+        if _debug_log_path:
+            _debug_log(f"   Debug log: {_debug_log_path}")
 
         while True:
             if max_rounds is not None and window_id >= max_rounds:
@@ -448,9 +454,12 @@ class Orchestrator:
                     if loop_iter % 100 == 0:
                         _debug_log(f"⏳ IDLE: Waiting for mutation task to complete (loop_iter={loop_iter})")
 
-            # Avoid busy spinning if we neither launched nor drained work
-            if launched == 0 and drained == 0:
-                await asyncio.sleep(0.01)
+            # Avoid busy spinning when concurrency is saturated or nothing progressed
+            if launched == 0:
+                if self._examples_inflight >= self._effective_concurrency:
+                    await asyncio.sleep(0.005)
+                elif drained == 0:
+                    await asyncio.sleep(0.01)
 
         # === Cleanup ===
         # Wait for all inflight evaluations to complete
@@ -476,6 +485,9 @@ class Orchestrator:
         )
         if completed:
             self.cache.clear_state()
+
+        if _debug_log_file is not None:
+            _debug_log_file.close()
 
     # === Streaming helpers ===
 
@@ -557,9 +569,15 @@ class Orchestrator:
                 # Check per-rung inflight cap before considering this rung
                 inflight = self._inflight_by_rung.get(rung_key, 0)
                 capacity = self._rung_capacity.get(rung_key, 0)
+                global_slack = max(0, self._max_total_inflight - self._total_inflight)
+                if inflight >= capacity and global_slack > 0:
+                    # Borrow unused global capacity when other rungs are idle.
+                    capacity += global_slack
 
                 if inflight >= capacity:
-                    debug_info.append(f"shard[{shard_idx}]: queue={queue_len}, key={rung_key}, at_capacity({inflight}/{capacity})")
+                    debug_info.append(
+                        f"shard[{shard_idx}]: queue={queue_len}, key={rung_key}, at_capacity({inflight}/{capacity})"
+                    )
                     continue  # Rung at capacity, skip
 
                 # Calculate deficit score: deficit - (inflight_fraction)
@@ -650,6 +668,17 @@ class Orchestrator:
             shard_ids = self.sampler.sample_shard(window_id, shard_size)
             self._shard_cache[shard_key] = shard_ids
 
+        # Compute fair per-candidate evaluator concurrency so total example-level
+        # work stays near the global target without oversubscription.
+        # We simulate the candidate as inflight by adding 1 to _total_inflight for the calculation.
+        active_candidates = max(1, self._total_inflight + 1)
+        per_cand_concurrency = max(1, int(self._effective_concurrency // active_candidates))
+        # Never exceed the shard size for this candidate
+        per_cand_concurrency = min(per_cand_concurrency, len(shard_ids))
+        # Respect hard global example-level cap; if not enough budget, don't launch yet
+        if self._examples_inflight + per_cand_concurrency > self._effective_concurrency:
+            return False
+
         time.time()
         cand_hash = candidate_key(candidate)
         self._total_inflight += 1
@@ -657,17 +686,6 @@ class Orchestrator:
         # Track inflight per rung for deficit scheduler
         rung_key = self._get_rung_key(candidate)
         self._inflight_by_rung[rung_key] += 1
-
-        # Compute fair per-candidate evaluator concurrency so total example-level
-        # work stays near the global target without oversubscription.
-        # Note: _total_inflight has already been incremented to include this candidate.
-        active_candidates = max(1, self._total_inflight)
-        per_cand_concurrency = max(1, int(self._effective_concurrency // active_candidates))
-        # Never exceed the shard size for this candidate
-        per_cand_concurrency = min(per_cand_concurrency, len(shard_ids))
-        # Respect hard global example-level cap; if not enough budget, don't launch yet
-        if self._examples_inflight + per_cand_concurrency > self._effective_concurrency:
-            return False
         # Reserve budget for this candidate
         self._examples_inflight += per_cand_concurrency
 
@@ -895,9 +913,20 @@ class Orchestrator:
             )
             self.logger.log("   This establishes the baseline for optimization.")
 
-        results = await asyncio.gather(
-            *[self._evaluate_candidate(seed, shard, shard_fraction, show_progress=self.show_progress) for seed in seeds]
-        )
+        seeds_count = max(1, len(seeds))
+        per_seed_budget = self._effective_concurrency // seeds_count if self._effective_concurrency >= seeds_count else 1
+        seed_concurrency = max(1, min(len(shard), per_seed_budget or 1))
+
+        results: list[EvalResult] = []
+        for seed in seeds:
+            result = await self._evaluate_candidate(
+                seed,
+                shard,
+                shard_fraction,
+                show_progress=self.show_progress,
+                concurrency_override=seed_concurrency,
+            )
+            results.append(result)
 
         if self.show_progress:
             self.logger.log("   ✓ Seed evaluation complete!")
@@ -1211,11 +1240,11 @@ class Orchestrator:
             parent_key = parent_meta.get("_sched_key") if isinstance(parent_meta, dict) else None
             if not isinstance(parent_key, str):
                 parent_key = entry.candidate.fingerprint
-            if (
-                parent_key in self._promotion_pending
-                or entry.candidate.fingerprint in self._promotion_pending
-            ):
-                continue
+
+            # Note: We used to skip parents in _promotion_pending, but this caused issues
+            # when all parents are pending promotion (e.g., early in optimization).
+            # It's safe to mutate from pending parents using their latest evaluation results.
+
             lineage = list(self._lineage_history.get(parent_key, ()))
             parent_contexts.append(
                 {
@@ -1465,11 +1494,14 @@ class Orchestrator:
         shard: Sequence[str],
         shard_fraction: float,
         show_progress: bool = False,
+        *,
+        concurrency_override: int | None = None,
     ) -> EvalResult:
+        concurrency = concurrency_override if concurrency_override is not None else self._effective_concurrency
         result = await self.evaluator.eval_on_shard(
             candidate,
             shard,
-            concurrency=self._effective_concurrency,
+            concurrency=concurrency,
             shard_fraction=shard_fraction,
             show_progress=show_progress,
         )

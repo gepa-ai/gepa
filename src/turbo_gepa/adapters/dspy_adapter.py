@@ -424,6 +424,7 @@ class DSpyAdapter:
         evaluator = AsyncEvaluator(
             cache=self.cache,
             task_runner=self._task_runner,
+            timeout_seconds=self.config.eval_timeout_seconds,
         )
         return Orchestrator(
             config=self.config,

@@ -6,6 +6,7 @@ Run with: python tests/turbo_gepa/test_fixes_manual.py
 
 import sys
 from pathlib import Path
+import pytest
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
@@ -72,6 +73,7 @@ def test_parent_based_promotion():
     print("✅ PASS: Parent-based promotion works")
 
 
+@pytest.mark.asyncio
 async def test_mutation_eligibility():
     """Test Fix #3: Seeds not eligible until shard 1."""
     print("\n" + "=" * 80)

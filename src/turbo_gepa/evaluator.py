@@ -32,6 +32,7 @@ class AsyncEvaluator:
         metrics_mapper: MetricsMapper | None = None,
         verbose_errors: bool = False,
         logger: LoggerProtocol | None = None,
+        timeout_seconds: float | None = None,
     ) -> None:
         self.cache = cache
         self.task_runner = task_runner
@@ -41,6 +42,7 @@ class AsyncEvaluator:
         self._inflight_examples: int = 0
         self._max_observed_inflight: int = 0
         self.logger: LoggerProtocol = logger or StdOutLogger()
+        self.timeout_seconds = timeout_seconds
 
     async def eval_on_shard(
         self,
@@ -92,11 +94,16 @@ class AsyncEvaluator:
                         self._max_observed_inflight = self._inflight_examples
 
                     _start_api = time.time()
-                    metrics = await self.task_runner(candidate, example_id)
+                    task = self.task_runner(candidate, example_id)
+                    if self.timeout_seconds is not None:
+                        metrics = await asyncio.wait_for(task, timeout=self.timeout_seconds)
+                    else:
+                        metrics = await task
                     _elapsed_api = time.time() - _start_api
 
                     if show_progress:
                         self.logger.log(f"✅ Completed eval for example {example_id} in {_elapsed_api:.1f}s")
+
                 # Ensure inflight counter is decremented even if mapper raises
                 self._inflight_examples = max(0, self._inflight_examples - 1)
                 mapped = self.metrics_mapper(metrics)
@@ -119,6 +126,34 @@ class AsyncEvaluator:
 
                 if show_progress:
                     self.logger.log(f"Progress: {completed}/{total} examples ({completed / total * 100:.0f}%)")
+            except asyncio.TimeoutError as e:
+                self._inflight_examples = max(0, self._inflight_examples - 1)
+                timeout_msg = (
+                    f"⚠️  Evaluation timed out for example {example_id} "
+                    f"after {self.timeout_seconds:.1f}s" if self.timeout_seconds else
+                    f"⚠️  Evaluation timed out for example {example_id}"
+                )
+                if show_progress:
+                    self.logger.log(timeout_msg)
+                fallback_metrics = {
+                    "quality": 0.0,
+                    "neg_cost": 0.0,
+                    "tokens": 0.0,
+                }
+                mapped = self.metrics_mapper(fallback_metrics)
+                trace = dict(fallback_metrics)
+                trace["example_id"] = example_id
+                trace["error"] = "timeout"
+                result = EvalResult(
+                    objectives=mapped,
+                    traces=[trace],
+                    n_examples=1,
+                    shard_fraction=shard_fraction,
+                    example_ids=[example_id],
+                )
+                # Don't cache timeouts - allow retry next run
+                results.append(result)
+                completed += 1
             except Exception as e:
                 self._inflight_examples = max(0, self._inflight_examples - 1)
                 # Handle task runner failures gracefully

@@ -269,6 +269,17 @@ class DefaultAdapter:
             print(f"   Num mutations requested: {num_mutations}")
             print(f"   Num parent contexts: {len(parent_contexts)}")
 
+            # Show shard info for parent contexts
+            if parent_contexts:
+                parent_shards = []
+                for ctx in parent_contexts:
+                    meta = ctx.get("meta", {})
+                    shard_fraction = meta.get("quality_shard_fraction", 0.0)
+                    if shard_fraction > 0.0:
+                        parent_shards.append(f"{shard_fraction * 100:.0f}%")
+                if parent_shards:
+                    print(f"   Parent shard levels: {', '.join(parent_shards)}")
+
             # Check if we have reflection examples
             reflection_examples = getattr(self.mutator, "_reflection_examples", [])
             print(f"   Reflection examples available: {len(reflection_examples)}")
@@ -306,6 +317,13 @@ class DefaultAdapter:
                     if "temperature" in meta:
                         temp_info = f", temp={meta['temperature']:.1f}"
 
+                    # Shard context - show what fraction of dataset was evaluated
+                    shard_info = ""
+                    shard_fraction = meta.get("quality_shard_fraction", 0.0)
+                    if shard_fraction > 0.0:
+                        shard_pct = shard_fraction * 100
+                        shard_info = f", shard={shard_pct:.0f}%"
+
                     # Performance summary from traces
                     if traces:
                         avg_quality = sum(t.get("quality", 0) for t in traces[:3]) / min(len(traces), 3)
@@ -313,7 +331,7 @@ class DefaultAdapter:
                     else:
                         perf_summary = f"Quality: {quality:.1%}"
 
-                    parent_summaries.append(f"""PROMPT {chr(65 + i)} ({perf_summary}{temp_info}):
+                    parent_summaries.append(f"""PROMPT {chr(65 + i)} ({perf_summary}{temp_info}{shard_info}):
 "{prompt_text}"
 """)
 
@@ -813,6 +831,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             cache=cache or self.cache,
             task_runner=self._task_runner,
             metrics_mapper=metrics_mapper,
+            timeout_seconds=self.config.eval_timeout_seconds,
         )
         # Create stop governor if auto-stop enabled
         # Use provided metrics_callback, or create dashboard if progress display is enabled

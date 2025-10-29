@@ -40,6 +40,8 @@ class DiskCache:
         # Global semaphore to limit concurrent file operations (prevent "too many open files")
         # Dynamically determine safe limit based on system's file descriptor limit
         self._file_semaphore = asyncio.Semaphore(self._get_safe_file_limit())
+        # In-memory index to avoid repeated linear scans per candidate
+        self._record_cache: dict[str, dict[str, EvalResult]] = {}
 
     def _get_safe_file_limit(self) -> int:
         """Determine a safe file descriptor limit for concurrent operations.
@@ -80,18 +82,62 @@ class DiskCache:
         shard_dir.mkdir(parents=True, exist_ok=True)
         return shard_dir / f"{cand_hash}.jsonl"
 
+    def _clone_result(self, result: EvalResult, example_id: str) -> EvalResult:
+        example_ids = list(result.example_ids) if result.example_ids else [example_id]
+        if example_id not in example_ids:
+            example_ids = [example_id]
+        traces = [
+            dict(trace) if isinstance(trace, dict) else trace  # shallow copy to avoid side-effects
+            for trace in (result.traces or [])
+        ]
+        return EvalResult(
+            objectives=dict(result.objectives),
+            traces=traces,
+            n_examples=result.n_examples,
+            shard_fraction=result.shard_fraction,
+            example_ids=example_ids,
+        )
+
+    def _ensure_candidate_cache(self, cand_hash: str, path: Path) -> dict[str, EvalResult]:
+        cached = self._record_cache.get(cand_hash)
+        if cached is not None:
+            return cached
+
+        records: dict[str, EvalResult] = {}
+        if path.exists():
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    record = json.loads(line)
+                    example_id = record["example_id"]
+                    result = EvalResult(
+                        objectives=dict(record["objectives"]),
+                        traces=[
+                            dict(trace) if isinstance(trace, dict) else trace
+                            for trace in record.get("traces", [])
+                        ],
+                        n_examples=record.get("n_examples", 1),
+                        shard_fraction=record.get("shard_fraction"),
+                        example_ids=[example_id],
+                    )
+                    records[example_id] = result
+        self._record_cache[cand_hash] = records
+        return records
+
     async def get(self, candidate: Candidate, example_id: str) -> EvalResult | None:
         """Fetch a cached result if present."""
         cand_hash = candidate_key(candidate)
         path = self._record_path(cand_hash)
+        in_memory = self._record_cache.get(cand_hash)
+        if in_memory is not None and example_id in in_memory:
+            return in_memory[example_id]
         if not path.exists():
             return None
         lock = self._lock_for(cand_hash)
         async with lock:
             # Use semaphore to limit concurrent file operations
             async with self._file_semaphore:
-                cached = await asyncio.to_thread(self._read_record, path, example_id)
-        return cached
+                records = await asyncio.to_thread(self._ensure_candidate_cache, cand_hash, path)
+        return records.get(example_id)
 
     async def set(self, candidate: Candidate, example_id: str, result: EvalResult) -> None:
         """Persist a new evaluation record."""
@@ -109,6 +155,8 @@ class DiskCache:
             # Use semaphore to limit concurrent file operations
             async with self._file_semaphore:
                 await asyncio.to_thread(self._append_record, path, record)
+            cache = self._record_cache.setdefault(cand_hash, {})
+            cache[example_id] = self._clone_result(result, example_id)
 
     async def batch_set(self, writes: list[tuple[Candidate, str, EvalResult]]) -> None:
         """Batch write multiple results, grouping by candidate for efficiency."""
@@ -116,6 +164,7 @@ class DiskCache:
 
         # Group writes by candidate hash to minimize lock contention
         by_candidate: defaultdict[str, list[tuple[Path, dict[str, object]]]] = defaultdict(list)
+        updates: defaultdict[str, list[tuple[str, EvalResult]]] = defaultdict(list)
 
         for candidate, example_id, result in writes:
             cand_hash = candidate_key(candidate)
@@ -128,6 +177,7 @@ class DiskCache:
                 "shard_fraction": result.shard_fraction,
             }
             by_candidate[cand_hash].append((path, record))
+            updates[cand_hash].append((example_id, result))
 
         async def write_batch(cand_hash: str, records: list[tuple[Path, dict]]) -> None:
             # All records for same candidate go to same file
@@ -138,12 +188,16 @@ class DiskCache:
                 # Use semaphore to limit concurrent file operations
                 async with self._file_semaphore:
                     await asyncio.to_thread(self._append_records, path, record_objs)
+            cache = self._record_cache.setdefault(cand_hash, {})
+            for example_id, res in updates.get(cand_hash, []):
+                cache[example_id] = self._clone_result(res, example_id)
 
         # Write all candidate batches in parallel
         await asyncio.gather(*(write_batch(k, v) for k, v in by_candidate.items()))
 
     def clear(self) -> None:
         """Remove all cached records (useful for tests)."""
+        self._record_cache.clear()
         if not self.cache_dir.exists():
             return
         for root, _dirs, files in os.walk(self.cache_dir, topdown=False):
