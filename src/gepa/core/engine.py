@@ -157,15 +157,18 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             if tqdm is None:
                 raise ImportError("tqdm must be installed when display_progress_bar is enabled")
 
+            # Check if stop_callback contains MaxMetricCallsStopper
             total_calls: int | None = None
             stop_cb = self.stop_callback
             if stop_cb is not None:
                 max_calls_attr = getattr(stop_cb, "max_metric_calls", None)
                 if isinstance(max_calls_attr, int):
+                    # Direct MaxMetricCallsStopper
                     total_calls = max_calls_attr
                 else:
                     stoppers = getattr(stop_cb, "stoppers", None)
                     if stoppers is not None:
+                        # CompositeStopper - iterate to find MaxMetricCallsStopper
                         for stopper in stoppers:
                             stopper_max = getattr(stopper, "max_metric_calls", None)
                             if isinstance(stopper_max, int):
