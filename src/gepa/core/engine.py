@@ -21,7 +21,7 @@ from .adapter import RolloutOutput, Trajectory
 # Import tqdm for progress bar functionality
 try:
     from tqdm import tqdm
-except ImportError:  # pragma: no cover - tqdm optional dependency
+except ImportError:
     tqdm = None
 
 
@@ -133,9 +133,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         linear_pareto_front_program_idx = self.val_evaluation_policy.get_best_program(state)
         if new_program_idx == linear_pareto_front_program_idx:
-            self.logger.log(
-                f"Iteration {state.i + 1}: Found a better program on the valset with score {valset_score}."
-            )
+            self.logger.log(f"Iteration {state.i + 1}: Found a better program on the valset with score {valset_score}.")
 
         valset = self.valset
         assert valset is not None
