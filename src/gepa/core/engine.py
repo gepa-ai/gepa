@@ -159,18 +159,18 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
             total_calls: int | None = None
             stop_cb = self.stop_callback
-            if isinstance(stop_cb, MaxMetricCallsStopper):
-                total_calls = stop_cb.max_metric_calls
-            elif isinstance(stop_cb, CompositeStopper):
-                for stopper in stop_cb.stoppers:
-                    if isinstance(stopper, MaxMetricCallsStopper):
-                        total_calls = stopper.max_metric_calls
-                        break
-
-            if total_calls is None and stop_cb is not None:
+            if stop_cb is not None:
                 max_calls_attr = getattr(stop_cb, "max_metric_calls", None)
                 if isinstance(max_calls_attr, int):
                     total_calls = max_calls_attr
+                else:
+                    stoppers = getattr(stop_cb, "stoppers", None)
+                    if stoppers is not None:
+                        for stopper in stoppers:
+                            stopper_max = getattr(stopper, "max_metric_calls", None)
+                            if isinstance(stopper_max, int):
+                                total_calls = stopper_max
+                                break
 
             if total_calls is not None:
                 progress_bar = tqdm(total=total_calls, desc="GEPA Optimization", unit="rollouts")
