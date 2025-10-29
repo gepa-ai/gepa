@@ -67,13 +67,13 @@ class Mutator:
         self.spec_induction_runner = spec_induction_runner
         self.temperature_mutations_enabled = temperature_mutations_enabled
         self._reflection_examples: list[dict[str, object]] = []
-        self._operator_stats: dict[str, dict[str, int]] = {
-            "temperature_shift": {"wins": 0, "trials": 0},
-            "incremental_reflection": {"wins": 0, "trials": 0},
-            "reflection": {"wins": 0, "trials": 0},
-            "spec_induction": {"wins": 0, "trials": 0},
+        self._operator_stats: dict[str, dict[str, float]] = {
+            "temperature_shift": {"trials": 0, "delta_sum": 0.0},
+            "incremental_reflection": {"trials": 0, "delta_sum": 0.0},
+            "reflection": {"trials": 0, "delta_sum": 0.0},
+            "spec_induction": {"trials": 0, "delta_sum": 0.0},
         }
-        self._operator_history: dict[str, deque[int]] = {key: deque(maxlen=20) for key in self._operator_stats}
+        self._operator_history: dict[str, deque[float]] = {key: deque(maxlen=20) for key in self._operator_stats}
         self._spec_cache: dict[str, deque[str]] = {}
         self._spec_cache_limit = max(4, config.max_mutations or 8)
         self._spec_runner_signature = _describe_callable(spec_induction_runner)
@@ -86,25 +86,23 @@ class Mutator:
         """Toggle temperature exploration without rebuilding the mutator."""
         self.temperature_mutations_enabled = enabled
 
-    def report_outcome(self, generation_method: str, success: bool) -> None:
-        stats = self._operator_stats.setdefault(generation_method, {"wins": 0, "trials": 0})
+    def report_outcome(self, generation_method: str, delta_quality: float) -> None:
+        stats = self._operator_stats.setdefault(generation_method, {"trials": 0, "delta_sum": 0.0})
         stats["trials"] += 1
-        if success:
-            stats["wins"] += 1
+        stats["delta_sum"] += delta_quality
         history = self._operator_history.setdefault(generation_method, deque(maxlen=20))
-        history.append(1 if success else 0)
+        history.append(delta_quality)
 
     def _operator_weight(self, generation_method: str) -> float:
         history = self._operator_history.get(generation_method)
         if history and len(history) > 0:
-            successes = sum(history)
-            trials = len(history)
-            # Simple moving-average with Laplace smoothing
-            return (successes + 1.0) / (trials + 2.0)
+            avg_delta = sum(history) / len(history)
+            return max(0.0, avg_delta) + 0.01
         stats = self._operator_stats.get(generation_method)
         if stats and stats["trials"] > 0:
-            return (stats["wins"] + 1.0) / (stats["trials"] + 2.0)
-        return 1.0
+            avg_delta = stats["delta_sum"] / max(1, stats["trials"])
+            return max(0.0, avg_delta) + 0.01
+        return 0.01
 
     async def propose(
         self,

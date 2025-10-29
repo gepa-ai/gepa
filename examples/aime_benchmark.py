@@ -101,8 +101,8 @@ parser = argparse.ArgumentParser(description="Benchmark GEPA vs TurboGEPA")
 parser.add_argument(
     "--run",
     choices=["gepa", "turbo", "both"],
-    default="both",
-    help="Which benchmark to run: gepa, turbo, or both (default: both)",
+    default="turbo",
+    help="Which benchmark to run: gepa, turbo, or both (default: turbo)",
 )
 args = parser.parse_args()
 
@@ -211,6 +211,7 @@ if RUN_TURBO:
     print("=" * 80 + "\n")
 
     # Convert GEPA dataset to TurboGEPA format (use same data as GEPA)
+    quick_limit = min(len(trainset), 64)
     turbo_dataset = [
         DefaultDataInst(
             input=ex["input"],
@@ -218,34 +219,22 @@ if RUN_TURBO:
             id=f"aime_{i}",
             additional_context=ex.get("additional_context"),
         )
-        for i, ex in enumerate(trainset)  # Use full trainset to match GEPA
+        for i, ex in enumerate(trainset[:quick_limit])
     ]
 
-    print(f"📊 Loaded {len(turbo_dataset)} AIME problems (matching GEPA trainset)")
+    print(f"📊 Loaded {len(turbo_dataset)} AIME problems (quick benchmark subset)")
 
     # Create config optimized for DEBUGGING (fast iterations, verbose output)
     config = Config(
-        shards=(
-            0.05,  # Small first shard for quick signal
-            0.1,  # Small first shard for quick signal
-            0.2,  # Small first shard for quick signal
-            0.5,  # Small first shard for quick signal
-            1.0,  # Immediately verify promising candidates on the full dataset
-        ),
-        eval_concurrency=248,
-        # max_total_inflight=64,
+        shards=(0.1, 0.4, 1.0),
+        eval_concurrency=32,
+        max_total_inflight=32,
         n_islands=1,
-        # batch_size=4,
-        # queue_limit=64,
-        # mutation_buffer_min=2,  # Keep generating mutations when queue < 2
-        # max_mutations_per_round=4,  # Generate 4 mutations per round
-        # reflection_batch_size=3,
-        # cohort_quantile=0.4,  # Promote top 60%
-        # eps_improve=0.0,  # Immediately promote ties
-        # enable_rung_convergence=False,  # Disable convergence checks for debugging
-        # lineage_patience=10,  # Allow more rounds without improvement
-        # lineage_min_improve=0.01,
-        target_quality=0.75,  # Lower target (50%) for faster completion during debugging
+        queue_limit=96,
+        mutation_buffer_min=2,
+        max_mutations_per_round=16,
+        reflection_batch_size=4,
+        target_quality=0.80,
         log_level="INFO",
     )
 
@@ -261,13 +250,16 @@ if RUN_TURBO:
     seed_turbo = "You are a helpful assistant. You are given a question and you need to answer it. The answer should be given at the end of your response in exactly the format '### <final answer>'"
 
     print("🚀 Starting TurboGEPA optimization...\n")
+    print("⏱️  Quick benchmark mode: 60-evaluation budget, ~1-2 minute runtime.\n")
 
     start_time = time.time()
     turbo_result = adapter.optimize(
         seeds=[seed_turbo],
-        enable_auto_stop=False,  # Disable auto-stop to force full 10 rounds
+        enable_auto_stop=True,
+        max_rounds=6,
+        max_evaluations=60,
         display_progress=True,
-        optimize_temperature_after_convergence=False,  # Skip temp phase for debugging
+        optimize_temperature_after_convergence=False,
     )
     turbo_elapsed = time.time() - start_time
 

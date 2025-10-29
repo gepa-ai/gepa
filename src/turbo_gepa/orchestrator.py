@@ -776,6 +776,28 @@ class Orchestrator:
         if shard_fraction > prev_fraction or (shard_fraction == prev_fraction and quality >= prev_quality):
             meta["quality"] = quality
             meta["quality_shard_fraction"] = shard_fraction
+
+        # Compute improvement signal for mutation operators
+        orig_meta = candidate.meta if isinstance(candidate.meta, dict) else {}
+        parent_score: float | None = None
+        if isinstance(orig_meta, dict):
+            parent_score_raw = orig_meta.get("parent_score")
+            if isinstance(parent_score_raw, (int, float)):
+                parent_score = float(parent_score_raw)
+            else:
+                parent_objectives = orig_meta.get("parent_objectives")
+                if isinstance(parent_objectives, dict):
+                    parent_val = parent_objectives.get(self.config.promote_objective)
+                    if isinstance(parent_val, (int, float)):
+                        parent_score = float(parent_val)
+        prev_quality_val = prev_quality if isinstance(prev_quality, (int, float)) and prev_quality != float("-inf") else None
+        if isinstance(parent_score, (float, int)):
+            delta_quality = quality - float(parent_score)
+        elif prev_quality_val is not None:
+            delta_quality = quality - float(prev_quality_val)
+        else:
+            delta_quality = quality
+
         candidate_with_meta = Candidate(text=candidate.text, meta=meta)
 
         cand_hash = candidate_key(candidate_with_meta)
@@ -824,8 +846,7 @@ class Orchestrator:
                 self._promotion_pending.add(candidate_with_meta.fingerprint)
 
         if generation_method and hasattr(self.mutator, "report_outcome"):
-            success = decision in ("promoted", "completed")
-            self.mutator.report_outcome(generation_method, success)
+            self.mutator.report_outcome(generation_method, delta_quality)
 
         # Clear both the original fingerprint (added before launch) and the updated one
         # (metadata changes can alter the fingerprint, so be defensive).
