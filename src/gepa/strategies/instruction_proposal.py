@@ -95,8 +95,8 @@ Provide the new instructions within ``` blocks."""
 
         return prompt
 
-    @staticmethod
-    def output_extractor(lm_out: str) -> dict[str, str]:
+    @classmethod
+    def output_extractor(cls, lm_out: str) -> dict[str, str]:
         def extract_instruction_text() -> str:
             # Find the first and last backtick positions (if any)
             start = lm_out.find("```") + 3

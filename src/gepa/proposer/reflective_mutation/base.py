@@ -38,8 +38,8 @@ class Signature:
     def prompt_renderer(cls, input_dict: Mapping[str, Any]) -> str:
         raise NotImplementedError
 
-    @staticmethod
-    def output_extractor(lm_out: str) -> dict[str, str]:
+    @classmethod
+    def output_extractor(cls, lm_out: str) -> dict[str, str]:
         raise NotImplementedError
 
     @classmethod
