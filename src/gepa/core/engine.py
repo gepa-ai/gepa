@@ -301,11 +301,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
                         self.merge_proposer.merges_due += 1
 
-            except Exception as exc:  # pragma: no cover - runtime safety
-                self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {exc}")
+            except Exception as e:
+                self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
                 self.logger.log(traceback.format_exc())
                 if self.raise_on_exception:
-                    raise exc
+                    raise e
                 else:
                     continue
 
