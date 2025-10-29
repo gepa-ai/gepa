@@ -279,20 +279,12 @@ def optimize(
     else:
         module_selector_instance = module_selector
 
-    batch_sampler_instance: BatchSampler
-    if isinstance(batch_sampler, str):
-        if batch_sampler != "epoch_shuffled":
-            raise ValueError(
-                "batch_sampler only accepts the string literal 'epoch_shuffled' or a BatchSampler instance."
-            )
-        minibatch_size = reflection_minibatch_size or 3
-        batch_sampler_instance = EpochShuffledBatchSampler(minibatch_size=minibatch_size, rng=rng)
+    if batch_sampler == "epoch_shuffled":
+        batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size or 3, rng=rng)
     else:
-        if reflection_minibatch_size is not None:
-            raise AssertionError(
-                "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'."
-            )
-        batch_sampler_instance = batch_sampler
+        assert reflection_minibatch_size is None, (
+            "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"
+        )
 
     experiment_tracker = create_experiment_tracker(
         use_wandb=use_wandb,
@@ -315,7 +307,7 @@ def optimize(
         adapter=active_adapter,
         candidate_selector=candidate_selector,
         module_selector=module_selector_instance,
-        batch_sampler=batch_sampler_instance,
+        batch_sampler=batch_sampler,
         perfect_score=perfect_score,
         skip_perfect_score=skip_perfect_score,
         experiment_tracker=experiment_tracker,
