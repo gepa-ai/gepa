@@ -145,6 +145,8 @@ def sample_and_attempt_merge_programs_by_common_predictors(
         assert agg_scores[ancestor] <= agg_scores[id2], "Ancestor should not be better than its descendants"
         assert id1 != id2, "Cannot merge the same program"
 
+        # Now we have a common ancestor, which is outperformed by both its descendants
+
         new_program: Program = deepcopy(program_candidates[ancestor])
 
         new_prog_desc: tuple[int, ...] = ()
@@ -158,11 +160,16 @@ def sample_and_attempt_merge_programs_by_common_predictors(
             pred_id1 = program_candidates[id1][pred_name]
             pred_id2 = program_candidates[id2][pred_name]
             if (pred_anc == pred_id1 or pred_anc == pred_id2) and pred_id1 != pred_id2:
+                # We have a predictor that is the same as one of its ancestors, so we can update it with the other
                 same_as_ancestor_id = 1 if pred_anc == pred_id1 else 2
                 new_value_idx = id2 if same_as_ancestor_id == 1 else id1
                 new_program[pred_name] = program_candidates[new_value_idx][pred_name]
                 new_prog_desc = (*new_prog_desc, new_value_idx)
             elif pred_anc != pred_id1 and pred_anc != pred_id2:
+                # Both predictors are different from  the ancestor, and it is difficult to decide which one gives the benefits
+                # We randomly select one of the descendants to update the predictor
+                # The probability of selecting is proportional to the agg_scores of the descendants
+                # prog_to_get_instruction_from = id1 if (rng.random() < (agg_scores[id1] / (agg_scores[id1] + agg_scores[id2]))) else id2
                 prog_to_get_instruction_from = (
                     id1
                     if agg_scores[id1] > agg_scores[id2]
@@ -171,15 +178,21 @@ def sample_and_attempt_merge_programs_by_common_predictors(
                 new_program[pred_name] = program_candidates[prog_to_get_instruction_from][pred_name]
                 new_prog_desc = (*new_prog_desc, prog_to_get_instruction_from)
             elif pred_id1 == pred_id2:
+                # Either both predictors are the same, or both are different from the ancestor
+                # If both are different from the ancestor, we should use the new predictor, so selecting either one of the descendants is fine
+                # If both are same as the ancesor, again selecting any one of the descendants is fine
+                # So let's select id1
                 new_program[pred_name] = program_candidates[id1][pred_name]
                 new_prog_desc = (*new_prog_desc, id1)
             else:  # pragma: no cover - defensive
                 raise AssertionError("Unexpected case in predictor merging logic")
 
         if (id1, id2, new_prog_desc) in merges_performed[1]:
+            # This triplet has already been merged, so we skip it
             continue
 
         if has_val_support_overlap and not has_val_support_overlap(id1, id2):
+            # not enough overlapping validation support for candidates
             continue
 
         merges_performed[1].append((id1, id2, new_prog_desc))
@@ -190,7 +203,15 @@ def sample_and_attempt_merge_programs_by_common_predictors(
 
 
 class MergeProposer(ProposeNewCandidate[DataId]):
-    """Implements merge flow that combines compatible descendants of a common ancestor."""
+    """
+    Implements merge flow that combines compatible descendants of a common ancestor.
+
+    - Find merge candidates among Pareto front dominators
+    - Attempt a merge via sample_and_attempt_merge_programs_by_common_predictors
+    - Subsample eval on valset-driven selected indices
+    - Return proposal if merge's subsample score >= max(parents)
+    The engine handles full eval + adding to state.
+    """
 
     def __init__(
         self,
@@ -287,6 +308,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             self.logger.log(f"Iteration {i}: No merge candidates found")
             return None
 
+        # success, new_program, id1, id2, ancestor
         new_program, id1, id2, ancestor = merge_output
         state.full_program_trace[-1]["merged"] = True
         state.full_program_trace[-1]["merged_entities"] = (id1, id2, ancestor)
@@ -298,6 +320,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             state.prog_candidate_val_subscores[id2],
         )
         mini_devset = self.valset.fetch(subsample_ids)
+        # below is a post condition of `select_eval_subsample_for_merged_program`
         assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id1].keys())
         assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id2].keys())
         id1_sub_scores = [state.prog_candidate_val_subscores[id1][k] for k in subsample_ids]
