@@ -832,6 +832,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             task_runner=self._task_runner,
             metrics_mapper=metrics_mapper,
             timeout_seconds=self.config.eval_timeout_seconds,
+            min_improve=self.config.eps_improve,
         )
         # Create stop governor if auto-stop enabled
         # Use provided metrics_callback, or create dashboard if progress display is enabled

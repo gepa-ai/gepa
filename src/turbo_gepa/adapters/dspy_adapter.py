@@ -135,6 +135,30 @@ class DSpyAdapter:
         # Reflection runner
         self.reflection_runner = self._create_reflection_runner()
 
+        async def batch_reflection_runner(parent_contexts: list[dict[str, object]], num_mutations: int) -> list[str]:
+            if num_mutations <= 0 or not parent_contexts:
+                return []
+            proposals: list[str] = []
+            for ctx in parent_contexts:
+                candidate = ctx.get("candidate")
+                if candidate is None:
+                    continue
+                failures = ctx.get("failures", []) or []
+                traces: list[dict] = []
+                for _example_id, trace_list in failures:
+                    traces.extend(trace_list)
+                try:
+                    mutated = await self.reflection_runner(traces, candidate.text)
+                except RuntimeError:
+                    continue
+                if not mutated:
+                    continue
+                for text in mutated:
+                    proposals.append(text)
+                    if len(proposals) >= num_mutations:
+                        return proposals
+            return proposals[:num_mutations]
+
         # Mutator
         self.mutator = Mutator(
             MutationConfig(
@@ -142,7 +166,8 @@ class DSpyAdapter:
                 max_mutations=config.max_mutations_per_round,
                 max_tokens=config.max_tokens,
             ),
-            reflection_runner=self.reflection_runner,
+            batch_reflection_runner=batch_reflection_runner,
+            spec_induction_runner=None,
         )
 
     def build_program(self, instructions: dict[str, str]) -> dspy.Module:
@@ -247,7 +272,7 @@ class DSpyAdapter:
 
         # Add example inputs for reflection
         result["input"] = str(example.inputs())
-        result["expected_output"] = str(example.labels()) if hasattr(example, "labels") else ""
+        result["expected_answer"] = str(example.labels()) if hasattr(example, "labels") else ""
 
         return result
 
@@ -425,6 +450,7 @@ class DSpyAdapter:
             cache=self.cache,
             task_runner=self._task_runner,
             timeout_seconds=self.config.eval_timeout_seconds,
+            min_improve=self.config.eps_improve,
         )
         return Orchestrator(
             config=self.config,

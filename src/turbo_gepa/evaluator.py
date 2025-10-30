@@ -33,6 +33,7 @@ class AsyncEvaluator:
         verbose_errors: bool = False,
         logger: LoggerProtocol | None = None,
         timeout_seconds: float | None = None,
+        min_improve: float = 0.0,
     ) -> None:
         self.cache = cache
         self.task_runner = task_runner
@@ -43,6 +44,7 @@ class AsyncEvaluator:
         self._max_observed_inflight: int = 0
         self.logger: LoggerProtocol = logger or StdOutLogger()
         self.timeout_seconds = timeout_seconds
+        self.min_improve = float(min_improve)
 
     async def eval_on_shard(
         self,
@@ -64,6 +66,26 @@ class AsyncEvaluator:
 
         import time
 
+        parent_target: float | None = None
+        meta = candidate.meta if isinstance(candidate.meta, dict) else None
+        if isinstance(meta, dict):
+            parent_score: float | None = None
+            raw_parent = meta.get("parent_score")
+            if isinstance(raw_parent, (int, float)):
+                parent_score = float(raw_parent)
+            else:
+                parent_obj = meta.get("parent_objectives")
+                if isinstance(parent_obj, dict):
+                    obj_val = parent_obj.get("quality")
+                    if isinstance(obj_val, (int, float)):
+                        parent_score = float(obj_val)
+            if parent_score is not None:
+                parent_target = parent_score + self.min_improve
+                if parent_target > 1.0:
+                    parent_target = 1.0
+                if parent_target < 0.0:
+                    parent_target = 0.0
+
         semaphore = asyncio.Semaphore(max(concurrency, 1))
         results: list[EvalResult] = []
         completed = 0
@@ -71,16 +93,51 @@ class AsyncEvaluator:
         early_stop_target = int(total * early_stop_fraction)
         batch_start_time = time.time()
         eval_durations: list[float] = []  # Track how long each eval took (excluding cached)
+        quality_lock = asyncio.Lock()
+        running_quality = 0.0
+        early_stop_flag = False
+
+        async def _register_result(result: EvalResult, quality_override: float | None = None) -> None:
+            nonlocal completed, running_quality, early_stop_flag
+            async with quality_lock:
+                results.append(result)
+                completed += result.n_examples
+                q_val = quality_override
+                if q_val is None:
+                    obj_quality = result.objectives.get("quality") if isinstance(result.objectives, dict) else None
+                    if isinstance(obj_quality, (int, float)):
+                        q_val = float(obj_quality)
+                if isinstance(q_val, (int, float)):
+                    running_quality += float(q_val) * max(1, result.n_examples)
+                if (
+                    not early_stop_flag
+                    and parent_target is not None
+                    and total > 0
+                ):
+                    remaining = total - completed
+                    if remaining < 0:
+                        remaining = 0
+                    best_possible = (running_quality + remaining * 1.0) / total
+                    if best_possible + 1e-9 < parent_target:
+                        early_stop_flag = True
+                        if show_progress:
+                            self.logger.log(
+                                f"⚠️ Early stop: candidate {candidate.fingerprint[:12]} cannot beat parent target {parent_target:.1%}"
+                            )
 
         async def eval_one(example_id: str, task_start_time: float) -> None:
             nonlocal completed
 
             cached = await self.cache.get(candidate, example_id)
             if cached:
-                results.append(cached)
-                completed += 1
+                quality_val = None
+                if isinstance(cached.objectives, dict):
+                    q = cached.objectives.get("quality")
+                    if isinstance(q, (int, float)):
+                        quality_val = float(q)
+                await _register_result(cached, quality_val)
                 if show_progress:
-                    self.logger.log(f"Progress: {completed}/{total} examples ({completed / total * 100:.0f}%)")
+                    self.logger.log(f"Progress: {completed}/{total} examples ({completed / max(total, 1) * 100:.0f}%)")
                 return
 
             try:
@@ -107,8 +164,32 @@ class AsyncEvaluator:
                 # Ensure inflight counter is decremented even if mapper raises
                 self._inflight_examples = max(0, self._inflight_examples - 1)
                 mapped = self.metrics_mapper(metrics)
-                trace = dict(metrics)
-                trace["example_id"] = example_id
+                # Build a lean trace to avoid heavy I/O; keep only fields used by reflection
+                max_len = 2048
+                trace: dict[str, object] = {"example_id": example_id}
+                # Always keep quality and tokens if present
+                if "quality" in metrics:
+                    trace["quality"] = metrics.get("quality")
+                if "tokens" in metrics:
+                    trace["tokens"] = metrics.get("tokens")
+                # Keep input and expected answer for feedback context
+                if "input" in metrics:
+                    trace["input"] = metrics.get("input")
+                if "expected_answer" in metrics:
+                    trace["expected_answer"] = metrics.get("expected_answer")
+                if "additional_context" in metrics:
+                    trace["additional_context"] = metrics.get("additional_context")
+                # Prefer a single output field; if only 'response' exists, map it to 'output'
+                raw_output = None
+                if "output" in metrics and isinstance(metrics.get("output"), str):
+                    raw_output = metrics.get("output")
+                elif "response" in metrics and isinstance(metrics.get("response"), str):
+                    raw_output = metrics.get("response")
+                if isinstance(raw_output, str):
+                    out = raw_output
+                    if len(out) > max_len:
+                        out = out[: max_len] + "…"
+                    trace["output"] = out
                 result = EvalResult(
                     objectives=mapped,
                     traces=[trace],
@@ -117,15 +198,19 @@ class AsyncEvaluator:
                     example_ids=[example_id],
                 )
                 await self.cache.set(candidate, example_id, result)
-                results.append(result)
-                completed += 1
+                quality_val = None
+                if isinstance(mapped, dict):
+                    val = mapped.get("quality")
+                    if isinstance(val, (int, float)):
+                        quality_val = float(val)
+                await _register_result(result, quality_val)
 
                 # Track duration for non-cached evals
                 eval_duration = time.time() - task_start_time
                 eval_durations.append(eval_duration)
 
                 if show_progress:
-                    self.logger.log(f"Progress: {completed}/{total} examples ({completed / total * 100:.0f}%)")
+                    self.logger.log(f"Progress: {completed}/{total} examples ({completed / max(total, 1) * 100:.0f}%)")
             except asyncio.TimeoutError as e:
                 self._inflight_examples = max(0, self._inflight_examples - 1)
                 timeout_msg = (
@@ -152,8 +237,7 @@ class AsyncEvaluator:
                     example_ids=[example_id],
                 )
                 # Don't cache timeouts - allow retry next run
-                results.append(result)
-                completed += 1
+                await _register_result(result, 0.0)
             except Exception as e:
                 self._inflight_examples = max(0, self._inflight_examples - 1)
                 # Handle task runner failures gracefully
@@ -181,7 +265,7 @@ class AsyncEvaluator:
                     example_ids=[example_id],
                 )
                 # Don't cache failed evaluations - allow retry on next run
-                results.append(result)
+                await _register_result(result, 0.0)
 
         # Launch all tasks
         current_time = time.time()
@@ -210,8 +294,9 @@ class AsyncEvaluator:
                 # Early stop if we've been waiting too long for stragglers
                 if time_since_should_have_hit_target > expected_time_for_remaining and remaining >= 2:
                     if show_progress:
+                        denom = max(total, 1)
                         self.logger.log(
-                            f"⚡ Early stop: {completed}/{total} complete ({completed / total * 100:.0f}%), cancelling {remaining} stragglers"
+                            f"⚡ Early stop: {completed}/{total} complete ({completed / denom * 100:.0f}%), cancelling {remaining} stragglers"
                         )
                         self.logger.log(
                             f"      Avg eval duration: {avg_duration:.1f}s, waited {time_since_should_have_hit_target:.1f}s past target..."
@@ -238,6 +323,14 @@ class AsyncEvaluator:
                     pass  # Expected for cancelled tasks
                 except Exception:
                     pass  # Already handled in eval_one
+
+            if early_stop_flag:
+                for task in pending:
+                    task.cancel()
+                break
+
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # No explicit progress bar cleanup when using logger
 

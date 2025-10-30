@@ -22,6 +22,7 @@
 - 🧬 **Dual Mutation Strategy**: Blends reflection edits with Prompt-MII-style spec induction for exploration vs. exploitation
 - 🌡️ **Two-Phase Optimization**: Prompt evolution first, optional temperature sweep second
 - 🚦 **Convergence & Lineage Guards**: Per-candidate auto-stop and lineage fast-tracks keep stagnating prompts moving forward
+- ⚙️ **Adaptive Runtime Control**: Parent-aware early stopping, latency-based concurrency tuning, mutation throttling, and runtime shard tuning keep tokens focused where they matter
 - 🧾 **Lineage-Aware Mutations**: Mutators receive parent/child score history and failure summaries to guide the next edits
 - 🔧 **Adaptive Configuration**: Auto-tunes concurrency, batch sizes, and shard settings based on dataset size
 
@@ -171,6 +172,7 @@ config = Config(
     shards=(0.3, 1.0),            # Fast scout shard + full verification
     eval_concurrency=64,
     max_total_inflight=64,
+    adaptive_shards_enabled=True,          # Let TurboGEPA tune shard fractions at runtime
     enable_rung_convergence=True, # Promote stalled prompts automatically
     lineage_patience=3,            # Force parent promotion after 3 flat children
     lineage_min_improve=0.005,     # Require >=0.5pp gain to reset the counter
@@ -182,6 +184,8 @@ adapter.config = config
 seed_prompt = "You are a helpful assistant. Provide your final answer as '### <answer>'."
 result = adapter.optimize(seeds=[seed_prompt])
 ```
+
+Need strict, reproducible shard boundaries? Set `adaptive_shards_enabled=False` to keep the fractions fixed for the entire run.
 
 ### TurboGEPA: DSPy Program Optimization
 
@@ -599,7 +603,7 @@ Each parent context passed to the mutator now includes a `lineage` list summariz
             "shard_fraction": 0.3,
             "tokens": 412,
             "parent_quality": 0.81,
-            "generation_method": "reflection",
+            "generation_method": "incremental_reflection",
             "failures": [
                 {"example_id": "aime_007", "quality": 0.0},
                 {"example_id": "aime_011", "quality": 0.5},

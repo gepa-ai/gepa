@@ -10,6 +10,8 @@ in the same process (async ring topology), not separate OS processes.
 from __future__ import annotations
 
 import asyncio
+import math
+import time
 from collections import defaultdict, deque
 from typing import Any, Callable, Iterable, Sequence
 
@@ -65,8 +67,9 @@ class Orchestrator:
                 lineage_min_improve=config.lineage_min_improve,
             )
         )
+        self._runtime_shards: list[float] = list(self.config.shards)
         self.queue: deque[Candidate] = deque(maxlen=config.queue_limit)
-        self._per_shard_queue: list[deque[Candidate]] = [deque() for _ in range(len(config.shards))]
+        self._per_shard_queue: list[deque[Candidate]] = [deque() for _ in range(len(self._runtime_shards))]
         self._pending_fingerprints: set[str] = set()
         self._inflight_fingerprints: set[str] = set()
         self._next_shard: int = 0
@@ -97,22 +100,22 @@ class Orchestrator:
         self._result_queue: asyncio.Queue[tuple[Candidate, EvalResult | Exception, int]] = asyncio.Queue()
         self._total_inflight: int = 0  # Total evaluations in flight across all shards
         total_cap = self.config.max_total_inflight or self.config.eval_concurrency
-        self._effective_concurrency: int = max(1, total_cap)
-        self._max_total_inflight: int = self._effective_concurrency
-        num_shards = max(1, len(self.config.shards))
-        base = max(1, self._max_total_inflight // num_shards)
-        remainder = max(0, self._max_total_inflight - base * num_shards)
-        self._shard_capacity = [base + (1 if i < remainder else 0) for i in range(num_shards)]
-        # Ensure we always honour the total budget even if integer division truncates
-        if sum(self._shard_capacity) < self._max_total_inflight:
-            deficit = self._max_total_inflight - sum(self._shard_capacity)
-            for i in range(deficit):
-                self._shard_capacity[i % num_shards] += 1
-        self._shard_inflight: list[int] = [0] * num_shards
+        self._max_total_inflight: int = max(1, total_cap)
+        self._examples_inflight: int = 0
+        self._launch_start_times: dict[str, float] = {}
+        self._latency_ema: float = 0.0
+        self._latency_samples: int = 0
+        self._eval_samples: int = 0
+        self._timeout_count: int = 0
+        self._mutation_throttle: bool = False
+        base_mut = self.config.max_mutations_per_round or max(16, self.config.eval_concurrency // 2)
+        self._max_mutations_ceiling = base_mut
+        self._mutation_min = max(4, base_mut // 4)
+        self._rung_launches: list[int] = [0] * len(self._runtime_shards)
+        self._rung_promotions: list[int] = [0] * len(self._runtime_shards)
+        self._promotion_ema: list[float] = [0.0] * len(self._runtime_shards)
         self._last_debug_log: float = 0.0
         self._last_budget_log: float = 0.0
-        # Global example-level inflight budget (hard cap across candidates)
-        self._examples_inflight: int = 0
         self._last_shared: dict[str, float] = {}
         # Evolution tracking
         self._mutations_requested: int = 0
@@ -128,21 +131,56 @@ class Orchestrator:
         self._promotion_pending: set[str] = set()
         self._last_mutation_attempt: float = 0.0
 
-        # Deficit scheduler state for fair rung allocation
-        import math
+        # Scheduler state derived from capacities
+        self._recompute_capacities()
 
-        self._rung_keys: list[str] = [str(shard) for shard in self.config.shards]
+    def _resize_metric_list(self, data: list[int], target: int) -> list[int]:
+        if len(data) < target:
+            data.extend([0] * (target - len(data)))
+        elif len(data) > target:
+            data = data[:target]
+        return data
+
+    def _resize_float_list(self, data: list[float], target: int) -> list[float]:
+        if len(data) < target:
+            data.extend([0.0] * (target - len(data)))
+        elif len(data) > target:
+            data = data[:target]
+        return data
+
+    def _rebalance_shard_queue(self, target: int) -> None:
+        while len(self._per_shard_queue) < target:
+            self._per_shard_queue.append(deque())
+        while len(self._per_shard_queue) > target:
+            extra = self._per_shard_queue.pop()
+            if extra and self._per_shard_queue:
+                self._per_shard_queue[-1].extend(extra)
+
+    def _recompute_capacities(self) -> None:
+        num_shards = max(1, len(self._runtime_shards))
+        self._rebalance_shard_queue(num_shards)
+        self._effective_concurrency = max(1, min(self._max_total_inflight, self.config.eval_concurrency))
+        base = max(1, self._effective_concurrency // num_shards)
+        remainder = max(0, self._effective_concurrency - base * num_shards)
+        self._shard_capacity = [base + (1 if i < remainder else 0) for i in range(num_shards)]
+        if sum(self._shard_capacity) < self._effective_concurrency:
+            deficit = self._effective_concurrency - sum(self._shard_capacity)
+            for i in range(deficit):
+                self._shard_capacity[i % num_shards] += 1
+        current_inflight = list(getattr(self, "_shard_inflight", []))
+        current_inflight = current_inflight[:num_shards] + [0] * max(0, num_shards - len(current_inflight))
+        self._shard_inflight = current_inflight
+        self._rung_keys = [str(shard) for shard in self._runtime_shards]
         n_rungs = len(self._rung_keys)
-        # Equal shares: each rung gets 1/n of launch opportunities
-        self._rung_shares: dict[str, float] = dict.fromkeys(self._rung_keys, 1.0 / n_rungs)
-        # Deficit accumulates when a rung doesn't get scheduled
-        self._rung_deficit: dict[str, float] = dict.fromkeys(self._rung_keys, 0.0)
-        # Track inflight per rung (in addition to per-shard tracking)
-        self._inflight_by_rung: dict[str, int] = dict.fromkeys(self._rung_keys, 0)
-        # Per-rung inflight capacity (hard cap to prevent oversubscription)
-        self._rung_capacity: dict[str, int] = {
-            key: math.ceil(self._rung_shares[key] * self._max_total_inflight) for key in self._rung_keys
+        self._rung_shares = dict.fromkeys(self._rung_keys, 1.0 / max(n_rungs, 1))
+        self._rung_deficit = dict.fromkeys(self._rung_keys, 0.0)
+        self._inflight_by_rung = dict.fromkeys(self._rung_keys, 0)
+        self._rung_capacity = {
+            key: max(1, math.ceil(self._rung_shares[key] * self._effective_concurrency)) for key in self._rung_keys
         }
+        self._rung_launches = self._resize_metric_list(self._rung_launches, num_shards)
+        self._rung_promotions = self._resize_metric_list(self._rung_promotions, num_shards)
+        self._promotion_ema = self._resize_float_list(self._promotion_ema, num_shards)
 
     def enqueue(self, candidates: Iterable[Candidate]) -> None:
         for candidate in candidates:
@@ -172,8 +210,148 @@ class Orchestrator:
         Uses scheduler.current_shard_index to ensure consistency with enqueue logic.
         """
         idx = self.scheduler.current_shard_index(candidate)
-        shard_fraction = self.config.shards[min(idx, len(self.config.shards) - 1)]
+        shard_fraction = self._runtime_shards[min(idx, len(self._runtime_shards) - 1)]
         return str(shard_fraction)
+
+    def _update_eval_metrics(self, candidate: Candidate, result: EvalResult) -> None:
+        cand_hash = candidate_key(candidate)
+        start = self._launch_start_times.pop(cand_hash, None)
+        duration = 0.0
+        now = time.time()
+        if start is not None:
+            duration = max(0.0, now - start)
+        if duration > 0:
+            if self._latency_samples == 0:
+                self._latency_ema = duration
+            else:
+                alpha = 0.2
+                self._latency_ema = (1 - alpha) * self._latency_ema + alpha * duration
+            self._latency_samples += 1
+        timed_out = False
+        for trace in result.traces:
+            if isinstance(trace, dict) and trace.get("error") == "timeout":
+                timed_out = True
+                break
+        self._eval_samples += 1
+        if timed_out:
+            self._timeout_count += 1
+
+    def _current_timeout_ratio(self) -> float:
+        return self._timeout_count / max(1, self._eval_samples)
+
+    def _maybe_adjust_shards(self) -> None:
+        if not getattr(self.config, "adaptive_shards_enabled", True):
+            self._rung_launches = [0] * len(self._rung_launches)
+            self._rung_promotions = [0] * len(self._rung_promotions)
+            self._promotion_ema = [0.0] * len(self._promotion_ema)
+            return
+
+        num_shards = len(self._runtime_shards)
+        if num_shards < 2:
+            self._rung_launches = [0] * len(self._rung_launches)
+            self._rung_promotions = [0] * len(self._rung_promotions)
+            self._promotion_ema = [0.0] * len(self._promotion_ema)
+            return
+
+        new_shards = list(self._runtime_shards)
+        adjusted = False
+        for idx in range(num_shards - 1):
+            launches = self._rung_launches[idx] if idx < len(self._rung_launches) else 0
+            if launches < 5:
+                continue
+            promotions = self._rung_promotions[idx] if idx < len(self._rung_promotions) else 0
+            rate = promotions / max(1, launches)
+            ema = self._promotion_ema[idx]
+            if ema <= 0:
+                ema = rate
+            else:
+                ema = 0.5 * ema + 0.5 * rate
+            self._promotion_ema[idx] = ema
+
+            shrink = ema >= 0.65
+            grow = ema <= 0.35
+            if not shrink and not grow:
+                continue
+
+            if shrink:
+                new_value = new_shards[idx] * 0.88
+            else:
+                new_value = new_shards[idx] * 1.12
+
+            lower_bound = 0.05 if idx == 0 else new_shards[idx - 1] + 0.03
+            upper_bound = new_shards[idx + 1] - 0.03 if idx < num_shards - 2 else 0.95
+            new_value = max(lower_bound, min(upper_bound, new_value))
+            if abs(new_value - new_shards[idx]) > 1e-4:
+                new_shards[idx] = new_value
+                adjusted = True
+
+        if adjusted:
+            # Ensure strictly increasing order and cap at 1.0 for the last shard
+            for i in range(1, num_shards - 1):
+                min_allowed = new_shards[i - 1] + 0.03
+                if new_shards[i] <= min_allowed:
+                    new_shards[i] = min_allowed
+            for i in range(num_shards - 2, -1, -1):
+                max_allowed = new_shards[i + 1] - 0.03 if i < num_shards - 2 else 0.97
+                if new_shards[i] >= max_allowed:
+                    new_shards[i] = max(0.05, max_allowed)
+            new_shards[-1] = 1.0
+            if any(abs(a - b) > 1e-4 for a, b in zip(new_shards, self._runtime_shards)):
+                if self.show_progress:
+                    before = ", ".join(f"{s:.2f}" for s in self._runtime_shards)
+                    after = ", ".join(f"{s:.2f}" for s in new_shards)
+                    self.logger.log(f"🔧 Adaptive shards: [{before}] → [{after}]")
+                self._runtime_shards = new_shards
+                self.config.shards = tuple(new_shards)
+                self.scheduler.update_shards(new_shards)
+                self._recompute_capacities()
+
+        self._rung_launches = [0] * len(self._runtime_shards)
+        self._rung_promotions = [0] * len(self._runtime_shards)
+
+    def _adjust_runtime_parameters(self) -> None:
+        if self._latency_samples < 5:
+            return
+        timeout_ratio = self._current_timeout_ratio()
+        high_latency = 5.0
+        low_latency = 1.5
+        timeout_high = 0.05
+        timeout_low = 0.01
+        adjusted = False
+        if self._latency_ema > high_latency or timeout_ratio > timeout_high:
+            new_inflight = max(1, self._max_total_inflight - 4)
+            if new_inflight != self._max_total_inflight:
+                self._max_total_inflight = new_inflight
+                self._recompute_capacities()
+            if self.config.max_mutations_per_round:
+                self.config.max_mutations_per_round = max(
+                    self._mutation_min, self.config.max_mutations_per_round - 4
+                )
+            adjusted = True
+        elif self._latency_ema < low_latency and timeout_ratio < timeout_low:
+            new_inflight = min(self._max_total_inflight + 4, self.config.eval_concurrency)
+            if new_inflight != self._max_total_inflight:
+                self._max_total_inflight = new_inflight
+                self._recompute_capacities()
+            if self.config.max_mutations_per_round:
+                self.config.max_mutations_per_round = min(
+                    self.config.max_mutations_per_round + 4, self._max_mutations_ceiling
+                )
+            adjusted = True
+        backlog0 = len(self._per_shard_queue[0]) if self._per_shard_queue else 0
+        launches0 = self._rung_launches[0] if self._rung_launches else 0
+        promotions0 = self._rung_promotions[0] if self._rung_promotions else 0
+        promo_rate0 = promotions0 / max(1, launches0)
+        backlog_high = max(3 * self.config.batch_size, 12)
+        backlog_low = max(self.config.batch_size, 8)
+        if backlog0 > backlog_high and promo_rate0 < 0.2:
+            self._mutation_throttle = True
+        elif backlog0 < backlog_low:
+            self._mutation_throttle = False
+        if adjusted:
+            # Slowly decay launch counters to keep ratios reactive
+            self._rung_launches = [max(0, int(count * 0.8)) for count in self._rung_launches]
+            self._rung_promotions = [max(0, int(count * 0.8)) for count in self._rung_promotions]
 
     async def run(
         self,
@@ -422,6 +600,7 @@ class Orchestrator:
                     await self._maybe_migrate()
 
                 await self._save_state()
+                self._maybe_adjust_shards()
 
                 if self.enable_auto_stop and self.stop_governor is not None:
                     should_stop, debug_info = self._check_stop_governor()
@@ -433,6 +612,8 @@ class Orchestrator:
             # 6) Target quality guard
             if await self._stream_check_target(window_id):
                 break
+
+            self._adjust_runtime_parameters()
 
             # 7) Idle detection - nothing running, nothing queued, mutations finished
             if (
@@ -563,7 +744,7 @@ class Orchestrator:
                     continue
 
                 # Get rung key for this shard (consistent with scheduler)
-                shard_fraction = self.config.shards[min(shard_idx, len(self.config.shards) - 1)]
+                shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
                 rung_key = str(shard_fraction)
 
                 # Check per-rung inflight cap before considering this rung
@@ -660,7 +841,7 @@ class Orchestrator:
         if self._total_inflight >= self._max_total_inflight:
             return False
 
-        shard_fraction = self.scheduler.shard_fraction_for_index(shard_idx)
+        shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
         shard_key = (window_id, shard_fraction)
         shard_ids = self._shard_cache.get(shard_key)
         if shard_ids is None:
@@ -688,6 +869,9 @@ class Orchestrator:
         self._inflight_by_rung[rung_key] += 1
         # Reserve budget for this candidate
         self._examples_inflight += per_cand_concurrency
+        self._launch_start_times[cand_hash] = time.time()
+        if 0 <= shard_idx < len(self._rung_launches):
+            self._rung_launches[shard_idx] += 1
 
         async def runner() -> None:
             try:
@@ -810,7 +994,10 @@ class Orchestrator:
         self.latest_results[cand_hash] = result
         self.evaluations_run += 1
 
+        prev_idx = min(self.scheduler.current_shard_index(candidate_with_meta), len(self._runtime_shards) - 1)
         decision = self.scheduler.record(candidate_with_meta, result, self.config.promote_objective)
+        if decision in ("promoted", "completed") and 0 <= prev_idx < len(self._rung_promotions):
+            self._rung_promotions[prev_idx] += 1
 
         if isinstance(candidate_with_meta.meta, dict):
             parent_fp = candidate_with_meta.meta.get("parent")
@@ -830,7 +1017,7 @@ class Orchestrator:
             self.logger.log(f"🔍 Got {len(promotions)} promotion(s) from scheduler, enqueuing for next shard...")
             for p in promotions:
                 rung = self.scheduler.current_shard_index(p)
-                shard_frac = self.config.shards[rung] if rung < len(self.config.shards) else 1.0
+                shard_frac = self._runtime_shards[rung] if rung < len(self._runtime_shards) else 1.0
                 generation = self._get_generation(p)
                 source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
                 self.logger.log(
@@ -888,6 +1075,7 @@ class Orchestrator:
         shard_idx: int,
     ) -> None:
         if isinstance(payload, Exception):
+            self._launch_start_times.pop(candidate_key(candidate), None)
             meta = candidate.meta if isinstance(candidate.meta, dict) else {}
             sched_key = meta.get("_sched_key")
             if isinstance(sched_key, str):
@@ -897,6 +1085,7 @@ class Orchestrator:
             return
 
         result: EvalResult = payload
+        self._update_eval_metrics(candidate, result)
         await self._ingest_result(candidate, result)
 
     async def _stream_check_target(self, window_id: int) -> bool:
@@ -907,7 +1096,7 @@ class Orchestrator:
         if not pareto:
             return False
 
-        full_shard = self.config.shards[-1]
+        full_shard = self._runtime_shards[-1]
         full_entries = [entry for entry in pareto if entry.result.shard_fraction == full_shard]
         if not full_entries:
             return False
@@ -924,7 +1113,7 @@ class Orchestrator:
     # === Streaming Launch Helpers ===
 
     async def _seed_archive(self, seeds: Sequence[Candidate]) -> None:
-        shard_fraction = self.config.shards[0]
+        shard_fraction = self._runtime_shards[0]
         shard_size = self._shard_size(shard_fraction)
         shard = self.sampler.sample_shard(self.round_index, shard_size)
 
@@ -968,7 +1157,7 @@ class Orchestrator:
                 current_rung = self.scheduler.current_shard_index(candidate_with_meta)
                 if decision == "promoted":
                     self.logger.log(
-                        f"   ✅ Seed PROMOTED to shard {current_rung} ({self.config.shards[current_rung]:.0%}) "
+                        f"   ✅ Seed PROMOTED to shard {current_rung} ({self._runtime_shards[current_rung]:.0%}) "
                         f"for full evaluation"
                     )
                 else:
@@ -1031,7 +1220,7 @@ class Orchestrator:
         if not pareto:
             return 0.0
 
-        full_shard = self.config.shards[-1]  # Longest shard (e.g., 1.0 = 100%)
+        full_shard = self._runtime_shards[-1]  # Longest shard (e.g., 1.0 = 100%)
 
         # Try to get quality from full-shard evaluations first
         full_shard_quality = 0.0
@@ -1232,15 +1421,15 @@ class Orchestrator:
         # Don't mutate from candidates only evaluated on the tiny first shard.
         # If no parent has reached the higher shard yet (e.g., full evaluation failed),
         # temporarily fall back to the first shard so optimization continues.
-        if len(self.config.shards) <= 1:
-            min_shard_for_mutation = self.config.shards[0]
+        if len(self._runtime_shards) <= 1:
+            min_shard_for_mutation = self._runtime_shards[0]
         else:
-            min_shard_for_mutation = self.config.shards[1]
+            min_shard_for_mutation = self._runtime_shards[1]
 
         has_eligible_parent = any(
             (entry.result.shard_fraction or 0.0) >= min_shard_for_mutation for entry in selected_entries
         )
-        effective_min_shard = min_shard_for_mutation if has_eligible_parent else self.config.shards[0]
+        effective_min_shard = min_shard_for_mutation if has_eligible_parent else self._runtime_shards[0]
 
         for entry in selected_entries:
             # Skip parents that haven't been evaluated on a meaningful shard yet
@@ -1441,9 +1630,12 @@ class Orchestrator:
 
     def _mutation_budget(self) -> int:
         """Compute how many new mutations we should request this cycle."""
-        max_mut = self.config.max_mutations_per_round
+        max_mut = self.config.max_mutations_per_round or 0
         if max_mut <= 0:
             return 0
+
+        if self._mutation_throttle and max_mut > self._mutation_min:
+            max_mut = max(self._mutation_min, max_mut // 2)
 
         ready = len(self.queue) + len(self._mutation_buffer)
         target_ready = max(self._max_total_inflight, self.config.batch_size)

@@ -85,6 +85,17 @@ class BudgetedScheduler:
     def current_shard_index(self, candidate: Candidate) -> int:
         return self._candidate_levels.get(self._sched_key(candidate), 0)
 
+    def update_shards(self, shards: Sequence[float]) -> None:
+        """Update rung configuration while preserving candidate levels."""
+        self.config = replace(self.config, shards=tuple(shards))
+        self.rungs = [Rung(shard) for shard in self.config.shards]
+        max_idx = max(len(self.rungs) - 1, 0)
+        for key, level in list(self._candidate_levels.items()):
+            if level > max_idx:
+                self._candidate_levels[key] = max_idx
+        self._pending_promotions.clear()
+        # Parent scores belong to old rungs; keep them but they will refresh on record()
+
     def _get_convergence_state(self, key: str, rung_idx: int) -> _ConvergenceState:
         cand_states = self._convergence.setdefault(key, {})
         state = cand_states.get(rung_idx)

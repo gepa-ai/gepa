@@ -229,6 +229,7 @@ if RUN_TURBO:
         shards=(0.1, 0.4, 1.0),
         eval_concurrency=32,
         max_total_inflight=32,
+        adaptive_shards_enabled=True,
         n_islands=1,
         queue_limit=96,
         mutation_buffer_min=2,

@@ -50,8 +50,6 @@ class Mutator:
         config: MutationConfig,
         *,
         validators: Iterable[Validator] | None = None,
-        reflection_runner: Callable[[Sequence[dict[str, Any]], str, dict[str, Any] | None], Awaitable[Sequence[str]]]
-        | None = None,
         batch_reflection_runner: BatchReflectionRunner | None = None,
         spec_induction_runner: SpecInductionRunner | None = None,
         seed: int | None = None,
@@ -62,7 +60,6 @@ class Mutator:
         extra_validators = list(validators or [])
         extra_validators.append(_default_token_validator(config.max_tokens))
         self.validators = extra_validators
-        self.single_reflection_runner = reflection_runner
         self.batch_reflection_runner = batch_reflection_runner
         self.spec_induction_runner = spec_induction_runner
         self.temperature_mutations_enabled = temperature_mutations_enabled
@@ -70,7 +67,6 @@ class Mutator:
         self._operator_stats: dict[str, dict[str, float]] = {
             "temperature_shift": {"trials": 0, "delta_sum": 0.0},
             "incremental_reflection": {"trials": 0, "delta_sum": 0.0},
-            "reflection": {"trials": 0, "delta_sum": 0.0},
             "spec_induction": {"trials": 0, "delta_sum": 0.0},
         }
         self._operator_history: dict[str, deque[float]] = {key: deque(maxlen=20) for key in self._operator_stats}
@@ -132,10 +128,7 @@ class Mutator:
         if total_budget == 0:
             return []
 
-        reflection_weight = max(
-            self._operator_weight("incremental_reflection"),
-            self._operator_weight("reflection"),
-        )
+        reflection_weight = self._operator_weight("incremental_reflection")
         spec_weight = self._operator_weight("spec_induction") if (self.spec_induction_runner and task_examples) else 0.0
         temp_weight = self._operator_weight("temperature_shift") if self.temperature_mutations_enabled else 0.0
 
@@ -170,8 +163,6 @@ class Mutator:
                 return []
             if self.batch_reflection_runner:
                 return await self._generate_incremental_mutations(parent_contexts, non_spec_budget)
-            if self.single_reflection_runner:
-                return await self._generate_single_reflection_mutations(parent_contexts, non_spec_budget)
             return []
 
         async def run_spec() -> list[Candidate]:
@@ -205,7 +196,7 @@ class Mutator:
         self.logger.log("⏱️  Mutator timing breakdown:")
         self.logger.log(f"   Temperature mutations: {temp_time:.2f}s ({len(temp_mutations)} generated)")
         self.logger.log(f"   LLM calls (parallel): {llm_time:.2f}s")
-        self.logger.log(f"     - Reflection: {len(reflection_mutations)} mutations")
+        self.logger.log(f"     - Incremental reflection: {len(reflection_mutations)} mutations")
         self.logger.log(f"     - Spec induction: {len(spec_mutations)} mutations")
         self.logger.log(f"   Filtering: {filter_time:.2f}s")
         self.logger.log(f"   Total propose: {propose_total:.2f}s")
@@ -533,48 +524,3 @@ class Mutator:
                 )
                 mutations.append(Candidate(text=candidate.text, meta=meta))
         return mutations[:limit]
-
-    async def _generate_single_reflection_mutations(
-        self,
-        parent_contexts: Sequence[dict[str, object]],
-        limit: int,
-    ) -> list[Candidate]:
-        if not self.single_reflection_runner or limit <= 0:
-            return []
-
-        proposals: list[Candidate] = []
-        for ctx in parent_contexts:
-            if len(proposals) >= limit:
-                break
-            candidate = ctx["candidate"]
-            failures = ctx.get("failures", []) or []
-            traces: list[dict[str, object]] = []
-            for _example_id, trace_list in failures:
-                traces.extend(trace_list)
-            traces = traces[: self.config.reflection_batch_size]
-
-            try:
-                mutated_texts = await self.single_reflection_runner(traces, candidate.text, candidate.meta)
-            except TypeError:
-                # Support legacy reflection runners that accept only (traces, text)
-                mutated_texts = await self.single_reflection_runner(traces, candidate.text, None)  # type: ignore[arg-type]
-
-            if not mutated_texts:
-                continue
-
-            for idx, text in enumerate(mutated_texts):
-                meta = dict(candidate.meta)
-                meta.pop("_sched_key", None)
-                meta.update(
-                    {
-                        "edit": "reflection",
-                        "generation_method": "reflection",
-                        "parent": candidate.fingerprint,
-                        "parent_sched_key": candidate.meta.get("_sched_key", candidate.fingerprint),
-                        "proposal_idx": idx,
-                    }
-                )
-                proposals.append(Candidate(text=text, meta=meta))
-                if len(proposals) >= limit:
-                    break
-        return proposals
