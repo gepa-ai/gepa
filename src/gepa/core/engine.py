@@ -14,7 +14,7 @@ from gepa.logging.utils import log_detailed_metrics_after_discovering_new_progra
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
-from gepa.utils import CompositeStopper, MaxMetricCallsStopper, StopperProtocol
+from gepa.utils import StopperProtocol
 
 from .adapter import RolloutOutput, Trajectory
 
