@@ -2,7 +2,7 @@
 # https://github.com/gepa-ai/gepa
 
 from dataclasses import dataclass
-from typing import Callable, Protocol, runtime_checkable
+from typing import Any, ClassVar, Mapping, Protocol, runtime_checkable
 
 from gepa.core.adapter import Trajectory
 from gepa.core.state import GEPAState
@@ -30,14 +30,20 @@ class LanguageModel(Protocol):
 
 @dataclass
 class Signature:
-    prompt_template: str
-    input_keys: list[str]
-    output_keys: list[str]
-    prompt_renderer: Callable[[dict[str, str]], str]
-    output_extractor: Callable[[str], dict[str, str]]
+    prompt_template: ClassVar[str]
+    input_keys: ClassVar[list[str]]
+    output_keys: ClassVar[list[str]]
 
     @classmethod
-    def run(cls, lm: LanguageModel, input_dict: dict[str, str]) -> dict[str, str]:
+    def prompt_renderer(cls, input_dict: Mapping[str, Any]) -> str:
+        raise NotImplementedError
+
+    @classmethod
+    def output_extractor(cls, lm_out: str) -> dict[str, str]:
+        raise NotImplementedError
+
+    @classmethod
+    def run(cls, lm: LanguageModel, input_dict: Mapping[str, Any]) -> dict[str, str]:
         full_prompt = cls.prompt_renderer(input_dict)
         lm_out = lm(full_prompt).strip()
         return cls.output_extractor(lm_out)

@@ -1,7 +1,8 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from typing import Any, Callable, TypedDict
+from collections.abc import Mapping, Sequence
+from typing import Any, Protocol, TypedDict
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
 
@@ -22,10 +23,29 @@ class DefaultRolloutOutput(TypedDict):
     full_assistant_response: str
 
 
+DefaultReflectiveRecord = TypedDict(
+    "DefaultReflectiveRecord",
+    {
+        "Inputs": str,
+        "Generated Outputs": str,
+        "Feedback": str,
+    },
+)
+
+
+class ChatMessage(TypedDict):
+    role: str
+    content: str
+
+
+class ChatCompletionCallable(Protocol):
+    def __call__(self, messages: Sequence[ChatMessage]) -> str: ...
+
+
 class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRolloutOutput]):
     def __init__(
         self,
-        model: str | Callable,
+        model: str | ChatCompletionCallable,
         failure_score: float = 0.0,
         max_litellm_workers: int = 10,
     ):
@@ -55,7 +75,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
         for data in batch:
             user_content = f"{data['input']}"
 
-            messages = [
+            messages: list[ChatMessage] = [
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": user_content},
             ]
@@ -76,19 +96,14 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
             raise e
 
         for data, assistant_response in zip(batch, responses, strict=False):
-            output = {"full_assistant_response": assistant_response}
+            output: DefaultRolloutOutput = {"full_assistant_response": assistant_response}
             score = 1.0 if data["answer"] in assistant_response else 0.0
 
             outputs.append(output)
             scores.append(score)
 
-            if capture_traces:
-                trajectories.append(
-                    {
-                        "data": data,
-                        "full_assistant_response": assistant_response,
-                    }
-                )
+            if trajectories is not None:
+                trajectories.append({"data": data, "full_assistant_response": assistant_response})
 
         return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
 
@@ -97,14 +112,17 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
         candidate: dict[str, str],
         eval_batch: EvaluationBatch[DefaultTrajectory, DefaultRolloutOutput],
         components_to_update: list[str],
-    ) -> dict[str, list[dict[str, Any]]]:
-        ret_d: dict[str, list[dict[str, Any]]] = {}
+    ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
+        ret_d: dict[str, list[DefaultReflectiveRecord]] = {}
 
         assert len(components_to_update) == 1
         comp = components_to_update[0]
 
-        items: list[dict[str, Any]] = []
-        trace_instances = list(zip(eval_batch.trajectories, eval_batch.scores, eval_batch.outputs, strict=False))
+        trajectories = eval_batch.trajectories
+        assert trajectories is not None, "Trajectories are required to build a reflective dataset."
+
+        items: list[DefaultReflectiveRecord] = []
+        trace_instances = list(zip(trajectories, eval_batch.scores, eval_batch.outputs, strict=False))
 
         for trace_instance in trace_instances:
             traj, score, _ = trace_instance
@@ -119,7 +137,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
                 additional_context_str = "\n".join(f"{k}: {v}" for k, v in data["additional_context"].items())
                 feedback = f"The generated response is incorrect. The correct answer is '{data['answer']}'. Ensure that the correct answer is included in the response exactly as it is. Here is some additional context that might be helpful:\n{additional_context_str}"
 
-            d = {
+            d: DefaultReflectiveRecord = {
                 "Inputs": data["input"],
                 "Generated Outputs": generated_outputs,
                 "Feedback": feedback,

@@ -860,7 +860,7 @@ http = [
 
 [[package]]
 name = "gepa"
-version = "0.0.16"
+version = "0.0.18"
 source = { editable = "." }
 
 [package.optional-dependencies]
@@ -880,6 +880,7 @@ dev = [
     { name = "mlflow" },
     { name = "packaging" },
     { name = "pre-commit" },
+    { name = "pyright" },
     { name = "pytest" },
     { name = "requests" },
     { name = "ruff" },
@@ -901,6 +902,7 @@ test = [
     { name = "datasets" },
     { name = "litellm" },
     { name = "mlflow" },
+    { name = "pyright" },
     { name = "pytest" },
     { name = "tqdm" },
     { name = "wandb" },
@@ -918,6 +920,7 @@ requires-dist = [
     { name = "mlflow", marker = "extra == 'full'", specifier = ">=3.0.0" },
     { name = "packaging", marker = "extra == 'build'" },
     { name = "pre-commit", marker = "extra == 'dev'" },
+    { name = "pyright", marker = "extra == 'test'" },
     { name = "pytest", marker = "extra == 'test'" },
     { name = "requests", marker = "extra == 'build'" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
@@ -2528,6 +2531,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e7/82/28175b2414effca1cdac8dc99f76d660e7a4fb0ceefa4b4ab8f5f6742925/pyproject_hooks-1.2.0.tar.gz", hash = "sha256:1e859bd5c40fae9448642dd871adf459e5e2084186e8d2c2a79a824c970da1f8", size = 19228, upload-time = "2024-09-29T09:24:13.293Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bd/24/12818598c362d7f300f18e74db45963dbcb85150324092410c8b49405e42/pyproject_hooks-1.2.0-py3-none-any.whl", hash = "sha256:9e5c6bfa8dcc30091c74b0cf803c81fdd29d94f01992a7707bc97babb1141913", size = 10216, upload-time = "2024-09-29T09:24:11.978Z" },
+]
+
+[[package]]
+name = "pyright"
+version = "1.1.407"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "nodeenv" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a6/1b/0aa08ee42948b61745ac5b5b5ccaec4669e8884b53d31c8ec20b2fcd6b6f/pyright-1.1.407.tar.gz", hash = "sha256:099674dba5c10489832d4a4b2d302636152a9a42d317986c38474c76fe562262", size = 4122872, upload-time = "2025-10-24T23:17:15.145Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dc/93/b69052907d032b00c40cb656d21438ec00b3a471733de137a3f65a49a0a0/pyright-1.1.407-py3-none-any.whl", hash = "sha256:6dd419f54fcc13f03b52285796d65e639786373f433e243f8b94cf93a7444d21", size = 5997008, upload-time = "2025-10-24T23:17:13.159Z" },
 ]
 
 [[package]]

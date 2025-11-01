@@ -1,6 +1,8 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+from typing import Any, ClassVar
+
 import yaml
 
 from gepa.proposer.reflective_mutation.base import Signature
@@ -87,11 +89,19 @@ Assignment:
 Output Format:
 - Start with the checklist in plain text (3-7 short bullets).
 - Follow immediately with one code block in triple backticks containing the complete Python code, including assigning a `program` object."""
-    input_keys = ["curr_program", "dataset_with_feedback"]
-    output_keys = ["new_program"]
+    input_keys: ClassVar[list[str]] = ["curr_program", "dataset_with_feedback"]
+    output_keys: ClassVar[list[str]] = ["new_program"]
 
     @classmethod
-    def prompt_renderer(cls, input_dict: dict[str, str]) -> str:
+    def prompt_renderer(cls, input_dict: dict[str, Any]) -> str:
+        curr_program = input_dict["curr_program"]
+        if not isinstance(curr_program, str):
+            raise TypeError("curr_program must be a string")
+
+        dataset = input_dict["dataset_with_feedback"]
+        if not isinstance(dataset, list):
+            raise TypeError("dataset_with_feedback must be a list")
+
         def format_samples(samples):
             # Serialize the samples list to YAML for concise, structured representation
             yaml_str = yaml.dump(samples, sort_keys=False, default_flow_style=False, indent=2)
@@ -99,12 +109,12 @@ Output Format:
             return yaml_str
 
         prompt = cls.prompt_template
-        prompt = prompt.replace("<curr_program>", input_dict["curr_program"])
-        prompt = prompt.replace("<dataset_with_feedback>", format_samples(input_dict["dataset_with_feedback"]))
+        prompt = prompt.replace("<curr_program>", curr_program)
+        prompt = prompt.replace("<dataset_with_feedback>", format_samples(dataset))
         return prompt
 
-    @classmethod
-    def output_extractor(cls, lm_out: str) -> dict[str, str]:
+    @staticmethod
+    def output_extractor(lm_out: str) -> dict[str, str]:
         # Extract ``` blocks
         new_instruction = None
         if lm_out.count("```") >= 2:

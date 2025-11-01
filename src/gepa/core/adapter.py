@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, Protocol, TypeVar
 
@@ -33,7 +34,7 @@ class ProposalFn(Protocol):
     def __call__(
         self,
         candidate: dict[str, str],
-        reflective_dataset: dict[str, list[dict[str, Any]]],
+        reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
         components_to_update: list[str],
     ) -> dict[str, str]:
         """
@@ -143,7 +144,7 @@ class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
         candidate: dict[str, str],
         eval_batch: EvaluationBatch[Trajectory, RolloutOutput],
         components_to_update: list[str],
-    ) -> dict[str, list[dict[str, Any]]]:
+    ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
         """
         Build a small, JSON-serializable dataset (per component) to drive instruction
         refinement by a teacher LLM.
