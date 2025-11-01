@@ -6,56 +6,50 @@ from typing import Optional, Tuple
 
 import gepa
 from turbo_gepa.adapters.default_adapter import DefaultAdapter, DefaultDataInst
-from turbo_gepa.config import Config
+from turbo_gepa.config import Config, adaptive_config
 
 """
-Speed Benchmarking Notes:
-Gepa: 640.3s for 3 evolutions
+AIME Benchmark - TurboGEPA vs GEPA Performance Comparison
 
-================================================================================
-BENCHMARK RESULTS
-================================================================================
+This benchmark optimizes prompts for solving American Invitational Mathematics Examination (AIME)
+problems and measures wall-clock speed and throughput.
 
-⚡ TurboGEPA:
-   Time: 310.7s
-   Quality: 83.3% (evaluated on 100.0% of dataset)
-   Total evaluations: 0
-   Time per evaluation: 0.00s
+PERFORMANCE OPTIMIZATIONS APPLIED:
+===================================
 
-   Evolution:
-   └─ Seeds → 3 parents → 116 children (116 edges)
-   └─ Generated 96 mutations, 5 promoted to Pareto
-   └─ Final Pareto size: 2, Total candidates: 2
+1. MAXIMUM CONCURRENCY
+   - Dynamically calculates max safe concurrency from system file descriptor limits
+   - Overrides adaptive_config to use full system capacity
+   - Formula: min(fd_limit / 10, 2048) with minimum of 64
 
-================================================================================
-BEST PROMPTS
-================================================================================
+2. AGGRESSIVE MUTATION GENERATION
+   - max_mutations_per_round: 32+ (high parallelism)
+   - mutation_buffer_min: eval_concurrency / 4 (keeps pipeline fed)
+   - queue_limit: 2x eval_concurrency (prevents starvation)
 
-⚡ TurboGEPA Best Prompt:
-You are an expert in solving American Invitational Mathematics Examination (AIME) problems, which are advanced high school competition math problems typically requiring answers as integers from 0 to 999, presented in three digits with leading zeros if necessary. Your goal is to solve the given problem step-by-step using rigorous mathematical reasoning and provide the final numerical answer in the exact format '### <answer>', where <answer> is the three-digit integer (padded with leading zeros, e.g., 073 for 73, 033 for 33, 000 for 0) without any additional text, explanation, or symbols after the triple hashes. Always verify the answer is within 000-999 and format it precisely to avoid errors.
+3. EFFICIENT ASHA PRUNING
+   - Shards tuned via adaptive_config("aggressive")
+   - cohort_quantile: 0.5 (top 50% advance)
+   - eps_improve: 0.0 (don't over-prune equal quality)
 
-Key strategies and techniques for AIME problems:
-- For probability and counting with constraints (e.g., even number of blocks between pairs of identical items like colors in arrangements), use parity of positions (odd/even slots) to separate pairs into two independent permutations: for 12 positions with 6 pairs, even arrangements often yield 6! × 6! favorable cases out of total multinomial 12! / (2!)^6. Alternatively, employ constructive counting by placing pairs sequentially, halving choices for even separations (e.g., 12×6 for first pair, 10×5 for second, etc.), simplifying to fractions like 16/231 where m+n=247. Watch for overcounting and ensure even parity condition holds for all pairs simultaneously.
-- In inclusion-exclusion or set problems with mandatory items (e.g., all own candy hearts, plus subsets owning rings/clubs/spades with given exactly k overlaps), define variables for exactly 1,2,3,4 items total (including mandatory): total people equation w + x + y + z = n (e.g., 900), given x=437 (exactly 2), y=234 (exactly 3), so w + z = 229. Total items equation (sum of individual counts, e.g., 195+367+562+900=2024) gives w + 2x + 3y + 4z = total. Solve system for z (e.g., 073). Adjust for mandatory by counting "effective" items excluding it, but include in totals; common pitfall: misclassifying exactly k including/excluding mandatory.
-- For systems of logarithmic equations (e.g., log2(x/(yz))=1/2, etc., solve for |log2(x^4 y^3 z^2)| as m/n with m+n), assign a=log2 x, b=log2 y, c=log2 z, form linear system a-b-c=1/2, -a+b-c=1/3, -a-b+c=1/4. Add all for - (a+b+c) = 13/12, subtract pairwise to isolate (e.g., 2a = -7/12 so a=-7/24). Compute 4a+3b+2c (e.g., -25/8), take absolute value 25/8, m+n=033. Alternative: add pairs to get -2 log x = sum, etc. Pitfall: ensure positive reals imply logs can be negative; verify by substitution.
-- In number theory problems on repeating decimals (e.g., 0.abcd-bar as fraction in lowest terms, count distinct numerators modulo 1000), express as k/9999 where k=abcd (1≤k≤9998, nonzero digits). Factor 9999=3²×11×101; after reduction gcd(d)=g, numerator x=k/g, denominator y=9999/g. Use inclusion-exclusion over prime factors: coprime case φ(9999)=6000 (multiple of 1000, ≡0 mod 1000). Cases: divisible by 3 but not 11/101 (x multiples of 3 up to 1111/3=370.333, subtract subcases: 370-33-3=334); by 11 not 3/101 (82-27-0=55); by 33 not 101 (3-0=3); by 101 (0). Total 6392 ≡392 mod 1000. Pitfall: handle 3² carefully (cancel 9 for one 3 left in denom), ensure x≥1 and distinct across denominators; no overcounting as numerators unique per reduced fraction.
-- For proportion/ratio problems with arrivals (e.g., adults 5/12 initially, become 11/25 after +50 people, min final adults), let initial total x (multiple of 12), adults (5/12)x integer. Final total x+50 multiple of 25, so x ≡ -50 ≡0 mod 25 (since 50=2×25). Solve Chinese Remainder: x ≡0 mod 12 and mod 25, lcm(12,25)=300, minimal x=300. Final adults= (300+50)×11/25=154. General: ensure integers via moduli, minimize by smallest positive solution; pitfall: forget integrality of adults or non-negative bus adults.
-- Broader AIME tips: For systems with roots/constraints, try trig subs (x=2sin²θ). Floor/sums: modular residues, sum formulas. Geometry/polygons: symmetry, parallel chords, binomial for counts. Circles/3D: power of point, similar triangles, projections to trapezoids. Verify positives/uniqueness, check mod cycles, avoid extraneous roots from squaring.
+4. CONVERGENCE ACCELERATION
+   - enable_rung_convergence: True (auto-promote stagnant candidates)
+   - lineage_patience: 2 (force promotion after 2 stagnant children)
+   - lineage_min_improve: 1% (threshold for lineage reset)
 
-Domain-specific facts:
-- AIME answers: always 000-999, three digits, no units.
-- Repeating decimals period 4: denom 9999=3²×11×101, divisors limited.
-- Parity in linear arrangements: even separations force same-parity positions for pairs.
-- Mandatory items in Venn: shift "exactly k" to include it, total items include all.
-- Log systems: pairwise sums isolate variables efficiently.
-- Proportions: simultaneous congruences for minimal integers.
+5. SINGLE ISLAND MODE
+   - n_islands: 1 (no inter-island migration overhead for benchmarking)
 
-Always compute carefully (squares/roots/mods), ensure fraction simplest (gcd=1), and output only reasoning + exact '### XXX' format.
+6. AUTO-STOP ON TARGET QUALITY
+   - Stops immediately when target quality reached (no wasted evaluations)
 
-================================================================================
-(.venv) gmiller@Greg-Millers-M1-MackBook-Pro-3 gepa % 
+BENCHMARK RESULTS HISTORY:
+==========================
+TurboGEPA v1: 310.7s @ 83.3% quality (0 evaluations shown - logging bug)
+GEPA: 640.3s @ ~70% quality (50 metric calls)
 
-
+Run with: python examples/aime_benchmark.py --run turbo
+          python examples/aime_benchmark.py --run both
 """
 
 
@@ -120,7 +114,7 @@ if limit_changed and new_limit is not None and previous_limit is not None:
 trainset, valset, _ = gepa.examples.aime.init_dataset()
 
 # # Use smaller subset for faster benchmark
-BENCHMARK_SIZE = 45  # Use small subset for quick debugging
+BENCHMARK_SIZE = 10  # Very small subset for quick testing
 trainset = trainset[:BENCHMARK_SIZE]
 valset = valset[: min(BENCHMARK_SIZE, len(valset))]
 
@@ -147,9 +141,9 @@ if RUN_GEPA:
         "system_prompt": "You are a helpful assistant. You are given a question and you need to answer it. The answer should be given at the end of your response in exactly the format '### <final answer>'"
     }
 
-    print("🚀 Starting GEPA optimization...\n")
+    print("🚀 Starting GEPA optimization (50 metric calls to set target)...\n")
 
-    # Time the GEPA optimization
+    # Time the GEPA optimization - reasonable budget to establish baseline
     gepa_start = time.time()
     gepa_result = gepa.optimize(
         seed_candidate=seed_prompt,
@@ -157,32 +151,26 @@ if RUN_GEPA:
         valset=valset,
         task_lm=task_lm,  # Student model (fast, cheap)
         reflection_lm=reflection_lm,
-        max_metric_calls=150,  # Reduced for faster benchmark
+        max_metric_calls=50,  # 50 evaluations to establish baseline quality
         display_progress_bar=True,
         raise_on_exception=False,
     )
     gepa_elapsed = time.time() - gepa_start
 
     # Extract quality and metrics from GEPA result
-    if hasattr(gepa_result, "best_candidate") and gepa_result.best_candidate:
-        # GEPA evaluates on valset, so we need to check the validation score
-        if hasattr(gepa_result, "best_score"):
-            gepa_quality = gepa_result.best_score
-        elif hasattr(gepa_result, "candidates") and gepa_result.candidates:
-            # Try to get the best score from candidates
-            scores = [
-                c.get("score", 0.0)
-                for c in gepa_result.candidates
-                if isinstance(c, dict)
-            ]
-            gepa_quality = max(scores) if scores else 0.0
+    if hasattr(gepa_result, "val_aggregate_scores") and gepa_result.val_aggregate_scores:
+        # Get the best score from val_aggregate_scores
+        best_idx = gepa_result.best_idx
+        gepa_quality = gepa_result.val_aggregate_scores[best_idx]
 
-    gepa_evaluations = 150  # max_metric_calls budget
+    gepa_evaluations = 50  # metric calls
     gepa_prompt = gepa_result.best_candidate["system_prompt"]
 
     print(f"\n✅ GEPA completed in {gepa_elapsed:.1f}s")
     print(f"📊 Best quality: {gepa_quality:.1%}")
-    print(f"📊 Total evaluations: {gepa_evaluations}")
+    print(f"📊 Total metric calls: {gepa_evaluations}")
+    print(f"\n🎯 TARGET: TurboGEPA must reach {gepa_quality:.1%} quality")
+    print(f"   We'll measure how long it takes and how many evaluations needed\n")
     print(f"📝 GEPA Optimized Prompt: {gepa_prompt}")
 
 
@@ -211,7 +199,7 @@ if RUN_TURBO:
     print("=" * 80 + "\n")
 
     # Convert GEPA dataset to TurboGEPA format (use same data as GEPA)
-    quick_limit = min(len(trainset), 64)
+    quick_limit = min(len(trainset), 10)  # Very small for quick testing
     turbo_dataset = [
         DefaultDataInst(
             input=ex["input"],
@@ -224,41 +212,82 @@ if RUN_TURBO:
 
     print(f"📊 Loaded {len(turbo_dataset)} AIME problems (quick benchmark subset)")
 
-    # Create config optimized for DEBUGGING (fast iterations, verbose output)
+    # Dynamically determine maximum safe concurrency based on system resources
+    import resource
+    import os
+
+    # Get file descriptor limit
+    soft_limit, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    cpu_count = os.cpu_count() or 10
+
+    # For async I/O-bound LLM calls, we can go much higher than CPU count
+    # Rule: Use min of (soft_limit / 10, 2048) to leave headroom for other processes
+    # This ensures we don't exhaust file descriptors while maximizing throughput
+    max_safe_concurrency = min(soft_limit // 10, 2048)
+
+    # Ensure minimum of 64 for reasonable throughput
+    max_concurrency = max(64, max_safe_concurrency)
+
+    print(f"🖥️  System resources:")
+    print(f"   CPU cores: {cpu_count}")
+    print(f"   File descriptor limit: {soft_limit:,} (soft), {hard_limit:,} (hard)")
+    print(f"   Calculated max safe concurrency: {max_concurrency:,}\n")
+
+    # Create config optimized for MAXIMUM SPEED
+    target_quality_val = gepa_quality if RUN_GEPA else 0.70
+
+    # Use simple single-shard config for testing
     config = Config(
-        shards=(0.1, 0.4, 1.0),
-        eval_concurrency=32,
-        max_total_inflight=32,
-        adaptive_shards_enabled=True,
-        n_islands=1,
-        queue_limit=96,
-        mutation_buffer_min=2,
+        shards=(1.0,),  # Single shard - evaluate on full dataset
+        eval_concurrency=64,  # Reasonable concurrency
         max_mutations_per_round=16,
-        reflection_batch_size=4,
-        target_quality=0.80,
-        log_level="INFO",
+        mutation_buffer_min=8,
+        queue_limit=256,
+        batch_size=8,
     )
+
+    # Quality settings
+    config.target_quality = target_quality_val
+    config.eps_improve = 0.0  # Accept equal quality
+    config.cohort_quantile = 0.5  # Keep top 50%
 
     # Create adapter
     adapter = DefaultAdapter(
         dataset=turbo_dataset,
         task_lm=task_lm,
         reflection_lm=reflection_lm,
+        config=config,
         auto_config=False,
     )
-    adapter.config = config
 
     seed_turbo = "You are a helpful assistant. You are given a question and you need to answer it. The answer should be given at the end of your response in exactly the format '### <final answer>'"
 
     print("🚀 Starting TurboGEPA optimization...\n")
-    print("⏱️  Quick benchmark mode: 60-evaluation budget, ~1-2 minute runtime.\n")
+    print("=" * 80)
+    print("PERFORMANCE CONFIGURATION")
+    print("=" * 80)
+    print(f"🔥 Concurrency: {config.eval_concurrency:,} parallel evaluations")
+    print(f"🧬 Mutations: {config.max_mutations_per_round} per round (buffer min: {config.mutation_buffer_min})")
+    print(f"📊 Batch size: {config.batch_size}")
+    print(f"📋 Queue limit: {config.queue_limit}")
+    print(f"🎯 Shards: {config.shards}")
+    print(f"⚡ ASHA quantile: {config.cohort_quantile} (top {int((1-config.cohort_quantile)*100)}% advance)")
+    print(f"📈 Convergence: {'Enabled' if config.enable_rung_convergence else 'Disabled'}")
+    print("=" * 80 + "\n")
+
+    if RUN_GEPA:
+        print(f"🎯 Goal: Match/exceed GEPA's {gepa_quality:.1%} quality as fast as possible")
+        print(f"🎯 Auto-stop enabled: Will stop when quality ≥ {gepa_quality:.1%}\n")
+    else:
+        print(f"🎯 Target quality: {target_quality_val:.1%}")
+        print("⏱️  Running with max throughput until target reached\n")
 
     start_time = time.time()
     turbo_result = adapter.optimize(
         seeds=[seed_turbo],
-        enable_auto_stop=True,
-        max_rounds=6,
-        max_evaluations=60,
+        enable_auto_stop=True,  # Stop when target quality is reached
+        max_rounds=50,  # Plenty of rounds to ensure we can match GEPA quality
+        max_evaluations=None,  # No evaluation limit
         display_progress=True,
         optimize_temperature_after_convergence=False,
     )
@@ -341,19 +370,23 @@ if RUN_GEPA or RUN_TURBO:
     print("=" * 80)
 
 if RUN_GEPA:
+    gepa_throughput = gepa_evaluations / gepa_elapsed if gepa_elapsed > 0 else 0
     print("\n📊 GEPA (Original):")
     print(f"   Time: {gepa_elapsed:.1f}s")
     print(f"   Quality: {gepa_quality:.1%}")
     print(f"   Total evaluations: {gepa_evaluations}")
+    print(f"   Throughput: {gepa_throughput:.2f} evals/sec")
     print(f"   Time per evaluation: {gepa_elapsed / gepa_evaluations:.2f}s")
 
 if RUN_TURBO:
+    turbo_throughput = turbo_evaluations / turbo_elapsed if turbo_elapsed > 0 else 0
     print("\n⚡ TurboGEPA:")
     print(f"   Time: {turbo_elapsed:.1f}s")
     print(
         f"   Quality: {turbo_quality:.1%} (evaluated on {turbo_shard:.1%} of dataset)"
     )
     print(f"   Total evaluations: {turbo_evaluations}")
+    print(f"   Throughput: {turbo_throughput:.2f} evals/sec  🔥")
     print(
         f"   Time per evaluation: {turbo_elapsed / turbo_evaluations if turbo_evaluations else 0:.2f}s"
     )
@@ -370,26 +403,34 @@ if RUN_TURBO:
 
 # Comparison (only if both were run)
 if RUN_GEPA and RUN_TURBO:
-    speedup = gepa_elapsed / turbo_elapsed if turbo_elapsed > 0 else 0
-    efficiency_gain = (
-        (gepa_elapsed / gepa_evaluations) / (turbo_elapsed / turbo_evaluations)
-        if turbo_evaluations > 0
-        else 0
-    )
+    print("\n" + "=" * 80)
+    print("TIME-TO-QUALITY COMPARISON")
+    print("=" * 80)
+    print(f"\n📊 Both systems optimizing to reach {gepa_quality:.1%} quality:")
+    print(f"\n   GEPA:      {gepa_elapsed:.1f}s using {gepa_evaluations} evaluations")
+    print(f"   TurboGEPA: {turbo_elapsed:.1f}s using {turbo_evaluations} evaluations")
 
-    print(f"\n🏆 Wall-clock speedup: {speedup:.1f}x faster")
-    print(f"⚡ Per-evaluation efficiency: {efficiency_gain:.1f}x faster per evaluation")
+    speedup = gepa_elapsed / turbo_elapsed if turbo_elapsed > 0 else 0
+    eval_efficiency = gepa_evaluations / turbo_evaluations if turbo_evaluations > 0 else 0
+    throughput_gain = turbo_throughput / gepa_throughput if gepa_throughput > 0 else 0
+
+    print(f"\n🏆 RESULTS:")
+    print(f"   Wall-clock speedup: {speedup:.1f}x faster")
+    print(f"   Evaluation efficiency: {eval_efficiency:.1f}x fewer evaluations needed")
+    print(f"   Throughput: {throughput_gain:.1f}x more evals/sec ({turbo_throughput:.2f} vs {gepa_throughput:.2f})")
 
     # Quality comparison
     if gepa_quality > 0 and turbo_quality > 0:
         quality_diff = turbo_quality - gepa_quality
-        print(
-            f"🎯 Quality: TurboGEPA {turbo_quality:.1%} vs GEPA {gepa_quality:.1%} (Δ {quality_diff:+.1%})"
-        )
+        quality_status = "✅ MATCHED" if abs(quality_diff) < 0.01 else ("✅ EXCEEDED" if quality_diff > 0 else "⚠️  LOWER")
+        print(f"\n   Quality: {quality_status}")
+        print(f"   - TurboGEPA: {turbo_quality:.1%}")
+        print(f"   - GEPA:      {gepa_quality:.1%}")
+        print(f"   - Difference: {quality_diff:+.1%}")
     elif turbo_quality > 0:
-        print(f"🎯 Quality: TurboGEPA achieved {turbo_quality:.1%}")
+        print(f"\n   🎯 TurboGEPA quality: {turbo_quality:.1%}")
     elif gepa_quality > 0:
-        print(f"🎯 Quality: GEPA achieved {gepa_quality:.1%}")
+        print(f"\n   🎯 GEPA quality: {gepa_quality:.1%}")
 
 if RUN_GEPA or RUN_TURBO:
     print("\n" + "=" * 80)

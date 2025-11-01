@@ -40,8 +40,10 @@ class InstanceSampler:
 
         # Reserve up to 25% of shard for hard examples (min 1 if hardness deque non-empty)
         hardness_count = 0
+        hardness_set: set[str] = set()
         if self.hardness:
             hardness_count = min(len(self.hardness), max(1, k // 4))
+            hardness_set = set(self.hardness)
 
         # Sample from hardness deque (take from the end for most recent hard examples)
         hard_ids = []
@@ -54,12 +56,36 @@ class InstanceSampler:
         # Fill remaining slots with random sampling from non-hardness examples
         remaining = k - len(hard_ids)
         if remaining > 0:
-            # Sample from all examples, excluding the entire hardness deque to maintain the 25% cap
-            remaining_pool = [ex_id for ex_id in self.example_ids if ex_id not in self.hardness]
-            if remaining_pool:
-                random_ids = self.random.sample(remaining_pool, min(remaining, len(remaining_pool)))
-            else:
+            # Sample from full dataset but filter hardness members without rebuilding large lists
+            selected: list[str] = []
+            seen: set[str] = set(hard_ids)
+
+            available = len(self.example_ids) - len(hardness_set)
+            if available <= 0:
                 random_ids = []
+            else:
+                if remaining >= available:
+                    random_ids = [ex_id for ex_id in self.example_ids if ex_id not in hardness_set][:remaining]
+                else:
+                    oversample = min(len(self.example_ids), remaining + len(hardness_set))
+                    candidates = self.random.sample(self.example_ids, oversample)
+                    for ex_id in candidates:
+                        if ex_id in hardness_set or ex_id in seen:
+                            continue
+                        selected.append(ex_id)
+                        seen.add(ex_id)
+                        if len(selected) == remaining:
+                            break
+
+                    if len(selected) < remaining:
+                        for ex_id in self.example_ids:
+                            if ex_id in hardness_set or ex_id in seen:
+                                continue
+                            selected.append(ex_id)
+                            seen.add(ex_id)
+                            if len(selected) == remaining:
+                                break
+                    random_ids = selected
         else:
             random_ids = []
 

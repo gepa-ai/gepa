@@ -15,7 +15,7 @@ import time
 from collections import defaultdict, deque
 from typing import Any, Callable, Iterable, Sequence
 
-from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
+from turbo_gepa.logging.logger import LogLevel, LoggerProtocol, StdOutLogger
 
 from .archive import Archive, ArchiveEntry
 from .cache import DiskCache, candidate_key
@@ -23,6 +23,7 @@ from .config import Config
 from .evaluator import AsyncEvaluator
 from .interfaces import Candidate, EvalResult
 from .islands import IslandContext, integrate_in, migrate_out
+from .metrics import Metrics
 from .mutator import Mutator
 from .sampler import InstanceSampler
 from .scheduler import BudgetedScheduler, SchedulerConfig
@@ -131,6 +132,11 @@ class Orchestrator:
         self._promotion_pending: set[str] = set()
         self._last_mutation_attempt: float = 0.0
 
+        # Metrics tracking
+        self.metrics = Metrics()
+        # Pass metrics to evaluator for cache tracking
+        self.evaluator.metrics = self.metrics
+
         # Scheduler state derived from capacities
         self._recompute_capacities()
 
@@ -174,7 +180,14 @@ class Orchestrator:
         n_rungs = len(self._rung_keys)
         self._rung_shares = dict.fromkeys(self._rung_keys, 1.0 / max(n_rungs, 1))
         self._rung_deficit = dict.fromkeys(self._rung_keys, 0.0)
-        self._inflight_by_rung = dict.fromkeys(self._rung_keys, 0)
+        # Preserve existing inflight counts when recomputing capacities
+        # This prevents negative counts when candidates finish evaluation after shards changed
+        old_inflight = getattr(self, "_inflight_by_rung", {})
+        self._inflight_by_rung = {key: old_inflight.get(key, 0) for key in self._rung_keys}
+        # Also preserve any old keys with non-zero counts (candidates still in-flight on old shards)
+        for old_key, old_count in old_inflight.items():
+            if old_key not in self._inflight_by_rung and old_count != 0:
+                self._inflight_by_rung[old_key] = old_count
         self._rung_capacity = {
             key: max(1, math.ceil(self._rung_shares[key] * self._effective_concurrency)) for key in self._rung_keys
         }
@@ -255,6 +268,9 @@ class Orchestrator:
 
         new_shards = list(self._runtime_shards)
         adjusted = False
+        target_rate = 0.5
+        tolerance = 0.1  # Allow ±10% window before adjusting
+
         for idx in range(num_shards - 1):
             launches = self._rung_launches[idx] if idx < len(self._rung_launches) else 0
             if launches < 5:
@@ -268,18 +284,27 @@ class Orchestrator:
                 ema = 0.5 * ema + 0.5 * rate
             self._promotion_ema[idx] = ema
 
-            shrink = ema >= 0.65
-            grow = ema <= 0.35
+            if abs(ema - target_rate) <= tolerance:
+                continue
+
+            shrink = ema > target_rate + tolerance
+            grow = ema < target_rate - tolerance
             if not shrink and not grow:
                 continue
 
+            error_fraction = min(0.25, abs(ema - target_rate))  # Cap to avoid huge jumps
+            step = 0.12 + error_fraction * 0.4  # Base 12%, larger if far from target
             if shrink:
-                new_value = new_shards[idx] * 0.88
+                scale = max(0.5, 1.0 - step)
             else:
-                new_value = new_shards[idx] * 1.12
+                scale = min(1.5, 1.0 + step)
+            new_value = new_shards[idx] * scale
 
             lower_bound = 0.05 if idx == 0 else new_shards[idx - 1] + 0.03
-            upper_bound = new_shards[idx + 1] - 0.03 if idx < num_shards - 2 else 0.95
+            if idx == num_shards - 2:
+                upper_bound = new_shards[-1] - 0.03
+            else:
+                upper_bound = 0.97
             new_value = max(lower_bound, min(upper_bound, new_value))
             if abs(new_value - new_shards[idx]) > 1e-4:
                 new_shards[idx] = new_value
@@ -292,7 +317,7 @@ class Orchestrator:
                 if new_shards[i] <= min_allowed:
                     new_shards[i] = min_allowed
             for i in range(num_shards - 2, -1, -1):
-                max_allowed = new_shards[i + 1] - 0.03 if i < num_shards - 2 else 0.97
+                max_allowed = new_shards[i + 1] - 0.03 if i < num_shards - 2 else new_shards[-1] - 0.03
                 if new_shards[i] >= max_allowed:
                     new_shards[i] = max(0.05, max_allowed)
             new_shards[-1] = 1.0
@@ -319,23 +344,23 @@ class Orchestrator:
         timeout_low = 0.01
         adjusted = False
         if self._latency_ema > high_latency or timeout_ratio > timeout_high:
-            new_inflight = max(1, self._max_total_inflight - 4)
+            new_inflight = max(1, self._max_total_inflight - 1)
             if new_inflight != self._max_total_inflight:
                 self._max_total_inflight = new_inflight
                 self._recompute_capacities()
             if self.config.max_mutations_per_round:
                 self.config.max_mutations_per_round = max(
-                    self._mutation_min, self.config.max_mutations_per_round - 4
+                    self._mutation_min, self.config.max_mutations_per_round - 1
                 )
             adjusted = True
         elif self._latency_ema < low_latency and timeout_ratio < timeout_low:
-            new_inflight = min(self._max_total_inflight + 4, self.config.eval_concurrency)
+            new_inflight = min(self._max_total_inflight + 1, self.config.eval_concurrency)
             if new_inflight != self._max_total_inflight:
                 self._max_total_inflight = new_inflight
                 self._recompute_capacities()
             if self.config.max_mutations_per_round:
                 self.config.max_mutations_per_round = min(
-                    self.config.max_mutations_per_round + 4, self._max_mutations_ceiling
+                    self.config.max_mutations_per_round + 1, self._max_mutations_ceiling
                 )
             adjusted = True
         backlog0 = len(self._per_shard_queue[0]) if self._per_shard_queue else 0
@@ -434,6 +459,9 @@ class Orchestrator:
         _debug_log(f"🚀 Starting main optimization loop (max_evaluations={max_evaluations})")
         if _debug_log_path:
             _debug_log(f"   Debug log: {_debug_log_path}")
+
+        # Track first round start
+        self.metrics.start_round()
 
         while True:
             if max_rounds is not None and window_id >= max_rounds:
@@ -576,6 +604,10 @@ class Orchestrator:
             evals_in_window = self.evaluations_run - window_start_evals
 
             if evals_in_window >= window_size:
+                # End current round and start new one
+                self.metrics.end_round()
+                self.metrics.start_round()
+
                 window_id += 1
                 self.eval_batches_completed = window_id
                 self.round_index = window_id
@@ -659,6 +691,22 @@ class Orchestrator:
         await self._save_state()
 
         await self.finalize()
+
+        # Print and save comprehensive metrics summary
+        metrics_summary = self.metrics.format_summary()
+        if self.show_progress:
+            self.logger.log("\n" + metrics_summary)
+
+        # Save metrics to .turbo_gepa/metrics/ directory
+        import os
+        metrics_dir = ".turbo_gepa/metrics"
+        os.makedirs(metrics_dir, exist_ok=True)
+        timestamp = int(time.time())
+        metrics_file = f"{metrics_dir}/metrics_{timestamp}.txt"
+        with open(metrics_file, "w") as f:
+            f.write(metrics_summary)
+        if self.show_progress:
+            self.logger.log(f"📊 Metrics saved to: {metrics_file}")
 
         # Clear state only if we reached completion (not if stopped early)
         completed = (max_rounds is not None and window_id >= max_rounds) or (
@@ -860,13 +908,24 @@ class Orchestrator:
         if self._examples_inflight + per_cand_concurrency > self._effective_concurrency:
             return False
 
+        # Track peak example-level concurrency for metrics
+        peak_examples = self._examples_inflight + per_cand_concurrency
+        self.metrics.update_concurrent_evals(peak_examples)
+
         time.time()
         cand_hash = candidate_key(candidate)
         self._total_inflight += 1
         self._shard_inflight[shard_idx] += 1
         # Track inflight per rung for deficit scheduler
-        rung_key = self._get_rung_key(candidate)
-        self._inflight_by_rung[rung_key] += 1
+        # IMPORTANT: Use the shard_idx passed to this function, NOT _get_rung_key()!
+        # The candidate may be promoted during evaluation, changing its shard index.
+        # We must use the EXACT shard fraction this launch is evaluating on.
+        rung_key_at_launch = str(shard_fraction)  # Use the actual shard fraction for this evaluation
+        fingerprint_at_launch = candidate.fingerprint
+        # Initialize key if not present (can happen if shards were updated mid-flight)
+        if rung_key_at_launch not in self._inflight_by_rung:
+            self._inflight_by_rung[rung_key_at_launch] = 0
+        self._inflight_by_rung[rung_key_at_launch] += 1
         # Reserve budget for this candidate
         self._examples_inflight += per_cand_concurrency
         self._launch_start_times[cand_hash] = time.time()
@@ -874,6 +933,7 @@ class Orchestrator:
             self._rung_launches[shard_idx] += 1
 
         async def runner() -> None:
+            eval_start = time.time()
             try:
                 if self.show_progress:
                     generation = self._get_generation(candidate)
@@ -889,6 +949,9 @@ class Orchestrator:
                     shard_fraction=shard_fraction,
                     show_progress=self.show_progress,  # Show progress for all evaluations
                 )
+                eval_duration = time.time() - eval_start
+                self.metrics.record_evaluation(shard_fraction, eval_duration)
+                self.metrics.time_eval_total += eval_duration
                 if self.show_progress:
                     quality = result.objectives.get(self.config.promote_objective, 0.0)
                     generation = self._get_generation(candidate)
@@ -899,6 +962,7 @@ class Orchestrator:
                     )
                 await self._result_queue.put((candidate, result, shard_idx))
             except Exception as exc:  # pragma: no cover - defensive logging path
+                self.metrics.llm_errors += 1
                 if self.show_progress:
                     self.logger.log(
                         f"❌ Evaluation failed for candidate {candidate.fingerprint[:12]}... "
@@ -908,11 +972,16 @@ class Orchestrator:
             finally:
                 self._shard_inflight[shard_idx] -= 1
                 self._total_inflight -= 1
-                # Decrement rung inflight for deficit scheduler
-                rung_key_inner = self._get_rung_key(candidate)
-                self._inflight_by_rung[rung_key_inner] -= 1
+                # Decrement rung inflight using the SAME key we incremented with
+                # Don't recalculate - the candidate may have been promoted while evaluating!
+                # Use get() with default 0 to avoid KeyError if key was removed during recompute
+                if rung_key_at_launch in self._inflight_by_rung:
+                    self._inflight_by_rung[rung_key_at_launch] -= 1
                 # Release global example-level budget
                 self._examples_inflight = max(0, self._examples_inflight - per_cand_concurrency)
+                # Clear inflight fingerprint using the captured value from launch time
+                # This prevents the candidate from being launched again until this evaluation completes
+                self._inflight_fingerprints.discard(fingerprint_at_launch)
 
         task = asyncio.create_task(runner())
         self._inflight_tasks[cand_hash] = task
@@ -996,6 +1065,15 @@ class Orchestrator:
 
         prev_idx = min(self.scheduler.current_shard_index(candidate_with_meta), len(self._runtime_shards) - 1)
         decision = self.scheduler.record(candidate_with_meta, result, self.config.promote_objective)
+
+        # Track scheduler decisions in metrics
+        if decision == "promoted":
+            self.metrics.record_promotion(prev_idx)
+        elif decision == "pruned":
+            self.metrics.record_pruning()
+        elif decision == "completed":
+            self.metrics.record_completion()
+
         if decision in ("promoted", "completed") and 0 <= prev_idx < len(self._rung_promotions):
             self._rung_promotions[prev_idx] += 1
 
@@ -1005,10 +1083,25 @@ class Orchestrator:
             if parent_key:
                 self._update_lineage_history(parent_key, candidate_with_meta, result)
 
+                # Track operator performance: delta quality vs parent
+                parent_objectives = candidate_with_meta.meta.get("parent_objectives")
+                if isinstance(parent_objectives, dict):
+                    parent_quality = parent_objectives.get("quality", 0.0)
+                    child_quality = result.objectives.get("quality", 0.0)
+                    delta_quality = child_quality - parent_quality
+
+                    # Determine which operator was used
+                    operator = candidate_with_meta.meta.get("operator", "unknown")
+                    self.metrics.record_operator_outcome(operator, delta_quality)
+
         if decision in ("promoted", "completed"):
             await self.archive.insert(candidate_with_meta, result)
             self._record_candidate_promotion(candidate_with_meta)
             await self._maybe_share(candidate_with_meta)
+            # Update archive size metrics
+            pareto_size = len(self.archive.pareto)
+            qd_size = len(self.archive.qd_grid)
+            self.metrics.update_archive_sizes(pareto_size, qd_size)
 
         self._register_failures(result)
 
@@ -1035,11 +1128,9 @@ class Orchestrator:
         if generation_method and hasattr(self.mutator, "report_outcome"):
             self.mutator.report_outcome(generation_method, delta_quality)
 
-        # Clear both the original fingerprint (added before launch) and the updated one
-        # (metadata changes can alter the fingerprint, so be defensive).
-        self._inflight_fingerprints.discard(original_fingerprint)
-        if candidate_with_meta.fingerprint != original_fingerprint:
-            self._inflight_fingerprints.discard(candidate_with_meta.fingerprint)
+        # NOTE: Do NOT clear _inflight_fingerprints here! The finally block in _stream_launch
+        # is responsible for clearing it after all bookkeeping is complete. Clearing it here
+        # would allow the same candidate to be launched twice before the finally block runs.
 
         return candidate_with_meta, decision
 
@@ -1081,7 +1172,7 @@ class Orchestrator:
             if isinstance(sched_key, str):
                 self._promotion_pending.discard(sched_key)
             self._promotion_pending.discard(candidate.fingerprint)
-            self._inflight_fingerprints.discard(candidate.fingerprint)
+            # NOTE: Do NOT clear _inflight_fingerprints here - the finally block handles it
             return
 
         result: EvalResult = payload
@@ -1249,20 +1340,30 @@ class Orchestrator:
         """Generate mutations using batched reflection for efficiency."""
         # Check if we've exceeded the evaluation budget before spawning mutations
         if self.max_evaluations is not None and self.evaluations_run >= self.max_evaluations:
-            print(f"[SPAWN_MUTATIONS] eval budget exceeded ({self.evaluations_run} >= {self.max_evaluations})", flush=True)
+            self.logger.log(
+                f"[SPAWN_MUTATIONS] eval budget exceeded ({self.evaluations_run} >= {self.max_evaluations})",
+                LogLevel.DEBUG,
+            )
             return
 
         entries = self.archive.pareto_entries()
         if not entries:
-            print(f"[SPAWN_MUTATIONS] archive empty, skipping", flush=True)
+            self.logger.log("[SPAWN_MUTATIONS] archive empty, skipping", LogLevel.DEBUG)
             return
 
         num_mutations = self._mutation_budget()
         if num_mutations <= 0:
-            print(f"[SPAWN_MUTATIONS] budget={num_mutations}, queue={len(self.queue)}, buffer={len(self._mutation_buffer)} - skipping", flush=True)
+            self.logger.log(
+                f"[SPAWN_MUTATIONS] budget={num_mutations}, queue={len(self.queue)}, "
+                f"buffer={len(self._mutation_buffer)} - skipping",
+                LogLevel.DEBUG,
+            )
             return
 
-        print(f"[SPAWN_MUTATIONS] WILL GENERATE {num_mutations} mutations from {len(entries)} parents", flush=True)
+        self.logger.log(
+            f"[SPAWN_MUTATIONS] WILL GENERATE {num_mutations} mutations from {len(entries)} parents",
+            LogLevel.DEBUG,
+        )
 
         # Log that we're actually going to try generating
         self.logger.log(
@@ -1481,10 +1582,13 @@ class Orchestrator:
 
         mutator_start = time.time()
         mutations = await self.mutator.propose(parent_contexts, num_mutations, task_examples=task_examples)
-        time.time() - mutator_start
+        mutator_duration = time.time() - mutator_start
+        self.metrics.record_mutation_batch(len(mutations), mutator_duration)
+        self.metrics.time_mutation_total += mutator_duration
         self._record_mutation_generation(num_mutations, mutations)
 
-        time.time() - batch_start
+        batch_duration = time.time() - batch_start
+        self.metrics.time_scheduler_total += batch_duration - mutator_duration  # Other overhead
 
         return mutations
 

@@ -9,12 +9,15 @@ we can run quickly in constrained environments.
 from __future__ import annotations
 
 import asyncio
-from typing import Awaitable, Callable, Iterable, Sequence
+from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence
 
 from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
 
 from .cache import DiskCache
 from .interfaces import Candidate, EvalResult
+
+if TYPE_CHECKING:
+    from .metrics import Metrics
 
 Validator = Callable[[Candidate], None]
 MetricsMapper = Callable[[dict[str, float]], dict[str, float]]
@@ -34,6 +37,7 @@ class AsyncEvaluator:
         logger: LoggerProtocol | None = None,
         timeout_seconds: float | None = None,
         min_improve: float = 0.0,
+        metrics: Metrics | None = None,
     ) -> None:
         self.cache = cache
         self.task_runner = task_runner
@@ -45,6 +49,7 @@ class AsyncEvaluator:
         self.logger: LoggerProtocol = logger or StdOutLogger()
         self.timeout_seconds = timeout_seconds
         self.min_improve = float(min_improve)
+        self.metrics = metrics
 
     async def eval_on_shard(
         self,
@@ -120,6 +125,9 @@ class AsyncEvaluator:
                     best_possible = (running_quality + remaining * 1.0) / total
                     if best_possible + 1e-9 < parent_target:
                         early_stop_flag = True
+                        # Track early stopping event
+                        if self.metrics:
+                            self.metrics.record_early_stop("parent_target")
                         if show_progress:
                             self.logger.log(
                                 f"⚠️ Early stop: candidate {candidate.fingerprint[:12]} cannot beat parent target {parent_target:.1%}"
@@ -130,6 +138,9 @@ class AsyncEvaluator:
 
             cached = await self.cache.get(candidate, example_id)
             if cached:
+                # Track cache hit
+                if self.metrics:
+                    self.metrics.record_cache_lookup(hit=True)
                 quality_val = None
                 if isinstance(cached.objectives, dict):
                     q = cached.objectives.get("quality")
@@ -139,6 +150,10 @@ class AsyncEvaluator:
                 if show_progress:
                     self.logger.log(f"Progress: {completed}/{total} examples ({completed / max(total, 1) * 100:.0f}%)")
                 return
+
+            # Track cache miss
+            if self.metrics:
+                self.metrics.record_cache_lookup(hit=False)
 
             try:
                 # Log when we're about to start an API call
@@ -198,6 +213,9 @@ class AsyncEvaluator:
                     example_ids=[example_id],
                 )
                 await self.cache.set(candidate, example_id, result)
+                # Track cache write
+                if self.metrics:
+                    self.metrics.record_cache_write()
                 quality_val = None
                 if isinstance(mapped, dict):
                     val = mapped.get("quality")

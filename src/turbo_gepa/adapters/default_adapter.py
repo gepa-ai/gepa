@@ -16,16 +16,22 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Sequence
 
 from turbo_gepa.archive import Archive
 from turbo_gepa.cache import DiskCache
-from turbo_gepa.config import DEFAULT_CONFIG, Config, adaptive_config
+from turbo_gepa.config import (
+    DEFAULT_CONFIG,
+    Config,
+    adaptive_config,
+    recommended_executor_workers,
+)
 from turbo_gepa.evaluator import AsyncEvaluator
 from turbo_gepa.interfaces import Candidate, EvalResult
 from turbo_gepa.islands import IslandContext, spawn_islands
+from turbo_gepa.logging.logger import LogLevel, StdOutLogger
 from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
@@ -159,8 +165,15 @@ class DefaultAdapter:
         if auto_config and config == DEFAULT_CONFIG:
             config = adaptive_config(len(dataset), strategy=shard_strategy, available_compute=available_compute)
 
+        config = replace(config)
         self.config = config
         self.dataset = list(dataset)
+
+        min_level = self._resolve_log_level(self.config.log_level)
+        if self.config.enable_debug_log:
+            min_level = LogLevel.DEBUG
+        self.logger = StdOutLogger(min_level=min_level)
+        self._debug_enabled = min_level <= LogLevel.DEBUG
 
         # Normalise model configuration objects
         if isinstance(task_lm, ModelConfig):
@@ -206,6 +219,7 @@ class DefaultAdapter:
         # Temperature support will be checked lazily during Phase 2 (temperature optimization)
         # No upfront LLM call needed - we optimize prompts first (Phase 1), then temperature (Phase 2)
         self.temperature_supported = True  # Assume supported, check later if needed
+        self._temperature_warned = False
 
         # Create batched reflection runner and spec induction runner
         batch_reflection_runner = self._create_batched_llm_reflection_runner()
@@ -224,8 +238,40 @@ class DefaultAdapter:
             batch_reflection_runner=self._batch_reflection_runner,
             spec_induction_runner=self._spec_induction_runner,
             temperature_mutations_enabled=False,  # Disabled for Phase 1 - only optimize prompt quality
+            logger=self.logger,
         )
         self.log_dir = log_dir or config.log_path
+
+    @staticmethod
+    def _resolve_log_level(level: str) -> LogLevel:
+        """Map string-based config log level to LogLevel enum."""
+        if isinstance(level, LogLevel):
+            return level
+        lookup = {
+            "debug": LogLevel.DEBUG,
+            "info": LogLevel.INFO,
+            "warning": LogLevel.WARNING,
+            "error": LogLevel.ERROR,
+            "critical": LogLevel.CRITICAL,
+        }
+        return lookup.get(str(level).lower(), LogLevel.WARNING)
+
+    def _log_debug(self, message: str) -> None:
+        if self._debug_enabled:
+            self.logger.log(message, LogLevel.DEBUG)
+
+    def _disable_temperature_support(self, context: str | None = None) -> None:
+        """Disable temperature tuning after a model rejects the parameter."""
+        if not self.temperature_supported:
+            return
+        self.temperature_supported = False
+        self.task_model.temperature = None
+        self.reflection_model.temperature = None
+        self.mutator.set_temperature_mutations_enabled(False)
+        if not self._temperature_warned:
+            reason = context if context else "model rejected temperature parameter"
+            self.logger.log(f"⚠️  Disabling temperature optimization: {reason}", LogLevel.WARNING)
+            self._temperature_warned = True
 
     def _check_temperature_support(self, model: str, test_temp: float) -> bool:
         """Quick test to see if model supports custom temperature.
@@ -262,35 +308,42 @@ class DefaultAdapter:
 
             start_time = time.time()
 
-            # Log what we're receiving for reflection
-            print(f"\n{'='*80}")
-            print(f"🔬 REFLECTION RUNNER CALLED")
-            print(f"{'='*80}")
-            print(f"   Num mutations requested: {num_mutations}")
-            print(f"   Num parent contexts: {len(parent_contexts)}")
+            reflection_examples = getattr(self.mutator, "_reflection_examples", [])
 
-            # Show shard info for parent contexts
-            if parent_contexts:
-                parent_shards = []
+            if self._debug_enabled:
+                parent_shards: list[str] = []
                 for ctx in parent_contexts:
                     meta = ctx.get("meta", {})
                     shard_fraction = meta.get("quality_shard_fraction", 0.0)
                     if shard_fraction > 0.0:
                         parent_shards.append(f"{shard_fraction * 100:.0f}%")
-                if parent_shards:
-                    print(f"   Parent shard levels: {', '.join(parent_shards)}")
 
-            # Check if we have reflection examples
-            reflection_examples = getattr(self.mutator, "_reflection_examples", [])
-            print(f"   Reflection examples available: {len(reflection_examples)}")
-            if reflection_examples:
-                num_with_feedback = sum(1 for ex in reflection_examples if ex.get("feedback"))
-                num_with_output = sum(1 for ex in reflection_examples if ex.get("assistant_output"))
-                num_with_solution = sum(1 for ex in reflection_examples if (ex.get("additional_context") or {}).get("solution"))
-                print(f"      → {num_with_feedback} with feedback")
-                print(f"      → {num_with_output} with assistant_output")
-                print(f"      → {num_with_solution} with reference solution")
-            print(f"{'='*80}\n")
+                debug_lines = [
+                    "",
+                    "=" * 80,
+                    "🔬 REFLECTION RUNNER CALLED",
+                    "=" * 80,
+                    f"   Num mutations requested: {num_mutations}",
+                    f"   Num parent contexts: {len(parent_contexts)}",
+                ]
+                if parent_shards:
+                    debug_lines.append(f"   Parent shard levels: {', '.join(parent_shards)}")
+                debug_lines.append(f"   Reflection examples available: {len(reflection_examples)}")
+                if reflection_examples:
+                    num_with_feedback = sum(1 for ex in reflection_examples if ex.get("feedback"))
+                    num_with_output = sum(1 for ex in reflection_examples if ex.get("assistant_output"))
+                    num_with_solution = sum(
+                        1 for ex in reflection_examples if (ex.get("additional_context") or {}).get("solution")
+                    )
+                    debug_lines.extend(
+                        [
+                            f"      → {num_with_feedback} with feedback",
+                            f"      → {num_with_output} with assistant_output",
+                            f"      → {num_with_solution} with reference solution",
+                        ]
+                    )
+                debug_lines.append("=" * 80)
+                self._log_debug("\n".join(debug_lines))
 
             try:
                 from litellm import acompletion
@@ -305,10 +358,11 @@ class DefaultAdapter:
                     parent_objectives = meta.get("parent_objectives", {})
                     if isinstance(parent_objectives, dict):
                         quality = parent_objectives.get("quality", 0.0)
-                        print(f"   Parent {i+1} quality from parent_objectives: {quality:.1%}")
+                        quality_source = "parent_objectives"
                     else:
                         quality = meta.get("quality", 0.0)
-                        print(f"   Parent {i+1} quality from meta: {quality:.1%}")
+                        quality_source = "meta"
+                    self._log_debug(f"   Parent {i+1} quality from {quality_source}: {quality:.1%}")
 
                     traces = ctx.get("traces", [])
 
@@ -400,14 +454,21 @@ IMPORTANT:
 - Each prompt should be a complete instruction for solving problems in this domain"""
 
                 # Log the actual prompt being sent (truncated for readability)
-                print(f"\n📝 REFLECTION PROMPT PREVIEW:")
-                print(f"{'='*80}")
-                prompt_preview = reflection_prompt[:1000] + "..." if len(reflection_prompt) > 1000 else reflection_prompt
-                print(prompt_preview)
-                print(f"{'='*80}")
-                print(f"   Total prompt length: {len(reflection_prompt)} chars")
-                print(f"   Example summaries count: {len(example_summaries)}")
-                print(f"{'='*80}\n")
+                if self._debug_enabled:
+                    prompt_preview = (
+                        reflection_prompt[:1000] + "..." if len(reflection_prompt) > 1000 else reflection_prompt
+                    )
+                    preview_lines = [
+                        "",
+                        "📝 REFLECTION PROMPT PREVIEW:",
+                        "=" * 80,
+                        prompt_preview,
+                        "=" * 80,
+                        f"   Total prompt length: {len(reflection_prompt)} chars",
+                        f"   Example summaries count: {len(example_summaries)}",
+                        "=" * 80,
+                    ]
+                    self._log_debug("\n".join(preview_lines))
 
                 completion_kwargs: dict[str, Any] = {
                     "model": self.reflection_model.name,
@@ -415,13 +476,24 @@ IMPORTANT:
                 }
                 if self.reflection_model.max_tokens is not None:
                     completion_kwargs["max_tokens"] = self.reflection_model.max_tokens
-                if self.reflection_model.temperature is not None:
+                if self.temperature_supported and self.reflection_model.temperature is not None:
                     completion_kwargs["temperature"] = self.reflection_model.temperature
                 if self.reflection_model.reasoning_effort is not None:
                     completion_kwargs["reasoning_effort"] = self.reflection_model.reasoning_effort
 
                 import asyncio
-                response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=180.0)
+                try:
+                    response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=180.0)
+                except asyncio.TimeoutError:
+                    raise
+                except Exception as e:
+                    if "temperature" in str(e).lower() and completion_kwargs.pop("temperature", None) is not None:
+                        self._disable_temperature_support(
+                            f"{self.reflection_model.name} rejected temperature parameter"
+                        )
+                        response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=180.0)
+                    else:
+                        raise
 
                 elapsed = time.time() - start_time
                 content = response.choices[0].message.content
@@ -438,44 +510,58 @@ IMPORTANT:
 
                     # Validation checks
                     if len(cleaned) < 50:
-                        print(f"   ⚠️ Skipping mutation {i+1}: Too short ({len(cleaned)} chars)")
+                        self._log_debug(f"   ⚠️ Skipping mutation {i+1}: Too short ({len(cleaned)} chars)")
                         continue
 
                     if cleaned.startswith("###"):
-                        print(f"   ⚠️ Skipping mutation {i+1}: Looks like an answer, not a prompt")
+                        self._log_debug(f"   ⚠️ Skipping mutation {i+1}: Looks like an answer, not a prompt")
                         continue
 
                     # Check if it's mostly just a number (like "220" or "### 242")
                     if len(cleaned) < 100 and re.match(r'^[#\s\d]+$', cleaned):
-                        print(f"   ⚠️ Skipping mutation {i+1}: Appears to be a number, not a prompt")
+                        self._log_debug(f"   ⚠️ Skipping mutation {i+1}: Appears to be a number, not a prompt")
                         continue
 
                     mutations.append(cleaned)
 
                 if not mutations:
-                    print(f"   ⚠️ WARNING: No valid prompts extracted! Check reflection LM output.")
-                    print(f"   Raw content preview: {content[:500]}")
+                    self.logger.log(
+                        "⚠️  No valid prompts extracted from reflection output. Check reflection LM response.",
+                        LogLevel.WARNING,
+                    )
+                    if self._debug_enabled:
+                        self._log_debug(f"   Raw content preview: {content[:500]}")
 
-                # Log mutations generated
-                print(f"\n✅ REFLECTION COMPLETE:")
-                print(f"   Generated {len(mutations)} mutations in {elapsed:.1f}s")
-                print(f"\n{'='*80}")
-                print(f"📝 GENERATED MUTATIONS (FULL TEXT):")
-                print(f"{'='*80}")
-                for i, mut in enumerate(mutations):
-                    print(f"\n[Mutation {i+1}/{len(mutations)}]")
-                    print(f"{'-'*80}")
-                    print(mut)
-                    print(f"{'-'*80}")
-                print(f"\n{'='*80}\n")
+                if self._debug_enabled:
+                    summary_lines = [
+                        "",
+                        "✅ REFLECTION COMPLETE:",
+                        f"   Generated {len(mutations)} mutations in {elapsed:.1f}s",
+                        "",
+                        "📝 GENERATED MUTATIONS (FULL TEXT):",
+                        "=" * 80,
+                    ]
+                    for idx, mut in enumerate(mutations):
+                        summary_lines.extend(
+                            [
+                                f"[Mutation {idx + 1}/{len(mutations)}]",
+                                "-" * 80,
+                                mut,
+                                "-" * 80,
+                            ]
+                        )
+                    summary_lines.append("=" * 80)
+                    self._log_debug("\n".join(summary_lines))
 
                 return mutations[:num_mutations]
 
             except asyncio.TimeoutError:
                 elapsed = time.time() - start_time
-                print(f"❌ Reflection LLM call TIMEOUT after {elapsed:.1f}s")
-                print(f"   Model: {self.reflection_model.name}")
-                print(f"   Requested {num_mutations} mutations from {len(parent_contexts)} parents")
+                self.logger.log(
+                    f"❌ Reflection LLM call TIMEOUT after {elapsed:.1f}s (model={self.reflection_model.name}, "
+                    f"mutations={num_mutations}, parents={len(parent_contexts)})",
+                    LogLevel.ERROR,
+                )
                 raise RuntimeError(
                     f"Reflection LLM call timed out after {elapsed:.1f}s. "
                     "This may indicate API rate limits or a very complex reflection task."
@@ -484,8 +570,11 @@ IMPORTANT:
                 elapsed = time.time() - start_time
                 error_type = type(e).__name__
                 error_msg = str(e)
-                print(f"❌ Reflection LLM call FAILED after {elapsed:.1f}s: {error_type}: {error_msg}")
-                print(f"   Model: {self.reflection_model.name}")
+                self.logger.log(
+                    f"❌ Reflection LLM call FAILED after {elapsed:.1f}s "
+                    f"(model={self.reflection_model.name}): {error_type}: {error_msg}",
+                    LogLevel.ERROR,
+                )
                 raise RuntimeError(
                     f"Batched reflection LLM call failed after {elapsed:.2f}s ({error_type}: {error_msg}). "
                     "Check your API key, model name, and network connection."
@@ -561,13 +650,24 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 }
                 if self.reflection_model.max_tokens is not None:
                     completion_kwargs["max_tokens"] = self.reflection_model.max_tokens
-                if self.reflection_model.temperature is not None:
+                if self.temperature_supported and self.reflection_model.temperature is not None:
                     completion_kwargs["temperature"] = self.reflection_model.temperature
                 if self.reflection_model.reasoning_effort is not None:
                     completion_kwargs["reasoning_effort"] = self.reflection_model.reasoning_effort
 
                 import asyncio
-                response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=180.0)
+                try:
+                    response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=180.0)
+                except asyncio.TimeoutError:
+                    raise
+                except Exception as e:
+                    if "temperature" in str(e).lower() and completion_kwargs.pop("temperature", None) is not None:
+                        self._disable_temperature_support(
+                            f"{self.reflection_model.name} rejected temperature parameter"
+                        )
+                        response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=180.0)
+                    else:
+                        raise
 
                 elapsed = time.time() - start_time
                 content = response.choices[0].message.content
@@ -580,9 +680,11 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
 
             except asyncio.TimeoutError:
                 elapsed = time.time() - start_time
-                print(f"❌ Spec induction LLM call TIMEOUT after {elapsed:.1f}s")
-                print(f"   Model: {self.reflection_model.name}")
-                print(f"   Requested {num_specs} specs from {len(task_examples)} examples")
+                self.logger.log(
+                    f"❌ Spec induction LLM call TIMEOUT after {elapsed:.1f}s "
+                    f"(model={self.reflection_model.name}, specs={num_specs}, examples={len(task_examples)})",
+                    LogLevel.ERROR,
+                )
                 raise RuntimeError(
                     f"Spec induction LLM call timed out after {elapsed:.1f}s. "
                     "This may indicate API rate limits or a very complex task."
@@ -591,8 +693,11 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 elapsed = time.time() - start_time
                 error_type = type(e).__name__
                 error_msg = str(e)
-                print(f"❌ Spec induction LLM call FAILED after {elapsed:.1f}s: {error_type}: {error_msg}")
-                print(f"   Model: {self.reflection_model.name}")
+                self.logger.log(
+                    f"❌ Spec induction LLM call FAILED after {elapsed:.1f}s "
+                    f"(model={self.reflection_model.name}): {error_type}: {error_msg}",
+                    LogLevel.ERROR,
+                )
                 raise RuntimeError(
                     f"Spec induction LLM call failed after {elapsed:.2f}s ({error_type}: {error_msg}). "
                     "Check your API key, model name, and network connection."
@@ -617,6 +722,8 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         for seed in seeds:
             if isinstance(seed, Candidate):
                 meta = dict(seed.meta)
+                if not self.temperature_supported:
+                    meta.pop("temperature", None)
                 meta["source"] = source
                 normalized.append(Candidate(text=seed.text, meta=meta))
             else:
@@ -734,11 +841,12 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             if self.task_model.max_tokens is not None:
                 completion_kwargs["max_tokens"] = self.task_model.max_tokens
 
-            candidate_temperature = candidate.meta.get("temperature")
-            if candidate_temperature is not None:
-                completion_kwargs["temperature"] = candidate_temperature
-            elif self.task_model.temperature is not None:
-                completion_kwargs["temperature"] = self.task_model.temperature
+            if self.temperature_supported:
+                candidate_temperature = candidate.meta.get("temperature")
+                if candidate_temperature is not None:
+                    completion_kwargs["temperature"] = candidate_temperature
+                elif self.task_model.temperature is not None:
+                    completion_kwargs["temperature"] = self.task_model.temperature
 
             reasoning_effort = candidate.meta.get("reasoning_effort", self.task_model.reasoning_effort)
             if reasoning_effort is not None:
@@ -753,13 +861,29 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 import asyncio
                 response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=120.0)
                 _elapsed_llm = _time_module.time() - _start_llm
+
+                # Track LLM call in metrics if available
+                if hasattr(self, '_metrics') and self._metrics is not None:
+                    self._metrics.record_llm_call("task", _elapsed_llm)
+
                 if _elapsed_llm > 60.0:
-                    print(f"⚠️  Slow task LLM call: {_elapsed_llm:.1f}s for example {example_id}")
+                    self.logger.log(
+                        f"⚠️  Slow task LLM call: {_elapsed_llm:.1f}s (example={example_id}, model={self.task_model.name})",
+                        LogLevel.WARNING,
+                    )
             except asyncio.TimeoutError:
                 _elapsed_llm = _time_module.time() - _start_llm
-                print(f"❌ Task LLM call TIMEOUT after {_elapsed_llm:.1f}s for example {example_id}")
-                print(f"   Model: {self.task_model.name}")
-                print(f"   This may indicate API rate limits or a very long response.")
+
+                # Track timeout in metrics
+                if hasattr(self, '_metrics') and self._metrics is not None:
+                    self._metrics.llm_timeouts += 1
+
+                self.logger.log(
+                    f"❌ Task LLM call TIMEOUT after {_elapsed_llm:.1f}s "
+                    f"(example={example_id}, model={self.task_model.name}). "
+                    "This may indicate API rate limits or a very long response.",
+                    LogLevel.ERROR,
+                )
                 raise RuntimeError(
                     f"Task LLM call timed out after {_elapsed_llm:.1f}s for example {example_id}. "
                     "This may indicate API rate limits or a very long response. Consider using a faster model."
@@ -768,7 +892,10 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 _elapsed_llm = _time_module.time() - _start_llm
                 # Some models don't support custom temperature (e.g., o1-preview)
                 if "temperature" in str(e).lower() and completion_kwargs.get("temperature") is not None:
+                    self._disable_temperature_support(f"{self.task_model.name} rejected temperature parameter")
                     completion_kwargs.pop("temperature", None)
+                    if isinstance(candidate.meta, dict):
+                        candidate.meta.pop("temperature", None)
                     response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=120.0)
                 else:
                     raise  # Re-raise if it's a different error
@@ -796,9 +923,11 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             # No heuristic fallback - raise the error with clear message
             error_type = type(e).__name__
             error_msg = str(e)
-            print(f"❌ Task LLM call FAILED: {error_type}: {error_msg}")
-            print(f"   Example ID: {example_id}")
-            print(f"   Model: {self.task_model.name}")
+            self.logger.log(
+                f"❌ Task LLM call FAILED (example={example_id}, model={self.task_model.name}): "
+                f"{error_type}: {error_msg}",
+                LogLevel.ERROR,
+            )
             raise RuntimeError(
                 f"Task LLM call failed ({error_type}: {error_msg}). "
                 "Check your API key, model name, and network connection."
@@ -819,6 +948,13 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         metrics_callback: Callable | None = None,
     ) -> Orchestrator:
         target_mutator = mutator or self.mutator
+        if temperature_mutations_enabled and not self.temperature_supported:
+            if not self._temperature_warned:
+                self.logger.log(
+                    "⚠️  Temperature mutations requested but disabled due to unsupported model.",
+                    LogLevel.WARNING,
+                )
+            temperature_mutations_enabled = False
         if temperature_mutations_enabled is not None:
             target_mutator.set_temperature_mutations_enabled(temperature_mutations_enabled)
         mutator = target_mutator
@@ -894,7 +1030,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             )
 
         # Staged temperature optimization: two-phase approach
-        if optimize_temperature_after_convergence:
+        if optimize_temperature_after_convergence and self.temperature_supported:
             return await self._optimize_staged_temperature(
                 seeds, max_rounds, max_evaluations, enable_auto_stop, display_progress
             )
@@ -905,6 +1041,11 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             display_progress=display_progress,
             metrics_callback=metrics_callback,
         )
+        # Store metrics reference in adapter for LLM call tracking
+        self._metrics = orchestrator.metrics
+        # Also pass metrics to mutator for tracking mutation LLM calls
+        self.mutator._metrics = orchestrator.metrics
+
         # Accept either strings or Candidate objects
         seed_candidates = []
         for seed in seeds:
@@ -963,6 +1104,8 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             display_progress=display_progress,
             temperature_mutations_enabled=False,
         )
+        # Pass metrics to mutator for tracking mutation LLM calls
+        self.mutator._metrics = orchestrator1.metrics
         await orchestrator1.run(phase1_seeds, max_rounds=phase1_rounds, max_evaluations=phase1_budget)
 
         phase1_pareto = orchestrator1.archive.pareto_entries()
@@ -1015,6 +1158,8 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             display_progress=display_progress,
             temperature_mutations_enabled=True,
         )
+        # Pass metrics to mutator for tracking mutation LLM calls
+        self.mutator._metrics = orchestrator2.metrics
         await orchestrator2.run(temp_seeds, max_rounds=phase2_rounds, max_evaluations=phase2_budget)
 
         phase2_pareto = orchestrator2.archive.pareto_entries()
@@ -1051,11 +1196,13 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 self.config.migration_k = tuned_k
         normalized_seeds = self._normalize_seeds(seeds, source="seed")
 
-        # Set up larger thread pool for concurrent file operations
+        # Set up thread pool for concurrent file operations (bounded to avoid oversubscription)
         import concurrent.futures
 
         loop = asyncio.get_running_loop()
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=100)
+        previous_executor = getattr(loop, "_default_executor", None)
+        max_workers = recommended_executor_workers(self.config.eval_concurrency)
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
         loop.set_default_executor(executor)
 
         # Create shared cache across all islands (better cache hits + controlled concurrency)
@@ -1085,6 +1232,8 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                     mutator=mutator,
                     log_dir=log_dir,
                 )
+                # Pass metrics to mutator for tracking mutation LLM calls
+                mutator._metrics = orchestrator.metrics
                 island_seeds = [
                     Candidate(text=seed.text, meta=dict(seed.meta, island=context.island_id))
                     for seed in normalized_seeds
@@ -1100,7 +1249,12 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             await asyncio.gather(*tasks)
             return island_results
 
-        orchestrators = await run_islands()
+        try:
+            orchestrators = await run_islands()
+        finally:
+            if previous_executor is not None:
+                loop.set_default_executor(previous_executor)
+            executor.shutdown(wait=True)
 
         combined_archive = self._make_archive()
         inserts: list[tuple[Candidate, EvalResult]] = []

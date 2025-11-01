@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from collections import defaultdict
 from pathlib import Path
@@ -301,9 +302,7 @@ class DiskCache:
                     time.sleep(0.1 * (2**attempt))
                 else:
                     # On final failure, log warning but don't crash optimization
-                    import sys
-
-                    print(f"Warning: Failed to save state after {max_attempts} attempts: {e}", file=sys.stderr)
+                    logging.warning("Failed to save state after %d attempts: %s", max_attempts, e)
 
     def load_state(self) -> dict | None:
         """
@@ -335,15 +334,11 @@ class DiskCache:
                     time.sleep(0.1 * (2**attempt))
                 else:
                     # On final failure, log warning and return None
-                    import sys
-
-                    print(f"Warning: Failed to load state after {max_attempts} attempts: {e}", file=sys.stderr)
+                    logging.warning("Failed to load state after %d attempts: %s", max_attempts, e)
                     return None
             except (json.JSONDecodeError, KeyError) as e:
                 # Corrupted state file, return None to start fresh
-                import sys
-
-                print(f"Warning: Corrupted state file, starting fresh: {e}", file=sys.stderr)
+                logging.warning("Corrupted state file, starting fresh: %s", e)
                 return None
 
     def has_state(self) -> bool:

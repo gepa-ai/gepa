@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Iterable, Sequence
@@ -55,6 +53,7 @@ class Mutator:
         seed: int | None = None,
         temperature_mutations_enabled: bool = True,
         logger: LoggerProtocol | None = None,
+        metrics: Any | None = None,
     ) -> None:
         self.config = config
         extra_validators = list(validators or [])
@@ -70,10 +69,8 @@ class Mutator:
             "spec_induction": {"trials": 0, "delta_sum": 0.0},
         }
         self._operator_history: dict[str, deque[float]] = {key: deque(maxlen=20) for key in self._operator_stats}
-        self._spec_cache: dict[str, deque[str]] = {}
-        self._spec_cache_limit = max(4, config.max_mutations or 8)
-        self._spec_runner_signature = _describe_callable(spec_induction_runner)
         self.logger: LoggerProtocol = logger or StdOutLogger()
+        self._metrics = metrics  # For tracking LLM calls in mutation generation
 
     def set_reflection_examples(self, examples: list[dict[str, object]]) -> None:
         self._reflection_examples = examples
@@ -223,19 +220,30 @@ class Mutator:
             # Limit traces per parent to avoid token explosion
             traces = traces[: self.config.reflection_batch_size]
 
+            context_meta = {k: v for k, v in candidate.meta.items() if k != "temperature"}
             reflection_contexts.append(
                 {
                     "prompt": candidate.text,
                     "traces": traces,
-                    "meta": dict(candidate.meta),
+                    "meta": context_meta,
                 }
             )
 
+        # Track LLM calls for reflection mutations
+        import time
+        _start_reflection = time.time()
         mutated_texts = await self._collect_text_batches(
             lambda: self.batch_reflection_runner(reflection_contexts, 1),
             num_mutations,
             max(1, min(self.config.reflection_batch_size, num_mutations)),
         )
+        _elapsed_reflection = time.time() - _start_reflection
+
+        # Record reflection LLM call in metrics
+        if self._metrics is not None:
+            # Track one LLM call per mutation generated (they're batched but async)
+            for _ in range(len(mutated_texts)):
+                self._metrics.record_llm_call("reflection", _elapsed_reflection / max(1, len(mutated_texts)))
 
         # Convert to Candidates with metadata tracking generation method
         proposals: list[Candidate] = []
@@ -247,12 +255,13 @@ class Mutator:
             else:
                 parent_candidate = parent_candidates[idx % len(parent_candidates)]
 
-            meta = dict(parent_candidate.meta)
+            meta = {k: v for k, v in parent_candidate.meta.items() if k != "temperature"}
             meta.pop("_sched_key", None)
             meta.update(
                 {
                     "edit": "incremental_reflection",  # Track generation method
                     "generation_method": "incremental_reflection",  # Explicit tracking for analysis
+                    "operator": "incremental_reflection",  # For metrics tracking
                     "parent": parent_candidate.fingerprint,
                     "parent_sched_key": parent_candidate.meta.get("_sched_key", parent_candidate.fingerprint),
                     "proposal_idx": idx,
@@ -288,44 +297,30 @@ class Mutator:
             # Limit traces per parent to avoid token explosion
             traces = traces[: self.config.reflection_batch_size]
 
+            context_meta = {k: v for k, v in candidate.meta.items() if k != "temperature"}
             reflection_contexts.append(
                 {
                     "prompt": candidate.text,
                     "traces": traces,
-                    "meta": dict(candidate.meta),
+                    "meta": context_meta,
                 }
             )
 
-        # Cache key based on contexts + examples
-        serialized_examples = sorted(json.dumps(ex, sort_keys=True) for ex in task_examples)
-        parent_fingerprints = sorted(ctx["candidate"].fingerprint for ctx in parent_contexts) if parent_contexts else []
-        cache_payload = {
-            "runner": self._spec_runner_signature,
-            "examples": serialized_examples,
-            "parents": parent_fingerprints,
-        }
-        cache_key = hashlib.blake2s(json.dumps(cache_payload, sort_keys=True).encode("utf-8")).hexdigest()
-        cache_queue = self._spec_cache.setdefault(cache_key, deque())
+        # Generate spec induction mutations directly via LLM
+        import time
+        _start_spec = time.time()
+        spec_texts = await self._collect_text_batches(
+            lambda: self.spec_induction_runner(reflection_contexts, 1),
+            num_mutations,
+            max(1, min(4, num_mutations)),
+        )
+        _elapsed_spec = time.time() - _start_spec
 
-        spec_texts: list[str] = []
-        while cache_queue and len(spec_texts) < num_mutations:
-            spec_texts.append(cache_queue.popleft())
-
-        remaining = num_mutations - len(spec_texts)
-        if remaining > 0:
-            prefetch = min(self._spec_cache_limit, max(remaining, remaining * 2))
-            # Pass reflection_contexts (with prompts + traces) instead of just task_examples
-            new_specs = await self._collect_text_batches(
-                lambda: self.spec_induction_runner(reflection_contexts, 1),
-                prefetch,
-                max(1, min(4, prefetch)),
-            )
-            for text in new_specs:
-                cache_queue.append(text)
-            while len(cache_queue) > self._spec_cache_limit:
-                cache_queue.popleft()
-            while cache_queue and len(spec_texts) < num_mutations:
-                spec_texts.append(cache_queue.popleft())
+        # Record spec_induction LLM call in metrics
+        if self._metrics is not None:
+            # Track one LLM call per mutation generated
+            for _ in range(len(spec_texts)):
+                self._metrics.record_llm_call("spec_induction", _elapsed_spec / max(1, len(spec_texts)))
 
         # Convert to Candidates with metadata tracking generation method
         proposals: list[Candidate] = []
@@ -337,7 +332,7 @@ class Mutator:
             else:
                 parent_candidate = parent_candidates[idx % len(parent_candidates)]
 
-            meta = dict(parent_candidate.meta)
+            meta = {k: v for k, v in parent_candidate.meta.items() if k != "temperature"}
             meta.pop("_sched_key", None)
             meta["parent"] = parent_candidate.fingerprint
             meta["parent_sched_key"] = parent_candidate.meta.get("_sched_key", parent_candidate.fingerprint)
@@ -345,6 +340,7 @@ class Mutator:
                 {
                     "edit": "spec_induction",  # Track generation method
                     "generation_method": "spec_induction",  # Explicit tracking for analysis
+                    "operator": "spec_induction",  # For metrics tracking
                     "proposal_idx": idx,
                     "num_examples_seen": len(task_examples),
                 }
@@ -518,6 +514,7 @@ class Mutator:
                         "temperature": temp,
                         "edit": "temperature_shift",
                         "generation_method": "temperature_shift",
+                        "operator": "temperature_shift",  # For metrics tracking
                         "parent": candidate.fingerprint,
                         "parent_sched_key": candidate.meta.get("_sched_key", candidate.fingerprint),
                     }

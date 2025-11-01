@@ -29,7 +29,7 @@ class Candidate:
     @property
     def fingerprint(self) -> str:
         """Stable identifier derived from canonicalised prompt + metadata."""
-        import hashlib
+        import xxhash
 
         def _normalize(value: Any) -> Any:
             if value is None:
@@ -64,7 +64,7 @@ class Candidate:
             }
             payload = json.dumps(fallback, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
-        return hashlib.sha256(payload).hexdigest()
+        return xxhash.xxh3_64_hexdigest(payload)
 
 
 @dataclass

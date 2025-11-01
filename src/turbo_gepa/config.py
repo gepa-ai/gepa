@@ -8,6 +8,7 @@ into orchestrator entrypoints or by subclassing ``Config``.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Sequence
 
@@ -177,6 +178,15 @@ class Config:
 
 
 DEFAULT_CONFIG = Config()
+
+
+def recommended_executor_workers(eval_concurrency: int, *, cpu_count: int | None = None) -> int:
+    """Return a safe default for threadpool workers used by async executors."""
+    detected_cpus = cpu_count if cpu_count is not None else (os.cpu_count() or 1)
+    # Limit concurrency to avoid oversubscribing CPUs while servicing IO-bound work
+    cpu_cap = max(4, detected_cpus * 4)
+    eval_cap = max(4, eval_concurrency)
+    return min(cpu_cap, eval_cap)
 
 
 def adaptive_config(
