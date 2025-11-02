@@ -174,12 +174,14 @@ class Mutator:
                 parent_contexts,
             )
 
+        # Stream mutations as they complete instead of waiting for all
         reflection_task = asyncio.create_task(run_reflection())
         spec_task = asyncio.create_task(run_spec())
 
-        reflection_mutations, spec_mutations = await asyncio.gather(reflection_task, spec_task)
-        proposals.extend(reflection_mutations)
-        proposals.extend(spec_mutations)
+        # Use as_completed to stream mutations without waiting for slowest task
+        for completed in asyncio.as_completed([reflection_task, spec_task]):
+            batch = await completed
+            proposals.extend(batch)
 
         llm_time = time.time() - llm_start
 

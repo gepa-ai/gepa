@@ -26,6 +26,7 @@ os.environ["LITELLM_DISABLE_LOGGING_WORKER"] = "True"
 import gepa
 from turbo_gepa.adapters.default_adapter import DefaultAdapter, DefaultDataInst
 from turbo_gepa.config import Config
+from turbo_gepa.litellm_cleanup import cleanup as cleanup_litellm
 
 # Models
 task_lm = "openrouter/openai/gpt-oss-20b:nitro"
@@ -106,6 +107,7 @@ def run_test(
     seed = "You are a helpful assistant. Answer in the format '### <final answer>'"
 
     start_time = time.time()
+    result = None
     try:
         result = adapter.optimize(
             seeds=[seed],
@@ -141,6 +143,8 @@ def run_test(
         print(f"❌ FAILED: Exception ({elapsed:.1f}s)")
         print(f"   Error: {str(e)}")
         return False, elapsed, str(e)
+    finally:
+        cleanup_litellm()
 
 
 def main():

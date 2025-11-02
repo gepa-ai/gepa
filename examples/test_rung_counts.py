@@ -11,6 +11,7 @@ os.environ["LITELLM_DISABLE_LOGGING_WORKER"] = "True"
 import gepa
 from turbo_gepa.adapters.default_adapter import DefaultAdapter, DefaultDataInst
 from turbo_gepa.config import Config
+from turbo_gepa.litellm_cleanup import cleanup as cleanup_litellm
 
 print("Quick Rung Count Test")
 print("=" * 80)
@@ -57,6 +58,7 @@ result = adapter.optimize(
     display_progress=True,
     optimize_temperature_after_convergence=False,
 )
+cleanup_litellm()
 
 pareto = result.get("pareto_entries", [])
 stats = result.get("evolution_stats", {})

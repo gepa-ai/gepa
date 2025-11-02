@@ -22,6 +22,7 @@ from pathlib import Path
 import gepa
 from turbo_gepa.adapters.default_adapter import DefaultAdapter, DefaultDataInst
 from turbo_gepa.config import Config
+from turbo_gepa.litellm_cleanup import cleanup as cleanup_litellm
 
 # ============================================================================
 # Configuration
@@ -135,6 +136,7 @@ result = adapter.optimize(
     optimize_temperature_after_convergence=False,
 )
 elapsed = time.time() - start_time
+cleanup_litellm()
 
 # ============================================================================
 # Results

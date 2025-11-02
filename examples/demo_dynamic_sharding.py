@@ -25,6 +25,7 @@ Expected output:
 import gepa
 from turbo_gepa.adapters.default_adapter import DefaultAdapter, DefaultDataInst
 from turbo_gepa.config import Config
+from turbo_gepa.litellm_cleanup import cleanup as cleanup_litellm
 
 print("=" * 80)
 print("DYNAMIC SHARDING (ASHA) DEMO")
@@ -109,6 +110,7 @@ result = adapter.optimize(
     display_progress=True,
     optimize_temperature_after_convergence=False,
 )
+cleanup_litellm()
 
 print()
 print("=" * 80)
