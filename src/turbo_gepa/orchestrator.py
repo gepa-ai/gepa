@@ -942,12 +942,14 @@ class Orchestrator:
                         f"🔬 Evaluating {source} on shard {shard_idx} ({shard_fraction:.0%} = {len(shard_ids)} examples) "
                         f"[fp={candidate.fingerprint[:12]}... concurrency={per_cand_concurrency}]"
                     )
+                is_final_shard = shard_idx == len(self._runtime_shards) - 1
                 result = await self.evaluator.eval_on_shard(
                     candidate,
                     shard_ids,
                     concurrency=per_cand_concurrency,
                     shard_fraction=shard_fraction,
                     show_progress=self.show_progress,  # Show progress for all evaluations
+                    is_final_shard=is_final_shard,
                 )
                 eval_duration = time.time() - eval_start
                 self.metrics.record_evaluation(shard_fraction, eval_duration)
@@ -1815,12 +1817,14 @@ class Orchestrator:
         concurrency_override: int | None = None,
     ) -> EvalResult:
         concurrency = concurrency_override if concurrency_override is not None else self._effective_concurrency
+        is_final_shard = shard_fraction == self._runtime_shards[-1]
         result = await self.evaluator.eval_on_shard(
             candidate,
             shard,
             concurrency=concurrency,
             shard_fraction=shard_fraction,
             show_progress=show_progress,
+            is_final_shard=is_final_shard,
         )
         return result
 
@@ -2020,6 +2024,7 @@ class Orchestrator:
                     shard,
                     concurrency=self._effective_concurrency,
                     shard_fraction=1.0,
+                    is_final_shard=True,
                 )
                 await self.archive.insert(candidate, result)
 

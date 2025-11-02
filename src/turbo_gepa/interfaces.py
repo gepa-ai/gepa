@@ -121,5 +121,10 @@ class AsyncEvaluatorProtocol:
         candidate: Candidate,
         example_ids: Sequence[str],
         concurrency: int,
+        *,
+        shard_fraction: float | None = None,
+        show_progress: bool = False,
+        early_stop_fraction: float = 0.9,
+        is_final_shard: bool = False,
     ) -> EvalResult:  # pragma: no cover - interface definition only
         raise NotImplementedError

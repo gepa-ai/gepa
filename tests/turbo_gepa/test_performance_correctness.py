@@ -44,6 +44,8 @@ class MockEvaluator(AsyncEvaluator):
         concurrency: int,
         shard_fraction: float | None = None,
         show_progress: bool = False,
+        early_stop_fraction: float = 0.9,
+        is_final_shard: bool = False,
     ) -> EvalResult:
         self.concurrent_evals += 1
         self.max_concurrent = max(self.max_concurrent, self.concurrent_evals)

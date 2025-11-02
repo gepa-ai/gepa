@@ -372,7 +372,6 @@ class Mutator:
         pending: dict[asyncio.Task[Sequence[str]], float] = {}  # task -> start_time
         results: list[str] = []
         started = 0
-        early_stop_target = int(total * early_stop_fraction)
         batch_start_time = time.time()
         mutation_durations: list[float] = []  # Track how long each individual mutation took
 
@@ -386,37 +385,26 @@ class Mutator:
             if not pending:
                 break
 
-            # Check if we've hit early stop threshold
-            if len(results) >= early_stop_target and early_stop_fraction < 1.0 and len(mutation_durations) >= 3:
-                elapsed = time.time() - batch_start_time
-                remaining = len(pending)
+            if len(mutation_durations) >= 3:
+                import statistics
 
-                # Compute average time per mutation based on completed ones
-                avg_duration = sum(mutation_durations) / len(mutation_durations)
-
-                # If we've been waiting significantly longer than expected, cut off stragglers
-                # We expect remaining mutations to take avg_duration each
-                # Add 2x buffer since stragglers can be slow
-                expected_time_for_remaining = avg_duration * 2.0
-
-                # How long have we been waiting since hitting the early stop target?
-                # We estimate when we should have hit the target based on avg duration
-                # Since tasks run concurrently, the batch should take roughly:
-                # (total_mutations / max_concurrency) * avg_duration
-                expected_time_to_target = (early_stop_target / max_concurrency) * avg_duration
-                time_since_should_have_hit_target = elapsed - expected_time_to_target
-
-                # Early stop if we've been waiting too long for stragglers
-                if time_since_should_have_hit_target > expected_time_for_remaining and remaining >= 2:
-                    self.logger.log(
-                        f"   ⚠️ Mutation early stop: produced={len(results)}/{total} ({len(results) / total * 100:.0f}%), "
-                        f"remaining={remaining}, avg_duration={avg_duration:.1f}s, "
-                        f"waited={time_since_should_have_hit_target:.1f}s"
-                    )
-                    # Cancel remaining tasks - they're stragglers
-                    for task in pending:
+                mean_duration = statistics.fmean(mutation_durations)
+                stdev = statistics.pstdev(mutation_durations) if len(mutation_durations) > 1 else 0.0
+                threshold = mean_duration + (2.0 * stdev if stdev > 0 else mean_duration * 2.0)
+                now = time.time()
+                cancelled = False
+                for task, start_time in list(pending.items()):
+                    elapsed_task = now - start_time
+                    if elapsed_task > threshold:
+                        self.logger.log(
+                            f"   ⚠️ Mutation early stop: produced={len(results)}/{total} "
+                            f"({len(results) / total * 100:.0f}%), remaining={len(pending)}, "
+                            f"elapsed={elapsed_task:.1f}s > threshold {threshold:.1f}s"
+                        )
                         task.cancel()
-                    break
+                        cancelled = True
+                if cancelled and getattr(self, "_metrics", None):
+                    self._metrics.record_early_stop("stragglers")  # type: ignore[attr-defined]
 
             done, _ = await asyncio.wait(pending.keys(), return_when=asyncio.FIRST_COMPLETED)
             for task in done:

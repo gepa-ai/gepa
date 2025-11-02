@@ -451,6 +451,7 @@ class DSpyAdapter:
             task_runner=self._task_runner,
             timeout_seconds=self.config.eval_timeout_seconds,
             min_improve=self.config.eps_improve,
+            skip_final_straggler_cutoff=self.config.skip_final_straggler_cutoff,
         )
         return Orchestrator(
             config=self.config,

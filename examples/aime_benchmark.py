@@ -12,7 +12,6 @@ os.environ["LITELLM_DISABLE_LOGGING_WORKER"] = "True"
 import gepa
 from turbo_gepa.adapters.default_adapter import DefaultAdapter, DefaultDataInst
 from turbo_gepa.config import Config, adaptive_config
-from turbo_gepa.litellm_cleanup import cleanup as cleanup_litellm
 
 """
 AIME Benchmark - TurboGEPA vs GEPA Performance Comparison
@@ -127,7 +126,7 @@ if limit_changed and new_limit is not None and previous_limit is not None:
 trainset, valset, _ = gepa.examples.aime.init_dataset()
 
 # # Use smaller subset for faster benchmark
-BENCHMARK_SIZE = 10  # Very small subset for quick testing
+BENCHMARK_SIZE = 45  # Very small subset for quick testing
 trainset = trainset[:BENCHMARK_SIZE]
 valset = valset[: min(BENCHMARK_SIZE, len(valset))]
 
@@ -260,6 +259,12 @@ if RUN_TURBO:
         strategy="aggressive",  # Prioritize speed over quality for benchmarking
         available_compute="server",  # Use maximum concurrency settings
     )
+    config.eval_concurrency = min(config.eval_concurrency, 64)
+    config.batch_size = min(config.batch_size, len(turbo_dataset))
+    config.max_mutations_per_round = min(config.max_mutations_per_round, 24)
+    config.mutation_buffer_min = max(8, config.eval_concurrency // 8)
+    config.queue_limit = max(config.queue_limit, config.eval_concurrency * 2)
+    config.log_level = "INFO"
 
     # Override only what's necessary for benchmarking
     config.n_islands = (
@@ -269,8 +274,6 @@ if RUN_TURBO:
     config.adaptive_shards_enabled = (
         True  # Enable dynamic rung adjustment during optimization
     )
-    config.max_mutations_per_round = 16  # Cap mutations to 16 per round
-    config.mutation_buffer_min = 8  # Ensure mutation pipeline stays fed
 
     # Create adapter
     adapter = DefaultAdapter(
@@ -321,7 +324,6 @@ if RUN_TURBO:
         max_evaluations=None,  # No evaluation limit
         display_progress=True,
     )
-    cleanup_litellm()
     turbo_elapsed = time.time() - start_time
 
     # Extract best result - prefer highest shard, then best quality within that shard
@@ -370,6 +372,13 @@ if RUN_TURBO:
     unique_children = evolution_stats.get("unique_children", 0)
     evolution_edges = evolution_stats.get("evolution_edges", 0)
     turbo_evaluations = evolution_stats.get("total_evaluations", 0)
+    metrics_obj = getattr(adapter, "_metrics", None)
+    if metrics_obj:
+        straggler_stops = getattr(metrics_obj, "early_stops_stragglers", 0)
+        parent_stops = getattr(metrics_obj, "early_stops_parent_target", 0)
+        total_stops = getattr(metrics_obj, "candidates_early_stopped", 0)
+    else:
+        straggler_stops = parent_stops = total_stops = 0
 
     # Get archive stats
     pareto_size = len(pareto_entries)
@@ -387,6 +396,10 @@ if RUN_TURBO:
     print(f"   Mutations generated: {mutations_generated}")
     print(f"   Mutations enqueued: {mutations_enqueued}")
     print(f"   Mutations promoted to archive: {mutations_promoted}")
+    if metrics_obj:
+        print(f"   Early stops (parent target): {parent_stops}")
+        print(f"   Early stops (stragglers): {straggler_stops}")
+        print(f"   Total candidates early-stopped: {total_stops}")
     print(f"   Pareto frontier size: {pareto_size}")
     print(f"   Total unique candidates: {total_candidates}")
     print(f"\n📝 TurboGEPA Optimized Prompt: {turbo_prompt}")

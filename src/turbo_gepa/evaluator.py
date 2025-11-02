@@ -38,6 +38,7 @@ class AsyncEvaluator:
         timeout_seconds: float | None = None,
         min_improve: float = 0.0,
         metrics: Metrics | None = None,
+        skip_final_straggler_cutoff: bool = False,
     ) -> None:
         self.cache = cache
         self.task_runner = task_runner
@@ -50,6 +51,7 @@ class AsyncEvaluator:
         self.timeout_seconds = timeout_seconds
         self.min_improve = float(min_improve)
         self.metrics = metrics
+        self.skip_final_straggler_cutoff = skip_final_straggler_cutoff
 
     async def eval_on_shard(
         self,
@@ -59,6 +61,7 @@ class AsyncEvaluator:
         shard_fraction: float | None = None,
         show_progress: bool = False,
         early_stop_fraction: float = 0.9,  # Return after 90% complete
+        is_final_shard: bool = False,
     ) -> EvalResult:
         """
         Evaluate ``candidate`` on ``example_ids`` with a concurrency cap.
@@ -95,7 +98,6 @@ class AsyncEvaluator:
         results: list[EvalResult] = []
         completed = 0
         total = len(example_ids)
-        early_stop_target = int(total * early_stop_fraction)
         batch_start_time = time.time()
         eval_durations: list[float] = []  # Track how long each eval took (excluding cached)
         quality_lock = asyncio.Lock()
@@ -287,54 +289,45 @@ class AsyncEvaluator:
 
         # Launch all tasks
         current_time = time.time()
-        tasks = {asyncio.create_task(eval_one(ex_id, current_time)): ex_id for ex_id in example_ids}
-        pending = set(tasks.keys())
+        pending: dict[asyncio.Task, float] = {
+            asyncio.create_task(eval_one(ex_id, current_time)): time.time()
+            for ex_id in example_ids
+        }
 
-        # Wait for early_stop_fraction to complete, then move on
+        # Monitor tasks and cancel stragglers based on runtime statistics
         while pending:
-            # Check if we've hit early stop threshold (dynamic version)
-            if completed >= early_stop_target and early_stop_fraction < 1.0 and len(eval_durations) >= 5:
-                elapsed = time.time() - batch_start_time
-                remaining = len(pending)
+            if len(eval_durations) >= 3 and not (self.skip_final_straggler_cutoff and is_final_shard):
+                import statistics
 
-                # Compute average eval duration (only non-cached evals)
-                avg_duration = sum(eval_durations) / len(eval_durations)
-
-                # Expected time for remaining evals (with 2x buffer for variance)
-                # Since we run with concurrency limit, estimate based on parallel execution
-                expected_time_for_remaining = avg_duration * 2.0
-
-                # How long should we have taken to reach this point?
-                # Estimate: (completed / concurrency) * avg_duration
-                expected_time_to_target = (early_stop_target / concurrency) * avg_duration
-                time_since_should_have_hit_target = elapsed - expected_time_to_target
-
-                # Early stop if we've been waiting too long for stragglers
-                if time_since_should_have_hit_target > expected_time_for_remaining and remaining >= 2:
-                    if show_progress:
-                        denom = max(total, 1)
-                        self.logger.log(
-                            f"⚡ Early stop: {completed}/{total} complete ({completed / denom * 100:.0f}%), cancelling {remaining} stragglers"
-                        )
-                        self.logger.log(
-                            f"      Avg eval duration: {avg_duration:.1f}s, waited {time_since_should_have_hit_target:.1f}s past target..."
-                        )
-                    # Cancel remaining tasks - they're stragglers
-                    for task in pending:
+                mean_duration = statistics.fmean(eval_durations)
+                stdev = statistics.pstdev(eval_durations) if len(eval_durations) > 1 else 0.0
+                threshold = mean_duration + (2.0 * stdev if stdev > 0 else mean_duration * 2.0)
+                now = time.time()
+                cancelled = False
+                for task, start_time in list(pending.items()):
+                    elapsed_task = now - start_time
+                    if elapsed_task > threshold:
+                        if show_progress:
+                            denom = max(total, 1)
+                            self.logger.log(
+                                f"⚡ Early stop: {completed}/{total} complete ({completed / denom * 100:.0f}%), "
+                                f"cancelling straggler (elapsed {elapsed_task:.1f}s > threshold {threshold:.1f}s)"
+                            )
                         task.cancel()
-                    break
+                        cancelled = True
+                if cancelled and self.metrics:
+                    self.metrics.record_early_stop("stragglers")
 
-            # Wait for next batch to complete (with timeout to prevent indefinite blocking)
-            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED, timeout=5.0)
+            if not pending:
+                break
 
-            # If nothing completed in 5 seconds, log status
-            if not done and show_progress:
-                self.logger.log(
-                    f"⏳ Waiting for tasks: {len(pending)} pending, {completed}/{total} completed"
-                )
-                continue
+            done, _ = await asyncio.wait(
+                list(pending.keys()),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
 
             for task in done:
+                pending.pop(task, None)
                 try:
                     await task  # Collect result (already added to results by eval_one)
                 except asyncio.CancelledError:

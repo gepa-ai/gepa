@@ -40,13 +40,16 @@ def adaptive_shards(
 
     Examples:
         >>> adaptive_shards(50)  # Small dataset
-        (0.30, 1.0)
+        (0.3, 0.45, 1.0)
         >>> adaptive_shards(500)  # Medium dataset
         (0.05, 0.20, 1.0)
         >>> adaptive_shards(5000, strategy="aggressive")  # Large dataset, aggressive
         (0.02, 0.08, 0.25, 1.0)
     """
     if dataset_size <= 0:
+        return (1.0,)
+
+    if dataset_size < min_first_shard_examples:
         return (1.0,)
 
     # Calculate target first shard percentage to get min_first_shard_examples
@@ -68,9 +71,17 @@ def adaptive_shards(
     elif strategy == "aggressive":
         # Aggressive: Lower confidence, more candidates tested
         if dataset_size < 50:
-            return (0.30, 1.0)  # Still need reasonable signal
+            first = max(target_first_pct, 0.25)
+            first = min(first, 0.60)
+            second = max(first + 0.10, 0.50)
+            second = min(second, 0.90)
+            return (round(first, 2), round(second, 2), 1.0)
         elif dataset_size < 100:
-            return (0.20, 1.0)
+            first = max(target_first_pct, 0.20)
+            first = min(first, 0.45)
+            second = max(first + 0.10, 0.45)
+            second = min(second, 0.85)
+            return (round(first, 2), round(second, 2), 1.0)
         elif dataset_size < 500:
             return (0.05, 0.15, 1.0)
         elif dataset_size < 2000:
@@ -82,13 +93,17 @@ def adaptive_shards(
     else:  # balanced (default)
         # Balanced: Good tradeoff for most cases
         if dataset_size < 50:
-            # Very small: 2-rung, conservative first stage
-            first_shard = max(0.30, min(0.50, target_first_pct))
-            return (first_shard, 1.0)
+            first_shard = max(target_first_pct, 0.25)
+            first_shard = min(first_shard, 0.55)
+            second_shard = max(first_shard + 0.10, 0.50)
+            second_shard = min(second_shard, 0.90)
+            return (round(first_shard, 2), round(second_shard, 2), 1.0)
         elif dataset_size < 100:
-            # Small: 2-rung, moderate first stage
-            first_shard = max(0.20, min(0.30, target_first_pct))
-            return (first_shard, 1.0)
+            first_shard = max(target_first_pct, 0.20)
+            first_shard = min(first_shard, 0.45)
+            second_shard = max(first_shard + 0.10, 0.45)
+            second_shard = min(second_shard, 0.85)
+            return (round(first_shard, 2), round(second_shard, 2), 1.0)
         elif dataset_size < 500:
             # Medium: 3-rung
             first_shard = max(0.10, min(0.20, target_first_pct))
@@ -138,6 +153,7 @@ class Config:
     streaming_mode: bool = True  # Enable continuous launch/drain (no batch barriers)
     mutation_buffer_min: int = 4  # Minimum mutations to trigger generation
     max_total_inflight: int | None = None  # Override total concurrent evaluations (defaults to eval_concurrency)
+    skip_final_straggler_cutoff: bool = False  # Always finish final shard evaluations
 
     # Logging config
     # Log levels control verbosity:
