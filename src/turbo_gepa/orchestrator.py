@@ -66,7 +66,7 @@ class Orchestrator:
             )
         )
         self._runtime_shards: list[float] = list(self.config.shards)
-        self.queue: deque[Candidate] = deque(maxlen=config.queue_limit)
+        self.queue: deque[Candidate] = deque()
         self._pending_fingerprints: set[str] = set()
         self._inflight_fingerprints: set[str] = set()
         self._next_shard: int = 0
@@ -117,8 +117,11 @@ class Orchestrator:
         self._mutation_kp: float = 0.2  # Proportional gain for mutation pacing
         self._priority_counter: int = 0  # Tie-breaker for heap ordering
         self._priority_queue: list = []  # Heap: (-priority, -rung_idx, counter, candidate)
-        self._cost_remaining: list[float] = [1.0 - (self._runtime_shards[i-1] if i > 0 else 0.0)
-                                              for i in range(len(self._runtime_shards))]
+        final_fraction = self._runtime_shards[-1] if self._runtime_shards else 1.0
+        self._cost_remaining: list[float] = [
+            max(1e-6, final_fraction - (self._runtime_shards[i - 1] if i > 0 else 0.0))
+            for i in range(len(self._runtime_shards))
+        ]
         self._last_debug_log: float = 0.0
         self._last_budget_log: float = 0.0
         self._last_shared: dict[str, float] = {}
@@ -166,10 +169,21 @@ class Orchestrator:
         self._rung_launches = self._resize_metric_list(self._rung_launches, num_shards)
         self._rung_promotions = self._resize_metric_list(self._rung_promotions, num_shards)
         self._promotion_ema = self._resize_float_list(self._promotion_ema, num_shards)
+        if num_shards:
+            final_fraction = self._runtime_shards[-1]
+            self._cost_remaining = [
+                max(1e-6, final_fraction - (self._runtime_shards[i - 1] if i > 0 else 0.0))
+                for i in range(num_shards)
+            ]
+        else:
+            self._cost_remaining = []
 
     def enqueue(self, candidates: Iterable[Candidate]) -> None:
         for candidate in candidates:
             if not candidate.text.strip():
+                continue
+            if self.config.queue_limit and len(self._priority_queue) >= self.config.queue_limit:
+                # Drop lowest-value additions when backlog is already saturated
                 continue
             fingerprint = candidate.fingerprint
             if fingerprint in self._pending_fingerprints or fingerprint in self._inflight_fingerprints:
@@ -186,6 +200,8 @@ class Orchestrator:
             heapq.heappush(self._priority_queue, (-priority, -rung_idx, self._priority_counter, candidate))
 
             self._pending_fingerprints.add(fingerprint)
+            # Keep legacy queue in sync for diagnostics and persistence
+            self.queue.append(candidate)
 
     def _get_rung_key(self, candidate: Candidate) -> str:
         """Get rung key string for a candidate based on its current shard.
@@ -756,6 +772,14 @@ class Orchestrator:
             if fingerprint in self._inflight_fingerprints:
                 continue  # Skip, already being evaluated
 
+            # Candidate is about to launch; clear pending bookkeeping and mirrored queue
+            self._pending_fingerprints.discard(fingerprint)
+            try:
+                self.queue.remove(candidate)
+            except ValueError:
+                # Candidate might have been removed already if enqueued twice; best effort only
+                pass
+
             # Mark as inflight
             self._inflight_fingerprints.add(fingerprint)
 
@@ -767,6 +791,8 @@ class Orchestrator:
             else:
                 # Launch failed, put candidate back on queue
                 self._inflight_fingerprints.discard(fingerprint)
+                self._pending_fingerprints.add(fingerprint)
+                self.queue.append(candidate)
                 heapq.heappush(self._priority_queue, (neg_priority, neg_rung_idx, counter, candidate))
                 break  # Stop trying to launch more
 
@@ -2002,5 +2028,22 @@ class Orchestrator:
         all_candidates = state["pareto"] + state["qd"]
         await asyncio.gather(*(restore_candidate(c) for c in all_candidates))
 
-        # Restore queue
-        self.queue = deque(state["queue"], maxlen=self.config.queue_limit)
+        # Restore queue / priority queue
+        queued_candidates = state.get("queue", [])
+        self.queue = deque()
+        self._priority_queue.clear()
+        self._pending_fingerprints.clear()
+        # Reset counter so restored items preserve relative ordering
+        self._priority_counter = 0
+        for candidate in queued_candidates:
+            if not candidate.text.strip():
+                continue
+            fingerprint = candidate.fingerprint
+            if fingerprint in self._pending_fingerprints or fingerprint in self._inflight_fingerprints:
+                continue
+            rung_idx = self.scheduler.current_shard_index(candidate)
+            priority = self._compute_priority(candidate, rung_idx)
+            self._priority_counter += 1
+            heapq.heappush(self._priority_queue, (-priority, -rung_idx, self._priority_counter, candidate))
+            self._pending_fingerprints.add(fingerprint)
+            self.queue.append(candidate)
