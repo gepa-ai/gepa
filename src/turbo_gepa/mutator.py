@@ -356,77 +356,38 @@ class Mutator:
         factory: Callable[[], Awaitable[Sequence[str]]],
         total: int,
         max_concurrency: int,
-        early_stop_fraction: float = 0.85,  # Return after 85% of mutations complete
-        result_callback: Callable[[str], None] | None = None,  # Stream results as they arrive
+        early_stop_fraction: float = 0.85,  # Not used anymore - kept for API compat
+        result_callback: Callable[[str], None] | None = None,  # Not used anymore - kept for API compat
     ) -> list[str]:
+        """
+        SIMPLIFIED: Launch all mutation tasks immediately and wait for results.
+        No artificial concurrency limits, no early stopping, no straggler detection.
+        Just pure async concurrency - let the LLM provider handle rate limits.
+        """
         import asyncio
-        import time
 
         if total <= 0:
             return []
 
-        max_concurrency = max(1, min(max_concurrency, total))
-        self.logger.log(
-            f"🌀 Mutation batch starting: total={total}, max_concurrency={max_concurrency}, early_stop={early_stop_fraction}"
-        )
-        pending: dict[asyncio.Task[Sequence[str]], float] = {}  # task -> start_time
+        self.logger.log(f"🌀 Launching {total} mutation tasks concurrently")
+
+        # Launch ALL tasks immediately
+        tasks = [asyncio.create_task(factory()) for _ in range(total)]
+
+        # Stream results as they complete (don't wait for all)
         results: list[str] = []
-        started = 0
-        batch_start_time = time.time()
-        mutation_durations: list[float] = []  # Track how long each individual mutation took
+        for completed in asyncio.as_completed(tasks):
+            try:
+                batch = await completed
+                if batch:
+                    results.append(batch[0])
+                    # Immediately stream result to callback if provided
+                    if result_callback:
+                        result_callback(batch[0])
+            except Exception as e:
+                self.logger.log(f"   ⚠️ Mutation task failed: {e}")
 
-        while len(results) < total:
-            while started < total and len(pending) < max_concurrency:
-                task = asyncio.create_task(factory())
-                self.logger.log(f"   + Launched mutation task {started + 1}/{total}")
-                pending[task] = time.time()  # Record when this task started
-                started += 1
-
-            if not pending:
-                break
-
-            if len(mutation_durations) >= 3:
-                import statistics
-
-                mean_duration = statistics.fmean(mutation_durations)
-                stdev = statistics.pstdev(mutation_durations) if len(mutation_durations) > 1 else 0.0
-                threshold = mean_duration + (2.0 * stdev if stdev > 0 else mean_duration * 2.0)
-                now = time.time()
-                cancelled = False
-                for task, start_time in list(pending.items()):
-                    elapsed_task = now - start_time
-                    if elapsed_task > threshold:
-                        self.logger.log(
-                            f"   ⚠️ Mutation early stop: produced={len(results)}/{total} "
-                            f"({len(results) / total * 100:.0f}%), remaining={len(pending)}, "
-                            f"elapsed={elapsed_task:.1f}s > threshold {threshold:.1f}s"
-                        )
-                        task.cancel()
-                        cancelled = True
-                if cancelled and getattr(self, "_metrics", None):
-                    self._metrics.record_early_stop("stragglers")  # type: ignore[attr-defined]
-
-            done, _ = await asyncio.wait(pending.keys(), return_when=asyncio.FIRST_COMPLETED)
-            for task in done:
-                task_start_time = pending.pop(task)
-                task_duration = time.time() - task_start_time
-                try:
-                    batch = task.result()
-                    if batch:
-                        text_result = batch[0]
-                        results.append(text_result)
-                        mutation_durations.append(task_duration)  # Track individual duration
-                        self.logger.log(
-                            f"   ✅ Mutation task complete in {task_duration:.2f}s "
-                            f"(generated {len(batch)} candidates, total so far {len(results)})"
-                        )
-                        # Stream result immediately via callback if provided
-                        if result_callback:
-                            result_callback(text_result)
-                except asyncio.CancelledError:
-                    pass  # Expected for cancelled tasks
-
-        self.logger.log(f"✅ Mutation batch finished: generated={len(results)} (requested {total})")
+        self.logger.log(f"✅ Generated {len(results)}/{total} mutations")
         return results[:total]
 
     def _filter(self, candidates: Iterable[Candidate]) -> list[Candidate]:

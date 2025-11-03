@@ -45,7 +45,6 @@ async def test_seed_flow_minimal():
         SchedulerConfig(
             shards=config.shards,
             eps_improve=config.eps_improve,
-            quantile=config.cohort_quantile,
         )
     )
 

@@ -20,7 +20,7 @@ def test_seed_promotion_and_requeue():
     print("DEADLOCK DEBUG: Seed promotion + queue state")
     print("=" * 80)
 
-    config = SchedulerConfig(shards=[0.3, 1.0], eps_improve=0.0, quantile=0.6)
+    config = SchedulerConfig(shards=[0.3, 1.0], eps_improve=0.0, )
     scheduler = BudgetedScheduler(config)
 
     # Create seed

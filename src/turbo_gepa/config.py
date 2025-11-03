@@ -128,8 +128,8 @@ class Config:
     n_islands: int = 4
     shards: Sequence[float] = field(default_factory=lambda: (0.05, 0.2, 1.0))
     adaptive_shards_enabled: bool = True
-    eps_improve: float = 0.0  # Children must match or beat parent score before quantile pruning
-    cohort_quantile: float = 0.6
+    eps_improve: float = 0.0  # Children must beat parent score by this amount to promote
+    auto_promote_threshold: float | None = 0.99  # Scores >= this skip mutation and immediately re-eval on next rung (None = disabled)
     qd_bins_length: int = 8
     qd_bins_bullets: int = 6
     qd_flags: Sequence[str] = field(default_factory=lambda: ("cot", "format", "fewshot"))
@@ -151,7 +151,7 @@ class Config:
 
     # Streaming mode config
     streaming_mode: bool = True  # Enable continuous launch/drain (no batch barriers)
-    mutation_buffer_min: int = 4  # Minimum mutations to trigger generation
+    mutation_buffer_min: int = 16  # Minimum mutations to trigger generation (increased from 4 to prevent starvation)
     max_total_inflight: int | None = None  # Override total concurrent evaluations (defaults to eval_concurrency)
     skip_final_straggler_cutoff: bool = False  # Always finish final shard evaluations
 
@@ -165,10 +165,6 @@ class Config:
     log_level: str = "WARNING"  # Minimum log level (default: WARNING for clean dashboard output)
     enable_debug_log: bool = False  # Write verbose orchestrator debug file when True
 
-    # Scheduler options
-    enable_rung_convergence: bool = True  # Promote stagnating candidates automatically
-    lineage_patience: int = 2  # Number of stagnant children before forcing promotion
-    lineage_min_improve: float = 0.01  # Minimum improvement over parent to reset lineage counter
 
     def __post_init__(self):
         """Auto-scale parameters based on eval_concurrency if not explicitly set."""
@@ -183,14 +179,14 @@ class Config:
 
         # Auto-scale queue_limit to prevent candidate starvation
         if self.queue_limit is None:
-            # Queue should hold at least 2x concurrency worth of candidates
-            self.queue_limit = max(128, self.eval_concurrency * 2)
+            # Queue should hold at least 4x concurrency worth of candidates (increased from 2x)
+            self.queue_limit = max(128, self.eval_concurrency * 4)
 
         # Auto-scale max_mutations_per_round to match throughput needs
         if self.max_mutations_per_round is None:
-            # Generate enough mutations to keep pipeline fed
-            # Scale with eval_concurrency (capped between 16-64)
-            self.max_mutations_per_round = max(16, min(64, self.eval_concurrency // 4))
+            # Generate 2x concurrency to stay ahead of evaluations (increased from 0.25x)
+            # This ensures mutation generation can keep the pipeline full
+            self.max_mutations_per_round = max(16, min(128, self.eval_concurrency * 2))
 
 
 DEFAULT_CONFIG = Config()

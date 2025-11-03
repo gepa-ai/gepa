@@ -244,60 +244,9 @@ async def test_deficit_scheduling_fairness():
             f"Shard 0.3 got too few evaluations: {evals_per_shard[0.3]}"
 
 
-@pytest.mark.asyncio
-async def test_asha_pruning_efficiency():
-    """Test that ASHA successfully prunes poor candidates early."""
-    config = Config(
-        eval_concurrency=8,
-        shards=(0.1, 0.3, 1.0),  # Three shards for multi-stage pruning
-        eps_improve=0.05,
-        cohort_quantile=0.6,  # Only top 40% promote
-        max_mutations_per_round=20,
-        mutation_buffer_min=5,
-    )
-
-    evaluator = MockEvaluator()
-    # Create a quality distribution: 2 excellent, 3 good, 5 poor
-    qualities = [0.95, 0.90, 0.70, 0.65, 0.60, 0.30, 0.25, 0.20, 0.15, 0.10]
-    for i, q in enumerate(qualities):
-        evaluator.quality_map[Candidate(text=f"seed {i}", meta={}).fingerprint] = q
-
-    archive = Archive(bins_length=8, bins_bullets=6)
-    cache = DiskCache(".turbo_gepa/test_cache")
-    sampler = InstanceSampler(["ex1", "ex2", "ex3", "ex4", "ex5"] * 10)
-    mutator = MockMutator()
-
-    orchestrator = Orchestrator(
-        config=config,
-        evaluator=evaluator,
-        archive=archive,
-        sampler=sampler,
-        mutator=mutator,
-        cache=cache,
-        show_progress=False,
-    )
-
-    seeds = [Candidate(text=f"seed {i}", meta={}) for i in range(10)]
-
-    await orchestrator.run(seeds, max_evaluations=40)
-
-    # Count how many times each candidate was evaluated
-    eval_counts = defaultdict(int)
-    for call in evaluator.calls:
-        fp = call["candidate"].fingerprint
-        eval_counts[fp] += 1
-
-    # High quality candidates should be evaluated more times (promoted through shards)
-    high_quality_fps = [Candidate(text=f"seed {i}", meta={}).fingerprint for i in range(2)]
-    low_quality_fps = [Candidate(text=f"seed {i}", meta={}).fingerprint for i in range(5, 10)]
-
-    high_quality_evals = sum(eval_counts[fp] for fp in high_quality_fps)
-    low_quality_evals = sum(eval_counts[fp] for fp in low_quality_fps)
-
-    # High quality candidates should get more OR equal total evaluations
-    # (With small sample sizes, the difference may not be dramatic)
-    assert high_quality_evals >= low_quality_evals * 0.8, \
-        f"ASHA not pruning efficiently: high={high_quality_evals}, low={low_quality_evals}"
+# REMOVED: test_asha_pruning_efficiency()
+# This test was for cohort-based ASHA which we removed.
+# With parent-child comparison, seeds (which have no parent) all get promoted equally.
 
 
 @pytest.mark.asyncio

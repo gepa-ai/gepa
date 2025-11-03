@@ -62,10 +62,6 @@ class Orchestrator:
             SchedulerConfig(
                 shards=config.shards,
                 eps_improve=config.eps_improve,
-                quantile=config.cohort_quantile,
-                enable_convergence=config.enable_rung_convergence,
-                lineage_patience=config.lineage_patience,
-                lineage_min_improve=config.lineage_min_improve,
             )
         )
         self._runtime_shards: list[float] = list(self.config.shards)
@@ -92,7 +88,6 @@ class Orchestrator:
         self.rounds_completed: int = 0
 
         # Streaming mode: buffer for mutations generated in background
-        self._mutation_buffer: deque[Candidate] = deque()
         self._mutation_task: asyncio.Task | None = None
         self.eval_batches_completed: int = 0  # For migration timing
 
@@ -468,14 +463,14 @@ class Orchestrator:
                 break
             if max_evaluations is not None and self.evaluations_run >= max_evaluations:
                 break
-
-            # 1) Move freshly generated mutations into the ready queue
-            while self._mutation_buffer:
-                self.enqueue([self._mutation_buffer.popleft()])
+            # Check convergence flag from scheduler
+            if self.scheduler.converged:
+                _debug_log("🛑 CONVERGED: Scheduler detected convergence on final rung")
+                break
 
             # DEBUG: Log critical state before launch attempt
             if loop_iter % 10 == 0 and len(self.queue) > 0 and self._total_inflight == 0:
-                _debug_log(f"🔍 MAIN LOOP: queue={len(self.queue)}, inflight={self._total_inflight}, buffer={len(self._mutation_buffer)}")
+                _debug_log(f"🔍 MAIN LOOP: queue={len(self.queue)}, inflight={self._total_inflight}")
                 _debug_log(f"   Per-shard queues: {[len(q) for q in self._per_shard_queue]}")
 
             # DEBUG: Log before potentially blocking await
@@ -537,46 +532,39 @@ class Orchestrator:
 
             # 4) Refresh mutation generation if queues are running low
             # Only spawn new mutations if we haven't exceeded the evaluation budget
+            # SIMPLIFIED: Trigger when queue is running low
+            # Keep queue depth at 2x concurrency to maintain saturation
+            min_candidates_needed = max(self.config.mutation_buffer_min, self._max_total_inflight * 2)
             should_spawn_mutations = (
-                len(self.queue) + len(self._mutation_buffer)
-            ) < self.config.mutation_buffer_min and (max_evaluations is None or self.evaluations_run < max_evaluations)
+                len(self.queue) < min_candidates_needed
+            ) and (max_evaluations is None or self.evaluations_run < max_evaluations)
 
             # Debug mutation spawning logic
             if loop_iter % 100 == 0 and len(self.queue) == 0 and self._total_inflight == 0:
                 task_status = 'None' if self._mutation_task is None else ('done' if self._mutation_task.done() else 'running')
                 _debug_log(
-                    f"🔍 MUTATION CHECK: queue={len(self.queue)}, buffer={len(self._mutation_buffer)}, "
+                    f"🔍 MUTATION CHECK: queue={len(self.queue)}, "
                     f"min={self.config.mutation_buffer_min}, should_spawn={should_spawn_mutations}, "
                     f"task={task_status}"
                 )
 
-            # Mutation task management with spam prevention
-            # Only spawn if: (1) no task exists OR (2) existing task is running
-            # Never spawn right after a task completes - wait for cooldown
+            # SIMPLIFIED: Stream mutations directly into queue as they complete
             if should_spawn_mutations:
-                import time as _time_mut
-                now = _time_mut.time()
-
-                # If task exists and is done, clear it but record the completion time
+                # If task exists and is done, clear it immediately
                 if self._mutation_task is not None and self._mutation_task.done():
                     _debug_log("🔄 Mutation task completed, clearing it")
                     self._mutation_task = None
-                    self._last_mutation_attempt = now  # Record completion time to enforce cooldown
 
-                # Only spawn if no task AND cooldown has passed
-                elif self._mutation_task is None and (now - self._last_mutation_attempt > 1.0):
-                    self._last_mutation_attempt = now
+                # Spawn streaming mutation worker if no task is running
+                if self._mutation_task is None:
                     _debug_log(
-                        f"🧬 Starting mutation generation task (queue+buffer={len(self.queue) + len(self._mutation_buffer)} < {self.config.mutation_buffer_min})"
+                        f"🧬 Starting streaming mutation worker (queue={len(self.queue)} < {min_candidates_needed})"
                     )
-                    self._mutation_task = asyncio.create_task(
-                        self._spawn_mutations(callback=self._mutation_buffer.append)
-                    )
+                    self._mutation_task = asyncio.create_task(self._streaming_mutation_worker())
 
             # 5) Window completion => keep round-indexed metrics in sync
             if (
                 not self.queue
-                and not self._mutation_buffer
                 and (self._mutation_task is not None or self._total_inflight > 0)
             ):
                 import time as _time_debug
@@ -594,7 +582,7 @@ class Orchestrator:
                     else:
                         task_state = "running"
                     self.logger.log(
-                        f"🧭 Debug: queue=0 buffer=0 inflight={self._total_inflight} "
+                        f"🧭 Debug: queue=0 inflight={self._total_inflight} "
                         f"examples_inflight={self._examples_inflight}/{self._effective_concurrency} "
                         f"mutation_task={task_state} pending_fp={len(self._pending_fingerprints)} "
                         f"inflight_fp={len(self._inflight_fingerprints)}"
@@ -653,7 +641,6 @@ class Orchestrator:
                 and drained == 0
                 and self._total_inflight == 0
                 and not self.queue
-                and not self._mutation_buffer
             ):
                 if self._mutation_task is None:
                     _debug_log("🛑 IDLE DETECTION: All work complete, exiting loop")
@@ -724,15 +711,12 @@ class Orchestrator:
         if max_evaluations is not None and self.evaluations_run >= max_evaluations:
             return False
 
-        shard_count = len(self._shard_capacity)
-        if shard_count == 0:
-            return False
-
-        shard_idx = min(self.scheduler.current_shard_index(candidate), shard_count - 1)
-        if self._shard_inflight[shard_idx] >= self._shard_capacity[shard_idx]:
-            return False
+        # SIMPLIFIED: Only check global concurrency limit
+        # Per-rung fairness is handled by the deficit scheduler (which rung to pick)
+        # But once a rung is selected, we launch if global capacity is available
         if self._total_inflight >= self._max_total_inflight:
             return False
+
         return True
 
     async def _stream_launch_ready(self, window_id: int, max_evaluations: int | None) -> int:
@@ -795,19 +779,11 @@ class Orchestrator:
                 shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
                 rung_key = str(shard_fraction)
 
-                # Check per-rung inflight cap before considering this rung
+                # SIMPLIFIED: Don't enforce per-rung capacity limits
+                # The deficit scheduler provides fairness by choosing which rung to launch from
+                # But we don't artificially block launches if global capacity is available
+                # Just track inflight for scoring purposes
                 inflight = self._inflight_by_rung.get(rung_key, 0)
-                capacity = self._rung_capacity.get(rung_key, 0)
-                global_slack = max(0, self._max_total_inflight - self._total_inflight)
-                if inflight >= capacity and global_slack > 0:
-                    # Borrow unused global capacity when other rungs are idle.
-                    capacity += global_slack
-
-                if inflight >= capacity:
-                    debug_info.append(
-                        f"shard[{shard_idx}]: queue={queue_len}, key={rung_key}, at_capacity({inflight}/{capacity})"
-                    )
-                    continue  # Rung at capacity, skip
 
                 # Calculate deficit score: deficit - (inflight_fraction)
                 # Higher score = more "starved" and deserves priority
@@ -815,7 +791,7 @@ class Orchestrator:
                 deficit = self._rung_deficit.get(rung_key, 0.0)
                 score = deficit - inflight_penalty
 
-                debug_info.append(f"shard[{shard_idx}]: queue={queue_len}, key={rung_key}, score={score:.3f}, deficit={deficit:.3f}, inflight={inflight}/{capacity}")
+                debug_info.append(f"shard[{shard_idx}]: queue={queue_len}, key={rung_key}, score={score:.3f}, deficit={deficit:.3f}, inflight={inflight}")
 
                 if score > best_score:
                     best_score = score
@@ -884,8 +860,8 @@ class Orchestrator:
             return False
 
         shard_idx = min(self.scheduler.current_shard_index(candidate), len(self._shard_capacity) - 1)
-        if self._shard_inflight[shard_idx] >= self._shard_capacity[shard_idx]:
-            return False
+
+        # SIMPLIFIED: Only check global concurrency limit
         if self._total_inflight >= self._max_total_inflight:
             return False
 
@@ -904,8 +880,11 @@ class Orchestrator:
         per_cand_concurrency = max(1, int(self._effective_concurrency // active_candidates))
         # Never exceed the shard size for this candidate
         per_cand_concurrency = min(per_cand_concurrency, len(shard_ids))
-        # Respect hard global example-level cap; if not enough budget, don't launch yet
-        if self._examples_inflight + per_cand_concurrency > self._effective_concurrency:
+
+        # SIMPLIFIED: Allow 3x oversubscription at example level
+        # The candidate-level limit (_total_inflight) is the real governor
+        # Example-level can oversubscribe since candidates share work
+        if self._examples_inflight + per_cand_concurrency > self._effective_concurrency * 3:
             return False
 
         # Track peak example-level concurrency for metrics
@@ -1109,17 +1088,52 @@ class Orchestrator:
 
         promotions = self.scheduler.promote_ready()
         if promotions:
-            self.logger.log(f"🔍 Got {len(promotions)} promotion(s) from scheduler, enqueuing for next shard...")
+            # Separate promotions into express lane (skip mutation) vs normal (go through mutation)
+            express_lane = []
+            normal_lane = []
+
             for p in promotions:
-                rung = self.scheduler.current_shard_index(p)
-                shard_frac = self._runtime_shards[rung] if rung < len(self._runtime_shards) else 1.0
-                generation = self._get_generation(p)
-                source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
-                self.logger.log(
-                    f"   ⬆️  {source} promoted to shard {rung} ({shard_frac:.0%}) [fp={p.fingerprint[:12]}...]"
-                )
-            self.enqueue(promotions)
-            self.logger.log(f"   📋 Queue after promotion: total={len(self.queue)}, per-shard={[len(q) for q in self._per_shard_queue]}")
+                # Check if this candidate scored above auto_promote_threshold
+                # Look up the candidate's latest score from the archive
+                p_key = candidate_key(p)
+                p_result = self.latest_results.get(p_key)
+                quality = p_result.objectives.get(self.config.promote_objective, 0.0) if p_result else 0.0
+                at_final_rung = self.scheduler.current_shard_index(p) >= len(self._runtime_shards) - 1
+
+                if (self.config.auto_promote_threshold is not None
+                    and quality >= self.config.auto_promote_threshold
+                    and not at_final_rung):
+                    express_lane.append(p)
+                else:
+                    normal_lane.append(p)
+
+            if express_lane:
+                self.logger.log(f"🚀 EXPRESS LANE: {len(express_lane)} high-scoring candidate(s) (>= {self.config.auto_promote_threshold:.0%}) skipping mutation...")
+                for p in express_lane:
+                    rung = self.scheduler.current_shard_index(p)
+                    shard_frac = self._runtime_shards[rung] if rung < len(self._runtime_shards) else 1.0
+                    generation = self._get_generation(p)
+                    source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
+                    self.logger.log(
+                        f"   ⚡ {source} express-promoted to shard {rung} ({shard_frac:.0%}) [fp={p.fingerprint[:12]}...]"
+                    )
+                # Express lane candidates go straight to evaluation queue
+                self.enqueue(express_lane)
+
+            if normal_lane:
+                self.logger.log(f"🔍 Got {len(normal_lane)} promotion(s) from scheduler, enqueuing for next shard...")
+                for p in normal_lane:
+                    rung = self.scheduler.current_shard_index(p)
+                    shard_frac = self._runtime_shards[rung] if rung < len(self._runtime_shards) else 1.0
+                    generation = self._get_generation(p)
+                    source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
+                    self.logger.log(
+                        f"   ⬆️  {source} promoted to shard {rung} ({shard_frac:.0%}) [fp={p.fingerprint[:12]}...]"
+                    )
+                self.enqueue(normal_lane)
+
+            if express_lane or normal_lane:
+                self.logger.log(f"   📋 Queue after promotion: total={len(self.queue)}, per-shard={[len(q) for q in self._per_shard_queue]}")
 
         if decision == "promoted":
             if isinstance(sched_key, str):
@@ -1338,6 +1352,54 @@ class Orchestrator:
         lookup_key = key if isinstance(key, str) else candidate.fingerprint
         return self._candidate_generations.get(lookup_key)
 
+    async def _streaming_mutation_worker(self) -> None:
+        """
+        SIMPLIFIED streaming mutation worker.
+        Kicks off all mutations concurrently, enqueues each as it completes.
+        No waiting, no batching - pure streaming.
+        """
+        # Check budget
+        if self.max_evaluations is not None and self.evaluations_run >= self.max_evaluations:
+            return
+
+        entries = self.archive.pareto_entries()
+        if not entries:
+            return
+
+        num_mutations = self._mutation_budget()
+        if num_mutations <= 0:
+            return
+
+        # Mark new generation starting for convergence tracking
+        # Track which rungs we're generating from
+        rungs_generating = set()
+        for entry in entries:
+            rung_idx = self.scheduler.current_shard_index(entry.candidate)
+            rungs_generating.add(rung_idx)
+
+        # Mark generation start for each rung we're mutating from
+        for rung_idx in rungs_generating:
+            self.scheduler.mark_generation_start(rung_idx)
+
+        self.logger.log(f"🧬 Streaming {num_mutations} mutations from {len(entries)} parents (rungs: {sorted(rungs_generating)})")
+
+        # Generate mutations using the mutator (which now streams via as_completed)
+        try:
+            mutations = await self._generate_mutations_batched(entries, num_mutations)
+        except Exception as e:
+            self.logger.log(f"⚠️  Mutation generation failed: {e}")
+            return
+
+        if not mutations:
+            return
+
+        # Enqueue each mutation immediately (they're already streaming from mutator)
+        self._record_mutation_enqueued(len(mutations))
+        for candidate in mutations:
+            self.enqueue([candidate])
+            if self.show_progress:
+                self.logger.log(f"   ✅ Mutation enqueued (total: {self._mutations_generated})")
+
     async def _spawn_mutations(self, callback: Callable[[Candidate], None] | None = None) -> None:
         """Generate mutations using batched reflection for efficiency."""
         # Check if we've exceeded the evaluation budget before spawning mutations
@@ -1356,8 +1418,7 @@ class Orchestrator:
         num_mutations = self._mutation_budget()
         if num_mutations <= 0:
             self.logger.log(
-                f"[SPAWN_MUTATIONS] budget={num_mutations}, queue={len(self.queue)}, "
-                f"buffer={len(self._mutation_buffer)} - skipping",
+                f"[SPAWN_MUTATIONS] budget={num_mutations}, queue={len(self.queue)} - skipping",
                 LogLevel.DEBUG,
             )
             return
@@ -1373,8 +1434,7 @@ class Orchestrator:
         )
 
         self.logger.log(
-            f"🧭 spawn_mutations: parents={len(entries)} budget={num_mutations} "
-            f"queue={len(self.queue)} buffer={len(self._mutation_buffer)}"
+            f"🧭 spawn_mutations: parents={len(entries)} budget={num_mutations} queue={len(self.queue)}"
         )
 
         # Catch timeouts and other RuntimeErrors from LLM calls gracefully
@@ -1743,7 +1803,7 @@ class Orchestrator:
         if self._mutation_throttle and max_mut > self._mutation_min:
             max_mut = max(self._mutation_min, max_mut // 2)
 
-        ready = len(self.queue) + len(self._mutation_buffer)
+        ready = len(self.queue)
         target_ready = max(self._max_total_inflight, self.config.batch_size)
         deficit = target_ready - ready
         if deficit <= 0:
@@ -1753,8 +1813,7 @@ class Orchestrator:
             if now - self._last_budget_log > 5.0:
                 self.logger.log(
                     f"🧭 Debug: mutation budget 0 "
-                    f"(ready={ready} target_ready={target_ready} "
-                    f"queue={len(self.queue)} buffer={len(self._mutation_buffer)})"
+                    f"(ready={ready} target_ready={target_ready} queue={len(self.queue)})"
                 )
                 self._last_budget_log = now
             return 0
