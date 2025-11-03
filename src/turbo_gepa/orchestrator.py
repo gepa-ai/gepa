@@ -669,11 +669,13 @@ class Orchestrator:
             self._adjust_runtime_parameters()
 
             # 7) Idle detection - nothing running, nothing queued, mutations finished
+            # CRITICAL FIX: Also check _priority_queue for promoted candidates awaiting evaluation
             if (
                 launched == 0
                 and drained == 0
                 and self._total_inflight == 0
                 and not self.queue
+                and not self._priority_queue  # FIX: Don't exit if promoted candidates are waiting
             ):
                 if self._mutation_task is None:
                     _debug_log("🛑 IDLE DETECTION: All work complete, exiting loop")

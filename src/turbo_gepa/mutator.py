@@ -261,6 +261,7 @@ class Mutator:
             meta.pop("_sched_key", None)
             meta.update(
                 {
+                    "source": "mutation",  # Fix: mutations should not inherit "source": "seed" from parent
                     "edit": "incremental_reflection",  # Track generation method
                     "generation_method": "incremental_reflection",  # Explicit tracking for analysis
                     "operator": "incremental_reflection",  # For metrics tracking
@@ -340,6 +341,7 @@ class Mutator:
             meta["parent_sched_key"] = parent_candidate.meta.get("_sched_key", parent_candidate.fingerprint)
             meta.update(
                 {
+                    "source": "mutation",  # Fix: mutations should not inherit "source": "seed" from parent
                     "edit": "spec_induction",  # Track generation method
                     "generation_method": "spec_induction",  # Explicit tracking for analysis
                     "operator": "spec_induction",  # For metrics tracking

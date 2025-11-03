@@ -241,11 +241,15 @@ def run_diagnostic(concurrency: int, dataset_size: int, max_rounds: int, timeout
     from turbo_gepa.config import adaptive_shards
     computed_shards = adaptive_shards(dataset_size)
 
+    # Force multiple shards for diagnostic purposes (override adaptive behavior)
+    # This ensures we test the successive halving logic even with small datasets
+    diagnostic_shards = (0.05, 0.2, 1.0) if dataset_size >= 3 else computed_shards
+
     # Create config with optimized values for continuous pipeline saturation
     config = Config(
         eval_concurrency=concurrency,
         n_islands=1,  # Single island for clearer diagnostics
-        shards=computed_shards,  # Use dataset-appropriate shards
+        shards=diagnostic_shards,  # Use multiple shards for testing
         batch_size=max(8, concurrency // 2),  # Larger batches for better throughput
         max_mutations_per_round=12,  # Limited mutations per round
         mutation_buffer_min=12,  # Keep pipeline full with 12 candidates
