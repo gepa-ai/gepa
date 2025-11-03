@@ -25,6 +25,7 @@ os.environ["LITELLM_DISABLE_LOGGING_WORKER"] = "True"
 import gepa
 from turbo_gepa.adapters.default_adapter import DefaultAdapter, DefaultDataInst
 from turbo_gepa.config import Config
+from turbo_gepa.interfaces import Candidate
 
 
 class DiagnosticMonitor:
@@ -201,7 +202,7 @@ class DiagnosticMonitor:
         print("\n" + "=" * 80)
 
 
-def run_diagnostic(concurrency: int, dataset_size: int, max_rounds: int, verbose: bool):
+def run_diagnostic(concurrency: int, dataset_size: int, max_rounds: int, timeout: int, verbose: bool):
     """Run diagnostic optimization."""
 
     print("=" * 80)
@@ -211,6 +212,7 @@ def run_diagnostic(concurrency: int, dataset_size: int, max_rounds: int, verbose
     print(f"  Concurrency: {concurrency}")
     print(f"  Dataset Size: {dataset_size}")
     print(f"  Max Rounds: {max_rounds if max_rounds else 'None (converge naturally)'}")
+    print(f"  Timeout: {timeout}s" if timeout else "  Timeout: None")
     print(f"  Verbose: {verbose}")
     print()
 
@@ -235,17 +237,23 @@ def run_diagnostic(concurrency: int, dataset_size: int, max_rounds: int, verbose
     ]
     print(f"📊 Loaded {len(turbo_dataset)} problems\n")
 
+    # Compute adaptive shards based on dataset size
+    from turbo_gepa.config import adaptive_shards
+    computed_shards = adaptive_shards(dataset_size)
+
     # Create config with optimized values for continuous pipeline saturation
     config = Config(
         eval_concurrency=concurrency,
         n_islands=1,  # Single island for clearer diagnostics
-        shards=(0.2, 0.5, 1.0),
+        shards=computed_shards,  # Use dataset-appropriate shards
         batch_size=max(8, concurrency // 2),  # Larger batches for better throughput
-        max_mutations_per_round=max(32, concurrency * 2),  # Generate ahead of consumption
-        mutation_buffer_min=max(16, concurrency),  # Keep pipeline full
+        max_mutations_per_round=12,  # Limited mutations per round
+        mutation_buffer_min=12,  # Keep pipeline full with 12 candidates
         queue_limit=max(128, concurrency * 4),  # Deep queue to prevent starvation
         log_level="DEBUG" if verbose else "WARNING",
-        adaptive_shards_enabled=False,
+        adaptive_shards_enabled=True,  # Enable adaptive sharding
+        auto_promote_threshold=0.99,  # Express lane for 99%+ scores
+        max_optimization_time_seconds=timeout if timeout else None,  # Global timeout (None = no limit)
     )
 
     print("TurboGEPA Configuration:")
@@ -299,6 +307,30 @@ def run_diagnostic(concurrency: int, dataset_size: int, max_rounds: int, verbose
     mutations_generated = evolution_stats.get("mutations_generated", 0)
     stop_reason = result.get("stop_reason", "unknown")
 
+    # Get quality metrics from pareto frontier
+    pareto_entries = result.get("pareto_entries", [])
+    pareto_candidates = result.get("pareto", [])
+
+    # Find seed quality (generation 0) and best quality
+    seed_quality = None
+    best_quality = None
+    best_candidate = None
+    best_entry = None
+
+    for entry in pareto_entries:
+        quality = entry.result.objectives.get(config.promote_objective, 0.0)
+        generation = entry.candidate.meta.get("generation", 0) if isinstance(entry.candidate.meta, dict) else 0
+
+        if generation == 0 and seed_quality is None:
+            seed_quality = quality
+
+        # Track best on final shard
+        if entry.result.shard_fraction >= config.shards[-1]:
+            if best_quality is None or quality > best_quality:
+                best_quality = quality
+                best_candidate = entry.candidate
+                best_entry = entry
+
     print(f"\n\n✅ Optimization completed!")
     print(f"   Stop Reason: {stop_reason}")
     print(f"   Time: {elapsed:.1f}s")
@@ -309,6 +341,133 @@ def run_diagnostic(concurrency: int, dataset_size: int, max_rounds: int, verbose
     if stop_reason == "converged":
         print(f"\n🎯 CONVERGENCE DETECTED!")
         print(f"   System automatically stopped after detecting no further improvements.")
+
+    # Show before/after quality comparison
+    print("\n" + "=" * 80)
+    print("QUALITY IMPROVEMENT")
+    print("=" * 80)
+
+    # Find the overall best candidate from any rung (highest quality)
+    overall_best_candidate = None
+    overall_best_quality_partial = 0.0
+    overall_best_rung = 0.0
+
+    for entry in pareto_entries:
+        quality = entry.result.objectives.get(config.promote_objective, 0.0)
+        if quality > overall_best_quality_partial:
+            overall_best_quality_partial = quality
+            overall_best_candidate = entry.candidate
+            overall_best_rung = entry.result.shard_fraction
+
+    # Show quality comparison at the highest rung reached
+    print(f"\n📊 Quality Metrics:")
+
+    # Find seed and best candidate evaluations on comparable rungs
+    if overall_best_candidate:
+        # Find what rung the best candidate reached
+        best_fp = overall_best_candidate.fingerprint
+        best_rungs = [(e.result.shard_fraction, e.result.objectives.get(config.promote_objective, 0.0))
+                      for e in pareto_entries if e.candidate.fingerprint == best_fp]
+
+        if best_rungs:
+            best_rungs.sort()
+            highest_rung, best_quality_at_highest = best_rungs[-1]
+
+            # Find seed quality at the same rung
+            seed_at_same_rung = None
+            for entry in pareto_entries:
+                is_seed = (isinstance(entry.candidate.meta, dict) and
+                          entry.candidate.meta.get("source") == "seed")
+                if is_seed and entry.result.shard_fraction == highest_rung:
+                    seed_at_same_rung = entry.result.objectives.get(config.promote_objective, 0.0)
+                    break
+
+            if seed_at_same_rung is not None:
+                improvement = best_quality_at_highest - seed_at_same_rung
+                improvement_pct = (improvement / seed_at_same_rung * 100) if seed_at_same_rung > 0 else 0
+
+                rung_pct = int(highest_rung * 100)
+                print(f"   Comparison at rung {rung_pct}% (highest reached):")
+                print(f"   - Seed quality:  {seed_at_same_rung:.1%}")
+                print(f"   - Best quality:  {best_quality_at_highest:.1%}")
+                print(f"   - Improvement:   {improvement:+.1%} ({improvement_pct:+.1f}%)")
+
+                if improvement > 0:
+                    print(f"\n✅ Quality improved by {improvement:.1%} at rung {rung_pct}%!")
+                elif improvement < 0:
+                    print(f"\n⚠️  Quality degraded by {abs(improvement):.1%}")
+                else:
+                    print(f"\n➖ No quality change at rung {rung_pct}%")
+            else:
+                print(f"   ⚠️  Could not find seed evaluation at rung {highest_rung:.0%}")
+        else:
+            print(f"   ⚠️  No evaluations found for best candidate")
+    else:
+        print(f"   ⚠️  No candidates found")
+
+    # Show rung progression for the best candidate
+    if overall_best_candidate:
+        print(f"\n🎯 Best Candidate Rung Progression:")
+        print("-" * 80)
+        print(f"Best candidate fingerprint: {overall_best_candidate.fingerprint[:12]}...")
+
+        # Find all evaluations of the best candidate across rungs
+        best_fp = overall_best_candidate.fingerprint
+        best_evals = [(e.result.shard_fraction, e.result.objectives.get(config.promote_objective, 0.0))
+                      for e in pareto_entries if e.candidate.fingerprint == best_fp]
+        best_evals.sort()  # Sort by shard fraction
+
+        if best_evals:
+            print(f"\nRung progression:")
+            for shard, quality in best_evals:
+                rung_pct = int(shard * 100)
+                print(f"   Rung {rung_pct:3d}% ({shard:.1f}): {quality:.1%}")
+
+            highest_rung = best_evals[-1][0]
+            highest_rung_pct = int(highest_rung * 100)
+            print(f"\n✅ Highest rung reached: {highest_rung_pct}% (shard {highest_rung:.1f})")
+
+            if highest_rung >= config.shards[-1]:
+                print(f"   🎉 Reached final rung!")
+            else:
+                final_rung_pct = int(config.shards[-1] * 100)
+                print(f"   ⏱️  Timeout before reaching final rung ({final_rung_pct}%)")
+        else:
+            print(f"   ⚠️  No evaluations found for best candidate")
+
+    # Show all pareto candidates with their rungs
+    if pareto_entries:
+        print(f"\n📊 Pareto Frontier ({len(pareto_entries)} candidates):")
+        print("-" * 80)
+        for i, entry in enumerate(sorted(pareto_entries, key=lambda e: e.result.objectives.get(config.promote_objective, 0.0), reverse=True)):
+            quality = entry.result.objectives.get(config.promote_objective, 0.0)
+            cost = entry.result.objectives.get("neg_cost", 0.0)
+            shard = entry.result.shard_fraction
+            is_seed = (isinstance(entry.candidate.meta, dict) and
+                      entry.candidate.meta.get("source") == "seed")
+            source_label = "seed" if is_seed else "mut"
+            fp = entry.candidate.fingerprint[:12]
+            rung_pct = int(shard * 100)
+
+            marker = "🌟" if entry.candidate.fingerprint == overall_best_candidate.fingerprint and entry.result.shard_fraction == overall_best_rung else "  "
+            print(f"{marker} #{i+1}: Quality={quality:.1%} Cost={cost:.4f} Rung={rung_pct}% Source={source_label} [fp={fp}...]")
+
+    # Show best candidate text
+    if best_candidate:
+        print(f"\n📝 Best Candidate (on final rung):")
+        print("-" * 80)
+        print(best_candidate.text)
+        print("-" * 80)
+
+    # Show seed candidate text for comparison
+    if pareto_entries:
+        seed_entries = [e for e in pareto_entries
+                       if isinstance(e.candidate.meta, dict) and e.candidate.meta.get("source") == "seed"]
+        if seed_entries:
+            print(f"\n📝 Seed Candidate (for comparison):")
+            print("-" * 80)
+            print(seed_entries[0].candidate.text)
+            print("-" * 80)
 
     # Simulate some samples for analysis (in real version, these would be collected during run)
     # For now, provide a basic analysis
@@ -378,6 +537,7 @@ def main():
     parser.add_argument("--concurrency", type=int, default=32, help="Evaluation concurrency")
     parser.add_argument("--dataset-size", type=int, default=15, help="Number of examples")
     parser.add_argument("--max-rounds", type=int, default=None, help="Maximum rounds (None = converge naturally)")
+    parser.add_argument("--timeout", type=int, default=None, help="Global timeout in seconds (None = no timeout)")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     args = parser.parse_args()
 
@@ -385,6 +545,7 @@ def main():
         concurrency=args.concurrency,
         dataset_size=args.dataset_size,
         max_rounds=args.max_rounds,
+        timeout=args.timeout,
         verbose=args.verbose,
     )
 

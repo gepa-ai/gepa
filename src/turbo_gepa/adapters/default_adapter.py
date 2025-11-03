@@ -1057,7 +1057,11 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             else:
                 # String seed
                 seed_candidates.append(Candidate(text=seed, meta={"source": "seed"}))
+
+        # Apply global timeout - but don't use asyncio.wait_for() because that cancels tasks
+        # Instead, let the orchestrator's own timeout logic handle it gracefully
         await orchestrator.run(seed_candidates, max_rounds=max_rounds, max_evaluations=max_evaluations)
+
         pareto = orchestrator.archive.pareto_candidates()
         qd = orchestrator.archive.sample_qd(limit=len(pareto))
         return {

@@ -158,9 +158,8 @@ class AsyncEvaluator:
                 self.metrics.record_cache_lookup(hit=False)
 
             try:
-                # Log when we're about to start an API call
-                if show_progress:
-                    self.logger.log(f"🔄 Starting eval for example {example_id} (inflight: {self._inflight_examples})")
+                # ALWAYS log when we're about to start an API call for straggler debugging
+                self.logger.log(f"🔄 Starting eval for example {example_id} at t={time.time() - batch_start_time:.1f}s (inflight: {self._inflight_examples})")
 
                 async with semaphore:
                     self._inflight_examples += 1
@@ -175,8 +174,8 @@ class AsyncEvaluator:
                         metrics = await task
                     _elapsed_api = time.time() - _start_api
 
-                    if show_progress:
-                        self.logger.log(f"✅ Completed eval for example {example_id} in {_elapsed_api:.1f}s")
+                    # ALWAYS log completion time for straggler debugging
+                    self.logger.log(f"✅ Completed eval for example {example_id} in {_elapsed_api:.1f}s at t={time.time() - batch_start_time:.1f}s")
 
                 # Ensure inflight counter is decremented even if mapper raises
                 self._inflight_examples = max(0, self._inflight_examples - 1)
@@ -301,22 +300,46 @@ class AsyncEvaluator:
 
                 mean_duration = statistics.fmean(eval_durations)
                 stdev = statistics.pstdev(eval_durations) if len(eval_durations) > 1 else 0.0
-                threshold = mean_duration + (2.0 * stdev if stdev > 0 else mean_duration * 2.0)
+                # AGGRESSIVE: Use mean + 1*stdev instead of 2*stdev to trigger more often
+                stdev_multiplier = 1.0  # Changed from 2.0 to make straggler detection more aggressive
+                threshold = mean_duration + (stdev_multiplier * stdev if stdev > 0 else mean_duration * 0.5)
                 now = time.time()
+
+                # ALWAYS log threshold calculation for visibility (not gated by show_progress)
+                self.logger.log(
+                    f"🔍 Straggler check: {completed}/{total} complete, "
+                    f"threshold={threshold:.1f}s (mean={mean_duration:.1f}s + {stdev_multiplier}×stdev={stdev:.1f}s), "
+                    f"{len(pending)} tasks pending"
+                )
+
                 cancelled = False
+                straggler_count = 0
                 for task, start_time in list(pending.items()):
                     elapsed_task = now - start_time
+                    # ALWAYS log task status (not gated by show_progress)
+                    status = "✅ within" if elapsed_task <= threshold else "⚠️ EXCEEDS"
+                    self.logger.log(
+                        f"   Task elapsed: {elapsed_task:.1f}s {status} threshold {threshold:.1f}s"
+                    )
                     if elapsed_task > threshold:
-                        if show_progress:
-                            denom = max(total, 1)
-                            self.logger.log(
-                                f"⚡ Early stop: {completed}/{total} complete ({completed / denom * 100:.0f}%), "
-                                f"cancelling straggler (elapsed {elapsed_task:.1f}s > threshold {threshold:.1f}s)"
-                            )
+                        straggler_count += 1
+                        # ALWAYS log cancellations (not gated by show_progress)
+                        denom = max(total, 1)
+                        self.logger.log(
+                            f"⚡ Early stop: {completed}/{total} complete ({completed / denom * 100:.0f}%), "
+                            f"cancelling straggler #{straggler_count} (elapsed {elapsed_task:.1f}s > threshold {threshold:.1f}s, "
+                            f"mean={mean_duration:.1f}s, stdev={stdev:.1f}s)"
+                        )
                         task.cancel()
                         cancelled = True
-                if cancelled and self.metrics:
-                    self.metrics.record_early_stop("stragglers")
+                if cancelled:
+                    # ALWAYS log straggler summary (not gated by show_progress)
+                    self.logger.log(
+                        f"📊 Straggler stats: cancelled {straggler_count}/{len(pending)+completed} tasks, "
+                        f"mean duration={mean_duration:.1f}s, stdev={stdev:.1f}s, threshold={threshold:.1f}s"
+                    )
+                    if self.metrics:
+                        self.metrics.record_early_stop("stragglers")
 
             if not pending:
                 break
@@ -344,6 +367,17 @@ class AsyncEvaluator:
             await asyncio.gather(*pending, return_exceptions=True)
 
         # No explicit progress bar cleanup when using logger
+
+        # Log batch completion metrics
+        batch_duration = time.time() - batch_start_time
+        if show_progress and eval_durations:
+            import statistics
+            mean_dur = statistics.fmean(eval_durations)
+            stdev_dur = statistics.pstdev(eval_durations) if len(eval_durations) > 1 else 0.0
+            self.logger.log(
+                f"⏱️  Batch complete: {len(results)}/{total} examples in {batch_duration:.1f}s "
+                f"(mean={mean_dur:.1f}s, stdev={stdev_dur:.1f}s, throughput={len(results)/batch_duration:.1f} ex/s)"
+            )
 
         totals: dict[str, float] = {}
         traces: list[dict[str, float]] = []

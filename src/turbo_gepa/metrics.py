@@ -359,7 +359,12 @@ def extract_metrics(orchestrator: Orchestrator) -> DashboardMetrics:
         avg_quality_shard = 0.0
 
     # Get rung activity (inflight counts per rung)
-    rung_activity = orchestrator._inflight_by_rung.copy()
+    # With priority queue, we compute this from the queue itself
+    rung_activity = {}
+    for _, rung_idx, _, candidate in orchestrator._priority_queue:
+        rung_fraction = orchestrator.scheduler.shard_fraction_for_index(rung_idx)
+        rung_key = f"{rung_fraction:.2f}"
+        rung_activity[rung_key] = rung_activity.get(rung_key, 0) + 1
 
     evo = orchestrator.evolution_snapshot()
 

@@ -148,6 +148,7 @@ class Config:
     reflection_lm_temperature: float | None = 1.0
     target_quality: float | None = None  # Stop when best quality reaches this threshold
     eval_timeout_seconds: float | None = 120.0  # Max time to wait for a single LLM evaluation
+    max_optimization_time_seconds: float | None = None  # Global timeout - stop optimization after this many seconds
 
     # Streaming mode config
     streaming_mode: bool = True  # Enable continuous launch/drain (no batch barriers)

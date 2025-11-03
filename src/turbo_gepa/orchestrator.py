@@ -10,6 +10,7 @@ in the same process (async ring topology), not separate OS processes.
 from __future__ import annotations
 
 import asyncio
+import heapq
 import math
 import time
 from collections import defaultdict, deque
@@ -66,7 +67,6 @@ class Orchestrator:
         )
         self._runtime_shards: list[float] = list(self.config.shards)
         self.queue: deque[Candidate] = deque(maxlen=config.queue_limit)
-        self._per_shard_queue: list[deque[Candidate]] = [deque() for _ in range(len(self._runtime_shards))]
         self._pending_fingerprints: set[str] = set()
         self._inflight_fingerprints: set[str] = set()
         self._next_shard: int = 0
@@ -109,7 +109,16 @@ class Orchestrator:
         self._mutation_min = max(4, base_mut // 4)
         self._rung_launches: list[int] = [0] * len(self._runtime_shards)
         self._rung_promotions: list[int] = [0] * len(self._runtime_shards)
-        self._promotion_ema: list[float] = [0.0] * len(self._runtime_shards)
+        self._promotion_ema: list[float] = [0.5] * len(self._runtime_shards)  # Initialize at 0.5 (neutral)
+        self._final_success_ema: float = 0.3  # Success rate at final rung
+        self._ema_alpha: float = 0.1  # EMA smoothing factor
+        self._priority_beta: float = 0.05  # Quality tie-breaker weight
+        self._queue_buffer_mult: float = 2.0  # Target queue depth = 2 × concurrency
+        self._mutation_kp: float = 0.2  # Proportional gain for mutation pacing
+        self._priority_counter: int = 0  # Tie-breaker for heap ordering
+        self._priority_queue: list = []  # Heap: (-priority, -rung_idx, counter, candidate)
+        self._cost_remaining: list[float] = [1.0 - (self._runtime_shards[i-1] if i > 0 else 0.0)
+                                              for i in range(len(self._runtime_shards))]
         self._last_debug_log: float = 0.0
         self._last_budget_log: float = 0.0
         self._last_shared: dict[str, float] = {}
@@ -149,43 +158,11 @@ class Orchestrator:
             data = data[:target]
         return data
 
-    def _rebalance_shard_queue(self, target: int) -> None:
-        while len(self._per_shard_queue) < target:
-            self._per_shard_queue.append(deque())
-        while len(self._per_shard_queue) > target:
-            extra = self._per_shard_queue.pop()
-            if extra and self._per_shard_queue:
-                self._per_shard_queue[-1].extend(extra)
-
     def _recompute_capacities(self) -> None:
-        num_shards = max(1, len(self._runtime_shards))
-        self._rebalance_shard_queue(num_shards)
-        self._effective_concurrency = max(1, min(self._max_total_inflight, self.config.eval_concurrency))
-        base = max(1, self._effective_concurrency // num_shards)
-        remainder = max(0, self._effective_concurrency - base * num_shards)
-        self._shard_capacity = [base + (1 if i < remainder else 0) for i in range(num_shards)]
-        if sum(self._shard_capacity) < self._effective_concurrency:
-            deficit = self._effective_concurrency - sum(self._shard_capacity)
-            for i in range(deficit):
-                self._shard_capacity[i % num_shards] += 1
-        current_inflight = list(getattr(self, "_shard_inflight", []))
-        current_inflight = current_inflight[:num_shards] + [0] * max(0, num_shards - len(current_inflight))
-        self._shard_inflight = current_inflight
-        self._rung_keys = [str(shard) for shard in self._runtime_shards]
-        n_rungs = len(self._rung_keys)
-        self._rung_shares = dict.fromkeys(self._rung_keys, 1.0 / max(n_rungs, 1))
-        self._rung_deficit = dict.fromkeys(self._rung_keys, 0.0)
-        # Preserve existing inflight counts when recomputing capacities
-        # This prevents negative counts when candidates finish evaluation after shards changed
-        old_inflight = getattr(self, "_inflight_by_rung", {})
-        self._inflight_by_rung = {key: old_inflight.get(key, 0) for key in self._rung_keys}
-        # Also preserve any old keys with non-zero counts (candidates still in-flight on old shards)
-        for old_key, old_count in old_inflight.items():
-            if old_key not in self._inflight_by_rung and old_count != 0:
-                self._inflight_by_rung[old_key] = old_count
-        self._rung_capacity = {
-            key: max(1, math.ceil(self._rung_shares[key] * self._effective_concurrency)) for key in self._rung_keys
-        }
+        # SIMPLIFIED: Just use eval_concurrency directly, no artificial limits
+        self._effective_concurrency = max(1, self.config.eval_concurrency)
+        # Resize metric lists to match current shard count
+        num_shards = len(self._runtime_shards)
         self._rung_launches = self._resize_metric_list(self._rung_launches, num_shards)
         self._rung_promotions = self._resize_metric_list(self._rung_promotions, num_shards)
         self._promotion_ema = self._resize_float_list(self._promotion_ema, num_shards)
@@ -197,19 +174,17 @@ class Orchestrator:
             fingerprint = candidate.fingerprint
             if fingerprint in self._pending_fingerprints or fingerprint in self._inflight_fingerprints:
                 continue
-            if len(self.queue) == self.queue.maxlen and self.queue:
-                evicted = self.queue.popleft()
-                self._pending_fingerprints.discard(evicted.fingerprint)
-                for dq in self._per_shard_queue:
-                    try:
-                        dq.remove(evicted)
-                        break
-                    except ValueError:
-                        continue
-            idx = self.scheduler.current_shard_index(candidate)
-            shard_idx = min(idx, len(self._per_shard_queue) - 1)
-            self._per_shard_queue[shard_idx].append(candidate)
-            self.queue.append(candidate)
+
+            # Add to priority queue with computed priority
+            rung_idx = self.scheduler.current_shard_index(candidate)
+            priority = self._compute_priority(candidate, rung_idx)
+
+            # Use negative priority for max-heap (heapq is min-heap)
+            # Secondary sort by negative rung_idx (prefer higher rungs)
+            # Tertiary sort by counter for FIFO tie-breaking
+            self._priority_counter += 1
+            heapq.heappush(self._priority_queue, (-priority, -rung_idx, self._priority_counter, candidate))
+
             self._pending_fingerprints.add(fingerprint)
 
     def _get_rung_key(self, candidate: Candidate) -> str:
@@ -220,6 +195,39 @@ class Orchestrator:
         idx = self.scheduler.current_shard_index(candidate)
         shard_fraction = self._runtime_shards[min(idx, len(self._runtime_shards) - 1)]
         return str(shard_fraction)
+
+    def _update_ema(self, old_value: float, new_value: float) -> float:
+        """Update EMA with alpha smoothing."""
+        return (1 - self._ema_alpha) * old_value + self._ema_alpha * new_value
+
+    def _compute_priority(self, candidate: Candidate, rung_idx: int) -> float:
+        """Compute priority = P_finish(rung_idx) / cost_remaining[rung_idx].
+
+        P_finish = (product of promotion_ema from rung_idx to final) × final_success_ema
+        Optional quality tie-breaker: multiply by (1 + beta × normalized_quality)
+        """
+        # Calculate probability of reaching and succeeding at final rung
+        p_finish = self._final_success_ema
+        for r in range(rung_idx, len(self._runtime_shards) - 1):
+            p_finish *= self._promotion_ema[r]
+
+        # Cost remaining at this rung
+        cost_remaining = self._cost_remaining[rung_idx]
+        if cost_remaining <= 0:
+            cost_remaining = 1e-6  # Avoid division by zero
+
+        # Base priority
+        priority = p_finish / cost_remaining
+
+        # Optional quality tie-breaker
+        if self._priority_beta > 0 and isinstance(candidate.meta, dict):
+            quality = candidate.meta.get("quality")
+            if isinstance(quality, (int, float)):
+                # Normalize quality to [0, 1] range (assuming quality is already in this range)
+                normalized_quality = max(0.0, min(1.0, float(quality)))
+                priority *= (1 + self._priority_beta * normalized_quality)
+
+        return priority
 
     def _update_eval_metrics(self, candidate: Candidate, result: EvalResult) -> None:
         cand_hash = candidate_key(candidate)
@@ -358,7 +366,7 @@ class Orchestrator:
                     self.config.max_mutations_per_round + 1, self._max_mutations_ceiling
                 )
             adjusted = True
-        backlog0 = len(self._per_shard_queue[0]) if self._per_shard_queue else 0
+        backlog0 = len(self._priority_queue)
         launches0 = self._rung_launches[0] if self._rung_launches else 0
         promotions0 = self._rung_promotions[0] if self._rung_promotions else 0
         promo_rate0 = promotions0 / max(1, launches0)
@@ -458,6 +466,9 @@ class Orchestrator:
         # Track first round start
         self.metrics.start_round()
 
+        # Track optimization start time for global timeout
+        optimization_start_time = time.time()
+
         while True:
             if max_rounds is not None and window_id >= max_rounds:
                 break
@@ -467,11 +478,17 @@ class Orchestrator:
             if self.scheduler.converged:
                 _debug_log("🛑 CONVERGED: Scheduler detected convergence on final rung")
                 break
+            # Check global timeout
+            if self.config.max_optimization_time_seconds is not None:
+                elapsed = time.time() - optimization_start_time
+                if elapsed >= self.config.max_optimization_time_seconds:
+                    _debug_log(f"⏱️  TIMEOUT: Reached max optimization time ({elapsed:.1f}s >= {self.config.max_optimization_time_seconds:.1f}s)")
+                    break
 
             # DEBUG: Log critical state before launch attempt
             if loop_iter % 10 == 0 and len(self.queue) > 0 and self._total_inflight == 0:
                 _debug_log(f"🔍 MAIN LOOP: queue={len(self.queue)}, inflight={self._total_inflight}")
-                _debug_log(f"   Per-shard queues: {[len(q) for q in self._per_shard_queue]}")
+                _debug_log(f"   Priority queue: {len(self._priority_queue)}")
 
             # DEBUG: Log before potentially blocking await
             if loop_iter % 20 == 0:
@@ -711,159 +728,60 @@ class Orchestrator:
         if max_evaluations is not None and self.evaluations_run >= max_evaluations:
             return False
 
-        # SIMPLIFIED: Only check global concurrency limit
-        # Per-rung fairness is handled by the deficit scheduler (which rung to pick)
-        # But once a rung is selected, we launch if global capacity is available
-        if self._total_inflight >= self._max_total_inflight:
-            return False
-
+        # REMOVED ALL CONCURRENCY LIMITS - only eval_concurrency matters (in evaluator)
+        # Let straggler detection handle any oversubscription issues
         return True
 
     async def _stream_launch_ready(self, window_id: int, max_evaluations: int | None) -> int:
-        """Launch ready candidates using deficit-based scheduling for fair rung allocation."""
+        """Launch ready candidates using priority-based scheduling."""
         launched = 0
-        shard_count = len(self._per_shard_queue)
-        if shard_count == 0:
-            return launched
 
-        # Try launching until we can't launch anymore
-        max_attempts = shard_count * 10  # Prevent infinite loops
-        attempts = 0
-
-        # Debug: Log queue state on first attempt
-        if attempts == 0 and len(self.queue) > 0 and self._total_inflight == 0:
-            self.logger.log(f"🔍 DEBUG _stream_launch_ready: queue={len(self.queue)} total_inflight={self._total_inflight}")
-            for i, q in enumerate(self._per_shard_queue):
-                if q:
-                    self.logger.log(f"   Per-shard queue[{i}]: {len(q)} candidates")
-                    if q:
-                        cand = q[0]
-                        sched_rung = self.scheduler.current_shard_index(cand)
-                        self.logger.log(f"      First candidate rung: {sched_rung}, fp: {cand.fingerprint[:12]}...")
-
-        while attempts < max_attempts:
-            attempts += 1
-
-            # Accumulate deficit for all rungs (every tick)
-            # Clamp deficit for empty queues to prevent infinite credit buildup
-            for shard_idx, key in enumerate(self._rung_keys):
-                if shard_idx < len(self._per_shard_queue):
-                    queue = self._per_shard_queue[shard_idx]
-                    if queue:
-                        # Queue has work: accumulate deficit normally
-                        self._rung_deficit[key] += self._rung_shares[key]
-                    else:
-                        # Queue empty: reset deficit to non-negative share baseline
-                        self._rung_deficit[key] = max(0.0, min(self._rung_deficit[key], self._rung_shares[key]))
-
-            # Calculate total inflight for normalization
-            total_inflight = max(1, sum(self._inflight_by_rung.values()))
-
-            # Find best rung by deficit score
-            best_score = float("-inf")
-            best_shard_idx = None
-            best_rung_key = None
-
-            # Debug: Track evaluation of each shard
-            debug_info = []
-
-            for shard_idx in range(shard_count):
-                queue = self._per_shard_queue[shard_idx]
-                queue_len = len(queue) if queue else 0
-
-                if not queue:
-                    debug_info.append(f"shard[{shard_idx}]: empty")
-                    continue
-
-                # Get rung key for this shard (consistent with scheduler)
-                shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
-                rung_key = str(shard_fraction)
-
-                # SIMPLIFIED: Don't enforce per-rung capacity limits
-                # The deficit scheduler provides fairness by choosing which rung to launch from
-                # But we don't artificially block launches if global capacity is available
-                # Just track inflight for scoring purposes
-                inflight = self._inflight_by_rung.get(rung_key, 0)
-
-                # Calculate deficit score: deficit - (inflight_fraction)
-                # Higher score = more "starved" and deserves priority
-                inflight_penalty = inflight / total_inflight
-                deficit = self._rung_deficit.get(rung_key, 0.0)
-                score = deficit - inflight_penalty
-
-                debug_info.append(f"shard[{shard_idx}]: queue={queue_len}, key={rung_key}, score={score:.3f}, deficit={deficit:.3f}, inflight={inflight}")
-
-                if score > best_score:
-                    best_score = score
-                    best_shard_idx = shard_idx
-                    best_rung_key = rung_key
-
-            # Log debug info if we have queued items but found no eligible rung
-            if len(self.queue) > 0 and best_shard_idx is None and attempts == 1:
-                self.logger.log(f"❌ DEBUG: No eligible rung found despite queue={len(self.queue)}")
-                for info in debug_info:
-                    self.logger.log(f"   {info}")
-                self.logger.log(f"   _rung_keys: {self._rung_keys}")
-                self.logger.log(f"   _rung_capacity: {self._rung_capacity}")
-                self.logger.log(f"   _inflight_by_rung: {self._inflight_by_rung}")
-
-            # No eligible rung found
-            if best_shard_idx is None:
+        # Launch from priority queue until we can't anymore
+        while self._priority_queue:
+            # Check if we can launch more
+            if not self._stream_can_launch(None, max_evaluations):
                 break
 
-            # Try to launch from best rung
-            queue = self._per_shard_queue[best_shard_idx]
-            candidate = queue[0]
+            # Pop highest priority candidate
+            try:
+                neg_priority, neg_rung_idx, counter, candidate = heapq.heappop(self._priority_queue)
+            except IndexError:
+                break
 
-            if self._stream_can_launch(candidate, max_evaluations):
-                # Remove from queue
-                queue.popleft()
-                try:
-                    self.queue.remove(candidate)
-                except ValueError:
-                    pass
+            priority = -neg_priority
+            rung_idx = -neg_rung_idx
 
-                fingerprint = candidate.fingerprint
-                self._pending_fingerprints.discard(fingerprint)
-                self._inflight_fingerprints.add(fingerprint)
+            # Check if candidate is already inflight or completed
+            fingerprint = candidate.fingerprint
+            if fingerprint in self._inflight_fingerprints:
+                continue  # Skip, already being evaluated
 
-                # Launch the evaluation
-                launched_successfully = await self._stream_launch(candidate, window_id)
+            # Mark as inflight
+            self._inflight_fingerprints.add(fingerprint)
 
-                if launched_successfully:
-                    # Subtract from deficit (rung got its turn)
-                    self._rung_deficit[best_rung_key] -= 1.0
-                    launched += 1
-                    continue
-                else:
-                    # Launch failed, put candidate back
-                    self._inflight_fingerprints.discard(fingerprint)
-                    self._pending_fingerprints.add(fingerprint)
-                    queue.appendleft(candidate)
-                    if candidate not in self.queue:
-                        self.queue.append(candidate)
-                    break
+            # Launch the evaluation
+            launched_successfully = await self._stream_launch(candidate, window_id)
+
+            if launched_successfully:
+                launched += 1
             else:
-                # Can't launch this candidate (capacity or eval limit reached)
-                break
-
-        # DEBUG: Log if we couldn't launch anything despite having queue items
-        if launched == 0 and len(self.queue) > 0 and attempts >= max_attempts:
-            self.logger.log(f"⚠️  _stream_launch_ready: launched=0 despite queue={len(self.queue)} after {attempts} attempts")
+                # Launch failed, put candidate back on queue
+                self._inflight_fingerprints.discard(fingerprint)
+                heapq.heappush(self._priority_queue, (neg_priority, neg_rung_idx, counter, candidate))
+                break  # Stop trying to launch more
 
         return launched
 
     async def _stream_launch(self, candidate: Candidate, window_id: int) -> bool:
         import time
 
-        if len(self._shard_capacity) == 0:
+        if len(self._runtime_shards) == 0:
             return False
 
-        shard_idx = min(self.scheduler.current_shard_index(candidate), len(self._shard_capacity) - 1)
+        shard_idx = min(self.scheduler.current_shard_index(candidate), len(self._runtime_shards) - 1)
 
-        # SIMPLIFIED: Only check global concurrency limit
-        if self._total_inflight >= self._max_total_inflight:
-            return False
+        # REMOVED: No orchestrator-level concurrency limits
+        # Only eval_concurrency (in evaluator) + straggler detection control throughput
 
         shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
         shard_key = (window_id, shard_fraction)
@@ -873,19 +791,13 @@ class Orchestrator:
             shard_ids = self.sampler.sample_shard(window_id, shard_size)
             self._shard_cache[shard_key] = shard_ids
 
-        # Compute fair per-candidate evaluator concurrency so total example-level
-        # work stays near the global target without oversubscription.
-        # We simulate the candidate as inflight by adding 1 to _total_inflight for the calculation.
-        active_candidates = max(1, self._total_inflight + 1)
-        per_cand_concurrency = max(1, int(self._effective_concurrency // active_candidates))
-        # Never exceed the shard size for this candidate
-        per_cand_concurrency = min(per_cand_concurrency, len(shard_ids))
+        # Give each candidate FULL concurrency - no artificial splitting!
+        # Let straggler detection in the evaluator handle slow tasks.
+        # Each candidate gets the full eval_concurrency budget, limited only by shard size.
+        per_cand_concurrency = min(self._effective_concurrency, len(shard_ids))
 
-        # SIMPLIFIED: Allow 3x oversubscription at example level
-        # The candidate-level limit (_total_inflight) is the real governor
-        # Example-level can oversubscribe since candidates share work
-        if self._examples_inflight + per_cand_concurrency > self._effective_concurrency * 3:
-            return False
+        # Remove example-level oversubscription check entirely - trust straggler detection
+        # to handle any tasks that run too long. This maximizes throughput.
 
         # Track peak example-level concurrency for metrics
         peak_examples = self._examples_inflight + per_cand_concurrency
@@ -894,17 +806,12 @@ class Orchestrator:
         time.time()
         cand_hash = candidate_key(candidate)
         self._total_inflight += 1
-        self._shard_inflight[shard_idx] += 1
-        # Track inflight per rung for deficit scheduler
+        # Track inflight per rung for deficit scheduler (removed with priority queue)
         # IMPORTANT: Use the shard_idx passed to this function, NOT _get_rung_key()!
         # The candidate may be promoted during evaluation, changing its shard index.
         # We must use the EXACT shard fraction this launch is evaluating on.
         rung_key_at_launch = str(shard_fraction)  # Use the actual shard fraction for this evaluation
         fingerprint_at_launch = candidate.fingerprint
-        # Initialize key if not present (can happen if shards were updated mid-flight)
-        if rung_key_at_launch not in self._inflight_by_rung:
-            self._inflight_by_rung[rung_key_at_launch] = 0
-        self._inflight_by_rung[rung_key_at_launch] += 1
         # Reserve budget for this candidate
         self._examples_inflight += per_cand_concurrency
         self._launch_start_times[cand_hash] = time.time()
@@ -951,13 +858,10 @@ class Orchestrator:
                     )
                 await self._result_queue.put((candidate, exc, shard_idx))
             finally:
-                self._shard_inflight[shard_idx] -= 1
                 self._total_inflight -= 1
                 # Decrement rung inflight using the SAME key we incremented with
                 # Don't recalculate - the candidate may have been promoted while evaluating!
                 # Use get() with default 0 to avoid KeyError if key was removed during recompute
-                if rung_key_at_launch in self._inflight_by_rung:
-                    self._inflight_by_rung[rung_key_at_launch] -= 1
                 # Release global example-level budget
                 self._examples_inflight = max(0, self._examples_inflight - per_cand_concurrency)
                 # Clear inflight fingerprint using the captured value from launch time
@@ -1055,8 +959,28 @@ class Orchestrator:
         elif decision == "completed":
             self.metrics.record_completion()
 
+        # Update EMA tracking for priority scheduling
+        if 0 <= prev_idx < len(self._rung_launches):
+            self._rung_launches[prev_idx] += 1
+
         if decision in ("promoted", "completed") and 0 <= prev_idx < len(self._rung_promotions):
             self._rung_promotions[prev_idx] += 1
+
+            # Update promotion EMA for this rung
+            if prev_idx < len(self._promotion_ema):
+                promoted = 1.0
+                self._promotion_ema[prev_idx] = self._update_ema(self._promotion_ema[prev_idx], promoted)
+        elif decision == "pruned" and 0 <= prev_idx < len(self._promotion_ema):
+            # Update with failure
+            promoted = 0.0
+            self._promotion_ema[prev_idx] = self._update_ema(self._promotion_ema[prev_idx], promoted)
+
+        # Update final success EMA when candidates complete final rung
+        if decision == "completed":
+            at_final_rung = prev_idx >= len(self._runtime_shards) - 1
+            if at_final_rung:
+                # Completed at final rung = success
+                self._final_success_ema = self._update_ema(self._final_success_ema, 1.0)
 
         if isinstance(candidate_with_meta.meta, dict):
             parent_fp = candidate_with_meta.meta.get("parent")
@@ -1088,52 +1012,28 @@ class Orchestrator:
 
         promotions = self.scheduler.promote_ready()
         if promotions:
-            # Separate promotions into express lane (skip mutation) vs normal (go through mutation)
-            express_lane = []
-            normal_lane = []
-
+            # Add promoted candidates to priority queue
             for p in promotions:
-                # Check if this candidate scored above auto_promote_threshold
-                # Look up the candidate's latest score from the archive
-                p_key = candidate_key(p)
-                p_result = self.latest_results.get(p_key)
-                quality = p_result.objectives.get(self.config.promote_objective, 0.0) if p_result else 0.0
-                at_final_rung = self.scheduler.current_shard_index(p) >= len(self._runtime_shards) - 1
+                rung_idx = self.scheduler.current_shard_index(p)
+                priority = self._compute_priority(p, rung_idx)
 
-                if (self.config.auto_promote_threshold is not None
-                    and quality >= self.config.auto_promote_threshold
-                    and not at_final_rung):
-                    express_lane.append(p)
-                else:
-                    normal_lane.append(p)
+                # Use negative priority for max-heap (heapq is min-heap)
+                # Secondary sort by negative rung_idx (prefer higher rungs)
+                # Tertiary sort by counter for FIFO tie-breaking
+                self._priority_counter += 1
+                heapq.heappush(self._priority_queue, (-priority, -rung_idx, self._priority_counter, p))
 
-            if express_lane:
-                self.logger.log(f"🚀 EXPRESS LANE: {len(express_lane)} high-scoring candidate(s) (>= {self.config.auto_promote_threshold:.0%}) skipping mutation...")
-                for p in express_lane:
-                    rung = self.scheduler.current_shard_index(p)
-                    shard_frac = self._runtime_shards[rung] if rung < len(self._runtime_shards) else 1.0
+                # Optional: log promotion
+                if self.show_progress:
+                    shard_frac = self._runtime_shards[rung_idx] if rung_idx < len(self._runtime_shards) else 1.0
                     generation = self._get_generation(p)
                     source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
                     self.logger.log(
-                        f"   ⚡ {source} express-promoted to shard {rung} ({shard_frac:.0%}) [fp={p.fingerprint[:12]}...]"
+                        f"   ⬆️  {source} promoted to shard {rung_idx} ({shard_frac:.0%}) priority={priority:.4f} [fp={p.fingerprint[:12]}...]"
                     )
-                # Express lane candidates go straight to evaluation queue
-                self.enqueue(express_lane)
 
-            if normal_lane:
-                self.logger.log(f"🔍 Got {len(normal_lane)} promotion(s) from scheduler, enqueuing for next shard...")
-                for p in normal_lane:
-                    rung = self.scheduler.current_shard_index(p)
-                    shard_frac = self._runtime_shards[rung] if rung < len(self._runtime_shards) else 1.0
-                    generation = self._get_generation(p)
-                    source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
-                    self.logger.log(
-                        f"   ⬆️  {source} promoted to shard {rung} ({shard_frac:.0%}) [fp={p.fingerprint[:12]}...]"
-                    )
-                self.enqueue(normal_lane)
-
-            if express_lane or normal_lane:
-                self.logger.log(f"   📋 Queue after promotion: total={len(self.queue)}, per-shard={[len(q) for q in self._per_shard_queue]}")
+            if self.show_progress:
+                self.logger.log(f"   📋 Priority queue size after promotion: {len(self._priority_queue)}")
 
         if decision == "promoted":
             if isinstance(sched_key, str):
@@ -1283,7 +1183,7 @@ class Orchestrator:
         if self.show_progress:
             self.logger.log(
                 f"   🎯 Seeds ready for next evaluation: queue={len(self.queue)}, "
-                f"per_shard={[len(q) for q in self._per_shard_queue]}"
+                f"priority_queue={len(self._priority_queue)}"
             )
 
     def _select_batch(self) -> list[Candidate]:
@@ -1795,7 +1695,10 @@ class Orchestrator:
         return data
 
     def _mutation_budget(self) -> int:
-        """Compute how many new mutations we should request this cycle."""
+        """Compute how many new mutations we should request this cycle.
+
+        Uses proportional control to maintain target queue depth at 2× concurrency.
+        """
         max_mut = self.config.max_mutations_per_round or 0
         if max_mut <= 0:
             return 0
@@ -1803,21 +1706,29 @@ class Orchestrator:
         if self._mutation_throttle and max_mut > self._mutation_min:
             max_mut = max(self._mutation_min, max_mut // 2)
 
-        ready = len(self.queue)
-        target_ready = max(self._max_total_inflight, self.config.batch_size)
-        deficit = target_ready - ready
-        if deficit <= 0:
+        # Use priority queue size for pacing
+        current_queue_depth = len(self._priority_queue)
+        target_queue_depth = int(self._queue_buffer_mult * self.config.eval_concurrency)
+
+        # Proportional control: error = target - current
+        error = target_queue_depth - current_queue_depth
+
+        # Apply proportional gain and clamp to [0, max_mut]
+        budget = int(self._mutation_kp * error)
+        budget = max(0, min(max_mut, budget))
+
+        if budget <= 0:
             import time as _time_budget
 
             now = _time_budget.time()
             if now - self._last_budget_log > 5.0:
                 self.logger.log(
                     f"🧭 Debug: mutation budget 0 "
-                    f"(ready={ready} target_ready={target_ready} queue={len(self.queue)})"
+                    f"(queue_depth={current_queue_depth} target={target_queue_depth})"
                 )
                 self._last_budget_log = now
             return 0
-        return max(1, min(max_mut, deficit))
+        return budget
 
     def _sample_task_examples_for_spec_induction(self, num_examples: int = 3) -> list[dict[str, object]]:
         """Sample a few task examples for spec induction (PROMPT-MII style)."""
