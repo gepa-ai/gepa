@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -27,6 +28,11 @@ REQUIRED_ENV = "OPENROUTER_API_KEY"
 def test_bottleneck_inspector(capfd):
     """Run a lightweight optimization and report bottleneck analysis."""
 
+    # Clear cache to ensure accurate timing measurements
+    cache_path = Path(".turbo_gepa/")
+    if cache_path.exists():
+        shutil.rmtree(cache_path)
+
     print("\n" + "="*80)
     print("TURBOGEPA BOTTLENECK ANALYSIS")
     print("="*80)
@@ -38,7 +44,7 @@ def test_bottleneck_inspector(capfd):
     ]
 
     config = Config(
-        eval_concurrency=64,
+        eval_concurrency=32,
         n_islands=1,
         shards=(0.6, 1.0),
         max_mutations_per_round=8,

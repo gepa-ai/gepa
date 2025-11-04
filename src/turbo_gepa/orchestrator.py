@@ -432,6 +432,10 @@ class Orchestrator:
                         f"🔄 Resumed from round {self.round_index + 1} ({self.evaluations_run} evaluations)"
                     )
 
+        # Track optimization start time for global timeout - BEFORE seed evaluation
+        import time
+        optimization_start_time = time.time()
+
         if not resumed:
             await self._seed_archive(seeds)
             if self.metrics_callback is not None:
@@ -454,7 +458,6 @@ class Orchestrator:
         last_heartbeat = 0  # Track last heartbeat for hung detection
 
         # Create debug log file for diagnostics
-        import time
         _debug_log_path: str | None = None
         _debug_log_file = None
         if self.config.enable_debug_log:
@@ -481,9 +484,6 @@ class Orchestrator:
         # Track first round start
         self.metrics.start_round()
 
-        # Track optimization start time for global timeout
-        optimization_start_time = time.time()
-
         while True:
             if max_rounds is not None and window_id >= max_rounds:
                 break
@@ -498,6 +498,11 @@ class Orchestrator:
                 elapsed = time.time() - optimization_start_time
                 if elapsed >= self.config.max_optimization_time_seconds:
                     _debug_log(f"⏱️  TIMEOUT: Reached max optimization time ({elapsed:.1f}s >= {self.config.max_optimization_time_seconds:.1f}s)")
+                    # Cancel all in-flight tasks to exit quickly
+                    if self._inflight_tasks:
+                        _debug_log(f"   Cancelling {len(self._inflight_tasks)} in-flight evaluations...")
+                        for task in self._inflight_tasks.values():
+                            task.cancel()
                     break
 
             # DEBUG: Log critical state before launch attempt

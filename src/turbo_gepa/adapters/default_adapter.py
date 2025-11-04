@@ -99,9 +99,7 @@ class DefaultAdapter:
         reflection_lm: LLM model for reflection (REQUIRED)
         task_lm_temperature: Temperature for task LLM (None = use model default)
         reflection_lm_temperature: Temperature for reflection LLM (None = use model default)
-        auto_config: Enable automatic configuration (default: True)
-        shard_strategy: Strategy - "balanced", "conservative", or "aggressive"
-        available_compute: "laptop", "workstation", or "server" (default: "laptop")
+        auto_config: Enable automatic configuration with principled sharding (default: True)
 
     Example usage::
 
@@ -155,8 +153,6 @@ class DefaultAdapter:
         task_lm_temperature: float | None = None,
         reflection_lm_temperature: float | None = None,
         auto_config: bool = True,
-        shard_strategy: str = "balanced",
-        available_compute: str = "laptop",
     ) -> None:
         if not dataset:
             raise ValueError("dataset must contain at least one data instance")
@@ -175,7 +171,7 @@ class DefaultAdapter:
 
         # Apply adaptive configuration if enabled and using default config
         if auto_config and config == DEFAULT_CONFIG:
-            config = adaptive_config(len(dataset), strategy=shard_strategy, available_compute=available_compute)
+            config = adaptive_config(len(dataset))
 
         config = replace(config)
         self.config = config
@@ -1399,6 +1395,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             # No seeds provided and initialization disabled - use default
             seeds = ["You are a helpful assistant. Follow the instructions carefully."]
 
+        # Just run normally - timeout is handled inside orchestrator
         return asyncio.run(
             self.optimize_async(
                 seeds,
