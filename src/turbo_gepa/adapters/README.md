@@ -31,7 +31,7 @@ The `DSpyAdapter` allows TurboGEPA to optimize DSPy programs by evolving their i
 - ✅ Integration with DSPy's `bootstrap_trace_data` for reflection
 - ✅ Optional feedback functions for per-predictor improvements
 - ✅ LLM-based reflection via `InstructionProposalPrompt` (requires feedback + LLM)
-- ✅ Pareto frontier + Quality-Diversity optimization
+- ✅ Pareto frontier optimization
 
 **Location**: `src/turbo_gepa/adapters/dspy_adapter.py`
 
@@ -173,4 +173,4 @@ See `DSpyAdapter` or `DefaultAdapter` for complete examples.
 2. **Use LLM reflection**: Provide a `reflection_lm` function with a capable model
 3. **Tune configuration**: Adjust `Config` parameters based on your dataset size and compute budget
 4. **Monitor cache hit rates**: Check logs to see if caching is effective
-5. **Inspect Pareto frontier**: Don't just use the "best" - explore the quality-diversity tradeoffs
+5. **Inspect Pareto frontier**: Don't just use the "best" - explore the quality-cost tradeoffs

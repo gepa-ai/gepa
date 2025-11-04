@@ -21,14 +21,18 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SchedulerConfig:
-    """SIMPLIFIED scheduler config with evolution-based convergence."""
+    """Variance-aware scheduler config with rung-specific promotion thresholds."""
     shards: Sequence[float]
-    eps_improve: float
-    patience_generations: int = 3  # Generations without improvement before convergence
-    # Rung-specific epsilon margins for fair comparison (higher margin at smaller rungs due to variance)
-    eps_per_rung: dict[float, float] | None = None  # If None, uses eps_improve for all rungs
+
+    # Variance-aware promotion: rung-specific tolerance values
+    # Higher tolerance at smaller rungs accounts for score noise with fewer examples
+    variance_tolerance: dict[float, float]
+
     # Shrinkage coefficients for estimating parent@rung_i from parent@final when unavailable
-    shrinkage_alpha: dict[float, float] | None = None  # If None, uses {0.2: 0.7, 0.5: 0.85, 1.0: 1.0}
+    # Higher alpha = more weight to parent's final score (less shrinkage toward baseline)
+    shrinkage_alpha: dict[float, float]
+
+    patience_generations: int = 3  # Generations without improvement before convergence
 
 
 class BudgetedScheduler:
@@ -54,18 +58,9 @@ class BudgetedScheduler:
         # Per-rung score tracking: (candidate_key, rung_idx) -> score
         self._rung_scores: dict[tuple[str, int], float] = {}
 
-        # Rung-specific epsilon (defaults to uniform eps_improve if not provided)
-        if config.eps_per_rung is None:
-            # Use uniform eps_improve for all rungs (empty dict signals uniform behavior)
-            self.eps_per_rung = {}
-        else:
-            self.eps_per_rung = dict(config.eps_per_rung)
-
-        # Shrinkage alpha for fallback (defaults if not provided)
-        if config.shrinkage_alpha is None:
-            self.shrinkage_alpha = {0.2: 0.7, 0.5: 0.85, 1.0: 1.0}
-        else:
-            self.shrinkage_alpha = dict(config.shrinkage_alpha)
+        # Variance-aware tolerance and shrinkage (required parameters)
+        self.variance_tolerance = dict(config.variance_tolerance)
+        self.shrinkage_alpha = dict(config.shrinkage_alpha)
 
         # Generation-based convergence tracking
         # rung_idx -> (generations_without_improvement, improvement_this_generation)
@@ -83,24 +78,25 @@ class BudgetedScheduler:
                 return key
         return candidate_hash(candidate)
 
-    def _get_epsilon_for_rung(self, rung_fraction: float) -> float:
-        """Get epsilon for a rung, interpolating if exact match not found."""
+    def _get_tolerance_for_rung(self, rung_fraction: float) -> float:
+        """Get variance tolerance for a rung, interpolating if exact match not found."""
         # Try exact match first
-        if rung_fraction in self.eps_per_rung:
-            return self.eps_per_rung[rung_fraction]
+        if rung_fraction in self.variance_tolerance:
+            return self.variance_tolerance[rung_fraction]
 
         # Find closest rung fraction with interpolation
-        sorted_rungs = sorted(self.eps_per_rung.keys())
+        sorted_rungs = sorted(self.variance_tolerance.keys())
         if not sorted_rungs:
-            return self.config.eps_improve
+            # Fallback: use 2% tolerance (shouldn't happen if config is valid)
+            return 0.02
 
-        # If smaller than smallest rung, use smallest rung's epsilon
+        # If smaller than smallest rung, use smallest rung's tolerance
         if rung_fraction <= sorted_rungs[0]:
-            return self.eps_per_rung[sorted_rungs[0]]
+            return self.variance_tolerance[sorted_rungs[0]]
 
-        # If larger than largest rung, use largest rung's epsilon
+        # If larger than largest rung, use largest rung's tolerance
         if rung_fraction >= sorted_rungs[-1]:
-            return self.eps_per_rung[sorted_rungs[-1]]
+            return self.variance_tolerance[sorted_rungs[-1]]
 
         # Interpolate between two nearest rungs
         for i in range(len(sorted_rungs) - 1):
@@ -108,13 +104,13 @@ class BudgetedScheduler:
             upper_rung = sorted_rungs[i + 1]
             if lower_rung <= rung_fraction <= upper_rung:
                 # Linear interpolation
-                lower_eps = self.eps_per_rung[lower_rung]
-                upper_eps = self.eps_per_rung[upper_rung]
+                lower_tol = self.variance_tolerance[lower_rung]
+                upper_tol = self.variance_tolerance[upper_rung]
                 weight = (rung_fraction - lower_rung) / (upper_rung - lower_rung)
-                return lower_eps + weight * (upper_eps - lower_eps)
+                return lower_tol + weight * (upper_tol - lower_tol)
 
         # Fallback (shouldn't reach here)
-        return self.config.eps_improve
+        return 0.02
 
     def current_shard_index(self, candidate: Candidate) -> int:
         return self._candidate_levels.get(self._sched_key(candidate), 0)
@@ -183,14 +179,13 @@ class BudgetedScheduler:
 
     def record(self, candidate: Candidate, result: EvalResult, objective_key: str) -> str:
         """
-        RUNG-AWARE: Parent-child comparison at same rung + track improvements per generation.
+        Variance-aware promotion: Parent-child comparison at same rung with variance tolerance.
 
         Rules:
         1. Seeds (no parent): Always promote
         2. Mutations: Compare child@rung_i vs parent@rung_i (fair comparison)
-           - Better → promote, mark improvement_this_generation = True
-           - Worse → prune
-           - Uses rung-specific epsilon margins (larger at small rungs due to variance)
+           - Promote if: child_score >= parent_score - tolerance
+           - This accounts for score variance at each rung (higher tolerance at smaller rungs)
            - Falls back to shrinkage estimate if parent@rung_i unavailable
         3. Orchestrator calls mark_generation_start() when starting new round
         """
@@ -234,39 +229,28 @@ class BudgetedScheduler:
                 self._rung_generations[idx] = (gens, True)
             return "promoted"
 
-        # MUTATION: Rung-aware parent comparison
+        # MUTATION: Variance-aware parent comparison
         # Try to get parent's score at this same rung
         parent_score_at_rung = None
         if parent_sched_key:
             parent_score_at_rung = self._rung_scores.get((parent_sched_key, idx))
 
-        # Determine comparison mode for fallback logic
-        using_rung_specific_fallback = len(self.eps_per_rung) > 0
-
-        # Fallback: Estimate parent score at this rung
+        # Fallback: Estimate parent score at this rung using shrinkage
         if parent_score_at_rung is None:
             parent_final_score = parent_objectives.get(objective_key)
             if parent_final_score is not None:
-                if using_rung_specific_fallback:
-                    # Variance tolerance mode: Use shrinkage to estimate parent@rung_i
-                    # b_parent(i) = (1 - alpha) * baseline + alpha * parent_final
-                    alpha = self.shrinkage_alpha.get(rung_fraction, 0.5)
-                    global_baseline = 0.5  # Conservative baseline
-                    parent_score_at_rung = (1 - alpha) * global_baseline + alpha * parent_final_score
-                    logger.debug(
-                        "   📉 Using shrinkage fallback: parent@final=%.1f%% → parent@rung_%d≈%.1f%% (α=%.2f)",
-                        parent_final_score * 100,
-                        idx,
-                        parent_score_at_rung * 100,
-                        alpha,
-                    )
-                else:
-                    # Minimum improvement mode: Use parent's final score directly (conservative)
-                    parent_score_at_rung = parent_final_score
-                    logger.debug(
-                        "   📊 Using parent's final score: %.1f%% (no shrinkage in min-improve mode)",
-                        parent_final_score * 100,
-                    )
+                # Use shrinkage to estimate parent@rung_i from parent@final
+                # b_parent(i) = (1 - alpha) * baseline + alpha * parent_final
+                alpha = self.shrinkage_alpha.get(rung_fraction, 0.5)
+                global_baseline = 0.5  # Conservative baseline
+                parent_score_at_rung = (1 - alpha) * global_baseline + alpha * parent_final_score
+                logger.debug(
+                    "   📉 Using shrinkage: parent@final=%.1f%% → parent@rung_%d≈%.1f%% (α=%.2f)",
+                    parent_final_score * 100,
+                    idx,
+                    parent_score_at_rung * 100,
+                    alpha,
+                )
             else:
                 # No parent score at all - treat as seed
                 logger.debug("   🌱 ASHA: No parent score found, treating as seed")
@@ -274,21 +258,12 @@ class BudgetedScheduler:
                 self._pending_promotions.append(candidate)
                 return "promoted"
 
-        # Get rung-specific epsilon - interpolate if exact match not found
-        eps = self._get_epsilon_for_rung(rung_fraction)
+        # Get rung-specific variance tolerance
+        tolerance = self._get_tolerance_for_rung(rung_fraction)
 
-        # Determine comparison mode based on whether rung-specific thresholds are configured
-        # - If eps_per_rung is empty: eps_improve is MINIMUM IMPROVEMENT required
-        # - If eps_per_rung is set: epsilon is VARIANCE TOLERANCE (can be slightly worse)
-        using_rung_specific = len(self.eps_per_rung) > 0
-
-        # Compare child vs parent at same rung
-        if using_rung_specific:
-            # Variance tolerance mode: child >= parent - eps (tolerate being slightly worse)
-            improved = score >= parent_score_at_rung - eps
-        else:
-            # Minimum improvement mode: child >= parent + eps (require improvement)
-            improved = score >= parent_score_at_rung + eps
+        # Variance-aware comparison: child >= parent - tolerance
+        # This tolerates being slightly worse due to score noise at smaller rungs
+        improved = score >= parent_score_at_rung - tolerance
 
         # Special case: if parent hit ceiling (100%), promote equal scores
         at_ceiling = parent_score_at_rung >= 0.999
@@ -296,31 +271,20 @@ class BudgetedScheduler:
         if at_ceiling and child_at_ceiling:
             # Both at ceiling → promote (can't improve beyond 100%)
             improved = True
-        elif using_rung_specific and at_ceiling:
-            # Variance tolerance mode: allow near-ceiling scores
-            if score >= parent_score_at_rung - 0.001:
-                improved = True
+        elif at_ceiling and score >= parent_score_at_rung - 0.001:
+            # Near-ceiling: allow tiny tolerance
+            improved = True
 
         if improved:
-            # Better than or near parent → promote
-            if using_rung_specific:
-                logger.debug(
-                    "   ⬆️  ASHA: PROMOTED! (score: %s >= %s - %s [variance tol], rung %s -> %s)",
-                    f"{score:.1%}",
-                    f"{parent_score_at_rung:.1%}",
-                    f"{eps:.2%}",
-                    idx,
-                    idx + 1,
-                )
-            else:
-                logger.debug(
-                    "   ⬆️  ASHA: PROMOTED! (score: %s >= %s + %s [min improve], rung %s -> %s)",
-                    f"{score:.1%}",
-                    f"{parent_score_at_rung:.1%}",
-                    f"{eps:.2%}",
-                    idx,
-                    idx + 1,
-                )
+            # Within variance tolerance → promote
+            logger.debug(
+                "   ⬆️  ASHA: PROMOTED! (score: %s >= %s - %s [variance tol], rung %s -> %s)",
+                f"{score:.1%}",
+                f"{parent_score_at_rung:.1%}",
+                f"{tolerance:.2%}",
+                idx,
+                idx + 1,
+            )
             self._candidate_levels[sched_key] = idx + 1
             self._pending_promotions.append(candidate)
             # Mark improvement on this rung
@@ -329,23 +293,14 @@ class BudgetedScheduler:
                 self._rung_generations[idx] = (gens, True)
             return "promoted"
         else:
-            # Worse than parent → prune
-            if using_rung_specific:
-                logger.debug(
-                    "   ❌ ASHA: Pruned (below variance tol: %s < %s - %s at rung %s)",
-                    f"{score:.1%}",
-                    f"{parent_score_at_rung:.1%}",
-                    f"{eps:.2%}",
-                    idx,
-                )
-            else:
-                logger.debug(
-                    "   ❌ ASHA: Pruned (insufficient improvement: %s < %s + %s at rung %s)",
-                    f"{score:.1%}",
-                    f"{parent_score_at_rung:.1%}",
-                    f"{eps:.2%}",
-                    idx,
-                )
+            # Below variance tolerance → prune
+            logger.debug(
+                "   ❌ ASHA: Pruned (below variance tol: %s < %s - %s at rung %s)",
+                f"{score:.1%}",
+                f"{parent_score_at_rung:.1%}",
+                f"{tolerance:.2%}",
+                idx,
+            )
             return "pruned"
 
     def shard_fraction_for_index(self, index: int) -> float:

@@ -102,14 +102,21 @@ class Mutator:
         parent_contexts: list[dict[str, object]],
         num_mutations: int,
         task_examples: list[dict[str, object]] | None = None,
+        candidate_sink: Callable[[Candidate], Awaitable[None]] | None = None,
     ) -> list[Candidate]:
         """
-        Generate mutated candidates given parent contexts and optional task examples.
+        Generate mutated candidates and stream them to orchestrator.
 
-        The method blends several strategies in priority order:
-            1. Deterministic temperature exploration (cheap, immediate signal)
-            2. Batched reflection (preferred) or single-candidate reflection
-            3. Specification induction from task examples (if available)
+        Args:
+            parent_contexts: List of parent candidate contexts
+            num_mutations: Number of mutations to generate
+            task_examples: Optional task examples for spec induction
+            candidate_sink: Async callback to stream candidates as they're created
+
+        The method blends several strategies:
+            1. Deterministic temperature exploration (instant, sent immediately)
+            2. Batched reflection (streamed as LLM calls complete)
+            3. Specification induction (streamed as LLM calls complete)
         """
         import asyncio
         import time
@@ -138,28 +145,37 @@ class Mutator:
         non_spec_budget = total_budget - spec_quota
         proposals: list[Candidate] = []
 
-        # 1) Deterministic temperature exploration
+        # 1) Deterministic temperature exploration - STREAM IMMEDIATELY
         temp_start = time.time()
         temp_quota = 0
         if non_spec_budget > 0 and self.temperature_mutations_enabled:
             total_tr = temp_weight + reflection_weight
             temp_share = temp_weight / total_tr if total_tr > 0 else 0.0
             temp_quota = min(non_spec_budget, round(non_spec_budget * temp_share))
+
         temp_mutations = self._temperature_mutations(parent_contexts, temp_quota)
         temp_time = time.time() - temp_start
-        proposals.extend(temp_mutations)
+
+        # STREAMING: Send temperature mutations immediately (they're instant, no LLM call)
+        for temp_mut in temp_mutations:
+            proposals.append(temp_mut)
+            if candidate_sink:
+                await candidate_sink(temp_mut)
+
         non_spec_budget = max(0, non_spec_budget - len(temp_mutations))
 
-        # 2 & 3) Run reflection and spec induction CONCURRENTLY for speed
+        # 2 & 3) Run reflection and spec induction CONCURRENTLY, streaming as they complete
         llm_start = time.time()
-        reflection_mutations: list[Candidate] = []
-        spec_mutations: list[Candidate] = []
 
         async def run_reflection() -> list[Candidate]:
             if non_spec_budget <= 0:
                 return []
             if self.batch_reflection_runner:
-                return await self._generate_incremental_mutations(parent_contexts, non_spec_budget)
+                return await self._generate_incremental_mutations(
+                    parent_contexts,
+                    non_spec_budget,
+                    candidate_sink=candidate_sink,
+                )
             return []
 
         async def run_spec() -> list[Candidate]:
@@ -172,42 +188,47 @@ class Mutator:
                 task_examples,
                 spec_budget,
                 parent_contexts,
+                candidate_sink=candidate_sink,
             )
 
-        # Stream mutations as they complete instead of waiting for all
+        # Both tasks stream candidates via candidate_sink as they complete
         reflection_task = asyncio.create_task(run_reflection())
         spec_task = asyncio.create_task(run_spec())
 
-        # Use as_completed to stream mutations without waiting for slowest task
+        # Wait for both to finish (candidates already streamed)
         for completed in asyncio.as_completed([reflection_task, spec_task]):
             batch = await completed
             proposals.extend(batch)
 
         llm_time = time.time() - llm_start
-
-        filter_start = time.time()
-        filtered = self._filter(proposals)[:num_mutations]
-        filter_time = time.time() - filter_start
-
         propose_total = time.time() - propose_start
 
-        # Log timing breakdown
-        self.logger.log("⏱️  Mutator timing breakdown:")
-        self.logger.log(f"   Temperature mutations: {temp_time:.2f}s ({len(temp_mutations)} generated)")
-        self.logger.log(f"   LLM calls (parallel): {llm_time:.2f}s")
-        self.logger.log(f"     - Incremental reflection: {len(reflection_mutations)} mutations")
-        self.logger.log(f"     - Spec induction: {len(spec_mutations)} mutations")
-        self.logger.log(f"   Filtering: {filter_time:.2f}s")
-        self.logger.log(f"   Total propose: {propose_total:.2f}s")
+        # Note: Filtering removed - streaming candidates go directly to orchestrator
+        # The orchestrator does deduplication via _pending_fingerprints
 
-        return filtered
+        # Log timing breakdown
+        self.logger.log("⏱️  Mutator timing (STREAMING):")
+        self.logger.log(f"   Temperature: {temp_time:.2f}s ({len(temp_mutations)} sent instantly)")
+        self.logger.log(f"   LLM calls (parallel): {llm_time:.2f}s")
+        self.logger.log(f"     - Total streamed: {len(proposals)} candidates")
+        self.logger.log(f"   Total propose: {propose_total:.2f}s")
+        self.logger.log(f"   ✅ Candidates streamed to orchestrator during generation")
+
+        return proposals  # Return all for metrics, but candidates already streamed
 
     async def _generate_incremental_mutations(
         self,
         parent_contexts: list[dict[str, object]],
         num_mutations: int,
+        candidate_sink: Callable[[Candidate], Awaitable[None]] | None = None,
     ) -> list[Candidate]:
-        """Generate mutations by synthesizing ideas from successful parent prompts."""
+        """Generate mutations by synthesizing ideas from successful parent prompts.
+
+        Args:
+            parent_contexts: List of parent candidate contexts
+            num_mutations: Number of mutations to generate
+            candidate_sink: Optional async callback to stream candidates as they're created
+        """
         # Build contexts for batch reflection
         reflection_contexts = []
         for ctx in parent_contexts:
@@ -231,26 +252,14 @@ class Mutator:
                 }
             )
 
-        # Track LLM calls for reflection mutations
-        import time
-        _start_reflection = time.time()
-        mutated_texts = await self._collect_text_batches(
-            lambda: self.batch_reflection_runner(reflection_contexts, 1),
-            num_mutations,
-            max(1, min(self.config.reflection_batch_size, num_mutations)),
-        )
-        _elapsed_reflection = time.time() - _start_reflection
-
-        # Record reflection LLM call in metrics
-        if self._metrics is not None:
-            # Track one LLM call per mutation generated (they're batched but async)
-            for _ in range(len(mutated_texts)):
-                self._metrics.record_llm_call("reflection", _elapsed_reflection / max(1, len(mutated_texts)))
-
-        # Convert to Candidates with metadata tracking generation method
-        proposals: list[Candidate] = []
+        # Prepare parent candidates for lineage tracking
         parent_candidates = [ctx["candidate"] for ctx in parent_contexts]
-        for idx, text in enumerate(mutated_texts):
+
+        # STREAMING: Create callback that builds Candidate immediately when text arrives
+        proposals: list[Candidate] = []
+
+        async def on_text_ready(text: str, idx: int) -> None:
+            """Called when each mutation text completes - immediately create Candidate and stream it."""
             # Rotate through available parents to maintain lineage diversity
             if not parent_candidates:
                 parent_candidate = self._best_parent_candidate(parent_contexts)
@@ -261,17 +270,38 @@ class Mutator:
             meta.pop("_sched_key", None)
             meta.update(
                 {
-                    "source": "mutation",  # Fix: mutations should not inherit "source": "seed" from parent
-                    "edit": "incremental_reflection",  # Track generation method
-                    "generation_method": "incremental_reflection",  # Explicit tracking for analysis
-                    "operator": "incremental_reflection",  # For metrics tracking
+                    "source": "mutation",
+                    "edit": "incremental_reflection",
+                    "generation_method": "incremental_reflection",
+                    "operator": "incremental_reflection",
                     "parent": parent_candidate.fingerprint,
                     "parent_sched_key": parent_candidate.meta.get("_sched_key", parent_candidate.fingerprint),
                     "proposal_idx": idx,
                     "num_parents_seen": len(parent_contexts),
                 }
             )
-            proposals.append(Candidate(text=text, meta=meta))
+            candidate = Candidate(text=text, meta=meta)
+            proposals.append(candidate)
+
+            # STREAMING: Immediately send to orchestrator
+            if candidate_sink:
+                await candidate_sink(candidate)
+
+        # Track LLM calls for reflection mutations
+        import time
+        _start_reflection = time.time()
+        mutated_texts = await self._collect_text_batches(
+            lambda: self.batch_reflection_runner(reflection_contexts, 1),
+            num_mutations,
+            max(1, min(self.config.reflection_batch_size, num_mutations)),
+            result_callback=on_text_ready,
+        )
+        _elapsed_reflection = time.time() - _start_reflection
+
+        # Record reflection LLM call in metrics
+        if self._metrics is not None:
+            for _ in range(len(mutated_texts)):
+                self._metrics.record_llm_call("reflection", _elapsed_reflection / max(1, len(mutated_texts)))
 
         return proposals
 
@@ -280,24 +310,22 @@ class Mutator:
         task_examples: list[dict[str, object]],
         num_mutations: int,
         parent_contexts: list[dict[str, object]],
+        candidate_sink: Callable[[Candidate], Awaitable[None]] | None = None,
     ) -> list[Candidate]:
         """Generate fresh specifications from task I/O examples (PROMPT-MII style)."""
         if num_mutations <= 0 or not self.spec_induction_runner:
             return []
 
-        # Build reflection contexts similar to incremental mutations
-        # but the spec_induction_runner will use a different prompt template
+        # Build reflection contexts
         reflection_contexts = []
         for ctx in parent_contexts:
             candidate = ctx["candidate"]
             failures = ctx.get("failures", []) or []
 
-            # Collect failure traces
             traces = []
             for _example_id, trace_list in failures:
                 traces.extend(trace_list)
 
-            # Limit traces per parent to avoid token explosion
             traces = traces[: self.config.reflection_batch_size]
 
             context_meta = {k: v for k, v in candidate.meta.items() if k != "temperature"}
@@ -309,27 +337,11 @@ class Mutator:
                 }
             )
 
-        # Generate spec induction mutations directly via LLM
-        import time
-        _start_spec = time.time()
-        spec_texts = await self._collect_text_batches(
-            lambda: self.spec_induction_runner(reflection_contexts, 1),
-            num_mutations,
-            max(1, min(4, num_mutations)),
-        )
-        _elapsed_spec = time.time() - _start_spec
-
-        # Record spec_induction LLM call in metrics
-        if self._metrics is not None:
-            # Track one LLM call per mutation generated
-            for _ in range(len(spec_texts)):
-                self._metrics.record_llm_call("spec_induction", _elapsed_spec / max(1, len(spec_texts)))
-
-        # Convert to Candidates with metadata tracking generation method
-        proposals: list[Candidate] = []
         parent_candidates = [ctx["candidate"] for ctx in parent_contexts]
+        proposals: list[Candidate] = []
 
-        for idx, text in enumerate(spec_texts):
+        async def on_text_ready(text: str, idx: int) -> None:
+            """STREAMING: Build Candidate immediately when spec text arrives."""
             if not parent_candidates:
                 parent_candidate = self._best_parent_candidate(parent_contexts)
             else:
@@ -341,15 +353,34 @@ class Mutator:
             meta["parent_sched_key"] = parent_candidate.meta.get("_sched_key", parent_candidate.fingerprint)
             meta.update(
                 {
-                    "source": "mutation",  # Fix: mutations should not inherit "source": "seed" from parent
-                    "edit": "spec_induction",  # Track generation method
-                    "generation_method": "spec_induction",  # Explicit tracking for analysis
-                    "operator": "spec_induction",  # For metrics tracking
+                    "source": "mutation",
+                    "edit": "spec_induction",
+                    "generation_method": "spec_induction",
+                    "operator": "spec_induction",
                     "proposal_idx": idx,
                     "num_examples_seen": len(task_examples),
                 }
             )
-            proposals.append(Candidate(text=text, meta=meta))
+            candidate = Candidate(text=text, meta=meta)
+            proposals.append(candidate)
+
+            # STREAMING: Immediately send to orchestrator
+            if candidate_sink:
+                await candidate_sink(candidate)
+
+        import time
+        _start_spec = time.time()
+        spec_texts = await self._collect_text_batches(
+            lambda: self.spec_induction_runner(reflection_contexts, 1),
+            num_mutations,
+            max(1, min(4, num_mutations)),
+            result_callback=on_text_ready,
+        )
+        _elapsed_spec = time.time() - _start_spec
+
+        if self._metrics is not None:
+            for _ in range(len(spec_texts)):
+                self._metrics.record_llm_call("spec_induction", _elapsed_spec / max(1, len(spec_texts)))
 
         return proposals
 
@@ -359,10 +390,14 @@ class Mutator:
         total: int,
         max_concurrency: int,
         early_stop_fraction: float = 0.85,  # Not used anymore - kept for API compat
-        result_callback: Callable[[str], None] | None = None,  # Not used anymore - kept for API compat
+        result_callback: Callable[[str, int], Awaitable[None]] | None = None,  # Async callback: (text, index) -> None
     ) -> list[str]:
         """
-        SIMPLIFIED: Launch all mutation tasks immediately and wait for results.
+        Launch all mutation tasks immediately and stream results as they complete.
+
+        If result_callback is provided, it will be called with (text, index) as soon as each mutation completes.
+        This enables the orchestrator to start evaluating candidates before all mutations finish.
+
         No artificial concurrency limits, no early stopping, no straggler detection.
         Just pure async concurrency - let the LLM provider handle rate limits.
         """
@@ -378,14 +413,15 @@ class Mutator:
 
         # Stream results as they complete (don't wait for all)
         results: list[str] = []
-        for completed in asyncio.as_completed(tasks):
+        for idx, completed in enumerate(asyncio.as_completed(tasks)):
             try:
                 batch = await completed
                 if batch:
-                    results.append(batch[0])
-                    # Immediately stream result to callback if provided
+                    text = batch[0]
+                    results.append(text)
+                    # STREAMING: Immediately invoke callback for this individual text
                     if result_callback:
-                        result_callback(batch[0])
+                        await result_callback(text, len(results) - 1)  # Pass index in results list
             except Exception as e:
                 self.logger.log(f"   ⚠️ Mutation task failed: {e}")
 

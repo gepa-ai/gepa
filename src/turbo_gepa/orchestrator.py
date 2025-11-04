@@ -45,8 +45,6 @@ class Orchestrator:
         *,
         island_context: IslandContext | None = None,
         show_progress: bool = True,
-        stop_governor: StopGovernor | None = None,
-        enable_auto_stop: bool = False,
         example_sampler: Callable[[int], list[dict[str, object]]] | None = None,
         metrics_callback: Callable | None = None,
         logger: LoggerProtocol | None = None,
@@ -62,7 +60,8 @@ class Orchestrator:
         self.scheduler = BudgetedScheduler(
             SchedulerConfig(
                 shards=config.shards,
-                eps_improve=config.eps_improve,
+                variance_tolerance=config.variance_tolerance,
+                shrinkage_alpha=config.shrinkage_alpha,
             )
         )
         self._runtime_shards: list[float] = list(self.config.shards)
@@ -76,10 +75,9 @@ class Orchestrator:
         self.show_progress = show_progress
         island_id = island_context.island_id if island_context else 0
         self.island_id = island_id
-        self.stop_governor = stop_governor if enable_auto_stop else None
-        self.enable_auto_stop = enable_auto_stop
+        # Stop governor: always enabled for convergence detection
+        self.stop_governor = StopGovernor(config.stop_governor_config)
         self.total_tokens_spent: int = 0
-        self.qd_cells_seen: set[tuple] = set()
         self._shard_cache: dict[tuple[int, float], list[str]] = {}
         self.metrics_callback = metrics_callback
         self.logger: LoggerProtocol = logger or StdOutLogger()
@@ -95,8 +93,7 @@ class Orchestrator:
         self._inflight_tasks: dict[str, asyncio.Task] = {}  # cand_hash -> task
         self._result_queue: asyncio.Queue[tuple[Candidate, EvalResult | Exception, int]] = asyncio.Queue()
         self._total_inflight: int = 0  # Total evaluations in flight across all shards
-        total_cap = self.config.max_total_inflight or self.config.eval_concurrency
-        self._max_total_inflight: int = max(1, total_cap)
+        self._max_total_inflight: int = max(1, self.config.eval_concurrency)  # Streaming mode: always use eval_concurrency
         self._examples_inflight: int = 0
         self._launch_start_times: dict[str, float] = {}
         self._latency_ema: float = 0.0
@@ -113,7 +110,10 @@ class Orchestrator:
         self._final_success_ema: float = 0.3  # Success rate at final rung
         self._ema_alpha: float = 0.1  # EMA smoothing factor
         self._priority_beta: float = 0.05  # Quality tie-breaker weight
-        self._queue_buffer_mult: float = 2.0  # Target queue depth = 2 × concurrency
+        self._recent_delta_weight: float = 0.5  # Boost for parents with recent improvements
+        self._queue_buffer_mult: float = 3.0  # Target queue depth = 3 × concurrency
+        # Maintain 3x concurrency buffer to prevent evaluator starvation
+        # when mutations temporarily lag behind fast evaluations
         self._mutation_kp: float = 0.2  # Proportional gain for mutation pacing
         self._priority_counter: int = 0  # Tie-breaker for heap ordering
         self._priority_queue: list = []  # Heap: (-priority, -rung_idx, counter, candidate)
@@ -243,6 +243,13 @@ class Orchestrator:
                 normalized_quality = max(0.0, min(1.0, float(quality)))
                 priority *= (1 + self._priority_beta * normalized_quality)
 
+        # Boost parents with strong recent improvements (moving average of delta quality)
+        if isinstance(candidate.meta, dict):
+            recent_avg = candidate.meta.get("recent_delta_avg")
+            if isinstance(recent_avg, (int, float)) and recent_avg > 0:
+                boost = max(0.0, min(1.0, recent_avg))
+                priority *= (1 + self._recent_delta_weight * boost)
+
         return priority
 
     def _update_eval_metrics(self, candidate: Candidate, result: EvalResult) -> None:
@@ -272,12 +279,7 @@ class Orchestrator:
         return self._timeout_count / max(1, self._eval_samples)
 
     def _maybe_adjust_shards(self) -> None:
-        if not getattr(self.config, "adaptive_shards_enabled", True):
-            self._rung_launches = [0] * len(self._rung_launches)
-            self._rung_promotions = [0] * len(self._rung_promotions)
-            self._promotion_ema = [0.0] * len(self._promotion_ema)
-            return
-
+        # Adaptive shards always enabled - auto-tune based on promotion rates
         num_shards = len(self._runtime_shards)
         if num_shards < 2:
             self._rung_launches = [0] * len(self._rung_launches)
@@ -288,11 +290,11 @@ class Orchestrator:
         new_shards = list(self._runtime_shards)
         adjusted = False
         target_rate = 0.5
-        tolerance = 0.1  # Allow ±10% window before adjusting
+        tolerance = 0.05  # Allow ±5% window before adjusting
 
         for idx in range(num_shards - 1):
             launches = self._rung_launches[idx] if idx < len(self._rung_launches) else 0
-            if launches < 5:
+            if launches < 3:
                 continue
             promotions = self._rung_promotions[idx] if idx < len(self._rung_promotions) else 0
             rate = promotions / max(1, launches)
@@ -311,12 +313,9 @@ class Orchestrator:
             if not shrink and not grow:
                 continue
 
-            error_fraction = min(0.25, abs(ema - target_rate))  # Cap to avoid huge jumps
-            step = 0.12 + error_fraction * 0.4  # Base 12%, larger if far from target
-            if shrink:
-                scale = max(0.5, 1.0 - step)
-            else:
-                scale = min(1.5, 1.0 + step)
+            # SIMPLE: adjust by fixed 15% in the appropriate direction
+            step = 0.15
+            scale = 1.0 - step if shrink else 1.0 + step
             new_value = new_shards[idx] * scale
 
             lower_bound = 0.05 if idx == 0 else new_shards[idx - 1] + 0.03
@@ -567,7 +566,7 @@ class Orchestrator:
             # Only spawn new mutations if we haven't exceeded the evaluation budget
             # SIMPLIFIED: Trigger when queue is running low
             # Keep queue depth at 2x concurrency to maintain saturation
-            min_candidates_needed = max(self.config.mutation_buffer_min, self._max_total_inflight * 2)
+            min_candidates_needed = self._max_total_inflight * 2  # Streaming mode: always 2x concurrency
             should_spawn_mutations = (
                 len(self.queue) < min_candidates_needed
             ) and (max_evaluations is None or self.evaluations_run < max_evaluations)
@@ -577,7 +576,7 @@ class Orchestrator:
                 task_status = 'None' if self._mutation_task is None else ('done' if self._mutation_task.done() else 'running')
                 _debug_log(
                     f"🔍 MUTATION CHECK: queue={len(self.queue)}, "
-                    f"min={self.config.mutation_buffer_min}, should_spawn={should_spawn_mutations}, "
+                    f"min={min_candidates_needed}, should_spawn={should_spawn_mutations}, "
                     f"task={task_status}"
                 )
 
@@ -655,12 +654,12 @@ class Orchestrator:
                 await self._save_state()
                 self._maybe_adjust_shards()
 
-                if self.enable_auto_stop and self.stop_governor is not None:
-                    should_stop, debug_info = self._check_stop_governor()
-                    if should_stop:
-                        if self.show_progress:
-                            self.logger.log(f"🛑 Auto-stopping: {debug_info['reason']}")
-                        break
+                # Stop governor: check convergence after each round
+                should_stop, debug_info = self._check_stop_governor()
+                if should_stop:
+                    if self.show_progress:
+                        self.logger.log(f"🛑 Auto-stopping: {debug_info['reason']}")
+                    break
 
             # 6) Target quality guard
             if await self._stream_check_target(window_id):
@@ -964,6 +963,13 @@ class Orchestrator:
         else:
             delta_quality = quality
 
+        meta["recent_delta"] = delta_quality
+        prev_avg = meta.get("recent_delta_avg")
+        if isinstance(prev_avg, (int, float)):
+            avg_delta = 0.5 * prev_avg + 0.5 * delta_quality
+        else:
+            avg_delta = delta_quality
+        meta["recent_delta_avg"] = avg_delta
         candidate_with_meta = Candidate(text=candidate.text, meta=meta)
 
         cand_hash = candidate_key(candidate_with_meta)
@@ -1033,8 +1039,7 @@ class Orchestrator:
             await self._maybe_share(candidate_with_meta)
             # Update archive size metrics
             pareto_size = len(self.archive.pareto)
-            qd_size = len(self.archive.qd_grid)
-            self.metrics.update_archive_sizes(pareto_size, qd_size)
+            self.metrics.update_archive_sizes(pareto_size)
 
         self._register_failures(result)
 
@@ -1121,7 +1126,13 @@ class Orchestrator:
 
         result: EvalResult = payload
         self._update_eval_metrics(candidate, result)
-        await self._ingest_result(candidate, result)
+        candidate_with_meta, decision = await self._ingest_result(candidate, result)
+
+        # STREAMING: Trigger mutation worker immediately after successful evaluation
+        # This eliminates idle gap between evaluation completion and next mutations
+        if decision in ("promoted", "completed"):
+            if self._mutation_task is None or self._mutation_task.done():
+                self._mutation_task = asyncio.create_task(self._streaming_mutation_worker())
 
     async def _stream_check_target(self, window_id: int) -> bool:
         if self.config.target_quality is None:
@@ -1286,47 +1297,71 @@ class Orchestrator:
         Kicks off all mutations concurrently, enqueues each as it completes.
         No waiting, no batching - pure streaming.
         """
-        # Check budget
-        if self.max_evaluations is not None and self.evaluations_run >= self.max_evaluations:
-            return
-
-        entries = self.archive.pareto_entries()
-        if not entries:
-            return
-
-        num_mutations = self._mutation_budget()
-        if num_mutations <= 0:
-            return
-
-        # Mark new generation starting for convergence tracking
-        # Track which rungs we're generating from
-        rungs_generating = set()
-        for entry in entries:
-            rung_idx = self.scheduler.current_shard_index(entry.candidate)
-            rungs_generating.add(rung_idx)
-
-        # Mark generation start for each rung we're mutating from
-        for rung_idx in rungs_generating:
-            self.scheduler.mark_generation_start(rung_idx)
-
-        self.logger.log(f"🧬 Streaming {num_mutations} mutations from {len(entries)} parents (rungs: {sorted(rungs_generating)})")
-
-        # Generate mutations using the mutator (which now streams via as_completed)
         try:
-            mutations = await self._generate_mutations_batched(entries, num_mutations)
-        except Exception as e:
-            self.logger.log(f"⚠️  Mutation generation failed: {e}")
-            return
+            # Check budget
+            if self.max_evaluations is not None and self.evaluations_run >= self.max_evaluations:
+                return
 
-        if not mutations:
-            return
+            entries = self.archive.pareto_entries()
+            if not entries:
+                return
 
-        # Enqueue each mutation immediately (they're already streaming from mutator)
-        self._record_mutation_enqueued(len(mutations))
-        for candidate in mutations:
-            self.enqueue([candidate])
+            num_mutations = self._mutation_budget()
+            if num_mutations <= 0:
+                return
+
+            # Mark new generation starting for convergence tracking
+            # Track which rungs we're generating from
+            rungs_generating = set()
+            for entry in entries:
+                rung_idx = self.scheduler.current_shard_index(entry.candidate)
+                rungs_generating.add(rung_idx)
+
+            # Adaptive mutation quota: bias budget towards higher rungs
+            max_rung_idx = max(rungs_generating) if rungs_generating else 0
+            rung_factor = 1.0
+            if len(self._runtime_shards) > 1:
+                if max_rung_idx == 0:
+                    rung_factor = 0.6  # Reduce churn when only rung 0 has parents
+                else:
+                    total_progress_rungs = max(1, len(self._runtime_shards) - 1)
+                    progress_ratio = max_rung_idx / total_progress_rungs
+                    rung_factor = 1.0 + 0.5 * progress_ratio  # Up to +50% when final rung active
+
+            adjusted_mutations = max(self._mutation_min, int(round(num_mutations * rung_factor)))
+            if self.config.max_mutations_per_round:
+                adjusted_mutations = min(self.config.max_mutations_per_round, adjusted_mutations)
+
+            if adjusted_mutations != num_mutations and self.show_progress:
+                self.logger.log(
+                    f"   🎯 Mutation budget adjusted by rung factor ({rung_factor:.2f}): {num_mutations} → {adjusted_mutations}"
+                )
+            num_mutations = adjusted_mutations
+
+            # Mark generation start for each rung we're mutating from
+            for rung_idx in rungs_generating:
+                self.scheduler.mark_generation_start(rung_idx)
+
+            self.logger.log(f"🧬 Streaming {num_mutations} mutations from {len(entries)} parents (rungs: {sorted(rungs_generating)})")
+
+            # Generate mutations - they stream directly to queue via candidate_sink
+            try:
+                mutations = await self._generate_mutations_batched(entries, num_mutations)
+            except Exception as e:
+                self.logger.log(f"⚠️  Mutation generation failed: {e}")
+                return
+
+            if not mutations:
+                return
+
+            # Note: Candidates already enqueued via streaming sink - just record metrics
+            self._record_mutation_enqueued(len(mutations))
             if self.show_progress:
-                self.logger.log(f"   ✅ Mutation enqueued (total: {self._mutations_generated})")
+                self.logger.log(f"   ✅ {len(mutations)} mutations streamed to queue (total enqueued: {self._mutations_enqueued})")
+        finally:
+            # CRITICAL: Clear task handle so next evaluation can trigger a new worker
+            # Without this, the handle points to a done task and new workers won't spawn correctly
+            self._mutation_task = None
 
     async def _spawn_mutations(self, callback: Callable[[Candidate], None] | None = None) -> None:
         """Generate mutations using batched reflection for efficiency."""
@@ -1407,7 +1442,7 @@ class Orchestrator:
 
         batch_start = time.time()
 
-        # Smart parent selection: mix of top quality + QD diversity
+        # Parent selection: top quality candidates from Pareto frontier
         # Select 3-5 parents to give reflection LLM rich context
         parent_select_start = time.time()
         num_parents = min(5, max(3, len(entries)))
@@ -1415,27 +1450,13 @@ class Orchestrator:
         # Get top performers by quality
         sorted_entries = sorted(
             entries,
-            key=lambda e: e.result.objectives.get(self.config.promote_objective, float("-inf")),
+            key=lambda e: (
+                e.candidate.meta.get("recent_delta", 0.0),
+                e.result.objectives.get(self.config.promote_objective, float("-inf")),
+            ),
             reverse=True,
         )
-        top_quality = sorted_entries[: num_parents // 2 + 1]  # At least half are top quality
-
-        # Add diversity from QD grid
-        qd_diverse = self.archive.sample_qd(num_parents - len(top_quality))
-
-        # Combine (deduplicate by fingerprint)
-        selected_fingerprints = {e.candidate.fingerprint for e in top_quality}
-        selected_entries = list(top_quality)
-
-        for candidate in qd_diverse:
-            if candidate.fingerprint not in selected_fingerprints:
-                # Find the entry for this candidate
-                entry = next((e for e in entries if e.candidate.fingerprint == candidate.fingerprint), None)
-                if entry:
-                    selected_entries.append(entry)
-                    selected_fingerprints.add(candidate.fingerprint)
-                if len(selected_entries) >= num_parents:
-                    break
+        selected_entries = sorted_entries[:num_parents]
 
         time.time() - parent_select_start
 
@@ -1571,7 +1592,23 @@ class Orchestrator:
                 self.mutator.set_reflection_examples(task_examples)
 
         mutator_start = time.time()
-        mutations = await self.mutator.propose(parent_contexts, num_mutations, task_examples=task_examples)
+
+        # STREAMING: Provide sink to enqueue candidates immediately as they're generated
+        async def stream_candidate_to_queue(candidate: Candidate) -> None:
+            """Called by mutator for each candidate as soon as it's created."""
+            # Enqueue immediately - this feeds the priority queue while mutations are still generating
+            self.enqueue([candidate])
+            if self.show_progress:
+                generation = self._get_generation(candidate)
+                source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
+                self.logger.log(f"   ✨ STREAMED {source} to queue (fp={candidate.fingerprint[:12]}...)")
+
+        mutations = await self.mutator.propose(
+            parent_contexts,
+            num_mutations,
+            task_examples=task_examples,
+            candidate_sink=stream_candidate_to_queue,
+        )
         mutator_duration = time.time() - mutator_start
         self.metrics.record_mutation_batch(len(mutations), mutator_duration)
         self.metrics.time_mutation_total += mutator_duration
@@ -1580,7 +1617,7 @@ class Orchestrator:
         batch_duration = time.time() - batch_start
         self.metrics.time_scheduler_total += batch_duration - mutator_duration  # Other overhead
 
-        return mutations
+        return mutations  # Still return for metrics tracking, but candidates already enqueued via streaming
 
     def _record_mutation_generation(self, requested: int, mutations: Sequence[Candidate]) -> None:
         if requested > 0:
@@ -1677,25 +1714,7 @@ class Orchestrator:
                 }
             )
 
-        # Get all QD grid candidates
-        for entry in self.archive.qd_grid.values():
-            meta = entry.candidate.meta if isinstance(entry.candidate.meta, dict) else {}
-            key = meta.get("_sched_key") if isinstance(meta, dict) else None
-            if not isinstance(key, str):
-                key = entry.candidate.fingerprint
-            fp = self._sched_to_fingerprint.get(key, entry.candidate.fingerprint)
-            # Skip if already in pareto
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            data.append(
-                {
-                    "fingerprint": fp,
-                    "generation": self._candidate_generations.get(key, 0),
-                    "quality": entry.result.objectives.get(promote_objective, 0.0),
-                    "status": "evaluated",
-                }
-            )
+        # Pareto candidates are already included above
 
         # Get in-flight candidates (in queue)
         for candidate in self.queue:
@@ -1723,10 +1742,7 @@ class Orchestrator:
         return data
 
     def _mutation_budget(self) -> int:
-        """Compute how many new mutations we should request this cycle.
-
-        Uses proportional control to maintain target queue depth at 2× concurrency.
-        """
+        """Compute how many new mutations we should request this cycle based on queue deficit."""
         max_mut = self.config.max_mutations_per_round or 0
         if max_mut <= 0:
             return 0
@@ -1734,18 +1750,11 @@ class Orchestrator:
         if self._mutation_throttle and max_mut > self._mutation_min:
             max_mut = max(self._mutation_min, max_mut // 2)
 
-        # Use priority queue size for pacing
         current_queue_depth = len(self._priority_queue)
         target_queue_depth = int(self._queue_buffer_mult * self.config.eval_concurrency)
+        deficit = target_queue_depth - current_queue_depth
 
-        # Proportional control: error = target - current
-        error = target_queue_depth - current_queue_depth
-
-        # Apply proportional gain and clamp to [0, max_mut]
-        budget = int(self._mutation_kp * error)
-        budget = max(0, min(max_mut, budget))
-
-        if budget <= 0:
+        if deficit <= 0:
             import time as _time_budget
 
             now = _time_budget.time()
@@ -1756,7 +1765,9 @@ class Orchestrator:
                 )
                 self._last_budget_log = now
             return 0
-        return budget
+
+        # SIMPLE: Request just enough mutations to fill the deficit (clamped to budget)
+        return min(max_mut, max(deficit, self._mutation_min))
 
     def _sample_task_examples_for_spec_induction(self, num_examples: int = 3) -> list[dict[str, object]]:
         """Sample a few task examples for spec induction (PROMPT-MII style)."""
@@ -1900,9 +1911,6 @@ class Orchestrator:
 
     def _check_stop_governor(self) -> tuple[bool, dict]:
         """Update stop governor with current metrics and check if we should stop."""
-        if self.stop_governor is None:
-            return False, {}
-
         # Collect current epoch metrics
         pareto_entries = self.archive.pareto_entries()
 
@@ -1929,21 +1937,6 @@ class Orchestrator:
             ),
         )
 
-        # Track QD novelty
-        qd_entries = list(self.archive.qd_grid.values())
-        current_cells = set()
-        for entry in qd_entries:
-            # Create a hashable cell identifier from QD features
-            cell_id = (
-                int(entry.result.objectives.get("quality", 0) * 100),  # Discretize
-                len(entry.candidate.text) // 100,  # Length bins
-            )
-            current_cells.add(cell_id)
-
-        new_cells = current_cells - self.qd_cells_seen
-        qd_novelty_rate = len(new_cells) / max(len(current_cells), 1)
-        self.qd_cells_seen.update(new_cells)
-
         # Update token spending
         tokens_this_round = sum(
             self.latest_results.get(e.candidate.fingerprint, e.result).objectives.get("tokens", 0)
@@ -1959,9 +1952,6 @@ class Orchestrator:
             best_quality=best_entry.result.objectives.get(self.config.promote_objective, 0.0),
             best_cost=best_entry.result.objectives.get("neg_cost", float("-inf")),
             frontier_ids={e.candidate.fingerprint for e in pareto_entries},
-            qd_filled_cells=len(current_cells),
-            qd_total_cells=self.config.qd_bins_length * self.config.qd_bins_bullets * len(self.config.qd_flags),
-            qd_novelty_rate=qd_novelty_rate,
             total_tokens_spent=self.total_tokens_spent,
         )
 
@@ -1985,7 +1975,6 @@ class Orchestrator:
             self._save_task.cancel()
 
         pareto_candidates = self.archive.pareto_candidates()
-        qd_candidates = self.archive.sample_qd(limit=len(self.archive.qd_grid))
 
         # Run save in background - don't block the optimization loop
         self._save_task = asyncio.create_task(
@@ -1994,7 +1983,6 @@ class Orchestrator:
                 round_num=self.round_index,
                 evaluations=self.evaluations_run,
                 pareto_candidates=pareto_candidates,
-                qd_candidates=qd_candidates,
                 queue=list(self.queue),
             )
         )
@@ -2026,9 +2014,10 @@ class Orchestrator:
                 )
                 await self.archive.insert(candidate, result)
 
-        # Restore all candidates with controlled parallelism
-        all_candidates = state["pareto"] + state["qd"]
-        await asyncio.gather(*(restore_candidate(c) for c in all_candidates))
+        # Restore Pareto candidates with controlled parallelism
+        pareto_candidates = state.get("pareto", [])
+        if pareto_candidates:
+            await asyncio.gather(*(restore_candidate(c) for c in pareto_candidates))
 
         # Restore queue / priority queue
         queued_candidates = state.get("queue", [])

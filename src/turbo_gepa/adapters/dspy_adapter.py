@@ -125,11 +125,7 @@ class DSpyAdapter:
         # Initialize TurboGEPA components
         self.sampler = InstanceSampler(list(self.example_map.keys()), seed=sampler_seed)
         self.cache = DiskCache(cache_dir or config.cache_path)
-        self.archive = Archive(
-            bins_length=config.qd_bins_length,
-            bins_bullets=config.qd_bins_bullets,
-            flags=config.qd_flags,
-        )
+        self.archive = Archive()
         self.log_dir = log_dir or config.log_path
 
         # Reflection runner
@@ -524,7 +520,7 @@ class DSpyAdapter:
             "best_quality": best_entry.result.objectives.get("quality", 0),
             "pareto": orchestrator.archive.pareto_candidates(),
             "pareto_entries": pareto_entries,
-            "qd_elites": orchestrator.archive.sample_qd(limit=len(pareto_entries)),
+            "qd_elites": [],  # Deprecated
             "archive": orchestrator.archive,
             "orchestrator": orchestrator,
         }

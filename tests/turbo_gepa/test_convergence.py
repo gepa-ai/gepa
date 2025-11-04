@@ -16,7 +16,6 @@ def test_mid_rung_convergence_forces_promotion():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,  # Converge after 3 generations without improvement
     )
     scheduler = BudgetedScheduler(config)
@@ -103,7 +102,6 @@ def test_final_rung_convergence_stops_optimization():
 
     config = SchedulerConfig(
         shards=[0.5, 1.0],  # Only 2 rungs
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -161,7 +159,6 @@ def test_improvement_resets_counter():
 
     config = SchedulerConfig(
         shards=[0.2, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -211,7 +208,6 @@ def test_ceiling_promotion():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -258,7 +254,6 @@ def test_ceiling_promotion_all_rungs():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)

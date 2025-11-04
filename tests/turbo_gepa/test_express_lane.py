@@ -17,7 +17,6 @@ def test_express_lane_single_rung_skip():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -48,7 +47,6 @@ def test_express_lane_multi_rung_cascade():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -101,7 +99,6 @@ def test_express_lane_stops_when_score_drops():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -156,7 +153,6 @@ def test_express_lane_threshold_boundary():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -211,7 +207,6 @@ def test_ceiling_prevents_stuck_at_100():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -261,7 +256,6 @@ def test_express_lane_disabled():
     # This test just verifies scheduler behavior doesn't change
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -292,7 +286,6 @@ def test_express_lane_intermediate_score():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)

@@ -12,6 +12,70 @@ import os
 from dataclasses import dataclass, field
 from typing import Sequence
 
+from turbo_gepa.stop_governor import StopGovernorConfig
+
+
+def _default_variance_tolerance(shards: Sequence[float]) -> dict[float, float]:
+    """
+    Auto-generate variance tolerance values for each rung.
+
+    Formula: tolerance = base_tolerance / sqrt(shard_fraction)
+    This accounts for increased variance at smaller dataset fractions.
+
+    Parameters:
+        shards: Sequence of rung fractions (e.g., (0.05, 0.2, 1.0))
+
+    Returns:
+        Dict mapping rung fraction to tolerance value
+
+    Example:
+        >>> _default_variance_tolerance((0.05, 0.2, 1.0))
+        {0.05: 0.089, 0.2: 0.045, 1.0: 0.020}
+    """
+    # Base tolerance at final rung (1.0): 2% margin
+    base_tolerance = 0.02
+
+    tolerance_map = {}
+    for shard in shards:
+        if shard <= 0:
+            # Skip invalid shards
+            continue
+        # Scale tolerance inversely with sqrt(shard_fraction)
+        # This matches statistical theory: stderr ∝ 1/sqrt(n)
+        tolerance = base_tolerance / (shard ** 0.5)
+        tolerance_map[shard] = round(tolerance, 3)
+
+    return tolerance_map
+
+
+def _default_shrinkage_alpha(shards: Sequence[float]) -> dict[float, float]:
+    """
+    Auto-generate shrinkage coefficients for estimating parent scores at earlier rungs.
+
+    Formula: alpha = shard_fraction ^ 0.3
+    This gives more weight to final score as rung gets larger.
+
+    Parameters:
+        shards: Sequence of rung fractions (e.g., (0.05, 0.2, 1.0))
+
+    Returns:
+        Dict mapping rung fraction to shrinkage alpha
+
+    Example:
+        >>> _default_shrinkage_alpha((0.05, 0.2, 1.0))
+        {0.05: 0.457, 0.2: 0.724, 1.0: 1.0}
+    """
+    alpha_map = {}
+    for shard in shards:
+        if shard <= 0:
+            continue
+        # Alpha increases with shard size (less shrinkage at larger rungs)
+        # Use power of 0.3 for smooth interpolation
+        alpha = shard ** 0.3
+        alpha_map[shard] = round(alpha, 3)
+
+    return alpha_map
+
 
 def adaptive_shards(
     dataset_size: int,
@@ -127,12 +191,24 @@ class Config:
     eval_concurrency: int = 64
     n_islands: int = 4
     shards: Sequence[float] = field(default_factory=lambda: (0.05, 0.2, 1.0))
-    adaptive_shards_enabled: bool = True
-    eps_improve: float = 0.0  # Children must beat parent score by this amount to promote
-    auto_promote_threshold: float | None = 0.99  # Scores >= this skip mutation and immediately re-eval on next rung (None = disabled)
-    qd_bins_length: int = 8
-    qd_bins_bullets: int = 6
-    qd_flags: Sequence[str] = field(default_factory=lambda: ("cot", "format", "fewshot"))
+
+    # Variance-aware promotion: rung-specific tolerance values
+    # Higher tolerance at smaller rungs accounts for score noise with fewer examples
+    # Example: {0.05: 0.15, 0.2: 0.08, 1.0: 0.02} means:
+    #   - At 5% rung: accept scores within 15% of parent (high variance)
+    #   - At 20% rung: accept scores within 8% of parent (medium variance)
+    #   - At 100% rung: accept scores within 2% of parent (low variance)
+    variance_tolerance: dict[float, float] | None = None  # If None, auto-generates based on shards
+
+    # Shrinkage coefficient for estimating parent score at earlier rungs
+    # Higher alpha = more weight to parent's final score (less shrinkage toward baseline)
+    # Example: {0.2: 0.7, 0.5: 0.85, 1.0: 1.0}
+    shrinkage_alpha: dict[float, float] | None = None  # If None, uses defaults
+
+    # Stop governor: automatic convergence detection
+    # Always enabled - monitors hypervolume, quality, stability, ROI
+    stop_governor_config: StopGovernorConfig = field(default_factory=StopGovernorConfig)
+
     reflection_batch_size: int = 6
     max_tokens: int = 2048
     migration_period: int = 1  # Migrate every evaluation batch by default
@@ -142,7 +218,6 @@ class Config:
     batch_size: int | None = None  # Auto-scaled to eval_concurrency if None
     queue_limit: int | None = None  # Auto-scaled to 2x eval_concurrency if None
     promote_objective: str = "quality"
-    log_summary_interval: int = 10
     max_mutations_per_round: int | None = None  # Auto-scaled to eval_concurrency if None
     task_lm_temperature: float | None = 1.0
     reflection_lm_temperature: float | None = 1.0
@@ -151,10 +226,6 @@ class Config:
     max_optimization_time_seconds: float | None = None  # Global timeout - stop optimization after this many seconds
 
     # Streaming mode config
-    streaming_mode: bool = True  # Enable continuous launch/drain (no batch barriers)
-    mutation_buffer_min: int = 16  # Minimum mutations to trigger generation (increased from 4 to prevent starvation)
-    max_total_inflight: int | None = None  # Override total concurrent evaluations (defaults to eval_concurrency)
-    skip_final_straggler_cutoff: bool = False  # Always finish final shard evaluations
 
     # Logging config
     # Log levels control verbosity:
@@ -188,6 +259,14 @@ class Config:
             # Generate 2x concurrency to stay ahead of evaluations (increased from 0.25x)
             # This ensures mutation generation can keep the pipeline full
             self.max_mutations_per_round = max(16, min(128, self.eval_concurrency * 2))
+
+        # Auto-generate variance_tolerance if not provided
+        if self.variance_tolerance is None:
+            self.variance_tolerance = _default_variance_tolerance(self.shards)
+
+        # Auto-generate shrinkage_alpha if not provided
+        if self.shrinkage_alpha is None:
+            self.shrinkage_alpha = _default_shrinkage_alpha(self.shards)
 
 
 DEFAULT_CONFIG = Config()
@@ -311,14 +390,16 @@ def adaptive_config(
     if strategy == "conservative":
         # Conservative: higher quality signals, less parallelism
         config.max_mutations_per_round = max(4, config.max_mutations_per_round // 2)
-        config.cohort_quantile = 0.7  # Stricter promotion (top 30% only)
-        config.eps_improve = 0.02  # Require larger improvements
+        # Stricter variance tolerance for conservative strategy
+        if config.variance_tolerance:
+            config.variance_tolerance = {k: v * 0.5 for k, v in config.variance_tolerance.items()}
 
     elif strategy == "aggressive":
         # Aggressive: more exploration, higher parallelism
         config.max_mutations_per_round = min(32, int(config.max_mutations_per_round * 1.5))
-        config.cohort_quantile = 0.5  # Easier promotion (top 50%)
-        config.eps_improve = 0.005  # Accept smaller improvements
+        # More lenient variance tolerance for aggressive strategy
+        if config.variance_tolerance:
+            config.variance_tolerance = {k: v * 2.0 for k, v in config.variance_tolerance.items()}
         config.batch_size = min(24, int(config.batch_size * 1.5))
 
     # Ensure migration_period scales with dataset size
@@ -367,8 +448,10 @@ def lightning_config(dataset_size: int, *, base_config: Config | None = None) ->
 
     # Aggressive 2-rung ASHA
     config.shards = (0.10, 1.0)
-    config.cohort_quantile = 0.75  # Top 25% only (vs 40%)
-    config.eps_improve = 0.02  # Stricter improvement (vs 0.01)
+    # Stricter variance tolerance for faster pruning
+    config.variance_tolerance = _default_variance_tolerance(config.shards)
+    if config.variance_tolerance:
+        config.variance_tolerance = {k: v * 0.5 for k, v in config.variance_tolerance.items()}
 
     # Reduce breadth
     config.batch_size = 4  # Half the candidates (vs 8)
@@ -417,8 +500,10 @@ def sprint_config(dataset_size: int, *, base_config: Config | None = None) -> Co
 
     # Moderate 3-rung ASHA
     config.shards = (0.08, 0.30, 1.0)
-    config.cohort_quantile = 0.65  # Top 35% advance (vs 40%)
-    config.eps_improve = 0.015  # Moderate threshold (vs 0.01)
+    # Moderate variance tolerance adjustment
+    config.variance_tolerance = _default_variance_tolerance(config.shards)
+    if config.variance_tolerance:
+        config.variance_tolerance = {k: v * 0.75 for k, v in config.variance_tolerance.items()}
 
     # Moderate breadth reduction
     config.batch_size = 6  # Slightly smaller (vs 8)
@@ -464,15 +549,16 @@ def blitz_config(dataset_size: int, *, base_config: Config | None = None) -> Con
         >>> config = blitz_config(500)
         >>> config.shards
         (0.15, 1.0)
-        >>> config.cohort_quantile
         0.85
     """
     config = base_config or Config()
 
     # Extreme 2-rung ASHA with large gap
     config.shards = (0.15, 1.0)
-    config.cohort_quantile = 0.85  # Only top 15% advance!
-    config.eps_improve = 0.03  # Very strict (vs 0.01)
+    # Very strict variance tolerance for maximum speed
+    config.variance_tolerance = _default_variance_tolerance(config.shards)
+    if config.variance_tolerance:
+        config.variance_tolerance = {k: v * 0.3 for k, v in config.variance_tolerance.items()}
 
     # Minimal breadth
     config.batch_size = 3  # Very small batches

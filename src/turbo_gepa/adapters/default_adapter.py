@@ -36,6 +36,18 @@ from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
 
+# Disable litellm's async logging worker at module import time
+# This prevents "RuntimeError: bound to a different event loop" errors
+# The worker tries to access queues from different event loops
+try:
+    import litellm
+    litellm.success_callback = []
+    litellm.failure_callback = []
+    litellm.suppress_debug_info = True
+    litellm.set_verbose = False
+except ImportError:
+    pass  # litellm not installed
+
 
 @dataclass(slots=True)
 class DefaultDataInst:
@@ -210,11 +222,7 @@ class DefaultAdapter:
         Path(self.base_cache_dir).mkdir(parents=True, exist_ok=True)
         Path(self.base_log_dir).mkdir(parents=True, exist_ok=True)
         self.cache = DiskCache(self.base_cache_dir)
-        self.archive = Archive(
-            bins_length=config.qd_bins_length,
-            bins_bullets=config.qd_bins_bullets,
-            flags=config.qd_flags,
-        )
+        self.archive = Archive()
 
         # Temperature support will be checked lazily during Phase 2 (temperature optimization)
         # No upfront LLM call needed - we optimize prompts first (Phase 1), then temperature (Phase 2)
@@ -739,11 +747,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         )
 
     def _make_archive(self) -> Archive:
-        return Archive(
-            bins_length=self.config.qd_bins_length,
-            bins_bullets=self.config.qd_bins_bullets,
-            flags=self.config.qd_flags,
-        )
+        return Archive()
 
     def _make_sampler(self, *, seed_offset: int = 0) -> InstanceSampler:
         return InstanceSampler(self._example_ids, seed=self._sampler_seed + seed_offset)
@@ -936,7 +940,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
     def _build_orchestrator(
         self,
         *,
-        enable_auto_stop: bool = False,
         display_progress: bool = True,
         temperature_mutations_enabled: bool | None = None,
         island_context: IslandContext | None = None,
@@ -968,8 +971,8 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             task_runner=self._task_runner,
             metrics_mapper=metrics_mapper,
             timeout_seconds=self.config.eval_timeout_seconds,
-            min_improve=self.config.eps_improve,
-            skip_final_straggler_cutoff=self.config.skip_final_straggler_cutoff,
+            min_improve=0.0,  # Disabled: variance-aware promotion handles this
+            skip_final_straggler_cutoff=False,  # Streaming mode always on: always finish final shard
         )
         # Create stop governor if auto-stop enabled
         # Use provided metrics_callback, or create dashboard if progress display is enabled
@@ -992,7 +995,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             sampler=sampler or self.sampler,
             mutator=mutator,
             cache=cache or self.cache,
-            enable_auto_stop=enable_auto_stop,
             show_progress=display_progress
             and not dashboard_enabled,  # Disable inline progress when dashboard is active
             example_sampler=self._sample_examples,
@@ -1008,7 +1010,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         max_evaluations: int | None = None,
         task_lm: str | None = None,  # Kept for API compatibility; models come from adapter init
         reflection_lm: str | None = None,  # Kept for API compatibility; models come from adapter init
-        enable_auto_stop: bool = False,  # Enable automatic stopping
         optimize_temperature_after_convergence: bool = False,  # Stage temperature optimization
         display_progress: bool = True,  # Show progress charts
         metrics_callback: Callable | None = None,  # Callback for dashboard updates
@@ -1019,14 +1020,12 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                     seeds,
                     max_rounds=max_rounds,
                     max_evaluations=max_evaluations,
-                    enable_auto_stop=enable_auto_stop,
                     display_progress=display_progress,
                 )
             return await self._optimize_multi_island(
                 seeds,
                 max_rounds=max_rounds,
                 max_evaluations=max_evaluations,
-                enable_auto_stop=enable_auto_stop,
                 display_progress=display_progress,
             )
 
@@ -1038,7 +1037,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
 
         # Standard integrated optimization
         orchestrator = self._build_orchestrator(
-            enable_auto_stop=enable_auto_stop,
             display_progress=display_progress,
             metrics_callback=metrics_callback,
         )
@@ -1063,11 +1061,10 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         await orchestrator.run(seed_candidates, max_rounds=max_rounds, max_evaluations=max_evaluations)
 
         pareto = orchestrator.archive.pareto_candidates()
-        qd = orchestrator.archive.sample_qd(limit=len(pareto))
         return {
             "pareto": pareto,
             "pareto_entries": orchestrator.archive.pareto_entries(),
-            "qd_elites": qd,
+            "qd_elites": [],  # Deprecated field kept for compatibility; always empty
             "evolution_stats": orchestrator.evolution_snapshot(include_edges=True),
         }
 
@@ -1076,7 +1073,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         seeds: Sequence[str | Candidate],
         max_rounds: int | None,
         max_evaluations: int | None,
-        enable_auto_stop: bool,
         display_progress: bool = True,
     ) -> dict[str, Any]:
         """Two-phase optimization: prompts first, then temperature.
@@ -1105,7 +1101,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         phase1_rounds = max_rounds if max_rounds else 10  # Default to 10 if unlimited
 
         orchestrator1 = self._build_orchestrator(
-            enable_auto_stop=enable_auto_stop,
             display_progress=display_progress,
             temperature_mutations_enabled=False,
         )
@@ -1121,7 +1116,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             return {
                 "pareto": [e.candidate for e in phase1_pareto],
                 "pareto_entries": phase1_pareto,
-                "qd_elites": orchestrator1.archive.sample_qd(limit=len(phase1_pareto)),
+                "qd_elites": [],  # Deprecated
                 "phase1_pareto": [e.candidate for e in phase1_pareto],
                 "phase1_evolution_stats": phase1_stats,
                 "evolution_stats": self._combine_evolution_snapshots([phase1_stats]),
@@ -1132,7 +1127,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             return {
                 "pareto": [],
                 "pareto_entries": [],
-                "qd_elites": [],
+                "qd_elites": [],  # Deprecated
                 "phase1_pareto": [],
                 "phase1_evolution_stats": phase1_stats,
                 "evolution_stats": self._combine_evolution_snapshots([phase1_stats]),
@@ -1159,7 +1154,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         phase2_rounds = min(max_phase2_rounds, max_rounds) if max_rounds else max_phase2_rounds
 
         orchestrator2 = self._build_orchestrator(
-            enable_auto_stop=False,  # Temperature phase runs for fixed duration
             display_progress=display_progress,
             temperature_mutations_enabled=True,
         )
@@ -1175,7 +1169,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         return {
             "pareto": [e.candidate for e in phase2_pareto],
             "pareto_entries": phase2_pareto,
-            "qd_elites": orchestrator2.archive.sample_qd(limit=len(phase2_pareto)),
+            "qd_elites": [],  # Deprecated
             "phase1_pareto": [e.candidate for e in phase1_pareto],  # Also return phase 1 results
             "phase1_evolution_stats": phase1_stats,
             "phase2_evolution_stats": phase2_stats,
@@ -1188,7 +1182,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         *,
         max_rounds: int | None,
         max_evaluations: int | None,
-        enable_auto_stop: bool,
         display_progress: bool,
         temperature_mutations_enabled: bool | None = None,
     ) -> dict[str, Any]:
@@ -1227,7 +1220,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 log_dir = self._make_log_dir(context.island_id)
                 display_local = display_progress and context.island_id == 0
                 orchestrator = self._build_orchestrator(
-                    enable_auto_stop=enable_auto_stop,
                     display_progress=display_local,
                     temperature_mutations_enabled=temperature_mutations_enabled,
                     island_context=context,
@@ -1272,14 +1264,13 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             await combined_archive.batch_insert(inserts)
         pareto_entries = combined_archive.pareto_entries()
         pareto_candidates = [entry.candidate for entry in pareto_entries]
-        qd_elites = combined_archive.sample_qd(limit=len(pareto_entries)) if pareto_entries else []
         evolution_stats = self._aggregate_evolution_stats(orchestrators)
-        # Calculate total unique candidates (Pareto + QD grid)
-        total_candidates = len(combined_archive.pareto) + len(combined_archive.qd_grid)
+        # Calculate total unique candidates (Pareto only)
+        total_candidates = len(combined_archive.pareto)
         return {
             "pareto": pareto_candidates,
             "pareto_entries": pareto_entries,
-            "qd_elites": qd_elites,
+            "qd_elites": [],  # Deprecated
             "evolution_stats": evolution_stats,
             "total_candidates": total_candidates,
         }
@@ -1290,7 +1281,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         *,
         max_rounds: int | None,
         max_evaluations: int | None,
-        enable_auto_stop: bool,
         display_progress: bool,
     ) -> dict[str, Any]:
         phase1_budget = int(max_evaluations * 0.7) if max_evaluations else None
@@ -1300,7 +1290,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             seeds,
             max_rounds=phase1_rounds,
             max_evaluations=phase1_budget,
-            enable_auto_stop=enable_auto_stop,
             display_progress=display_progress,
             temperature_mutations_enabled=False,
         )
@@ -1333,7 +1322,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             temp_seeds,
             max_rounds=phase2_rounds,
             max_evaluations=phase2_budget,
-            enable_auto_stop=False,
             display_progress=display_progress,
             temperature_mutations_enabled=True,
         )
@@ -1356,7 +1344,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
         max_evaluations: int | None = None,
         task_lm: str | None = None,  # Kept for API compatibility; models come from adapter init
         reflection_lm: str | None = None,  # Kept for API compatibility; models come from adapter init
-        enable_auto_stop: bool = False,  # Enable automatic stopping
         optimize_temperature_after_convergence: bool = False,  # Stage temperature optimization
         display_progress: bool = True,  # Show progress charts
         enable_seed_initialization: bool = False,  # Use PROMPT-MII-style seed generation
@@ -1372,7 +1359,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             max_evaluations: Maximum evaluations (None = unlimited)
             task_lm: Kept for compatibility; adapter uses model set at construction
             reflection_lm: Kept for compatibility; adapter uses model set at construction
-            enable_auto_stop: Enable automatic convergence detection
             optimize_temperature_after_convergence: Stage temperature optimization after
                 prompt optimization (Phase 1: optimize prompts, Phase 2: optimize temperature)
             enable_seed_initialization: If True, use PROMPT-MII-style spec induction to
@@ -1420,7 +1406,6 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 max_evaluations=max_evaluations,
                 task_lm=task_lm,
                 reflection_lm=reflection_lm,
-                enable_auto_stop=enable_auto_stop,
                 optimize_temperature_after_convergence=optimize_temperature_after_convergence,
                 display_progress=display_progress,
                 metrics_callback=metrics_callback,

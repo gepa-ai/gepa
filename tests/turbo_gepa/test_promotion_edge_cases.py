@@ -22,7 +22,6 @@ def test_express_lane_preserves_parent_tracking():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -83,7 +82,6 @@ def test_ceiling_logic_doesnt_inflate_improvement_signal():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -144,7 +142,6 @@ def test_convergence_with_express_lane_at_ceiling():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -184,7 +181,6 @@ def test_parent_score_lookup_on_different_rungs():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -240,7 +236,6 @@ def test_force_promotion_doesnt_break_express_lane():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -287,21 +282,17 @@ def test_force_promotion_doesnt_break_express_lane():
 
 def test_eps_improve_zero_with_ceiling():
     """
-    ISSUE: With eps_improve=0.0, does ceiling logic cause issues?
     At ceiling, we allow score >= parent_score - 0.001.
-    With eps_improve=0.0, normal logic is score >= parent_score + 0.0.
     Could this create inconsistency?
 
     ANSWER: No! Both lead to score >= parent_score, which is correct.
     Ceiling just adds a tiny tolerance (0.001) for floating point issues.
     """
     print("\n" + "=" * 80)
-    print("TEST: eps_improve=0.0 with ceiling logic")
     print("=" * 80)
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.0,  # Zero threshold
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -339,7 +330,6 @@ def test_eps_improve_zero_with_ceiling():
     # BUT ceiling logic: parent >= 0.999 → True, child >= parent - 0.001 (0.999) → True → promote!
     assert decision == "promoted", "Ceiling tolerance allows 99.9% to promote"
 
-    print("\n✅ PASS: eps_improve=0.0 works correctly with ceiling logic")
 
 
 def test_multiple_children_at_ceiling_all_promote():
@@ -357,7 +347,6 @@ def test_multiple_children_at_ceiling_all_promote():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.05,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -409,5 +398,4 @@ if __name__ == "__main__":
     print("- Convergence handles continuous 100% scores ✅")
     print("- Parent score comparison works across rungs ✅")
     print("- Force promotion compatible with express lane ✅")
-    print("- eps_improve=0.0 works with ceiling logic ✅")
     print("- Multiple ceiling candidates handled safely ✅")

@@ -25,7 +25,6 @@ PERFORMANCE OPTIMIZATIONS APPLIED (MAXIMIZED FOR SPEED):
 1. AGGRESSIVE ADAPTIVE SHARDING (ASHA)
    - 3-rung configuration: (0.05, 0.2, 1.0) - Very aggressive early pruning!
    - Evaluates on 5%, 20%, 100% of data progressively
-   - Dynamic rung adjustment based on promotion rates (adaptive_shards_enabled=True)
    - Target: 50% promotion rate (optimal ASHA)
    - Automatically prunes ~75-80% of poor candidates in first rung!
 
@@ -35,21 +34,16 @@ PERFORMANCE OPTIMIZATIONS APPLIED (MAXIMIZED FOR SPEED):
    - ALL mutation generation scaled to max concurrency
 
 3. MAXIMIZED MUTATION GENERATION
-   - max_mutations_per_round: max_concurrency (no limit!)
-   - mutation_buffer_min: concurrency/2 (huge buffer for sustained throughput)
-   - queue_limit: 4x concurrency (massive queue to prevent ANY starvation)
-   - batch_size: ALL dataset points (maximum parallelism)
+   - max_mutations_per_round: 2x concurrency for high throughput
+   - queue_limit: 4x concurrency (large queue to prevent starvation)
+   - batch_size: Auto-scaled based on concurrency
 
 4. OPTIMAL ASHA SETTINGS
    - cohort_quantile: 0.5 (top 50% advance - theoretically optimal)
    - eps_improve: 0.0 (don't over-prune equal quality)
-   - Adaptive rung adjustment enabled (rungs self-tune)
 
 5. SINGLE ISLAND MODE
    - n_islands: 1 (no inter-island migration overhead for benchmarking)
-
-6. AUTO-STOP ON TARGET QUALITY
-   - Stops immediately when target quality reached (no wasted evaluations)
 
 EXPECTED PERFORMANCE:
 =====================
@@ -141,6 +135,8 @@ gepa_quality = 0.0
 gepa_evaluations = 0
 gepa_elapsed = 0.0
 gepa_prompt = ""
+
+# NEVER EVER MODIFY THESE!!!
 task_lm = "openrouter/openai/gpt-oss-20b:nitro"
 reflection_lm = "openrouter/x-ai/grok-4-fast"
 
@@ -259,10 +255,10 @@ if RUN_TURBO:
         strategy="aggressive",  # Prioritize speed over quality for benchmarking
         available_compute="server",  # Use maximum concurrency settings
     )
+    # Limit concurrency for reasonable benchmark runtime
     config.eval_concurrency = min(config.eval_concurrency, 64)
     config.batch_size = min(config.batch_size, len(turbo_dataset))
     config.max_mutations_per_round = min(config.max_mutations_per_round, 24)
-    config.mutation_buffer_min = max(8, config.eval_concurrency // 8)
     config.queue_limit = max(config.queue_limit, config.eval_concurrency * 2)
     config.log_level = "INFO"
 
@@ -271,9 +267,6 @@ if RUN_TURBO:
         1  # Single island for cleaner benchmarking (no migration overhead)
     )
     config.target_quality = target_quality_val  # Stop when we reach target quality
-    config.adaptive_shards_enabled = (
-        True  # Enable dynamic rung adjustment during optimization
-    )
 
     # Create adapter
     adapter = DefaultAdapter(
@@ -291,35 +284,25 @@ if RUN_TURBO:
     print("PERFORMANCE CONFIGURATION (MAXIMIZED FOR SPEED)")
     print("=" * 80)
     print(f"🔥 Concurrency: {config.eval_concurrency:,} parallel evaluations")
-    print(
-        f"🧬 Mutations: {config.max_mutations_per_round} per round (buffer: {config.mutation_buffer_min})"
-    )
-    print(f"📊 Batch size: {config.batch_size} (full dataset)")
+    print(f"🧬 Mutations: {config.max_mutations_per_round} per round")
+    print(f"📊 Batch size: {config.batch_size}")
     print(f"📋 Queue limit: {config.queue_limit}")
-    print(
-        f"🎯 Shards (ASHA): {config.shards} {'(adaptive)' if config.adaptive_shards_enabled else ''}"
-    )
+    print(f"🎯 Shards (ASHA): {config.shards}")
     print(
         f"⚡ ASHA quantile: {config.cohort_quantile} (top {int(config.cohort_quantile*100)}% advance)"
-    )
-    print(
-        f"📈 Adaptive rungs: {'Enabled' if config.adaptive_shards_enabled else 'Disabled'}"
     )
     print("=" * 80 + "\n")
 
     if RUN_GEPA:
         print(
-            f"🎯 Goal: Match/exceed GEPA's {gepa_quality:.1%} quality as fast as possible"
+            f"🎯 Goal: Match/exceed GEPA's {gepa_quality:.1%} quality as fast as possible\n"
         )
-        print(f"🎯 Auto-stop enabled: Will stop when quality ≥ {gepa_quality:.1%}\n")
     else:
-        print(f"🎯 Target quality: {target_quality_val:.1%}")
-        print("⏱️  Running with max throughput until target reached\n")
+        print(f"🎯 Target quality: {target_quality_val:.1%}\n")
 
     start_time = time.time()
     turbo_result = adapter.optimize(
         seeds=[seed_turbo],
-        enable_auto_stop=True,  # Stop when target quality is reached
         max_rounds=50,  # Plenty of rounds to ensure we can match GEPA quality
         max_evaluations=None,  # No evaluation limit
         display_progress=True,

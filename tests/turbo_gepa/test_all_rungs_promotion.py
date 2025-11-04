@@ -18,7 +18,6 @@ async def test_seed_visits_all_three_rungs():
     # Create scheduler with 3 rungs
     config = SchedulerConfig(
         shards=(0.2, 0.5, 1.0),
-        eps_improve=0.01,
     )
     scheduler = BudgetedScheduler(config)
 

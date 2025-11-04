@@ -5,7 +5,6 @@ The StopGovernor monitors:
 - Pareto hypervolume gain rate
 - Best candidate improvement
 - Frontier stability
-- QD grid novelty
 - Cost efficiency (ROI)
 - Statistical significance
 
@@ -27,9 +26,6 @@ class EpochMetrics:
     best_quality: float
     best_cost: float  # negative tokens
     frontier_ids: set[str]
-    qd_filled_cells: int
-    qd_total_cells: int
-    qd_novelty_rate: float  # fraction landing in new cells
     total_tokens_spent: int
 
 
@@ -51,7 +47,6 @@ class StopGovernorConfig:
     tau_quality: float = 1e-3  # 0.1% absolute improvement per epoch
     tau_quality_relative: float = 0.01  # OR 1% relative improvement per epoch (whichever is less strict)
     tau_cost: float = 5.0  # Lowered from 10.0
-    tau_qd_novelty: float = 0.03  # Lowered from 0.05 (3% instead of 5%)
     tau_roi: float = 1e-6  # Lowered from 1e-5
 
     # Stability thresholds
@@ -62,7 +57,6 @@ class StopGovernorConfig:
     weight_hv: float = 1.0
     weight_quality: float = 1.0
     weight_cost: float = 0.6  # Reduced from 0.8 (care less about cost)
-    weight_qd: float = 0.7  # Increased from 0.6 (care more about exploration)
     weight_roi: float = 0.5  # Reduced from 0.7
 
     # Stability penalty exponent
@@ -147,7 +141,6 @@ class StopGovernor:
                 "s_hv": 1.0,
                 "s_quality": 1.0,
                 "s_cost": 1.0,
-                "s_qd": 1.0,
                 "s_roi": 1.0,
                 "s_stability": 0.0,
                 "jaccard": 0.0,
@@ -177,13 +170,10 @@ class StopGovernor:
         # Signal 3: Cost improvement (tokens saved)
         s_cost = min(1.0, self.ewma_cost_delta / self.config.tau_cost) if self.config.tau_cost > 0 else 1.0
 
-        # Signal 4: QD novelty
-        s_qd = min(1.0, curr.qd_novelty_rate / self.config.tau_qd_novelty) if self.config.tau_qd_novelty > 0 else 1.0
-
-        # Signal 5: ROI
+        # Signal 4: ROI
         s_roi = min(1.0, self.ewma_roi / self.config.tau_roi) if self.config.tau_roi > 0 else 1.0
 
-        # Signal 6: Frontier stability (inverse - high stability = low score)
+        # Signal 5: Frontier stability (inverse - high stability = low score)
         jaccard = self._compute_jaccard(prev.frontier_ids, curr.frontier_ids)
         s_stability = jaccard if jaccard > self.config.min_jaccard_for_stable else 0.0
 
@@ -191,7 +181,6 @@ class StopGovernor:
             "s_hv": s_hv,
             "s_quality": s_quality,
             "s_cost": s_cost,
-            "s_qd": s_qd,
             "s_roi": s_roi,
             "s_stability": s_stability,
             "jaccard": jaccard,
@@ -215,7 +204,6 @@ class StopGovernor:
             self.config.weight_hv * signals["s_hv"],
             self.config.weight_quality * signals["s_quality"],
             self.config.weight_cost * signals["s_cost"],
-            self.config.weight_qd * signals["s_qd"],
             self.config.weight_roi * signals["s_roi"],
         )
 

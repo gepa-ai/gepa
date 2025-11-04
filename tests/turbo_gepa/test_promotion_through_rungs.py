@@ -15,7 +15,6 @@ def test_seed_promotes_through_all_rungs():
     # Setup scheduler with 3 rungs
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.01,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -87,7 +86,6 @@ def test_mutation_promotes_if_better_than_parent():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.01,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)
@@ -124,7 +122,6 @@ def test_mutation_pruned_if_not_better():
 
     config = SchedulerConfig(
         shards=[0.2, 0.5, 1.0],
-        eps_improve=0.01,
         patience_generations=3,
     )
     scheduler = BudgetedScheduler(config)

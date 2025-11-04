@@ -267,7 +267,6 @@ class DiskCache:
         round_num: int,
         evaluations: int,
         pareto_candidates: list[Candidate],
-        qd_candidates: list[Candidate],
         queue: list[Candidate],
     ) -> None:
         """
@@ -280,7 +279,6 @@ class DiskCache:
             "round": round_num,
             "evaluations": evaluations,
             "pareto": [self._serialize_candidate(c) for c in pareto_candidates],
-            "qd": [self._serialize_candidate(c) for c in qd_candidates],
             "queue": [self._serialize_candidate(c) for c in queue],
         }
 
@@ -308,7 +306,7 @@ class DiskCache:
         """
         Load saved orchestrator state, or None if no state exists.
 
-        Returns dict with keys: round, evaluations, pareto, qd, queue
+        Returns dict with keys: round, evaluations, pareto, queue
         Uses retry logic to handle temporary file system issues.
         """
         state_path = self._state_path()
@@ -323,7 +321,6 @@ class DiskCache:
 
                 # Deserialize candidates
                 state["pareto"] = [self._deserialize_candidate(c) for c in state["pareto"]]
-                state["qd"] = [self._deserialize_candidate(c) for c in state["qd"]]
                 state["queue"] = [self._deserialize_candidate(c) for c in state["queue"]]
 
                 return state

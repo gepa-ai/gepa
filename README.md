@@ -20,9 +20,10 @@
 - 🏝️ **Island-Based Parallelism**: Concurrent islands with an async ring topology preserve diversity without extra processes
 - 📊 **ASHA Successive Halving**: Prunes most underperformers early to reduce wasted evaluations
 - 🧬 **Dual Mutation Strategy**: Blends reflection edits with Prompt-MII-style spec induction for exploration vs. exploitation
+- 📈 **Parent-Weighted Scheduling**: Recent improvement history boosts promising lineages to the front of the queue
 - 🌡️ **Two-Phase Optimization**: Prompt evolution first, optional temperature sweep second
 - 🚦 **Convergence & Lineage Guards**: Per-candidate auto-stop and lineage fast-tracks keep stagnating prompts moving forward
-- ⚙️ **Adaptive Runtime Control**: Parent-aware early stopping, latency-based concurrency tuning, mutation throttling, and runtime shard tuning keep tokens focused where they matter
+- ⚙️ **Adaptive Runtime Control**: Parent-aware early stopping, latency-based concurrency tuning, rung-aware mutation budgets, and runtime shard tuning keep tokens focused where they matter
 - 🧾 **Lineage-Aware Mutations**: Mutators receive parent/child score history and failure summaries to guide the next edits
 - 🔧 **Adaptive Configuration**: Auto-tunes concurrency, batch sizes, and shard settings based on dataset size
 
@@ -170,13 +171,12 @@ from turbo_gepa.config import Config
 
 config = Config(
     shards=(0.3, 1.0),            # Fast scout shard + full verification
-    eval_concurrency=64,
-    max_total_inflight=64,
-    adaptive_shards_enabled=True,          # Let TurboGEPA tune shard fractions at runtime
-    enable_rung_convergence=True, # Promote stalled prompts automatically
-    lineage_patience=3,            # Force parent promotion after 3 flat children
-    lineage_min_improve=0.005,     # Require >=0.5pp gain to reset the counter
-    target_quality=0.80,
+    eval_concurrency=48,          # Keep evaluators busy without oversubscription
+    n_islands=1,                  # Single island for most workloads
+    max_mutations_per_round=96,   # Queue stays ~2× ahead of the evaluator
+    target_quality=0.82,          # Stop once full-rung quality clears this bar
+    max_optimization_time_seconds=180,
+    log_level="INFO",
 )
 
 adapter = DefaultAdapter(dataset=trainset, task_lm=task_lm, reflection_lm=reflection_lm, auto_config=False)
@@ -185,7 +185,7 @@ seed_prompt = "You are a helpful assistant. Provide your final answer as '### <a
 result = adapter.optimize(seeds=[seed_prompt])
 ```
 
-Need strict, reproducible shard boundaries? Set `adaptive_shards_enabled=False` to keep the fractions fixed for the entire run.
+Need strict, reproducible shard boundaries? Manually pass a tuple to `Config(shards=...)` and reuse the same configuration across runs.
 
 ### TurboGEPA: DSPy Program Optimization
 
@@ -235,7 +235,6 @@ TurboGEPA is a high-throughput production fork of GEPA with:
 - **Async/await architecture** - Non-blocking I/O for maximum concurrency
 - **Multi-island parallelism** - Concurrent islands within a single process (async ring)
 - **ASHA successive halving** - Early stopping to reduce wasted evaluations
-- **Quality-Diversity archives** - Maintains diverse solutions beyond Pareto frontier
 - **Adaptive configuration** - Auto-tunes based on dataset size and hardware
 
 **Best for**: Production deployments, large-scale optimization, maximum throughput
@@ -247,7 +246,7 @@ TurboGEPA is a high-throughput production fork of GEPA with:
 | **Concurrency Model** | Thread pool (~4-8)   | Adaptive async (scales to available compute) |
 | **Parallelism**       | Single-threaded      | Multi-island (1-8+ islands, adaptive)        |
 | **Early Stopping**    | None                 | ASHA successive halving (60%+ pruning)       |
-| **Diversity**         | Pareto frontier only | Pareto + Quality-Diversity grid              |
+| **Archive**           | Pareto frontier only | Pareto frontier with variance tracking       |
 | **Typical Speedup**   | 1x baseline          | **3-10x faster** wall time                   |
 
 ---
@@ -263,8 +262,6 @@ TurboGEPA is a high-throughput production fork of GEPA with:
 **Island**: Independent optimization population running in parallel (TurboGEPA only)
 
 **Pareto Frontier**: Non-dominated candidates across quality and cost objectives
-
-**QD Archive**: Quality-Diversity grid maintaining diverse high-performing solutions
 
 ### Available Adapters
 
@@ -293,7 +290,7 @@ graph TB
 
     Phase1 --> Mutate[Generate Mutations<br/>Reflection + Spec Induction]
     Mutate --> Eval[ASHA Evaluation<br/>Concurrent async]
-    Eval --> Archive[Update Archive<br/>Pareto + QD]
+    Eval --> Archive[Update Archive<br/>Pareto Frontier]
     Archive --> Check1{Quality<br/>Target Met?}
 
     Check1 -->|No| Phase1
@@ -305,7 +302,7 @@ graph TB
     ArchiveTemp --> Check2{Auto-Stop<br/>Criteria?}
 
     Check2 -->|No improvement| Phase2
-    Check2 -->|Converged| Results[Output<br/>Best Candidate<br/>Pareto Frontier<br/>QD Archive]
+    Check2 -->|Converged| Results[Output<br/>Best Candidate<br/>Pareto Frontier]
 
     style Start fill:#e1f5ff
     style Phase1 fill:#fff3cd
@@ -397,7 +394,7 @@ graph TB
         Validate -->|Yes| ASHA1[ASHA Evaluation]
         Validate -->|No| Discard[Discard]
 
-        ASHA1 --> Archive1[Archive<br/>Pareto + QD]
+        ASHA1 --> Archive1[Archive<br/>Pareto Frontier]
     end
 
     Archive1 --> Convergence{Converged?<br/>Auto-Stop}
@@ -553,7 +550,6 @@ config = Config(
     n_islands=4,                # Number of parallel islands (1-4 default)
     shards=(0.05, 0.2, 1.0),    # ASHA evaluation shards
     migration_period=1,         # Evaluation batches between migrations (default: 1 = every batch)
-    qd_bins_length=8,           # QD grid dimensions
     reflection_batch_size=6,    # Examples per reflection
     batch_size=8,               # Evaluation batch size
 )

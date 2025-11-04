@@ -68,7 +68,6 @@ class Metrics:
 
     # Archive Stats
     pareto_size_max: int = 0
-    qd_grid_size_max: int = 0
 
     # Timing Breakdown
     time_eval_total: float = 0.0
@@ -152,12 +151,10 @@ class Metrics:
         if current > self.concurrent_evals_peak:
             self.concurrent_evals_peak = current
 
-    def update_archive_sizes(self, pareto_size: int, qd_size: int) -> None:
+    def update_archive_sizes(self, pareto_size: int) -> None:
         """Update archive size tracking."""
         if pareto_size > self.pareto_size_max:
             self.pareto_size_max = pareto_size
-        if qd_size > self.qd_grid_size_max:
-            self.qd_grid_size_max = qd_size
 
     def start_round(self) -> None:
         """Mark the start of a new optimization round."""
@@ -288,7 +285,6 @@ class Metrics:
             "",
             "📦 Archive:",
             f"  Max Pareto size: {self.pareto_size_max}",
-            f"  Max QD grid size: {self.qd_grid_size_max}",
             "",
             "=" * 80,
         ])
@@ -315,7 +311,6 @@ class DashboardMetrics:
     avg_quality: float
     avg_quality_shard: float  # Average shard fraction across Pareto frontier
     pareto_size: int
-    qd_size: int
     total_candidates: int
     rung_activity: dict[str, int]  # rung_key -> inflight count
     max_rounds: int | None = None
@@ -338,9 +333,8 @@ def extract_metrics(orchestrator: Orchestrator) -> DashboardMetrics:
     """
     # Get archive statistics
     pareto = orchestrator.archive.pareto_entries()
-    qd_elites = orchestrator.archive.sample_qd(limit=1000)  # Get all QD elites
-    # Total unique candidates = pareto + QD grid
-    total = len(orchestrator.archive.pareto) + len(orchestrator.archive.qd_grid)
+    # Total unique candidates = pareto size
+    total = len(orchestrator.archive.pareto)
 
     # Calculate best and average quality from pareto frontier
     # Track which shard the best quality came from
@@ -380,7 +374,6 @@ def extract_metrics(orchestrator: Orchestrator) -> DashboardMetrics:
         avg_quality=avg_quality,
         avg_quality_shard=avg_quality_shard,
         pareto_size=len(pareto),
-        qd_size=len(qd_elites),
         total_candidates=total,
         rung_activity=rung_activity,
         max_rounds=orchestrator.max_rounds,
