@@ -38,15 +38,78 @@ from turbo_gepa.sampler import InstanceSampler
 
 # Disable litellm's async logging worker at module import time
 # This prevents "RuntimeError: bound to a different event loop" errors
-# The worker tries to access queues from different event loops
+# and "OSError: too many open files" from dynamic module imports in async tasks
 try:
     import litellm
     litellm.success_callback = []
     litellm.failure_callback = []
     litellm.suppress_debug_info = True
     litellm.set_verbose = False
+    litellm.logging = False  # Disable ALL logging to prevent file descriptor leaks
+
+    # Monkey-patch the async logging helper to be a no-op
+    # This prevents the "too many open files" error from dynamic imports in async tasks
+    import litellm.utils
+    async def _noop_logging_helper(*args, **kwargs):
+        pass
+    litellm.utils._client_async_logging_helper = _noop_logging_helper
+
+    import httpx
+    _HTTPX_AVAILABLE = True
 except ImportError:
-    pass  # litellm not installed
+    _HTTPX_AVAILABLE = False
+
+
+def _configure_litellm_client(max_concurrency: int) -> None:
+    """
+    Configure litellm's shared httpx client with connection pooling.
+
+    This sets up a single httpx.AsyncClient that will be reused across all litellm
+    API calls, with connection limits based on the user's concurrency settings.
+
+    Args:
+        max_concurrency: Maximum concurrent requests (from Config.eval_concurrency)
+                        The httpx client will queue requests beyond this limit.
+    """
+    if not _HTTPX_AVAILABLE:
+        return
+
+    # If client is already configured with the right settings, skip
+    if litellm.aclient_session is not None:
+        existing_client = litellm.aclient_session
+        if hasattr(existing_client, '_transport'):
+            transport = existing_client._transport
+            if hasattr(transport, '_pool'):
+                pool = transport._pool
+                # Check if limits match (within reason)
+                if hasattr(pool, '_max_connections'):
+                    if pool._max_connections == max_concurrency:
+                        return  # Already configured correctly
+
+    # Close existing client if present
+    if litellm.aclient_session is not None and not litellm.aclient_session.is_closed:
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Can't close synchronously in a running loop, schedule for later
+                loop.create_task(litellm.aclient_session.aclose())
+            else:
+                loop.run_until_complete(litellm.aclient_session.aclose())
+        except Exception:
+            pass  # Best effort cleanup
+
+    # Create new client with dynamic limits based on user's concurrency config
+    # max_connections limits concurrent TCP connections - requests beyond this will queue
+    # This prevents file descriptor exhaustion with high concurrency
+    litellm.aclient_session = httpx.AsyncClient(
+        limits=httpx.Limits(
+            max_connections=max_concurrency,  # Match user's eval_concurrency
+            max_keepalive_connections=min(20, max_concurrency // 4),  # 25% kept alive
+            keepalive_expiry=30.0,  # Close idle connections after 30s
+        ),
+        timeout=httpx.Timeout(180.0, connect=30.0),
+    )
 
 
 @dataclass(slots=True)
@@ -176,6 +239,10 @@ class DefaultAdapter:
         config = replace(config)
         self.config = config
         self.dataset = list(dataset)
+
+        # Configure litellm's httpx client based on eval_concurrency
+        # This ensures connection pooling matches the user's concurrency settings
+        _configure_litellm_client(self.config.eval_concurrency)
 
         min_level = self._resolve_log_level(self.config.log_level)
         if self.config.enable_debug_log:

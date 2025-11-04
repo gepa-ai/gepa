@@ -176,7 +176,7 @@ def adaptive_shards(
 class Config:
     """Runtime parameters controlling concurrency, shard sizes, and promotion."""
 
-    eval_concurrency: int = 64
+    eval_concurrency: int = 128  # Higher default with fixed connection pooling
     n_islands: int = 4
     shards: Sequence[float] = field(default_factory=lambda: (0.05, 0.2, 1.0))
 
@@ -302,17 +302,18 @@ def adaptive_config(
     config.shards = adaptive_shards(dataset_size)
 
     # Scale concurrency with dataset size (simple and predictable)
+    # With fixed connection pooling, we can be more aggressive
     if dataset_size < 10:
-        config.eval_concurrency = 4
+        config.eval_concurrency = 32
         config.n_islands = 1
     elif dataset_size < 50:
-        config.eval_concurrency = 16
+        config.eval_concurrency = 64
         config.n_islands = 1
     elif dataset_size < 200:
-        config.eval_concurrency = 32
+        config.eval_concurrency = 128
         config.n_islands = 2
     else:
-        config.eval_concurrency = 64
+        config.eval_concurrency = 256
         config.n_islands = 4
 
     # Everything else auto-scales from concurrency in Config.__post_init__
@@ -368,8 +369,8 @@ def lightning_config(dataset_size: int, *, base_config: Config | None = None) ->
     config.n_islands = 1
     config.migration_period = 999  # Effectively disabled
 
-    # Keep high concurrency for speed
-    config.eval_concurrency = 64
+    # High concurrency for speed (with fixed connection pooling)
+    config.eval_concurrency = 128
 
     return config
 
