@@ -28,6 +28,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
         model: str | Callable,
         failure_score: float = 0.0,
         max_litellm_workers: int = 10,
+        litellm_batch_completion_kwargs: dict[str, Any] = {},
     ):
         if isinstance(model, str):
             import litellm
@@ -37,6 +38,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
 
         self.failure_score = failure_score
         self.max_litellm_workers = max_litellm_workers
+        self.litellm_batch_completion_kwargs = litellm_batch_completion_kwargs
 
     def evaluate(
         self,
@@ -67,7 +69,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
                 responses = [
                     resp.choices[0].message.content.strip()
                     for resp in self.litellm.batch_completion(
-                        model=self.model, messages=litellm_requests, max_workers=self.max_litellm_workers
+                        model=self.model, messages=litellm_requests, max_workers=self.max_litellm_workers, **self.litellm_batch_completion_kwargs
                     )
                 ]
             else:
