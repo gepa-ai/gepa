@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, Protocol, TypeVar
 
@@ -9,6 +9,8 @@ from typing import Any, Generic, Protocol, TypeVar
 RolloutOutput = TypeVar("RolloutOutput")
 Trajectory = TypeVar("Trajectory")
 DataInst = TypeVar("DataInst")
+Candidate = dict[str, str]
+EvaluatorFn = Callable[[list[DataInst], Candidate], tuple[list[RolloutOutput], list[float]]]
 
 
 @dataclass

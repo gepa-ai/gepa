@@ -2,10 +2,9 @@
 # https://github.com/gepa-ai/gepa
 
 import traceback
-from collections.abc import Callable
 from typing import Generic
 
-from gepa.core.adapter import DataInst
+from gepa.core.adapter import DataInst, EvaluatorFn, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState, ProgramIdx, initialize_gepa_state
 from gepa.logging.experiment_tracker import ExperimentTracker
@@ -16,16 +15,11 @@ from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMuta
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import StopperProtocol
 
-from .adapter import RolloutOutput, Trajectory
-
 # Import tqdm for progress bar functionality
 try:
     from tqdm import tqdm
 except ImportError:
     tqdm = None
-
-
-EvaluatorFn = Callable[[list[DataInst], dict[str, str]], tuple[list[RolloutOutput], list[float]]]
 
 
 class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):

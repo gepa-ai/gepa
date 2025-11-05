@@ -6,18 +6,16 @@ import random
 from collections.abc import Callable, Iterable, Sequence
 from copy import deepcopy
 
-from gepa.core.adapter import DataInst, RolloutOutput
+from gepa.core.adapter import Candidate, DataInst, EvaluatorFn, RolloutOutput
 from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 
-Candidate = dict[str, str]
 AncestorLog = tuple[int, int, int]
 MergeDescription = tuple[int, int, tuple[int, ...]]
 MergeAttempt = tuple[Candidate, ProgramIdx, ProgramIdx, ProgramIdx] | None
-EvaluatorFn = Callable[[list[DataInst], Candidate], tuple[list[RolloutOutput], list[float]]]
 
 
 def does_triplet_have_desirable_predictors(
