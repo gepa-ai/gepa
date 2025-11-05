@@ -2,11 +2,27 @@
 
 from __future__ import annotations
 
-from typing import Hashable, Protocol, Sequence, TypeVar, cast, runtime_checkable
+from typing import Any, Hashable, Protocol, Sequence, TypeVar, cast, runtime_checkable
 
 from gepa.core.adapter import DataInst
 
-DataId = TypeVar("DataId", bound=Hashable)
+class ComparableHashable(Hashable, Protocol):
+    """Protocol requiring hashing and rich comparison support."""
+
+    def __lt__(self, other: Any, /) -> bool:
+        ...
+
+    def __gt__(self, other: Any, /) -> bool:
+        ...
+
+    def __le__(self, other: Any, /) -> bool:
+        ...
+
+    def __ge__(self, other: Any, /) -> bool:
+        ...
+
+
+DataId = TypeVar("DataId", bound=ComparableHashable)
 """ Generic for the identifier for data examples """
 
 
