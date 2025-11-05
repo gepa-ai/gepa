@@ -13,15 +13,15 @@ from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 
-Program = dict[str, str]
+Candidate = dict[str, str]
 AncestorLog = tuple[int, int, int]
 MergeDescription = tuple[int, int, tuple[int, ...]]
-MergeAttempt = tuple[Program, ProgramIdx, ProgramIdx, ProgramIdx] | None
-EvaluatorFn = Callable[[list[DataInst], Program], tuple[list[RolloutOutput], list[float]]]
+MergeAttempt = tuple[Candidate, ProgramIdx, ProgramIdx, ProgramIdx] | None
+EvaluatorFn = Callable[[list[DataInst], Candidate], tuple[list[RolloutOutput], list[float]]]
 
 
 def does_triplet_have_desirable_predictors(
-    program_candidates: Sequence[Program],
+    program_candidates: Sequence[Candidate],
     ancestor: ProgramIdx,
     id1: ProgramIdx,
     id2: ProgramIdx,
@@ -45,7 +45,7 @@ def filter_ancestors(
     common_ancestors: Iterable[ProgramIdx],
     merges_performed: tuple[list[AncestorLog], list[MergeDescription]],
     agg_scores: Sequence[float],
-    program_candidates: Sequence[Program],
+    program_candidates: Sequence[Candidate],
 ) -> list[ProgramIdx]:
     filtered_ancestors: list[ProgramIdx] = []
     for ancestor in common_ancestors:
@@ -68,7 +68,7 @@ def find_common_ancestor_pair(
     program_indexes: Sequence[int],
     merges_performed: tuple[list[AncestorLog], list[MergeDescription]],
     agg_scores: Sequence[float],
-    program_candidates: Sequence[Program],
+    program_candidates: Sequence[Candidate],
     max_attempts: int = 10,
 ) -> tuple[int, int, int] | None:
     def get_ancestors(node: int, ancestors_found: set[int]) -> list[int]:
@@ -116,7 +116,7 @@ def sample_and_attempt_merge_programs_by_common_predictors(
     rng: random.Random,
     merge_candidates: Sequence[int],
     merges_performed: tuple[list[AncestorLog], list[MergeDescription]],
-    program_candidates: Sequence[Program],
+    program_candidates: Sequence[Candidate],
     parent_program_for_candidate: Sequence[Sequence[int | None]],
     has_val_support_overlap: Callable[[ProgramIdx, ProgramIdx], bool] | None = None,
     max_attempts: int = 10,
@@ -147,7 +147,7 @@ def sample_and_attempt_merge_programs_by_common_predictors(
 
         # Now we have a common ancestor, which is outperformed by both its descendants
 
-        new_program: Program = deepcopy(program_candidates[ancestor])
+        new_program: Candidate = deepcopy(program_candidates[ancestor])
 
         new_prog_desc: tuple[int, ...] = ()
 
