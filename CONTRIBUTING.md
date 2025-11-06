@@ -94,3 +94,16 @@ You can also run the hooks manually:
 
 Please ensure all pre-commit checks pass before creating your pull request. If you're unsure about any
 formatting issues, feel free to commit your changes and let the pre-commit hooks fix them automatically.
+
+## Type Checking with Pyright
+Run Pyright before opening a pull request to catch type regressions early:
+
+```shell
+uv run pyright
+```
+
+You can target specific modules while iterating:
+
+```shell
+uv run pyright src/gepa/strategies/
+```
