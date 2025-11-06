@@ -1,7 +1,6 @@
 {
   "include": [
     "src",
-    "tests"
   ],
   "typeCheckingMode": "standard",
   "exclude": [

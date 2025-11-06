@@ -4,7 +4,7 @@
 import os
 import random
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from gepa.adapters.default_adapter.default_adapter import ChatCompletionCallable, DefaultAdapter
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
@@ -156,7 +156,9 @@ def optimize(
         assert task_lm is not None, (
             "Since no adapter is provided, GEPA requires a task LM to be provided. Please set the `task_lm` parameter."
         )
-        active_adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] = DefaultAdapter(model=task_lm)  # type: ignore[assignment]
+        active_adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] = cast(
+            GEPAAdapter[DataInst, Trajectory, RolloutOutput], DefaultAdapter(model=task_lm)
+        )
     else:
         assert task_lm is None, (
             "Since an adapter is provided, GEPA does not require a task LM to be provided. Please set the `task_lm` parameter to None."
