@@ -3,9 +3,10 @@
 
 import os
 import random
-from typing import Any, Callable, Literal
+from collections.abc import Sequence
+from typing import Any, Literal, cast
 
-from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
+from gepa.adapters.default_adapter.default_adapter import ChatCompletionCallable, DefaultAdapter
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
@@ -34,24 +35,24 @@ def optimize(
     trainset: list[DataInst] | DataLoader[DataId, DataInst],
     valset: list[DataInst] | DataLoader[DataId, DataInst] | None = None,
     adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None,
-    task_lm: str | Callable | None = None,
+    task_lm: str | ChatCompletionCallable | None = None,
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
     candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto",
-    skip_perfect_score=True,
+    skip_perfect_score: bool = True,
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
     reflection_minibatch_size: int | None = None,
-    perfect_score=1,
+    perfect_score: float = 1.0,
     reflection_prompt_template: str | None = None,
     # Component selection configuration
-    module_selector: "ReflectionComponentSelector | str" = "round_robin",
+    module_selector: ReflectionComponentSelector | str = "round_robin",
     # Merge-based configuration
-    use_merge=False,
-    max_merge_invocations=5,
+    use_merge: bool = False,
+    max_merge_invocations: int = 5,
     merge_val_overlap_floor: int = 5,
     # Budget and Stop Condition
-    max_metric_calls=None,
-    stop_callbacks: "StopperProtocol | list[StopperProtocol] | None" = None,
+    max_metric_calls: int | None = None,
+    stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None,
     # Logging
     logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
@@ -68,7 +69,7 @@ def optimize(
     seed: int = 0,
     raise_on_exception: bool = True,
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
-):
+) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
     GEPA can also leverage rich textual feedback obtained from the system's execution environment, evaluation,
@@ -130,7 +131,7 @@ def optimize(
 
     # Budget and Stop Condition
     - max_metric_calls: Optional maximum number of metric calls to perform. If not provided, stop_callbacks must be provided.
-    - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single StopperProtocol or a list of StopperProtocol instances. Examples: FileStopper, TimeoutStopCondition, SignalStopper, NoImprovementStopper, or custom stopping logic. If not provided, max_metric_calls must be provided.
+    - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single StopperProtocol or a list or tuple of StopperProtocol instances. Examples: FileStopper, TimeoutStopCondition, SignalStopper, NoImprovementStopper, or custom stopping logic. If not provided, max_metric_calls must be provided.
 
     # Logging
     - logger: A `LoggerProtocol` instance that is used to log the progress of the optimization.
@@ -155,21 +156,24 @@ def optimize(
         assert task_lm is not None, (
             "Since no adapter is provided, GEPA requires a task LM to be provided. Please set the `task_lm` parameter."
         )
-        adapter = DefaultAdapter(model=task_lm)
+        active_adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] = cast(
+            GEPAAdapter[DataInst, Trajectory, RolloutOutput], DefaultAdapter(model=task_lm)
+        )
     else:
         assert task_lm is None, (
             "Since an adapter is provided, GEPA does not require a task LM to be provided. Please set the `task_lm` parameter to None."
         )
+        active_adapter = adapter
 
-    # cast data to DataLoader
-    trainset = ensure_loader(trainset)
-    valset = ensure_loader(valset if valset is not None else trainset)
+    # Normalize datasets to DataLoader instances
+    train_loader = ensure_loader(trainset)
+    val_loader = ensure_loader(valset) if valset is not None else train_loader
 
     # Comprehensive stop_callback logic
     # Convert stop_callbacks to a list if it's not already
-    stop_callbacks_list = []
+    stop_callbacks_list: list[StopperProtocol] = []
     if stop_callbacks is not None:
-        if isinstance(stop_callbacks, list):
+        if isinstance(stop_callbacks, Sequence):
             stop_callbacks_list.extend(stop_callbacks)
         else:
             stop_callbacks_list.append(stop_callbacks)
@@ -188,12 +192,13 @@ def optimize(
         stop_callbacks_list.append(max_calls_stopper)
 
     # Assert that at least one stopping condition is provided
-    if len(stop_callbacks_list) == 0:
+    if not stop_callbacks_list:
         raise ValueError(
             "The user must provide at least one of stop_callbacks or max_metric_calls to specify a stopping condition."
         )
 
     # Create composite stopper if multiple stoppers, or use single stopper
+    stop_callback: StopperProtocol
     if len(stop_callbacks_list) == 1:
         stop_callback = stop_callbacks_list[0]
     else:
@@ -201,9 +206,9 @@ def optimize(
 
         stop_callback = CompositeStopper(*stop_callbacks_list)
 
-    if not hasattr(adapter, "propose_new_texts"):
+    if not hasattr(active_adapter, "propose_new_texts"):
         assert reflection_lm is not None, (
-            f"reflection_lm was not provided. The adapter used '{adapter!s}' does not provide a propose_new_texts method, "
+            f"reflection_lm was not provided. The adapter used '{active_adapter!s}' does not provide a propose_new_texts method, "
             + "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
         )
 
@@ -211,17 +216,19 @@ def optimize(
         import litellm
 
         reflection_lm_name = reflection_lm
-        reflection_lm = (
-            lambda prompt: litellm.completion(model=reflection_lm_name, messages=[{"role": "user", "content": prompt}])
-            .choices[0]
-            .message.content
-        )
+
+        def _reflection_lm(prompt: str) -> str:
+            completion = litellm.completion(model=reflection_lm_name, messages=[{"role": "user", "content": prompt}])
+            return completion.choices[0].message.content  # type: ignore
+
+        reflection_lm = _reflection_lm
 
     if logger is None:
         logger = StdOutLogger()
 
     rng = random.Random(seed)
 
+    candidate_selector: CandidateSelector
     if isinstance(candidate_selection_strategy, str):
         factories = {
             "pareto": lambda: ParetoCandidateSelector(rng=rng),
@@ -231,14 +238,17 @@ def optimize(
 
         try:
             candidate_selector = factories[candidate_selection_strategy]()
-        except KeyError:
+        except KeyError as exc:
             raise ValueError(
                 f"Unknown candidate_selector strategy: {candidate_selection_strategy}. "
                 "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
-            )
-
-    if isinstance(candidate_selection_strategy, CandidateSelector):
+            ) from exc
+    elif isinstance(candidate_selection_strategy, CandidateSelector):
         candidate_selector = candidate_selection_strategy
+    else:
+        raise TypeError(
+            "candidate_selection_strategy must be a supported string strategy or an instance of CandidateSelector."
+        )
 
     if val_evaluation_policy is None or val_evaluation_policy == "full_eval":
         val_evaluation_policy = FullEvaluationPolicy()
@@ -257,7 +267,9 @@ def optimize(
             f"Unknown module_selector strategy: {module_selector}. Supported strategies: 'round_robin', 'all'"
         )
 
-        module_selector = module_selector_cls()
+        module_selector_instance: ReflectionComponentSelector = module_selector_cls()
+    else:
+        module_selector_instance = module_selector
 
     if batch_sampler == "epoch_shuffled":
         batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size or 3, rng=rng)
@@ -276,16 +288,17 @@ def optimize(
     )
 
     if reflection_prompt_template is not None:
-        assert not (hasattr(adapter, "propose_new_texts") and adapter.propose_new_texts is not None), (
-            f"Adapter {adapter!s} provides its own propose_new_texts method; reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
+        assert not (adapter is not None and getattr(adapter, "propose_new_texts", None) is not None), (
+            f"Adapter {adapter!s} provides its own propose_new_texts method; reflection_prompt_template will be ignored. "
+            "Set reflection_prompt_template to None."
         )
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
-        trainset=trainset,
-        adapter=adapter,
+        trainset=train_loader,
+        adapter=active_adapter,
         candidate_selector=candidate_selector,
-        module_selector=module_selector,
+        module_selector=module_selector_instance,
         batch_sampler=batch_sampler,
         perfect_score=perfect_score,
         skip_perfect_score=skip_perfect_score,
@@ -294,15 +307,15 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
     )
 
-    def evaluator(inputs, prog):
-        eval_out = adapter.evaluate(inputs, prog, capture_traces=False)
+    def evaluator(inputs: list[DataInst], prog: dict[str, str]) -> tuple[list[RolloutOutput], list[float]]:
+        eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
         return eval_out.outputs, eval_out.scores
 
-    merge_proposer = None
+    merge_proposer: MergeProposer | None = None
     if use_merge:
         merge_proposer = MergeProposer(
             logger=logger,
-            valset=valset,
+            valset=val_loader,
             evaluator=evaluator,
             use_merge=use_merge,
             max_merge_invocations=max_merge_invocations,
@@ -313,7 +326,7 @@ def optimize(
     engine = GEPAEngine(
         run_dir=run_dir,
         evaluator=evaluator,
-        valset=valset,
+        valset=val_loader,
         seed_candidate=seed_candidate,
         perfect_score=perfect_score,
         seed=seed,
@@ -332,5 +345,4 @@ def optimize(
     with experiment_tracker:
         state = engine.run()
 
-    result = GEPAResult.from_state(state)
-    return result
+    return GEPAResult.from_state(state, run_dir=run_dir, seed=seed)
