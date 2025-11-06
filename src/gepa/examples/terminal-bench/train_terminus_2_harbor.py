@@ -35,18 +35,33 @@ class Terminus2Wrapper(Terminus2):
         """Return the path to the custom prompt template that will be dynamically generated."""
         return Path(__file__).parent / "prompt-templates" / "terminus_2_harbor.txt"
 
+running_time = {'adaptive-rejection-sampler': 1003, 'bn-fit-modify': 980, 'break-filter-js-from-html': 1194, 'build-cython-ext': 478, 'build-pmars': 360, 'build-pov-ray': 2262, 'caffe-cifar-10': 1384, 'cancel-async-tasks': 97, 'chess-best-move': 453, 'circuit-fibsqrt': 1731, 'cobol-modernization': 295, 'code-from-image': 378, 'compile-compcert': 2236, 'configure-git-webserver': 148, 'constraints-scheduling': 130, 'count-dataset-tokens': 419, 'crack-7z-hash': 1442, 'custom-memory-heap-crash': 994, 'db-wal-recovery': 292, 'distribution-search': 1880, 'dna-assembly': 417, 'dna-insert': 239, 'extract-elf': 311, 'extract-moves-from-video': 1872, 'feal-differential-cryptanalysis': 2486, 'feal-linear-cryptanalysis': 1899, 'filter-js-from-html': 692, 'financial-document-processor': 468, 'fix-code-vulnerability': 263, 'fix-git': 81, 'fix-ocaml-gc': 2723, 'gcode-to-text': 132, 'git-leak-recovery': 121, 'git-multibranch': 328, 'gpt2-codegolf': 298, 'headless-terminal': 135, 'hf-model-inference': 531, 'install-windows-3.11': 358, 'kv-store-grpc': 116, 'large-scale-text-editing': 1274, 'largest-eigenval': 316, 'llm-inference-batching-scheduler': 333, 'log-summary-date-ranges': 82, 'mailman': 2155, 'make-doom-for-mips': 1004, 'make-mips-interpreter': 1179, 'mcmc-sampling-stan': 2263, 'merge-diff-arc-agi-task': 256, 'model-extraction-relu-logits': 228, 'modernize-scientific-stack': 150, 'mteb-leaderboard': 753, 'mteb-retrieve': 624, 'multi-source-data-merger': 173, 'nginx-request-logging': 138, 'openssl-selfsigned-cert': 90, 'overfull-hbox': 360, 'password-recovery': 328, 'path-tracing': 824, 'path-tracing-reverse': 381, 'polyglot-c-py': 315, 'polyglot-rust-c': 670, 'portfolio-optimization': 411, 'protein-assembly': 317, 'prove-plus-comm': 230, 'pypi-server': 138, 'pytorch-model-cli': 377, 'pytorch-model-recovery': 1846, 'qemu-alpine-ssh': 1141, 'qemu-startup': 850, 'query-optimize': 2126, 'raman-fitting': 194, 'regex-chess': 1741, 'regex-log': 139, 'reshard-c4-data': 618, 'rstan-to-pystan': 1881, 'sam-cell-seg': 1372, 'sanitize-git-repo': 183, 'schemelike-metacircular-eval': 497, 'sparql-university': 125, 'sqlite-db-truncate': 112, 'sqlite-with-gcov': 343, 'torch-pipeline-parallelism': 567, 'torch-tensor-parallelism': 373, 'train-fasttext': 5839, 'tune-mjcf': 861, 'video-processing': 141, 'vulnerable-secret': 144, 'winning-avg-corewars': 1593, 'write-compressor': 846}
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, default="gpt-4o-mini")
     parser.add_argument("--n_concurrent", type=int, default=4)
     parser.add_argument("--parser_name", type=str, default="json", choices=["json", "xml"])
+    parser.add_argument("--gepa_out_path", type=str, default=None)
     parser.add_argument("--skip_testset", action="store_true", default=False)
     args = parser.parse_args()
 
     # This is the ONLY part that GEPA will optimize
     # Starting from the base technical instructions from Harbor's template
-    initial_instruction_prompt = """IMPORTANT: The text inside "keystrokes" will be used completely verbatim as keystrokes. Write commands exactly as you want them sent to the terminal:
+    initial_instruction_prompt = """Required fields:
+- "analysis": Your analysis of the current situation
+- "plan": Your plan for the next steps
+- "commands": Array of command objects to execute
+
+Optional fields:
+- "task_complete": Boolean indicating if the task is complete (defaults to false if not present)
+
+Command object structure:
+- "keystrokes": String containing the exact keystrokes to send to the terminal (required)
+- "duration": Number of seconds to wait for the command to complete before the next command will be executed (defaults to 1.0 if not present)
+
+IMPORTANT: The text inside "keystrokes" will be used completely verbatim as keystrokes. Write commands exactly as you want them sent to the terminal:
 - Most bash commands should end with a newline (\n) to cause them to execute
 - For special key sequences, use tmux-style escape sequences:
   - C-c for Ctrl+C
@@ -68,7 +83,7 @@ Important notes:
     # terminal-bench@2.0 is the full testset
     
     print("Fetching task IDs from Harbor registry...")
-    registry = RegistryClient()
+    registry = RegistryClient(url="https://raw.githubusercontent.com/laude-institute/harbor/dc62fd28edc087e64fde3bfa0bfd22d5003d2184/registry.json")
     
     # Get task IDs from tb-lite-beta@0.0
     lite_dataset_items = registry.download_dataset("tb-lite-beta", "0.0", overwrite=False)
@@ -78,7 +93,7 @@ Important notes:
     print(f"Sample task names: {lite_task_names[:3]}")
     
     # Split into train (19) and val (20)
-    excluded_task_names = ["spinning-up-rl", "mnist-learning-fix", "hdfs-deployment"]
+    excluded_task_names = ["spinning-up-rl", "mnist-learning-fix", "hdfs-deployment", "png-generation"]
     trainset = [
         HarborTerminus2Task(task_id=task_name, model_name=args.model_name, parser_name=args.parser_name)
         for task_name in lite_task_names if all(excluded_task_name not in task_name for excluded_task_name in excluded_task_names) # First 19 for training
@@ -150,7 +165,10 @@ Important notes:
         testset_results_before_opt = None
 
     from datetime import datetime
-    output_dir = Path(f"gepa_terminus_2_harbor_{args.model_name}_{datetime.now().strftime("%m%d%H%M")}")
+    if args.gepa_out_path is None:
+        output_dir = Path(f"gepa_terminus_2_harbor_{args.model_name}_{datetime.now().strftime("%m%d%H%M")}")
+    else:
+        output_dir = Path(args.gepa_out_path)
     output_dir.mkdir(exist_ok=True)
     
 
@@ -170,7 +188,7 @@ Important notes:
         max_metric_calls=400,
         reflection_minibatch_size=3,
         perfect_score=1,
-        skip_perfect_score=False,
+        skip_perfect_score=True,
         run_dir=str(output_dir),
     )
 
@@ -182,7 +200,7 @@ Important notes:
         testset,
         {"instruction_prompt": optimized_results.best_candidate["instruction_prompt"]},
         capture_traces=True,
-        job_name=f"gepa_terminus2_testset_optimized_{args.model_name}_{datetime.now().strftime("%Y%m%d%H%M%S")}",
+        job_name=f"gepa_terminus2_testset_optimized_{args.model_name}_{datetime.now().strftime("%m%d%H%M")}",
     )
 
     # Print summary
@@ -190,7 +208,8 @@ Important notes:
     print("SUMMARY")
     print("=" * 80)
     # print(f"Testset score (no prompt):      {sum(t['success'] for t in testset_results_no_prompt.trajectories)}/{len(testset)}")
-    print(f"Testset score (before opt):     {sum(t['success'] for t in testset_results_before_opt.trajectories)}/{len(testset)}")
+    if testset_results_before_opt is not None:
+        print(f"Testset score (before opt):     {sum(t['success'] for t in testset_results_before_opt.trajectories)}/{len(testset)}")
     print(f"Testset score (after opt):      {sum(t['success'] for t in testset_results_after_opt.trajectories)}/{len(testset)}")
     print("=" * 80)
 

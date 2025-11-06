@@ -38,6 +38,10 @@ def write_terminus_2_template(instruction_prompt: str, template_path: Path, pars
     about JSON/XML format, keystrokes, duration, etc. are kept fixed.
     """
     
+
+    # de-format instruction_prompt
+    instruction_prompt = instruction_prompt.replace("{", "{{").replace("}", "}}")
+
     # Fixed technical specification for JSON format
     # Based on Harbor's terminus-json-plain.txt template
     if parser_name == "json":
@@ -59,18 +63,6 @@ Format your response as JSON with the following structure:
   ],
   "task_complete": true
 }}}}
-
-Required fields:
-- "analysis": Your analysis of the current situation
-- "plan": Your plan for the next steps
-- "commands": Array of command objects to execute
-
-Optional fields:
-- "task_complete": Boolean indicating if the task is complete (defaults to false if not present)
-
-Command object structure:
-- "keystrokes": String containing the exact keystrokes to send to the terminal (required)
-- "duration": Number of seconds to wait for the command to complete before the next command will be executed (defaults to 1.0 if not present)
 
 {instruction_prompt}
 
@@ -199,18 +191,36 @@ def get_results_from_harbor_job(job_dir: Path) -> tuple[list[bool], list[float],
         else:
             failed_reason = "Test failed. Unknown reason."
         
-        # Extract trajectory from agent logs
-        trajectory_path = trial_dir / "agent" / "trajectory.json"
+        # Extract messages from the last episode's debug.json
         messages = []
-        if trajectory_path.exists():
-            with open(trajectory_path) as f:
-                trajectory_data = json.load(f)
-                # Convert Harbor trajectory format to messages
-                for step in trajectory_data.get("steps", []):
-                    if step.get("source") == "user":
-                        messages.append({"role": "user", "content": step.get("message", "")})
-                    elif step.get("source") == "agent":
-                        messages.append({"role": "assistant", "content": step.get("message", "")})
+        try:
+            agent_dir = trial_dir / "agent"
+            episode_dirs = sorted(
+                [d for d in agent_dir.iterdir() if d.is_dir() and d.name.startswith("episode-")],
+                key=lambda d: int(d.name.split("-")[1])
+            )
+            last_episode_dir = episode_dirs[-1]
+            
+            with open(last_episode_dir / "debug.json") as f:
+                debug_data = json.load(f)
+                messages = debug_data.get("messages", [])
+                
+                # For all messages, if content is a list, extract the first text content
+                for msg in messages:
+                    if isinstance(msg.get("content"), list):
+                        msg["content"] = msg["content"][0]["text"]
+                
+                # Parse and add original_response as the last message
+                original_response = debug_data.get("original_response")
+                response_data = json.loads(original_response)
+                messages.append({
+                    "role": "assistant",
+                    "content": response_data["content"][0]["text"]
+                })
+
+            
+        except (FileNotFoundError, IndexError, json.JSONDecodeError, KeyError, TypeError) as e:
+            print(f"Warning: Failed to extract messages for {trial_dir.name}: {e}")
         
         successes.append(success)
         scores.append(score)
@@ -296,7 +306,7 @@ class Terminus2HarborAdapter(GEPAAdapter):
             jobs_dir=job_dir.parent,
             datasets=[
                 RegistryDatasetConfig(
-                    registry=RemoteRegistryInfo(url=RegistryClient.DEFAULT_REGISTRY_URL),
+                    registry=RemoteRegistryInfo(url="https://raw.githubusercontent.com/laude-institute/harbor/dc62fd28edc087e64fde3bfa0bfd22d5003d2184/registry.json"),
                     name=ds_name,
                     version=ds_version,
                     task_names=task_ids if task_ids else None,  # Filter to specific task names (exact match)
