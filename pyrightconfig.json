@@ -11,6 +11,5 @@
     "src/gepa/adapters/anymaths_adapter",
     "src/gepa/adapters/terminal_bench_adapter",
     "tests"
-  ],
-  "stubPath": "typings"
+  ]
 }
