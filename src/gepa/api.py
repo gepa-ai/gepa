@@ -217,15 +217,7 @@ def optimize(
 
         def _reflection_lm(prompt: str) -> str:
             completion = litellm.completion(model=reflection_lm_name, messages=[{"role": "user", "content": prompt}])
-            choices = getattr(completion, "choices", None)
-            if not choices:
-                raise RuntimeError("litellm completion returned no choices.")
-            first_choice = choices[0]
-            message = getattr(first_choice, "message", None)
-            content = getattr(message, "content", None) if message is not None else None
-            if not isinstance(content, str):
-                raise TypeError("litellm completion returned a non-string message content.")
-            return content
+            return completion.choices[0].message.content  # type: ignore
 
         reflection_lm = _reflection_lm
 
