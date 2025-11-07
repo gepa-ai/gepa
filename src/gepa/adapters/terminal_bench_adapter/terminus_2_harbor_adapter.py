@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +30,7 @@ class HarborTerminus2Task(BaseModel):
     task_id: str
     model_name: str
     parser_name: str = "json"  # For Terminus 2: "json" or "xml"
+    dataset_name: str = "terminal-bench@2.0"
 
 
 def write_terminus_2_template(instruction_prompt: str, template_path: Path, parser_name: str = "json"):
@@ -132,7 +134,56 @@ Current terminal state:
     template_path.write_text(template_content)
 
 
-def get_results_from_harbor_job(job_dir: Path) -> tuple[list[bool], list[float], list[str], list[dict]]:
+def parse_pytest_output(test_stdout_path: Path) -> tuple[float, str | None]:
+    """
+    Parse pytest output to extract partial score and failures section.
+    
+    Returns:
+        tuple of (partial_score, failures_section)
+        - partial_score: passed_tests / total_tests (or 0.0 if parsing fails)
+        - failures_section: The FAILURES section content (or None if not found)
+    """
+    try:
+        content = test_stdout_path.read_text()
+    except (FileNotFoundError, OSError):
+        return 0.0, None
+    
+    # Look for test summary info line like "1 failed, 5 passed in 12.92s"
+    # Pattern to match test results (e.g., "1 failed, 5 passed", "5 passed", "6 failed")
+    # Ignore warnings in the count
+    passed = 0
+    failed = 0
+    total = 0
+    
+    # Find the summary line
+    summary_pattern = r"=+\s*(\d+)\s+failed,\s+(\d+)\s+passed.*?=+|=+\s*(\d+)\s+passed.*?=+|=+\s*(\d+)\s+failed.*?=+"
+    match = re.search(summary_pattern, content)
+    
+    if match:
+        if match.group(1) and match.group(2):  # "X failed, Y passed"
+            failed = int(match.group(1))
+            passed = int(match.group(2))
+        elif match.group(3):  # "X passed"
+            passed = int(match.group(3))
+        elif match.group(4):  # "X failed"
+            failed = int(match.group(4))
+        
+        total = passed + failed
+        partial_score = passed / total if total > 0 else 0.0
+    else:
+        partial_score = 0.0
+    
+    # Extract FAILURES section (from "=== FAILURES ===" to end of file or next section)
+    failures_section = None
+    failures_start = content.find("=== FAILURES ===")
+    if failures_start != -1:
+        # Get everything from FAILURES to the end
+        failures_section = content[failures_start:]
+    
+    return partial_score, failures_section
+
+
+def get_results_from_harbor_job(job_dir: Path, partial_score: bool = True) -> tuple[list[bool], list[float], list[str], list[dict]]:
     """Extract results from a completed Harbor job."""
     successes = []
     scores = []
@@ -174,6 +225,14 @@ def get_results_from_harbor_job(job_dir: Path) -> tuple[list[bool], list[float],
             success = False
             score = 0.0
         
+        # Try to get partial score from test output if score is 0
+        failures_section = None
+        if partial_score and score == 0.0:
+            test_stdout_path = trial_dir / "verifier" / "test-stdout.txt"
+            parsed_score, failures_section = parse_pytest_output(test_stdout_path)
+            if parsed_score > 0.0:
+                score = parsed_score
+        
         # Determine failure reason
         if exception_info:
             failed_reason = f"{exception_info.get('exception_type', 'unknown')}: {exception_info.get('exception_message', 'unknown')}"
@@ -186,6 +245,9 @@ def get_results_from_harbor_job(job_dir: Path) -> tuple[list[bool], list[float],
                     failed_reason += f"\n\n{exception_text}"
         elif not success and verifier_result:
             failed_reason = "Test failed. The trajectory failed to meet the task description."
+            # Append failures section if available
+            if failures_section:
+                failed_reason += f"\n\n{failures_section}"
         elif verifier_result is None:
             failed_reason = "Test failed. The verifier result is missing."
         else:
@@ -264,6 +326,7 @@ class Terminus2HarborAdapter(GEPAAdapter):
         capture_traces: bool = False,
         dataset_name: str | None = None,
         job_name: str = "gepa_terminus2",
+        partial_score: bool = True,
     ) -> EvaluationBatch:
         """
         Evaluate a batch of tasks using Harbor.
@@ -289,29 +352,39 @@ class Terminus2HarborAdapter(GEPAAdapter):
         job_name = f"{job_name}_{timestamp}"
         job_dir = Path("runs") / job_name
         
-        # Extract task IDs from batch
-        task_ids = [task.task_id for task in batch]
+        # Extract task IDs from batch and group by dataset_name
+        from collections import defaultdict
+        tasks_by_dataset = defaultdict(list)
+        for task in batch:
+            # Use task's dataset_name field, falling back to parameter if needed
+            task_dataset = task.dataset_name if hasattr(task, 'dataset_name') else dataset_name
+            tasks_by_dataset[task_dataset].append(task.task_id)
+        
         model_name = batch[0].model_name
         
-        # Parse dataset name (format: "name@version" or just "name")
-        if "@" in dataset_name:
-            ds_name, ds_version = dataset_name.split("@", 1)
-        else:
-            ds_name, ds_version = dataset_name, "head"
-        
-        # Create Harbor job config
-        # Note: We filter to specific task names by passing them as exact patterns
-        job_config = JobConfig(
-            job_name=job_name,
-            jobs_dir=job_dir.parent,
-            datasets=[
+        # Create RegistryDatasetConfig for each unique dataset
+        dataset_configs = []
+        for ds_full_name, task_ids in tasks_by_dataset.items():
+            # Parse dataset name (format: "name@version" or just "name")
+            if "@" in ds_full_name:
+                ds_name, ds_version = ds_full_name.split("@", 1)
+            else:
+                ds_name, ds_version = ds_full_name, "head"
+            
+            dataset_configs.append(
                 RegistryDatasetConfig(
                     registry=RemoteRegistryInfo(url="https://raw.githubusercontent.com/laude-institute/harbor/dc62fd28edc087e64fde3bfa0bfd22d5003d2184/registry.json"),
                     name=ds_name,
                     version=ds_version,
                     task_names=task_ids if task_ids else None,  # Filter to specific task names (exact match)
                 )
-            ],
+            )
+        
+        # Create Harbor job config
+        job_config = JobConfig(
+            job_name=job_name,
+            jobs_dir=job_dir.parent,
+            datasets=dataset_configs,
             agents=[
                 AgentConfig(
                     name="terminus-2-gepa-adapter",
@@ -332,8 +405,9 @@ class Terminus2HarborAdapter(GEPAAdapter):
         
         # Run the job
         print(f"Running Harbor job: {job_name}")
-        print(f"Dataset: {dataset_name}, Tasks: {len(task_ids)}, Model: {model_name}")
-        print(f"Task names to filter: {task_ids[:5]}...")  # Show first 5 task names
+        print(f"Datasets: {list(tasks_by_dataset.keys())}, Total tasks: {len(batch)}, Model: {model_name}")
+        for ds_name_key, task_ids_for_ds in tasks_by_dataset.items():
+            print(f"  {ds_name_key}: {len(task_ids_for_ds)} tasks (first 5: {task_ids_for_ds[:5]})")  # Show first 5 task names per dataset
         
         try:
             job = Job(job_config)
@@ -353,7 +427,7 @@ class Terminus2HarborAdapter(GEPAAdapter):
             )
         
         # Extract results
-        successes, scores, failed_reasons, traj_list = get_results_from_harbor_job(job_dir)
+        successes, scores, failed_reasons, traj_list = get_results_from_harbor_job(job_dir, partial_score)
         
         # Build outputs and trajectories
         outputs = []

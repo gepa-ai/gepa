@@ -272,14 +272,14 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 # Acceptance: require strict improvement on subsample
                 old_sum = sum(proposal.subsample_scores_before or [])
                 new_sum = sum(proposal.subsample_scores_after or [])
-                if new_sum <= old_sum:
+                if all(new_score <= old_score for new_score, old_score in zip(proposal.subsample_scores_after, proposal.subsample_scores_before, strict=True)):
                     self.logger.log(
                         f"Iteration {state.i + 1}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
                     )
                     continue
                 else:
                     self.logger.log(
-                        f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
+                        f"Iteration {state.i + 1}: New subsample scores {proposal.subsample_scores_after} is better than old score {proposal.subsample_scores_before}. Continue to full eval and add to candidate pool."
                     )
 
                 # Accept: full eval + add

@@ -28,6 +28,7 @@ class ExperimentTracker:
         use_mlflow: bool = False,
         mlflow_tracking_uri: str | None = None,
         mlflow_experiment_name: str | None = None,
+        wandb_experiment_name: str | None = None,
     ):
         self.use_wandb = use_wandb
         self.use_mlflow = use_mlflow
@@ -36,7 +37,7 @@ class ExperimentTracker:
         self.wandb_init_kwargs = wandb_init_kwargs or {}
         self.mlflow_tracking_uri = mlflow_tracking_uri
         self.mlflow_experiment_name = mlflow_experiment_name
-
+        self.wandb_experiment_name = wandb_experiment_name
         self._created_mlflow_run = False
 
     def initialize(self):
@@ -79,7 +80,7 @@ class ExperimentTracker:
         if self.use_wandb:
             import wandb  # type: ignore
 
-            wandb.init(**self.wandb_init_kwargs)
+            wandb.init(name=self.wandb_experiment_name, **self.wandb_init_kwargs)
         if self.use_mlflow:
             import mlflow  # type: ignore
 
@@ -159,6 +160,7 @@ def create_experiment_tracker(
     use_mlflow: bool = False,
     mlflow_tracking_uri: str | None = None,
     mlflow_experiment_name: str | None = None,
+    wandb_experiment_name: str | None = None,
 ) -> ExperimentTracker:
     """
     Create an experiment tracker based on the specified backends.
@@ -170,7 +172,7 @@ def create_experiment_tracker(
         wandb_init_kwargs: Additional kwargs for wandb.init()
         mlflow_tracking_uri: Tracking URI for mlflow
         mlflow_experiment_name: Experiment name for mlflow
-
+        wandb_experiment_name: Experiment name for wandb
     Returns:
         ExperimentTracker instance
 
@@ -184,4 +186,5 @@ def create_experiment_tracker(
         use_mlflow=use_mlflow,
         mlflow_tracking_uri=mlflow_tracking_uri,
         mlflow_experiment_name=mlflow_experiment_name,
+        wandb_experiment_name=wandb_experiment_name,
     )

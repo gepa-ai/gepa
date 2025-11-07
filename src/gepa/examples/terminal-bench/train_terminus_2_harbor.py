@@ -4,6 +4,7 @@ os.environ["LITELLM_LOG"] = "ERROR"
 
 import argparse
 import json
+import random
 from pathlib import Path
 
 import litellm
@@ -28,7 +29,7 @@ class Terminus2Wrapper(Terminus2):
     """
 
     def __init__(self, *args, **kwargs):
-        kwargs["max_episodes"] = 500
+        kwargs["max_episodes"] = 150
         super().__init__(*args, **kwargs)
     
     def _get_prompt_template_path(self) -> Path:
@@ -36,6 +37,14 @@ class Terminus2Wrapper(Terminus2):
         return Path(__file__).parent / "prompt-templates" / "terminus_2_harbor.txt"
 
 running_time = {'adaptive-rejection-sampler': 1003, 'bn-fit-modify': 980, 'break-filter-js-from-html': 1194, 'build-cython-ext': 478, 'build-pmars': 360, 'build-pov-ray': 2262, 'caffe-cifar-10': 1384, 'cancel-async-tasks': 97, 'chess-best-move': 453, 'circuit-fibsqrt': 1731, 'cobol-modernization': 295, 'code-from-image': 378, 'compile-compcert': 2236, 'configure-git-webserver': 148, 'constraints-scheduling': 130, 'count-dataset-tokens': 419, 'crack-7z-hash': 1442, 'custom-memory-heap-crash': 994, 'db-wal-recovery': 292, 'distribution-search': 1880, 'dna-assembly': 417, 'dna-insert': 239, 'extract-elf': 311, 'extract-moves-from-video': 1872, 'feal-differential-cryptanalysis': 2486, 'feal-linear-cryptanalysis': 1899, 'filter-js-from-html': 692, 'financial-document-processor': 468, 'fix-code-vulnerability': 263, 'fix-git': 81, 'fix-ocaml-gc': 2723, 'gcode-to-text': 132, 'git-leak-recovery': 121, 'git-multibranch': 328, 'gpt2-codegolf': 298, 'headless-terminal': 135, 'hf-model-inference': 531, 'install-windows-3.11': 358, 'kv-store-grpc': 116, 'large-scale-text-editing': 1274, 'largest-eigenval': 316, 'llm-inference-batching-scheduler': 333, 'log-summary-date-ranges': 82, 'mailman': 2155, 'make-doom-for-mips': 1004, 'make-mips-interpreter': 1179, 'mcmc-sampling-stan': 2263, 'merge-diff-arc-agi-task': 256, 'model-extraction-relu-logits': 228, 'modernize-scientific-stack': 150, 'mteb-leaderboard': 753, 'mteb-retrieve': 624, 'multi-source-data-merger': 173, 'nginx-request-logging': 138, 'openssl-selfsigned-cert': 90, 'overfull-hbox': 360, 'password-recovery': 328, 'path-tracing': 824, 'path-tracing-reverse': 381, 'polyglot-c-py': 315, 'polyglot-rust-c': 670, 'portfolio-optimization': 411, 'protein-assembly': 317, 'prove-plus-comm': 230, 'pypi-server': 138, 'pytorch-model-cli': 377, 'pytorch-model-recovery': 1846, 'qemu-alpine-ssh': 1141, 'qemu-startup': 850, 'query-optimize': 2126, 'raman-fitting': 194, 'regex-chess': 1741, 'regex-log': 139, 'reshard-c4-data': 618, 'rstan-to-pystan': 1881, 'sam-cell-seg': 1372, 'sanitize-git-repo': 183, 'schemelike-metacircular-eval': 497, 'sparql-university': 125, 'sqlite-db-truncate': 112, 'sqlite-with-gcov': 343, 'torch-pipeline-parallelism': 567, 'torch-tensor-parallelism': 373, 'train-fasttext': 5839, 'tune-mjcf': 861, 'video-processing': 141, 'vulnerable-secret': 144, 'winning-avg-corewars': 1593, 'write-compressor': 846}
+
+
+# train-fasttext: 5839s (97.3 min)
+# fix-ocaml-gc: 2723s (45.4 min)
+# feal-differential-cryptanalysis: 2486s (41.4 min)??
+
+excluded_task_names = ["spinning-up-rl", "mnist-learning-fix", "hdfs-deployment", "png-generation", "train-fasttext", "fix-ocaml-gc", "feal-differential-cryptanalysis"]
+
 
 
 if __name__ == "__main__":
@@ -79,39 +88,66 @@ Important notes:
 - Commands array can be empty if you want to wait without taking action"""
 
     # Harbor datasets
-    # tb-lite-beta@0.0 has 39 examples: 19 for train, 20 for val
-    # terminal-bench@2.0 is the full testset
+    # tb-lite-beta@0.0 has 39 examples
+    # terminal-bench@2.0 is the full testset (89 examples)
+    # Strategy:
+    # 1. Split tb2: use 50 for test, remaining for dev (excluding excluded tasks)
+    # 2. Add half of tb-lite into dev (excluding excluded tasks)
+    # 3. Use dev for both train and val
     
     print("Fetching task IDs from Harbor registry...")
     registry = RegistryClient(url="https://raw.githubusercontent.com/laude-institute/harbor/dc62fd28edc087e64fde3bfa0bfd22d5003d2184/registry.json")
     
     # Get task IDs from tb-lite-beta@0.0
     lite_dataset_items = registry.download_dataset("tb-lite-beta", "0.0", overwrite=False)
-    # Extract task names (directory names) from the task IDs
     lite_task_names = [item.id.get_name() for item in lite_dataset_items]
-    print(f"Found {len(lite_task_names)} tasks in tb-lite-beta@0.0")
-    print(f"Sample task names: {lite_task_names[:3]}")
+    # Filter out excluded tasks
+    lite_task_names_filtered = [name for name in lite_task_names if name not in excluded_task_names]
+    print(f"Found {len(lite_task_names)} tasks in tb-lite-beta@0.0 ({len(lite_task_names_filtered)} after exclusions)")
     
-    # Split into train (19) and val (20)
-    excluded_task_names = ["spinning-up-rl", "mnist-learning-fix", "hdfs-deployment", "png-generation"]
-    trainset = [
-        HarborTerminus2Task(task_id=task_name, model_name=args.model_name, parser_name=args.parser_name)
-        for task_name in lite_task_names if all(excluded_task_name not in task_name for excluded_task_name in excluded_task_names) # First 19 for training
+    # Get task IDs from terminal-bench@2.0
+    tb2_dataset_items = registry.download_dataset("terminal-bench", "2.0", overwrite=False)
+    tb2_task_names = [item.id.get_name() for item in tb2_dataset_items]
+    # Filter out excluded tasks
+    tb2_task_names_filtered = [name for name in tb2_task_names if name not in excluded_task_names]
+    print(f"Found {len(tb2_task_names)} tasks in terminal-bench@2.0 ({len(tb2_task_names_filtered)} after exclusions)")
+    
+    # Shuffle with fixed seed for reproducibility
+    random.seed(42)
+    random.shuffle(lite_task_names_filtered)
+    random.shuffle(tb2_task_names_filtered)
+    
+    # Split tb2: use 50 for test, remaining for dev
+    tb2_test_task_names = tb2_task_names_filtered[:50]
+    tb2_dev_task_names = tb2_task_names_filtered[50:]
+    
+    # Split tb-lite into half for dev
+    lite_half = len(lite_task_names_filtered) // 2
+    lite_dev_task_names = lite_task_names_filtered[:lite_half]
+    
+    # Combine for dev set: remaining tb2 tasks + 50% of tb-lite
+    dev_task_names = tb2_dev_task_names + lite_dev_task_names
+    print(f"Dev set: {len(dev_task_names)} tasks ({len(tb2_dev_task_names)} from tb2 + {len(lite_dev_task_names)} from tb-lite)")
+    print(f"Test set: {len(tb2_test_task_names)} tasks (50 from tb2)")
+    
+    # Create dev set (used for both train and val)
+    # Tasks from tb2 use terminal-bench@2.0, tasks from tb-lite use tb-lite-beta@0.0
+    dev_tasks_from_tb2 = [
+        HarborTerminus2Task(task_id=task_name, model_name=args.model_name, parser_name=args.parser_name, dataset_name="terminal-bench@2.0")
+        for task_name in tb2_dev_task_names
     ]
-    valset = [
-        HarborTerminus2Task(task_id=task_name, model_name=args.model_name, parser_name=args.parser_name)
-        for task_name in lite_task_names if all(excluded_task_name not in task_name for excluded_task_name in excluded_task_names) # Last 20 for validation
+    dev_tasks_from_lite = [
+        # HarborTerminus2Task(task_id=task_name, model_name=args.model_name, parser_name=args.parser_name, dataset_name="tb-lite-beta@0.0")
+        # for task_name in lite_dev_task_names
     ]
+    dev_tasks = dev_tasks_from_tb2 + dev_tasks_from_lite
+    trainset = dev_tasks
+    valset = dev_tasks
     
-    # Get task IDs from terminal-bench@2.0 for testset
-    testset_dataset_items = registry.download_dataset("terminal-bench", "2.0", overwrite=False)
-    # Extract task names (directory names) from the task IDs
-    testset_task_names = [item.id.get_name() for item in testset_dataset_items]
-    print(f"Found {len(testset_task_names)} tasks in terminal-bench@2.0")
-    
+    # Create test set (50 tasks from tb2)
     testset = [
-        HarborTerminus2Task(task_id=task_name, model_name=args.model_name, parser_name=args.parser_name)
-        for task_name in testset_task_names
+        HarborTerminus2Task(task_id=task_name, model_name=args.model_name, parser_name=args.parser_name, dataset_name="terminal-bench@2.0")
+        for task_name in tb2_test_task_names
     ]
 
     reflection_lm_name = "openai/gpt-5"
@@ -125,16 +161,18 @@ Important notes:
         .message.content
     )
 
-    # Create separate adapters for train/val (tb-lite-beta) and test (terminal-bench)
-    adapter_lite = Terminus2HarborAdapter(
+    # Create adapters
+    # Note: Dev set contains tasks from both tb2 and tb-lite, so we use terminal-bench@2.0 as default
+    # which is the full dataset that should be able to handle all tasks
+    adapter_dev = Terminus2HarborAdapter(
         n_concurrent=args.n_concurrent,
         parser_name=args.parser_name,
         agent_import_path="train_terminus_2_harbor:Terminus2Wrapper",
         template_dir=TEMPLATE_DIR,
-        default_dataset_name="tb-lite-beta@0.0",
+        default_dataset_name="terminal-bench@2.0",
     )
     
-    adapter_full = Terminus2HarborAdapter(
+    adapter_test = Terminus2HarborAdapter(
         n_concurrent=args.n_concurrent,
         parser_name=args.parser_name,
         agent_import_path="train_terminus_2_harbor:Terminus2Wrapper",
@@ -142,24 +180,17 @@ Important notes:
         default_dataset_name="terminal-bench@2.0",
     )
 
-    # print("=" * 80)
-    # print("Evaluating testset WITHOUT custom instruction prompt (baseline)...")
-    # print("=" * 80)
-    # testset_results_no_prompt = adapter_full.evaluate(
-    #     testset, 
-    #     {"instruction_prompt": ""}, 
-    #     capture_traces=True,
-    # )
 
     print("\n" + "=" * 80)
     print("Evaluating testset BEFORE optimization (with initial instruction prompt)...")
     print("=" * 80)
     if not args.skip_testset:
-        testset_results_before_opt = adapter_full.evaluate(
+        testset_results_before_opt = adapter_test.evaluate(
             testset,
             {"instruction_prompt": initial_instruction_prompt},
             capture_traces=True,
             job_name=f"gepa_terminus2_testset_{args.model_name}",
+            partial_score=False,
         )
     else:
         testset_results_before_opt = None
@@ -170,6 +201,35 @@ Important notes:
     else:
         output_dir = Path(args.gepa_out_path)
     output_dir.mkdir(exist_ok=True)
+    
+    # Save task information
+    dev_tasks_info = {
+        "total": len(dev_task_names),
+        "from_tb2": {
+            "count": len(tb2_dev_task_names),
+            "dataset": "terminal-bench@2.0",
+            "tasks": tb2_dev_task_names
+        },
+        # "from_tb_lite": {
+        #     "count": len(lite_dev_task_names),
+        #     "dataset": "tb-lite-beta@0.0",
+        #     "tasks": lite_dev_task_names
+        # }
+    }
+    
+    test_tasks_info = {
+        "total": len(tb2_test_task_names),
+        "dataset": "terminal-bench@2.0",
+        "tasks": tb2_test_task_names
+    }
+    
+    with open(output_dir / "dev_tasks.json", "w") as f:
+        json.dump(dev_tasks_info, f, indent=2)
+    
+    with open(output_dir / "test_tasks.json", "w") as f:
+        json.dump(test_tasks_info, f, indent=2)
+    
+    print(f"\nTask info saved to {output_dir}/dev_tasks.json and {output_dir}/test_tasks.json")
     
 
     print("\n" + "=" * 80)
@@ -182,7 +242,7 @@ Important notes:
         seed_candidate={"instruction_prompt": initial_instruction_prompt},
         trainset=trainset,
         valset=valset,
-        adapter=adapter_lite,  # Use lite adapter for train/val on tb-lite-beta@0.0
+        adapter=adapter_dev,  # Use dev adapter for train/val (contains tasks from both tb2 and tb-lite)
         reflection_lm=reflection_lm,
         use_wandb=True,
         max_metric_calls=400,
@@ -190,17 +250,19 @@ Important notes:
         perfect_score=1,
         skip_perfect_score=True,
         run_dir=str(output_dir),
+        wandb_experiment_name=args.gepa_out_path or f"gepa_terminus2_harbor_{args.model_name}",
     )
 
     print("\n" + "=" * 80)
     print("Evaluating testset AFTER optimization...")
     print("=" * 80)
     from datetime import datetime
-    testset_results_after_opt = adapter_full.evaluate(  # Use full adapter for test on terminal-bench@2.0
+    testset_results_after_opt = adapter_test.evaluate(  # Use test adapter for evaluation on held-out tb2 tasks
         testset,
         {"instruction_prompt": optimized_results.best_candidate["instruction_prompt"]},
         capture_traces=True,
         job_name=f"gepa_terminus2_testset_optimized_{args.model_name}_{datetime.now().strftime("%m%d%H%M")}",
+        partial_score=False,
     )
 
     # Print summary

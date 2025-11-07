@@ -21,9 +21,9 @@ The following are examples of different task inputs provided to the assistant al
 
 Your task is to write a new instruction for the assistant.
 
-Read the inputs carefully and identify the input format and infer detailed task description about the task I wish to solve with the assistant.
+Read all the assistant responses and the corresponding feedback. Identify general knowledge about the task and terminal use, as they may not be available to the assistant in the future. The assistant may have utilized a generalizable strategy to solve the task, if so, include that in the instruction as well.
 
-Read all the assistant responses and the corresponding feedback. Identify all niche and domain specific factual information about the task and include it in the instruction, as a lot of it may not be available to the assistant in the future. The assistant may have utilized a generalizable strategy to solve the task, if so, include that in the instruction as well.
+For the new instruction, be comprehensive and detailed. Make sure to be creative, and make sure all the instructions should be your careful reflection from the examples and feedback provided.
 
 Provide the new instructions within ``` blocks."""
 
@@ -92,6 +92,15 @@ Provide the new instructions within ``` blocks."""
 
         prompt = prompt_template.replace("<curr_instructions>", current_instruction)
         prompt = prompt.replace("<inputs_outputs_feedback>", format_samples(dataset))
+
+        # Log prompt to file
+        from pathlib import Path
+        from datetime import datetime
+        log_dir = Path("logs/instruction_proposals")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        log_file = log_dir / f"prompt_{timestamp}.txt"
+        log_file.write_text(prompt)
 
         return prompt
 
