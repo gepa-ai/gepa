@@ -70,6 +70,13 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
         new_texts: dict[str, str] = {}
         for name in components_to_update:
+            # Gracefully handle cases where a selected component has no data in reflective_dataset
+            if name not in reflective_dataset or not reflective_dataset.get(name):
+                self.logger.log(
+                    f"Component '{name}' is not in reflective dataset. Skipping."
+                )
+                continue
+
             base_instruction = candidate[name]
             dataset_with_feedback = reflective_dataset[name]
             new_texts[name] = InstructionProposalSignature.run(
