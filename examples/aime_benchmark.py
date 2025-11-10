@@ -250,11 +250,7 @@ if RUN_TURBO:
     # Use adaptive_config() to automatically set ALL parameters based on dataset size
     from turbo_gepa.config import adaptive_config
 
-    config = adaptive_config(
-        dataset_size=len(turbo_dataset),
-        strategy="aggressive",  # Prioritize speed over quality for benchmarking
-        available_compute="server",  # Use maximum concurrency settings
-    )
+    config = adaptive_config(len(turbo_dataset))
     # Limit concurrency for reasonable benchmark runtime
     config.eval_concurrency = min(config.eval_concurrency, 64)
     config.batch_size = min(config.batch_size, len(turbo_dataset))

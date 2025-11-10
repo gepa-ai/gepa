@@ -13,6 +13,10 @@ from dataclasses import dataclass, field
 from typing import Sequence
 
 from turbo_gepa.stop_governor import StopGovernorConfig
+from turbo_gepa.strategies import (
+    ReflectionStrategy,
+    resolve_reflection_strategy_names,
+)
 
 
 def _default_variance_tolerance(shards: Sequence[float]) -> dict[float, float]:
@@ -212,6 +216,8 @@ class Config:
     target_quality: float | None = None  # Stop when best quality reaches this threshold
     eval_timeout_seconds: float | None = 120.0  # Max time to wait for a single LLM evaluation
     max_optimization_time_seconds: float | None = None  # Global timeout - stop optimization after this many seconds
+    reflection_strategy_names: tuple[str, ...] | None = None  # Default to all known strategies
+    reflection_strategies: tuple[ReflectionStrategy, ...] | None = None
 
     # Streaming mode config
 
@@ -255,6 +261,16 @@ class Config:
         # Auto-generate shrinkage_alpha if not provided
         if self.shrinkage_alpha is None:
             self.shrinkage_alpha = _default_shrinkage_alpha(self.shards)
+
+        custom_strategies = list(self.reflection_strategies or ())
+        resolved_defaults = list(resolve_reflection_strategy_names(self.reflection_strategy_names))
+        resolved_defaults.extend(custom_strategies)
+        if not resolved_defaults:
+            raise ValueError(
+                "At least one reflection strategy must be configured. "
+                "Provide reflection_strategy_names or reflection_strategies."
+            )
+        self.reflection_strategies = tuple(resolved_defaults)
 
 
 DEFAULT_CONFIG = Config()

@@ -217,3 +217,5 @@ gepa_terminus/
 .turbo_gepa/** */
 AGENTS.md
 CLAUDE.md
+.dspy_cache/
+.hf_cache/

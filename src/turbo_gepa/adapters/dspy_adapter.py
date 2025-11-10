@@ -56,6 +56,8 @@ from turbo_gepa.interfaces import Candidate
 from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
+from turbo_gepa.utils.litellm_client import configure_litellm_client
+
 
 DSPyTrace = list[tuple[Any, dict[str, Any], Prediction]]
 
@@ -128,10 +130,18 @@ class DSpyAdapter:
         self.archive = Archive()
         self.log_dir = log_dir or config.log_path
 
+        # Configure litellm's httpx client based on eval_concurrency
+        # This ensures connection pooling matches the user's concurrency settings
+        configure_litellm_client(self.config.eval_concurrency)
+
         # Reflection runner
         self.reflection_runner = self._create_reflection_runner()
 
-        async def batch_reflection_runner(parent_contexts: list[dict[str, object]], num_mutations: int) -> list[str]:
+        async def batch_reflection_runner(
+            parent_contexts: list[dict[str, object]],
+            num_mutations: int,
+            _task_examples: list[dict[str, object]] | None = None,
+        ) -> list[str]:
             if num_mutations <= 0 or not parent_contexts:
                 return []
             proposals: list[str] = []

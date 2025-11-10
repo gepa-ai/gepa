@@ -166,6 +166,42 @@ print(f"Pareto frontier: {len(result.get('pareto_entries', []))} candidates")
 
 ### Turbo speed configuration example
 
+### Built-in reflection strategies
+
+TurboGEPA ships with multiple reflection styles that can be combined or selected via
+`Config.reflection_strategy_names` (or `--strategies` in the helper scripts):
+
+| Name | Purpose |
+| --- | --- |
+| `incremental_reflection` | Original GEPA-style prompt edits that splice together high-performing parent prompts with fresh traces. |
+| `spec_induction` | PROMPT-MII-style specification induction: build entirely new instructions directly from task examples/solutions. |
+| `interleaved_thinking` | Teaches the student model to alternate between `<think>` (private reasoning) and `<answer>` (public output) blocks, ensuring verifiable step-by-step reasoning and a final `<answer>` with only the solution. |
+
+**When to use which?**
+
+- Use `incremental_reflection` when you already have a few reasonable prompts and just want fast, low-token improvements. It tends to converge quickly and is the safest default.
+- Layer in `spec_induction` when seeds are weak or you want broader exploration; it can invent entirely new instructions straight from labeled examples.
+- Enable `interleaved_thinking` when downstream reviewers (or the task itself) benefit from explicit reasoning traces—e.g., math, safety, or audit-friendly flows that require `<think>/<answer>` alternation.
+
+Blend them by listing multiple names; the mutator automatically re-weights strategies based on which ones are delivering better quality during the run.
+All built-in strategy definitions (and reference system prompts) live in `src/turbo_gepa/strategies/__init__.py` so you can inspect or extend them easily.
+
+Example:
+
+```python
+from turbo_gepa.config import Config
+
+config = Config(
+    reflection_strategy_names=(
+        "incremental_reflection",
+        "spec_induction",
+        "interleaved_thinking",
+    )
+)
+```
+
+Add your own `ReflectionStrategy` objects by setting `config.reflection_strategies` (they’ll be appended to the built-ins).
+
 ```python
 from turbo_gepa.config import Config
 
@@ -534,7 +570,7 @@ TurboGEPA **automatically scales concurrency** to available resources. Real-worl
 - **Hardware**: CPU cores, memory, file descriptors, network bandwidth
 - **Dataset Size**: Auto-config adjusts based on training data volume
 
-The adaptive configuration automatically balances throughput and resource utilization based on your `available_compute` setting ("laptop", "workstation", or "server").
+The adaptive configuration automatically balances throughput and resource utilization based on dataset size. Override individual `Config` fields (e.g., `eval_concurrency`, `reflection_strategy_names`) when you need a laptop-safe or server-heavy profile.
 
 ---
 
@@ -570,18 +606,70 @@ from turbo_gepa.adapters import DefaultAdapter
 # Automatically configures based on dataset size
 adapter = DefaultAdapter(
     dataset=trainset,
-    auto_config=True,               # Enable automatic tuning
-    shard_strategy="balanced",      # "conservative" | "balanced" | "aggressive"
-    available_compute="laptop"      # "laptop" | "workstation" | "server"
+    auto_config=True,
+    task_lm=task_lm,
+    reflection_lm=reflection_lm,
 )
 
-# For maximum throughput on server hardware
-adapter = DefaultAdapter(
-    dataset=large_trainset,
-    available_compute="server",     # Maximizes concurrency for available resources
-    shard_strategy="aggressive"     # More aggressive ASHA pruning
+# Manual tweaks after auto-config
+adapter.config.eval_concurrency = 32
+adapter.config.reflection_strategy_names = (
+    "incremental_reflection",
+    "spec_induction",
+    "interleaved_thinking",
 )
 ```
+
+### Rung‑Aware Parent Gating (Fair, Fast Promotion)
+
+TurboGEPA promotes children using a rung‑aware, parent‑based gate:
+
+- Compare child@rung_i to parent@rung_i (apples‑to‑apples).
+- Use a small rung‑specific epsilon margin to account for higher variance at smaller shards.
+- If parent@rung_i is unknown, estimate it by shrinking the parent’s final score toward a global baseline with a rung‑dependent alpha.
+
+Defaults (kept lightweight and easy to tune):
+- Variance tolerance per rung: `{0.2: 0.08, 0.5: 0.05, 1.0: 0.02}`
+- Shrinkage alphas: `{0.2: 0.7, 0.5: 0.85, 1.0: 1.0}`
+
+If you construct a scheduler manually, you can override these:
+
+```python
+from turbo_gepa.scheduler import BudgetedScheduler, SchedulerConfig
+
+sched = BudgetedScheduler(
+    SchedulerConfig(
+        shards=(0.2, 0.5, 1.0),
+        variance_tolerance={0.2: 0.08, 0.5: 0.05, 1.0: 0.02},
+        shrinkage_alpha={0.2: 0.7, 0.5: 0.85, 1.0: 1.0},
+    )
+)
+```
+
+The evaluator’s early‑stop check uses the same rung‑aware parent baseline for consistency, so promotion and per‑example early stopping agree on expectations at each shard.
+
+### Amortized Mutations (More Output Per Call)
+
+TurboGEPA can request multiple mutations per reflection/spec call to increase mutations/sec without opening more connections.
+
+- Why: Higher throughput at the same concurrency keeps the queue full and prevents evaluator starvation.
+- How: Configure per‑call counts on the mutator (defaults to 1).
+
+Example:
+
+```python
+# After creating your adapter
+adapter.mutator.set_mutations_per_call(4)  # ask reflection LLM for 4 prompts/call
+adapter.mutator.set_specs_per_call(4)      # ask spec-induction for 4 prompts/call
+
+# Or configure directly via the underlying config
+adapter.mutator.config.mutations_per_call = 4
+adapter.mutator.config.specs_per_call = 4
+```
+
+Notes:
+- Collector consumes all returned prompts from each call and stops at your requested total.
+- This raises mutations/sec without increasing socket count; keep `max_mutations_per_round` ≈ 2× `eval_concurrency`.
 
 ---
 

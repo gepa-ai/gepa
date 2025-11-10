@@ -10,8 +10,12 @@ from turbo_gepa.logging.logger import LogLevel, LoggerProtocol, StdOutLogger
 
 from .interfaces import Candidate
 
-BatchReflectionRunner = Callable[[Sequence[dict[str, object]], int], Awaitable[Sequence[str]]]
-SpecInductionRunner = Callable[[Sequence[dict[str, object]], int], Awaitable[Sequence[str]]]
+StrategyRunner = Callable[
+    [Sequence[dict[str, object]], int, list[dict[str, object]] | None],
+    Awaitable[Sequence[str]],
+]
+BatchReflectionRunner = StrategyRunner
+SpecInductionRunner = StrategyRunner
 Validator = Callable[[Candidate], None]
 
 
@@ -38,6 +42,9 @@ class MutationConfig:
     reflection_batch_size: int
     max_mutations: int
     max_tokens: int
+    # Amortization: number of items to request per LLM call
+    mutations_per_call: int = 1
+    specs_per_call: int = 1
 
 
 class Mutator:
@@ -78,6 +85,20 @@ class Mutator:
     def set_temperature_mutations_enabled(self, enabled: bool) -> None:
         """Toggle temperature exploration without rebuilding the mutator."""
         self.temperature_mutations_enabled = enabled
+
+    def set_mutations_per_call(self, n: int) -> None:
+        """Set how many reflection mutations to request per LLM call."""
+        try:
+            self.config.mutations_per_call = max(1, int(n))
+        except Exception:
+            self.config.mutations_per_call = 1
+
+    def set_specs_per_call(self, n: int) -> None:
+        """Set how many spec induction prompts to request per LLM call."""
+        try:
+            self.config.specs_per_call = max(1, int(n))
+        except Exception:
+            self.config.specs_per_call = 1
 
     def report_outcome(self, generation_method: str, delta_quality: float) -> None:
         stats = self._operator_stats.setdefault(generation_method, {"trials": 0, "delta_sum": 0.0})
@@ -249,6 +270,8 @@ class Mutator:
                     "prompt": candidate.text,
                     "traces": traces,
                     "meta": context_meta,
+                    "candidate": candidate,
+                    "failures": failures,
                 }
             )
 
@@ -290,11 +313,13 @@ class Mutator:
         # Track LLM calls for reflection mutations
         import time
         _start_reflection = time.time()
+        per_call = max(1, getattr(self.config, "mutations_per_call", 1))
         mutated_texts = await self._collect_text_batches(
-            lambda: self.batch_reflection_runner(reflection_contexts, 1),
+            lambda: self.batch_reflection_runner(reflection_contexts, per_call, None),
             num_mutations,
             max(1, min(self.config.reflection_batch_size, num_mutations)),
             result_callback=on_text_ready,
+            items_per_call=per_call,
         )
         _elapsed_reflection = time.time() - _start_reflection
 
@@ -334,6 +359,8 @@ class Mutator:
                     "prompt": candidate.text,
                     "traces": traces,
                     "meta": context_meta,
+                    "candidate": candidate,
+                    "failures": failures,
                 }
             )
 
@@ -370,11 +397,13 @@ class Mutator:
 
         import time
         _start_spec = time.time()
+        per_call = max(1, getattr(self.config, "specs_per_call", 1))
         spec_texts = await self._collect_text_batches(
-            lambda: self.spec_induction_runner(reflection_contexts, 1),
+            lambda: self.spec_induction_runner(reflection_contexts, per_call, task_examples),
             num_mutations,
             max(1, min(4, num_mutations)),
             result_callback=on_text_ready,
+            items_per_call=per_call,
         )
         _elapsed_spec = time.time() - _start_spec
 
@@ -391,6 +420,7 @@ class Mutator:
         max_concurrency: int,
         early_stop_fraction: float = 0.85,  # Not used anymore - kept for API compat
         result_callback: Callable[[str, int], Awaitable[None]] | None = None,  # Async callback: (text, index) -> None
+        items_per_call: int = 1,
     ) -> list[str]:
         """
         Launch all mutation tasks immediately and stream results as they complete.
@@ -406,10 +436,12 @@ class Mutator:
         if total <= 0:
             return []
 
-        self.logger.log(f"🌀 Launching {total} mutation tasks concurrently")
+        import math as _math
+        num_calls = max(1, _math.ceil(total / max(1, items_per_call)))
+        self.logger.log(f"🌀 Launching {num_calls} mutation task(s) (target {total}, {items_per_call}/call)")
 
-        # Launch ALL tasks immediately
-        tasks = [asyncio.create_task(factory()) for _ in range(total)]
+        # Launch tasks immediately
+        tasks = [asyncio.create_task(factory()) for _ in range(num_calls)]
 
         # Stream results as they complete (don't wait for all)
         results: list[str] = []
@@ -417,11 +449,14 @@ class Mutator:
             try:
                 batch = await completed
                 if batch:
-                    text = batch[0]
-                    results.append(text)
-                    # STREAMING: Immediately invoke callback for this individual text
-                    if result_callback:
-                        await result_callback(text, len(results) - 1)  # Pass index in results list
+                    added = 0
+                    for text in batch:
+                        if len(results) >= total:
+                            break
+                        results.append(text)
+                        if result_callback:
+                            await result_callback(text, len(results) - 1)
+                        added += 1
             except Exception as e:
                 self.logger.log(f"   ⚠️ Mutation task failed: {e}")
 

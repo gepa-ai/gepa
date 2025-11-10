@@ -1560,13 +1560,31 @@ class Orchestrator:
             latest_result = self.latest_results.get(entry.candidate.fingerprint)
             parent_objectives = latest_result.objectives if latest_result else entry.result.objectives
 
+            # Derive scheduler key for this parent candidate
+            try:
+                parent_sched_key = self.scheduler._sched_key(entry.candidate)  # type: ignore[attr-defined]
+            except Exception:
+                parent_sched_key = entry.candidate.fingerprint
+
+            # Collect per‑rung parent scores from scheduler history, keyed by rung fraction
+            parent_rung_scores: dict[float, float] = {}
+            try:
+                shards = getattr(self.scheduler, "shards", list(self.config.shards))
+                rung_scores = getattr(self.scheduler, "_rung_scores", {})  # type: ignore[attr-defined]
+                for idx, frac in enumerate(shards):
+                    val = rung_scores.get((parent_sched_key, idx))
+                    if isinstance(val, (int, float)):
+                        parent_rung_scores[float(frac)] = float(val)
+            except Exception:
+                parent_rung_scores = {}
+
             candidate_with_parent = entry.candidate.with_meta(
                 parent_objectives=parent_objectives,
+                parent_rung_scores=parent_rung_scores,
+                _sched_key=parent_sched_key,
             )
             parent_meta = candidate_with_parent.meta if isinstance(candidate_with_parent.meta, dict) else {}
-            parent_key = parent_meta.get("_sched_key") if isinstance(parent_meta, dict) else None
-            if not isinstance(parent_key, str):
-                parent_key = entry.candidate.fingerprint
+            parent_key = parent_sched_key
 
             # Note: We used to skip parents in _promotion_pending, but this caused issues
             # when all parents are pending promotion (e.g., early in optimization).

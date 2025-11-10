@@ -35,81 +35,8 @@ from turbo_gepa.logging.logger import LogLevel, StdOutLogger
 from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
-
-# Disable litellm's async logging worker at module import time
-# This prevents "RuntimeError: bound to a different event loop" errors
-# and "OSError: too many open files" from dynamic module imports in async tasks
-try:
-    import litellm
-    litellm.success_callback = []
-    litellm.failure_callback = []
-    litellm.suppress_debug_info = True
-    litellm.set_verbose = False
-    litellm.logging = False  # Disable ALL logging to prevent file descriptor leaks
-
-    # Monkey-patch the async logging helper to be a no-op
-    # This prevents the "too many open files" error from dynamic imports in async tasks
-    import litellm.utils
-    async def _noop_logging_helper(*args, **kwargs):
-        pass
-    litellm.utils._client_async_logging_helper = _noop_logging_helper
-
-    import httpx
-    _HTTPX_AVAILABLE = True
-except ImportError:
-    _HTTPX_AVAILABLE = False
-
-
-def _configure_litellm_client(max_concurrency: int) -> None:
-    """
-    Configure litellm's shared httpx client with connection pooling.
-
-    This sets up a single httpx.AsyncClient that will be reused across all litellm
-    API calls, with connection limits based on the user's concurrency settings.
-
-    Args:
-        max_concurrency: Maximum concurrent requests (from Config.eval_concurrency)
-                        The httpx client will queue requests beyond this limit.
-    """
-    if not _HTTPX_AVAILABLE:
-        return
-
-    # If client is already configured with the right settings, skip
-    if litellm.aclient_session is not None:
-        existing_client = litellm.aclient_session
-        if hasattr(existing_client, '_transport'):
-            transport = existing_client._transport
-            if hasattr(transport, '_pool'):
-                pool = transport._pool
-                # Check if limits match (within reason)
-                if hasattr(pool, '_max_connections'):
-                    if pool._max_connections == max_concurrency:
-                        return  # Already configured correctly
-
-    # Close existing client if present
-    if litellm.aclient_session is not None and not litellm.aclient_session.is_closed:
-        try:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Can't close synchronously in a running loop, schedule for later
-                loop.create_task(litellm.aclient_session.aclose())
-            else:
-                loop.run_until_complete(litellm.aclient_session.aclose())
-        except Exception:
-            pass  # Best effort cleanup
-
-    # Create new client with dynamic limits based on user's concurrency config
-    # max_connections limits concurrent TCP connections - requests beyond this will queue
-    # This prevents file descriptor exhaustion with high concurrency
-    litellm.aclient_session = httpx.AsyncClient(
-        limits=httpx.Limits(
-            max_connections=max_concurrency,  # Match user's eval_concurrency
-            max_keepalive_connections=min(20, max_concurrency // 4),  # 25% kept alive
-            keepalive_expiry=30.0,  # Close idle connections after 30s
-        ),
-        timeout=httpx.Timeout(180.0, connect=30.0),
-    )
+from turbo_gepa.strategies import ReflectionStrategy
+from turbo_gepa.utils.litellm_client import configure_litellm_client
 
 
 @dataclass(slots=True)
@@ -174,23 +101,6 @@ class DefaultAdapter:
         )
         result = adapter.optimize(seeds=["You are a helpful assistant."])
 
-        # Conservative strategy for important tasks
-        adapter = DefaultAdapter(
-            dataset=trainset,
-            task_lm="openrouter/google/gemini-flash-1.5",
-            reflection_lm="openrouter/google/gemini-flash-1.5",
-            shard_strategy="conservative"
-        )
-
-        # Server deployment with aggressive exploration
-        adapter = DefaultAdapter(
-            dataset=large_trainset,
-            task_lm="openrouter/google/gemini-flash-1.5",
-            reflection_lm="openrouter/google/gemini-flash-1.5",
-            shard_strategy="aggressive",
-            available_compute="server"
-        )
-
         # Manual configuration (disables auto-config)
         config = Config(shards=(0.10, 0.30, 1.0), batch_size=16)
         adapter = DefaultAdapter(
@@ -199,6 +109,18 @@ class DefaultAdapter:
             reflection_lm="openrouter/google/gemini-flash-1.5",
             config=config,
             auto_config=False
+        )
+
+        # After auto-config, tweak reflection strategies explicitly
+        adapter = DefaultAdapter(
+            dataset=trainset,
+            task_lm="openrouter/google/gemini-flash-1.5",
+            reflection_lm="openrouter/google/gemini-flash-1.5",
+        )
+        adapter.config.reflection_strategy_names = (
+            "incremental_reflection",
+            "spec_induction",
+            "interleaved_thinking",
         )
     """
 
@@ -242,7 +164,7 @@ class DefaultAdapter:
 
         # Configure litellm's httpx client based on eval_concurrency
         # This ensures connection pooling matches the user's concurrency settings
-        _configure_litellm_client(self.config.eval_concurrency)
+        configure_litellm_client(self.config.eval_concurrency)
 
         min_level = self._resolve_log_level(self.config.log_level)
         if self.config.enable_debug_log:
@@ -292,9 +214,13 @@ class DefaultAdapter:
         self.temperature_supported = True  # Assume supported, check later if needed
         self._temperature_warned = False
 
-        # Create batched reflection runner and spec induction runner
-        batch_reflection_runner = self._create_batched_llm_reflection_runner()
-        spec_induction_runner = self._create_spec_induction_runner()
+        # Configure reflection/spec strategies
+        self._reflection_strategies: tuple[ReflectionStrategy, ...] = tuple(self.config.reflection_strategies or ())
+        reflection_strategies = [strategy for strategy in self._reflection_strategies if not strategy.requires_examples]
+        spec_strategies = [strategy for strategy in self._reflection_strategies if strategy.requires_examples]
+
+        batch_reflection_runner = self._create_strategy_runner(reflection_strategies)
+        spec_induction_runner = self._create_strategy_runner(spec_strategies) if spec_strategies else None
 
         # Pass temperature support flag to mutator
         self._mutation_config = mutation_config or MutationConfig(
@@ -313,6 +239,21 @@ class DefaultAdapter:
         )
         self.log_dir = log_dir or config.log_path
 
+        # Shared HTTP client for all LLM calls (caps sockets, reuses TLS, HTTP/2)
+        try:
+            import httpx
+
+            max_conn = max(1, int(config.eval_concurrency))
+            limits = httpx.Limits(
+                max_connections=max_conn,
+                max_keepalive_connections=max_conn,
+                keepalive_expiry=15.0,
+            )
+            timeout = httpx.Timeout(connect=10.0, read=60.0, write=60.0, pool=10.0)
+            self._httpx_client = httpx.AsyncClient(http2=True, limits=limits, timeout=timeout)
+        except Exception:
+            self._httpx_client = None
+
     @staticmethod
     def _resolve_log_level(level: str) -> LogLevel:
         """Map string-based config log level to LogLevel enum."""
@@ -330,6 +271,28 @@ class DefaultAdapter:
     def _log_debug(self, message: str) -> None:
         if self._debug_enabled:
             self.logger.log(message, LogLevel.DEBUG)
+
+    async def _acompletion_with_client(self, acompletion, completion_kwargs: dict, timeout: float):
+        """Call litellm.acompletion with our shared httpx client when supported.
+
+        Tries 'httpx_client' then 'client' keyword; falls back to no client if unsupported.
+        """
+        import asyncio
+
+        if getattr(self, "_httpx_client", None) is not None:
+            # Try both parameter names for maximum compatibility
+            for key in ("httpx_client", "client"):
+                try:
+                    kwargs = dict(completion_kwargs)
+                    kwargs[key] = self._httpx_client
+                    return await asyncio.wait_for(acompletion(**kwargs), timeout=timeout)
+                except TypeError as e:
+                    # Unknown kw; try next option
+                    if "unexpected keyword argument" in str(e) and key in str(e):
+                        continue
+                    raise
+        # Fallback: let litellm manage the client
+        return await asyncio.wait_for(acompletion(**completion_kwargs), timeout=timeout)
 
     def _disable_temperature_support(self, context: str | None = None) -> None:
         """Disable temperature tuning after a model rejects the parameter."""
@@ -368,182 +331,51 @@ class DefaultAdapter:
             # Other errors (auth, network) - assume temperature works
             return True
 
-    def _create_batched_llm_reflection_runner(self):
-        """Create a batched reflection runner that calls a real LLM with multiple parents."""
 
-        async def batched_llm_reflection_runner(parent_contexts: list, num_mutations: int) -> list[str]:
-            if not parent_contexts:
+    def _create_strategy_runner(
+        self,
+        strategies: Sequence[ReflectionStrategy],
+    ):
+        """Return an async runner that iterates through configured strategies."""
+
+        if not strategies:
+            return None
+
+        async def run_strategies(
+            parent_contexts: list[dict[str, object]],
+            num_mutations: int,
+            task_examples: list[dict[str, object]] | None = None,
+        ) -> list[str]:
+            if num_mutations <= 0:
                 return []
 
             import time
 
-            start_time = time.time()
+            collected: list[str] = []
 
-            reflection_examples = getattr(self.mutator, "_reflection_examples", [])
+            for strategy in strategies:
+                if len(collected) >= num_mutations:
+                    break
+                if strategy.requires_examples and not task_examples:
+                    continue
 
-            if self._debug_enabled:
-                parent_shards: list[str] = []
-                for ctx in parent_contexts:
-                    meta = ctx.get("meta", {})
-                    shard_fraction = meta.get("quality_shard_fraction", 0.0)
-                    if shard_fraction > 0.0:
-                        parent_shards.append(f"{shard_fraction * 100:.0f}%")
-
-                debug_lines = [
-                    "",
-                    "=" * 80,
-                    "🔬 REFLECTION RUNNER CALLED",
-                    "=" * 80,
-                    f"   Num mutations requested: {num_mutations}",
-                    f"   Num parent contexts: {len(parent_contexts)}",
+                remaining = num_mutations - len(collected)
+                reflection_examples = (
+                    getattr(self.mutator, "_reflection_examples", []) if hasattr(self, "mutator") else []
+                )
+                user_prompt = strategy.user_prompt_builder(
+                    parent_contexts,
+                    reflection_examples,
+                    task_examples or [],
+                    remaining,
+                )
+                messages = [
+                    {"role": "system", "content": strategy.system_prompt},
+                    {"role": "user", "content": user_prompt},
                 ]
-                if parent_shards:
-                    debug_lines.append(f"   Parent shard levels: {', '.join(parent_shards)}")
-                debug_lines.append(f"   Reflection examples available: {len(reflection_examples)}")
-                if reflection_examples:
-                    num_with_feedback = sum(1 for ex in reflection_examples if ex.get("feedback"))
-                    num_with_output = sum(1 for ex in reflection_examples if ex.get("assistant_output"))
-                    num_with_solution = sum(
-                        1 for ex in reflection_examples if (ex.get("additional_context") or {}).get("solution")
-                    )
-                    debug_lines.extend(
-                        [
-                            f"      → {num_with_feedback} with feedback",
-                            f"      → {num_with_output} with assistant_output",
-                            f"      → {num_with_solution} with reference solution",
-                        ]
-                    )
-                debug_lines.append("=" * 80)
-                self._log_debug("\n".join(debug_lines))
-
-            try:
-                from litellm import acompletion
-
-                # Build rich reflection prompt showing multiple successful prompts
-                parent_summaries = []
-                for i, ctx in enumerate(parent_contexts[:5]):  # Limit to 5 parents for token efficiency
-                    prompt_text = ctx.get("prompt", "")
-                    meta = ctx.get("meta", {})
-
-                    # CRITICAL: Check what quality we're showing
-                    parent_objectives = meta.get("parent_objectives", {})
-                    if isinstance(parent_objectives, dict):
-                        quality = parent_objectives.get("quality", 0.0)
-                        quality_source = "parent_objectives"
-                    else:
-                        quality = meta.get("quality", 0.0)
-                        quality_source = "meta"
-                    self._log_debug(f"   Parent {i+1} quality from {quality_source}: {quality:.1%}")
-
-                    traces = ctx.get("traces", [])
-
-                    # Temperature context if available
-                    temp_info = ""
-                    if "temperature" in meta:
-                        temp_info = f", temp={meta['temperature']:.1f}"
-
-                    # Shard context - show what fraction of dataset was evaluated
-                    shard_info = ""
-                    shard_fraction = meta.get("quality_shard_fraction", 0.0)
-                    if shard_fraction > 0.0:
-                        shard_pct = shard_fraction * 100
-                        shard_info = f", shard={shard_pct:.0f}%"
-
-                    # Performance summary from traces
-                    if traces:
-                        avg_quality = sum(t.get("quality", 0) for t in traces[:3]) / min(len(traces), 3)
-                        perf_summary = f"Recent avg: {avg_quality:.1%}"
-                    else:
-                        perf_summary = f"Quality: {quality:.1%}"
-
-                    parent_summaries.append(f"""PROMPT {chr(65 + i)} ({perf_summary}{temp_info}{shard_info}):
-"{prompt_text}"
-""")
-
-                all_parents_text = "\n".join(parent_summaries)
-
-                example_summaries = []
-                if (
-                    isinstance(getattr(self.mutator, "_reflection_examples", None), list)
-                    and self.mutator._reflection_examples
-                ):
-                    for j, ex in enumerate(self.mutator._reflection_examples[:5]):
-                        example_input = ex.get("input", "").strip()
-                        example_answer = (ex.get("expected_answer") or ex.get("answer") or "").strip()
-                        assistant_output = ex.get("assistant_output", "").strip()
-                        feedback_text = ex.get("feedback", "").strip()
-                        additional = ex.get("additional_context") or {}
-                        solution = additional.get("solution") if isinstance(additional, dict) else None
-                        example_block = [f"Example {j + 1} Input: {example_input}"]
-                        if assistant_output:
-                            example_block.append(f"Example {j + 1} Assistant Output: {assistant_output}")
-                        if example_answer:
-                            example_block.append(f"Example {j + 1} Correct Answer: {example_answer}")
-                        if feedback_text:
-                            example_block.append(f"Example {j + 1} Feedback: {feedback_text}")
-                        if solution:
-                            formatted_solution = "\n".join(str(solution).splitlines())
-                            example_block.append(f"Example {j + 1} Reference Solution:\n{formatted_solution}")
-                        example_summaries.append("\n".join(example_block))
-
-                examples_text = "\n\n".join(example_summaries)
-
-                reflection_prompt = f"""I provided an assistant with the following instructions to perform a task:
-
-Existing high-performing instructions and their recent quality:
-{all_parents_text}
-
-The following are examples of different task inputs provided to the assistant along with the assistant's response for each of them, and some feedback on how the assistant's response could be better:
-
-{examples_text if example_summaries else "(no additional examples available)"}
-
-Your task is to write {num_mutations} new instruction variants for the assistant.
-
-Read the inputs carefully and identify the input format and infer detailed task description about the task I wish to solve with the assistant.
-
-Read all the assistant responses and the corresponding feedback. Identify all niche and domain-specific factual information about the task and include it in the instruction, as a lot of it may not be available to the assistant in the future. The assistant may have utilized a generalizable strategy to solve the task; if so, include that in the instruction as well.
-
-IMPORTANT guidance:
-- Extract and include domain-specific factual knowledge, techniques, and patterns from the examples and solutions
-- Include key mathematical principles, common solution approaches, and problem-solving strategies observed in the reference solutions
-- Capture the types of problems, solution methods, and domain expertise needed to solve similar problems
-- Address common pitfalls and edge cases specific to this problem domain
-- Ensure each instruction emphasizes the required answer format
-
-You CAN and SHOULD include domain-specific terminology, solution techniques, and factual knowledge from the examples and reference solutions. The goal is to teach the assistant to solve NEW problems in the SAME DOMAIN by providing it with the domain knowledge and strategies it needs.
-
-Write {num_mutations} new instruction variants. Each instruction MUST be wrapped in XML tags like this:
-
-<PROMPT>
-Your new instruction text here...
-</PROMPT>
-
-IMPORTANT:
-- Each prompt must be wrapped in <PROMPT></PROMPT> tags
-- Do NOT include example answers like "### 242" in your prompts
-- Do NOT copy reference solutions - create NEW instructions
-- Each prompt should be a complete instruction for solving problems in this domain"""
-
-                # Log the actual prompt being sent (truncated for readability)
-                if self._debug_enabled:
-                    prompt_preview = (
-                        reflection_prompt[:1000] + "..." if len(reflection_prompt) > 1000 else reflection_prompt
-                    )
-                    preview_lines = [
-                        "",
-                        "📝 REFLECTION PROMPT PREVIEW:",
-                        "=" * 80,
-                        prompt_preview,
-                        "=" * 80,
-                        f"   Total prompt length: {len(reflection_prompt)} chars",
-                        f"   Example summaries count: {len(example_summaries)}",
-                        "=" * 80,
-                    ]
-                    self._log_debug("\n".join(preview_lines))
-
                 completion_kwargs: dict[str, Any] = {
                     "model": self.reflection_model.name,
-                    "messages": [{"role": "user", "content": reflection_prompt}],
+                    "messages": messages,
                 }
                 if self.reflection_model.max_tokens is not None:
                     completion_kwargs["max_tokens"] = self.reflection_model.max_tokens
@@ -552,229 +384,88 @@ IMPORTANT:
                 if self.reflection_model.reasoning_effort is not None:
                     completion_kwargs["reasoning_effort"] = self.reflection_model.reasoning_effort
 
-                import asyncio
+                start_time = time.time()
                 try:
-                    response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=180.0)
-                except asyncio.TimeoutError:
-                    raise
-                except Exception as e:
-                    if "temperature" in str(e).lower() and completion_kwargs.pop("temperature", None) is not None:
-                        self._disable_temperature_support(
-                            f"{self.reflection_model.name} rejected temperature parameter"
-                        )
-                        response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=180.0)
-                    else:
+                    from litellm import acompletion
+
+                    import asyncio
+
+                    try:
+                        response = await self._acompletion_with_client(acompletion, completion_kwargs, 180.0)
+                    except asyncio.TimeoutError:
                         raise
-
-                elapsed = time.time() - start_time
-                content = response.choices[0].message.content
-
-                # Extract prompts from <PROMPT>...</PROMPT> tags
-                import re
-                prompt_pattern = r'<PROMPT>\s*(.*?)\s*</PROMPT>'
-                matches = re.findall(prompt_pattern, content, re.DOTALL | re.IGNORECASE)
-
-                # Validate and clean mutations
-                mutations = []
-                for i, match in enumerate(matches):
-                    cleaned = match.strip()
-
-                    # Validation checks
-                    if len(cleaned) < 50:
-                        self._log_debug(f"   ⚠️ Skipping mutation {i+1}: Too short ({len(cleaned)} chars)")
-                        continue
-
-                    if cleaned.startswith("###"):
-                        self._log_debug(f"   ⚠️ Skipping mutation {i+1}: Looks like an answer, not a prompt")
-                        continue
-
-                    # Check if it's mostly just a number (like "220" or "### 242")
-                    if len(cleaned) < 100 and re.match(r'^[#\s\d]+$', cleaned):
-                        self._log_debug(f"   ⚠️ Skipping mutation {i+1}: Appears to be a number, not a prompt")
-                        continue
-
-                    mutations.append(cleaned)
-
-                if not mutations:
+                    except Exception as err:
+                        if "temperature" in str(err).lower() and completion_kwargs.pop("temperature", None) is not None:
+                            self._disable_temperature_support(
+                                f"{self.reflection_model.name} rejected temperature parameter"
+                            )
+                            response = await self._acompletion_with_client(acompletion, completion_kwargs, 180.0)
+                        else:
+                            raise
+                except asyncio.TimeoutError:
+                    elapsed = time.time() - start_time
                     self.logger.log(
-                        "⚠️  No valid prompts extracted from reflection output. Check reflection LM response.",
-                        LogLevel.WARNING,
+                        f"❌ Strategy '{strategy.name}' LLM call TIMEOUT after {elapsed:.1f}s "
+                        f"(model={self.reflection_model.name})",
+                        LogLevel.ERROR,
                     )
-                    if self._debug_enabled:
-                        self._log_debug(f"   Raw content preview: {content[:500]}")
+                    raise RuntimeError(
+                        f"Strategy '{strategy.name}' LLM call timed out after {elapsed:.1f}s."
+                    ) from None
+                except Exception as exc:
+                    elapsed = time.time() - start_time
+                    self.logger.log(
+                        f"❌ Strategy '{strategy.name}' LLM call FAILED after {elapsed:.1f}s "
+                        f"(model={self.reflection_model.name}): {type(exc).__name__}: {exc}",
+                        LogLevel.ERROR,
+                    )
+                    raise RuntimeError(
+                        f"Strategy '{strategy.name}' LLM call failed after {elapsed:.1f}s "
+                        f"({type(exc).__name__}: {exc})."
+                    ) from exc
 
-                if self._debug_enabled:
-                    summary_lines = [
-                        "",
-                        "✅ REFLECTION COMPLETE:",
-                        f"   Generated {len(mutations)} mutations in {elapsed:.1f}s",
-                        "",
-                        "📝 GENERATED MUTATIONS (FULL TEXT):",
-                        "=" * 80,
-                    ]
-                    for idx, mut in enumerate(mutations):
-                        summary_lines.extend(
-                            [
-                                f"[Mutation {idx + 1}/{len(mutations)}]",
-                                "-" * 80,
-                                mut,
-                                "-" * 80,
-                            ]
-                        )
-                    summary_lines.append("=" * 80)
-                    self._log_debug("\n".join(summary_lines))
-
-                return mutations[:num_mutations]
-
-            except asyncio.TimeoutError:
-                elapsed = time.time() - start_time
-                self.logger.log(
-                    f"❌ Reflection LLM call TIMEOUT after {elapsed:.1f}s (model={self.reflection_model.name}, "
-                    f"mutations={num_mutations}, parents={len(parent_contexts)})",
-                    LogLevel.ERROR,
-                )
-                raise RuntimeError(
-                    f"Reflection LLM call timed out after {elapsed:.1f}s. "
-                    "This may indicate API rate limits or a very complex reflection task."
-                )
-            except Exception as e:
-                elapsed = time.time() - start_time
-                error_type = type(e).__name__
-                error_msg = str(e)
-                self.logger.log(
-                    f"❌ Reflection LLM call FAILED after {elapsed:.1f}s "
-                    f"(model={self.reflection_model.name}): {error_type}: {error_msg}",
-                    LogLevel.ERROR,
-                )
-                raise RuntimeError(
-                    f"Batched reflection LLM call failed after {elapsed:.2f}s ({error_type}: {error_msg}). "
-                    "Check your API key, model name, and network connection."
-                ) from e
-
-        return batched_llm_reflection_runner
-
-    def _create_spec_induction_runner(self):
-        """Create a spec induction runner that generates fresh prompts from task examples."""
-
-        async def spec_induction_runner(task_examples: list, num_specs: int) -> list[str]:
-            if not task_examples:
-                return []
-
-            import time
-
-            start_time = time.time()
-
-            try:
-                from litellm import acompletion
-
-                # Build rich examples summary with solutions (like incremental_reflection)
-                example_summaries = []
-                for i, ex in enumerate(task_examples[:3]):  # Limit to 3 examples
-                    input_text = ex.get("input", "")
-                    answer_text = ex.get("answer", "")
-                    additional_context = ex.get("additional_context") or {}
-
-                    example_block = [f"Example {i + 1}:"]
-                    example_block.append(f"Input: {input_text}")
-                    example_block.append(f"Expected Output: {answer_text}")
-
-                    # Show additional context (AIME solutions, hints, etc.)
-                    if additional_context and isinstance(additional_context, dict):
-                        for k, v in additional_context.items():
-                            # Format solution nicely
-                            formatted_value = "\n".join(str(v).splitlines())
-                            example_block.append(f"{k.title()}: {formatted_value}")
-
-                    example_summaries.append("\n".join(example_block))
-
-                all_examples_text = "\n\n".join(example_summaries)
-
-                # Spec induction prompt matching OG GEPA's philosophy
-                spec_prompt = f"""Below are {len(task_examples)} examples of a task with full context including reference solutions:
-
-{all_examples_text}
-
-Your task is to generate {num_specs} different instruction variants that would teach an AI assistant to solve tasks like these.
-
-Read the inputs carefully and identify the input format and infer detailed task description.
-
-Read all the reference solutions and identify all niche and domain-specific factual information about the task and include it in the instructions, as a lot of it may not be available to the assistant in the future. Extract generalizable strategies used in the solutions and include those as well.
-
-IMPORTANT guidance:
-- Extract and include domain-specific factual knowledge, techniques, and patterns from the examples and solutions
-- Include key mathematical principles, common solution approaches, and problem-solving strategies observed in the reference solutions
-- Capture the types of problems, solution methods, and domain expertise needed to solve similar problems
-- Address common pitfalls and edge cases specific to this problem domain
-- Ensure each instruction emphasizes the required answer format
-
-Each instruction should:
-- Be self-contained and clear
-- Teach the assistant with domain knowledge and strategies from the examples
-- Be different from the others in approach or emphasis
-
-Output format: Return each instruction separated by "---" (exactly {num_specs} instructions)."""
-
-                # Build kwargs
-                completion_kwargs: dict[str, Any] = {
-                    "model": self.reflection_model.name,
-                    "messages": [{"role": "user", "content": spec_prompt}],
-                }
-                if self.reflection_model.max_tokens is not None:
-                    completion_kwargs["max_tokens"] = self.reflection_model.max_tokens
-                if self.temperature_supported and self.reflection_model.temperature is not None:
-                    completion_kwargs["temperature"] = self.reflection_model.temperature
-                if self.reflection_model.reasoning_effort is not None:
-                    completion_kwargs["reasoning_effort"] = self.reflection_model.reasoning_effort
-
-                import asyncio
-                try:
-                    response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=180.0)
-                except asyncio.TimeoutError:
-                    raise
-                except Exception as e:
-                    if "temperature" in str(e).lower() and completion_kwargs.pop("temperature", None) is not None:
-                        self._disable_temperature_support(
-                            f"{self.reflection_model.name} rejected temperature parameter"
-                        )
-                        response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=180.0)
-                    else:
-                        raise
-
-                elapsed = time.time() - start_time
                 content = response.choices[0].message.content
-                # Split by --- and clean up
-                specs = [s.strip() for s in content.split("---") if s.strip()]
+                parsed = strategy.response_parser(content or "")
+                cleaned = self._filter_strategy_mutations(parsed, strategy_name=strategy.name)
+                collected.extend(cleaned)
 
-                # Log timing for diagnostics
+            return collected[:num_mutations]
 
-                return specs[:num_specs]
+        return run_strategies
 
-            except asyncio.TimeoutError:
-                elapsed = time.time() - start_time
-                self.logger.log(
-                    f"❌ Spec induction LLM call TIMEOUT after {elapsed:.1f}s "
-                    f"(model={self.reflection_model.name}, specs={num_specs}, examples={len(task_examples)})",
-                    LogLevel.ERROR,
+    def _filter_strategy_mutations(self, raw_texts: Sequence[str], *, strategy_name: str) -> list[str]:
+        """Validate and clean raw prompt outputs from a strategy."""
+
+        cleaned_mutations: list[str] = []
+        for idx, raw in enumerate(raw_texts, 1):
+            cleaned = raw.strip()
+            if not cleaned:
+                continue
+            if len(cleaned) < 50:
+                self._log_debug(
+                    f"   ⚠️ Skipping {strategy_name} mutation {idx}: Too short ({len(cleaned)} chars)"
                 )
-                raise RuntimeError(
-                    f"Spec induction LLM call timed out after {elapsed:.1f}s. "
-                    "This may indicate API rate limits or a very complex task."
+                continue
+            if cleaned.startswith("###"):
+                self._log_debug(
+                    f"   ⚠️ Skipping {strategy_name} mutation {idx}: Looks like an answer, not a prompt"
                 )
-            except Exception as e:
-                elapsed = time.time() - start_time
-                error_type = type(e).__name__
-                error_msg = str(e)
-                self.logger.log(
-                    f"❌ Spec induction LLM call FAILED after {elapsed:.1f}s "
-                    f"(model={self.reflection_model.name}): {error_type}: {error_msg}",
-                    LogLevel.ERROR,
+                continue
+            stripped = cleaned.replace("#", "").replace(" ", "")
+            if len(cleaned) < 100 and stripped.isdigit():
+                self._log_debug(
+                    f"   ⚠️ Skipping {strategy_name} mutation {idx}: Appears to be numeric output"
                 )
-                raise RuntimeError(
-                    f"Spec induction LLM call failed after {elapsed:.2f}s ({error_type}: {error_msg}). "
-                    "Check your API key, model name, and network connection."
-                ) from e
+                continue
+            cleaned_mutations.append(cleaned)
 
-        return spec_induction_runner
+        if not cleaned_mutations and raw_texts:
+            self.logger.log(
+                f"⚠️  Strategy '{strategy_name}' produced no usable prompts. Check reflection output.",
+                LogLevel.WARNING,
+            )
+
+        return cleaned_mutations
 
     def _sample_examples(self, num_examples: int) -> list[dict]:
         """Sample random examples for spec induction."""
@@ -926,7 +617,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
             try:
                 # Add timeout to prevent hanging on slow API calls
                 import asyncio
-                response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=120.0)
+                response = await self._acompletion_with_client(acompletion, completion_kwargs, 120.0)
                 _elapsed_llm = _time_module.time() - _start_llm
 
                 # Track LLM call in metrics if available
@@ -963,7 +654,7 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                     completion_kwargs.pop("temperature", None)
                     if isinstance(candidate.meta, dict):
                         candidate.meta.pop("temperature", None)
-                    response = await asyncio.wait_for(acompletion(**completion_kwargs), timeout=120.0)
+                    response = await self._acompletion_with_client(acompletion, completion_kwargs, 120.0)
                 else:
                     raise  # Re-raise if it's a different error
 
@@ -1475,3 +1166,12 @@ Output format: Return each instruction separated by "---" (exactly {num_specs} i
                 metrics_callback=metrics_callback,
             )
         )
+
+    async def aclose(self) -> None:
+        """Close shared HTTP client (if created)."""
+        client = getattr(self, "_httpx_client", None)
+        if client is not None:
+            try:
+                await client.aclose()  # type: ignore[attr-defined]
+            except Exception:
+                pass

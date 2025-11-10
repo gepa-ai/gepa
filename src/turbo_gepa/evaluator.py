@@ -74,25 +74,77 @@ class AsyncEvaluator:
 
         import time
 
-        parent_target: float | None = None
-        meta = candidate.meta if isinstance(candidate.meta, dict) else None
-        if isinstance(meta, dict):
-            parent_score: float | None = None
+        # Compute rung-aware parent baseline for early-stop.
+        # Prefer an explicit parent rung score if provided via meta; otherwise
+        # shrink the parent's final score toward a global baseline using a
+        # rung-dependent alpha (kept in sync with the scheduler defaults).
+        def _parent_baseline_for_rung() -> float | None:
+            meta = candidate.meta if isinstance(candidate.meta, dict) else None
+            if not isinstance(meta, dict):
+                return None
+
+            # 1) If caller provided rung-specific parent scores, prefer those.
+            parent_rung_scores = meta.get("parent_rung_scores")
+            if isinstance(parent_rung_scores, dict) and shard_fraction is not None:
+                # Try exact fraction key; else nearest fraction present
+                val = parent_rung_scores.get(shard_fraction)
+                if isinstance(val, (int, float)):
+                    return float(val)
+                best_key = None
+                best_diff = 1e9
+                for k, v in parent_rung_scores.items():
+                    if not isinstance(k, (int, float)) or not isinstance(v, (int, float)):
+                        continue
+                    diff = abs(float(k) - float(shard_fraction))
+                    if diff < best_diff:
+                        best_diff = diff
+                        best_key = k
+                if best_key is not None:
+                    return float(parent_rung_scores[best_key])
+
+            # 2) Fallback to shrinkage from parent final score
+            parent_final: float | None = None
             raw_parent = meta.get("parent_score")
             if isinstance(raw_parent, (int, float)):
-                parent_score = float(raw_parent)
+                parent_final = float(raw_parent)
             else:
                 parent_obj = meta.get("parent_objectives")
                 if isinstance(parent_obj, dict):
                     obj_val = parent_obj.get("quality")
                     if isinstance(obj_val, (int, float)):
-                        parent_score = float(obj_val)
-            if parent_score is not None:
-                parent_target = parent_score + self.min_improve
-                if parent_target > 1.0:
-                    parent_target = 1.0
-                if parent_target < 0.0:
-                    parent_target = 0.0
+                        parent_final = float(obj_val)
+            if parent_final is None:
+                return None
+
+            # Default alphas mirror scheduler defaults
+            alpha_map = {0.2: 0.7, 0.5: 0.85, 1.0: 1.0}
+            alpha = None
+            if shard_fraction is not None:
+                if shard_fraction in alpha_map:
+                    alpha = alpha_map[shard_fraction]  # type: ignore[index]
+                else:
+                    best_key = None
+                    best_diff = 1e9
+                    for k in alpha_map:
+                        diff = abs(float(k) - float(shard_fraction))
+                        if diff < best_diff:
+                            best_diff = diff
+                            best_key = k
+                    if best_key is not None:
+                        alpha = alpha_map[best_key]
+            if alpha is None:
+                alpha = 0.85
+            baseline = (1 - alpha) * 0.5 + alpha * parent_final
+            return max(0.0, min(1.0, baseline))
+
+        parent_target: float | None = None
+        parent_baseline = _parent_baseline_for_rung()
+        if isinstance(parent_baseline, (int, float)):
+            parent_target = float(parent_baseline) + float(self.min_improve)
+            if parent_target > 1.0:
+                parent_target = 1.0
+            if parent_target < 0.0:
+                parent_target = 0.0
 
         semaphore = asyncio.Semaphore(max(concurrency, 1))
         results: list[EvalResult] = []
