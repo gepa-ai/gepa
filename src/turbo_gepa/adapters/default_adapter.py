@@ -545,6 +545,8 @@ class DefaultAdapter:
                 continue
             combined["mutations_requested"] += snapshot.get("mutations_requested", 0)
             combined["mutations_generated"] += snapshot.get("mutations_generated", 0)
+            if "strategy_stats" in snapshot:
+                combined.setdefault("strategy_stats", {}).setdefault("islands", []).append(snapshot["strategy_stats"])
             combined["mutations_enqueued"] += snapshot.get("mutations_enqueued", 0)
             combined["total_evaluations"] += snapshot.get("total_evaluations", 0)
             promoted_total += snapshot.get("mutations_promoted", 0)

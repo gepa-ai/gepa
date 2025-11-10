@@ -71,9 +71,9 @@ class Mutator:
         self.temperature_mutations_enabled = temperature_mutations_enabled
         self._reflection_examples: list[dict[str, object]] = []
         self._operator_stats: dict[str, dict[str, float]] = {
-            "temperature_shift": {"trials": 0, "delta_sum": 0.0},
-            "incremental_reflection": {"trials": 0, "delta_sum": 0.0},
-            "spec_induction": {"trials": 0, "delta_sum": 0.0},
+            "temperature_shift": {"trials": 0, "delta_sum": 0.0, "generated": 0, "promoted": 0},
+            "incremental_reflection": {"trials": 0, "delta_sum": 0.0, "generated": 0, "promoted": 0},
+            "spec_induction": {"trials": 0, "delta_sum": 0.0, "generated": 0, "promoted": 0},
         }
         self._operator_history: dict[str, deque[float]] = {key: deque(maxlen=20) for key in self._operator_stats}
         self.logger: LoggerProtocol = logger or StdOutLogger()
@@ -101,9 +101,13 @@ class Mutator:
             self.config.specs_per_call = 1
 
     def report_outcome(self, generation_method: str, delta_quality: float) -> None:
-        stats = self._operator_stats.setdefault(generation_method, {"trials": 0, "delta_sum": 0.0})
+        stats = self._operator_stats.setdefault(
+            generation_method, {"trials": 0, "delta_sum": 0.0, "generated": 0, "promoted": 0}
+        )
         stats["trials"] += 1
         stats["delta_sum"] += delta_quality
+        if delta_quality > 0:
+            stats["promoted"] += 1
         history = self._operator_history.setdefault(generation_method, deque(maxlen=20))
         history.append(delta_quality)
 

@@ -1697,6 +1697,7 @@ class Orchestrator:
         snapshot: dict[str, Any] = {
             "mutations_requested": self._mutations_requested,
             "mutations_generated": self._mutations_generated,
+            "strategy_stats": getattr(self.mutator, "strategy_stats", {}),
             "mutations_enqueued": self._mutations_enqueued,
             "mutations_promoted": len(self._promoted_children),
             "unique_parents": len(self._parent_children),
