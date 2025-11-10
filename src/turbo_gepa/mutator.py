@@ -134,10 +134,9 @@ class Mutator:
             task_examples: Optional task examples for spec induction
             candidate_sink: Async callback to stream candidates as they're created
 
-        The method blends several strategies:
-            1. Deterministic temperature exploration (instant, sent immediately)
-            2. Batched reflection (streamed as LLM calls complete)
-            3. Specification induction (streamed as LLM calls complete)
+        The method blends prompt-centric strategies (reflection/spec induction) during Phase 1.
+        During a temperature-optimization phase (Phase 2), only deterministic temperature
+        mutations are generated.
         """
         import asyncio
         import time
@@ -153,9 +152,23 @@ class Mutator:
         if total_budget == 0:
             return []
 
+        # Phase 2: exclusively run temperature mutations
+        if self.temperature_mutations_enabled:
+            temp_start = time.time()
+            temp_mutations = self._temperature_mutations(parent_contexts, total_budget)
+            for temp_mut in temp_mutations:
+                if candidate_sink:
+                    await candidate_sink(temp_mut)
+            elapsed = time.time() - temp_start
+            self.logger.log(
+                f"⏱️  Temperature phase generated {len(temp_mutations)} candidates in {elapsed:.2f}s",
+                LogLevel.INFO,
+            )
+            return temp_mutations
+
         reflection_weight = self._operator_weight("incremental_reflection")
         spec_weight = self._operator_weight("spec_induction") if (self.spec_induction_runner and task_examples) else 0.0
-        temp_weight = self._operator_weight("temperature_shift") if self.temperature_mutations_enabled else 0.0
+        proposals: list[Candidate] = []
 
         spec_quota = 0
         if spec_weight > 0.0:
@@ -164,26 +177,6 @@ class Mutator:
             spec_quota = min(total_budget, max(1, round(total_budget * spec_share)))
 
         non_spec_budget = total_budget - spec_quota
-        proposals: list[Candidate] = []
-
-        # 1) Deterministic temperature exploration - STREAM IMMEDIATELY
-        temp_start = time.time()
-        temp_quota = 0
-        if non_spec_budget > 0 and self.temperature_mutations_enabled:
-            total_tr = temp_weight + reflection_weight
-            temp_share = temp_weight / total_tr if total_tr > 0 else 0.0
-            temp_quota = min(non_spec_budget, round(non_spec_budget * temp_share))
-
-        temp_mutations = self._temperature_mutations(parent_contexts, temp_quota)
-        temp_time = time.time() - temp_start
-
-        # STREAMING: Send temperature mutations immediately (they're instant, no LLM call)
-        for temp_mut in temp_mutations:
-            proposals.append(temp_mut)
-            if candidate_sink:
-                await candidate_sink(temp_mut)
-
-        non_spec_budget = max(0, non_spec_budget - len(temp_mutations))
 
         # 2 & 3) Run reflection and spec induction CONCURRENTLY, streaming as they complete
         llm_start = time.time()
@@ -229,7 +222,7 @@ class Mutator:
 
         # Log timing breakdown
         self.logger.log("⏱️  Mutator timing (STREAMING):")
-        self.logger.log(f"   Temperature: {temp_time:.2f}s ({len(temp_mutations)} sent instantly)")
+        self.logger.log(f"   Temperature: 0.00s (0 sent instantly)")
         self.logger.log(f"   LLM calls (parallel): {llm_time:.2f}s")
         self.logger.log(f"     - Total streamed: {len(proposals)} candidates")
         self.logger.log(f"   Total propose: {propose_total:.2f}s")

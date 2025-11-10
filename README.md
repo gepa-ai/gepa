@@ -481,12 +481,12 @@ TurboGEPA uses two complementary mutation strategies that both receive the same 
 
 **Phase 2: Temperature Cycling (30% of budget)**
 
-After prompt optimization converges, TurboGEPA explores temperature variations:
+After prompt optimization converges, TurboGEPA freezes prompt exploration and runs a dedicated temperature sweep:
 
 - **Select top prompts** from Phase 1 Pareto frontier
-- **Generate temperature grid**: 0.0, 0.3, 0.5, 0.7, 1.0 and ±0.2 around baseline (clamped to [0.0, 1.0])
-- **Evaluate with ASHA**: Find optimal temperature for final deployment
-- **Output**: Best prompt + optimal temperature setting
+- **Generate temperature grid** anchored to each prompt's meta (0.0, 0.3, 0.5, 0.7, 1.0 and ±0.2 around baseline, clamped to [0.0, 1.0])
+- **Enable temperature mutations only** and evaluate with ASHA (no prompt edits in this phase)
+- **Output**: Best prompt paired with its optimal temperature
 
 ### TurboGEPA Enhancements
 
