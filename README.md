@@ -545,7 +545,7 @@ graph TD
 - **With ASHA**: (100 × 5%) + (40 × 20%) + (16 × 100%) = **29 full evaluation equivalents**
 - **Savings**: ~**71% fewer evaluations** while keeping the best candidates
 
-**How It Works**: Start with many candidates on cheap evaluations (5% data), progressively promote only the top performers to more expensive evaluations (20%, then 100%). Most poor candidates are eliminated early before wasting compute.
+**How It Works**: Start with many candidates on cheap evaluations (5% data), progressively promote only the top performers to more expensive evaluations (20%, then 100%). Most poor candidates are eliminated early before wasting compute. TurboGEPA never cancels evaluations on the final rung—once a candidate reaches the 100 % shard, every example finishes so convergence decisions reflect the full dataset.
 
 #### 2. Async Orchestration
 
@@ -714,6 +714,40 @@ archive.
 | 1000 examples | 900 min       | 240 min (3.75x)      | 180 min (5x)          |
 
 _Benchmarks: AIME dataset, gpt-4o-mini task LM, 10 optimization rounds, 8-core machine_
+
+### Reproducing the OSS‑20 / Grok‑4 Benchmark
+
+To compare legacy GEPA vs TurboGEPA (and guarantee fully fresh runs):
+
+```bash
+# 1) Run both optimizers back-to-back (clears .turbo_gepa automatically)
+source .envrc && source .venv/bin/activate
+python examples/aime_benchmark_v2.py \
+  --mode both \
+  --dataset-size 30 \
+  --task-lm openrouter/openai/gpt-oss-20b:nitro \
+  --reflection-lm openrouter/x-ai/grok-4-fast \
+  --turbo-eval-concurrency 2 \
+  --turbo-target-quality 0.733 \
+  --turbo-show-progress
+
+# 2) Verify the TurboGEPA best prompt on the full train (or val) split
+python scripts/verify_prompt.py \
+  --split train \
+  --dataset-size 30 \
+  --eval-concurrency 8
+```
+
+- `examples/aime_benchmark_v2.py` now wipes `.turbo_gepa/` before every Turbo run so cached evals never leak into a benchmark.
+- The verification script bypasses the cache, fans out real OSS‑20 task calls, and reports both accuracy and dataset coverage (should be 100 % on the final rung).
+- The best prompt from the latest run is persisted to `.turbo_gepa/best_prompt.txt` and is what the verification script reads.
+
+Current OSS‑20 results (train split, 30 examples, TurboGEPA with clean cache):
+
+| Optimizer  | Runtime | Eval Budget Used | Full-Shard Quality | Train Accuracy (verify_prompt) |
+|------------|---------|------------------|--------------------|--------------------------------|
+| GEPA       | 598 s   | 150 metric calls | 0.733              | –                              |
+| TurboGEPA  | 170 s   | 43 evaluations   | 0.767 (seed)       | 0.73 (22/30)                   |
 
 ---
 

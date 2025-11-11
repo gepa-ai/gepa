@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,6 +59,16 @@ def _load_aime_subset(limit: int) -> Tuple[List[dict], List[dict]]:
         trainset = trainset[:limit]
         valset = valset[: min(limit, len(valset))]
     return trainset, valset
+
+
+def _reset_turbo_cache() -> None:
+    """Delete .turbo_gepa to guarantee clean-state benchmarks."""
+
+    turbo_root = Path(".turbo_gepa")
+    if turbo_root.exists():
+        shutil.rmtree(turbo_root)
+    turbo_root.mkdir(parents=True, exist_ok=True)
+    print("🧹 Cleared .turbo_gepa cache for a fresh TurboGEPA run.")
 
 
 def _summarize_prompt(prompt_text: str | None, max_chars: int = 160) -> str:
@@ -208,6 +219,12 @@ def run_turbo(
         quality = best_entry.result.objectives.get("quality", 0.0)
         prompt = best_entry.candidate.text
 
+    best_path = Path(".turbo_gepa") / "best_prompt.txt"
+    try:
+        best_path.write_text(prompt, encoding="utf-8")
+    except Exception as exc:
+        print(f"⚠️ Could not write best prompt to {best_path}: {exc}")
+
     stats = result.get("evolution_stats", {}) or {}
     evaluations = stats.get("total_evaluations", 0)
 
@@ -314,6 +331,7 @@ def main() -> None:
         )
 
     if args.mode in {"turbo", "both"}:
+        _reset_turbo_cache()
         results["TurboGEPA"] = run_turbo(
             trainset,
             task_lm=args.task_lm,
