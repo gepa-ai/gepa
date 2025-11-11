@@ -7,10 +7,45 @@ structured, task-specific starting prompts.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import random
 import re
 from typing import Any
 
 from .interfaces import Candidate
+
+_retry_rng = random.Random()
+
+
+async def _call_with_retries(
+    coro_factory,
+    *,
+    label: str,
+    max_attempts: int = 3,
+    base_delay: float = 1.5,
+):
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await coro_factory()
+        except Exception as exc:  # pragma: no cover - network failures
+            last_exc = exc
+            if attempt >= max_attempts:
+                raise
+            delay = base_delay * (2 ** (attempt - 1))
+            delay += _retry_rng.uniform(0.0, 0.5)
+            logging.warning(
+                "Seed initializer LLM call '%s' failed (attempt %s/%s): %s. Retrying in %.1fs",
+                label,
+                attempt,
+                max_attempts,
+                exc,
+                delay,
+            )
+            await asyncio.sleep(delay)
+    if last_exc:
+        raise last_exc
 
 
 async def initialize_seeds_from_examples(
@@ -78,7 +113,21 @@ async def initialize_seeds_from_examples(
     if reflection_lm_temperature is not None:
         completion_kwargs["temperature"] = reflection_lm_temperature
 
-    response = await acompletion(**completion_kwargs)
+    async def invoke():
+        return await acompletion(**completion_kwargs)
+
+    try:
+        response = await _call_with_retries(invoke, label="seed_init")
+    except Exception as exc:
+        if "temperature" in str(exc).lower() and completion_kwargs.pop("temperature", None) is not None:
+            logging.warning("Reflection LM rejected temperature during seed init; retrying without temperature.")
+
+            async def invoke_no_temp():
+                return await acompletion(**completion_kwargs)
+
+            response = await _call_with_retries(invoke_no_temp, label="seed_init_no_temp", max_attempts=2)
+        else:
+            raise
     content = response.choices[0].message.content
 
     # Parse the generated specs

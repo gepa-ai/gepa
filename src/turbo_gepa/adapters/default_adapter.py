@@ -18,9 +18,14 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Sequence
+import shutil
+import tempfile
+from typing import Any, Awaitable, Sequence
 
-from turbo_gepa.archive import Archive
+import random
+import re
+
+from turbo_gepa.archive import Archive, ArchiveEntry
 from turbo_gepa.cache import DiskCache
 from turbo_gepa.config import (
     DEFAULT_CONFIG,
@@ -31,12 +36,54 @@ from turbo_gepa.config import (
 from turbo_gepa.evaluator import AsyncEvaluator
 from turbo_gepa.interfaces import Candidate, EvalResult
 from turbo_gepa.islands import IslandContext, spawn_islands
+from turbo_gepa.logging import ProgressReporter
 from turbo_gepa.logging.logger import LogLevel, StdOutLogger
 from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
 from turbo_gepa.strategies import ReflectionStrategy
 from turbo_gepa.utils.litellm_client import configure_litellm_client
+
+_AIME_HASHTAG_RE = re.compile(r"###\s*([\-+]?\d+)", re.IGNORECASE)
+_BOXED_RE = re.compile(r"\\boxed\{([^}]+)\}")
+_INTEGER_RE = re.compile(r"(-?\d+)")
+
+
+def _normalize_numeric_token(token: str | None) -> str | None:
+    if not token:
+        return None
+    stripped = token.strip()
+    if not stripped:
+        return None
+    try:
+        return str(int(stripped))
+    except ValueError:
+        return None
+
+
+def _extract_numeric_answer(text: str | None, *, preferred_length: int | None = None) -> str | None:
+    if not isinstance(text, str):
+        return None
+    for pattern in (_AIME_HASHTAG_RE, _BOXED_RE):
+        matches = list(pattern.finditer(text))
+        for matched in reversed(matches):
+            normalised = _normalize_numeric_token(matched.group(1))
+            if normalised is None:
+                continue
+            if preferred_length is not None and preferred_length > 0 and len(normalised) != preferred_length:
+                continue
+            return normalised
+    matches = list(_INTEGER_RE.finditer(text))
+    if preferred_length is not None and preferred_length > 0:
+        for match in reversed(matches):
+            normalised = _normalize_numeric_token(match.group(1))
+            if normalised is not None and len(normalised) == preferred_length:
+                return normalised
+    for match in reversed(matches):
+        normalised = _normalize_numeric_token(match.group(1))
+        if normalised is not None:
+            return normalised
+    return None
 
 
 @dataclass(slots=True)
@@ -359,6 +406,8 @@ class DefaultAdapter:
                 if strategy.requires_examples and not task_examples:
                     continue
 
+                strategy_label = getattr(strategy, "name", strategy.__class__.__name__)
+
                 remaining = num_mutations - len(collected)
                 reflection_examples = (
                     getattr(self.mutator, "_reflection_examples", []) if hasattr(self, "mutator") else []
@@ -390,8 +439,14 @@ class DefaultAdapter:
 
                     import asyncio
 
+                    async def invoke_reflection():
+                        return await self._acompletion_with_client(acompletion, completion_kwargs, 180.0)
+
                     try:
-                        response = await self._acompletion_with_client(acompletion, completion_kwargs, 180.0)
+                        response = await self._call_with_retries(
+                            invoke_reflection,
+                            label=f"reflection:{strategy_label}",
+                        )
                     except asyncio.TimeoutError:
                         raise
                     except Exception as err:
@@ -399,34 +454,42 @@ class DefaultAdapter:
                             self._disable_temperature_support(
                                 f"{self.reflection_model.name} rejected temperature parameter"
                             )
-                            response = await self._acompletion_with_client(acompletion, completion_kwargs, 180.0)
+
+                            async def invoke_no_temp():
+                                return await self._acompletion_with_client(acompletion, completion_kwargs, 180.0)
+
+                            response = await self._call_with_retries(
+                                invoke_no_temp,
+                                label=f"reflection:{strategy_label}",
+                                max_attempts=2,
+                            )
                         else:
                             raise
                 except asyncio.TimeoutError:
                     elapsed = time.time() - start_time
                     self.logger.log(
-                        f"❌ Strategy '{strategy.name}' LLM call TIMEOUT after {elapsed:.1f}s "
+                        f"❌ Strategy '{strategy_label}' LLM call TIMEOUT after {elapsed:.1f}s "
                         f"(model={self.reflection_model.name})",
                         LogLevel.ERROR,
                     )
                     raise RuntimeError(
-                        f"Strategy '{strategy.name}' LLM call timed out after {elapsed:.1f}s."
+                        f"Strategy '{strategy_label}' LLM call timed out after {elapsed:.1f}s."
                     ) from None
                 except Exception as exc:
                     elapsed = time.time() - start_time
                     self.logger.log(
-                        f"❌ Strategy '{strategy.name}' LLM call FAILED after {elapsed:.1f}s "
+                        f"❌ Strategy '{strategy_label}' LLM call FAILED after {elapsed:.1f}s "
                         f"(model={self.reflection_model.name}): {type(exc).__name__}: {exc}",
                         LogLevel.ERROR,
                     )
                     raise RuntimeError(
-                        f"Strategy '{strategy.name}' LLM call failed after {elapsed:.1f}s "
+                        f"Strategy '{strategy_label}' LLM call failed after {elapsed:.1f}s "
                         f"({type(exc).__name__}: {exc})."
                     ) from exc
 
                 content = response.choices[0].message.content
                 parsed = strategy.response_parser(content or "")
-                cleaned = self._filter_strategy_mutations(parsed, strategy_name=strategy.name)
+                cleaned = self._filter_strategy_mutations(parsed, strategy_name=strategy_label)
                 collected.extend(cleaned)
 
             return collected[:num_mutations]
@@ -584,6 +647,160 @@ class DefaultAdapter:
             snapshots.append(orchestrator.evolution_snapshot(include_edges=True))
         return self._combine_evolution_snapshots(snapshots)
 
+    def _build_run_metadata(
+        self,
+        orchestrator: Orchestrator,
+        pareto_entries: Sequence[ArchiveEntry],
+    ) -> dict[str, Any]:
+        promote_obj = orchestrator.config.promote_objective
+        best_quality = 0.0
+        best_shard = None
+        best_prompt = None
+        full_shard = orchestrator._runtime_shards[-1] if orchestrator._runtime_shards else 1.0
+        tolerance = 1e-6
+        full_entries = [
+            entry
+            for entry in pareto_entries
+            if entry.result.shard_fraction is not None
+            and abs(entry.result.shard_fraction - full_shard) <= tolerance
+        ]
+        candidates = full_entries or list(pareto_entries)
+        if candidates:
+            best_entry = max(
+                candidates,
+                key=lambda entry: entry.result.objectives.get(promote_obj, 0.0),
+            )
+            best_quality = best_entry.result.objectives.get(promote_obj, 0.0)
+            best_shard = best_entry.result.shard_fraction or 0.0
+            best_prompt = best_entry.candidate.text
+        return {
+            "run_id": orchestrator.run_id,
+            "stop_reason": orchestrator.stop_reason,
+            "evaluations": orchestrator.evaluations_run,
+            "best_quality": best_quality,
+            "best_quality_shard": best_shard,
+            "best_prompt": best_prompt,
+        }
+
+    async def evaluate_prompt_async(
+        self,
+        prompt: str | Candidate,
+        *,
+        example_ids: Sequence[str] | None = None,
+        concurrency: int | None = None,
+        bypass_cache: bool = True,
+        show_progress: bool = True,
+        label: str = "verification",
+        cache_dir: str | None = None,
+    ) -> EvalResult:
+        """
+        Evaluate a single prompt on the adapter dataset without running optimization.
+
+        Returns the aggregated EvalResult covering all requested examples.
+        """
+        target_ids = list(example_ids) if example_ids is not None else list(self._example_ids)
+        if not target_ids:
+            raise ValueError("No example IDs supplied for verification.")
+
+        if isinstance(prompt, Candidate):
+            candidate = prompt
+            if "source" not in candidate.meta and label:
+                candidate = candidate.with_meta(source=label)
+        else:
+            candidate = Candidate(text=prompt, meta={"source": label})
+
+        eff_concurrency = max(1, concurrency or self.config.eval_concurrency)
+
+        temp_dir: tempfile.TemporaryDirectory[str] | None = None
+        cache = self.cache
+        if bypass_cache:
+            if cache_dir:
+                verify_cache = Path(cache_dir)
+                shutil.rmtree(verify_cache, ignore_errors=True)
+                verify_cache.mkdir(parents=True, exist_ok=True)
+            else:
+                base_cache = Path(self.base_cache_dir)
+                base_cache.mkdir(parents=True, exist_ok=True)
+                temp_dir = tempfile.TemporaryDirectory(prefix="verify_", dir=str(base_cache))
+                verify_cache = Path(temp_dir.name)
+            cache = DiskCache(str(verify_cache))
+
+        evaluator = AsyncEvaluator(
+            cache=cache,
+            task_runner=self._task_runner,
+            metrics_mapper=lambda metrics: {"quality": metrics.get("quality", 0.0)},
+            timeout_seconds=self.config.eval_timeout_seconds,
+            skip_final_straggler_cutoff=True,
+            logger=self.logger,
+        )
+
+        try:
+            return await evaluator.eval_on_shard(
+                candidate,
+                target_ids,
+                eff_concurrency,
+                shard_fraction=1.0,
+                show_progress=show_progress,
+                is_final_shard=True,
+            )
+        finally:
+            if temp_dir is not None:
+                temp_dir.cleanup()
+
+    def evaluate_prompt(
+        self,
+        prompt: str | Candidate,
+        *,
+        example_ids: Sequence[str] | None = None,
+        concurrency: int | None = None,
+        bypass_cache: bool = True,
+        show_progress: bool = True,
+        label: str = "verification",
+        cache_dir: str | None = None,
+    ) -> EvalResult:
+        """Sync wrapper around evaluate_prompt_async for convenience."""
+        return asyncio.run(
+            self.evaluate_prompt_async(
+                prompt,
+                example_ids=example_ids,
+                concurrency=concurrency,
+                bypass_cache=bypass_cache,
+                show_progress=show_progress,
+                label=label,
+                cache_dir=cache_dir,
+            )
+        )
+
+    async def _call_with_retries(
+        self,
+        coro_factory: Callable[[], Awaitable[Any]],
+        *,
+        label: str,
+        max_attempts: int = 3,
+        base_delay: float = 1.5,
+    ):
+        """Execute an async factory with exponential backoff."""
+        import asyncio
+
+        last_exc: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return await coro_factory()
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= max_attempts:
+                    raise
+                delay = base_delay * (2 ** (attempt - 1))
+                delay += random.uniform(0.0, 0.5)
+                self.logger.log(
+                    f"⚠️  LLM call '{label}' failed (attempt {attempt}/{max_attempts}): {exc}. "
+                    f"Retrying in {delay:.1f}s",
+                    LogLevel.WARNING,
+                )
+                await asyncio.sleep(delay)
+        if last_exc:
+            raise last_exc
+
     async def _task_runner(self, candidate: Candidate, example_id: str) -> dict[str, float]:
         """Execute task LLM on a single example."""
         example = self.example_map[example_id].to_payload()
@@ -612,32 +829,20 @@ class DefaultAdapter:
             if reasoning_effort is not None:
                 completion_kwargs["reasoning_effort"] = reasoning_effort
 
-            # Try with temperature, fall back without it if model doesn't support it
             import time as _time_module
+            import asyncio
 
             _start_llm = _time_module.time()
+
+            async def invoke():
+                return await self._acompletion_with_client(acompletion, completion_kwargs, 120.0)
+
             try:
-                # Add timeout to prevent hanging on slow API calls
-                import asyncio
-                response = await self._acompletion_with_client(acompletion, completion_kwargs, 120.0)
-                _elapsed_llm = _time_module.time() - _start_llm
-
-                # Track LLM call in metrics if available
-                if hasattr(self, '_metrics') and self._metrics is not None:
-                    self._metrics.record_llm_call("task", _elapsed_llm)
-
-                if _elapsed_llm > 60.0:
-                    self.logger.log(
-                        f"⚠️  Slow task LLM call: {_elapsed_llm:.1f}s (example={example_id}, model={self.task_model.name})",
-                        LogLevel.WARNING,
-                    )
+                response = await self._call_with_retries(invoke, label=f"task:{example_id}")
             except asyncio.TimeoutError:
                 _elapsed_llm = _time_module.time() - _start_llm
-
-                # Track timeout in metrics
-                if hasattr(self, '_metrics') and self._metrics is not None:
+                if hasattr(self, "_metrics") and self._metrics is not None:
                     self._metrics.llm_timeouts += 1
-
                 self.logger.log(
                     f"❌ Task LLM call TIMEOUT after {_elapsed_llm:.1f}s "
                     f"(example={example_id}, model={self.task_model.name}). "
@@ -649,22 +854,52 @@ class DefaultAdapter:
                     "This may indicate API rate limits or a very long response. Consider using a faster model."
                 )
             except Exception as e:
-                _elapsed_llm = _time_module.time() - _start_llm
-                # Some models don't support custom temperature (e.g., o1-preview)
                 if "temperature" in str(e).lower() and completion_kwargs.get("temperature") is not None:
                     self._disable_temperature_support(f"{self.task_model.name} rejected temperature parameter")
                     completion_kwargs.pop("temperature", None)
                     if isinstance(candidate.meta, dict):
                         candidate.meta.pop("temperature", None)
-                    response = await self._acompletion_with_client(acompletion, completion_kwargs, 120.0)
+
+                    async def invoke_no_temp():
+                        return await self._acompletion_with_client(acompletion, completion_kwargs, 120.0)
+
+                    response = await self._call_with_retries(
+                        invoke_no_temp,
+                        label=f"task:{example_id}",
+                        max_attempts=2,
+                    )
                 else:
-                    raise  # Re-raise if it's a different error
+                    raise
+
+            _elapsed_llm = _time_module.time() - _start_llm
+
+            if hasattr(self, "_metrics") and self._metrics is not None:
+                self._metrics.record_llm_call("task", _elapsed_llm)
+
+            if _elapsed_llm > 60.0:
+                self.logger.log(
+                    f"⚠️  Slow task LLM call: {_elapsed_llm:.1f}s (example={example_id}, model={self.task_model.name})",
+                    LogLevel.WARNING,
+                )
 
             model_output = response.choices[0].message.content
             tokens_used = response.usage.total_tokens
 
-            # Check if answer is in output
-            quality = 1.0 if example["answer"] in model_output else 0.0
+            expected_token = _extract_numeric_answer(example.get("answer"))
+            preferred_len = len(expected_token) if expected_token is not None else None
+            actual_token = _extract_numeric_answer(model_output, preferred_length=preferred_len)
+            if expected_token is not None and actual_token is not None:
+                quality = 1.0 if expected_token == actual_token else 0.0
+            else:
+                answer_field = example.get("answer")
+                haystack = model_output or ""
+                quality = (
+                    1.0
+                    if isinstance(answer_field, str)
+                    and answer_field
+                    and answer_field in haystack
+                    else 0.0
+                )
 
             metrics = {
                 "quality": quality,
@@ -680,7 +915,6 @@ class DefaultAdapter:
             return metrics
 
         except Exception as e:
-            # No heuristic fallback - raise the error with clear message
             error_type = type(e).__name__
             error_msg = str(e)
             self.logger.log(
@@ -722,27 +956,19 @@ class DefaultAdapter:
         def metrics_mapper(metrics: dict[str, float]) -> dict[str, float]:
             return {"quality": metrics.get("quality", 0.0)}
 
+        progress_callback = metrics_callback
+        if display_progress and progress_callback is None:
+            progress_callback = ProgressReporter(self.logger)
+
         evaluator = AsyncEvaluator(
             cache=cache or self.cache,
             task_runner=self._task_runner,
             metrics_mapper=metrics_mapper,
             timeout_seconds=self.config.eval_timeout_seconds,
             min_improve=0.0,  # Disabled: variance-aware promotion handles this
-            skip_final_straggler_cutoff=False,  # Streaming mode always on: always finish final shard
+            skip_final_straggler_cutoff=True,  # Never cancel final-shard evals early; we need full-dataset coverage
+            logger=self.logger,
         )
-        # Create stop governor if auto-stop enabled
-        # Use provided metrics_callback, or create dashboard if progress display is enabled
-        dashboard_enabled = False
-        if metrics_callback is None and display_progress:
-            try:
-                from turbo_gepa.dashboard import TerminalDashboard
-
-                dashboard = TerminalDashboard()
-                metrics_callback = dashboard.update
-                dashboard_enabled = True
-            except ImportError:
-                # plotext not installed, fall back to simple progress
-                pass
 
         return Orchestrator(
             config=self.config,
@@ -751,11 +977,11 @@ class DefaultAdapter:
             sampler=sampler or self.sampler,
             mutator=mutator,
             cache=cache or self.cache,
-            show_progress=display_progress
-            and not dashboard_enabled,  # Disable inline progress when dashboard is active
+            show_progress=display_progress,
             example_sampler=self._sample_examples,
             island_context=island_context,
-            metrics_callback=metrics_callback,
+            metrics_callback=progress_callback,
+            logger=self.logger,
         )
 
     async def optimize_async(
@@ -816,12 +1042,14 @@ class DefaultAdapter:
         # Instead, let the orchestrator's own timeout logic handle it gracefully
         await orchestrator.run(seed_candidates, max_rounds=max_rounds, max_evaluations=max_evaluations)
 
-        pareto = orchestrator.archive.pareto_candidates()
+        pareto_entries = orchestrator.archive.pareto_entries()
+        pareto = [entry.candidate for entry in pareto_entries]
         return {
             "pareto": pareto,
-            "pareto_entries": orchestrator.archive.pareto_entries(),
+            "pareto_entries": pareto_entries,
             "qd_elites": [],  # Deprecated field kept for compatibility; always empty
             "evolution_stats": orchestrator.evolution_snapshot(include_edges=True),
+            "run_metadata": self._build_run_metadata(orchestrator, pareto_entries),
         }
 
     async def _optimize_staged_temperature(
@@ -866,6 +1094,7 @@ class DefaultAdapter:
 
         phase1_pareto = orchestrator1.archive.pareto_entries()
         phase1_stats = orchestrator1.evolution_snapshot(include_edges=True)
+        phase1_metadata = self._build_run_metadata(orchestrator1, phase1_pareto)
 
         # Early exit if temperature not supported
         if not self.temperature_supported:
@@ -876,6 +1105,7 @@ class DefaultAdapter:
                 "phase1_pareto": [e.candidate for e in phase1_pareto],
                 "phase1_evolution_stats": phase1_stats,
                 "evolution_stats": self._combine_evolution_snapshots([phase1_stats]),
+                "run_metadata": phase1_metadata,
             }
 
         # Early exit if no pareto frontier
@@ -887,6 +1117,7 @@ class DefaultAdapter:
                 "phase1_pareto": [],
                 "phase1_evolution_stats": phase1_stats,
                 "evolution_stats": self._combine_evolution_snapshots([phase1_stats]),
+                "run_metadata": phase1_metadata,
             }
 
         # Take top K prompts sorted by quality
@@ -919,6 +1150,7 @@ class DefaultAdapter:
 
         phase2_pareto = orchestrator2.archive.pareto_entries()
         phase2_stats = orchestrator2.evolution_snapshot(include_edges=True)
+        phase2_metadata = self._build_run_metadata(orchestrator2, phase2_pareto)
 
         combined_stats = self._combine_evolution_snapshots([phase1_stats, phase2_stats])
 
@@ -930,6 +1162,8 @@ class DefaultAdapter:
             "phase1_evolution_stats": phase1_stats,
             "phase2_evolution_stats": phase2_stats,
             "evolution_stats": combined_stats,
+            "run_metadata": phase2_metadata,
+            "phase1_run_metadata": phase1_metadata,
         }
 
     async def _optimize_multi_island(
@@ -1023,12 +1257,18 @@ class DefaultAdapter:
         evolution_stats = self._aggregate_evolution_stats(orchestrators)
         # Calculate total unique candidates (Pareto only)
         total_candidates = len(combined_archive.pareto)
+        island_metadata = [
+            self._build_run_metadata(orchestrator, orchestrator.archive.pareto_entries())
+            for orchestrator in orchestrators
+            if orchestrator is not None
+        ]
         return {
             "pareto": pareto_candidates,
             "pareto_entries": pareto_entries,
             "qd_elites": [],  # Deprecated
             "evolution_stats": evolution_stats,
             "total_candidates": total_candidates,
+            "run_metadata_per_island": island_metadata,
         }
 
     async def _optimize_multi_island_staged(
@@ -1051,12 +1291,14 @@ class DefaultAdapter:
         )
         phase1_entries = phase1_result.get("pareto_entries", [])
         phase1_stats = phase1_result.get("evolution_stats", {})
+        phase1_metadata_per_island = phase1_result.get("run_metadata_per_island", [])
         if not phase1_entries:
             return {
                 **phase1_result,
                 "phase1_pareto": [],
                 "phase1_evolution_stats": phase1_stats,
                 "evolution_stats": phase1_stats,
+                "phase1_run_metadata_per_island": phase1_metadata_per_island,
             }
 
         top_k = min(5, len(phase1_entries))
@@ -1090,6 +1332,8 @@ class DefaultAdapter:
         phase2_result["phase1_evolution_stats"] = phase1_stats
         phase2_result["phase2_evolution_stats"] = phase2_stats
         phase2_result["evolution_stats"] = combined_stats
+        phase2_result["phase1_run_metadata_per_island"] = phase1_metadata_per_island
+        phase2_result.setdefault("run_metadata_per_island", [])
         return phase2_result
 
     def optimize(

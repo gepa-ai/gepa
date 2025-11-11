@@ -43,7 +43,7 @@ import asyncio
 import logging
 import random
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence
+from typing import Any, Awaitable, Callable, Sequence
 
 import dspy
 from dspy.primitives import Example, Prediction
@@ -136,6 +136,7 @@ class DSpyAdapter:
 
         # Reflection runner
         self.reflection_runner = self._create_reflection_runner()
+        self._async_random = random.Random()
 
         async def batch_reflection_runner(
             parent_contexts: list[dict[str, object]],
@@ -325,6 +326,39 @@ class DSpyAdapter:
 
     # Removed rule-based fallback: reflection requires an LLM
 
+    async def _call_with_retries(
+        self,
+        coro_factory: Callable[[], Awaitable[Any]],
+        *,
+        label: str,
+        max_attempts: int = 3,
+        base_delay: float = 1.5,
+    ):
+        """Retry helper for LLM calls."""
+        import asyncio
+
+        last_exc: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return await coro_factory()
+            except Exception as exc:  # pragma: no cover - defensive path
+                last_exc = exc
+                if attempt >= max_attempts:
+                    raise
+                delay = base_delay * (2 ** (attempt - 1))
+                delay += self._async_random.uniform(0.0, 0.5)
+                logging.warning(
+                    "LLM call '%s' failed (attempt %s/%s): %s. Retrying in %.1fs",
+                    label,
+                    attempt,
+                    max_attempts,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+        if last_exc:
+            raise last_exc
+
     async def _llm_reflection(
         self,
         traces: list[dict],
@@ -359,8 +393,14 @@ class DSpyAdapter:
             # Build LLM prompt
             prompt = InstructionProposalPrompt.build_prompt(current_inst, dataset)
 
-            # Call reflection LLM
-            response = await self.reflection_lm(prompt)
+            # Call reflection LLM with retries
+            async def invoke():
+                return await self.reflection_lm(prompt)
+
+            response = await self._call_with_retries(
+                invoke,
+                label=f"dspy_reflection:{pred_name}",
+            )
 
             # Extract new instruction
             new_instruction = InstructionProposalPrompt.extract_instruction(response)

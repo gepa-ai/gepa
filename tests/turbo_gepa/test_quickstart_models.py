@@ -90,4 +90,3 @@ def test_quickstart_models_smoke():
     # Ensure evolution stats are populated
     evolution_stats = result.get("evolution_stats", {}) or {}
     assert evolution_stats.get("total_evaluations", 0) > 0
-***

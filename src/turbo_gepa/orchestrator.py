@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import heapq
+import json
 import math
 import time
+import uuid
 from collections import defaultdict, deque
 from typing import Any, Callable, Iterable, Sequence
 
+from turbo_gepa.logging import build_progress_snapshot
 from turbo_gepa.logging.logger import LogLevel, LoggerProtocol, StdOutLogger
 
 from .archive import Archive, ArchiveEntry
@@ -48,6 +51,7 @@ class Orchestrator:
         example_sampler: Callable[[int], list[dict[str, object]]] | None = None,
         metrics_callback: Callable | None = None,
         logger: LoggerProtocol | None = None,
+        run_id: str | None = None,
     ) -> None:
         self.config = config
         self.evaluator = evaluator
@@ -138,6 +142,9 @@ class Orchestrator:
         self._sched_to_fingerprint: dict[str, str] = {}
         self._promotion_pending: set[str] = set()
         self._last_mutation_attempt: float = 0.0
+        self._stop_reason: str | None = None
+        self._run_started_at: float | None = None
+        self._run_id = run_id or uuid.uuid4().hex[:8]
 
         # Metrics tracking
         self.metrics = Metrics()
@@ -146,6 +153,48 @@ class Orchestrator:
 
         # Scheduler state derived from capacities
         self._recompute_capacities()
+
+    def _set_stop_reason(self, reason: str) -> None:
+        """Record why the orchestration loop decided to stop."""
+        if not self._stop_reason:
+            self._stop_reason = reason
+
+    def _log_structured(self, event: str, level: LogLevel = LogLevel.INFO, **fields: Any) -> None:
+        payload = {"event": event, "run_id": self._run_id}
+        payload.update(fields)
+        try:
+            message = json.dumps(payload, sort_keys=True)
+        except Exception:
+            # Fallback to repr if something isn't serializable
+            message = json.dumps(
+                {k: repr(v) for k, v in payload.items()},
+                sort_keys=True,
+            )
+        self.logger.log(message, level)
+
+    @property
+    def stop_reason(self) -> str | None:
+        return self._stop_reason
+
+    @property
+    def run_started_at(self) -> float | None:
+        return self._run_started_at
+
+    @property
+    def run_id(self) -> str:
+        return self._run_id
+
+    @property
+    def run_id(self) -> str:
+        return self._run_id
+
+    @property
+    def total_inflight(self) -> int:
+        return self._total_inflight
+
+    @property
+    def examples_inflight(self) -> int:
+        return self._examples_inflight
 
     def _resize_metric_list(self, data: list[int], target: int) -> list[int]:
         if len(data) < target:
@@ -419,6 +468,7 @@ class Orchestrator:
         # Store budgets for metrics reporting
         self.max_rounds = max_rounds
         self.max_evaluations = max_evaluations
+        self._stop_reason = None
 
         # Attempt to resume from saved state
         resumed = False
@@ -435,13 +485,12 @@ class Orchestrator:
         # Track optimization start time for global timeout - BEFORE seed evaluation
         import time
         optimization_start_time = time.time()
+        self._run_started_at = optimization_start_time
 
         if not resumed:
             await self._seed_archive(seeds)
             if self.metrics_callback is not None:
-                from .metrics import extract_metrics
-
-                self.metrics_callback(extract_metrics(self))
+                self.metrics_callback(build_progress_snapshot(self))
 
         # DON'T start mutation task here - archive is empty!
         # Let the main loop start it naturally after seeds are evaluated
@@ -486,18 +535,32 @@ class Orchestrator:
 
         while True:
             if max_rounds is not None and window_id >= max_rounds:
+                self._set_stop_reason(f"max_rounds({max_rounds})")
                 break
             if max_evaluations is not None and self.evaluations_run >= max_evaluations:
+                self._set_stop_reason("max_evaluations")
                 break
             # Check convergence flag from scheduler
             if self.scheduler.converged:
-                _debug_log("🛑 CONVERGED: Scheduler detected convergence on final rung")
-                break
+                best_full = self._get_best_quality_from_full_shard()
+                target_quality = self.config.target_quality
+                if target_quality is None or best_full >= target_quality:
+                    _debug_log("🛑 CONVERGED: Scheduler detected convergence on final rung")
+                    self._set_stop_reason("scheduler_converged")
+                    break
+                else:
+                    _debug_log(
+                        "⚠️  Scheduler convergence ignored (best_full_shard=%.3f < target %.3f)",
+                        best_full,
+                        target_quality,
+                    )
+                    self.scheduler.reset_final_rung_convergence()
             # Check global timeout
             if self.config.max_optimization_time_seconds is not None:
                 elapsed = time.time() - optimization_start_time
                 if elapsed >= self.config.max_optimization_time_seconds:
                     _debug_log(f"⏱️  TIMEOUT: Reached max optimization time ({elapsed:.1f}s >= {self.config.max_optimization_time_seconds:.1f}s)")
+                    self._set_stop_reason("timeout")
                     # Cancel all in-flight tasks to exit quickly
                     if self._inflight_tasks:
                         _debug_log(f"   Cancelling {len(self._inflight_tasks)} in-flight evaluations...")
@@ -563,9 +626,7 @@ class Orchestrator:
                     )
                     last_progress_display = self.evaluations_run
                     if self.metrics_callback is not None:
-                        from .metrics import extract_metrics
-
-                        self.metrics_callback(extract_metrics(self))
+                        self.metrics_callback(build_progress_snapshot(self))
 
             # 4) Refresh mutation generation if queues are running low
             # Only spawn new mutations if we haven't exceeded the evaluation budget
@@ -641,10 +702,7 @@ class Orchestrator:
 
                 # Call metrics callback if provided
                 if self.metrics_callback is not None:
-                    from .metrics import extract_metrics
-
-                    metrics = extract_metrics(self)
-                    self.metrics_callback(metrics)
+                    self.metrics_callback(build_progress_snapshot(self))
 
                 # Clear inline progress before showing summary
                 if self.show_progress:
@@ -664,10 +722,12 @@ class Orchestrator:
                 if should_stop:
                     if self.show_progress:
                         self.logger.log(f"🛑 Auto-stopping: {debug_info['reason']}")
+                    self._set_stop_reason(f"auto_stop:{debug_info['reason']}")
                     break
 
             # 6) Target quality guard
             if await self._stream_check_target(window_id):
+                self._set_stop_reason("target_quality")
                 break
 
             self._adjust_runtime_parameters()
@@ -683,10 +743,12 @@ class Orchestrator:
             ):
                 if self._mutation_task is None:
                     _debug_log("🛑 IDLE DETECTION: All work complete, exiting loop")
+                    self._set_stop_reason("idle")
                     break
                 elif self._mutation_task.done():
                     _debug_log("🛑 IDLE DETECTION: Mutation task done, exiting loop")
                     self._mutation_task = None
+                    self._set_stop_reason("idle")
                     break
                 else:
                     # Mutation task still running, wait for it
@@ -699,6 +761,9 @@ class Orchestrator:
                     await asyncio.sleep(0.005)
                 elif drained == 0:
                     await asyncio.sleep(0.01)
+
+        if not self._stop_reason:
+            self._stop_reason = "completed"
 
         # === Cleanup ===
         # Wait for all inflight evaluations to complete
@@ -730,9 +795,31 @@ class Orchestrator:
         timestamp = int(time.time())
         metrics_file = f"{metrics_dir}/metrics_{timestamp}.txt"
         with open(metrics_file, "w") as f:
+            f.write(f"Run ID: {self._run_id}\n")
             f.write(metrics_summary)
         if self.show_progress:
             self.logger.log(f"📊 Metrics saved to: {metrics_file}")
+            snapshot = build_progress_snapshot(self)
+            reason = snapshot.stop_reason or "completed"
+            self.logger.log(
+                f"🏁 TurboGEPA finished run={self._run_id} (reason: {reason}) "
+                f"| evals={snapshot.evaluations} best={snapshot.best_quality:.3f}@{snapshot.best_quality_shard:.0%} "
+                f"| pareto={snapshot.pareto_size}",
+                LogLevel.WARNING,
+            )
+            if snapshot.best_prompt_snippet:
+                self.logger.log(f"   best_prompt: {snapshot.best_prompt_snippet}", LogLevel.WARNING)
+            self._log_structured(
+                "run_complete",
+                level=LogLevel.WARNING,
+                reason=reason,
+                evaluations=snapshot.evaluations,
+                best_quality=round(snapshot.best_quality, 6),
+                best_quality_shard=snapshot.best_quality_shard,
+                pareto_size=snapshot.pareto_size,
+                stop_reason=reason,
+                best_prompt=snapshot.best_prompt_snippet,
+            )
 
         # Clear state only if we reached completion (not if stopped early)
         completed = (max_rounds is not None and window_id >= max_rounds) or (
@@ -1148,7 +1235,13 @@ class Orchestrator:
             return False
 
         full_shard = self._runtime_shards[-1]
-        full_entries = [entry for entry in pareto if entry.result.shard_fraction == full_shard]
+        tolerance = 1e-6
+        full_entries = [
+            entry
+            for entry in pareto
+            if entry.result.shard_fraction is not None
+            and abs(entry.result.shard_fraction - full_shard) <= tolerance
+        ]
         if not full_entries:
             return False
 
@@ -1272,12 +1365,14 @@ class Orchestrator:
             return 0.0
 
         full_shard = self._runtime_shards[-1]  # Longest shard (e.g., 1.0 = 100%)
+        tolerance = 1e-6
 
         # Try to get quality from full-shard evaluations first
         full_shard_quality = 0.0
         has_full_shard = False
         for entry in pareto:
-            if entry.result.shard_fraction == full_shard:
+            shard_fraction = entry.result.shard_fraction
+            if shard_fraction is not None and abs(shard_fraction - full_shard) <= tolerance:
                 has_full_shard = True
                 quality = entry.result.objectives.get(self.config.promote_objective, 0.0)
                 full_shard_quality = max(full_shard_quality, quality)

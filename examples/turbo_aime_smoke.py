@@ -111,6 +111,23 @@ def _summarize_results(result: dict) -> None:
     for key in ("total_evaluations", "mutations_generated", "mutations_promoted"):
         print(f"  {key}: {stats.get(key, 'n/a')}")
 
+    strat = stats.get("strategy_stats", {})
+    islands = strat.get("islands") or []
+    if islands:
+        print("\nStrategy breakdown (aggregate across islands):")
+        combined: dict[str, dict[str, float]] = {}
+        for island_stats in islands:
+            for name, data in island_stats.items():
+                bucket = combined.setdefault(name, {"generated": 0, "promoted": 0, "trials": 0})
+                bucket["generated"] += data.get("generated", 0)
+                bucket["promoted"] += data.get("promoted", 0)
+                bucket["trials"] += data.get("trials", 0)
+        for name, info in combined.items():
+            gen = info["generated"]
+            promo = info["promoted"]
+            win = (promo / gen) * 100 if gen else 0.0
+            print(f"  • {name}: generated={gen}, promoted={promo}, promote rate={win:.1f}%")
+
     # Heuristic check: did we see any interleaved-thinking prompts?
     interleaved = []
     for entry in pareto_entries:

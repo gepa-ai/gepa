@@ -375,6 +375,25 @@ if RUN_TURBO:
     print(f"   Mutations generated: {mutations_generated}")
     print(f"   Mutations enqueued: {mutations_enqueued}")
     print(f"   Mutations promoted to archive: {mutations_promoted}")
+    strategy_stats = evolution_stats.get("strategy_stats", {})
+    if strategy_stats:
+        print("   Strategy breakdown:")
+        islands = strategy_stats.get("islands") or []
+        aggregate: dict[str, dict[str, float]] = {}
+        for island_stats in islands:
+            for name, data in island_stats.items():
+                stats = aggregate.setdefault(name, {"generated": 0, "promoted": 0, "trials": 0})
+                stats["generated"] += data.get("generated", 0)
+                stats["promoted"] += data.get("promoted", 0)
+                stats["trials"] += data.get("trials", 0)
+        for name, stats in aggregate.items():
+            promoted = stats["promoted"]
+            generated = stats["generated"]
+            win_rate = (promoted / generated) * 100 if generated else 0.0
+            print(
+                f"      • {name}: generated={generated}, promoted={promoted}, "
+                f"promote rate={win_rate:.1f}%"
+            )
     if metrics_obj:
         print(f"   Early stops (parent target): {parent_stops}")
         print(f"   Early stops (stragglers): {straggler_stops}")

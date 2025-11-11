@@ -62,10 +62,19 @@ class BudgetedScheduler:
         self.variance_tolerance = dict(config.variance_tolerance)
         self.shrinkage_alpha = dict(config.shrinkage_alpha)
 
-        # Generation-based convergence tracking
-        # rung_idx -> (generations_without_improvement, improvement_this_generation)
-        self._rung_generations: dict[int, tuple[int, bool]] = {
-            i: (0, False) for i in range(len(self.shards))
+        # Convergence tracking per rung: generation + evaluation counters
+        # rung_idx -> {
+        #   "stagnant_generations": int,
+        #   "improvement_this_gen": bool,
+        #   "stagnant_evals": int,
+        # }
+        self._rung_generations: dict[int, dict[str, int | bool]] = {
+            i: {
+                "stagnant_generations": 0,
+                "improvement_this_gen": False,
+                "stagnant_evals": 0,
+            }
+            for i in range(len(self.shards))
         }
         self._best_on_rung: dict[int, tuple[Candidate, float]] = {}  # rung_idx -> (candidate, score)
         self.converged = False  # Flag for final rung convergence
@@ -123,18 +132,27 @@ class BudgetedScheduler:
         if rung_idx not in self._rung_generations:
             return
 
-        stagnant_gens, improved_this_gen = self._rung_generations[rung_idx]
+        info = self._rung_generations[rung_idx]
+        final_rung_index = len(self.shards) - 1
+        stagnant_gens = int(info["stagnant_generations"])
+        improved_this_gen = bool(info["improvement_this_gen"])
+        stagnant_evals = int(info.get("stagnant_evals", 0))
 
         if improved_this_gen:
             # Had improvement → reset counter
-            self._rung_generations[rung_idx] = (0, False)
+            info["stagnant_generations"] = 0
+            info["stagnant_evals"] = 0
+            info["improvement_this_gen"] = False
         else:
             # No improvement → increment counter
             new_count = stagnant_gens + 1
-            self._rung_generations[rung_idx] = (new_count, False)
+            info["stagnant_generations"] = new_count
+            info.setdefault("stagnant_evals", 0)
+            info["improvement_this_gen"] = False
 
             # Check for convergence
-            if new_count >= self.config.patience_generations:
+            eval_threshold = 20 if rung_idx >= final_rung_index else 0
+            if new_count >= self.config.patience_generations and stagnant_evals >= eval_threshold:
                 final_rung_index = len(self.shards) - 1
 
                 if rung_idx >= final_rung_index:
@@ -151,7 +169,9 @@ class BudgetedScheduler:
                         best_key = self._sched_key(best_cand)
                         self._candidate_levels[best_key] = rung_idx + 1
                         self._pending_promotions.append(best_cand)
-                        self._rung_generations[rung_idx] = (0, False)  # Reset
+                        info["stagnant_generations"] = 0
+                        info["stagnant_evals"] = 0
+                        info["improvement_this_gen"] = False
                         logger.debug(
                             "   🚀 FORCE PROMOTED best on rung %d after %d stagnant generations (score=%s)",
                             rung_idx,
@@ -169,8 +189,26 @@ class BudgetedScheduler:
                 self._candidate_levels[key] = max_idx
         self._pending_promotions.clear()
         # Reset convergence tracking
-        self._rung_generations = {i: (0, False) for i in range(len(self.shards))}
+        self._rung_generations = {
+            i: {
+                "stagnant_generations": 0,
+                "improvement_this_gen": False,
+                "stagnant_evals": 0,
+            }
+            for i in range(len(self.shards))
+        }
         self._best_on_rung.clear()
+        self.converged = False
+
+    def reset_final_rung_convergence(self) -> None:
+        """Clear convergence flag/count for the final rung so optimization can continue."""
+        final_idx = len(self.shards) - 1
+        if final_idx >= 0:
+            self._rung_generations[final_idx] = {
+                "stagnant_generations": 0,
+                "improvement_this_gen": False,
+                "stagnant_evals": 0,
+            }
         self.converged = False
 
     def current_shard_fraction(self, candidate: Candidate) -> float:
@@ -203,6 +241,14 @@ class BudgetedScheduler:
         self._parent_scores[sched_key] = score
         if idx not in self._best_on_rung or score > self._best_on_rung[idx][1]:
             self._best_on_rung[idx] = (candidate, score)
+            info = self._rung_generations.get(idx)
+            if info is not None:
+                info["improvement_this_gen"] = True
+                info["stagnant_evals"] = 0
+        else:
+            info = self._rung_generations.get(idx)
+            if info is not None:
+                info["stagnant_evals"] = int(info.get("stagnant_evals", 0)) + 1
 
         # Check if at final rung
         if idx >= final_rung_index:
@@ -225,8 +271,9 @@ class BudgetedScheduler:
             self._pending_promotions.append(candidate)
             # Mark improvement on this rung
             if idx in self._rung_generations:
-                gens, _ = self._rung_generations[idx]
-                self._rung_generations[idx] = (gens, True)
+                info = self._rung_generations[idx]
+                info["improvement_this_gen"] = True
+                info["stagnant_evals"] = 0
             return "promoted"
 
         # MUTATION: Variance-aware parent comparison
@@ -289,8 +336,9 @@ class BudgetedScheduler:
             self._pending_promotions.append(candidate)
             # Mark improvement on this rung
             if idx in self._rung_generations:
-                gens, _ = self._rung_generations[idx]
-                self._rung_generations[idx] = (gens, True)
+                info = self._rung_generations[idx]
+                info["improvement_this_gen"] = True
+                info["stagnant_evals"] = 0
             return "promoted"
         else:
             # Below variance tolerance → prune
