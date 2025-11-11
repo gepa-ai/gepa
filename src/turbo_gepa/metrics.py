@@ -45,6 +45,7 @@ class Metrics:
     evaluations_by_shard: dict[float, int] = field(default_factory=lambda: defaultdict(int))
     concurrent_evals_peak: int = 0
     eval_time_sum: float = 0.0
+    shard_outcomes: dict[float, dict[str, float]] = field(default_factory=dict)
 
     # Scheduler Decisions
     candidates_promoted: int = 0
@@ -108,6 +109,29 @@ class Metrics:
         self.evaluations_total += 1
         self.evaluations_by_shard[shard_fraction] += 1
         self.eval_time_sum += duration
+
+    def record_shard_outcome(
+        self,
+        shard_fraction: float | None,
+        coverage: float,
+        stragglers_cancelled: int,
+        duration: float,
+    ) -> None:
+        """Record aggregate stats for a shard evaluation batch."""
+        key = shard_fraction if shard_fraction is not None else -1.0
+        stats = self.shard_outcomes.setdefault(
+            key,
+            {
+                "count": 0,
+                "coverage_sum": 0.0,
+                "stragglers": 0,
+                "duration_sum": 0.0,
+            },
+        )
+        stats["count"] += 1
+        stats["coverage_sum"] += coverage
+        stats["stragglers"] += stragglers_cancelled
+        stats["duration_sum"] += duration
 
     def record_promotion(self, from_rung: int) -> None:
         """Record a candidate promotion."""
@@ -248,6 +272,24 @@ class Metrics:
             f"  Peak concurrency: {self.concurrent_evals_peak}",
             f"  By shard: {dict(self.evaluations_by_shard)}",
             "",
+            "📏 Shard Outcomes:",
+        ]
+
+        if not self.shard_outcomes:
+            lines.append("  (no shard outcome data yet)")
+        else:
+            for shard, stats in sorted(self.shard_outcomes.items(), key=lambda kv: kv[0]):
+                count = stats["count"]
+                avg_cov = stats["coverage_sum"] / count if count else 0.0
+                avg_duration = stats["duration_sum"] / count if count else 0.0
+                lines.append(
+                    f"  shard={shard:.2f}: coverage={avg_cov:.1%}, "
+                    f"stragglers={int(stats['stragglers'])}, batches={count}, "
+                    f"mean_duration={avg_duration:.1f}s"
+                )
+
+        lines.extend([
+            "",
             "📊 Scheduler Decisions:",
             f"  Promoted: {self.candidates_promoted}",
             f"  Pruned: {self.candidates_pruned}",
@@ -268,7 +310,7 @@ class Metrics:
             f"  Archive: {self.time_archive_total:.1f}s",
             "",
             "🎯 Operator Performance:",
-        ]
+        ])
 
         for operator in sorted(self.operator_delta_quality.keys()):
             success_rate = self.operator_success_rate(operator)

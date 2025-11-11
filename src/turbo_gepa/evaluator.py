@@ -86,60 +86,18 @@ class AsyncEvaluator:
             # 1) If caller provided rung-specific parent scores, prefer those.
             parent_rung_scores = meta.get("parent_rung_scores")
             if isinstance(parent_rung_scores, dict) and shard_fraction is not None:
-                # Try exact fraction key; else nearest fraction present
                 val = parent_rung_scores.get(shard_fraction)
                 if isinstance(val, (int, float)):
                     return float(val)
-                best_key = None
-                best_diff = 1e9
-                for k, v in parent_rung_scores.items():
-                    if not isinstance(k, (int, float)) or not isinstance(v, (int, float)):
-                        continue
-                    diff = abs(float(k) - float(shard_fraction))
-                    if diff < best_diff:
-                        best_diff = diff
-                        best_key = k
-                if best_key is not None:
-                    return float(parent_rung_scores[best_key])
-
-            # 2) Fallback to shrinkage from parent final score
-            parent_final: float | None = None
-            raw_parent = meta.get("parent_score")
-            if isinstance(raw_parent, (int, float)):
-                parent_final = float(raw_parent)
-            else:
-                parent_obj = meta.get("parent_objectives")
-                if isinstance(parent_obj, dict):
-                    obj_val = parent_obj.get("quality")
-                    if isinstance(obj_val, (int, float)):
-                        parent_final = float(obj_val)
-            if parent_final is None:
+                # If parent never saw this shard, don't gate; defer to scheduler
                 return None
 
-            # Default alphas mirror scheduler defaults
-            alpha_map = {0.2: 0.7, 0.5: 0.85, 1.0: 1.0}
-            alpha = None
-            if shard_fraction is not None:
-                if shard_fraction in alpha_map:
-                    alpha = alpha_map[shard_fraction]  # type: ignore[index]
-                else:
-                    best_key = None
-                    best_diff = 1e9
-                    for k in alpha_map:
-                        diff = abs(float(k) - float(shard_fraction))
-                        if diff < best_diff:
-                            best_diff = diff
-                            best_key = k
-                    if best_key is not None:
-                        alpha = alpha_map[best_key]
-            if alpha is None:
-                alpha = 0.85
-            baseline = (1 - alpha) * 0.5 + alpha * parent_final
-            return max(0.0, min(1.0, baseline))
+            # 2) No rung-specific data; skip gating to avoid apples-to-oranges comparisons.
+            return None
 
         parent_target: float | None = None
         parent_baseline = _parent_baseline_for_rung()
-        if isinstance(parent_baseline, (int, float)):
+        if isinstance(parent_baseline, (int, float)) and not (is_final_shard and self.skip_final_straggler_cutoff):
             parent_target = float(parent_baseline) + float(self.min_improve)
             if parent_target > 1.0:
                 parent_target = 1.0
@@ -155,6 +113,7 @@ class AsyncEvaluator:
         quality_lock = asyncio.Lock()
         running_quality = 0.0
         early_stop_flag = False
+        straggler_cancelled_total = 0
 
         async def _register_result(result: EvalResult, quality_override: float | None = None) -> None:
             nonlocal completed, running_quality, early_stop_flag
@@ -347,7 +306,11 @@ class AsyncEvaluator:
 
         # Monitor tasks and cancel stragglers based on runtime statistics
         while pending:
-            if len(eval_durations) >= 3 and not (self.skip_final_straggler_cutoff and is_final_shard):
+            if (
+                len(eval_durations) >= 3
+                and not (self.skip_final_straggler_cutoff and is_final_shard)
+                and completed >= max(total * 0.5, 1)
+            ):
                 import statistics
 
                 mean_duration = statistics.fmean(eval_durations)
@@ -390,6 +353,7 @@ class AsyncEvaluator:
                         f"📊 Straggler stats: cancelled {straggler_count}/{len(pending)+completed} tasks, "
                         f"mean duration={mean_duration:.1f}s, stdev={stdev:.1f}s, threshold={threshold:.1f}s"
                     )
+                    straggler_cancelled_total += straggler_count
                     if self.metrics:
                         self.metrics.record_early_stop("stragglers")
 
@@ -443,6 +407,23 @@ class AsyncEvaluator:
             n_examples += result.n_examples
 
         averaged = {k: v / max(n_examples, 1) for k, v in totals.items()}
+        coverage_ratio = completed / max(total, 1)
+        shard_key = shard_fraction if shard_fraction is not None else 0.0
+
+        if self.metrics:
+            self.metrics.record_shard_outcome(
+                shard_fraction,
+                coverage_ratio,
+                straggler_cancelled_total,
+                batch_duration,
+            )
+
+        if (coverage_ratio < 0.999 or straggler_cancelled_total > 0) and total > 0:
+            self.logger.log(
+                f"📏 Shard outcome {shard_key:.0%}: coverage={coverage_ratio:.1%} "
+                f"(completed {completed}/{total}), stragglers_cancelled={straggler_cancelled_total}, "
+                f"duration={batch_duration:.1f}s"
+            )
         return EvalResult(
             objectives=averaged,
             traces=traces,

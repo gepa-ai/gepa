@@ -573,6 +573,14 @@ class Orchestrator:
                 _debug_log(f"🔍 MAIN LOOP: queue={len(self.queue)}, inflight={self._total_inflight}")
                 _debug_log(f"   Priority queue: {len(self._priority_queue)}")
 
+            if loop_iter % 20 == 0 and self._total_inflight > self._effective_concurrency * 2:
+                self.logger.log(
+                    f"⚠️  Inflight spike: {self._total_inflight} candidates "
+                    f"(configured concurrency={self._effective_concurrency}). "
+                    f"Queue={len(self.queue)}, priority_queue={len(self._priority_queue)}, "
+                    f"examples_inflight={self._examples_inflight}"
+                )
+
             # DEBUG: Log before potentially blocking await
             if loop_iter % 20 == 0:
                 _debug_log(f"🔄 Loop iteration {loop_iter}: About to call _stream_launch_ready")
