@@ -317,6 +317,7 @@ We encourage the community and users to help us develop adapters to allow GEPA t
     - Boosting Sanskrit QA: Finetuning EmbeddingGemma with 50k GEPA generated synthetic data samples [(Tweet)](https://x.com/dhrtha/status/1984315872547385504), [(Code)](https://github.com/ganarajpr/rgfe)
     - [Simulating Realistic Market Research Focus Groups with GEPA-Optimized AI Personas](https://x.com/hammer_mt/status/1984269888979116061)
     - [Optimizing Google ADK Agents' SOP using GEPA](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/)
+    - [HuggingFace Cookbook on prompt optimization for with DSPy and GEPA](https://huggingface.co/learn/cookbook/en/dspy_gepa)
     - [OpenAI Cookbook showing how to build self-evolving agents using GEPA](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining)
 
 ## Reference and Citation
