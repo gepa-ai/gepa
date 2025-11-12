@@ -15,7 +15,7 @@ authors = [
   { name = "Lakshya A Agrawal", email = "lakshyaaagrawal@berkeley.edu" }
 ]
 license = { text = "MIT" }
-requires-python = ">=3.10, <3.14"
+requires-python = ">=3.10, <=3.14"
 
 dependencies = []
 
