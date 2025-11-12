@@ -10,6 +10,7 @@ from __future__ import annotations
 import collections
 import random
 from typing import Iterable, Sequence
+import hashlib
 
 
 class InstanceSampler:
@@ -91,6 +92,34 @@ class InstanceSampler:
 
         shard = hard_ids + random_ids
         return shard
+
+    # === Canonical sampling ===
+
+    def _canonical_seed(self, shard_fraction: float, namespace: int | None = None) -> int:
+        """Derive a deterministic seed from dataset IDs + shard fraction + namespace."""
+        key_items = list(self.example_ids)
+        key_items.sort()
+        base = "|".join(key_items) + f"@{round(shard_fraction, 6)}"
+        if namespace is not None:
+            base += f"#{namespace}"
+        h = hashlib.sha1(base.encode("utf-8")).digest()
+        return int.from_bytes(h[:8], "big", signed=False)
+
+    def sample_canonical(self, shard_fraction: float, k: int, *, island_id: int = 0) -> list[str]:
+        """
+        Deterministically select ``k`` example IDs for the given ``shard_fraction``.
+
+        This ignores hardness and pure randomness to ensure apples-to-apples
+        comparisons across candidates and runs.
+        """
+        k = min(k, len(self.example_ids))
+        if k <= 0:
+            return []
+        seed = self._canonical_seed(shard_fraction, namespace=island_id)
+        rnd = random.Random(seed)
+        if k >= len(self.example_ids):
+            return list(self.example_ids)
+        return rnd.sample(self.example_ids, k)
 
     def register_hard_examples(self, example_ids: Iterable[str]) -> None:
         """Record examples that triggered failures for increased sampling."""

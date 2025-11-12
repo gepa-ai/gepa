@@ -513,6 +513,13 @@ class DefaultAdapter:
                     ) from exc
 
                 content = response.choices[0].message.content
+                # Record per-strategy call in metrics (if available)
+                try:
+                    if hasattr(self, "_metrics") and self._metrics is not None:
+                        elapsed = time.time() - start_time
+                        self._metrics.record_strategy_call(strategy_label, elapsed)
+                except Exception:
+                    pass
                 parsed = strategy.response_parser(content or "")
                 cleaned = self._filter_strategy_mutations(parsed, strategy_name=strategy_label)
                 collected.extend(cleaned)
@@ -681,23 +688,64 @@ class DefaultAdapter:
         best_quality = 0.0
         best_shard = None
         best_prompt = None
-        full_shard = orchestrator._runtime_shards[-1] if orchestrator._runtime_shards else 1.0
-        tolerance = 1e-6
-        full_entries = [
-            entry
-            for entry in pareto_entries
-            if entry.result.shard_fraction is not None
-            and abs(entry.result.shard_fraction - full_shard) <= tolerance
-        ]
-        candidates = full_entries or list(pareto_entries)
-        if candidates:
-            best_entry = max(
-                candidates,
-                key=lambda entry: entry.result.objectives.get(promote_obj, 0.0),
-            )
-            best_quality = best_entry.result.objectives.get(promote_obj, 0.0)
-            best_shard = best_entry.result.shard_fraction or 0.0
-            best_prompt = best_entry.candidate.text
+
+        # Prefer the exact candidate that achieved the target on the final rung,
+        # captured at the moment of attainment (it may no longer be on Pareto).
+        try:
+            star_prompt = getattr(orchestrator, "_north_star_prompt", None)
+            star_quality = getattr(orchestrator, "_north_star_quality", None)
+            star_shard = getattr(orchestrator, "_north_star_shard", None)
+            if isinstance(star_prompt, str) and isinstance(star_quality, (int, float)) and isinstance(star_shard, (int, float)):
+                best_prompt = star_prompt
+                best_quality = float(star_quality)
+                best_shard = float(star_shard)
+        except Exception:
+            pass
+
+        # Fallback #1: scan orchestrator.latest_results for any full-shard results
+        # and recover the corresponding prompt via orchestrator's candidate map.
+        if best_prompt is None:
+            try:
+                tol = 1e-6
+                full_shard = orchestrator._runtime_shards[-1] if orchestrator._runtime_shards else 1.0
+                best_fp = None
+                best_q = -1.0
+                for fp, res in getattr(orchestrator, "latest_results", {}).items():
+                    sf = res.shard_fraction if res.shard_fraction is not None else 0.0
+                    if abs(sf - full_shard) <= tol:
+                        q = res.objectives.get(promote_obj, 0.0)
+                        if q > best_q:
+                            best_q = q
+                            best_fp = fp
+                if best_fp is not None:
+                    cmap = getattr(orchestrator, "_candidates_by_fp", {})
+                    cand = cmap.get(best_fp)
+                    if cand is not None:
+                        best_prompt = cand.text
+                        best_quality = best_q
+                        best_shard = full_shard
+            except Exception:
+                pass
+
+        # Fallback #2: current Pareto entries, preferring full-shard items
+        if best_prompt is None:
+            full_shard = orchestrator._runtime_shards[-1] if orchestrator._runtime_shards else 1.0
+            tolerance = 1e-6
+            full_entries = [
+                entry
+                for entry in pareto_entries
+                if entry.result.shard_fraction is not None
+                and abs(entry.result.shard_fraction - full_shard) <= tolerance
+            ]
+            candidates = full_entries or list(pareto_entries)
+            if candidates:
+                best_entry = max(
+                    candidates,
+                    key=lambda entry: entry.result.objectives.get(promote_obj, 0.0),
+                )
+                best_quality = best_entry.result.objectives.get(promote_obj, 0.0)
+                best_shard = best_entry.result.shard_fraction or 0.0
+                best_prompt = best_entry.candidate.text
         return {
             "run_id": orchestrator.run_id,
             "stop_reason": orchestrator.stop_reason,
@@ -838,11 +886,7 @@ class DefaultAdapter:
         try:
             from litellm import acompletion
 
-            # Append a strict answer-format instruction to encourage fast, parseable outputs
-            system_prompt = (
-                (candidate.text or "").rstrip()
-                + "\n\nStrict output format: At the very end, output only the final integer answer as '### NNN'."
-            )
+            system_prompt = (candidate.text or "").rstrip()
             completion_kwargs: dict[str, Any] = {
                 "model": self.task_model.name,
                 "messages": [

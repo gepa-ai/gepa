@@ -59,6 +59,9 @@ class Metrics:
     mutations_by_operator: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     mutation_latency_sum: float = 0.0
     mutation_batches: int = 0
+    # Strategy call tracking (reflection variants)
+    strategy_call_counts: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    strategy_latency_sum: dict[str, float] = field(default_factory=lambda: defaultdict(float))
 
     # Early Stopping
     early_stops_parent_target: int = 0
@@ -302,6 +305,16 @@ class Metrics:
         deltas = self.operator_delta_quality.get(operator, [])
         return sum(deltas) / len(deltas) if deltas else 0.0
 
+    def record_strategy_call(self, name: str, latency: float) -> None:
+        self.strategy_call_counts[name] += 1
+        self.strategy_latency_sum[name] += max(0.0, float(latency))
+
+    def strategy_latency_mean(self, name: str) -> float:
+        n = self.strategy_call_counts.get(name, 0)
+        if n <= 0:
+            return 0.0
+        return self.strategy_latency_sum.get(name, 0.0) / n
+
     def turbo_score(self) -> float | None:
         if (
             self.target_quality is None
@@ -369,6 +382,10 @@ class Metrics:
             f"  Batches: {self.mutation_batches}",
             f"  Mean latency: {self.mutation_latency_mean:.2f}s",
             f"  By operator: {dict(self.mutations_by_operator)}",
+            "",
+            "🧠 Reflection Strategies:",
+            f"  Calls: {dict(self.strategy_call_counts)}",
+            f"  Mean latency by strategy: {{" + ", ".join(f"{k}: {self.strategy_latency_mean(k):.2f}s" for k in self.strategy_call_counts) + "}}",
             "",
             "⏱️  Timing Breakdown:",
             f"  Evaluation: {self.time_eval_total:.1f}s",

@@ -87,6 +87,30 @@ class Orchestrator:
             )
         )
         self._runtime_shards: list[float] = list(self.config.shards)
+        # Ensure the ladder includes the target shard (helps time-to-target metrics)
+        try:
+            tgt = float(self.config.target_shard_fraction or 1.0)
+        except Exception:
+            tgt = 1.0
+        if 0.0 < tgt < 1.0:
+            eps = 1e-6
+            has_tgt = any(abs(s - tgt) <= 0.005 for s in self._runtime_shards)
+            if not has_tgt:
+                new = sorted(self._runtime_shards + [tgt])
+                merged: list[float] = []
+                for s in new:
+                    if not merged:
+                        merged.append(s)
+                        continue
+                    if s - merged[-1] < 0.06 and s < 1.0:
+                        # Keep the one closer to target
+                        if abs(s - tgt) + eps < abs(merged[-1] - tgt):
+                            merged[-1] = s
+                        continue
+                    merged.append(s)
+                if merged[-1] < 1.0 - 1e-6:
+                    merged.append(1.0)
+                self._runtime_shards = merged
         self._final_rung_index: int = max(0, len(self._runtime_shards) - 1)
         self.queue: deque[Candidate] = deque()
         self._pending_fingerprints: set[str] = set()
@@ -173,6 +197,9 @@ class Orchestrator:
         self._stop_reason: str | None = None
         self._run_started_at: float | None = None
         self._run_id = run_id or uuid.uuid4().hex[:8]
+        # Track candidates by fingerprint so we can recover prompt text for
+        # results that may fall off the Pareto frontier later.
+        self._candidates_by_fp: dict[str, Candidate] = {}
 
         # Metrics tracking
         self.metrics = Metrics()
@@ -180,6 +207,13 @@ class Orchestrator:
         self.metrics.target_shard_fraction = self.config.target_shard_fraction
         # Pass metrics to evaluator for cache tracking
         self.evaluator.metrics = self.metrics
+
+        # Capture the candidate that hits the target at the final rung so we can
+        # later surface its exact prompt even if it falls off the Pareto frontier.
+        self._north_star_fp: str | None = None
+        self._north_star_prompt: str | None = None
+        self._north_star_quality: float | None = None
+        self._north_star_shard: float | None = None
 
         # Scheduler state derived from capacities
         self._recompute_capacities()
@@ -218,12 +252,51 @@ class Orchestrator:
         ):
             return
         if shard_fraction + 1e-6 >= target_shard_fraction and quality >= target_quality:
+            # Try to capture the best full-shard entry (candidate + prompt) at the moment of target attainment.
+            try:
+                tol = 1e-6
+                # Prefer to scan latest_results so we include dominated (non-Pareto) full‑shard entries
+                full_fp: str | None = None
+                full_quality: float = -1.0
+                for fp, res in self.latest_results.items():
+                    sf = res.shard_fraction if res.shard_fraction is not None else 0.0
+                    if abs(sf - target_shard_fraction) <= tol:
+                        q = res.objectives.get(self.config.promote_objective, 0.0)
+                        if q > full_quality:
+                            full_quality = q
+                            full_fp = fp
+                if full_fp is not None:
+                    cand = self._candidates_by_fp.get(full_fp)
+                    if cand is not None:
+                        self._north_star_fp = full_fp
+                        self._north_star_prompt = cand.text
+                        self._north_star_quality = full_quality
+                        self._north_star_shard = target_shard_fraction
+            except Exception:
+                # Non-fatal; continue without embedding prompt
+                pass
             self.metrics.time_to_target_seconds = elapsed
             if self.show_progress:
                 self.logger.log(
                     f"🏎️  Target reached at {elapsed:.1f}s (quality={quality:.3f} @ {shard_fraction:.0%})",
                     LogLevel.WARNING,
                 )
+            # Emit a structured "north_star" event for easy parsing
+            try:
+                promos = dict(self.metrics.promotions_by_rung)
+            except Exception:
+                promos = {}
+            self._log_structured(
+                "north_star",
+                level=LogLevel.WARNING,
+                time_to_target_seconds=round(elapsed, 3),
+                target_quality=round(target_quality, 6),
+                target_shard_fraction=target_shard_fraction,
+                evaluations_to_target=self.evaluations_run,
+                promotions_by_rung=promos,
+                best_prompt_snippet=(self._north_star_prompt[:180] if isinstance(self._north_star_prompt, str) else None),
+                best_full_quality=(round(self._north_star_quality, 6) if isinstance(self._north_star_quality, (int, float)) else None),
+            )
 
     def _log_structured(self, event: str, level: LogLevel = LogLevel.INFO, **fields: Any) -> None:
         payload = {"event": event, "run_id": self._run_id}
@@ -297,6 +370,11 @@ class Orchestrator:
         for candidate in candidates:
             if not candidate.text.strip():
                 continue
+            # Remember candidate by fingerprint for later lookup (even if it falls off Pareto)
+            try:
+                self._candidates_by_fp[candidate.fingerprint] = candidate
+            except Exception:
+                pass
             if self.config.queue_limit and len(self._priority_queue) >= self.config.queue_limit:
                 # Drop lowest-value additions when backlog is already saturated
                 continue
@@ -364,6 +442,20 @@ class Orchestrator:
             if isinstance(recent_avg, (int, float)) and recent_avg > 0:
                 boost = max(0.0, min(1.0, recent_avg))
                 priority *= (1 + self._recent_delta_weight * boost)
+
+        # Bias toward the target rung until time_to_target is reached
+        try:
+            target = float(self.config.target_shard_fraction or 1.0)
+        except Exception:
+            target = 1.0
+        if self.metrics.time_to_target_seconds is None and 0.0 < target <= 1.0:
+            try:
+                tgt_idx = self._runtime_shards.index(target)
+            except ValueError:
+                tgt_idx = min(range(len(self._runtime_shards)), key=lambda i: abs(self._runtime_shards[i] - target))
+            dist = max(0, tgt_idx - rung_idx)
+            if dist > 0:
+                priority *= (1.0 + 0.15 * dist)
 
         return priority
 
@@ -1107,11 +1199,12 @@ class Orchestrator:
         # Only eval_concurrency (in evaluator) + straggler detection control throughput
 
         shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
-        shard_key = (window_id, shard_fraction)
+        shard_key = ("canonical", shard_fraction)
         shard_ids = self._shard_cache.get(shard_key)
         if shard_ids is None:
             shard_size = self._shard_size(shard_fraction)
-            shard_ids = self.sampler.sample_shard(window_id, shard_size)
+            island_ns = getattr(self.island_context, "island_id", 0) if self.island_context else 0
+            shard_ids = self.sampler.sample_canonical(shard_fraction, shard_size, island_id=island_ns)
             self._shard_cache[shard_key] = shard_ids
         # Track assigned examples for coverage accounting
         self._candidate_eval_examples[candidate.fingerprint] = list(shard_ids)
@@ -1510,8 +1603,15 @@ class Orchestrator:
                 self._mutation_task = asyncio.create_task(self._streaming_mutation_worker())
 
     async def _stream_check_target(self, window_id: int) -> bool:
+        # Fast path: if time_to_target is already recorded, stop immediately.
         if self.config.target_quality is None:
             return False
+        if self.metrics.time_to_target_seconds is not None:
+            if self.show_progress:
+                self.logger.log(
+                    f"🎯 Target quality {self.config.target_quality:.2%} reached (time_to_target={self.metrics.time_to_target_seconds:.1f}s)."
+                )
+            return True
 
         pareto = self.archive.pareto_entries()
         if not pareto:
@@ -1542,7 +1642,8 @@ class Orchestrator:
     async def _seed_archive(self, seeds: Sequence[Candidate]) -> None:
         shard_fraction = self._runtime_shards[0]
         shard_size = self._shard_size(shard_fraction)
-        shard = self.sampler.sample_shard(self.round_index, shard_size)
+        island_ns = getattr(self.island_context, "island_id", 0) if self.island_context else 0
+        shard = self.sampler.sample_canonical(shard_fraction, shard_size, island_id=island_ns)
 
         if self.show_progress:
             self.logger.log(
@@ -2337,6 +2438,21 @@ class Orchestrator:
 
         if not pareto_entries:
             return False, {"reason": "no_pareto_candidates"}
+
+        # Enforce final‑rung discipline for auto‑stop: do not allow the governor
+        # to stop early unless we've observed at least one full‑shard evaluation.
+        # This keeps auto convergence aligned with "final rung or target" semantics.
+        try:
+            full_shard = self._runtime_shards[-1] if self._runtime_shards else 1.0
+            tol = 1e-6
+            has_full_shard = any(
+                (e.result.shard_fraction is not None) and (abs(e.result.shard_fraction - full_shard) <= tol)
+                for e in pareto_entries
+            )
+        except Exception:
+            has_full_shard = False
+        if not has_full_shard:
+            return False, {"reason": "no_full_shard_yet"}
 
         # Compute hypervolume (use reference point below all possible values)
         points = [

@@ -220,19 +220,14 @@ def run_turbo(
         asyncio.run(adapter.aclose())
     elapsed = time.time() - start
 
-    best_entry = None
-    pareto_entries = result.get("pareto_entries", []) or []
-    if pareto_entries:
-        best_entry = max(
-            pareto_entries,
-            key=lambda entry: entry.result.objectives.get(config.promote_objective, 0.0),
-        )
-
-    quality = 0.0
-    prompt = seed_prompt
-    if best_entry:
-        quality = best_entry.result.objectives.get("quality", 0.0)
-        prompt = best_entry.candidate.text
+    # Prefer adapter-provided run_metadata if present (it captures the full‑shard
+    # candidate that actually hit the target, even if not on the Pareto frontier).
+    run_meta = result.get("run_metadata", {}) or {}
+    quality = float(run_meta.get("best_quality") or 0.0)
+    prompt = str(run_meta.get("best_prompt") or seed_prompt)
+    shard_info = run_meta.get("best_quality_shard")
+    if isinstance(shard_info, (int, float)):
+        print(f"   Selected best prompt from shard {float(shard_info):.0%}")
 
     best_path = Path(".turbo_gepa") / "best_prompt.txt"
     try:
@@ -305,8 +300,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hf-cache", type=Path, default=Path(".hf_cache"), help="Optional HF cache override.")
     parser.add_argument("--max-metric-calls", type=int, default=40, help="GEPA metric calls.")
     # Turbo-specific knobs
-    parser.add_argument("--turbo-max-rounds", type=int, default=20)
-    parser.add_argument("--turbo-max-evaluations", type=int, default=200)
+    # Let target-quality and convergence govern stopping by default.
+    # Leave these unset (None) unless the caller wants hard caps.
+    parser.add_argument("--turbo-max-rounds", type=int, default=None)
+    parser.add_argument("--turbo-max-evaluations", type=int, default=None)
     parser.add_argument("--turbo-max-mutations", type=int, default=8)
     parser.add_argument("--turbo-queue-limit", type=int, default=32)
     parser.add_argument("--turbo-eval-concurrency", type=int, default=20)
@@ -317,7 +314,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turbo-task-max-tokens", type=int, default=None, help="Max tokens for task LLM (caps generation length)")
     parser.add_argument("--turbo-target-quality", type=float, default=None)
     parser.add_argument("--turbo-target-shard", type=float, default=1.0)
-    parser.add_argument("--turbo-max-runtime", type=int, default=300)
+    parser.add_argument("--turbo-max-runtime", type=int, default=None)
     parser.add_argument("--turbo-log-level", default="WARNING")
     parser.add_argument("--turbo-show-progress", action="store_true")
     parser.add_argument(
