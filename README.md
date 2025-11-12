@@ -727,7 +727,7 @@ python examples/aime_benchmark_v2.py \
   --dataset-size 30 \
   --task-lm openrouter/openai/gpt-oss-20b:nitro \
   --reflection-lm openrouter/x-ai/grok-4-fast \
-  --turbo-eval-concurrency 12 \
+  --turbo-eval-concurrency 20 \
   --turbo-target-quality 0.733 \
   --turbo-show-progress
 
@@ -760,14 +760,14 @@ python examples/aime_benchmark_v2.py \
   --reflection-lm openrouter/x-ai/grok-4-fast \
   --turbo-target-shard 0.4 \
   --turbo-target-quality 0.5 \
-  --turbo-eval-concurrency 12 \
+  --turbo-eval-concurrency 20 \
   --turbo-max-runtime 120 \
   --turbo-show-progress
 
 Defaults tuned for speed and stability:
 - Global concurrency budget: ON (prevents oversubscription)
 - Adaptive effective concurrency: ON (follows provider sweet spot)
-- Default ceiling: eval_concurrency=12 (adjusted automatically at runtime)
+- Default ceiling: eval_concurrency=20 (adjusted automatically at runtime)
 ```
 
 #### Stragglers and Final‑Rung Concurrency

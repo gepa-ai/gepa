@@ -838,15 +838,20 @@ class DefaultAdapter:
         try:
             from litellm import acompletion
 
+            # Append a strict answer-format instruction to encourage fast, parseable outputs
+            system_prompt = (
+                (candidate.text or "").rstrip()
+                + "\n\nStrict output format: At the very end, output only the final integer answer as '### NNN'."
+            )
             completion_kwargs: dict[str, Any] = {
                 "model": self.task_model.name,
                 "messages": [
-                    {"role": "system", "content": candidate.text},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": example["input"]},
                 ],
             }
-            max_tokens = self.task_model.max_tokens if self.task_model.max_tokens is not None else 2048
-            completion_kwargs["max_tokens"] = min(max_tokens, 2048)
+            max_tokens = self.task_model.max_tokens if self.task_model.max_tokens is not None else 1024
+            completion_kwargs["max_tokens"] = min(max_tokens, 1024)
 
             if self.temperature_supported:
                 candidate_temperature = candidate.meta.get("temperature")

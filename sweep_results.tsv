@@ -1,0 +1,10 @@
+ceiling	tokens	time_to_target_s	turbo_score	lat_mean_s	p95_s	evals
+12	1024	NA	n/a	1.47	2.46	64
+12	768	NA	n/a	1.27	2.04	50
+12	512	NA	n/a	0.96	1.54	90
+16	1024	NA	n/a	1.51	2.43	44
+16	768	NA	n/a	1.24	1.87	54
+16	512	NA	n/a	1.08	1.73	93
+20	1024	56.5	0.0059	1.72	2.63	51
+20	768	NA	n/a	1.40	2.20	28
+20	512	NA	n/a	1.10	1.85	45

@@ -127,6 +127,7 @@ class Orchestrator:
         self._eval_samples: int = 0
         self._timeout_count: int = 0
         self._last_inflight_adjust: float = 0.0
+        self._last_finalcap_adjust: float = 0.0
         self._last_effconc_adjust: float = 0.0
         self._mutation_throttle: bool = False
         base_mut = self.config.max_mutations_per_round or max(16, self.config.eval_concurrency // 2)
@@ -218,6 +219,11 @@ class Orchestrator:
             return
         if shard_fraction + 1e-6 >= target_shard_fraction and quality >= target_quality:
             self.metrics.time_to_target_seconds = elapsed
+            if self.show_progress:
+                self.logger.log(
+                    f"🏎️  Target reached at {elapsed:.1f}s (quality={quality:.3f} @ {shard_fraction:.0%})",
+                    LogLevel.WARNING,
+                )
 
     def _log_structured(self, event: str, level: LogLevel = LogLevel.INFO, **fields: Any) -> None:
         payload = {"event": event, "run_id": self._run_id}
@@ -547,6 +553,36 @@ class Orchestrator:
             # Slowly decay launch counters to keep ratios reactive
             self._rung_launches = [max(0, int(count * 0.8)) for count in self._rung_launches]
             self._rung_promotions = [max(0, int(count * 0.8)) for count in self._rung_promotions]
+
+        # Adaptive final-rung inflight cap: overlap multiple full-shard candidates when tails are low,
+        # back off when p95 grows large. Rate-limit changes to one step per second.
+        try:
+            lat_p50 = _percentile(latencies, 0.50)
+        except Exception:
+            lat_p50 = lat_mean
+        if self.config.max_final_shard_inflight is not None:
+            desired_cap = self.config.max_final_shard_inflight
+            cap_floor = 2
+            cap_ceil = max(2, int(max(1, getattr(self, "_effective_concurrency", self.config.eval_concurrency)) * 0.75))
+            increase = lat_p95 < max(1.4 * lat_p50, 1.2 * lat_mean) and backlog0 > backlog_high
+            decrease = lat_p95 > max(1.8 * lat_mean, 1.6 * lat_p50)
+            now = time.time()
+            if now - self._last_finalcap_adjust >= 1.0:
+                new_cap = desired_cap
+                if increase and desired_cap < cap_ceil:
+                    new_cap = min(cap_ceil, desired_cap + 1)
+                elif decrease and desired_cap > cap_floor:
+                    new_cap = max(cap_floor, desired_cap - 1)
+                if new_cap != desired_cap:
+                    old = self.config.max_final_shard_inflight
+                    self.config.max_final_shard_inflight = new_cap
+                    self._last_finalcap_adjust = now
+                    if self.show_progress:
+                        direction = "↑" if new_cap > old else "↓"
+                        self.logger.log(
+                            f"⚙️  Adaptive final-rung cap {direction} {old}→{new_cap} | p95={lat_p95:.1f}s p50={lat_p50:.1f}s mean={lat_mean:.1f}s",
+                            LogLevel.WARNING,
+                        )
 
         # Adaptive effective concurrency (network-aware throttle)
         # Target: maximize throughput by staying near provider sweet spot.

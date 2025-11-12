@@ -161,6 +161,11 @@ def _build_turbo_config(dataset_size: int, args: argparse.Namespace) -> Config:
     config.target_shard_fraction = args.turbo_target_shard
     config.max_optimization_time_seconds = args.turbo_max_runtime
     config.auto_scale_eval_concurrency = args.turbo_auto_scale
+    if getattr(args, "turbo_eval_timeout", None):
+        try:
+            config.eval_timeout_seconds = float(args.turbo_eval_timeout)
+        except Exception:
+            pass
     # Allow multiple full-shard candidates so slow OSS-20 calls overlap.
     final_cap = max(2, args.turbo_eval_concurrency // 2)
     config.max_final_shard_inflight = min(args.turbo_eval_concurrency, final_cap)
@@ -197,6 +202,11 @@ def run_turbo(
         config=config,
         auto_config=False,
     )
+    if getattr(args, "turbo_task_max_tokens", None):
+        try:
+            adapter.task_model.max_tokens = int(args.turbo_task_max_tokens)
+        except Exception:
+            pass
 
     start = time.time()
     try:
@@ -299,10 +309,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turbo-max-evaluations", type=int, default=200)
     parser.add_argument("--turbo-max-mutations", type=int, default=8)
     parser.add_argument("--turbo-queue-limit", type=int, default=32)
-    parser.add_argument("--turbo-eval-concurrency", type=int, default=12)
+    parser.add_argument("--turbo-eval-concurrency", type=int, default=20)
     parser.add_argument("--turbo-auto-scale", dest="turbo_auto_scale", action="store_true")
     parser.add_argument("--no-turbo-auto-scale", dest="turbo_auto_scale", action="store_false")
     parser.set_defaults(turbo_auto_scale=True)
+    parser.add_argument("--turbo-eval-timeout", type=int, default=None, help="Per-example eval timeout seconds (overrides config)")
+    parser.add_argument("--turbo-task-max-tokens", type=int, default=None, help="Max tokens for task LLM (caps generation length)")
     parser.add_argument("--turbo-target-quality", type=float, default=None)
     parser.add_argument("--turbo-target-shard", type=float, default=1.0)
     parser.add_argument("--turbo-max-runtime", type=int, default=300)

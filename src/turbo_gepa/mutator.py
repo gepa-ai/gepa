@@ -132,6 +132,10 @@ class Mutator:
         if sample_size >= 6 and success_rate == 0.0:
             return 0.0  # temporary cooldown for consistently failing operators
 
+        # Penalize consistently negative lift more aggressively
+        if sample_size >= 8 and avg_delta <= -0.03:
+            return 0.001
+
         weight = success_rate * max(avg_delta, 0.0)
         return max(weight, 0.0) + 0.01
 

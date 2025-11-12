@@ -15,7 +15,7 @@ Raw console output is saved in `og_gepa_benchmark.log`.
 
 ## 2024-11-11 — TurboGEPA (Clean Run)
 
-- **Script**: `examples/aime_benchmark_v2.py --mode turbo --turbo-eval-concurrency 2`
+- **Script**: `examples/aime_benchmark_v2.py --mode turbo --turbo-eval-concurrency 20`
 - **Models**: task `openrouter/openai/gpt-oss-20b:nitro`, reflection `openrouter/x-ai/grok-4-fast`
 - **Dataset**: AIME subset (train=30, val=30)
 - **Max evaluations**: 150 (43 used)

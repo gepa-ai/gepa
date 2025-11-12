@@ -340,6 +340,7 @@ class AsyncEvaluator:
             pending[task] = {"start": time.time(), "example_id": ex_id}
 
         # Monitor tasks and detach stragglers based on runtime statistics
+        last_threshold: float | None = None
         while pending:
             if (
                 len(eval_durations) >= 2
@@ -376,7 +377,13 @@ class AsyncEvaluator:
                     perc70 * 1.3,
                     perc80 * 1.15,
                 )
-                threshold = min(dyn_cap, core)
+                threshold_raw = min(dyn_cap, core)
+                # Smooth with a small EMA to reduce jitter
+                if last_threshold is None:
+                    threshold = threshold_raw
+                else:
+                    threshold = 0.6 * last_threshold + 0.4 * threshold_raw
+                last_threshold = threshold
                 # Add a small slack so equal-times don’t trigger detaches due to rounding jitter
                 detach_margin = max(0.5, 0.10 * threshold)
                 now = time.time()
@@ -411,6 +418,33 @@ class AsyncEvaluator:
                             f"⚡ Detaching straggler #{straggler_count} (example {example_id}) at {completed}/{total} "
                             f"({completed / denom * 100:.0f}%), elapsed {elapsed_task:.1f}s > threshold {threshold:.1f}s + slack {detach_margin:.1f}s"
                         )
+                # Expedite final rung closure when tails dominate and coverage is high
+                if (
+                    is_final_shard
+                    and total > 0
+                    and (completed / max(total, 1)) >= 0.9
+                    and len(pending) > 0
+                ):
+                    import statistics as _stats
+                    p50 = (
+                        _stats.quantiles(eval_durations, n=100)[49]
+                        if len(eval_durations) >= 5
+                        else mean_duration
+                    )
+                    if perc80 > max(2.0 * p50, 1.6 * mean_duration):
+                        for task, info in list(pending.items()):
+                            example_id = info["example_id"]
+                            if deliver_flags.get(example_id, True):
+                                deliver_flags[example_id] = False
+                                _ensure_straggler_future(example_id)
+                                pending.pop(task, None)
+                                await asyncio.sleep(0)
+                                straggler_count += 1
+                                detached = True
+                                self.logger.log(
+                                    f"⚡ Detaching tail straggler (final rung expedite) example {example_id}"
+                                )
+
                 if detached and straggler_count:
                     active_total = len(pending) + completed + straggler_count
                     self.logger.log(

@@ -225,7 +225,7 @@ class Config:
 
     # Practical default ceiling for example-level concurrency. The adaptive governor
     # will adjust effective concurrency at runtime based on observed latency/backlog.
-    eval_concurrency: int = 12
+    eval_concurrency: int = 20
     n_islands: int = 4
     shards: Sequence[float] = field(default_factory=lambda: (0.05, 0.2, 1.0))
 
@@ -313,7 +313,8 @@ class Config:
 
         # Set default floor for effective concurrency if not provided
         if self.min_effective_concurrency is None:
-            self.min_effective_concurrency = max(2, int(self.eval_concurrency // 2))
+            # Keep at ~75% of the ceiling to avoid over-throttling during brief p95 spikes
+            self.min_effective_concurrency = max(2, int(round(self.eval_concurrency * 0.75)))
 
         if self.target_shard_fraction is None:
             self.target_shard_fraction = 1.0
