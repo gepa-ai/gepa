@@ -127,6 +127,7 @@ class Orchestrator:
         self._eval_samples: int = 0
         self._timeout_count: int = 0
         self._last_inflight_adjust: float = 0.0
+        self._last_effconc_adjust: float = 0.0
         self._mutation_throttle: bool = False
         base_mut = self.config.max_mutations_per_round or max(16, self.config.eval_concurrency // 2)
         self._max_mutations_ceiling = base_mut
@@ -546,6 +547,34 @@ class Orchestrator:
             # Slowly decay launch counters to keep ratios reactive
             self._rung_launches = [max(0, int(count * 0.8)) for count in self._rung_launches]
             self._rung_promotions = [max(0, int(count * 0.8)) for count in self._rung_promotions]
+
+        # Adaptive effective concurrency (network-aware throttle)
+        # Target: maximize throughput by staying near provider sweet spot.
+        if self.config.auto_scale_eval_concurrency:
+            floor = max(1, self.config.min_effective_concurrency or 1)
+            ceil = max(1, self.config.eval_concurrency)
+            old_eff = getattr(self, "_effective_concurrency", ceil)
+            eff = old_eff
+
+            lat_p50 = _percentile(latencies, 0.50)
+            high_tail = lat_p95 > max(1.8 * lat_mean, 1.5 * lat_p50)
+            low_tail = lat_p95 < max(1.4 * lat_mean, 1.3 * lat_p50)
+            saturated = self._examples_inflight >= old_eff
+
+            if now - self._last_effconc_adjust >= 1.0:
+                if high_tail and saturated and eff > floor:
+                    eff = max(floor, eff - 1)
+                elif low_tail and backlog0 > backlog_high and eff < ceil:
+                    eff = min(ceil, eff + 1)
+                if eff != old_eff:
+                    self._effective_concurrency = eff
+                    self._last_effconc_adjust = now
+                    if self.show_progress:
+                        direction = "↑" if eff > old_eff else "↓"
+                        self.logger.log(
+                            f"⚙️  Adaptive effective concurrency {direction} {old_eff}→{eff} | p95={lat_p95:.1f}s p50={lat_p50:.1f}s mean={lat_mean:.1f}s backlog={backlog0}",
+                            LogLevel.WARNING,
+                        )
 
     async def run(
         self,

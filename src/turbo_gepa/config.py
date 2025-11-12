@@ -265,6 +265,9 @@ class Config:
     max_final_shard_inflight: int | None = 2  # Limit concurrent full-shard evaluations (None = unlimited)
     straggler_grace_seconds: float = 5.0  # Wait this long for detached stragglers before replaying
     llm_connection_limit: int | None = None  # Cap simultaneous LLM calls (defaults to 1.5x eval_concurrency)
+    # Dynamically scale effective evaluation concurrency to maximize throughput
+    auto_scale_eval_concurrency: bool = True
+    min_effective_concurrency: int | None = None  # If None, defaults to max(2, eval_concurrency//2)
 
     # Streaming mode config
 
@@ -303,6 +306,10 @@ class Config:
 
         if self.llm_connection_limit is None:
             self.llm_connection_limit = max(8, int(self.eval_concurrency * 1.5))
+
+        # Set default floor for effective concurrency if not provided
+        if self.min_effective_concurrency is None:
+            self.min_effective_concurrency = max(2, int(self.eval_concurrency // 2))
 
         if self.target_shard_fraction is None:
             self.target_shard_fraction = 1.0
