@@ -113,14 +113,27 @@ class Mutator:
 
     def _operator_weight(self, generation_method: str) -> float:
         history = self._operator_history.get(generation_method)
-        if history and len(history) > 0:
-            avg_delta = sum(history) / len(history)
-            return max(0.0, avg_delta) + 0.01
-        stats = self._operator_stats.get(generation_method)
-        if stats and stats["trials"] > 0:
-            avg_delta = stats["delta_sum"] / max(1, stats["trials"])
-            return max(0.0, avg_delta) + 0.01
-        return 0.01
+        success_rate = 0.0
+        avg_delta = 0.0
+        sample_size = 0
+
+        if history:
+            positives = sum(1 for delta in history if delta > 0)
+            sample_size = len(history)
+            success_rate = positives / sample_size if sample_size else 0.0
+            avg_delta = sum(history) / max(1, sample_size)
+        else:
+            stats = self._operator_stats.get(generation_method)
+            if stats and stats["trials"] > 0:
+                sample_size = stats["trials"]
+                success_rate = stats["promoted"] / max(1, sample_size)
+                avg_delta = stats["delta_sum"] / max(1, sample_size)
+
+        if sample_size >= 6 and success_rate == 0.0:
+            return 0.0  # temporary cooldown for consistently failing operators
+
+        weight = success_rate * max(avg_delta, 0.0)
+        return max(weight, 0.0) + 0.01
 
     async def propose(
         self,

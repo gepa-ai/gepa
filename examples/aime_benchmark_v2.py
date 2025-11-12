@@ -152,13 +152,17 @@ def run_gepa(
 def _build_turbo_config(dataset_size: int, args: argparse.Namespace) -> Config:
     config = adaptive_config(dataset_size)
     config.n_islands = 1
-    config.eval_concurrency = max(1, min(args.turbo_eval_concurrency, dataset_size))
+    config.eval_concurrency = max(1, args.turbo_eval_concurrency)
     config.batch_size = max(1, min(dataset_size, config.eval_concurrency))
     config.max_mutations_per_round = max(1, args.turbo_max_mutations)
     config.queue_limit = max(4, args.turbo_queue_limit)
     config.log_level = args.turbo_log_level
     config.target_quality = args.turbo_target_quality
+    config.target_shard_fraction = args.turbo_target_shard
     config.max_optimization_time_seconds = args.turbo_max_runtime
+    # Allow multiple full-shard candidates so slow OSS-20 calls overlap.
+    final_cap = max(2, args.turbo_eval_concurrency // 2)
+    config.max_final_shard_inflight = min(args.turbo_eval_concurrency, final_cap)
     if args.turbo_strategies:
         config.reflection_strategy_names = tuple(args.turbo_strategies)
     return config
@@ -295,7 +299,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turbo-max-mutations", type=int, default=8)
     parser.add_argument("--turbo-queue-limit", type=int, default=32)
     parser.add_argument("--turbo-eval-concurrency", type=int, default=8)
-    parser.add_argument("--turbo-target-quality", type=float, default=0.0)
+    parser.add_argument("--turbo-target-quality", type=float, default=None)
+    parser.add_argument("--turbo-target-shard", type=float, default=1.0)
     parser.add_argument("--turbo-max-runtime", type=int, default=300)
     parser.add_argument("--turbo-log-level", default="WARNING")
     parser.add_argument("--turbo-show-progress", action="store_true")

@@ -93,9 +93,11 @@ class EvalResult:
 
     def merge(self, other: EvalResult) -> EvalResult:
         """Combine two evaluation results by summing objectives and traces."""
-        combined = dict(self.objectives)
+        combined: dict[str, float] = {}
+        for key, value in self.objectives.items():
+            combined[key] = value * self.n_examples
         for key, value in other.objectives.items():
-            combined[key] = combined.get(key, 0.0) + value
+            combined[key] = combined.get(key, 0.0) + value * other.n_examples
         traces = list(self.traces)
         traces.extend(other.traces)
         example_ids: list[str] = []

@@ -742,6 +742,44 @@ python scripts/verify_prompt.py \
 - The verification script bypasses the cache, fans out real OSS‑20 task calls, and reports both accuracy and dataset coverage (should be 100 % on the final rung).
 - The best prompt from the latest run is persisted to `.turbo_gepa/best_prompt.txt` and is what the verification script reads.
 
+#### North‑Star Metric (Time‑to‑Target)
+
+TurboGEPA logs a “Turbo score” that captures speed and efficiency:
+
+- Turbo score = `(target_quality − baseline) / time_to_target_seconds`
+- If the run doesn’t reach the configured shard (`--turbo-target-shard`, default 1.0), we emit a Rung Metric: best shard reached, time to reach it, and gain/sec.
+
+Tune targets on small slices for fast iteration, e.g. on 30 problems:
+
+```bash
+source .envrc && source .venv/bin/activate
+python examples/aime_benchmark_v2.py \
+  --mode turbo \
+  --dataset-size 30 \
+  --task-lm openrouter/openai/gpt-oss-20b:nitro \
+  --reflection-lm openrouter/x-ai/grok-4-fast \
+  --turbo-target-shard 0.4 \
+  --turbo-target-quality 0.5 \
+  --turbo-eval-concurrency 8 \
+  --turbo-max-runtime 120 \
+  --turbo-show-progress
+```
+
+#### Stragglers and Final‑Rung Concurrency
+
+TurboGEPA uses a simple, robust straggler policy that detaches slow examples without cancelling them:
+
+- Threshold = `min(dynamic_cap, max(mean + 1·stdev, 1.3·p70, 1.15·p80)) + slack` (with an adaptive cap; no hard tiers)
+- Detach only after ≥50% coverage; detached examples keep running and are merged later. Missing IDs are replayed to guarantee 100% shard coverage.
+- Final rung allows multiple full‑shard candidates to overlap: cap via `max_final_shard_inflight` (auto‑set from `--turbo-eval-concurrency`).
+
+To inspect scaling quickly across concurrencies, use the bench matrix helper:
+
+```bash
+source .envrc && source .venv/bin/activate
+python scripts/bench_matrix.py 8 2 4 8 16 32
+```
+
 Current OSS‑20 results (train split, 30 examples, TurboGEPA with clean cache):
 
 | Optimizer  | Runtime | Eval Budget Used | Full-Shard Quality | Train Accuracy (verify_prompt) |

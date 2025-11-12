@@ -9,7 +9,8 @@ we can run quickly in constrained environments.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence
+import math
+from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence, Any
 
 from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
 
@@ -52,6 +53,8 @@ class AsyncEvaluator:
         self.min_improve = float(min_improve)
         self.metrics = metrics
         self.skip_final_straggler_cutoff = skip_final_straggler_cutoff
+        # Track detached stragglers so orchestrator can await their results later
+        self._straggler_results: dict[tuple[str, str], asyncio.Future[EvalResult]] = {}
 
     async def eval_on_shard(
         self,
@@ -113,7 +116,39 @@ class AsyncEvaluator:
         quality_lock = asyncio.Lock()
         running_quality = 0.0
         early_stop_flag = False
-        straggler_cancelled_total = 0
+        straggler_detached_total = 0
+        candidate_fp = candidate.fingerprint
+        deliver_flags: dict[str, bool] = {ex_id: True for ex_id in example_ids}
+        loop = asyncio.get_running_loop()
+
+        def _ensure_straggler_future(example_id: str) -> asyncio.Future[EvalResult]:
+            key = (candidate_fp, example_id)
+            future = self._straggler_results.get(key)
+            if future is None or future.done():
+                future = loop.create_future()
+                self._straggler_results[key] = future
+            return future
+
+        async def _deliver_result(
+            result: EvalResult,
+            quality_override: float | None,
+            example_id: str,
+        ) -> None:
+            if deliver_flags.get(example_id, True):
+                await _register_result(result, quality_override)
+                return
+
+            future_key = (candidate_fp, example_id)
+            future = self._straggler_results.get(future_key)
+            if future is None:
+                # Straggler finished before we could register the future; fall back to normal delivery
+                await _register_result(result, quality_override)
+                return
+            if not future.done():
+                future.set_result(result)
+            else:
+                # Future already consumed (e.g., orchestrator timed out) → still persist result
+                await _register_result(result, quality_override)
 
         async def _register_result(result: EvalResult, quality_override: float | None = None) -> None:
             nonlocal completed, running_quality, early_stop_flag
@@ -159,7 +194,7 @@ class AsyncEvaluator:
                     q = cached.objectives.get("quality")
                     if isinstance(q, (int, float)):
                         quality_val = float(q)
-                await _register_result(cached, quality_val)
+                await _deliver_result(cached, quality_val, example_id)
                 if show_progress:
                     self.logger.log(f"Progress: {completed}/{total} examples ({completed / max(total, 1) * 100:.0f}%)")
                 return
@@ -233,7 +268,7 @@ class AsyncEvaluator:
                     val = mapped.get("quality")
                     if isinstance(val, (int, float)):
                         quality_val = float(val)
-                await _register_result(result, quality_val)
+                await _deliver_result(result, quality_val, example_id)
 
                 # Track duration for non-cached evals
                 eval_duration = time.time() - task_start_time
@@ -267,7 +302,7 @@ class AsyncEvaluator:
                     example_ids=[example_id],
                 )
                 # Don't cache timeouts - allow retry next run
-                await _register_result(result, 0.0)
+                await _deliver_result(result, 0.0, example_id)
             except Exception as e:
                 self._inflight_examples = max(0, self._inflight_examples - 1)
                 # Handle task runner failures gracefully
@@ -295,19 +330,19 @@ class AsyncEvaluator:
                     example_ids=[example_id],
                 )
                 # Don't cache failed evaluations - allow retry on next run
-                await _register_result(result, 0.0)
+                await _deliver_result(result, 0.0, example_id)
 
         # Launch all tasks
         current_time = time.time()
-        pending: dict[asyncio.Task, float] = {
-            asyncio.create_task(eval_one(ex_id, current_time)): time.time()
-            for ex_id in example_ids
-        }
+        pending: dict[asyncio.Task, dict[str, Any]] = {}
+        for ex_id in example_ids:
+            task = asyncio.create_task(eval_one(ex_id, current_time))
+            pending[task] = {"start": time.time(), "example_id": ex_id}
 
-        # Monitor tasks and cancel stragglers based on runtime statistics
+        # Monitor tasks and detach stragglers based on runtime statistics
         while pending:
             if (
-                len(eval_durations) >= 3
+                len(eval_durations) >= 2
                 and not (self.skip_final_straggler_cutoff and is_final_shard)
                 and completed >= max(total * 0.5, 1)
             ):
@@ -315,58 +350,91 @@ class AsyncEvaluator:
 
                 mean_duration = statistics.fmean(eval_durations)
                 stdev = statistics.pstdev(eval_durations) if len(eval_durations) > 1 else 0.0
-                # AGGRESSIVE: Use mean + 1*stdev instead of 2*stdev to trigger more often
-                stdev_multiplier = 1.0  # Changed from 2.0 to make straggler detection more aggressive
-                threshold = mean_duration + (stdev_multiplier * stdev if stdev > 0 else mean_duration * 0.5)
+                # Robust quantiles (fallback to mean when samples are too few)
+                perc70 = (
+                    statistics.quantiles(eval_durations, n=100)[69]
+                    if len(eval_durations) >= 5
+                    else mean_duration
+                )
+                perc80 = (
+                    statistics.quantiles(eval_durations, n=100)[79]
+                    if len(eval_durations) >= 7
+                    else max(perc70, mean_duration)
+                )
+
+                # Smooth absolute cap derived from observed latencies (no hard-coded tiers)
+                # - Partial rungs: tolerate ~2.0x p80
+                # - Final rung: a bit more headroom (~2.5x p80)
+                dyn_cap = (perc80 * (2.5 if is_final_shard else 2.0))
+                # Clamp to a reasonable range to avoid runaway caps on noisy small samples
+                dyn_cap = float(max(12.0, min(75.0, dyn_cap)))
+
+                # Core dynamic threshold: exceed typical latency by a healthy margin
+                # Use the max of multiple estimators to avoid over-detaching on tight means
+                core = max(
+                    mean_duration + 1.0 * stdev,
+                    perc70 * 1.3,
+                    perc80 * 1.15,
+                )
+                threshold = min(dyn_cap, core)
+                # Add a small slack so equal-times don’t trigger detaches due to rounding jitter
+                detach_margin = max(0.5, 0.10 * threshold)
                 now = time.time()
 
                 # ALWAYS log threshold calculation for visibility (not gated by show_progress)
                 self.logger.log(
                     f"🔍 Straggler check: {completed}/{total} complete, "
-                    f"threshold={threshold:.1f}s (mean={mean_duration:.1f}s + {stdev_multiplier}×stdev={stdev:.1f}s), "
+                    f"threshold={threshold:.1f}s (mean={mean_duration:.1f}s, p70={perc70:.1f}s, p80={perc80:.1f}s, cap={dyn_cap:.1f}s), "
                     f"{len(pending)} tasks pending"
                 )
 
-                cancelled = False
+                detached = False
                 straggler_count = 0
-                for task, start_time in list(pending.items()):
+                for task, info in list(pending.items()):
+                    start_time = info["start"]
+                    example_id = info["example_id"]
                     elapsed_task = now - start_time
-                    # ALWAYS log task status (not gated by show_progress)
-                    status = "✅ within" if elapsed_task <= threshold else "⚠️ EXCEEDS"
+                    is_straggler = elapsed_task > (threshold + detach_margin)
+                    status = "✅ within" if not is_straggler else "⚠️ EXCEEDS"
                     self.logger.log(
-                        f"   Task elapsed: {elapsed_task:.1f}s {status} threshold {threshold:.1f}s"
+                        f"   Task {example_id}: elapsed {elapsed_task:.1f}s {status} threshold {threshold:.1f}s (+{detach_margin:.1f}s slack)"
                     )
-                    if elapsed_task > threshold:
+                    if is_straggler and deliver_flags.get(example_id, True):
                         straggler_count += 1
-                        # ALWAYS log cancellations (not gated by show_progress)
+                        deliver_flags[example_id] = False
+                        _ensure_straggler_future(example_id)
+                        pending.pop(task, None)
+                        await asyncio.sleep(0)
+                        detached = True
                         denom = max(total, 1)
                         self.logger.log(
-                            f"⚡ Early stop: {completed}/{total} complete ({completed / denom * 100:.0f}%), "
-                            f"cancelling straggler #{straggler_count} (elapsed {elapsed_task:.1f}s > threshold {threshold:.1f}s, "
-                            f"mean={mean_duration:.1f}s, stdev={stdev:.1f}s)"
+                            f"⚡ Detaching straggler #{straggler_count} (example {example_id}) at {completed}/{total} "
+                            f"({completed / denom * 100:.0f}%), elapsed {elapsed_task:.1f}s > threshold {threshold:.1f}s + slack {detach_margin:.1f}s"
                         )
-                        task.cancel()
-                        cancelled = True
-                if cancelled:
-                    # ALWAYS log straggler summary (not gated by show_progress)
+                if detached and straggler_count:
+                    active_total = len(pending) + completed + straggler_count
                     self.logger.log(
-                        f"📊 Straggler stats: cancelled {straggler_count}/{len(pending)+completed} tasks, "
-                        f"mean duration={mean_duration:.1f}s, stdev={stdev:.1f}s, threshold={threshold:.1f}s"
+                        f"📊 Straggler stats: detached {straggler_count}/{active_total} tasks, "
+                        f"mean={mean_duration:.1f}s, stdev={stdev:.1f}s, p80={perc80:.1f}s, threshold={threshold:.1f}s"
                     )
-                    straggler_cancelled_total += straggler_count
+                    straggler_detached_total += straggler_count
                     if self.metrics:
                         self.metrics.record_early_stop("stragglers")
 
             if not pending:
                 break
 
+            wait_set = list(pending.keys())
+            if not wait_set:
+                break
+
             done, _ = await asyncio.wait(
-                list(pending.keys()),
+                wait_set,
                 return_when=asyncio.FIRST_COMPLETED,
             )
 
             for task in done:
-                pending.pop(task, None)
+                info = pending.pop(task, None)
                 try:
                     await task  # Collect result (already added to results by eval_one)
                 except asyncio.CancelledError:
@@ -414,14 +482,14 @@ class AsyncEvaluator:
             self.metrics.record_shard_outcome(
                 shard_fraction,
                 coverage_ratio,
-                straggler_cancelled_total,
+                straggler_detached_total,
                 batch_duration,
             )
 
-        if (coverage_ratio < 0.999 or straggler_cancelled_total > 0) and total > 0:
+        if (coverage_ratio < 0.999 or straggler_detached_total > 0) and total > 0:
             self.logger.log(
                 f"📏 Shard outcome {shard_key:.0%}: coverage={coverage_ratio:.1%} "
-                f"(completed {completed}/{total}), stragglers_cancelled={straggler_cancelled_total}, "
+                f"(completed {completed}/{total}), stragglers_detached={straggler_detached_total}, "
                 f"duration={batch_duration:.1f}s"
             )
         return EvalResult(
@@ -441,6 +509,92 @@ class AsyncEvaluator:
     def max_observed_inflight(self) -> int:
         """Highest concurrent example-level evaluations seen since instantiation."""
         return self._max_observed_inflight
+
+    async def collect_straggler_results(
+        self,
+        candidate: Candidate,
+        example_ids: Sequence[str],
+        *,
+        timeout: float | None = None,
+    ) -> list[EvalResult]:
+        """Wait for detached straggler evaluations to finish and return their results.
+
+        Args:
+            candidate: Candidate whose evaluations produced the stragglers
+            example_ids: Example identifiers we are still missing
+            timeout: Optional time budget (seconds). ``None`` waits indefinitely,
+                ``0`` performs a non-blocking poll.
+
+        Returns:
+            List of EvalResult objects (one per completed straggler example).
+        """
+
+        if not example_ids:
+            return []
+
+        fingerprint = candidate.fingerprint
+        futures: list[asyncio.Future[EvalResult]] = []
+        keys: list[tuple[str, str]] = []
+
+        for example_id in example_ids:
+            key = (fingerprint, example_id)
+            future = self._straggler_results.get(key)
+            if future is None:
+                continue
+            futures.append(future)
+            keys.append(key)
+
+        if not futures:
+            return []
+
+        wait_timeout: float | None
+        if timeout is None:
+            wait_timeout = None
+        else:
+            wait_timeout = max(0.0, timeout)
+
+        if wait_timeout == 0.0:
+            done = {future for future in futures if future.done()}
+            pending = {future for future in futures if not future.done()}
+        else:
+            done, pending = await asyncio.wait(futures, timeout=wait_timeout)
+
+        results: list[EvalResult] = []
+        for future in done:
+            if future.cancelled():
+                continue
+            try:
+                result = future.result()
+            except Exception as exc:  # pragma: no cover - defensive logging only
+                self.logger.log(f"⚠️  Straggler future failed: {exc}")
+                continue
+            results.append(result)
+
+        # Clean up completed futures so they are not awaited twice
+        for key in keys:
+            future = self._straggler_results.get(key)
+            if future is not None and future.done():
+                self._straggler_results.pop(key, None)
+
+        if results:
+            self.logger.log(
+                f"📦 Collected {len(results)} completed stragglers for candidate {fingerprint[:12]}"
+            )
+
+        # Pending futures remain registered for the next grace window
+        return results
+
+    def discard_straggler_results(self, candidate: Candidate, example_ids: Sequence[str]) -> None:
+        """Forget pending straggler futures for the given candidate/example IDs."""
+
+        if not example_ids:
+            return
+
+        fingerprint = candidate.fingerprint
+        for example_id in example_ids:
+            key = (fingerprint, example_id)
+            if key in self._straggler_results:
+                self._straggler_results.pop(key, None)
 
 
 def _accumulate(

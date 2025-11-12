@@ -44,6 +44,16 @@ from turbo_gepa.sampler import InstanceSampler
 from turbo_gepa.strategies import ReflectionStrategy
 from turbo_gepa.utils.litellm_client import configure_litellm_client
 
+
+def _detect_fd_guard() -> int | None:
+    try:
+        import resource
+
+        soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+        return max(32, int(soft * 0.5))
+    except Exception:  # pragma: no cover - platform specific
+        return None
+
 _AIME_HASHTAG_RE = re.compile(r"###\s*([\-+]?\d+)", re.IGNORECASE)
 _BOXED_RE = re.compile(r"\\boxed\{([^}]+)\}")
 _INTEGER_RE = re.compile(r"(-?\d+)")
@@ -212,12 +222,18 @@ class DefaultAdapter:
         # Configure litellm's httpx client based on eval_concurrency
         # This ensures connection pooling matches the user's concurrency settings
         configure_litellm_client(self.config.eval_concurrency)
+        self._fd_guard_limit = _detect_fd_guard()
 
         min_level = self._resolve_log_level(self.config.log_level)
         if self.config.enable_debug_log:
             min_level = LogLevel.DEBUG
         self.logger = StdOutLogger(min_level=min_level)
         self._debug_enabled = min_level <= LogLevel.DEBUG
+        import asyncio as _asyncio_adapter
+        _llm_limit = int(self.config.llm_connection_limit or self.config.eval_concurrency)
+        if self._fd_guard_limit is not None:
+            _llm_limit = min(_llm_limit, max(4, self._fd_guard_limit // 2))
+        self._llm_semaphore = _asyncio_adapter.Semaphore(max(1, _llm_limit))
 
         # Normalise model configuration objects
         if isinstance(task_lm, ModelConfig):
@@ -291,6 +307,8 @@ class DefaultAdapter:
             import httpx
 
             max_conn = max(1, int(config.eval_concurrency))
+            if self._fd_guard_limit is not None:
+                max_conn = min(max_conn, max(4, self._fd_guard_limit // 2))
             limits = httpx.Limits(
                 max_connections=max_conn,
                 max_keepalive_connections=max_conn,
@@ -325,6 +343,13 @@ class DefaultAdapter:
         Tries 'httpx_client' then 'client' keyword; falls back to no client if unsupported.
         """
         import asyncio
+        semaphore = getattr(self, "_llm_semaphore", None)
+
+        async def _invoke(kwargs: dict) -> Any:
+            if semaphore is None:
+                return await asyncio.wait_for(acompletion(**kwargs), timeout=timeout)
+            async with semaphore:
+                return await asyncio.wait_for(acompletion(**kwargs), timeout=timeout)
 
         if getattr(self, "_httpx_client", None) is not None:
             # Try both parameter names for maximum compatibility
@@ -332,14 +357,14 @@ class DefaultAdapter:
                 try:
                     kwargs = dict(completion_kwargs)
                     kwargs[key] = self._httpx_client
-                    return await asyncio.wait_for(acompletion(**kwargs), timeout=timeout)
+                    return await _invoke(kwargs)
                 except TypeError as e:
                     # Unknown kw; try next option
                     if "unexpected keyword argument" in str(e) and key in str(e):
                         continue
                     raise
         # Fallback: let litellm manage the client
-        return await asyncio.wait_for(acompletion(**completion_kwargs), timeout=timeout)
+        return await _invoke(completion_kwargs)
 
     def _disable_temperature_support(self, context: str | None = None) -> None:
         """Disable temperature tuning after a model rejects the parameter."""
@@ -788,10 +813,15 @@ class DefaultAdapter:
                 return await coro_factory()
             except Exception as exc:
                 last_exc = exc
+                transient = isinstance(exc, RuntimeError) or "OpenrouterException" in str(exc)
+                critical = any(keyword in str(exc).lower() for keyword in ("too many open files", "ssl", "timeout"))
+                if not transient or critical:
+                    raise
                 if attempt >= max_attempts:
                     raise
-                delay = base_delay * (2 ** (attempt - 1))
-                delay += random.uniform(0.0, 0.5)
+                delay = base_delay * (1.5 ** (attempt - 1))
+                delay = min(3.0, delay)
+                delay += random.uniform(0.0, 0.3)
                 self.logger.log(
                     f"⚠️  LLM call '{label}' failed (attempt {attempt}/{max_attempts}): {exc}. "
                     f"Retrying in {delay:.1f}s",
@@ -815,8 +845,8 @@ class DefaultAdapter:
                     {"role": "user", "content": example["input"]},
                 ],
             }
-            if self.task_model.max_tokens is not None:
-                completion_kwargs["max_tokens"] = self.task_model.max_tokens
+            max_tokens = self.task_model.max_tokens if self.task_model.max_tokens is not None else 2048
+            completion_kwargs["max_tokens"] = min(max_tokens, 2048)
 
             if self.temperature_supported:
                 candidate_temperature = candidate.meta.get("temperature")
@@ -826,7 +856,7 @@ class DefaultAdapter:
                     completion_kwargs["temperature"] = self.task_model.temperature
 
             reasoning_effort = candidate.meta.get("reasoning_effort", self.task_model.reasoning_effort)
-            if reasoning_effort is not None:
+            if reasoning_effort is not None and not self.task_model.name.endswith("gpt-oss-120b:nitro"):
                 completion_kwargs["reasoning_effort"] = reasoning_effort
 
             import time as _time_module
@@ -885,21 +915,21 @@ class DefaultAdapter:
             model_output = response.choices[0].message.content
             tokens_used = response.usage.total_tokens
 
-            expected_token = _extract_numeric_answer(example.get("answer"))
+            answer_field = example.get("answer")
+            expected_token = _extract_numeric_answer(answer_field)
             preferred_len = len(expected_token) if expected_token is not None else None
             actual_token = _extract_numeric_answer(model_output, preferred_length=preferred_len)
-            if expected_token is not None and actual_token is not None:
-                quality = 1.0 if expected_token == actual_token else 0.0
+
+            if expected_token is not None:
+                if actual_token is not None:
+                    quality = 1.0 if expected_token == actual_token else 0.0
+                else:
+                    digits_only = "".join(ch for ch in (model_output or "") if ch.isdigit())
+                    quality = 1.0 if expected_token and expected_token in digits_only else 0.0
             else:
-                answer_field = example.get("answer")
-                haystack = model_output or ""
-                quality = (
-                    1.0
-                    if isinstance(answer_field, str)
-                    and answer_field
-                    and answer_field in haystack
-                    else 0.0
-                )
+                haystack = (model_output or "").lower()
+                needle = str(answer_field or "").lower()
+                quality = 1.0 if needle and needle in haystack else 0.0
 
             metrics = {
                 "quality": quality,

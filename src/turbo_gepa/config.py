@@ -9,6 +9,7 @@ into orchestrator entrypoints or by subclassing ``Config``.
 from __future__ import annotations
 
 import os
+import math
 from dataclasses import dataclass, field
 from typing import Sequence
 
@@ -104,6 +105,7 @@ def adaptive_shards(
     *,
     min_samples_per_rung: int = 20,
     reduction_factor: float = 3.0,
+    ladder_density: float = 1.2,
 ) -> tuple[float, ...]:
     """
     Automatically select optimal shard configuration using principled algorithm.
@@ -124,6 +126,8 @@ def adaptive_shards(
                               20 examples gives ±22% confidence interval for binary
         reduction_factor: Geometric multiplier between rungs (default: 3.0)
                          Higher = more aggressive pruning, fewer rungs
+        ladder_density: Adjusts how many intermediate rungs are generated
+                        (0.5 = sparser ladder, 1.5 = denser ladder)
 
     Returns:
         Tuple of shard fractions, always ending in 1.0
@@ -138,42 +142,81 @@ def adaptive_shards(
     if dataset_size <= 0:
         return (1.0,)
 
-    # If dataset too small for meaningful first rung, just use full dataset
-    if dataset_size < min_samples_per_rung:
+    if dataset_size <= 3:
         return (1.0,)
 
-    # Calculate first rung fraction
-    first_shard = min_samples_per_rung / dataset_size
+    ladder_density = max(0.5, min(1.5, ladder_density))
 
-    # If first rung would be > 40%, just use 2-rung system
-    if first_shard > 0.40:
-        # Clamp first rung to reasonable range
-        first_shard = min(0.40, max(0.20, first_shard))
-        return (round(first_shard, 2), 1.0)
+    # First rung should have enough examples to be meaningful, but not exceed 50% coverage
+    ratio = min_samples_per_rung / dataset_size
+    min_fraction = ratio / (1.0 + ratio)
+    dynamic_floor = max(2 / dataset_size, 0.06)
+    min_fraction = max(dynamic_floor, min_fraction)
+    min_fraction = min(min_fraction, 0.5)
 
-    # Build geometric progression of rungs
-    rungs = []
-    current_shard = first_shard
+    # Determine how many rungs we want (including the final full-shard rung)
+    span = math.log(max(1.01, 1.0 / min_fraction), reduction_factor)
+    raw_rungs = span * ladder_density
+    target_rungs = int(math.ceil(raw_rungs)) + 1  # +1 to include the final full-shard rung
+    target_rungs = max(2, min(6, target_rungs))
 
-    while current_shard < 0.95:  # Stop before reaching 1.0
-        rungs.append(current_shard)
-        current_shard *= reduction_factor
+    # Convert target rung count into a geometric ladder that ends at full coverage
+    ladder_len = max(1, target_rungs - 1)
+    if min_fraction >= 0.95:
+        return (0.95, 1.0)
 
-    # Always end with full dataset
-    rungs.append(1.0)
+    growth = (1.0 / min_fraction) ** (1.0 / ladder_len)
+    fractions: list[float] = []
+    current = min_fraction
+    for _ in range(ladder_len):
+        fractions.append(current)
+        current *= growth
 
-    # Round to 2 decimal places, but ensure no rung rounds to 0
-    rounded_rungs = []
-    for r in rungs:
-        rounded = round(r, 2)
-        # Prevent rounding to 0.0 - use minimum of 0.01 (1%)
-        if rounded == 0.0:
-            rounded = 0.01
-        # Skip duplicates (can happen when multiple values round to same number)
-        if not rounded_rungs or rounded != rounded_rungs[-1]:
-            rounded_rungs.append(rounded)
+    # Convert to sample counts to avoid tiny fractions on small datasets
+    counts: list[int] = []
+    for frac in fractions:
+        count = int(round(frac * dataset_size))
+        count = min(dataset_size - 1, max(1, count))
+        counts.append(count)
 
-    return tuple(rounded_rungs)
+    # Deduplicate and ensure strictly increasing order
+    deduped: list[int] = []
+    for count in sorted(set(counts)):
+        if deduped and count <= deduped[-1]:
+            continue
+        deduped.append(count)
+
+    # Ensure we have at least one intermediate rung
+    if not deduped:
+        first = max(1, min(dataset_size - 1, round(min_fraction * dataset_size)))
+        deduped = [first]
+
+    rounded_rungs: list[float] = []
+    for count in deduped:
+        frac = round(count / dataset_size, 2)
+        if frac <= 0.0:
+            frac = round(1 / dataset_size, 2)
+        if rounded_rungs and frac <= rounded_rungs[-1]:
+            continue
+        rounded_rungs.append(frac)
+
+    if not rounded_rungs or rounded_rungs[-1] < 0.95:
+        rounded_rungs.append(1.0)
+    else:
+        rounded_rungs[-1] = 1.0
+
+    # Merge excessively dense ladders by removing rungs that are too close together
+    merged: list[float] = []
+    min_gap = 0.08
+    for frac in rounded_rungs:
+        if merged and frac - merged[-1] < min_gap and frac < 1.0:
+            continue
+        merged.append(min(frac, 1.0))
+
+    if merged[-1] != 1.0:
+        merged[-1] = 1.0
+
+    return tuple(merged)
 
 
 @dataclass(slots=True)
@@ -214,10 +257,14 @@ class Config:
     task_lm_temperature: float | None = 1.0
     reflection_lm_temperature: float | None = 1.0
     target_quality: float | None = None  # Stop when best quality reaches this threshold
+    target_shard_fraction: float | None = 1.0  # Rung fraction that counts as "full" for turbo metric
     eval_timeout_seconds: float | None = 120.0  # Max time to wait for a single LLM evaluation
     max_optimization_time_seconds: float | None = None  # Global timeout - stop optimization after this many seconds
     reflection_strategy_names: tuple[str, ...] | None = None  # Default to all known strategies
     reflection_strategies: tuple[ReflectionStrategy, ...] | None = None
+    max_final_shard_inflight: int | None = 2  # Limit concurrent full-shard evaluations (None = unlimited)
+    straggler_grace_seconds: float = 5.0  # Wait this long for detached stragglers before replaying
+    llm_connection_limit: int | None = None  # Cap simultaneous LLM calls (defaults to 1.5x eval_concurrency)
 
     # Streaming mode config
 
@@ -253,6 +300,12 @@ class Config:
             # Generate 2x concurrency to stay ahead of evaluations (increased from 0.25x)
             # This ensures mutation generation can keep the pipeline full
             self.max_mutations_per_round = max(16, min(128, self.eval_concurrency * 2))
+
+        if self.llm_connection_limit is None:
+            self.llm_connection_limit = max(8, int(self.eval_concurrency * 1.5))
+
+        if self.target_shard_fraction is None:
+            self.target_shard_fraction = 1.0
 
         # Auto-generate variance_tolerance if not provided
         if self.variance_tolerance is None:

@@ -79,6 +79,57 @@ class Metrics:
     # Round-level tracking
     round_start_times: list[float] = field(default_factory=list)
     round_durations: list[float] = field(default_factory=list)
+    baseline_quality: float = 0.0
+    baseline_recorded: bool = False
+    target_quality: float | None = None
+    target_shard_fraction: float | None = None
+    time_to_target_seconds: float | None = None
+    best_quality: float = 0.0
+    best_shard_fraction: float = 0.0
+    highest_rung_fraction: float = 0.0
+    best_rung_quality: float = 0.0
+    time_to_best_rung: float | None = None
+    rung_baselines: dict[float, float] = field(default_factory=dict)
+
+    def record_rung_sample(self, shard_fraction: float, quality: float, elapsed: float | None) -> None:
+        shard_fraction = round(max(0.0, shard_fraction), 4)
+        if shard_fraction not in self.rung_baselines:
+            self.rung_baselines[shard_fraction] = quality
+        target_shard = self.target_shard_fraction or 1.0
+        if (
+            not self.baseline_recorded
+            and shard_fraction + 1e-6 >= target_shard
+        ):
+            self.baseline_quality = quality if self.baseline_quality == 0.0 else self.baseline_quality
+            self.baseline_recorded = True
+        eps = 1e-6
+        if (
+            shard_fraction > self.highest_rung_fraction + eps
+            or (
+                abs(shard_fraction - self.highest_rung_fraction) <= eps
+                and quality > self.best_rung_quality
+            )
+        ):
+            self.highest_rung_fraction = shard_fraction
+            self.best_rung_quality = quality
+            if elapsed is not None:
+                self.time_to_best_rung = max(elapsed, 0.0)
+    baseline_quality: float = 0.0
+    target_quality: float | None = None
+    time_to_target_seconds: float | None = None
+
+    def turbo_score(self) -> float | None:
+        if (
+            self.target_quality is None
+            or self.time_to_target_seconds is None
+            or self.time_to_target_seconds <= 0
+            or not self.baseline_recorded
+        ):
+            return None
+        gain = self.target_quality - self.baseline_quality
+        if gain <= 0:
+            return 0.0
+        return gain / self.time_to_target_seconds
 
     def record_llm_call(self, call_type: str, latency: float) -> None:
         """Record an LLM API call with timing."""
@@ -247,6 +298,18 @@ class Metrics:
         deltas = self.operator_delta_quality.get(operator, [])
         return sum(deltas) / len(deltas) if deltas else 0.0
 
+    def turbo_score(self) -> float | None:
+        if (
+            self.target_quality is None
+            or self.time_to_target_seconds is None
+            or self.time_to_target_seconds <= 0
+        ):
+            return None
+        gain = self.target_quality - self.baseline_quality
+        if gain <= 0:
+            return 0.0
+        return gain / self.time_to_target_seconds
+
     def format_summary(self) -> str:
         """Generate a human-readable metrics summary."""
         lines = [
@@ -328,7 +391,53 @@ class Metrics:
             "📦 Archive:",
             f"  Max Pareto size: {self.pareto_size_max}",
             "",
-            "=" * 80,
         ])
+
+        if self.target_quality is not None:
+            target_shard = self.target_shard_fraction if self.target_shard_fraction is not None else 1.0
+            baseline_str = f"{self.baseline_quality:.3f}" if self.baseline_recorded else "n/a"
+            if self.time_to_target_seconds is None:
+                lines.extend([
+                    "🚀 Turbo Metric:",
+                    f"  Target shard: {target_shard:.2f}",
+                    f"  Baseline={baseline_str} → Target={self.target_quality:.3f}",
+                    "  Time to target: not reached",
+                    "  Turbo score: n/a",
+                    "",
+                ])
+            else:
+                score = self.turbo_score()
+                score_str = f"{score:.4f}" if score is not None else "n/a"
+                lines.extend([
+                    "🚀 Turbo Metric:",
+                    f"  Target shard: {target_shard:.2f}",
+                    f"  Baseline={baseline_str} → Target={self.target_quality:.3f}",
+                    f"  Time to target: {self.time_to_target_seconds:.1f}s",
+                    f"  Turbo score: {score_str}",
+                    "",
+                ])
+
+        if self.time_to_target_seconds is None and self.time_to_best_rung is not None:
+            rung = self.highest_rung_fraction
+            baseline_rung = self.rung_baselines.get(round(rung, 4))
+            rung_score = None
+            if baseline_rung is not None and self.time_to_best_rung > 0:
+                gain = self.best_rung_quality - baseline_rung
+                rung_score = gain / self.time_to_best_rung if gain > 0 else 0.0
+            lines.extend([
+                "🚀 Rung Metric:",
+                f"  Rung={rung:.2f} quality={self.best_rung_quality:.3f}",
+                f"  Time to rung: {self.time_to_best_rung:.1f}s",
+                f"  Rung score: {rung_score:.4f}" if rung_score is not None else "  Rung score: n/a",
+                "",
+            ])
+
+        lines.extend([
+            "Best observed:",
+            f"  Quality={self.best_quality:.3f} @ shard {self.best_shard_fraction:.2f}",
+            "",
+        ])
+
+        lines.append("=" * 80)
 
         return "\n".join(lines)

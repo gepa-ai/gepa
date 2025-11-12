@@ -34,6 +34,24 @@ from .scheduler import BudgetedScheduler, SchedulerConfig
 from .stop_governor import EpochMetrics, StopGovernor, compute_hypervolume_2d
 
 
+def _percentile(samples: Sequence[float], quantile: float) -> float:
+    """Return the quantile value using linear interpolation."""
+
+    if not samples:
+        return 0.0
+    values = sorted(samples)
+    if len(values) == 1:
+        return float(values[0])
+    quantile = max(0.0, min(1.0, quantile))
+    pos = (len(values) - 1) * quantile
+    lower = math.floor(pos)
+    upper = math.ceil(pos)
+    if lower == upper:
+        return float(values[int(pos)])
+    fraction = pos - lower
+    return float(values[lower] + (values[upper] - values[lower]) * fraction)
+
+
 class Orchestrator:
     """Single-island orchestrator loop."""
 
@@ -69,6 +87,7 @@ class Orchestrator:
             )
         )
         self._runtime_shards: list[float] = list(self.config.shards)
+        self._final_rung_index: int = max(0, len(self._runtime_shards) - 1)
         self.queue: deque[Candidate] = deque()
         self._pending_fingerprints: set[str] = set()
         self._inflight_fingerprints: set[str] = set()
@@ -97,13 +116,17 @@ class Orchestrator:
         self._inflight_tasks: dict[str, asyncio.Task] = {}  # cand_hash -> task
         self._result_queue: asyncio.Queue[tuple[Candidate, EvalResult | Exception, int]] = asyncio.Queue()
         self._total_inflight: int = 0  # Total evaluations in flight across all shards
-        self._max_total_inflight: int = max(1, self.config.eval_concurrency)  # Streaming mode: always use eval_concurrency
+        self._fd_guard_limit: int | None = self._detect_fd_guard()
+        self._max_total_inflight: int = self._clamp_inflight(self.config.eval_concurrency)
+        self._adaptive_inflight_floor: int = max(1, self.config.max_final_shard_inflight or 1)
         self._examples_inflight: int = 0
         self._launch_start_times: dict[str, float] = {}
         self._latency_ema: float = 0.0
         self._latency_samples: int = 0
+        self._latency_history: deque[float] = deque(maxlen=200)
         self._eval_samples: int = 0
         self._timeout_count: int = 0
+        self._last_inflight_adjust: float = 0.0
         self._mutation_throttle: bool = False
         base_mut = self.config.max_mutations_per_round or max(16, self.config.eval_concurrency // 2)
         self._max_mutations_ceiling = base_mut
@@ -142,12 +165,17 @@ class Orchestrator:
         self._sched_to_fingerprint: dict[str, str] = {}
         self._promotion_pending: set[str] = set()
         self._last_mutation_attempt: float = 0.0
+        self._candidate_eval_examples: dict[str, list[str]] = {}
+        self._inflight_by_rung: defaultdict[int, int] = defaultdict(int)
+        self._final_inflight_peak: int = 0
         self._stop_reason: str | None = None
         self._run_started_at: float | None = None
         self._run_id = run_id or uuid.uuid4().hex[:8]
 
         # Metrics tracking
         self.metrics = Metrics()
+        self.metrics.target_quality = self.config.target_quality
+        self.metrics.target_shard_fraction = self.config.target_shard_fraction
         # Pass metrics to evaluator for cache tracking
         self.evaluator.metrics = self.metrics
 
@@ -158,6 +186,37 @@ class Orchestrator:
         """Record why the orchestration loop decided to stop."""
         if not self._stop_reason:
             self._stop_reason = reason
+
+    def _record_best_quality(self, quality: float, shard_fraction: float | None) -> None:
+        shard_fraction = shard_fraction if shard_fraction is not None else 0.0
+        if quality > self.metrics.best_quality:
+            self.metrics.best_quality = quality
+            self.metrics.best_shard_fraction = shard_fraction
+        target_shard = self.metrics.target_shard_fraction or 1.0
+        if (
+            not self.metrics.baseline_recorded
+            and shard_fraction + 1e-6 >= target_shard
+        ):
+            self.metrics.baseline_quality = quality
+            self.metrics.baseline_recorded = True
+        elapsed = None
+        if self._run_started_at is not None:
+            elapsed = max(0.0, time.time() - self._run_started_at)
+        self.metrics.record_rung_sample(shard_fraction, quality, elapsed)
+        self._maybe_record_target_hit(quality, shard_fraction, elapsed)
+
+    def _maybe_record_target_hit(self, quality: float, shard_fraction: float | None, elapsed: float | None) -> None:
+        shard_fraction = shard_fraction if shard_fraction is not None else 0.0
+        target_quality = self.config.target_quality
+        target_shard_fraction = self.config.target_shard_fraction or self._runtime_shards[-1]
+        if (
+            target_quality is None
+            or self.metrics.time_to_target_seconds is not None
+            or elapsed is None
+        ):
+            return
+        if shard_fraction + 1e-6 >= target_shard_fraction and quality >= target_quality:
+            self.metrics.time_to_target_seconds = elapsed
 
     def _log_structured(self, event: str, level: LogLevel = LogLevel.INFO, **fields: Any) -> None:
         payload = {"event": event, "run_id": self._run_id}
@@ -315,6 +374,7 @@ class Orchestrator:
                 alpha = 0.2
                 self._latency_ema = (1 - alpha) * self._latency_ema + alpha * duration
             self._latency_samples += 1
+            self._latency_history.append(duration)
         timed_out = False
         for trace in result.traces:
             if isinstance(trace, dict) and trace.get("error") == "timeout":
@@ -402,44 +462,86 @@ class Orchestrator:
         self._rung_promotions = [0] * len(self._runtime_shards)
 
     def _adjust_runtime_parameters(self) -> None:
-        if self._latency_samples < 5:
+        latencies = list(self._latency_history)
+        if len(latencies) < 5:
             return
+
+        import statistics
+        now = time.time()
+
         timeout_ratio = self._current_timeout_ratio()
-        high_latency = 5.0
-        low_latency = 1.5
-        timeout_high = 0.05
-        timeout_low = 0.01
-        adjusted = False
-        if self._latency_ema > high_latency or timeout_ratio > timeout_high:
-            new_inflight = max(1, self._max_total_inflight - 1)
-            if new_inflight != self._max_total_inflight:
-                self._max_total_inflight = new_inflight
-                self._recompute_capacities()
-            if self.config.max_mutations_per_round:
-                self.config.max_mutations_per_round = max(
-                    self._mutation_min, self.config.max_mutations_per_round - 1
-                )
-            adjusted = True
-        elif self._latency_ema < low_latency and timeout_ratio < timeout_low:
-            new_inflight = min(self._max_total_inflight + 1, self.config.eval_concurrency)
-            if new_inflight != self._max_total_inflight:
-                self._max_total_inflight = new_inflight
-                self._recompute_capacities()
-            if self.config.max_mutations_per_round:
-                self.config.max_mutations_per_round = min(
-                    self.config.max_mutations_per_round + 1, self._max_mutations_ceiling
-                )
-            adjusted = True
+        lat_mean = statistics.fmean(latencies)
+        lat_p95 = _percentile(latencies, 0.95)
+
+        timeout_cap = self.config.eval_timeout_seconds or 60.0
+        high_latency = min(max(10.0, 0.75 * timeout_cap), timeout_cap)
+        low_latency = 6.0
+
         backlog0 = len(self._priority_queue)
         launches0 = self._rung_launches[0] if self._rung_launches else 0
         promotions0 = self._rung_promotions[0] if self._rung_promotions else 0
         promo_rate0 = promotions0 / max(1, launches0)
         backlog_high = max(3 * self.config.batch_size, 12)
         backlog_low = max(self.config.batch_size, 8)
+
+        limit = self.config.eval_concurrency
+        pressure = backlog0 / max(1, self._max_total_inflight)
+        at_cap = self._total_inflight >= max(1, self._max_total_inflight - 1)
+
+        should_expand = (
+            self._max_total_inflight < limit
+            and pressure > 1.2
+            and at_cap
+            and timeout_ratio < 0.04
+            and lat_p95 < high_latency * 0.8
+        )
+        should_reduce = (
+            timeout_ratio > 0.08
+            or lat_p95 > high_latency
+            or (lat_mean > high_latency and self._max_total_inflight > self._adaptive_inflight_floor)
+        )
+
+        adjusted = False
+        if should_expand or should_reduce:
+            if now - self._last_inflight_adjust >= 1.0:
+                old_limit = self._max_total_inflight
+                if should_expand:
+                    step = max(1, max(1, old_limit // 3))
+                    new_limit = min(limit, old_limit + step)
+                else:
+                    step = max(1, max(1, old_limit // 4))
+                    floor = max(self._adaptive_inflight_floor, 1)
+                    new_limit = max(floor, old_limit - step)
+                new_limit = self._clamp_inflight(new_limit)
+                if new_limit != old_limit:
+                    self._max_total_inflight = new_limit
+                    self._recompute_capacities()
+                    self._last_inflight_adjust = now
+                    adjusted = True
+                    direction = "↑" if new_limit > old_limit else "↓"
+                    if self.show_progress:
+                        self.logger.log(
+                            (
+                                f"⚙️  Adaptive inflight {direction} {old_limit}→{new_limit} "
+                                f"| p95={lat_p95:.1f}s mean={lat_mean:.1f}s timeout={timeout_ratio:.1%} backlog={backlog0}"
+                            ),
+                            LogLevel.WARNING,
+                        )
+                    if self.config.max_mutations_per_round:
+                        if new_limit > old_limit:
+                            self.config.max_mutations_per_round = min(
+                                self.config.max_mutations_per_round + 1, self._max_mutations_ceiling
+                            )
+                        else:
+                            self.config.max_mutations_per_round = max(
+                                self._mutation_min, self.config.max_mutations_per_round - 1
+                            )
+
         if backlog0 > backlog_high and promo_rate0 < 0.2:
             self._mutation_throttle = True
         elif backlog0 < backlog_low:
             self._mutation_throttle = False
+
         if adjusted:
             # Slowly decay launch counters to keep ratios reactive
             self._rung_launches = [max(0, int(count * 0.8)) for count in self._rung_launches]
@@ -532,6 +634,9 @@ class Orchestrator:
 
         # Track first round start
         self.metrics.start_round()
+        if not self.metrics.baseline_recorded:
+            baseline = self._get_best_quality_from_full_shard()
+            self.metrics.baseline_quality = baseline
 
         while True:
             if max_rounds is not None and window_id >= max_rounds:
@@ -640,17 +745,22 @@ class Orchestrator:
             # Only spawn new mutations if we haven't exceeded the evaluation budget
             # SIMPLIFIED: Trigger when queue is running low
             # Keep queue depth at 2x concurrency to maintain saturation
-            min_candidates_needed = self._max_total_inflight * 2  # Streaming mode: always 2x concurrency
+            ready_depth = len(self.queue) + len(self._priority_queue)
+            soft_target = max(int(self._max_total_inflight * self._queue_buffer_mult), self.config.batch_size)
+            hard_target = max(self._max_total_inflight, self.config.batch_size)
+            need_depth = ready_depth < soft_target
+            need_queue = len(self.queue) < hard_target and self._total_inflight >= max(1, hard_target // 2)
             should_spawn_mutations = (
-                len(self.queue) < min_candidates_needed
-            ) and (max_evaluations is None or self.evaluations_run < max_evaluations)
+                (need_depth or need_queue)
+                and (max_evaluations is None or self.evaluations_run < max_evaluations)
+            )
 
             # Debug mutation spawning logic
             if loop_iter % 100 == 0 and len(self.queue) == 0 and self._total_inflight == 0:
                 task_status = 'None' if self._mutation_task is None else ('done' if self._mutation_task.done() else 'running')
                 _debug_log(
-                    f"🔍 MUTATION CHECK: queue={len(self.queue)}, "
-                    f"min={min_candidates_needed}, should_spawn={should_spawn_mutations}, "
+                    f"🔍 MUTATION CHECK: queue={len(self.queue)}, priority={len(self._priority_queue)}, "
+                    f"target_soft={soft_target}, need_depth={need_depth}, need_queue={need_queue}, "
                     f"task={task_status}"
                 )
 
@@ -664,7 +774,7 @@ class Orchestrator:
                 # Spawn streaming mutation worker if no task is running
                 if self._mutation_task is None:
                     _debug_log(
-                        f"🧬 Starting streaming mutation worker (queue={len(self.queue)} < {min_candidates_needed})"
+                        f"🧬 Starting streaming mutation worker (ready={ready_depth}, target={soft_target})"
                     )
                     self._mutation_task = asyncio.create_task(self._streaming_mutation_worker())
 
@@ -794,6 +904,12 @@ class Orchestrator:
         # Print and save comprehensive metrics summary
         metrics_summary = self.metrics.format_summary()
         if self.show_progress:
+            limit = self.config.max_final_shard_inflight or "∞"
+            self.logger.log(
+                f"📈 Final rung peak inflight: {self._final_inflight_peak}/{limit}",
+                LogLevel.WARNING,
+            )
+        if self.show_progress:
             self.logger.log("\n" + metrics_summary)
 
         # Save metrics to .turbo_gepa/metrics/ directory
@@ -841,12 +957,27 @@ class Orchestrator:
 
     # === Streaming helpers ===
 
-    def _stream_can_launch(self, candidate: Candidate, max_evaluations: int | None) -> bool:
+    def _stream_can_launch(self, candidate: Candidate | None, max_evaluations: int | None) -> bool:
         if max_evaluations is not None and self.evaluations_run >= max_evaluations:
             return False
 
-        # REMOVED ALL CONCURRENCY LIMITS - only eval_concurrency matters (in evaluator)
-        # Let straggler detection handle any oversubscription issues
+        if candidate is None:
+            return True
+
+        limit = self.config.max_final_shard_inflight
+        if limit is None:
+            return True
+
+        rung_idx = min(self.scheduler.current_shard_index(candidate), len(self._runtime_shards) - 1)
+        if rung_idx == self._final_rung_index:
+            inflight = self._inflight_by_rung.get(rung_idx, 0)
+            if inflight >= limit:
+                if self.show_progress:
+                    self.logger.log(
+                        f"⏸️  Final rung saturated: inflight={inflight}/{limit}, delaying launch",
+                        LogLevel.WARNING,
+                    )
+                return False
         return True
 
     async def _stream_launch_ready(self, window_id: int, max_evaluations: int | None) -> int:
@@ -855,14 +986,14 @@ class Orchestrator:
 
         # Launch from priority queue until we can't anymore
         while self._priority_queue:
-            # Check if we can launch more
-            if not self._stream_can_launch(None, max_evaluations):
-                break
-
             # Pop highest priority candidate
             try:
                 neg_priority, neg_rung_idx, counter, candidate = heapq.heappop(self._priority_queue)
             except IndexError:
+                break
+
+            if not self._stream_can_launch(candidate, max_evaluations):
+                heapq.heappush(self._priority_queue, (neg_priority, neg_rung_idx, counter, candidate))
                 break
 
             priority = -neg_priority
@@ -917,6 +1048,8 @@ class Orchestrator:
             shard_size = self._shard_size(shard_fraction)
             shard_ids = self.sampler.sample_shard(window_id, shard_size)
             self._shard_cache[shard_key] = shard_ids
+        # Track assigned examples for coverage accounting
+        self._candidate_eval_examples[candidate.fingerprint] = list(shard_ids)
 
         # Give each candidate FULL concurrency - no artificial splitting!
         # Let straggler detection in the evaluator handle slow tasks.
@@ -991,10 +1124,26 @@ class Orchestrator:
                 # Use get() with default 0 to avoid KeyError if key was removed during recompute
                 # Release global example-level budget
                 self._examples_inflight = max(0, self._examples_inflight - per_cand_concurrency)
+                current = self._inflight_by_rung.get(shard_idx, 0)
+                if current <= 1:
+                    self._inflight_by_rung.pop(shard_idx, None)
+                else:
+                    self._inflight_by_rung[shard_idx] = current - 1
                 # Clear inflight fingerprint using the captured value from launch time
                 # This prevents the candidate from being launched again until this evaluation completes
                 self._inflight_fingerprints.discard(fingerprint_at_launch)
 
+        self._inflight_by_rung[shard_idx] += 1
+        if shard_idx == self._final_rung_index:
+            current = self._inflight_by_rung[shard_idx]
+            if current > self._final_inflight_peak:
+                self._final_inflight_peak = current
+            if self.show_progress:
+                limit = self.config.max_final_shard_inflight or "∞"
+                self.logger.log(
+                    f"🚀 Final rung launch: inflight={current}/{limit} [fp={candidate.fingerprint[:12]}...]",
+                    LogLevel.WARNING,
+                )
         task = asyncio.create_task(runner())
         self._inflight_tasks[cand_hash] = task
         task.add_done_callback(lambda _: self._inflight_tasks.pop(cand_hash, None))
@@ -1225,8 +1374,51 @@ class Orchestrator:
             return
 
         result: EvalResult = payload
+        expected_ids = self._candidate_eval_examples.pop(candidate.fingerprint, [])
+        shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
+        if expected_ids:
+            seen_ids = set(result.example_ids or [])
+            missing = [ex for ex in expected_ids if ex not in seen_ids]
+            if missing:
+                if self.config.straggler_grace_seconds:
+                    grace = self.config.straggler_grace_seconds
+                    recovered = await self.evaluator.collect_straggler_results(
+                        candidate,
+                        missing,
+                        timeout=grace,
+                    )
+                    for recovered_result in recovered:
+                        result = result.merge(recovered_result)
+                        if recovered_result.example_ids:
+                            seen_ids.update(recovered_result.example_ids)
+                    if recovered:
+                        missing = [ex for ex in expected_ids if ex not in seen_ids]
+                        if self.show_progress:
+                            self.logger.log(
+                                f"📦 Recovered {len(recovered)} straggler example(s) after {grace:.1f}s grace window"
+                            )
+                missing = [ex for ex in expected_ids if ex not in seen_ids]
+            if missing:
+                self.evaluator.discard_straggler_results(candidate, missing)
+                self.logger.log(
+                    f"♻️  Replaying {len(missing)} missing examples on shard {shard_idx} ({shard_fraction:.0%}) "
+                    f"for candidate {candidate.fingerprint[:12]}..."
+                )
+                replay = await self.evaluator.eval_on_shard(
+                    candidate,
+                    missing,
+                    concurrency=min(self._effective_concurrency, max(1, len(missing))),
+                    shard_fraction=shard_fraction,
+                    show_progress=self.show_progress,
+                    is_final_shard=shard_idx == len(self._runtime_shards) - 1,
+                )
+                result = result.merge(replay)
         self._update_eval_metrics(candidate, result)
         candidate_with_meta, decision = await self._ingest_result(candidate, result)
+
+        shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
+        quality = result.objectives.get(self.config.promote_objective, 0.0)
+        self._record_best_quality(quality, shard_fraction)
 
         # STREAMING: Trigger mutation worker immediately after successful evaluation
         # This eliminates idle gap between evaluation completion and next mutations
@@ -1303,6 +1495,7 @@ class Orchestrator:
                 )
 
             candidate_with_meta, decision = await self._ingest_result(seed, result)
+            self._record_best_quality(quality, shard_fraction)
             enriched.append(candidate_with_meta)
 
             if self.show_progress:
@@ -1774,6 +1967,24 @@ class Orchestrator:
         if count <= 0:
             return
         self._mutations_enqueued += count
+        if self.show_progress:
+            self._log_operator_stats()
+
+    def _log_operator_stats(self) -> None:
+        stats = getattr(self.mutator, "_operator_stats", None)
+        if not stats:
+            return
+        summary: list[str] = []
+        for op, data in stats.items():
+            trials = data.get("trials", 0)
+            if not trials:
+                continue
+            promoted = data.get("promoted", 0)
+            delta_sum = data.get("delta_sum", 0.0)
+            avg = delta_sum / max(1, trials)
+            summary.append(f"{op}: {promoted}/{trials} ({avg:+.3f})")
+        if summary:
+            self.logger.log("   📈 Operator stats: " + "; ".join(summary[:4]))
 
     def _record_candidate_promotion(self, candidate: Candidate) -> None:
         if not isinstance(candidate.meta, dict):
@@ -2165,3 +2376,23 @@ class Orchestrator:
             heapq.heappush(self._priority_queue, (-priority, -rung_idx, self._priority_counter, candidate))
             self._pending_fingerprints.add(fingerprint)
             self.queue.append(candidate)
+    def _detect_fd_guard(self) -> int | None:
+        try:
+            import resource
+
+            soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+            guard = int(max(32, soft * 0.5))
+            return guard
+        except Exception:
+            return None
+
+    def _clamp_inflight(self, proposed: int) -> int:
+        limit = max(1, proposed)
+        if self._fd_guard_limit is not None and limit > self._fd_guard_limit:
+            limit = self._fd_guard_limit
+            if self.show_progress:
+                self.logger.log(
+                    f"🔒 FD guard limiting inflight to {limit} (soft limit {self._fd_guard_limit})",
+                    LogLevel.WARNING,
+                )
+        return limit
