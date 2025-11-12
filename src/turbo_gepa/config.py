@@ -145,6 +145,11 @@ def adaptive_shards(
     if dataset_size <= 3:
         return (1.0,)
 
+    # Unified algorithm for all dataset sizes: build a geometric ladder from an
+    # uncertainty-aware first rung to full coverage, then merge overly dense rungs.
+    # Count-aware rounding ensures sensible rungs even for small N without
+    # special-casing.
+
     ladder_density = max(0.5, min(1.5, ladder_density))
 
     # First rung should have enough examples to be meaningful, but not exceed 50% coverage

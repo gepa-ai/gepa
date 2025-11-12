@@ -850,8 +850,13 @@ class DefaultAdapter:
                     {"role": "user", "content": example["input"]},
                 ],
             }
-            max_tokens = self.task_model.max_tokens if self.task_model.max_tokens is not None else 1024
-            completion_kwargs["max_tokens"] = min(max_tokens, 1024)
+            # Let the model decide output length by default (no forced max_tokens).
+            # Respect a user-provided cap only when explicitly configured.
+            if self.task_model.max_tokens is not None:
+                try:
+                    completion_kwargs["max_tokens"] = int(self.task_model.max_tokens)
+                except Exception:
+                    pass
 
             if self.temperature_supported:
                 candidate_temperature = candidate.meta.get("temperature")
