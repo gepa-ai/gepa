@@ -223,7 +223,9 @@ def adaptive_shards(
 class Config:
     """Runtime parameters controlling concurrency, shard sizes, and promotion."""
 
-    eval_concurrency: int = 128  # Higher default with fixed connection pooling
+    # Practical default ceiling for example-level concurrency. The adaptive governor
+    # will adjust effective concurrency at runtime based on observed latency/backlog.
+    eval_concurrency: int = 12
     n_islands: int = 4
     shards: Sequence[float] = field(default_factory=lambda: (0.05, 0.2, 1.0))
 
@@ -268,6 +270,8 @@ class Config:
     # Dynamically scale effective evaluation concurrency to maximize throughput
     auto_scale_eval_concurrency: bool = True
     min_effective_concurrency: int | None = None  # If None, defaults to max(2, eval_concurrency//2)
+    # Enforce a global example-level budget across all candidates to avoid oversubscription
+    global_concurrency_budget: bool = True
 
     # Streaming mode config
 

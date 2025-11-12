@@ -299,7 +299,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turbo-max-evaluations", type=int, default=200)
     parser.add_argument("--turbo-max-mutations", type=int, default=8)
     parser.add_argument("--turbo-queue-limit", type=int, default=32)
-    parser.add_argument("--turbo-eval-concurrency", type=int, default=8)
+    parser.add_argument("--turbo-eval-concurrency", type=int, default=12)
     parser.add_argument("--turbo-auto-scale", dest="turbo_auto_scale", action="store_true")
     parser.add_argument("--no-turbo-auto-scale", dest="turbo_auto_scale", action="store_false")
     parser.set_defaults(turbo_auto_scale=True)

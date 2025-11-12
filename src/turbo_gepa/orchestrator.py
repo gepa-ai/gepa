@@ -1080,10 +1080,28 @@ class Orchestrator:
         # Track assigned examples for coverage accounting
         self._candidate_eval_examples[candidate.fingerprint] = list(shard_ids)
 
-        # Give each candidate FULL concurrency - no artificial splitting!
-        # Let straggler detection in the evaluator handle slow tasks.
-        # Each candidate gets the full eval_concurrency budget, limited only by shard size.
-        per_cand_concurrency = min(self._effective_concurrency, len(shard_ids))
+        # Determine per-candidate concurrency and respect a global budget to optimize throughput
+        desired = min(self._effective_concurrency, len(shard_ids))
+        per_cand_concurrency = desired
+        if self.config.global_concurrency_budget:
+            available = max(0, self._effective_concurrency - self._examples_inflight)
+            if available <= 0:
+                # Not enough global budget right now – defer launch
+                # Put candidate back on priority queue and try later
+                self._pending_fingerprints.add(candidate.fingerprint)
+                self.queue.append(candidate)
+                rung_idx = self.scheduler.current_shard_index(candidate)
+                priority = self._compute_priority(candidate, rung_idx)
+                self._priority_counter += 1
+                heapq.heappush(self._priority_queue, (-priority, -rung_idx, self._priority_counter, candidate))
+                return False
+            if available < per_cand_concurrency:
+                per_cand_concurrency = max(1, available)
+                if self.show_progress:
+                    self.logger.log(
+                        f"🔧 Global budget clamp: concurrency {desired}→{per_cand_concurrency} (inflight={self._examples_inflight}/{self._effective_concurrency})"
+                    )
+                self.metrics.record_budget_clamp()
 
         # Remove example-level oversubscription check entirely - trust straggler detection
         # to handle any tasks that run too long. This maximizes throughput.

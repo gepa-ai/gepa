@@ -44,6 +44,7 @@ class Metrics:
     evaluations_total: int = 0
     evaluations_by_shard: dict[float, int] = field(default_factory=lambda: defaultdict(int))
     concurrent_evals_peak: int = 0
+    concurrent_budget_clamps: int = 0
     eval_time_sum: float = 0.0
     shard_outcomes: dict[float, dict[str, float]] = field(default_factory=dict)
 
@@ -225,6 +226,9 @@ class Metrics:
         """Update peak concurrent evaluations."""
         if current > self.concurrent_evals_peak:
             self.concurrent_evals_peak = current
+
+    def record_budget_clamp(self) -> None:
+        self.concurrent_budget_clamps += 1
 
     def update_archive_sizes(self, pareto_size: int) -> None:
         """Update archive size tracking."""
