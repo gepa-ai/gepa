@@ -21,6 +21,8 @@ import os
 import shutil
 import time
 from pathlib import Path
+import subprocess
+import webbrowser
 from typing import Sequence
 
 import gepa
@@ -167,12 +169,21 @@ def main() -> None:
             "Defaults to all built-in strategies when omitted."
         ),
     )
+    parser.add_argument("--open-ui", action="store_true", help="Open live evolution UI (http://localhost:8080/scripts/evolution_live.html)")
     args = parser.parse_args()
 
     _configure_hf_cache(args.hf_cache)
     dataset = _load_aime_subset(args.limit)
     print(f"Loaded {len(dataset)} AIME examples for smoke test.")
     config = _build_config(dataset, args)
+
+    # Optionally bring up live UI
+    if args.open_ui:
+        try:
+            subprocess.Popen(["python", "-m", "http.server", "8080"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            webbrowser.open("http://localhost:8080/scripts/evolution_live_v2.html")
+        except Exception:
+            pass
 
     adapter = DefaultAdapter(
         dataset=dataset,

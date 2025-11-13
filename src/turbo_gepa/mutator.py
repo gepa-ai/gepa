@@ -45,6 +45,7 @@ class MutationConfig:
     # Amortization: number of items to request per LLM call
     mutations_per_call: int = 1
     specs_per_call: int = 1
+    objective_key: str = "quality"
 
 
 class Mutator:
@@ -78,6 +79,7 @@ class Mutator:
         self._operator_history: dict[str, deque[float]] = {key: deque(maxlen=20) for key in self._operator_stats}
         self.logger: LoggerProtocol = logger or StdOutLogger()
         self._metrics = metrics  # For tracking LLM calls in mutation generation
+        self.objective_key = config.objective_key
 
     def set_reflection_examples(self, examples: list[dict[str, object]]) -> None:
         self._reflection_examples = examples
@@ -139,6 +141,56 @@ class Mutator:
         weight = success_rate * max(avg_delta, 0.0)
         return max(weight, 0.0) + 0.01
 
+    def _allocate_operator_budget(
+        self,
+        total_budget: int,
+        available_ops: list[str],
+    ) -> dict[str, int]:
+        """Allocate mutation slots across operators using bandit-style weights."""
+        if total_budget <= 0 or not available_ops:
+            return {name: 0 for name in available_ops}
+
+        weights: dict[str, float] = {}
+        for name in available_ops:
+            weights[name] = max(self._operator_weight(name), 0.01)
+
+        weight_sum = sum(weights.values())
+        budgets = {name: 0 for name in available_ops}
+
+        if weight_sum <= 0:
+            # Evenly distribute when we have no signal yet
+            for name in available_ops:
+                budgets[name] = total_budget // len(available_ops)
+            remainder = total_budget - sum(budgets.values())
+            for name in available_ops[:remainder]:
+                budgets[name] += 1
+            return budgets
+
+        remaining = total_budget
+        sorted_ops = sorted(available_ops, key=lambda name: weights[name], reverse=True)
+        for idx, name in enumerate(sorted_ops):
+            ops_left = len(sorted_ops) - idx
+            if remaining <= 0:
+                break
+            ideal = total_budget * (weights[name] / weight_sum)
+            quota = int(round(ideal))
+            # Ensure every operator gets at least one slot while budget remains
+            min_quota = 1 if remaining >= ops_left else 0
+            quota = max(min_quota, quota)
+            quota = min(quota, remaining)
+            budgets[name] = quota
+            remaining -= quota
+
+        # Distribute any leftover (due to rounding) to the heaviest operators
+        idx = 0
+        while remaining > 0 and sorted_ops:
+            name = sorted_ops[idx % len(sorted_ops)]
+            budgets[name] += 1
+            remaining -= 1
+            idx += 1
+
+        return budgets
+
     async def propose(
         self,
         parent_contexts: list[dict[str, object]],
@@ -187,28 +239,30 @@ class Mutator:
             )
             return temp_mutations
 
-        reflection_weight = self._operator_weight("incremental_reflection")
-        spec_weight = self._operator_weight("spec_induction") if (self.spec_induction_runner and task_examples) else 0.0
+        has_reflection = self.batch_reflection_runner is not None
+        has_spec = bool(self.spec_induction_runner and task_examples)
+
+        available_ops: list[str] = []
+        if has_reflection:
+            available_ops.append("incremental_reflection")
+        if has_spec:
+            available_ops.append("spec_induction")
+
+        operator_budgets = self._allocate_operator_budget(total_budget, available_ops)
+        reflection_budget = operator_budgets.get("incremental_reflection", total_budget if not available_ops else 0)
+        spec_quota = operator_budgets.get("spec_induction", 0)
         proposals: list[Candidate] = []
-
-        spec_quota = 0
-        if spec_weight > 0.0:
-            total_rs = reflection_weight + spec_weight
-            spec_share = spec_weight / total_rs if total_rs > 0 else 0.0
-            spec_quota = min(total_budget, max(1, round(total_budget * spec_share)))
-
-        non_spec_budget = total_budget - spec_quota
 
         # 2 & 3) Run reflection and spec induction CONCURRENTLY, streaming as they complete
         llm_start = time.time()
 
         async def run_reflection() -> list[Candidate]:
-            if non_spec_budget <= 0:
+            if reflection_budget <= 0 or not has_reflection:
                 return []
             if self.batch_reflection_runner:
                 return await self._generate_incremental_mutations(
                     parent_contexts,
-                    non_spec_budget,
+                    reflection_budget,
                     candidate_sink=candidate_sink,
                 )
             return []
@@ -279,6 +333,7 @@ class Mutator:
             traces = traces[: self.config.reflection_batch_size]
 
             context_meta = {k: v for k, v in candidate.meta.items() if k != "temperature"}
+            context_meta["objective_key"] = self.objective_key
             reflection_contexts.append(
                 {
                     "prompt": candidate.text,
@@ -368,6 +423,7 @@ class Mutator:
             traces = traces[: self.config.reflection_batch_size]
 
             context_meta = {k: v for k, v in candidate.meta.items() if k != "temperature"}
+            context_meta["objective_key"] = self.objective_key
             reflection_contexts.append(
                 {
                     "prompt": candidate.text,
@@ -500,11 +556,17 @@ class Mutator:
         def score(ctx: dict[str, object]) -> float:
             candidate = ctx["candidate"]
             meta = candidate.meta or {}
-            if isinstance(meta.get("quality"), (int, float)):
-                return float(meta["quality"])
+            key = self.objective_key
+            value = meta.get(key)
+            if not isinstance(value, (int, float)):
+                value = meta.get("quality")
+            if isinstance(value, (int, float)):
+                return float(value)
             parent_objectives = meta.get("parent_objectives")
             if isinstance(parent_objectives, dict):
-                quality = parent_objectives.get("quality")
+                quality = parent_objectives.get(key)
+                if quality is None:
+                    quality = parent_objectives.get("quality")
                 if isinstance(quality, (int, float)):
                     return float(quality)
             return 0.0

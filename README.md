@@ -785,12 +785,14 @@ source .envrc && source .venv/bin/activate
 python scripts/bench_matrix.py 8 2 4 8 16 32
 ```
 
-Current OSS‑20 results (train split, 30 examples, TurboGEPA with clean cache):
+Current OSS‑20 results (train split, 30 examples, fresh cache):
 
-| Optimizer  | Runtime | Eval Budget Used | Full-Shard Quality | Train Accuracy (verify_prompt) |
-|------------|---------|------------------|--------------------|--------------------------------|
-| GEPA       | 598 s   | 150 metric calls | 0.733              | –                              |
-| TurboGEPA  | 170 s   | 43 evaluations   | 0.767 (seed)       | 0.73 (22/30)                   |
+| Optimizer  | Runtime | Eval Budget Used | Full-Shard Quality | Avg. Evolutions* | Train Accuracy (verify_prompt) |
+|------------|---------|------------------|--------------------|------------------|--------------------------------|
+| GEPA       | 598 s   | 150 metric calls | 0.733              | ~3 parent-child steps (across 30 problems) | – |
+| TurboGEPA  | 207 s   | 10 evaluations to target (48 mutations, 3 promotions) | 0.885 | 3 promotions (out of 48 streamed mutations) | 0.73 (22/30) |
+
+\*GEPA’s 150 metric calls across 30 problems effectively translate to about 3 “real” evolution steps per seed; TurboGEPA hit the 0.733 target after 7 evaluations (time-to-target ≈145 s) with three promoted children, demonstrating why prioritization + aggressive concurrency accelerates the north star metric.
 
 ---
 

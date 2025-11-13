@@ -40,21 +40,27 @@ def _format_parent_summaries(parent_contexts: Sequence[dict[str, object]]) -> st
         meta = ctx.get("meta", {}) or {}
         traces = ctx.get("traces", []) or []
 
+        objective_key = meta.get("objective_key", "quality")
         parent_objectives = meta.get("parent_objectives")
         if isinstance(parent_objectives, dict):
-            quality = parent_objectives.get("quality", 0.0)
+            quality = parent_objectives.get(objective_key)
+            if quality is None:
+                quality = parent_objectives.get("quality", 0.0)
         else:
-            quality = meta.get("quality", 0.0)
+            quality = meta.get(objective_key, meta.get("quality", 0.0))
 
         shard_fraction = meta.get("quality_shard_fraction", 0.0)
         shard_info = f", shard={shard_fraction * 100:.0f}%" if shard_fraction else ""
         avg_quality = 0.0
         if traces:
-            values = [t.get("quality", 0.0) for t in traces[:3]]
+            values = [t.get(objective_key, t.get("quality", 0.0)) for t in traces[:3]]
             if values:
                 avg_quality = sum(values) / len(values)
 
-        perf_summary = f"Recent avg: {avg_quality:.1%}" if traces else f"Quality: {quality:.1%}"
+        label = "Quality"
+        if objective_key != "quality":
+            label = objective_key
+        perf_summary = f"Recent avg: {avg_quality:.1%}" if traces else f"{label}: {quality:.1%}"
         summaries.append(
             f"""PROMPT {chr(65 + i)} ({perf_summary}{shard_info}):
 "{prompt_text.strip()}"

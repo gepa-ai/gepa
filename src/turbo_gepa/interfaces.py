@@ -84,6 +84,8 @@ class EvalResult:
     n_examples: int
     shard_fraction: float | None = None
     example_ids: Sequence[str] | None = None
+    # Optional: fraction of examples completed on this shard (for live partials)
+    coverage_fraction: float | None = None
 
     def objective(self, key: str, default: float | None = None) -> float | None:
         """Convenience accessor for a specific objective value."""
@@ -113,6 +115,7 @@ class EvalResult:
             n_examples=total_examples,
             shard_fraction=self.shard_fraction,
             example_ids=example_ids,
+            coverage_fraction=self.coverage_fraction,
         )
 
 

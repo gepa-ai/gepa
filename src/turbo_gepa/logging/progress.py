@@ -38,8 +38,12 @@ class ProgressSnapshot:
     inflight_candidates: int
     inflight_examples: int
     target_quality: Optional[float]
+    target_shard_fraction: float
     target_reached: bool
     stop_reason: Optional[str]
+    promotion_attempts: dict[int, int]
+    promotion_promoted: dict[int, int]
+    promotion_pruned: dict[int, int]
 
 
 def build_progress_snapshot(orchestrator: Orchestrator) -> ProgressSnapshot:
@@ -72,8 +76,19 @@ def build_progress_snapshot(orchestrator: Orchestrator) -> ProgressSnapshot:
         snippet = _truncate_prompt(best_entry.candidate.text)
 
     target = orchestrator.config.target_quality
-    target_reached = target is not None and best_quality >= target
+    target_shard = float(getattr(orchestrator.config, "target_shard_fraction", 1.0) or 1.0)
+    tol = 1e-6
+    # Consider target reached only when both quality and shard criteria are met
+    target_reached = (
+        target is not None
+        and best_quality >= target
+        and (best_shard + tol) >= target_shard
+    )
     run_started_at = orchestrator.run_started_at or time.time()
+    metrics = getattr(orchestrator, "metrics", None)
+    attempts = dict(getattr(metrics, "promotion_attempts_by_rung", {})) if metrics else {}
+    promoted = dict(getattr(metrics, "promotions_by_rung", {})) if metrics else {}
+    pruned = dict(getattr(metrics, "promotion_pruned_by_rung", {})) if metrics else {}
 
     return ProgressSnapshot(
         timestamp=time.time(),
@@ -89,8 +104,12 @@ def build_progress_snapshot(orchestrator: Orchestrator) -> ProgressSnapshot:
         inflight_candidates=orchestrator.total_inflight,
         inflight_examples=orchestrator.examples_inflight,
         target_quality=target,
+        target_shard_fraction=target_shard,
         target_reached=target_reached,
         stop_reason=orchestrator.stop_reason,
+        promotion_attempts=attempts,
+        promotion_promoted=promoted,
+        promotion_pruned=pruned,
     )
 
 
@@ -136,6 +155,17 @@ class ProgressReporter:
             f"{time_since_improve:.0f}s ago" if time_since_improve is not None and time_since_improve >= 1.0 else "just now"
         )
 
+        rung_stats = ""
+        if snapshot.promotion_attempts:
+            parts = []
+            for rung in sorted(snapshot.promotion_attempts):
+                attempts = snapshot.promotion_attempts.get(rung, 0)
+                promoted = snapshot.promotion_promoted.get(rung, 0)
+                pruned = snapshot.promotion_pruned.get(rung, 0)
+                rate = promoted / attempts if attempts else 0.0
+                parts.append(f"{rung}:{promoted}/{attempts} ({rate:.0%})")
+            rung_stats = " promotions=[" + ", ".join(parts[:4]) + "]"
+
         self.logger.log(
             (
                 f"[TurboGEPA] run={snapshot.run_id} round={snapshot.round_index} "
@@ -145,7 +175,7 @@ class ProgressReporter:
                 f"(Δ={delta_str}, last_improve={since_str}) "
                 f"pareto={snapshot.pareto_size} "
                 f"queue={snapshot.queue_size} inflight={snapshot.inflight_candidates}"
-                f"{target_block}"
+                f"{target_block}{rung_stats}"
             ),
             LogLevel.WARNING,
         )
@@ -170,7 +200,11 @@ class ProgressReporter:
             "queue": snapshot.queue_size,
             "inflight_candidates": snapshot.inflight_candidates,
             "target_quality": snapshot.target_quality,
+            "target_shard": snapshot.target_shard_fraction,
             "target_reached": snapshot.target_reached,
             "stop_reason": snapshot.stop_reason,
+            "promotion_attempts": snapshot.promotion_attempts,
+            "promotion_promoted": snapshot.promotion_promoted,
+            "promotion_pruned": snapshot.promotion_pruned,
         }
         self.logger.log(json.dumps(structured), LogLevel.WARNING)

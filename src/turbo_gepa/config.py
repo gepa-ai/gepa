@@ -63,8 +63,15 @@ def _default_variance_tolerance(shards: Sequence[float]) -> dict[float, float]:
         # Combine: statistical uncertainty + base margin
         total_tolerance = statistical_tolerance + base_tolerance
 
-        # Cap at 0.40 (40%) to avoid accepting everything
-        total_tolerance = min(total_tolerance, 0.40)
+        # Apply rung-specific caps so early rungs stay strict
+        # Treat the very first rung extra strictly (≤ first shard).
+        if shard <= shards[0]:
+            total_tolerance = min(total_tolerance, 0.10)
+        # Apply medium tolerance to the next rung (e.g., 0.2) before easing up.
+        elif shard <= (shards[1] if len(shards) > 1 else 0.65):
+            total_tolerance = min(total_tolerance, 0.15)
+        else:
+            total_tolerance = min(total_tolerance, 0.25)
 
         tolerance_map[shard] = round(total_tolerance, 3)
 
@@ -277,6 +284,7 @@ class Config:
     min_effective_concurrency: int | None = None  # If None, defaults to max(2, eval_concurrency//2)
     # Enforce a global example-level budget across all candidates to avoid oversubscription
     global_concurrency_budget: bool = True
+    latest_results_limit: int = 2048
 
     # Streaming mode config
 

@@ -53,6 +53,8 @@ class Metrics:
     candidates_pruned: int = 0
     candidates_completed: int = 0
     promotions_by_rung: dict[int, int] = field(default_factory=lambda: defaultdict(int))
+    promotion_attempts_by_rung: dict[int, int] = field(default_factory=lambda: defaultdict(int))
+    promotion_pruned_by_rung: dict[int, int] = field(default_factory=lambda: defaultdict(int))
 
     # Mutation Performance
     mutations_generated: int = 0
@@ -188,14 +190,20 @@ class Metrics:
         stats["stragglers"] += stragglers_cancelled
         stats["duration_sum"] += duration
 
+    def record_promotion_attempt(self, rung: int) -> None:
+        """Record that the scheduler made a decision on this rung."""
+        self.promotion_attempts_by_rung[rung] += 1
+
     def record_promotion(self, from_rung: int) -> None:
         """Record a candidate promotion."""
         self.candidates_promoted += 1
         self.promotions_by_rung[from_rung] += 1
 
-    def record_pruning(self) -> None:
+    def record_pruning(self, rung: int | None = None) -> None:
         """Record a candidate being pruned."""
         self.candidates_pruned += 1
+        if rung is not None:
+            self.promotion_pruned_by_rung[rung] += 1
 
     def record_completion(self) -> None:
         """Record a candidate completing all rungs."""
@@ -376,6 +384,21 @@ class Metrics:
             f"  Completed: {self.candidates_completed}",
             f"  Promotion rate: {self.promotion_rate:.1%}",
             f"  Promotions by rung: {dict(self.promotions_by_rung)}",
+            "",
+        ])
+
+        if self.promotion_attempts_by_rung:
+            lines.append("  Rung promotion stats:")
+            for rung in sorted(self.promotion_attempts_by_rung):
+                attempts = self.promotion_attempts_by_rung[rung]
+                promoted = self.promotions_by_rung.get(rung, 0)
+                pruned = self.promotion_pruned_by_rung.get(rung, 0)
+                rate = promoted / attempts if attempts else 0.0
+                lines.append(
+                    f"    rung {rung}: attempts={attempts}, promoted={promoted}, "
+                    f"pruned={pruned}, rate={rate:.1%}"
+                )
+        lines.extend([
             "",
             "🔬 Mutation Generation:",
             f"  Total mutations: {self.mutations_generated}",

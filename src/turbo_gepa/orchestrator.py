@@ -13,9 +13,11 @@ import asyncio
 import heapq
 import json
 import math
+import os
+import random
 import time
 import uuid
-from collections import defaultdict, deque
+from collections import defaultdict, deque, OrderedDict
 from typing import Any, Callable, Iterable, Sequence
 
 from turbo_gepa.logging import build_progress_snapshot
@@ -116,7 +118,8 @@ class Orchestrator:
         self._pending_fingerprints: set[str] = set()
         self._inflight_fingerprints: set[str] = set()
         self._next_shard: int = 0
-        self.latest_results: dict[str, EvalResult] = {}
+        self._latest_results_limit = int(getattr(self.config, "latest_results_limit", 2048) or 2048)
+        self.latest_results: OrderedDict[str, EvalResult] = OrderedDict()
         self.evaluations_run: int = 0
         self.round_index: int = 0
         self.show_progress = show_progress
@@ -125,6 +128,8 @@ class Orchestrator:
         # Stop governor: always enabled for convergence detection
         self.stop_governor = StopGovernor(config.stop_governor_config)
         self.total_tokens_spent: int = 0
+        self._governor_prev_evals: int = 0
+        self._governor_token_buffer: int = 0
         self._shard_cache: dict[tuple[int, float], list[str]] = {}
         self.metrics_callback = metrics_callback
         self.logger: LoggerProtocol = logger or StdOutLogger()
@@ -190,6 +195,7 @@ class Orchestrator:
         self._lineage_history: defaultdict[str, deque] = defaultdict(lambda: deque(maxlen=8))
         self._sched_to_fingerprint: dict[str, str] = {}
         self._promotion_pending: set[str] = set()
+        self._high_rung_parent_quorum: int = 3
         self._last_mutation_attempt: float = 0.0
         self._candidate_eval_examples: dict[str, list[str]] = {}
         self._inflight_by_rung: defaultdict[int, int] = defaultdict(int)
@@ -197,9 +203,13 @@ class Orchestrator:
         self._stop_reason: str | None = None
         self._run_started_at: float | None = None
         self._run_id = run_id or uuid.uuid4().hex[:8]
+        # Progress timeline for visualization (bounded deque of ProgressSnapshot dicts)
+        self._timeline: deque[dict[str, Any]] = deque(maxlen=500)
         # Track candidates by fingerprint so we can recover prompt text for
         # results that may fall off the Pareto frontier later.
         self._candidates_by_fp: dict[str, Candidate] = {}
+        # Live evolution persistence throttle
+        self._evo_last_persist: float = 0.0
 
         # Metrics tracking
         self.metrics = Metrics()
@@ -240,6 +250,28 @@ class Orchestrator:
             elapsed = max(0.0, time.time() - self._run_started_at)
         self.metrics.record_rung_sample(shard_fraction, quality, elapsed)
         self._maybe_record_target_hit(quality, shard_fraction, elapsed)
+
+    def _record_progress_snapshot(self) -> None:
+        """Append a ProgressSnapshot dict to the internal timeline for viz."""
+        try:
+            snap = build_progress_snapshot(self)
+            self._timeline.append(
+                {
+                    "timestamp": snap.timestamp,
+                    "elapsed": snap.elapsed,
+                    "evaluations": snap.evaluations,
+                    "pareto_size": snap.pareto_size,
+                    "best_quality": snap.best_quality,
+                    "best_quality_shard": snap.best_quality_shard,
+                    "queue_size": snap.queue_size,
+                    "inflight_candidates": snap.inflight_candidates,
+                    "inflight_examples": snap.inflight_examples,
+                    "target_quality": snap.target_quality,
+                    "target_reached": snap.target_reached,
+                }
+            )
+        except Exception:
+            pass
 
     def _maybe_record_target_hit(self, quality: float, shard_fraction: float | None, elapsed: float | None) -> None:
         shard_fraction = shard_fraction if shard_fraction is not None else 0.0
@@ -348,6 +380,13 @@ class Orchestrator:
         elif len(data) > target:
             data = data[:target]
         return data
+
+    def _remember_latest_result(self, key: str, result: EvalResult) -> None:
+        """Track latest evaluation results with an LRU cap."""
+        self.latest_results[key] = result
+        self.latest_results.move_to_end(key)
+        while len(self.latest_results) > self._latest_results_limit:
+            self.latest_results.popitem(last=False)
 
     def _recompute_capacities(self) -> None:
         # SIMPLIFIED: Just use eval_concurrency directly, no artificial limits
@@ -746,8 +785,26 @@ class Orchestrator:
         optimization_start_time = time.time()
         self._run_started_at = optimization_start_time
 
+        # Write evolution pointer immediately so dashboards can connect
+        try:
+            evo_dir = os.path.abspath(os.path.join(self.config.log_path, "..", "evolution"))
+            os.makedirs(evo_dir, exist_ok=True)
+            cur = os.path.join(evo_dir, "current.json")
+            with open(cur + ".tmp", "w", encoding="utf-8") as fcur:
+                json.dump({"run_id": self._run_id}, fcur)
+            os.replace(cur + ".tmp", cur)
+            # Also write a bootstrap snapshot so the live UI shows the seed immediately
+            try:
+                self._persist_evolution_bootstrap(seeds, evo_dir)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
         if not resumed:
             await self._seed_archive(seeds)
+            # Record a snapshot after seeding
+            self._record_progress_snapshot()
             if self.metrics_callback is not None:
                 self.metrics_callback(build_progress_snapshot(self))
 
@@ -858,8 +915,19 @@ class Orchestrator:
 
             # 3) Drain completed results and update bookkeeping
             drained = await self._stream_drain_results()
-            if drained > 0 and loop_iter % 5 == 0:
-                _debug_log(f"✅ Drained {drained} result(s), total inflight: {self._total_inflight}")
+            if drained > 0:
+                if loop_iter % 5 == 0:
+                    _debug_log(f"✅ Drained {drained} result(s), total inflight: {self._total_inflight}")
+                # LIVE SNAPSHOT: record a progress sample and persist the
+                # evolution JSON so the dashboard updates between epochs.
+                try:
+                    self._record_progress_snapshot()
+                except Exception:
+                    pass
+                try:
+                    self._persist_evolution_live()  # throttled internally (~2s)
+                except Exception:
+                    pass
 
             # Heartbeat: log every 30 seconds even if nothing is happening
             # This proves the system is alive and not hung
@@ -976,6 +1044,14 @@ class Orchestrator:
                 window_start_evals = self.evaluations_run
 
                 # Call metrics callback if provided
+                # Record timeline snapshot each epoch
+                self._record_progress_snapshot()
+                # Persist evolution snapshot for live UI (throttled)
+                try:
+                    self._persist_evolution_live()
+                except Exception:
+                    # Live persistence is best-effort; ignore failures during run
+                    pass
                 if self.metrics_callback is not None:
                     self.metrics_callback(build_progress_snapshot(self))
 
@@ -1056,6 +1132,12 @@ class Orchestrator:
         # Final save
         await self._save_state()
 
+        # Write a final evolution snapshot for offline rendering
+        try:
+            self._persist_evolution_live(force=True)
+        except Exception:
+            pass
+
         await self.finalize()
 
         # Print and save comprehensive metrics summary
@@ -1102,6 +1184,13 @@ class Orchestrator:
                 best_prompt=snapshot.best_prompt_snippet,
             )
 
+        # Persist a compact verification summary for easy parsing/CI checks
+        try:
+            self._persist_evolution_summary()
+        except Exception:
+            # Non-fatal: summary is a convenience artifact
+            pass
+
         # Clear state only if we reached completion (not if stopped early)
         completed = (max_rounds is not None and window_id >= max_rounds) or (
             max_evaluations is not None and self.evaluations_run >= max_evaluations
@@ -1111,6 +1200,202 @@ class Orchestrator:
 
         if _debug_log_file is not None:
             _debug_log_file.close()
+
+    def _persist_evolution_live(self, *, force: bool = False, min_interval: float = 2.0) -> None:
+        """Persist a live evolution JSON snapshot for UI polling.
+
+        Writes to .turbo_gepa/evolution/<run_id>.json and a current pointer.
+        Atomic replace is used to avoid partial reads.
+        """
+        now = time.time()
+        if not force and (now - self._evo_last_persist) < min_interval:
+            return
+
+        evo_dir = os.path.abspath(os.path.join(self.config.log_path, "..", "evolution"))
+        os.makedirs(evo_dir, exist_ok=True)
+
+        # Pointer to current run for the live UI
+        current_path = os.path.join(evo_dir, "current.json")
+        try:
+            with open(current_path + ".tmp", "w", encoding="utf-8") as fcur:
+                json.dump({"run_id": self._run_id}, fcur)
+            os.replace(current_path + ".tmp", current_path)
+        except Exception:
+            pass
+
+        # Compose payload similar to adapter's final snapshot
+        evo_stats = self.evolution_snapshot(include_edges=True)
+        lineage = self.get_candidate_lineage_data()
+        # Basic run metadata for display
+        best_full = self._get_best_quality_from_full_shard()
+        try:
+            full_shard = self._runtime_shards[-1] if self._runtime_shards else 1.0
+        except Exception:
+            full_shard = 1.0
+        run_meta = {
+            "run_id": self._run_id,
+            "stop_reason": self._stop_reason,
+            "evaluations": self.evaluations_run,
+            "best_quality": best_full,
+            "best_quality_shard": full_shard,
+        }
+        payload = {
+            "run_id": self._run_id,
+            "evolution_stats": evo_stats,
+            "lineage": lineage,
+            "run_metadata": run_meta,
+            "timeline": list(getattr(self, "_timeline", [])),
+        }
+
+        out_path = os.path.join(evo_dir, f"{self._run_id}.json")
+        tmp = out_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(tmp, out_path)
+
+    def _persist_evolution_bootstrap(self, seeds: Sequence[Candidate], evo_dir: str | None = None) -> None:
+        """Persist a minimal run JSON immediately with seed(s) as nodes.
+
+        This ensures the live dashboard shows the OG seed node before the first
+        evaluation completes (useful for slow models).</n+        """
+        try:
+            import time as _time
+            dir_path = evo_dir or os.path.abspath(os.path.join(self.config.log_path, "..", "evolution"))
+            os.makedirs(dir_path, exist_ok=True)
+            # Build a minimal lineage with seeds
+            lineage: list[dict[str, object]] = []
+            for seed in seeds:
+                if not isinstance(seed, Candidate):
+                    continue
+                fp = seed.fingerprint
+                text = seed.text
+                snippet = " ".join((text or "").split())
+                if len(snippet) > 180:
+                    snippet = snippet[:179] + "…"
+                lineage.append(
+                    {
+                        "fingerprint": fp,
+                        "generation": 0,
+                        "quality": 0.0,
+                        "status": "queued",
+                        "shard_fraction": 0.0,
+                        "coverage_fraction": 0.0,
+                        "prompt": snippet,
+                        "prompt_full": text or "",
+                    }
+                )
+
+            payload = {
+                "run_id": self._run_id,
+                "evolution_stats": {
+                    "mutations_requested": 0,
+                    "mutations_generated": 0,
+                    "mutations_enqueued": 0,
+                    "mutations_promoted": 0,
+                    "unique_parents": 0,
+                    "unique_children": 0,
+                    "evolution_edges": 0,
+                    "total_evaluations": 0,
+                    "parent_children": {},
+                    "children": [],
+                    "promoted_children": [],
+                },
+                "lineage": lineage,
+                "run_metadata": {
+                    "run_id": self._run_id,
+                    "stop_reason": None,
+                    "evaluations": 0,
+                    "best_quality": 0.0,
+                    "best_quality_shard": (self._runtime_shards[-1] if self._runtime_shards else 1.0),
+                },
+                "timeline": [],
+            }
+
+            out_path = os.path.join(dir_path, f"{self._run_id}.json")
+            tmp = out_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False)
+            os.replace(tmp, out_path)
+        except Exception:
+            pass
+
+    # --- Lightweight verification summary (fast to parse) ---
+    def _persist_evolution_summary(self) -> None:
+        """Write a tiny summary JSON with depth and key counts for verification.
+
+        Output: .turbo_gepa/evolution/<run_id>.summary.json and current_summary.json
+        """
+        import os
+
+        evo_dir = os.path.abspath(os.path.join(self.config.log_path, "..", "evolution"))
+        os.makedirs(evo_dir, exist_ok=True)
+
+        evo_stats = self.evolution_snapshot(include_edges=True)
+        lineage = self.get_candidate_lineage_data()
+
+        # Build parent_children mapping (already converted to fingerprints in snapshot)
+        parent_children: dict[str, list[str]] = evo_stats.get("parent_children", {}) or {}
+
+        # Compute max depth via BFS
+        nodes: set[str] = set(parent_children.keys())
+        for kids in parent_children.values():
+            nodes.update(kids)
+        indeg: dict[str, int] = {n: 0 for n in nodes}
+        for p, kids in parent_children.items():
+            for c in kids:
+                indeg[c] = indeg.get(c, 0) + 1
+            indeg.setdefault(p, indeg.get(p, 0))
+        roots = [n for n in nodes if indeg.get(n, 0) == 0]
+        depth: dict[str, int] = {n: 0 for n in roots}
+        from collections import deque
+        q = deque(roots)
+        while q:
+            n = q.popleft()
+            for c in parent_children.get(n, []):
+                d = depth.get(n, 0) + 1
+                if d > depth.get(c, -1):
+                    depth[c] = d
+                    q.append(c)
+        max_depth = max(depth.values()) if depth else 0
+
+        # Count generation≥2 directly from lineage if available
+        gen2 = sum(1 for item in lineage if int(item.get("generation", 0)) >= 2)
+
+        # Best-at-full-shard quality (already computed helper)
+        best_full = self._get_best_quality_from_full_shard()
+        full_shard = self._runtime_shards[-1] if self._runtime_shards else 1.0
+
+        summary = {
+            "run_id": self._run_id,
+            "evaluations": int(self.evaluations_run),
+            "unique_parents": int(len(parent_children)),
+            "unique_children": int(evo_stats.get("unique_children", 0)),
+            "evolution_edges": int(evo_stats.get("evolution_edges", 0)),
+            "mutations_generated": int(evo_stats.get("mutations_generated", 0)),
+            "mutations_promoted": int(evo_stats.get("mutations_promoted", 0)),
+            "max_depth": int(max_depth),
+            "has_grandchild": bool(max_depth >= 2 or gen2 > 0),
+            "gen2_count": int(gen2),
+            "best_full_quality": float(best_full),
+            "full_shard_fraction": float(full_shard),
+            "stop_reason": self._stop_reason,
+        }
+
+        out_path = os.path.join(evo_dir, f"{self._run_id}.summary.json")
+        tmp = out_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(summary, f, ensure_ascii=False)
+        os.replace(tmp, out_path)
+
+        # Pointer for latest summary
+        current_summary = os.path.join(evo_dir, "current_summary.json")
+        try:
+            with open(current_summary + ".tmp", "w", encoding="utf-8") as fcur:
+                json.dump({"run_id": self._run_id}, fcur)
+            os.replace(current_summary + ".tmp", current_summary)
+        except Exception:
+            pass
+        self._evo_last_persist = now
 
     # === Streaming helpers ===
 
@@ -1210,7 +1495,14 @@ class Orchestrator:
         self._candidate_eval_examples[candidate.fingerprint] = list(shard_ids)
 
         # Determine per-candidate concurrency and respect a global budget to optimize throughput
+        # Share final‑rung capacity across concurrently running full‑shard candidates to overlap tails.
         desired = min(self._effective_concurrency, len(shard_ids))
+        if shard_idx == self._final_rung_index:
+            # Target a fair share based on configured inflight cap (dynamic, simple)
+            cap = int(self.config.max_final_shard_inflight or 2)
+            cap = max(1, cap)
+            fair_share = max(1, self._effective_concurrency // cap)
+            desired = min(desired, fair_share)
         per_cand_concurrency = desired
         if self.config.global_concurrency_budget:
             available = max(0, self._effective_concurrency - self._examples_inflight)
@@ -1265,6 +1557,18 @@ class Orchestrator:
                         f"[fp={candidate.fingerprint[:12]}... concurrency={per_cand_concurrency}]"
                     )
                 is_final_shard = shard_idx == len(self._runtime_shards) - 1
+                async def _on_partial(cand: Candidate, partial_res: EvalResult) -> None:
+                    try:
+                        ck = candidate_key(cand)
+                        self._remember_latest_result(ck, partial_res)
+                        # Persist a throttled live snapshot so the UI shows mid-shard quality
+                        try:
+                            self._persist_evolution_live()
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
                 result = await self.evaluator.eval_on_shard(
                     candidate,
                     shard_ids,
@@ -1272,6 +1576,7 @@ class Orchestrator:
                     shard_fraction=shard_fraction,
                     show_progress=self.show_progress,  # Show progress for all evaluations
                     is_final_shard=is_final_shard,
+                    on_partial=_on_partial,
                 )
                 eval_duration = time.time() - eval_start
                 self.metrics.record_evaluation(shard_fraction, eval_duration)
@@ -1404,17 +1709,23 @@ class Orchestrator:
             self._sched_to_fingerprint[sched_key] = candidate_with_meta.fingerprint
         else:
             self._promotion_pending.discard(candidate_with_meta.fingerprint)
-        self.latest_results[cand_hash] = result
+        self._remember_latest_result(cand_hash, result)
         self.evaluations_run += 1
+        tokens_obj = result.objectives.get("tokens") if isinstance(result.objectives, dict) else None
+        if isinstance(tokens_obj, (int, float)):
+            self._governor_token_buffer += int(tokens_obj)
 
         prev_idx = min(self.scheduler.current_shard_index(candidate_with_meta), len(self._runtime_shards) - 1)
         decision = self.scheduler.record(candidate_with_meta, result, self.config.promote_objective)
+
+        if prev_idx >= 0:
+            self.metrics.record_promotion_attempt(prev_idx)
 
         # Track scheduler decisions in metrics
         if decision == "promoted":
             self.metrics.record_promotion(prev_idx)
         elif decision == "pruned":
-            self.metrics.record_pruning()
+            self.metrics.record_pruning(prev_idx)
         elif decision == "completed":
             self.metrics.record_completion()
 
@@ -1657,6 +1968,7 @@ class Orchestrator:
 
         results: list[EvalResult] = []
         for seed in seeds:
+            # Evaluate seed on first rung and ensure 100% coverage (recover stragglers, replay missing)
             result = await self._evaluate_candidate(
                 seed,
                 shard,
@@ -1664,6 +1976,34 @@ class Orchestrator:
                 show_progress=self.show_progress,
                 concurrency_override=seed_concurrency,
             )
+            try:
+                # Recover stragglers for seeds similarly to streaming path
+                expected_ids = set(shard)
+                seen_ids = set(result.example_ids or [])
+                missing = [ex for ex in expected_ids if ex not in seen_ids]
+                if missing:
+                    if self.config.straggler_grace_seconds:
+                        recovered = await self.evaluator.collect_straggler_results(
+                            seed, missing, timeout=self.config.straggler_grace_seconds
+                        )
+                        for rec in recovered:
+                            result = result.merge(rec)
+                            if rec.example_ids:
+                                seen_ids.update(rec.example_ids)
+                        missing = [ex for ex in expected_ids if ex not in seen_ids]
+                    if missing:
+                        replay = await self.evaluator.eval_on_shard(
+                            seed,
+                            missing,
+                            concurrency=min(self._effective_concurrency, max(1, len(missing))),
+                            shard_fraction=shard_fraction,
+                            show_progress=self.show_progress,
+                            is_final_shard=False,
+                        )
+                        result = result.merge(replay)
+            except Exception:
+                # Seed replay is best-effort; do not fail the run if recovery fails
+                pass
             results.append(result)
 
         if self.show_progress:
@@ -1707,6 +2047,12 @@ class Orchestrator:
                 f"   🎯 Seeds ready for next evaluation: queue={len(self.queue)}, "
                 f"priority_queue={len(self._priority_queue)}"
             )
+        # Emit an initial live snapshot immediately after seeding so the UI has
+        # something to load even before the first epoch completes.
+        try:
+            self._persist_evolution_live(force=True)
+        except Exception:
+            pass
 
     def _select_batch(self) -> list[Candidate]:
         batch: list[Candidate] = []
@@ -1722,18 +2068,27 @@ class Orchestrator:
             needed = self.config.batch_size - len(batch)
             exploit = (needed + 1) // 2
             explore = needed // 2
-            archive_candidates = self.archive.select_for_generation(
-                exploit,
-                explore,
-                objective=self.config.promote_objective,
-            )
-            for candidate in archive_candidates:
-                if len(batch) >= self.config.batch_size:
-                    break
-                if candidate.fingerprint in seen:
-                    continue
-                batch.append(candidate)
-                seen.add(candidate.fingerprint)
+            pareto_entries = self.archive.pareto_entries()
+            if pareto_entries:
+                sorted_entries = sorted(
+                    pareto_entries,
+                    key=lambda e: e.result.objectives.get(self.config.promote_objective, float("-inf")),
+                    reverse=True,
+                )
+                exploit_entries = sorted_entries[:exploit]
+                remaining_entries = sorted_entries[exploit:]
+                explore_entries: list[ArchiveEntry] = []
+                if explore > 0 and remaining_entries:
+                    sample_size = min(explore, len(remaining_entries))
+                    explore_entries = random.sample(remaining_entries, sample_size)
+                archive_candidates = [entry.candidate for entry in exploit_entries + explore_entries]
+                for candidate in archive_candidates:
+                    if len(batch) >= self.config.batch_size:
+                        break
+                    if candidate.fingerprint in seen:
+                        continue
+                    batch.append(candidate)
+                    seen.add(candidate.fingerprint)
         return batch
 
     def _get_best_quality_from_full_shard(self) -> float:
@@ -1942,6 +2297,8 @@ class Orchestrator:
             reverse=True,
         )
         selected_entries = sorted_entries[:num_parents]
+        low_parent_quota = max(1, num_parents // 3)
+        low_parents_added = 0
 
         time.time() - parent_select_start
 
@@ -2023,17 +2380,24 @@ class Orchestrator:
         else:
             min_shard_for_mutation = self._runtime_shards[1]
 
-        has_eligible_parent = any(
-            (entry.result.shard_fraction or 0.0) >= min_shard_for_mutation for entry in selected_entries
+        high_rung_count = sum(
+            1 for entry in selected_entries if (entry.result.shard_fraction or 0.0) >= min_shard_for_mutation
         )
-        effective_min_shard = min_shard_for_mutation if has_eligible_parent else self._runtime_shards[0]
+        if high_rung_count >= self._high_rung_parent_quorum:
+            effective_min_shard = min_shard_for_mutation
+        else:
+            effective_min_shard = self._runtime_shards[0]
 
         for entry in selected_entries:
             # Skip parents that haven't been evaluated on a meaningful shard yet
             # This prevents mutating from 100% scores on tiny samples before seeing real failures
             current_shard = entry.result.shard_fraction or 0.0
-            if current_shard < effective_min_shard:
-                continue
+            is_high_rung = current_shard >= min_shard_for_mutation
+            if current_shard < effective_min_shard and not is_high_rung:
+                if high_rung_count >= self._high_rung_parent_quorum:
+                    if low_parents_added >= low_parent_quota:
+                        continue
+                    low_parents_added += 1
 
             # Prefer latest_results (most recent eval, usually full dataset)
             # Fall back to entry.result if not found in latest_results
@@ -2213,7 +2577,7 @@ class Orchestrator:
         return snapshot
 
     def get_candidate_lineage_data(self) -> list[dict[str, Any]]:
-        """Return list of all candidates with generation, quality, and status for visualization."""
+        """Return list of all candidates with generation, quality, shard and status for visualization."""
 
         data: list[dict[str, Any]] = []
         seen_keys: set[str] = set()
@@ -2227,39 +2591,183 @@ class Orchestrator:
                 key = entry.candidate.fingerprint
             fp = self._sched_to_fingerprint.get(key, entry.candidate.fingerprint)
             seen_keys.add(key)
+            shard = entry.result.shard_fraction or 0.0
+            full = entry.candidate.text
+            snippet = " ".join(full.split())
+            if len(snippet) > 180:
+                snippet = snippet[:179] + "…"
             data.append(
                 {
                     "fingerprint": fp,
                     "generation": self._candidate_generations.get(key, 0),
                     "quality": entry.result.objectives.get(promote_objective, 0.0),
                     "status": "promoted",
+                    "shard_fraction": shard,
+                    "prompt": snippet,
+                    "prompt_full": full,
                 }
             )
 
-        # Pareto candidates are already included above
-
-        # Get in-flight candidates (in queue)
+        # Get in-flight candidates (queue)
         for candidate in self.queue:
             meta = candidate.meta if isinstance(candidate.meta, dict) else {}
             key = meta.get("_sched_key") if isinstance(meta, dict) else None
             if not isinstance(key, str):
                 key = candidate.fingerprint
             fp = self._sched_to_fingerprint.get(key, candidate.fingerprint)
-            # Get quality from archive if available
+            # Lookup latest quality and shard if present
             quality = 0.0
+            shard = 0.0
             cache_key = candidate_key(candidate)
             latest = self.latest_results.get(cache_key)
             if latest:
                 quality = latest.objectives.get(promote_objective, 0.0)
-
+                shard = latest.shard_fraction or 0.0
+            full = candidate.text
+            snippet = " ".join(full.split())
+            if len(snippet) > 180:
+                snippet = snippet[:179] + "…"
             data.append(
                 {
                     "fingerprint": fp,
                     "generation": self._candidate_generations.get(key, 0),
                     "quality": quality,
                     "status": "in_flight",
+                    "shard_fraction": shard,
+                    "prompt": snippet,
+                    "prompt_full": full,
                 }
             )
+
+        return data
+
+    def get_candidate_lineage_data(self) -> list[dict[str, Any]]:
+        """Return list of all candidates with generation, quality, shard, prompt and status for visualization.
+
+        Includes:
+        - Current Pareto candidates (status=promoted)
+        - In-queue candidates (status=in_flight)
+        - Any candidate with a recorded evaluation in latest_results
+        - Any child seen in the parent_children map (fallback with defaults)
+        """
+
+        data: list[dict[str, Any]] = []
+        seen_nodes: set[str] = set()  # set of fingerprints to avoid duplicates
+        seen_sched: set[str] = set()  # schedule keys to compute generation
+        promote_objective = self.config.promote_objective
+
+        def _add_entry(fp: str, key: str, quality: float, shard: float, status: str, cand_text: str | None, coverage: float | None = None) -> None:
+            nonlocal data, seen_nodes, seen_sched
+            if not isinstance(fp, str) or not fp:
+                return
+            if fp in seen_nodes and key in seen_sched:
+                return
+            snippet = ""
+            if isinstance(cand_text, str):
+                snippet = " ".join(cand_text.split())
+                if len(snippet) > 180:
+                    snippet = snippet[:179] + "…"
+            data.append(
+                {
+                    "fingerprint": fp,
+                    "generation": self._candidate_generations.get(key, 0),
+                    "quality": float(quality or 0.0),
+                    "status": status,
+                    "shard_fraction": float(shard or 0.0),
+                    "coverage_fraction": float(coverage) if isinstance(coverage, (int, float)) else None,
+                    "prompt": snippet,
+                    "prompt_full": cand_text or "",
+                }
+            )
+            seen_nodes.add(fp)
+            seen_sched.add(key)
+
+        # Helper: resolve schedule key -> fingerprint and candidate object
+        def _resolve(key: str) -> tuple[str, Any | None]:
+            fp = self._sched_to_fingerprint.get(key, key)
+            cand = self._candidates_by_fp.get(fp)
+            return fp, cand
+
+        # 1) Archive (Pareto)
+        for entry in self.archive.pareto_entries():
+            meta = entry.candidate.meta if isinstance(entry.candidate.meta, dict) else {}
+            key = meta.get("_sched_key") if isinstance(meta, dict) else entry.candidate.fingerprint
+            if not isinstance(key, str):
+                key = entry.candidate.fingerprint
+            fp, cand = _resolve(key)
+            shard = entry.result.shard_fraction or 0.0
+            quality = entry.result.objectives.get(promote_objective, 0.0)
+            _add_entry(fp, key, quality, shard, "promoted", entry.candidate.text, None)
+
+        # 2) Queue (in_flight)
+        for candidate in list(self.queue):
+            meta = candidate.meta if isinstance(candidate.meta, dict) else {}
+            key = meta.get("_sched_key") if isinstance(meta, dict) else candidate.fingerprint
+            if not isinstance(key, str):
+                key = candidate.fingerprint
+            fp, cand = _resolve(key)
+            latest = self.latest_results.get(candidate_key(candidate))
+            quality = latest.objectives.get(promote_objective, 0.0) if latest else 0.0
+            shard = latest.shard_fraction or 0.0 if latest else 0.0
+            cov = getattr(latest, "coverage_fraction", None) if latest else None
+            _add_entry(fp, key, quality, shard, "in_flight", candidate.text, cov)
+
+        # 3) Any evaluated candidates from latest_results
+        # Build reverse map from candidate_key to Candidate
+        key_to_cand: dict[str, Any] = {}
+        try:
+            for fp, cand in self._candidates_by_fp.items():
+                ck = candidate_key(cand)
+                key_to_cand[ck] = cand
+        except Exception:
+            key_to_cand = {}
+
+        for ck, res in self.latest_results.items():
+            cand = key_to_cand.get(ck)
+            if cand is None:
+                continue
+            meta = cand.meta if isinstance(cand.meta, dict) else {}
+            key = meta.get("_sched_key") if isinstance(meta, dict) else cand.fingerprint
+            if not isinstance(key, str):
+                key = cand.fingerprint
+            fp, _ = _resolve(key)
+            quality = res.objectives.get(promote_objective, 0.0)
+            shard = res.shard_fraction or 0.0
+            _add_entry(fp, key, quality, shard, "other", cand.text, None)
+
+        # 4) Add any child/parent nodes from parent_children that haven't been covered
+        for parent_key, children in self._parent_children.items():
+            # Parent
+            p_fp, p_cand = _resolve(parent_key)
+            if p_fp not in seen_nodes:
+                # Try latest result for quality/shard
+                p_quality = 0.0
+                p_shard = 0.0
+                try:
+                    if p_cand is not None:
+                        lr = self.latest_results.get(candidate_key(p_cand))
+                        if lr:
+                            p_quality = lr.objectives.get(promote_objective, 0.0)
+                            p_shard = lr.shard_fraction or 0.0
+                except Exception:
+                    pass
+                _add_entry(p_fp, parent_key, p_quality, p_shard, "other", getattr(p_cand, "text", None), None)
+            # Children
+            for child_key in list(children):
+                c_fp, c_cand = _resolve(child_key)
+                if c_fp in seen_nodes:
+                    continue
+                c_quality = 0.0
+                c_shard = 0.0
+                try:
+                    if c_cand is not None:
+                        lr = self.latest_results.get(candidate_key(c_cand))
+                        if lr:
+                            c_quality = lr.objectives.get(promote_objective, 0.0)
+                            c_shard = lr.shard_fraction or 0.0
+                except Exception:
+                    pass
+                _add_entry(c_fp, child_key, c_quality, c_shard, "other", getattr(c_cand, "text", None), None)
 
         return data
 
@@ -2272,23 +2780,27 @@ class Orchestrator:
         if self._mutation_throttle and max_mut > self._mutation_min:
             max_mut = max(self._mutation_min, max_mut // 2)
 
+        ready_depth = len(self.queue) + len(self._priority_queue)
         current_queue_depth = len(self._priority_queue)
         target_queue_depth = int(self._queue_buffer_mult * self.config.eval_concurrency)
+        queue_cap = int(self.config.queue_limit or (target_queue_depth * 2))
+
         deficit = target_queue_depth - current_queue_depth
 
-        if deficit <= 0:
-            import time as _time_budget
+        available_inflight = max(0, self._max_total_inflight - self._total_inflight)
+        inflight_ratio = self._examples_inflight / max(1, self._effective_concurrency)
+        need_inflight = available_inflight > 0 and inflight_ratio < 0.7
 
-            now = _time_budget.time()
-            if now - self._last_budget_log > 5.0:
-                self.logger.log(
-                    f"🧭 Debug: mutation budget 0 "
-                    f"(queue_depth={current_queue_depth} target={target_queue_depth})"
-                )
-                self._last_budget_log = now
+        if ready_depth >= queue_cap and not need_inflight:
             return 0
 
-        # SIMPLE: Request just enough mutations to fill the deficit (clamped to budget)
+        if deficit <= 0 and not need_inflight:
+            return 0
+
+        if need_inflight:
+            return min(max_mut, max(self._mutation_min, available_inflight))
+
+        # Request just enough mutations to fill the deficit (clamped to budget)
         return min(max_mut, max(deficit, self._mutation_min))
 
     def _sample_task_examples_for_spec_induction(self, num_examples: int = 3) -> list[dict[str, object]]:
@@ -2308,9 +2820,12 @@ class Orchestrator:
         # Trigger migration based on evaluation batches completed (streaming mode)
         if self.eval_batches_completed % self.config.migration_period != 0:
             return
+        migration_k = int(self.config.migration_k or 0)
+        if migration_k <= 0:
+            return
+        elite_count = migration_k
         elites = self.archive.select_for_generation(
-            self.config.migration_k,
-            0,
+            elite_count,
             objective=self.config.promote_objective,
         )
         if elites:
@@ -2321,7 +2836,7 @@ class Orchestrator:
 
         pareto_entries = self.archive.pareto_entries()
         if pareto_entries:
-            share_count = min(self.config.migration_k or 1, len(pareto_entries))
+            share_count = min(migration_k, len(pareto_entries))
             top_candidates = sorted(
                 pareto_entries,
                 key=lambda entry: entry.result.objectives.get(self.config.promote_objective, float("-inf")),
@@ -2454,6 +2969,10 @@ class Orchestrator:
         if not has_full_shard:
             return False, {"reason": "no_full_shard_yet"}
 
+        eval_delta = max(0, self.evaluations_run - self._governor_prev_evals)
+        if eval_delta <= 0:
+            return False, {"reason": "no_new_data"}
+
         # Compute hypervolume (use reference point below all possible values)
         points = [
             (
@@ -2474,18 +2993,16 @@ class Orchestrator:
             ),
         )
 
-        # Update token spending
-        tokens_this_round = sum(
-            self.latest_results.get(e.candidate.fingerprint, e.result).objectives.get("tokens", 0)
-            for e in pareto_entries
-        )
-        self.total_tokens_spent += int(tokens_this_round)
+        tokens_delta = int(self._governor_token_buffer)
+        self._governor_token_buffer = 0
+        self.total_tokens_spent += tokens_delta
+        self._governor_prev_evals = self.evaluations_run
 
         # Create epoch metrics
         metrics = EpochMetrics(
             round_num=self.round_index,
             hypervolume=hypervolume,
-            new_evaluations=self.evaluations_run,
+            new_evaluations=eval_delta,
             best_quality=best_entry.result.objectives.get(self.config.promote_objective, 0.0),
             best_cost=best_entry.result.objectives.get("neg_cost", float("-inf")),
             frontier_ids={e.candidate.fingerprint for e in pareto_entries},
@@ -2511,7 +3028,7 @@ class Orchestrator:
         if hasattr(self, "_save_task") and not self._save_task.done():
             self._save_task.cancel()
 
-        pareto_candidates = self.archive.pareto_candidates()
+        pareto_entries = self.archive.pareto_entries()
 
         # Run save in background - don't block the optimization loop
         self._save_task = asyncio.create_task(
@@ -2519,7 +3036,7 @@ class Orchestrator:
                 self.cache.save_state,
                 round_num=self.round_index,
                 evaluations=self.evaluations_run,
-                pareto_candidates=pareto_candidates,
+                pareto_entries=[(entry.candidate, entry.result) for entry in pareto_entries],
                 queue=list(self.queue),
             )
         )
@@ -2550,11 +3067,24 @@ class Orchestrator:
                     is_final_shard=True,
                 )
                 await self.archive.insert(candidate, result)
+                self._remember_latest_result(candidate_key(candidate), result)
 
         # Restore Pareto candidates with controlled parallelism
-        pareto_candidates = state.get("pareto", [])
-        if pareto_candidates:
-            await asyncio.gather(*(restore_candidate(c) for c in pareto_candidates))
+        pareto_entries = state.get("pareto", [])
+        tasks = []
+        for entry in pareto_entries:
+            if isinstance(entry, dict) and "candidate" in entry:
+                candidate_obj = entry["candidate"]
+                result_obj = entry.get("result")
+                if result_obj is not None:
+                    await self.archive.insert(candidate_obj, result_obj)
+                    self._remember_latest_result(candidate_key(candidate_obj), result_obj)
+                else:
+                    tasks.append(restore_candidate(candidate_obj))
+            else:
+                tasks.append(restore_candidate(entry))
+        if tasks:
+            await asyncio.gather(*tasks)
 
         # Restore queue / priority queue
         queued_candidates = state.get("queue", [])

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chart Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    body { background: #0a0e1a; color: white; padding: 20px; font-family: monospace; }
+    #chartContainer { background: #141820; padding: 20px; border: 1px solid #2a3040; }
+    canvas { width: 100%; height: 400px; }
+    #debug { margin-top: 20px; background: #1f2937; padding: 10px; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <h1>Chart Test</h1>
+  <div id="chartContainer">
+    <canvas id="myChart"></canvas>
+  </div>
+  <div id="debug"></div>
+
+  <script>
+    const ctx = document.getElementById('myChart');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        datasets: [{
+          label: 'Best Quality',
+          data: [],
+          borderColor: '#6B8AFF',
+          backgroundColor: 'transparent',
+          pointRadius: 4,
+          borderWidth: 2,
+          tension: 0.25
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          x: {
+            type: 'linear',
+            title: { display: true, text: 'Evaluations', color: '#8b95a8' },
+            ticks: { color: '#8b95a8' },
+            grid: { color: '#2a3040' }
+          },
+          y: {
+            min: 0,
+            max: 1.0,
+            title: { display: true, text: 'Best Quality', color: '#8b95a8' },
+            ticks: {
+              stepSize: 0.1,
+              color: '#8b95a8',
+              callback: function(value) { return (value * 100).toFixed(0) + '%'; }
+            },
+            grid: { color: '#2a3040' }
+          }
+        },
+        plugins: {
+          legend: { display: false }
+        }
+      }
+    });
+
+    // Test with actual data
+    async function loadData() {
+      try {
+        const resp = await fetch('/.turbo_gepa/evolution/current.json');
+        const current = await resp.json();
+
+        const dataResp = await fetch(`/.turbo_gepa/evolution/${current.run_id}.json`);
+        const data = await dataResp.json();
+
+        document.getElementById('debug').innerHTML = `
+          <strong>Data loaded:</strong><br>
+          Run ID: ${data.run_id}<br>
+          Timeline entries: ${data.timeline.length}<br>
+          <pre>${JSON.stringify(data.timeline, null, 2)}</pre>
+        `;
+
+        // Add points
+        data.timeline.forEach(snapshot => {
+          if (typeof snapshot.best_quality === 'number' && typeof snapshot.evaluations === 'number') {
+            chart.data.datasets[0].data.push({
+              x: snapshot.evaluations,
+              y: snapshot.best_quality
+            });
+          }
+        });
+
+        chart.update();
+
+        document.getElementById('debug').innerHTML += `<br><strong>Points added: ${chart.data.datasets[0].data.length}</strong>`;
+
+      } catch (e) {
+        document.getElementById('debug').textContent = 'Error: ' + e.toString();
+      }
+    }
+
+    loadData();
+  </script>
+</body>
+</html>

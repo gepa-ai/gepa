@@ -282,12 +282,20 @@ class BudgetedScheduler:
         if parent_sched_key:
             parent_score_at_rung = self._rung_scores.get((parent_sched_key, idx))
 
+        # Check if orchestrator supplied explicit rung scores via metadata
+        if parent_score_at_rung is None:
+            meta = candidate.meta if isinstance(candidate.meta, dict) else None
+            if meta:
+                parent_rung_scores = meta.get("parent_rung_scores")
+                if isinstance(parent_rung_scores, dict):
+                    rung_val = parent_rung_scores.get(rung_fraction)
+                    if isinstance(rung_val, (int, float)):
+                        parent_score_at_rung = float(rung_val)
+
         # Fallback: Estimate parent score at this rung using shrinkage
         if parent_score_at_rung is None:
             parent_final_score = parent_objectives.get(objective_key)
             if parent_final_score is not None:
-                # Use shrinkage to estimate parent@rung_i from parent@final
-                # b_parent(i) = (1 - alpha) * baseline + alpha * parent_final
                 alpha = self.shrinkage_alpha.get(rung_fraction, 0.5)
                 global_baseline = 0.5  # Conservative baseline
                 parent_score_at_rung = (1 - alpha) * global_baseline + alpha * parent_final_score
@@ -299,7 +307,6 @@ class BudgetedScheduler:
                     alpha,
                 )
             else:
-                # No parent score at all - treat as seed
                 logger.debug("   🌱 ASHA: No parent score found, treating as seed")
                 self._candidate_levels[sched_key] = idx + 1
                 self._pending_promotions.append(candidate)

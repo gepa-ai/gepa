@@ -266,7 +266,7 @@ class DiskCache:
         self,
         round_num: int,
         evaluations: int,
-        pareto_candidates: list[Candidate],
+        pareto_entries: list[tuple[Candidate, EvalResult]],
         queue: list[Candidate],
     ) -> None:
         """
@@ -278,7 +278,13 @@ class DiskCache:
         state = {
             "round": round_num,
             "evaluations": evaluations,
-            "pareto": [self._serialize_candidate(c) for c in pareto_candidates],
+            "pareto": [
+                {
+                    "candidate": self._serialize_candidate(entry[0]),
+                    "result": self._serialize_eval_result(entry[1]),
+                }
+                for entry in pareto_entries
+            ],
             "queue": [self._serialize_candidate(c) for c in queue],
         }
 
@@ -319,9 +325,17 @@ class DiskCache:
                 with state_path.open("r", encoding="utf-8") as f:
                     state = json.load(f)
 
-                # Deserialize candidates
-                state["pareto"] = [self._deserialize_candidate(c) for c in state["pareto"]]
-                state["queue"] = [self._deserialize_candidate(c) for c in state["queue"]]
+                parsed_pareto = []
+                for entry in state.get("pareto", []):
+                    if isinstance(entry, dict) and "candidate" in entry:
+                        cand = self._deserialize_candidate(entry["candidate"])
+                        result = self._deserialize_eval_result(entry.get("result"))
+                        parsed_pareto.append({"candidate": cand, "result": result})
+                    else:
+                        cand = self._deserialize_candidate(entry)
+                        parsed_pareto.append({"candidate": cand, "result": None})
+                state["pareto"] = parsed_pareto
+                state["queue"] = [self._deserialize_candidate(c) for c in state.get("queue", [])]
 
                 return state
             except OSError as e:
@@ -360,4 +374,23 @@ class DiskCache:
         return Candidate(
             text=data["text"],
             meta=data.get("meta", {}),
+        )
+
+    def _serialize_eval_result(self, result: EvalResult) -> dict:
+        return {
+            "objectives": dict(result.objectives),
+            "n_examples": result.n_examples,
+            "shard_fraction": result.shard_fraction,
+            "example_ids": list(result.example_ids or []),
+        }
+
+    def _deserialize_eval_result(self, data: dict | None) -> EvalResult | None:
+        if not isinstance(data, dict):
+            return None
+        return EvalResult(
+            objectives=dict(data.get("objectives", {})),
+            traces=[],
+            n_examples=data.get("n_examples", 0),
+            shard_fraction=data.get("shard_fraction"),
+            example_ids=data.get("example_ids"),
         )

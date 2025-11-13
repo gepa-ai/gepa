@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TurboGEPA Evolution - Live</title>
+  <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+  <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0a0e1a;
+      color: #e4e9f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #141820;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid #2a3040;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header-left {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      color: #8b95a8;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .controls {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    button {
+      padding: 0.5rem 1rem;
+      background: #1f2937;
+      color: #e4e9f0;
+      border: 1px solid #374151;
+      border-radius: 0.375rem;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      background: #374151;
+      border-color: #4b5563;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 400px;
+      gap: 1rem;
+      padding: 1rem;
+      height: calc(100vh - 70px);
+    }
+
+    .left-column {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .graph-container {
+      background: #141820;
+      border-radius: 0.5rem;
+      border: 1px solid #2a3040;
+      overflow: hidden;
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+
+    #cy {
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-container {
+      background: #141820;
+      border-radius: 0.5rem;
+      border: 1px solid #2a3040;
+      padding: 1rem;
+      height: 400px;
+      position: relative;
+    }
+
+    .chart-wrapper {
+      position: relative;
+      height: 360px;
+      width: 100%;
+    }
+
+    #qualityChart {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      overflow-y: auto;
+    }
+
+    .card {
+      background: #141820;
+      border: 1px solid #2a3040;
+      border-radius: 0.5rem;
+      padding: 1rem;
+    }
+
+    .card-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #8b95a8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+    }
+
+    .legend {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+    }
+
+    .legend-color {
+      width: 16px;
+      height: 16px;
+      border-radius: 0.25rem;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: #8b95a8;
+    }
+
+    .stat-value {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .details {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .detail-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .detail-label {
+      font-size: 0.75rem;
+      color: #8b95a8;
+    }
+
+    .detail-value {
+      font-size: 0.875rem;
+      color: #e4e9f0;
+      font-family: 'Courier New', monospace;
+    }
+
+    .prompt-text {
+      background: #0a0e1a;
+      border: 1px solid #2a3040;
+      border-radius: 0.375rem;
+      padding: 0.75rem;
+      font-size: 0.8125rem;
+      line-height: 1.5;
+      color: #d1d5db;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #6b7280;
+      text-align: center;
+      padding: 2rem;
+    }
+
+    .empty-state svg {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 1rem;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <div class="title">TurboGEPA Evolution</div>
+      <div class="status">
+        <div class="status-dot"></div>
+        <span id="statusText">Connecting...</span>
+      </div>
+    </div>
+    <div class="controls">
+      <button onclick="refreshData()">Refresh</button>
+      <button onclick="fitGraph()">Fit</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="left-column">
+      <div class="graph-container">
+        <div id="cy"></div>
+      </div>
+
+      <div class="chart-container">
+        <div class="card-title">Quality Over Iterations <span id="chartDebug" style="font-size: 10px; color: #6b7280; font-weight: normal;"></span></div>
+        <div class="chart-wrapper">
+          <canvas id="qualityChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="card">
+        <div class="card-title">Legend</div>
+        <div class="legend">
+          <div class="legend-item">
+            <div class="legend-color" style="background: #10b981;"></div>
+            <span>Promoted (completed evaluation)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #f59e0b;"></div>
+            <span>In Flight (evaluating)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #6366f1;"></div>
+            <span>Other (queued/pending)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Statistics</div>
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-label">Nodes</div>
+            <div class="stat-value" id="nodeCount">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Edges</div>
+            <div class="stat-value" id="edgeCount">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Evaluations</div>
+            <div class="stat-value" id="evalCount">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Best Quality</div>
+            <div class="stat-value" id="bestQuality">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Candidate Details</div>
+        <div id="detailsContent" class="empty-state">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+          <p>Click a node to view details</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let cy = null;
+    let nodeData = new Map();
+    let refreshInterval = null;
+    let nodePositions = new Map(); // Cache node positions
+    let lastNodeCount = 0; // Track if graph structure changed
+
+    // Quality chart state
+    let qualityChart = null;
+    let lastSeenEval = 0;
+    let currentRunId = null;
+
+    // Initialize Cytoscape
+    function initCytoscape() {
+      if (cy) return;
+
+      cy = cytoscape({
+        container: document.getElementById('cy'),
+        style: [
+          {
+            selector: 'node',
+            style: {
+              'background-color': '#6366f1',
+              'label': 'data(label)',
+              'color': '#ffffff',
+              'text-valign': 'center',
+              'text-halign': 'center',
+              'font-size': '12px',
+              'width': '60px',
+              'height': '60px',
+              'border-width': '2px',
+              'border-color': '#4f46e5',
+              'text-wrap': 'wrap',
+              'text-max-width': '80px'
+            }
+          },
+          {
+            selector: 'node[status="promoted"]',
+            style: {
+              'background-color': '#10b981',
+              'border-color': '#059669'
+            }
+          },
+          {
+            selector: 'node[status="in_flight"]',
+            style: {
+              'background-color': '#f59e0b',
+              'border-color': '#d97706'
+            }
+          },
+          {
+            selector: 'node.highlighted',
+            style: {
+              'border-width': '4px',
+              'border-color': '#fbbf24',
+              'z-index': 999
+            }
+          },
+          {
+            selector: 'edge',
+            style: {
+              'width': 2,
+              'line-color': '#4b5563',
+              'target-arrow-color': '#4b5563',
+              'target-arrow-shape': 'triangle',
+              'curve-style': 'bezier',
+              'arrow-scale': 1.5
+            }
+          }
+        ],
+        layout: {
+          name: 'preset'
+        },
+        wheelSensitivity: 0.1,
+        minZoom: 0.1,
+        maxZoom: 3
+      });
+
+      // Click handler
+      cy.on('tap', 'node', function(evt) {
+        const node = evt.target;
+        const nodeId = node.id();
+        const data = nodeData.get(nodeId);
+
+        // Highlight selected node
+        cy.nodes().removeClass('highlighted');
+        node.addClass('highlighted');
+
+        showDetails(data);
+      });
+
+      // Register dagre layout
+      if (typeof cytoscape !== 'undefined' && typeof cytoscapeDagre !== 'undefined') {
+        cytoscape.use(cytoscapeDagre);
+      }
+    }
+
+    // Initialize quality chart
+    function initQualityChart() {
+      if (qualityChart) return;
+
+      const ctx = document.getElementById('qualityChart');
+      if (!ctx) {
+        console.log('[Chart] Canvas element not found');
+        return;
+      }
+
+      console.log('[Chart] Initializing chart...');
+
+      qualityChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          datasets: [{
+            label: 'Best Quality',
+            data: [],
+            borderColor: '#6B8AFF',
+            backgroundColor: 'transparent',
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            borderWidth: 3,
+            tension: 0.25
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              type: 'linear',
+              title: {
+                display: true,
+                text: 'Evaluations',
+                color: '#8b95a8'
+              },
+              ticks: {
+                autoSkip: true,
+                color: '#8b95a8'
+              },
+              grid: {
+                color: '#2a3040'
+              }
+            },
+            y: {
+              min: 0,
+              max: 1.0,
+              title: {
+                display: true,
+                text: 'Best Quality',
+                color: '#8b95a8'
+              },
+              ticks: {
+                stepSize: 0.1,
+                color: '#8b95a8',
+                callback: function(value) {
+                  return (value * 100).toFixed(0) + '%';
+                }
+              },
+              grid: {
+                color: '#2a3040'
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return 'Quality: ' + context.parsed.y.toFixed(3);
+                }
+              }
+            }
+          }
+        }
+      });
+
+      console.log('[Chart] Chart initialized successfully');
+    }
+
+    // Update quality chart with new data
+    function updateQualityChart(data) {
+      if (!data) {
+        console.log('[Chart] No data provided');
+        return;
+      }
+
+      initQualityChart();
+      if (!qualityChart) {
+        console.log('[Chart] Chart not initialized');
+        return;
+      }
+
+      const runId = data.run_id;
+      const timeline = data.timeline || [];
+
+      console.log('[Chart] Update called:', {
+        runId,
+        timelineLength: timeline.length,
+        currentRunId,
+        lastSeenEval
+      });
+
+      // Reset if run changed
+      if (currentRunId !== runId) {
+        console.log('[Chart] New run detected, resetting');
+        currentRunId = runId;
+        lastSeenEval = 0;
+        qualityChart.data.datasets[0].data = [];
+      }
+
+      // Append new points
+      let pointsAdded = 0;
+      timeline.forEach(snapshot => {
+        const evals = snapshot.evaluations;
+        const quality = snapshot.best_quality;
+
+        console.log('[Chart] Snapshot:', { evals, quality, lastSeenEval, condition: typeof quality === 'number' && evals > lastSeenEval });
+
+        if (typeof quality === 'number' && typeof evals === 'number' && evals > lastSeenEval) {
+          qualityChart.data.datasets[0].data.push({
+            x: evals,
+            y: quality
+          });
+          lastSeenEval = Math.max(lastSeenEval, evals);
+          pointsAdded++;
+          console.log('[Chart] Added point:', { x: evals, y: quality });
+        } else {
+          console.log('[Chart] Skipped point - reason:', {
+            qualityIsNumber: typeof quality === 'number',
+            evalsIsNumber: typeof evals === 'number',
+            evalsGreaterThanLast: evals > lastSeenEval
+          });
+        }
+      });
+
+      console.log('[Chart] Points added:', pointsAdded, 'Total points:', qualityChart.data.datasets[0].data.length);
+
+      // Update debug display
+      const debugEl = document.getElementById('chartDebug');
+      if (debugEl) {
+        debugEl.textContent = `(${qualityChart.data.datasets[0].data.length} points)`;
+      }
+
+      qualityChart.update('none');
+    }
+
+    // Show candidate details
+    function showDetails(data) {
+      if (!data) return;
+
+      const content = `
+        <div class="details">
+          <div class="detail-row">
+            <div class="detail-label">Fingerprint</div>
+            <div class="detail-value">${data.fingerprint || 'N/A'}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Generation</div>
+            <div class="detail-value">${data.generation ?? 'N/A'}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Quality</div>
+            <div class="detail-value">${data.quality != null ? data.quality.toFixed(3) : 'N/A'}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Shard Progress</div>
+            <div class="detail-value">${data.shard_fraction != null ? (data.shard_fraction * 100).toFixed(0) + '%' : 'N/A'}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Status</div>
+            <div class="detail-value">${data.status || 'N/A'}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Prompt</div>
+            <div class="prompt-text">${data.prompt_full || data.prompt || '(empty)'}</div>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('detailsContent').innerHTML = content;
+    }
+
+    // Update graph from data
+    function updateGraph(data) {
+      if (!data || !data.lineage || !data.evolution_stats) {
+        console.warn('Invalid data structure', data);
+        return;
+      }
+
+      initCytoscape();
+
+      const lineage = data.lineage;
+      const parentChildren = data.evolution_stats.parent_children || {};
+
+      // Clear node data
+      nodeData.clear();
+
+      // Build nodes from lineage
+      const nodes = [];
+      const edges = [];
+
+      lineage.forEach(item => {
+        const fp = item.fingerprint;
+        if (!fp) return;
+
+        const shortId = fp.substring(0, 8);
+        const label = `${shortId}\nq=${(item.quality || 0).toFixed(2)}`;
+
+        nodes.push({
+          data: {
+            id: shortId,
+            label: label,
+            status: item.status || 'other'
+          }
+        });
+
+        nodeData.set(shortId, item);
+      });
+
+      // Build edges from parent_children
+      Object.entries(parentChildren).forEach(([parent, children]) => {
+        const parentShort = parent.substring(0, 8);
+        children.forEach(child => {
+          const childShort = child.substring(0, 8);
+          edges.push({
+            data: {
+              id: `${parentShort}-${childShort}`,
+              source: parentShort,
+              target: childShort
+            }
+          });
+        });
+      });
+
+      // Get current node and edge IDs
+      const existingNodeIds = new Set(cy.nodes().map(n => n.id()));
+      const existingEdgeIds = new Set(cy.edges().map(e => e.id()));
+
+      const newNodeIds = new Set(nodes.map(n => n.data.id));
+      const newEdgeIds = new Set(edges.map(e => e.data.id));
+
+      // Check if structure actually changed
+      const nodesAdded = [...newNodeIds].some(id => !existingNodeIds.has(id));
+      const edgesAdded = [...newEdgeIds].some(id => !existingEdgeIds.has(id));
+      const structureChanged = nodesAdded || edgesAdded || existingNodeIds.size !== newNodeIds.size;
+
+      if (structureChanged) {
+        // Structure changed - need to rebuild
+        cy.elements().remove();
+        cy.add([...nodes, ...edges]);
+
+        const layout = cy.layout({
+          name: 'dagre',
+          rankDir: 'LR',
+          nodeSep: 80,
+          rankSep: 120,
+          padding: 50,
+          animate: false
+        });
+
+        layout.run();
+
+        // Cache positions after layout
+        setTimeout(() => {
+          cy.nodes().forEach(node => {
+            const pos = node.position();
+            nodePositions.set(node.id(), { x: pos.x, y: pos.y });
+          });
+        }, 50);
+      } else {
+        // No structure change - just update node attributes in place
+        nodes.forEach(nodeObj => {
+          const nodeId = nodeObj.data.id;
+          const cyNode = cy.$(`#${nodeId}`);
+
+          if (cyNode.length > 0) {
+            // Update node data without moving it
+            cyNode.data('label', nodeObj.data.label);
+            cyNode.data('status', nodeObj.data.status);
+          }
+        });
+      }
+
+      lastNodeCount = nodes.length;
+
+      // Update stats
+      document.getElementById('nodeCount').textContent = nodes.length;
+      document.getElementById('edgeCount').textContent = edges.length;
+      document.getElementById('evalCount').textContent = data.run_metadata?.evaluations || 0;
+      document.getElementById('bestQuality').textContent =
+        data.run_metadata?.best_quality != null
+          ? data.run_metadata.best_quality.toFixed(3)
+          : '-';
+
+      // Auto-select best node
+      if (data.run_metadata?.best_prompt) {
+        const bestNode = lineage.find(item =>
+          item.prompt === data.run_metadata.best_prompt ||
+          item.prompt_full === data.run_metadata.best_prompt
+        );
+
+        if (bestNode) {
+          const shortId = bestNode.fingerprint.substring(0, 8);
+          setTimeout(() => {
+            const node = cy.$(`#${shortId}`);
+            if (node.length > 0) {
+              cy.nodes().removeClass('highlighted');
+              node.addClass('highlighted');
+              cy.center(node);
+              showDetails(bestNode);
+            }
+          }, 100);
+        }
+      }
+    }
+
+    // Fetch current run data
+    async function fetchData() {
+      try {
+        // First get current run ID
+        const currentResp = await fetch('/.turbo_gepa/evolution/current.json?t=' + Date.now());
+        if (!currentResp.ok) throw new Error('Failed to fetch current.json');
+
+        const current = await currentResp.json();
+        const runId = current.run_id;
+
+        if (!runId) {
+          document.getElementById('statusText').textContent = 'Waiting for run to start...';
+          return;
+        }
+
+        // Fetch run data
+        const dataResp = await fetch(`/.turbo_gepa/evolution/${runId}.json?t=` + Date.now());
+        if (!dataResp.ok) throw new Error('Failed to fetch run data');
+
+        const data = await dataResp.json();
+
+        updateGraph(data);
+        updateQualityChart(data);
+        document.getElementById('statusText').textContent = `Live - Run ${runId}`;
+
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        document.getElementById('statusText').textContent = 'Error: ' + error.message;
+      }
+    }
+
+    // Refresh data
+    function refreshData() {
+      fetchData();
+    }
+
+    // Fit graph to viewport
+    function fitGraph() {
+      if (cy) {
+        cy.fit(undefined, 50);
+      }
+    }
+
+    // Start auto-refresh
+    function startAutoRefresh() {
+      // Initial fetch
+      fetchData();
+
+      // Set up interval (every 2 seconds)
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+      refreshInterval = setInterval(fetchData, 2000);
+    }
+
+    // Initialize on load
+    window.addEventListener('load', () => {
+      initCytoscape();
+      initQualityChart();
+      startAutoRefresh();
+    });
+
+    // Cleanup on unload
+    window.addEventListener('beforeunload', () => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+    });
+  </script>
+</body>
+</html>

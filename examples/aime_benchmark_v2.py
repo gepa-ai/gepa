@@ -25,6 +25,8 @@ import os
 import shutil
 import time
 from dataclasses import dataclass
+import subprocess
+import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -249,9 +251,12 @@ def run_turbo(
         quality=quality,
         prompt=prompt,
         extra={
-            "pareto_size": len(pareto_entries),
+            # Keep keys robust to result payloads
             "mutations_generated": stats.get("mutations_generated"),
             "mutations_promoted": stats.get("mutations_promoted"),
+            "unique_parents": stats.get("unique_parents"),
+            "unique_children": stats.get("unique_children"),
+            "evolution_edges": stats.get("evolution_edges"),
         },
     )
 
@@ -317,6 +322,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turbo-max-runtime", type=int, default=None)
     parser.add_argument("--turbo-log-level", default="WARNING")
     parser.add_argument("--turbo-show-progress", action="store_true")
+    parser.add_argument("--open-ui", action="store_true", help="Open live evolution UI (http://localhost:8080/scripts/evolution_live.html)")
     parser.add_argument(
         "--turbo-strategies",
         nargs="+",
@@ -349,6 +355,13 @@ def main() -> None:
         )
 
     if args.mode in {"turbo", "both"}:
+        # Optionally open the live UI with a simple local server
+        if args.open_ui:
+            try:
+                subprocess.Popen(["python", "-m", "http.server", "8080"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                webbrowser.open("http://localhost:8080/scripts/evolution_live_v2.html")
+            except Exception:
+                pass
         _reset_turbo_cache()
         results["TurboGEPA"] = run_turbo(
             trainset,

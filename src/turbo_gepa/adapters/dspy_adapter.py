@@ -172,6 +172,7 @@ class DSpyAdapter:
                 reflection_batch_size=config.reflection_batch_size,
                 max_mutations=config.max_mutations_per_round,
                 max_tokens=config.max_tokens,
+                objective_key=config.promote_objective,
             ),
             batch_reflection_runner=batch_reflection_runner,
             spec_induction_runner=None,
@@ -492,12 +493,28 @@ class DSpyAdapter:
 
     def _build_orchestrator(self, max_rounds: int = 100) -> Orchestrator:
         """Build TurboGEPA orchestrator."""
+        objective = self.config.promote_objective or "quality"
+
+        def metrics_mapper(metrics: dict[str, float]) -> dict[str, float]:
+            value = metrics.get(objective)
+            if value is None:
+                value = metrics.get("quality", 0.0)
+            mapped: dict[str, float] = {objective: value}
+            if objective != "quality" and "quality" in metrics:
+                mapped["quality"] = metrics.get("quality", 0.0)
+            for extra in ("tokens", "neg_cost"):
+                if extra in metrics:
+                    mapped[extra] = metrics[extra]
+            return mapped
+
         evaluator = AsyncEvaluator(
             cache=self.cache,
             task_runner=self._task_runner,
+            metrics_mapper=metrics_mapper,
             timeout_seconds=self.config.eval_timeout_seconds,
             min_improve=self.config.eps_improve,
             skip_final_straggler_cutoff=self.config.skip_final_straggler_cutoff,
+            promote_objective=objective,
         )
         return Orchestrator(
             config=self.config,

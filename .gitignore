@@ -215,6 +215,9 @@ gepa_terminus/
 .claude/
 .turbo_gepa/
 .turbo_gepa/** */
+.http_server_pid
+.live_run*_pid
+regression_runs/
 AGENTS.md
 CLAUDE.md
 .dspy_cache/

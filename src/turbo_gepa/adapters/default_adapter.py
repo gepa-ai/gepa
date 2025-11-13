@@ -290,6 +290,7 @@ class DefaultAdapter:
             reflection_batch_size=config.reflection_batch_size,
             max_mutations=config.max_mutations_per_round,
             max_tokens=config.max_tokens,
+            objective_key=config.promote_objective,
         )
         self._batch_reflection_runner = batch_reflection_runner
         self._spec_induction_runner = spec_induction_runner
@@ -402,6 +403,23 @@ class DefaultAdapter:
                 return False
             # Other errors (auth, network) - assume temperature works
             return True
+
+    def _make_metrics_mapper(self) -> Callable[[dict[str, float]], dict[str, float]]:
+        objective = self.config.promote_objective or "quality"
+
+        def mapper(metrics: dict[str, float]) -> dict[str, float]:
+            value = metrics.get(objective)
+            if value is None:
+                value = metrics.get("quality", 0.0)
+            mapped: dict[str, float] = {objective: value}
+            if objective != "quality" and "quality" in metrics:
+                mapped["quality"] = metrics.get("quality", 0.0)
+            for extra in ("tokens", "neg_cost"):
+                if extra in metrics:
+                    mapped[extra] = metrics[extra]
+            return mapped
+
+        return mapper
 
 
     def _create_strategy_runner(
@@ -798,13 +816,15 @@ class DefaultAdapter:
                 verify_cache = Path(temp_dir.name)
             cache = DiskCache(str(verify_cache))
 
+        mapper = self._make_metrics_mapper()
         evaluator = AsyncEvaluator(
             cache=cache,
             task_runner=self._task_runner,
-            metrics_mapper=lambda metrics: {"quality": metrics.get("quality", 0.0)},
+            metrics_mapper=mapper,
             timeout_seconds=self.config.eval_timeout_seconds,
-            skip_final_straggler_cutoff=True,
+            skip_final_straggler_cutoff=False,
             logger=self.logger,
+            promote_objective=self.config.promote_objective,
         )
 
         try:
@@ -1037,8 +1057,7 @@ class DefaultAdapter:
         mutator = target_mutator
 
         # Only optimize for quality, ignore token cost
-        def metrics_mapper(metrics: dict[str, float]) -> dict[str, float]:
-            return {"quality": metrics.get("quality", 0.0)}
+        metrics_mapper = self._make_metrics_mapper()
 
         progress_callback = metrics_callback
         if display_progress and progress_callback is None:
@@ -1050,8 +1069,9 @@ class DefaultAdapter:
             metrics_mapper=metrics_mapper,
             timeout_seconds=self.config.eval_timeout_seconds,
             min_improve=0.0,  # Disabled: variance-aware promotion handles this
-            skip_final_straggler_cutoff=True,  # Never cancel final-shard evals early; we need full-dataset coverage
+            skip_final_straggler_cutoff=False,
             logger=self.logger,
+            promote_objective=self.config.promote_objective,
         )
 
         return Orchestrator(
@@ -1133,6 +1153,7 @@ class DefaultAdapter:
             "pareto_entries": pareto_entries,
             "qd_elites": [],  # Deprecated field kept for compatibility; always empty
             "evolution_stats": orchestrator.evolution_snapshot(include_edges=True),
+            "lineage": orchestrator.get_candidate_lineage_data(),
             "run_metadata": self._build_run_metadata(orchestrator, pareto_entries),
         }
 

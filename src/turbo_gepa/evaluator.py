@@ -40,6 +40,7 @@ class AsyncEvaluator:
         min_improve: float = 0.0,
         metrics: Metrics | None = None,
         skip_final_straggler_cutoff: bool = False,
+        promote_objective: str = "quality",
     ) -> None:
         self.cache = cache
         self.task_runner = task_runner
@@ -53,6 +54,7 @@ class AsyncEvaluator:
         self.min_improve = float(min_improve)
         self.metrics = metrics
         self.skip_final_straggler_cutoff = skip_final_straggler_cutoff
+        self.promote_objective = promote_objective
         # Track detached stragglers so orchestrator can await their results later
         self._straggler_results: dict[tuple[str, str], asyncio.Future[EvalResult]] = {}
 
@@ -65,6 +67,10 @@ class AsyncEvaluator:
         show_progress: bool = False,
         early_stop_fraction: float = 0.9,  # Return after 90% complete
         is_final_shard: bool = False,
+        *,
+        on_partial: Callable[[Candidate, EvalResult], Awaitable[None]] | None = None,
+        partial_min_samples: int = 2,
+        partial_interval_seconds: float = 1.5,
     ) -> EvalResult:
         """
         Evaluate ``candidate`` on ``example_ids`` with a concurrency cap.
@@ -120,6 +126,11 @@ class AsyncEvaluator:
         candidate_fp = candidate.fingerprint
         deliver_flags: dict[str, bool] = {ex_id: True for ex_id in example_ids}
         loop = asyncio.get_running_loop()
+        # Partial publishing accumulators
+        partial_sum: dict[str, float] = {}
+        partial_n: int = 0
+        partial_example_ids: list[str] = []
+        last_partial_publish: float = 0.0
 
         def _ensure_straggler_future(example_id: str) -> asyncio.Future[EvalResult]:
             key = (candidate_fp, example_id)
@@ -151,13 +162,22 @@ class AsyncEvaluator:
                 await _register_result(result, quality_override)
 
         async def _register_result(result: EvalResult, quality_override: float | None = None) -> None:
-            nonlocal completed, running_quality, early_stop_flag
+            # Update outer-scope accumulators for partial publishing and gating.
+            # We mutate these counters here, so declare them nonlocal.
+            nonlocal completed, running_quality, early_stop_flag, partial_n, last_partial_publish
             async with quality_lock:
                 results.append(result)
                 completed += result.n_examples
+                # Accumulate for partial publishing
+                for k, v in result.objectives.items():
+                    if isinstance(v, (int, float)):
+                        partial_sum[k] = partial_sum.get(k, 0.0) + float(v) * max(1, result.n_examples)
+                partial_n += result.n_examples
+                if result.example_ids:
+                    partial_example_ids.extend(list(result.example_ids))
                 q_val = quality_override
                 if q_val is None:
-                    obj_quality = result.objectives.get("quality") if isinstance(result.objectives, dict) else None
+                    obj_quality = result.objectives.get(self.promote_objective) if isinstance(result.objectives, dict) else None
                     if isinstance(obj_quality, (int, float)):
                         q_val = float(obj_quality)
                 if isinstance(q_val, (int, float)):
@@ -180,6 +200,24 @@ class AsyncEvaluator:
                             self.logger.log(
                                 f"⚠️ Early stop: candidate {candidate.fingerprint[:12]} cannot beat parent target {parent_target:.1%}"
                             )
+                # Partial publish
+                if on_partial is not None and total > 0:
+                    now = time.time()
+                    if partial_n >= max(1, partial_min_samples) and (now - last_partial_publish) >= partial_interval_seconds:
+                        averaged = {k: v / max(partial_n, 1) for k, v in partial_sum.items()}
+                        partial = EvalResult(
+                            objectives=averaged,
+                            traces=[],
+                            n_examples=partial_n,
+                            shard_fraction=shard_fraction,
+                            example_ids=list(partial_example_ids),
+                            coverage_fraction=float(completed) / float(total) if total else 0.0,
+                        )
+                        try:
+                            await on_partial(candidate, partial)
+                        except Exception:
+                            pass
+                        last_partial_publish = now
 
         async def eval_one(example_id: str, task_start_time: float) -> None:
             nonlocal completed
@@ -191,7 +229,9 @@ class AsyncEvaluator:
                     self.metrics.record_cache_lookup(hit=True)
                 quality_val = None
                 if isinstance(cached.objectives, dict):
-                    q = cached.objectives.get("quality")
+                    q = cached.objectives.get(self.promote_objective)
+                    if q is None:
+                        q = cached.objectives.get("quality")
                     if isinstance(q, (int, float)):
                         quality_val = float(q)
                 await _deliver_result(cached, quality_val, example_id)
@@ -229,8 +269,14 @@ class AsyncEvaluator:
                 # Build a lean trace to avoid heavy I/O; keep only fields used by reflection
                 max_len = 2048
                 trace: dict[str, object] = {"example_id": example_id}
-                # Always keep quality and tokens if present
-                if "quality" in metrics:
+                # Always keep objective metric and tokens if present
+                obj_key = self.promote_objective
+                obj_val = metrics.get(obj_key)
+                if obj_val is None and obj_key != "quality":
+                    obj_val = metrics.get("quality")
+                if obj_val is not None:
+                    trace[obj_key] = obj_val
+                if obj_key != "quality" and "quality" in metrics:
                     trace["quality"] = metrics.get("quality")
                 if "tokens" in metrics:
                     trace["tokens"] = metrics.get("tokens")
@@ -265,7 +311,9 @@ class AsyncEvaluator:
                     self.metrics.record_cache_write()
                 quality_val = None
                 if isinstance(mapped, dict):
-                    val = mapped.get("quality")
+                    val = mapped.get(self.promote_objective)
+                    if val is None:
+                        val = mapped.get("quality")
                     if isinstance(val, (int, float)):
                         quality_val = float(val)
                 await _deliver_result(result, quality_val, example_id)
@@ -286,6 +334,7 @@ class AsyncEvaluator:
                 if show_progress:
                     self.logger.log(timeout_msg)
                 fallback_metrics = {
+                    self.promote_objective: 0.0,
                     "quality": 0.0,
                     "neg_cost": 0.0,
                     "tokens": 0.0,
@@ -314,6 +363,7 @@ class AsyncEvaluator:
                     # Always log failures when show_progress is on
                     self.logger.log(error_msg)
                 fallback_metrics = {
+                    self.promote_objective: 0.0,
                     "quality": 0.0,
                     "neg_cost": 0.0,
                     "tokens": 0.0,
@@ -345,7 +395,20 @@ class AsyncEvaluator:
             if (
                 len(eval_durations) >= 2
                 and not (self.skip_final_straggler_cutoff and is_final_shard)
-                and completed >= max(total * 0.5, 1)
+                and (
+                    # Dynamic coverage trigger: start detaching earlier on small batches
+                    # min_cov = max(base, min(0.6, 5/total))
+                    # base = 0.25 (partial rungs) or 0.30 (final rung)
+                    completed >= max(
+                        1,
+                        int(
+                            math.ceil(
+                                (max((0.3 if is_final_shard else 0.25), min(0.6, 5.0 / max(total, 1))))
+                                * total
+                            )
+                        ),
+                    )
+                )
             ):
                 import statistics
 
@@ -422,7 +485,7 @@ class AsyncEvaluator:
                 if (
                     is_final_shard
                     and total > 0
-                    and (completed / max(total, 1)) >= 0.9
+                    and (completed / max(total, 1)) >= max(0.7, 1.0 - 5.0 / max(total, 1))
                     and len(pending) > 0
                 ):
                     import statistics as _stats
