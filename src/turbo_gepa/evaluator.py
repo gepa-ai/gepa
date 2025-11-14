@@ -101,8 +101,34 @@ class AsyncEvaluator:
                 # If parent never saw this shard, don't gate; defer to scheduler
                 return None
 
-            # 2) No rung-specific data; skip gating to avoid apples-to-oranges comparisons.
-            return None
+            # 2) Fall back to shrinkage of the final parent score toward a neutral baseline.
+            parent_objectives = meta.get("parent_objectives")
+            promote_key = getattr(self, "promote_objective", "quality")
+            parent_final = None
+            if isinstance(parent_objectives, dict):
+                parent_final = parent_objectives.get(promote_key)
+                if parent_final is None and promote_key != "quality":
+                    parent_final = parent_objectives.get("quality")
+            if not isinstance(parent_final, (int, float)):
+                return None
+            if shard_fraction is None:
+                return None
+            alpha = meta.get("parent_shrinkage_alpha")
+            if not isinstance(alpha, (int, float)):
+                try:
+                    if shard_fraction <= 0:
+                        alpha = 0.0
+                    else:
+                        alpha = shard_fraction ** 0.3
+                except Exception:
+                    alpha = 0.0
+            alpha = max(0.0, min(1.0, float(alpha)))
+            baseline_anchor = meta.get("baseline_quality", 0.5)
+            if not isinstance(baseline_anchor, (int, float)):
+                baseline_anchor = 0.5
+            baseline_anchor = float(baseline_anchor)
+            parent_final = float(parent_final)
+            return baseline_anchor + alpha * (parent_final - baseline_anchor)
 
         parent_target: float | None = None
         parent_baseline = _parent_baseline_for_rung()

@@ -34,6 +34,7 @@ from .mutator import Mutator
 from .sampler import InstanceSampler
 from .scheduler import BudgetedScheduler, SchedulerConfig
 from .stop_governor import EpochMetrics, StopGovernor, compute_hypervolume_2d
+from .migrations import MigrationBackend, NullMigrationBackend, LocalQueueMigrationBackend, FileMigrationBackend
 
 
 def _percentile(samples: Sequence[float], quantile: float) -> float:
@@ -67,6 +68,8 @@ class Orchestrator:
         cache: DiskCache,
         *,
         island_context: IslandContext | None = None,
+        island_id: int | None = None,
+        migration_backend: MigrationBackend | None = None,
         show_progress: bool = True,
         example_sampler: Callable[[int], list[dict[str, object]]] | None = None,
         metrics_callback: Callable | None = None,
@@ -80,6 +83,15 @@ class Orchestrator:
         self.mutator = mutator
         self.cache = cache
         self.island_context = island_context
+        if migration_backend is not None:
+            self.migration_backend: MigrationBackend = migration_backend
+        elif island_context is not None:
+            self.migration_backend = LocalQueueMigrationBackend(island_context)
+        elif getattr(self.config, "migration_backend", None) == "volume":
+            path = self.config.migration_path or os.path.join(self.config.cache_path, "migrations")
+            self.migration_backend = FileMigrationBackend(path, self.config.n_islands)
+        else:
+            self.migration_backend = NullMigrationBackend()
         self.example_sampler = example_sampler
         self.scheduler = BudgetedScheduler(
             SchedulerConfig(
@@ -123,8 +135,9 @@ class Orchestrator:
         self.evaluations_run: int = 0
         self.round_index: int = 0
         self.show_progress = show_progress
-        island_id = island_context.island_id if island_context else 0
-        self.island_id = island_id
+        context_id = island_context.island_id if island_context else None
+        resolved_island_id = island_id if island_id is not None else (context_id if context_id is not None else 0)
+        self.island_id = resolved_island_id
         # Stop governor: always enabled for convergence detection
         self.stop_governor = StopGovernor(config.stop_governor_config)
         self.total_tokens_spent: int = 0
@@ -175,6 +188,9 @@ class Orchestrator:
         self._mutation_kp: float = 0.2  # Proportional gain for mutation pacing
         self._priority_counter: int = 0  # Tie-breaker for heap ordering
         self._priority_queue: list = []  # Heap: (-priority, -rung_idx, counter, candidate)
+        self._mutation_buffer_limit: int = max(1, int(self.config.mutation_buffer_limit or (self.config.eval_concurrency * 4)))
+        self._mutation_buffer: deque[Candidate] = deque()
+        self._buffered_fingerprints: set[str] = set()
         final_fraction = self._runtime_shards[-1] if self._runtime_shards else 1.0
         self._cost_remaining: list[float] = [
             max(1e-6, final_fraction - (self._runtime_shards[i - 1] if i > 0 else 0.0))
@@ -198,6 +214,7 @@ class Orchestrator:
         self._high_rung_parent_quorum: int = 3
         self._last_mutation_attempt: float = 0.0
         self._candidate_eval_examples: dict[str, list[str]] = {}
+        self._recent_final_straggler_events: deque[tuple[float, int]] = deque(maxlen=64)
         self._inflight_by_rung: defaultdict[int, int] = defaultdict(int)
         self._final_inflight_peak: int = 0
         self._stop_reason: str | None = None
@@ -347,6 +364,10 @@ class Orchestrator:
     def stop_reason(self) -> str | None:
         return self._stop_reason
 
+    def metrics_snapshot(self) -> dict[str, Any]:
+        """Return a stable snapshot of KPI metrics for callers."""
+        return self.metrics.snapshot()
+
     @property
     def run_started_at(self) -> float | None:
         return self._run_started_at
@@ -435,6 +456,44 @@ class Orchestrator:
             # Keep legacy queue in sync for diagnostics and persistence
             self.queue.append(candidate)
 
+    def _buffer_mutation(self, candidate: Candidate) -> None:
+        """Store streamed mutations in a bounded buffer until the queue has capacity."""
+        fingerprint = candidate.fingerprint
+        if (
+            fingerprint in self._pending_fingerprints
+            or fingerprint in self._inflight_fingerprints
+            or fingerprint in self._buffered_fingerprints
+        ):
+            return
+        if len(self._mutation_buffer) >= self._mutation_buffer_limit:
+            dropped = self._mutation_buffer.popleft()
+            self._buffered_fingerprints.discard(dropped.fingerprint)
+            if self.show_progress:
+                self.logger.log(
+                    f"🧺 Mutation buffer full ({self._mutation_buffer_limit}); dropping {dropped.fingerprint[:12]}…",
+                    LogLevel.DEBUG,
+                )
+        self._mutation_buffer.append(candidate)
+        self._buffered_fingerprints.add(fingerprint)
+
+    def _drain_mutation_buffer(self, max_items: int | None = None) -> int:
+        """Move buffered mutations into the live queue if capacity allows."""
+        drained = 0
+        queue_limit = self.config.queue_limit
+        while self._mutation_buffer and (max_items is None or drained < max_items):
+            if queue_limit and len(self._priority_queue) >= queue_limit:
+                break
+            candidate = self._mutation_buffer.popleft()
+            self._buffered_fingerprints.discard(candidate.fingerprint)
+            self.enqueue([candidate])
+            drained += 1
+        if drained and self.show_progress:
+            self.logger.log(
+                f"🧺 Drained {drained} buffered mutation(s) into queue (buffer={len(self._mutation_buffer)})",
+                LogLevel.DEBUG,
+            )
+        return drained
+
     def _get_rung_key(self, candidate: Candidate) -> str:
         """Get rung key string for a candidate based on its current shard.
 
@@ -521,6 +580,11 @@ class Orchestrator:
         self._eval_samples += 1
         if timed_out:
             self._timeout_count += 1
+
+    def _record_final_straggler_event(self, count: int) -> None:
+        if count <= 0:
+            return
+        self._recent_final_straggler_events.append((time.time(), count))
 
     def _current_timeout_ratio(self) -> float:
         return self._timeout_count / max(1, self._eval_samples)
@@ -695,9 +759,14 @@ class Orchestrator:
             desired_cap = self.config.max_final_shard_inflight
             cap_floor = 2
             cap_ceil = max(2, int(max(1, getattr(self, "_effective_concurrency", self.config.eval_concurrency)) * 0.75))
-            increase = lat_p95 < max(1.4 * lat_p50, 1.2 * lat_mean) and backlog0 > backlog_high
-            decrease = lat_p95 > max(1.8 * lat_mean, 1.6 * lat_p50)
             now = time.time()
+            recent_stragglers = 0
+            for ts, count in list(self._recent_final_straggler_events):
+                if now - ts <= 20.0:
+                    recent_stragglers += count
+            straggler_pressure = recent_stragglers >= max(2, self.config.max_final_shard_inflight or 2)
+            increase = (lat_p95 < max(1.4 * lat_p50, 1.2 * lat_mean) and backlog0 > backlog_high) or straggler_pressure
+            decrease = lat_p95 > max(1.8 * lat_mean, 1.6 * lat_p50)
             if now - self._last_finalcap_adjust >= 1.0:
                 new_cap = desired_cap
                 if increase and desired_cap < cap_ceil:
@@ -714,6 +783,10 @@ class Orchestrator:
                             f"⚙️  Adaptive final-rung cap {direction} {old}→{new_cap} | p95={lat_p95:.1f}s p50={lat_p50:.1f}s mean={lat_mean:.1f}s",
                             LogLevel.WARNING,
                         )
+        # Drop stale straggler samples beyond 60s
+        prune_before = time.time() - 60.0
+        while self._recent_final_straggler_events and self._recent_final_straggler_events[0][0] < prune_before:
+            self._recent_final_straggler_events.popleft()
 
         # Adaptive effective concurrency (network-aware throttle)
         # Target: maximize throughput by staying near provider sweet spot.
@@ -908,6 +981,8 @@ class Orchestrator:
             launched = await self._stream_launch_ready(window_id, max_evaluations)
             if launched > 0 and loop_iter % 5 == 0:
                 _debug_log(f"🚀 Launched {launched} candidate(s), total inflight: {self._total_inflight}")
+            if launched > 0:
+                self._drain_mutation_buffer()
 
             # DEBUG: Log before drain
             if loop_iter % 20 == 0:
@@ -928,6 +1003,8 @@ class Orchestrator:
                     self._persist_evolution_live()  # throttled internally (~2s)
                 except Exception:
                     pass
+                # Attempt to move buffered mutations into the live queue now that space freed up
+                self._drain_mutation_buffer()
 
             # Heartbeat: log every 30 seconds even if nothing is happening
             # This proves the system is alive and not hung
@@ -1002,6 +1079,8 @@ class Orchestrator:
                         f"🧬 Starting streaming mutation worker (ready={ready_depth}, target={soft_target})"
                     )
                     self._mutation_task = asyncio.create_task(self._streaming_mutation_worker())
+            else:
+                self._drain_mutation_buffer()
 
             # 5) Window completion => keep round-indexed metrics in sync
             if (
@@ -1232,6 +1311,7 @@ class Orchestrator:
             full_shard = self._runtime_shards[-1] if self._runtime_shards else 1.0
         except Exception:
             full_shard = 1.0
+        metrics_snapshot = self.metrics_snapshot()
         run_meta = {
             "run_id": self._run_id,
             "stop_reason": self._stop_reason,
@@ -1239,11 +1319,19 @@ class Orchestrator:
             "best_quality": best_full,
             "best_quality_shard": full_shard,
         }
+        if metrics_snapshot.get("time_to_target_seconds") is not None:
+            run_meta["time_to_target_seconds"] = metrics_snapshot["time_to_target_seconds"]
+        if metrics_snapshot.get("turbo_score") is not None:
+            run_meta["turbo_score"] = metrics_snapshot["turbo_score"]
+        if metrics_snapshot.get("promotions_by_rung"):
+            run_meta["promotions_by_rung"] = metrics_snapshot["promotions_by_rung"]
+        run_meta["metrics"] = metrics_snapshot
         payload = {
             "run_id": self._run_id,
             "evolution_stats": evo_stats,
             "lineage": lineage,
             "run_metadata": run_meta,
+            "metrics": metrics_snapshot,
             "timeline": list(getattr(self, "_timeline", [])),
         }
 
@@ -1863,12 +1951,17 @@ class Orchestrator:
         result: EvalResult = payload
         expected_ids = self._candidate_eval_examples.pop(candidate.fingerprint, [])
         shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
+        is_final_shard = shard_idx == len(self._runtime_shards) - 1
         if expected_ids:
             seen_ids = set(result.example_ids or [])
             missing = [ex for ex in expected_ids if ex not in seen_ids]
             if missing:
+                if is_final_shard:
+                    self._record_final_straggler_event(len(missing))
                 if self.config.straggler_grace_seconds:
                     grace = self.config.straggler_grace_seconds
+                    if is_final_shard and self.config.final_rung_straggler_grace_seconds is not None:
+                        grace = min(grace, self.config.final_rung_straggler_grace_seconds)
                     recovered = await self.evaluator.collect_straggler_results(
                         candidate,
                         missing,
@@ -1897,7 +1990,7 @@ class Orchestrator:
                     concurrency=min(self._effective_concurrency, max(1, len(missing))),
                     shard_fraction=shard_fraction,
                     show_progress=self.show_progress,
-                    is_final_shard=shard_idx == len(self._runtime_shards) - 1,
+                    is_final_shard=is_final_shard,
                 )
                 result = result.merge(replay)
         self._update_eval_metrics(candidate, result)
@@ -2464,7 +2557,8 @@ class Orchestrator:
         async def stream_candidate_to_queue(candidate: Candidate) -> None:
             """Called by mutator for each candidate as soon as it's created."""
             # Enqueue immediately - this feeds the priority queue while mutations are still generating
-            self.enqueue([candidate])
+            self._buffer_mutation(candidate)
+            self._drain_mutation_buffer()
             if self.show_progress:
                 generation = self._get_generation(candidate)
                 source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
@@ -2813,27 +2907,28 @@ class Orchestrator:
             return []
 
     async def _maybe_migrate(self) -> None:
-        if not self.island_context:
-            return
-        if self.eval_batches_completed == 0:
-            return
-        # Trigger migration based on evaluation batches completed (streaming mode)
-        if self.eval_batches_completed % self.config.migration_period != 0:
+        if isinstance(self.migration_backend, NullMigrationBackend):
             return
         migration_k = int(self.config.migration_k or 0)
         if migration_k <= 0:
+            incoming = self.migration_backend.consume(self.island_id)
+            if incoming:
+                if self.show_progress:
+                    ids = ", ".join(candidate.fingerprint[:8] for candidate in incoming)
+                    self.logger.log(f"🌐 Island {self.island_id}: received {len(incoming)} candidate(s): {ids}")
+                self.enqueue(incoming)
             return
-        elite_count = migration_k
-        elites = self.archive.select_for_generation(
-            elite_count,
-            objective=self.config.promote_objective,
-        )
-        if elites:
-            if self.show_progress:
-                ids = ", ".join(candidate.fingerprint[:8] for candidate in elites)
-                self.logger.log(f"🌍 Island {self.island_id}: migrating out {len(elites)} candidate(s): {ids}")
-            migrate_out(self.island_context, elites)
-
+        # Trigger migration based on evaluation batches completed (streaming mode)
+        if self.eval_batches_completed % self.config.migration_period == 0:
+            elites = self.archive.select_for_generation(
+                migration_k,
+                objective=self.config.promote_objective,
+            )
+            if elites:
+                if self.show_progress:
+                    ids = ", ".join(candidate.fingerprint[:8] for candidate in elites)
+                    self.logger.log(f"🌍 Island {self.island_id}: migrating out {len(elites)} candidate(s): {ids}")
+                self.migration_backend.publish(self.island_id, elites)
         pareto_entries = self.archive.pareto_entries()
         if pareto_entries:
             share_count = min(migration_k, len(pareto_entries))
@@ -2846,7 +2941,7 @@ class Orchestrator:
             if shared:
                 self.enqueue(shared)
 
-        incoming = integrate_in(self.island_context)
+        incoming = self.migration_backend.consume(self.island_id)
         if incoming:
             if self.show_progress:
                 ids = ", ".join(candidate.fingerprint[:8] for candidate in incoming)

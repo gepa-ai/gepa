@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -334,6 +335,44 @@ class Metrics:
         if gain <= 0:
             return 0.0
         return gain / self.time_to_target_seconds
+
+    def snapshot(self) -> dict[str, Any]:
+        """
+        Return a JSON-serializable summary of key KPI metrics so dashboards/CI can
+        assert time-to-target and promotion health without re-computing anything.
+        """
+        return {
+            "time_to_target_seconds": self.time_to_target_seconds,
+            "turbo_score": self.turbo_score(),
+            "target_quality": self.target_quality,
+            "target_shard_fraction": self.target_shard_fraction,
+            "baseline_quality": self.baseline_quality,
+            "best_quality": self.best_quality,
+            "best_shard_fraction": self.best_shard_fraction,
+            "time_to_best_rung": self.time_to_best_rung,
+            "evaluations_total": self.evaluations_total,
+            "evaluation_throughput": self.evals_per_second,
+            "candidates_promoted": self.candidates_promoted,
+            "candidates_pruned": self.candidates_pruned,
+            "candidates_completed": self.candidates_completed,
+            "promotions_by_rung": dict(self.promotions_by_rung),
+            "promotion_attempts_by_rung": dict(self.promotion_attempts_by_rung),
+            "promotion_pruned_by_rung": dict(self.promotion_pruned_by_rung),
+            "llm_calls_total": self.llm_calls_total,
+            "llm_latency_mean": self.llm_latency_mean,
+            "llm_latency_p50": self.llm_latency_p50,
+            "llm_latency_p95": self.llm_latency_p95,
+            "cache_hit_rate": self.cache_hit_rate,
+            "concurrent_evals_peak": self.concurrent_evals_peak,
+            "concurrent_budget_clamps": self.concurrent_budget_clamps,
+            "mutations_generated": self.mutations_generated,
+            "mutation_batches": self.mutation_batches,
+            "mutation_latency_mean": self.mutation_latency_mean,
+            "time_eval_total": self.time_eval_total,
+            "time_mutation_total": self.time_mutation_total,
+            "time_scheduler_total": self.time_scheduler_total,
+            "time_archive_total": self.time_archive_total,
+        }
 
     def format_summary(self) -> str:
         """Generate a human-readable metrics summary."""

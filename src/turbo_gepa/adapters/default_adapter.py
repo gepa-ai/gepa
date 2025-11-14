@@ -21,9 +21,11 @@ from pathlib import Path
 import shutil
 import tempfile
 from typing import Any, Awaitable, Sequence
+import os
 
 import random
 import re
+import math
 
 from turbo_gepa.archive import Archive, ArchiveEntry
 from turbo_gepa.cache import DiskCache
@@ -38,6 +40,7 @@ from turbo_gepa.interfaces import Candidate, EvalResult
 from turbo_gepa.islands import IslandContext, spawn_islands
 from turbo_gepa.logging import ProgressReporter
 from turbo_gepa.logging.logger import LogLevel, StdOutLogger
+from turbo_gepa.migrations import MigrationBackend
 from turbo_gepa.mutator import MutationConfig, Mutator
 from turbo_gepa.orchestrator import Orchestrator
 from turbo_gepa.sampler import InstanceSampler
@@ -219,8 +222,20 @@ class DefaultAdapter:
         self.config = config
         self.dataset = list(dataset)
 
+        env_cache = os.getenv("TURBOGEPA_CACHE_PATH")
+        env_logs = os.getenv("TURBOGEPA_LOG_PATH")
+        base_cache = cache_dir or env_cache or config.cache_path
+        base_logs = log_dir or env_logs or config.log_path
+        self.base_cache_dir = os.path.abspath(base_cache)
+        self.base_log_dir = os.path.abspath(base_logs)
+        Path(self.base_cache_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.base_log_dir).mkdir(parents=True, exist_ok=True)
+        self.cache_namespace = self.config.shared_cache_namespace or "main"
+        self.cache = DiskCache(self.base_cache_dir, namespace=self.cache_namespace)
+        self.archive = Archive()
+        self.log_dir = self.base_log_dir
+
         # Configure litellm's httpx client based on eval_concurrency
-        # This ensures connection pooling matches the user's concurrency settings
         configure_litellm_client(self.config.eval_concurrency)
         self._fd_guard_limit = _detect_fd_guard()
 
@@ -265,12 +280,6 @@ class DefaultAdapter:
         self._example_ids = list(self.example_map.keys())
         self._sampler_seed = sampler_seed
         self.sampler = InstanceSampler(self._example_ids, seed=self._sampler_seed)
-        self.base_cache_dir = cache_dir or config.cache_path
-        self.base_log_dir = log_dir or config.log_path
-        Path(self.base_cache_dir).mkdir(parents=True, exist_ok=True)
-        Path(self.base_log_dir).mkdir(parents=True, exist_ok=True)
-        self.cache = DiskCache(self.base_cache_dir)
-        self.archive = Archive()
 
         # Temperature support will be checked lazily during Phase 2 (temperature optimization)
         # No upfront LLM call needed - we optimize prompts first (Phase 1), then temperature (Phase 2)
@@ -301,7 +310,7 @@ class DefaultAdapter:
             temperature_mutations_enabled=False,  # Disabled for Phase 1 - only optimize prompt quality
             logger=self.logger,
         )
-        self.log_dir = log_dir or config.log_path
+        self.log_dir = self.base_log_dir
 
         # Shared HTTP client for all LLM calls (caps sockets, reuses TLS, HTTP/2)
         try:
@@ -619,13 +628,28 @@ class DefaultAdapter:
     def _make_sampler(self, *, seed_offset: int = 0) -> InstanceSampler:
         return InstanceSampler(self._example_ids, seed=self._sampler_seed + seed_offset)
 
+    def _assigned_worker_islands(self) -> list[int] | None:
+        cfg = self.config
+        if cfg.worker_id is None or not cfg.worker_count or cfg.worker_count <= 0:
+            return None
+        total_islands = max(1, cfg.n_islands)
+        per_worker = cfg.islands_per_worker or math.ceil(total_islands / max(1, cfg.worker_count))
+        if per_worker <= 0:
+            per_worker = 1
+        start = max(0, int(cfg.worker_id) * per_worker)
+        if start >= total_islands:
+            return []
+        end = min(total_islands, start + per_worker)
+        return list(range(start, end))
+
     def _make_cache(self, island_id: int | None = None) -> DiskCache:
         if island_id is None:
-            return DiskCache(self.base_cache_dir)
+            return DiskCache(self.base_cache_dir, namespace=self.cache_namespace)
         path = Path(self.base_cache_dir)
         island_path = path / f"island_{island_id}"
         island_path.mkdir(parents=True, exist_ok=True)
-        return DiskCache(str(island_path))
+        ns = f"{self.cache_namespace}_island_{island_id}"
+        return DiskCache(str(island_path), namespace=ns)
 
     def _make_log_dir(self, island_id: int | None = None) -> str:
         path = Path(self.base_log_dir)
@@ -697,6 +721,41 @@ class DefaultAdapter:
             snapshots.append(orchestrator.evolution_snapshot(include_edges=True))
         return self._combine_evolution_snapshots(snapshots)
 
+    async def _summarize_island_runs(
+        self, orchestrators: Sequence[Orchestrator | None]
+    ) -> dict[str, Any]:
+        combined_archive = self._make_archive()
+        inserts: list[tuple[Candidate, EvalResult]] = []
+        for orchestrator in orchestrators:
+            if orchestrator is None:
+                continue
+            for entry in orchestrator.archive.pareto_entries():
+                inserts.append((entry.candidate, entry.result))
+        if inserts:
+            await combined_archive.batch_insert(inserts)
+        pareto_entries = combined_archive.pareto_entries()
+        pareto_candidates = [entry.candidate for entry in pareto_entries]
+        evolution_stats = self._aggregate_evolution_stats(orchestrators)
+        total_candidates = len(combined_archive.pareto)
+        island_metadata = [
+            self._build_run_metadata(orchestrator, orchestrator.archive.pareto_entries())
+            for orchestrator in orchestrators
+            if orchestrator is not None
+        ]
+        metrics_per_island = [
+            meta.get("metrics") if isinstance(meta, dict) else None for meta in island_metadata
+        ]
+        return {
+            "pareto": pareto_candidates,
+            "pareto_entries": pareto_entries,
+            "qd_elites": [],
+            "evolution_stats": evolution_stats,
+            "total_candidates": total_candidates,
+            "run_metadata_per_island": island_metadata,
+            "metrics_per_island": metrics_per_island,
+            "metrics": {"per_island": metrics_per_island},
+        }
+
     def _build_run_metadata(
         self,
         orchestrator: Orchestrator,
@@ -764,7 +823,8 @@ class DefaultAdapter:
                 best_quality = best_entry.result.objectives.get(promote_obj, 0.0)
                 best_shard = best_entry.result.shard_fraction or 0.0
                 best_prompt = best_entry.candidate.text
-        return {
+        metrics_snapshot = orchestrator.metrics_snapshot()
+        metadata: dict[str, Any] = {
             "run_id": orchestrator.run_id,
             "stop_reason": orchestrator.stop_reason,
             "evaluations": orchestrator.evaluations_run,
@@ -772,6 +832,15 @@ class DefaultAdapter:
             "best_quality_shard": best_shard,
             "best_prompt": best_prompt,
         }
+        if metrics_snapshot:
+            metadata["metrics"] = metrics_snapshot
+            if metrics_snapshot.get("time_to_target_seconds") is not None:
+                metadata["time_to_target_seconds"] = metrics_snapshot["time_to_target_seconds"]
+            if metrics_snapshot.get("turbo_score") is not None:
+                metadata["turbo_score"] = metrics_snapshot["turbo_score"]
+            if metrics_snapshot.get("promotions_by_rung"):
+                metadata["promotions_by_rung"] = metrics_snapshot["promotions_by_rung"]
+        return metadata
 
     async def evaluate_prompt_async(
         self,
@@ -1043,6 +1112,8 @@ class DefaultAdapter:
         mutator: Mutator | None = None,
         log_dir: str | None = None,
         metrics_callback: Callable | None = None,
+        island_id: int | None = None,
+        migration_backend: MigrationBackend | None = None,
     ) -> Orchestrator:
         target_mutator = mutator or self.mutator
         if temperature_mutations_enabled and not self.temperature_supported:
@@ -1084,6 +1155,8 @@ class DefaultAdapter:
             show_progress=display_progress,
             example_sampler=self._sample_examples,
             island_context=island_context,
+             island_id=island_id,
+             migration_backend=migration_backend,
             metrics_callback=progress_callback,
             logger=self.logger,
         )
@@ -1098,8 +1171,22 @@ class DefaultAdapter:
         reflection_lm: str | None = None,  # Kept for API compatibility; models come from adapter init
         optimize_temperature_after_convergence: bool = False,  # Stage temperature optimization
         display_progress: bool = True,  # Show progress charts
+        enable_auto_stop: bool = True,
         metrics_callback: Callable | None = None,  # Callback for dashboard updates
     ) -> dict[str, Any]:
+        worker_islands = self._assigned_worker_islands()
+        if worker_islands is not None:
+            if not getattr(self.config, "migration_backend", None):
+                self.config.migration_backend = "volume"
+            if not getattr(self.config, "migration_path", None):
+                self.config.migration_path = os.path.join(self.base_cache_dir, "migrations")
+            return await self._optimize_distributed_islands(
+                seeds,
+                island_ids=worker_islands,
+                max_rounds=max_rounds,
+                max_evaluations=max_evaluations,
+                display_progress=display_progress,
+            )
         if self.config.n_islands > 1:
             if optimize_temperature_after_convergence:
                 return await self._optimize_multi_island_staged(
@@ -1155,6 +1242,7 @@ class DefaultAdapter:
             "evolution_stats": orchestrator.evolution_snapshot(include_edges=True),
             "lineage": orchestrator.get_candidate_lineage_data(),
             "run_metadata": self._build_run_metadata(orchestrator, pareto_entries),
+            "metrics": orchestrator.metrics_snapshot(),
         }
 
     async def _optimize_staged_temperature(
@@ -1162,6 +1250,7 @@ class DefaultAdapter:
         seeds: Sequence[str | Candidate],
         max_rounds: int | None,
         max_evaluations: int | None,
+        enable_auto_stop: bool = True,
         display_progress: bool = True,
     ) -> dict[str, Any]:
         """Two-phase optimization: prompts first, then temperature.
@@ -1211,6 +1300,7 @@ class DefaultAdapter:
                 "phase1_evolution_stats": phase1_stats,
                 "evolution_stats": self._combine_evolution_snapshots([phase1_stats]),
                 "run_metadata": phase1_metadata,
+                "metrics": phase1_metadata.get("metrics"),
             }
 
         # Early exit if no pareto frontier
@@ -1223,6 +1313,7 @@ class DefaultAdapter:
                 "phase1_evolution_stats": phase1_stats,
                 "evolution_stats": self._combine_evolution_snapshots([phase1_stats]),
                 "run_metadata": phase1_metadata,
+                "metrics": phase1_metadata.get("metrics"),
             }
 
         # Take top K prompts sorted by quality
@@ -1269,6 +1360,9 @@ class DefaultAdapter:
             "evolution_stats": combined_stats,
             "run_metadata": phase2_metadata,
             "phase1_run_metadata": phase1_metadata,
+            "metrics": phase2_metadata.get("metrics"),
+            "phase1_metrics": phase1_metadata.get("metrics"),
+            "phase2_metrics": phase2_metadata.get("metrics"),
         }
 
     async def _optimize_multi_island(
@@ -1348,33 +1442,54 @@ class DefaultAdapter:
                 loop.set_default_executor(previous_executor)
             executor.shutdown(wait=True)
 
-        combined_archive = self._make_archive()
-        inserts: list[tuple[Candidate, EvalResult]] = []
-        for orchestrator in orchestrators:
-            if orchestrator is None:
-                continue
-            for entry in orchestrator.archive.pareto_entries():
-                inserts.append((entry.candidate, entry.result))
-        if inserts:
-            await combined_archive.batch_insert(inserts)
-        pareto_entries = combined_archive.pareto_entries()
-        pareto_candidates = [entry.candidate for entry in pareto_entries]
-        evolution_stats = self._aggregate_evolution_stats(orchestrators)
-        # Calculate total unique candidates (Pareto only)
-        total_candidates = len(combined_archive.pareto)
-        island_metadata = [
-            self._build_run_metadata(orchestrator, orchestrator.archive.pareto_entries())
-            for orchestrator in orchestrators
-            if orchestrator is not None
-        ]
-        return {
-            "pareto": pareto_candidates,
-            "pareto_entries": pareto_entries,
-            "qd_elites": [],  # Deprecated
-            "evolution_stats": evolution_stats,
-            "total_candidates": total_candidates,
-            "run_metadata_per_island": island_metadata,
-        }
+        return await self._summarize_island_runs(orchestrators)
+
+    async def _optimize_distributed_islands(
+        self,
+        seeds: Sequence[str | Candidate],
+        *,
+        island_ids: Sequence[int],
+        max_rounds: int | None,
+        max_evaluations: int | None,
+        display_progress: bool,
+        temperature_mutations_enabled: bool | None = None,
+    ) -> dict[str, Any]:
+        if not island_ids:
+            return await self._summarize_island_runs([])
+        normalized_seeds = self._normalize_seeds(seeds, source="seed")
+        orchestrators: list[Orchestrator | None] = []
+        for idx, island_id in enumerate(island_ids):
+            cache = DiskCache(self.base_cache_dir, namespace=f"{self.cache_namespace}_island_{island_id}")
+            archive = self._make_archive()
+            sampler = self._make_sampler(seed_offset=island_id)
+            mutator = self._make_mutator()
+            if temperature_mutations_enabled is not None:
+                mutator.set_temperature_mutations_enabled(temperature_mutations_enabled)
+            log_dir = self._make_log_dir(island_id)
+            display_local = display_progress and idx == 0
+            orchestrator = self._build_orchestrator(
+                display_progress=display_local,
+                temperature_mutations_enabled=temperature_mutations_enabled,
+                island_context=None,
+                cache=cache,
+                archive=archive,
+                sampler=sampler,
+                mutator=mutator,
+                log_dir=log_dir,
+                island_id=island_id,
+            )
+            mutator._metrics = orchestrator.metrics
+            island_seeds = [
+                Candidate(text=seed.text, meta=dict(seed.meta, island=island_id))
+                for seed in normalized_seeds
+            ]
+            await orchestrator.run(
+                island_seeds,
+                max_rounds=max_rounds,
+                max_evaluations=max_evaluations,
+            )
+            orchestrators.append(orchestrator)
+        return await self._summarize_island_runs(orchestrators)
 
     async def _optimize_multi_island_staged(
         self,
@@ -1438,7 +1553,14 @@ class DefaultAdapter:
         phase2_result["phase2_evolution_stats"] = phase2_stats
         phase2_result["evolution_stats"] = combined_stats
         phase2_result["phase1_run_metadata_per_island"] = phase1_metadata_per_island
+        phase2_result["phase1_metrics_per_island"] = phase1_result.get("metrics_per_island")
         phase2_result.setdefault("run_metadata_per_island", [])
+        if "metrics_per_island" not in phase2_result:
+            per_island = None
+            metrics_entry = phase2_result.get("metrics")
+            if isinstance(metrics_entry, dict):
+                per_island = metrics_entry.get("per_island")
+            phase2_result["metrics_per_island"] = per_island
         return phase2_result
 
     def optimize(
@@ -1451,6 +1573,7 @@ class DefaultAdapter:
         reflection_lm: str | None = None,  # Kept for API compatibility; models come from adapter init
         optimize_temperature_after_convergence: bool = False,  # Stage temperature optimization
         display_progress: bool = True,  # Show progress charts
+        enable_auto_stop: bool = True,
         enable_seed_initialization: bool = False,  # Use PROMPT-MII-style seed generation
         num_generated_seeds: int = 3,  # How many seeds to generate if initializing
         metrics_callback: Callable | None = None,  # Callback for dashboard updates
@@ -1466,6 +1589,8 @@ class DefaultAdapter:
             reflection_lm: Kept for compatibility; adapter uses model set at construction
             optimize_temperature_after_convergence: Stage temperature optimization after
                 prompt optimization (Phase 1: optimize prompts, Phase 2: optimize temperature)
+            enable_auto_stop: Disable to keep the stop governor from short-circuiting
+                long sweeps (handy for regression tests/benchmarks)
             enable_seed_initialization: If True, use PROMPT-MII-style spec induction to
                 generate smart initial seeds from task examples instead of using generic prompts.
                 Requires a reflection model to be set. Can optimize user-provided seeds or generate from scratch.
@@ -1514,6 +1639,7 @@ class DefaultAdapter:
                 reflection_lm=reflection_lm,
                 optimize_temperature_after_convergence=optimize_temperature_after_convergence,
                 display_progress=display_progress,
+                enable_auto_stop=enable_auto_stop,
                 metrics_callback=metrics_callback,
             )
         )

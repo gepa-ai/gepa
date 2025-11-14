@@ -268,6 +268,7 @@ class Config:
     queue_limit: int | None = None  # Auto-scaled to 2x eval_concurrency if None
     promote_objective: str = "quality"
     max_mutations_per_round: int | None = None  # Auto-scaled to eval_concurrency if None
+    mutation_buffer_limit: int | None = None  # Max pending streamed mutations awaiting queue capacity
     task_lm_temperature: float | None = 1.0
     reflection_lm_temperature: float | None = 1.0
     target_quality: float | None = None  # Stop when best quality reaches this threshold
@@ -278,6 +279,7 @@ class Config:
     reflection_strategies: tuple[ReflectionStrategy, ...] | None = None
     max_final_shard_inflight: int | None = 2  # Limit concurrent full-shard evaluations (None = unlimited)
     straggler_grace_seconds: float = 5.0  # Wait this long for detached stragglers before replaying
+    final_rung_straggler_grace_seconds: float | None = 2.0  # Extra-short grace before replay on final rung
     llm_connection_limit: int | None = None  # Cap simultaneous LLM calls (defaults to 1.5x eval_concurrency)
     # Dynamically scale effective evaluation concurrency to maximize throughput
     auto_scale_eval_concurrency: bool = True
@@ -286,8 +288,13 @@ class Config:
     global_concurrency_budget: bool = True
     latest_results_limit: int = 2048
 
-    # Streaming mode config
-
+    # Streaming mode / distributed config
+    worker_id: int | None = None
+    worker_count: int | None = None
+    islands_per_worker: int | None = None
+    shared_cache_namespace: str | None = None
+    migration_backend: str | None = None  # "local", "volume", etc.
+    migration_path: str | None = None
     # Logging config
     # Log levels control verbosity:
     #   - DEBUG: All messages including detailed traces (very verbose)
@@ -321,6 +328,9 @@ class Config:
             # This ensures mutation generation can keep the pipeline full
             self.max_mutations_per_round = max(16, min(128, self.eval_concurrency * 2))
 
+        if self.mutation_buffer_limit is None:
+            self.mutation_buffer_limit = max(128, self.eval_concurrency * 6)
+
         if self.llm_connection_limit is None:
             self.llm_connection_limit = max(8, int(self.eval_concurrency * 1.5))
 
@@ -331,6 +341,9 @@ class Config:
 
         if self.target_shard_fraction is None:
             self.target_shard_fraction = 1.0
+
+        if self.worker_count and not self.islands_per_worker:
+            self.islands_per_worker = max(1, self.n_islands // max(1, self.worker_count))
 
         # Auto-generate variance_tolerance if not provided
         if self.variance_tolerance is None:

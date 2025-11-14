@@ -289,6 +289,22 @@ TurboGEPA is a high-throughput production fork of GEPA with:
 
 ## 📚 Documentation
 
+Need to mount TurboGEPA caches/logs on a shared filesystem (e.g., Modal Volumes) so multiple workers can reuse evaluations?
+See [docs/modal_volumes.md](docs/modal_volumes.md) for environment variables and locking behavior.
+
+Need to fan islands out across multiple processes or Modal functions? Use the distributed worker CLI:
+
+```bash
+turbo-gepa-worker \
+  --factory path.to.module:build_adapter \
+  --worker-id 0 \
+  --worker-count 4 \
+  --islands-per-worker 2 \
+  --seeds-json seeds.json
+```
+
+Each worker mounts the same cache/log directories (see the Modal docs above) and exchanges elites via the volume-backed migration backend.
+
 ### Core Concepts
 
 **Candidate**: A mapping from component names to text (e.g., `{"system_prompt": "You are..."}`)

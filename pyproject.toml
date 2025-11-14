@@ -65,6 +65,9 @@ dev = [
 "Documentation" = "https://github.com/Studio-Intrinsic/turbo-gepa#readme"
 "Original GEPA" = "https://github.com/gepa-ai/gepa"
 
+[project.scripts]
+turbo-gepa-worker = "turbo_gepa.distributed.runner:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

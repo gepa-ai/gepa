@@ -41,8 +41,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Sequence
 
 import dspy
@@ -126,9 +128,16 @@ class DSpyAdapter:
 
         # Initialize TurboGEPA components
         self.sampler = InstanceSampler(list(self.example_map.keys()), seed=sampler_seed)
-        self.cache = DiskCache(cache_dir or config.cache_path)
+        env_cache = os.getenv("TURBOGEPA_CACHE_PATH")
+        env_logs = os.getenv("TURBOGEPA_LOG_PATH")
+        self.base_cache_dir = os.path.abspath(cache_dir or env_cache or config.cache_path)
+        self.base_log_dir = os.path.abspath(log_dir or env_logs or config.log_path)
+        Path(self.base_cache_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.base_log_dir).mkdir(parents=True, exist_ok=True)
+        namespace = self.config.shared_cache_namespace or "dspy"
+        self.cache = DiskCache(self.base_cache_dir, namespace=namespace)
         self.archive = Archive()
-        self.log_dir = log_dir or config.log_path
+        self.log_dir = self.base_log_dir
 
         # Configure litellm's httpx client based on eval_concurrency
         # This ensures connection pooling matches the user's concurrency settings

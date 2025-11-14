@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
 from .logger import LogLevel, LoggerProtocol
@@ -37,13 +37,13 @@ class ProgressSnapshot:
     queue_size: int
     inflight_candidates: int
     inflight_examples: int
-    target_quality: Optional[float]
-    target_shard_fraction: float
-    target_reached: bool
-    stop_reason: Optional[str]
-    promotion_attempts: dict[int, int]
-    promotion_promoted: dict[int, int]
-    promotion_pruned: dict[int, int]
+    target_quality: Optional[float] = None
+    target_shard_fraction: float = 1.0
+    target_reached: bool = False
+    stop_reason: Optional[str] = None
+    promotion_attempts: dict[int, int] = field(default_factory=dict)
+    promotion_promoted: dict[int, int] = field(default_factory=dict)
+    promotion_pruned: dict[int, int] = field(default_factory=dict)
 
 
 def build_progress_snapshot(orchestrator: Orchestrator) -> ProgressSnapshot:

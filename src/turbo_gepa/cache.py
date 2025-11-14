@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+import contextlib
 from collections import defaultdict
 from pathlib import Path
 
@@ -33,7 +34,7 @@ class DiskCache:
     serialized with an asyncio lock so async evaluators can share the cache.
     """
 
-    def __init__(self, cache_dir: str) -> None:
+    def __init__(self, cache_dir: str, *, namespace: str | None = None) -> None:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         # Use defaultdict to avoid race condition in lock creation
@@ -43,6 +44,7 @@ class DiskCache:
         self._file_semaphore = asyncio.Semaphore(self._get_safe_file_limit())
         # In-memory index to avoid repeated linear scans per candidate
         self._record_cache: dict[str, dict[str, EvalResult]] = {}
+        self._state_namespace = (namespace or "default").replace("/", "_")
 
     def _get_safe_file_limit(self) -> int:
         """Determine a safe file descriptor limit for concurrent operations.
@@ -82,6 +84,37 @@ class DiskCache:
         shard_dir = self.cache_dir / prefix
         shard_dir.mkdir(parents=True, exist_ok=True)
         return shard_dir / f"{cand_hash}.jsonl"
+
+    def _lock_path(self, target: Path) -> Path:
+        return target.with_suffix(target.suffix + ".lock")
+
+    @contextlib.contextmanager
+    def _file_lock(self, target: Path):
+        lock_path = self._lock_path(target)
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR)
+        try:
+            if os.name == "nt":  # pragma: no cover - windows specific
+                import msvcrt
+
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            else:  # pragma: no cover - unix specific
+                import fcntl
+
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                if os.name == "nt":  # pragma: no cover - windows specific
+                    import msvcrt
+
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:  # pragma: no cover - unix specific
+                    import fcntl
+
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
 
     def _clone_result(self, result: EvalResult, example_id: str) -> EvalResult:
         example_ids = list(result.example_ids) if result.example_ids else [example_id]
@@ -153,7 +186,6 @@ class DiskCache:
         }
         lock = self._lock_for(cand_hash)
         async with lock:
-            # Use semaphore to limit concurrent file operations
             async with self._file_semaphore:
                 await asyncio.to_thread(self._append_record, path, record)
             cache = self._record_cache.setdefault(cand_hash, {})
@@ -186,7 +218,6 @@ class DiskCache:
             record_objs = [r[1] for r in records]
             lock = self._lock_for(cand_hash)
             async with lock:
-                # Use semaphore to limit concurrent file operations
                 async with self._file_semaphore:
                     await asyncio.to_thread(self._append_records, path, record_objs)
             cache = self._record_cache.setdefault(cand_hash, {})
@@ -228,8 +259,9 @@ class DiskCache:
         max_attempts = 3
         for attempt in range(max_attempts):
             try:
-                with path.open("a", encoding="utf-8", buffering=1) as handle:
-                    handle.write(json.dumps(record) + "\n")
+                with self._file_lock(path):
+                    with path.open("a", encoding="utf-8", buffering=1) as handle:
+                        handle.write(json.dumps(record) + "\n")
                 return
             except OSError:
                 if attempt < max_attempts - 1:
@@ -244,9 +276,10 @@ class DiskCache:
         max_attempts = 3
         for attempt in range(max_attempts):
             try:
-                with path.open("a", encoding="utf-8", buffering=1) as handle:
-                    for record in records:
-                        handle.write(json.dumps(record) + "\n")
+                with self._file_lock(path):
+                    with path.open("a", encoding="utf-8", buffering=1) as handle:
+                        for record in records:
+                            handle.write(json.dumps(record) + "\n")
                 return
             except OSError:
                 if attempt < max_attempts - 1:
@@ -260,7 +293,7 @@ class DiskCache:
 
     def _state_path(self) -> Path:
         """Path to orchestrator state file."""
-        return self.cache_dir / "orchestrator_state.json"
+        return self.cache_dir / f"{self._state_namespace}_orchestrator_state.json"
 
     def save_state(
         self,
@@ -295,9 +328,10 @@ class DiskCache:
         max_attempts = 3
         for attempt in range(max_attempts):
             try:
-                with temp_path.open("w", encoding="utf-8") as f:
-                    json.dump(state, f, indent=2)
-                temp_path.replace(state_path)
+                with self._file_lock(state_path):
+                    with temp_path.open("w", encoding="utf-8") as f:
+                        json.dump(state, f, indent=2)
+                    temp_path.replace(state_path)
                 return
             except OSError as e:
                 if attempt < max_attempts - 1:
@@ -305,7 +339,6 @@ class DiskCache:
 
                     time.sleep(0.1 * (2**attempt))
                 else:
-                    # On final failure, log warning but don't crash optimization
                     logging.warning("Failed to save state after %d attempts: %s", max_attempts, e)
 
     def load_state(self) -> dict | None:
@@ -322,8 +355,9 @@ class DiskCache:
         max_attempts = 3
         for attempt in range(max_attempts):
             try:
-                with state_path.open("r", encoding="utf-8") as f:
-                    state = json.load(f)
+                with self._file_lock(state_path):
+                    with state_path.open("r", encoding="utf-8") as f:
+                        state = json.load(f)
 
                 parsed_pareto = []
                 for entry in state.get("pareto", []):
@@ -360,7 +394,8 @@ class DiskCache:
         """Delete saved state file."""
         state_path = self._state_path()
         if state_path.exists():
-            state_path.unlink()
+            with self._file_lock(state_path):
+                state_path.unlink()
 
     def _serialize_candidate(self, candidate: Candidate) -> dict:
         """Convert Candidate to JSON-serializable dict."""
