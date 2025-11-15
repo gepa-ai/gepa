@@ -147,8 +147,14 @@ def adapter_factory() -> tuple[DefaultAdapter, Sequence[str]]:
     dataset_size = int(os.environ.get("AIME_DATASET_SIZE", "30"))
     eval_concurrency = int(os.environ.get("AIME_EVAL_CONCURRENCY", "20"))
     target_quality = float(os.environ.get("AIME_TARGET_QUALITY", "0.73"))
+    max_runtime = os.environ.get("AIME_MAX_RUNTIME")
     dataset = _load_dataset(dataset_size)
     config = _build_config(dataset_size, eval_concurrency, target_quality)
+    if max_runtime:
+        try:
+            config.max_optimization_time_seconds = int(max_runtime)
+        except ValueError:
+            config.max_optimization_time_seconds = None
     adapter = DefaultAdapter(
         dataset=dataset,
         task_lm=os.environ.get("TASK_LM", "openrouter/openai/gpt-oss-20b:nitro"),
@@ -196,11 +202,16 @@ def run_worker(
     target_quality: float,
     max_rounds: int | None,
     max_evaluations: int | None,
+    max_runtime: int | None,
 ) -> dict:
     control_dir = _prepare_env(run_id)
     os.environ["AIME_DATASET_SIZE"] = str(dataset_size)
     os.environ["AIME_EVAL_CONCURRENCY"] = str(eval_concurrency)
     os.environ["AIME_TARGET_QUALITY"] = str(target_quality)
+    if max_runtime is not None:
+        os.environ["AIME_MAX_RUNTIME"] = str(max_runtime)
+    elif "AIME_MAX_RUNTIME" in os.environ:
+        os.environ.pop("AIME_MAX_RUNTIME")
     payload = run_worker_from_factory(
         factory="examples.modal_turbo_aime:adapter_factory",
         package="examples",
@@ -286,13 +297,24 @@ def main(
     target_quality: float = 0.73,
     max_rounds: int | None = 6,
     max_evaluations: int | None = 200,
+    max_runtime: int | None = None,
 ) -> None:
     """Launch Modal workers and aggregate the final TurboGEPA results."""
     run_id = f"modal-{int(time.time())}"
     # Reset shared cache/log directories so the run starts from a clean slate.
     clear_volume.remote()
     worker_args = [
-        (wid, num_workers, run_id, dataset_size, eval_concurrency, target_quality, max_rounds, max_evaluations)
+        (
+            wid,
+            num_workers,
+            run_id,
+            dataset_size,
+            eval_concurrency,
+            target_quality,
+            max_rounds,
+            max_evaluations,
+            max_runtime,
+        )
         for wid in range(num_workers)
     ]
     # Fully realize the Modal generator so we drain all worker futures before summarizing.

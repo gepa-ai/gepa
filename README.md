@@ -414,13 +414,28 @@ graph TD
     style Island2 fill:#f3e5f5
     style Island3 fill:#e8f5e9
     style Island4 fill:#fff3e0
+
+    Arch1 -->|Broadcast| Pop2
+    Arch1 -->|Broadcast| Pop3
+    Arch1 -->|Broadcast| Pop4
+    Arch2 -->|Broadcast| Pop1
+    Arch2 -->|Broadcast| Pop3
+    Arch2 -->|Broadcast| Pop4
+    Arch3 -->|Broadcast| Pop1
+    Arch3 -->|Broadcast| Pop2
+    Arch3 -->|Broadcast| Pop4
+    Arch4 -->|Broadcast| Pop1
+    Arch4 -->|Broadcast| Pop2
+    Arch4 -->|Broadcast| Pop3
 ```
 
 **Benefits**:
 
 - **Parallelism**: 4 islands explore simultaneously (4× throughput)
-- **Diversity**: Ring topology prevents premature convergence
-- **Robustness**: Different islands may discover different high-quality regions
+- **Diversity**: Every island now broadcasts its top elites to all peers (not just the next hop), so promising edits propagate immediately while each island still evolves independently.
+- **Robustness**: Different islands may discover different high-quality regions and immediately cross-pollinate those parents, preventing stagnation.
+
+> **Note:** Internally we still allocate queues in a ring for efficiency, but both the in-process (`LocalQueueMigrationBackend`) and filesystem (`FileMigrationBackend`) paths broadcast elites. Tune sharing frequency with `migration_k`/`migration_period`, and set `TURBOGEPA_CONTROL_PATH`/`--control-dir` plus `TURBOGEPA_RUN_ID` when running distributed workers so migrations and control files stay coordinated.
 
 ### TurboGEPA Two-Phase Optimization
 
