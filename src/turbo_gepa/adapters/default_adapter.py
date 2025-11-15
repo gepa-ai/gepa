@@ -785,6 +785,27 @@ class DefaultAdapter:
         best_shard = None
         best_prompt = None
 
+        def _pack_candidate(candidate: Candidate | None, result: EvalResult | None) -> dict[str, Any] | None:
+            if candidate is None or result is None:
+                return None
+            shard = result.shard_fraction or 0.0
+            quality = result.objectives.get(promote_obj, 0.0)
+            meta = candidate.meta if isinstance(candidate.meta, dict) else {}
+            is_seed = meta.get("source") == "seed"
+            return {
+                "candidate": candidate,
+                "quality": quality,
+                "shard": shard,
+                "is_seed": is_seed,
+            }
+
+        def _pick_best(entries: list[dict[str, Any]]) -> dict[str, Any] | None:
+            if not entries:
+                return None
+            non_seed = [entry for entry in entries if not entry.get("is_seed")]
+            pool = non_seed or entries
+            return max(pool, key=lambda entry: (entry.get("shard", 0.0), entry.get("quality", 0.0)))
+
         # Prefer the exact candidate that achieved the target on the final rung,
         # captured at the moment of attainment (it may no longer be on Pareto).
         try:
@@ -802,46 +823,32 @@ class DefaultAdapter:
         # and recover the corresponding prompt via orchestrator's candidate map.
         if best_prompt is None:
             try:
-                tol = 1e-6
-                full_shard = orchestrator._runtime_shards[-1] if orchestrator._runtime_shards else 1.0
-                best_fp = None
-                best_q = -1.0
+                entries: list[dict[str, Any]] = []
+                cmap = getattr(orchestrator, "_candidates_by_fp", {})
                 for fp, res in getattr(orchestrator, "latest_results", {}).items():
-                    sf = res.shard_fraction if res.shard_fraction is not None else 0.0
-                    if abs(sf - full_shard) <= tol:
-                        q = res.objectives.get(promote_obj, 0.0)
-                        if q > best_q:
-                            best_q = q
-                            best_fp = fp
-                if best_fp is not None:
-                    cmap = getattr(orchestrator, "_candidates_by_fp", {})
-                    cand = cmap.get(best_fp)
-                    if cand is not None:
-                        best_prompt = cand.text
-                        best_quality = best_q
-                        best_shard = full_shard
+                    entry = _pack_candidate(cmap.get(fp), res)
+                    if entry:
+                        entries.append(entry)
+                best_entry = _pick_best(entries)
+                if best_entry:
+                    best_prompt = best_entry["candidate"].text
+                    best_quality = best_entry["quality"]
+                    best_shard = best_entry["shard"]
             except Exception:
                 pass
 
-        # Fallback #2: current Pareto entries, preferring full-shard items
+        # Fallback #2: current Pareto entries, preferring deepest shard even if partial
         if best_prompt is None:
-            full_shard = orchestrator._runtime_shards[-1] if orchestrator._runtime_shards else 1.0
-            tolerance = 1e-6
-            full_entries = [
-                entry
-                for entry in pareto_entries
-                if entry.result.shard_fraction is not None
-                and abs(entry.result.shard_fraction - full_shard) <= tolerance
-            ]
-            candidates = full_entries or list(pareto_entries)
-            if candidates:
-                best_entry = max(
-                    candidates,
-                    key=lambda entry: entry.result.objectives.get(promote_obj, 0.0),
-                )
-                best_quality = best_entry.result.objectives.get(promote_obj, 0.0)
-                best_shard = best_entry.result.shard_fraction or 0.0
-                best_prompt = best_entry.candidate.text
+            entries: list[dict[str, Any]] = []
+            for entry in pareto_entries:
+                packed = _pack_candidate(entry.candidate, entry.result)
+                if packed:
+                    entries.append(packed)
+            best_entry = _pick_best(entries)
+            if best_entry:
+                best_prompt = best_entry["candidate"].text
+                best_quality = best_entry["quality"]
+                best_shard = best_entry["shard"]
         metrics_snapshot = orchestrator.metrics_snapshot()
         metadata: dict[str, Any] = {
             "run_id": orchestrator.run_id,
