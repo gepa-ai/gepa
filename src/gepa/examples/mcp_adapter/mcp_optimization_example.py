@@ -94,7 +94,7 @@ def list_files() -> str:
         files = [str(p.relative_to(BASE_DIR)) for p in BASE_DIR.rglob("*") if p.is_file()]
         if not files:
             return "No files found"
-        return "\\n".join(files)
+        return "\\\\n".join(files)
     except Exception as e:
         return f"Error listing files: {e}"
 
@@ -119,8 +119,8 @@ def create_test_files():
     base_dir = Path("/tmp/mcp_test")
     base_dir.mkdir(exist_ok=True)
 
-    (base_dir / "notes.txt").write_text("Meeting at 3pm in Room B\\nDiscuss Q4 goals")
-    (base_dir / "data.txt").write_text("Revenue: $50000\\nExpenses: $30000\\nProfit: $20000")
+    (base_dir / "notes.txt").write_text("Meeting at 3pm in Room B\nDiscuss Q4 goals")
+    (base_dir / "data.txt").write_text("Revenue: $50000\nExpenses: $30000\nProfit: $20000")
 
     logger.info(f"Created test files in: {base_dir}")
 
@@ -198,29 +198,27 @@ def run_local_example():
         "tool_description": "Read file contents from disk."
     }
 
-    logger.info("\\nRunning optimization...")
+    logger.info("\nRunning optimization...")
     logger.info(f"Dataset size: {len(dataset)} examples")
     logger.info(f"Initial tool description: {seed_candidate['tool_description']}")
 
     # Run GEPA optimization
-    optimizer = gepa.GEPA(
-        adapter=adapter,
-        n_iterations=2,  # Small number for demo
-        batch_size=2,
-    )
-
-    result = optimizer.optimize(
-        train_dataset=dataset,
-        val_dataset=dataset,  # In practice, use separate validation set
+    result = gepa.optimize(
         seed_candidate=seed_candidate,
-        components_to_update=["tool_description"],
+        trainset=dataset,
+        valset=dataset,  # In practice, use separate validation set
+        adapter=adapter,
+        reflection_lm="gpt-4o-mini",  # LLM for generating improved descriptions
+        max_metric_calls=10,  # Limit iterations for demo
     )
 
-    logger.info("\\n" + "=" * 60)
+    logger.info("\n" + "=" * 60)
     logger.info("OPTIMIZATION COMPLETE")
     logger.info("=" * 60)
-    logger.info(f"Best score: {result.best_score:.2f}")
-    logger.info(f"Optimized tool description: {result.best_candidate.get('tool_description', 'N/A')}")
+    best_score = result.val_aggregate_scores[result.best_idx] if result.val_aggregate_scores else 0.0
+    best_candidate = result.candidates[result.best_idx]
+    logger.info(f"Best score: {best_score:.2f}")
+    logger.info(f"Optimized tool description: {best_candidate.get('tool_description', 'N/A')}")
 
     return result
 
@@ -262,27 +260,26 @@ def run_remote_example(url: str):
         "tool_description": "Search for information."
     }
 
-    logger.info(f"\\nConnecting to remote server: {url}")
+    logger.info(f"\nConnecting to remote server: {url}")
     logger.info(f"Dataset size: {len(dataset)} examples")
 
     # Run optimization
-    optimizer = gepa.GEPA(
-        adapter=adapter,
-        n_iterations=2,
-    )
-
-    result = optimizer.optimize(
-        train_dataset=dataset,
-        val_dataset=dataset,
+    result = gepa.optimize(
         seed_candidate=seed_candidate,
-        components_to_update=["tool_description"],
+        trainset=dataset,
+        valset=dataset,
+        adapter=adapter,
+        reflection_lm="gpt-4o-mini",
+        max_metric_calls=10,
     )
 
-    logger.info("\\n" + "=" * 60)
+    logger.info("\n" + "=" * 60)
     logger.info("OPTIMIZATION COMPLETE")
     logger.info("=" * 60)
-    logger.info(f"Best score: {result.best_score:.2f}")
-    logger.info(f"Optimized description: {result.best_candidate.get('tool_description', 'N/A')}")
+    best_score = result.val_aggregate_scores[result.best_idx] if result.val_aggregate_scores else 0.0
+    best_candidate = result.candidates[result.best_idx]
+    logger.info(f"Best score: {best_score:.2f}")
+    logger.info(f"Optimized description: {best_candidate.get('tool_description', 'N/A')}")
 
     return result
 
@@ -334,27 +331,24 @@ def run_multitool_example():
         "tool_description_list_files": "List files.",
     }
 
-    logger.info(f"\\nOptimizing {len(adapter.tool_names)} tools...")
+    logger.info(f"\nOptimizing {len(adapter.tool_names)} tools...")
 
-    optimizer = gepa.GEPA(adapter=adapter, n_iterations=2)
-
-    result = optimizer.optimize(
-        train_dataset=dataset,
-        val_dataset=dataset,
+    result = gepa.optimize(
         seed_candidate=seed_candidate,
-        components_to_update=[
-            "tool_description_read_file",
-            "tool_description_write_file",
-            "tool_description_list_files",
-        ],
+        trainset=dataset,
+        valset=dataset,
+        adapter=adapter,
+        reflection_lm="gpt-4o-mini",
+        max_metric_calls=10,
     )
 
-    logger.info("\\n" + "=" * 60)
+    logger.info("\n" + "=" * 60)
     logger.info("MULTI-TOOL OPTIMIZATION COMPLETE")
     logger.info("=" * 60)
+    best_candidate = result.candidates[result.best_idx]
     for tool_name in adapter.tool_names:
         key = f"tool_description_{tool_name}"
-        logger.info(f"{tool_name}: {result.best_candidate.get(key, 'N/A')}")
+        logger.info(f"{tool_name}: {best_candidate.get(key, 'N/A')}")
 
     return result
 
@@ -393,7 +387,7 @@ if __name__ == "__main__":
             run_multitool_example()
 
     except KeyboardInterrupt:
-        logger.info("\\nInterrupted by user")
+        logger.info("\nInterrupted by user")
         sys.exit(0)
     except Exception as e:
         logger.exception(f"Error: {e}")
