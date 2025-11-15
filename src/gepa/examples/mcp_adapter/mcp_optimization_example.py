@@ -11,16 +11,24 @@ What you'll learn:
 - Running optimization to improve tool descriptions
 - Multi-tool support
 
+MODEL CONFIGURATION:
+Defaults to Ollama models (no API key needed). Requires Ollama installed: https://ollama.com
+Pull models: ollama pull llama3.1:8b && ollama pull qwen3:8b
+
+To use OpenAI models: --task-model gpt-4o-mini (requires OPENAI_API_KEY)
+
 Requirements:
     pip install gepa mcp litellm
 
-For local example:
-    - Create a simple MCP server (see simple_mcp_server.py below)
-    - Run: python mcp_optimization_example.py --mode local
+Usage Examples:
+    # Run with default Ollama models (no flags needed)
+    python mcp_optimization_example.py
 
-For remote example:
-    - Set up a remote MCP server with SSE endpoint
-    - Run: python mcp_optimization_example.py --mode remote --url YOUR_URL
+    # Use OpenAI models (requires OPENAI_API_KEY)
+    python mcp_optimization_example.py --task-model gpt-4o-mini
+
+    # Remote MCP server
+    python mcp_optimization_example.py --mode remote --url YOUR_URL
 """
 
 import logging
@@ -33,6 +41,22 @@ from mcp import StdioServerParameters
 import gepa
 from gepa.adapters.mcp_adapter import MCPAdapter
 
+# Suppress verbose output from dependencies
+try:
+    import litellm
+    litellm.set_verbose = False
+    litellm.drop_params = True
+    # Set LiteLLM logger to WARNING to suppress INFO messages
+    logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+except ImportError:
+    pass
+
+# Suppress HTTP request logging
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+# Configure logging for GEPA output
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -110,7 +134,6 @@ def create_test_server():
     temp_dir = Path(tempfile.mkdtemp(prefix="gepa_mcp_"))
     server_file = temp_dir / "server.py"
     server_file.write_text(SIMPLE_MCP_SERVER)
-    logger.info(f"Created test server at: {server_file}")
     return server_file
 
 
@@ -121,8 +144,6 @@ def create_test_files():
 
     (base_dir / "notes.txt").write_text("Meeting at 3pm in Room B\nDiscuss Q4 goals")
     (base_dir / "data.txt").write_text("Revenue: $50000\nExpenses: $30000\nProfit: $20000")
-
-    logger.info(f"Created test files in: {base_dir}")
 
 
 # ============================================================================
@@ -167,20 +188,23 @@ def metric_fn(data_inst, output: str) -> float:
 # Local Server Example
 # ============================================================================
 
-def run_local_example():
+def run_local_example(task_model: str = "ollama/llama3.1:8b", reflection_model: str = "ollama/qwen3:8b"):
     """Run optimization with local stdio MCP server."""
     logger.info("=" * 60)
-    logger.info("LOCAL MCP SERVER EXAMPLE")
+    logger.info("GEPA MCP Tool Optimization")
     logger.info("=" * 60)
-
-    # Create test server and files
+    
     server_file = create_test_server()
     create_test_files()
+    
+    logger.info(f"MCP Server: Local stdio server ({server_file.name})")
+    logger.info(f"Tools: read_file")
+    logger.info(f"Task Model: {task_model}")
+    logger.info(f"Reflection Model: {reflection_model}")
 
-    # Create adapter with local server
     adapter = MCPAdapter(
-        tool_names="read_file",  # Single tool
-        task_model="gpt-4o-mini",  # Use any litellm-compatible model
+        tool_names="read_file",
+        task_model=task_model,
         metric_fn=metric_fn,
         server_params=StdioServerParameters(
             command="python",
@@ -190,35 +214,39 @@ def run_local_example():
         enable_two_pass=True,
     )
 
-    # Create dataset
     dataset = create_dataset()
-
-    # Define seed candidate (initial tool description)
     seed_candidate = {
         "tool_description": "Read file contents from disk."
     }
+    
+    logger.info("")
+    logger.info("Seed Prompt (Initial Tool Description):")
+    logger.info(f"  {seed_candidate['tool_description']}")
+    logger.info("")
+    logger.info(f"Dataset: {len(dataset)} examples")
+    logger.info("")
+    logger.info("Starting GEPA optimization...")
+    logger.info("-" * 60)
 
-    logger.info("\nRunning optimization...")
-    logger.info(f"Dataset size: {len(dataset)} examples")
-    logger.info(f"Initial tool description: {seed_candidate['tool_description']}")
-
-    # Run GEPA optimization
     result = gepa.optimize(
         seed_candidate=seed_candidate,
         trainset=dataset,
-        valset=dataset,  # In practice, use separate validation set
+        valset=dataset,
         adapter=adapter,
-        reflection_lm="gpt-4o-mini",  # LLM for generating improved descriptions
-        max_metric_calls=10,  # Limit iterations for demo
+        reflection_lm=reflection_model,
+        max_metric_calls=10,
     )
 
-    logger.info("\n" + "=" * 60)
-    logger.info("OPTIMIZATION COMPLETE")
+    logger.info("-" * 60)
+    logger.info("Optimization Complete")
     logger.info("=" * 60)
     best_score = result.val_aggregate_scores[result.best_idx] if result.val_aggregate_scores else 0.0
     best_candidate = result.candidates[result.best_idx]
-    logger.info(f"Best score: {best_score:.2f}")
-    logger.info(f"Optimized tool description: {best_candidate.get('tool_description', 'N/A')}")
+    logger.info(f"Best Score: {best_score:.2f}")
+    logger.info("")
+    logger.info("Optimized Tool Description:")
+    logger.info(f"  {best_candidate.get('tool_description', 'N/A')}")
+    logger.info("=" * 60)
 
     return result
 
@@ -227,26 +255,26 @@ def run_local_example():
 # Remote Server Example
 # ============================================================================
 
-def run_remote_example(url: str):
+def run_remote_example(url: str, task_model: str = "ollama/llama3.1:8b", reflection_model: str = "ollama/qwen3:8b"):
     """Run optimization with remote SSE MCP server."""
     logger.info("=" * 60)
-    logger.info("REMOTE MCP SERVER EXAMPLE (SSE)")
+    logger.info("GEPA MCP Tool Optimization")
     logger.info("=" * 60)
+    
+    logger.info(f"MCP Server: Remote SSE server ({url})")
+    logger.info(f"Tools: search")
+    logger.info(f"Task Model: {task_model}")
+    logger.info(f"Reflection Model: {reflection_model}")
 
-    # Create adapter with remote server
     adapter = MCPAdapter(
-        tool_names="search",  # Example: search tool
-        task_model="gpt-4o-mini",
+        tool_names="search",
+        task_model=task_model,
         metric_fn=metric_fn,
         remote_url=url,
         remote_transport="sse",
-        remote_headers={
-            # Add auth headers if needed
-            # "Authorization": "Bearer YOUR_TOKEN"
-        },
+        remote_headers={},
     )
 
-    # Define your dataset based on remote server's capabilities
     dataset = [
         {
             "user_query": "Search for information about Python",
@@ -259,27 +287,35 @@ def run_remote_example(url: str):
     seed_candidate = {
         "tool_description": "Search for information."
     }
+    
+    logger.info("")
+    logger.info("Seed Prompt (Initial Tool Description):")
+    logger.info(f"  {seed_candidate['tool_description']}")
+    logger.info("")
+    logger.info(f"Dataset: {len(dataset)} examples")
+    logger.info("")
+    logger.info("Starting GEPA optimization...")
+    logger.info("-" * 60)
 
-    logger.info(f"\nConnecting to remote server: {url}")
-    logger.info(f"Dataset size: {len(dataset)} examples")
-
-    # Run optimization
     result = gepa.optimize(
         seed_candidate=seed_candidate,
         trainset=dataset,
         valset=dataset,
         adapter=adapter,
-        reflection_lm="gpt-4o-mini",
+        reflection_lm=reflection_model,
         max_metric_calls=10,
     )
 
-    logger.info("\n" + "=" * 60)
-    logger.info("OPTIMIZATION COMPLETE")
+    logger.info("-" * 60)
+    logger.info("Optimization Complete")
     logger.info("=" * 60)
     best_score = result.val_aggregate_scores[result.best_idx] if result.val_aggregate_scores else 0.0
     best_candidate = result.candidates[result.best_idx]
-    logger.info(f"Best score: {best_score:.2f}")
-    logger.info(f"Optimized description: {best_candidate.get('tool_description', 'N/A')}")
+    logger.info(f"Best Score: {best_score:.2f}")
+    logger.info("")
+    logger.info("Optimized Tool Description:")
+    logger.info(f"  {best_candidate.get('tool_description', 'N/A')}")
+    logger.info("=" * 60)
 
     return result
 
@@ -288,19 +324,23 @@ def run_remote_example(url: str):
 # Multi-Tool Example
 # ============================================================================
 
-def run_multitool_example():
+def run_multitool_example(task_model: str = "ollama/llama3.1:8b", reflection_model: str = "ollama/qwen3:8b"):
     """Run optimization with multiple tools."""
     logger.info("=" * 60)
-    logger.info("MULTI-TOOL EXAMPLE")
+    logger.info("GEPA MCP Tool Optimization (Multi-Tool)")
     logger.info("=" * 60)
-
+    
     server_file = create_test_server()
     create_test_files()
+    
+    logger.info(f"MCP Server: Local stdio server ({server_file.name})")
+    logger.info(f"Tools: read_file, write_file, list_files")
+    logger.info(f"Task Model: {task_model}")
+    logger.info(f"Reflection Model: {reflection_model}")
 
-    # Create adapter with multiple tools
     adapter = MCPAdapter(
-        tool_names=["read_file", "write_file", "list_files"],  # Multiple tools
-        task_model="gpt-4o-mini",
+        tool_names=["read_file", "write_file", "list_files"],
+        task_model=task_model,
         metric_fn=metric_fn,
         server_params=StdioServerParameters(
             command="python",
@@ -308,7 +348,6 @@ def run_multitool_example():
         ),
     )
 
-    # Dataset with queries requiring different tools
     dataset = [
         {
             "user_query": "What files are available?",
@@ -324,31 +363,41 @@ def run_multitool_example():
         },
     ]
 
-    # Optimize descriptions for each tool
     seed_candidate = {
         "tool_description_read_file": "Read a file.",
         "tool_description_write_file": "Write a file.",
         "tool_description_list_files": "List files.",
     }
-
-    logger.info(f"\nOptimizing {len(adapter.tool_names)} tools...")
+    
+    logger.info("")
+    logger.info("Seed Prompts (Initial Tool Descriptions):")
+    for tool_name in adapter.tool_names:
+        key = f"tool_description_{tool_name}"
+        logger.info(f"  {tool_name}: {seed_candidate.get(key, 'N/A')}")
+    logger.info("")
+    logger.info(f"Dataset: {len(dataset)} examples")
+    logger.info("")
+    logger.info("Starting GEPA optimization...")
+    logger.info("-" * 60)
 
     result = gepa.optimize(
         seed_candidate=seed_candidate,
         trainset=dataset,
         valset=dataset,
         adapter=adapter,
-        reflection_lm="gpt-4o-mini",
+        reflection_lm=reflection_model,
         max_metric_calls=10,
     )
 
-    logger.info("\n" + "=" * 60)
-    logger.info("MULTI-TOOL OPTIMIZATION COMPLETE")
+    logger.info("-" * 60)
+    logger.info("Optimization Complete")
     logger.info("=" * 60)
     best_candidate = result.candidates[result.best_idx]
+    logger.info("Optimized Tool Descriptions:")
     for tool_name in adapter.tool_names:
         key = f"tool_description_{tool_name}"
-        logger.info(f"{tool_name}: {best_candidate.get(key, 'N/A')}")
+        logger.info(f"  {tool_name}: {best_candidate.get(key, 'N/A')}")
+    logger.info("=" * 60)
 
     return result
 
@@ -372,19 +421,31 @@ if __name__ == "__main__":
         type=str,
         help="Remote MCP server URL (for remote mode)",
     )
+    parser.add_argument(
+        "--task-model",
+        type=str,
+        default="ollama/llama3.1:8b",
+        help='Model for task execution (default: "ollama/llama3.1:8b")',
+    )
+    parser.add_argument(
+        "--reflection-model",
+        type=str,
+        default="ollama/qwen3:8b",
+        help='Model for reflection (default: "ollama/qwen3:8b")',
+    )
 
     args = parser.parse_args()
 
     try:
         if args.mode == "local":
-            run_local_example()
+            run_local_example(args.task_model, args.reflection_model)
         elif args.mode == "remote":
             if not args.url:
                 logger.error("Remote mode requires --url argument")
                 sys.exit(1)
-            run_remote_example(args.url)
+            run_remote_example(args.url, args.task_model, args.reflection_model)
         elif args.mode == "multitool":
-            run_multitool_example()
+            run_multitool_example(args.task_model, args.reflection_model)
 
     except KeyboardInterrupt:
         logger.info("\nInterrupted by user")
