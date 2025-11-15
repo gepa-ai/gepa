@@ -527,17 +527,77 @@ Always respond with valid JSON. No other text.
 
         return f"{custom_system_prompt}\n{tools_section}{usage_instructions}"
 
-    def _extract_tool_response(self, result: dict) -> str:
-        """Extract text from MCP tool response."""
-        if isinstance(result, dict):
-            content = result.get("content", [])
-            if isinstance(content, list):
+    def _extract_tool_response(self, result) -> str:
+        """
+        Extract text from MCP tool response.
+
+        Handles multiple content types following MCP SDK best practices:
+        - TextContent: Plain text responses
+        - EmbeddedResource: Resource references
+        - ImageContent: Image data (converted to description)
+        - structuredContent: Structured JSON data
+
+        Based on latest MCP SDK examples and DSPy implementation.
+        """
+        try:
+            # Import MCP types for proper parsing
+            from mcp.types import EmbeddedResource, ImageContent, TextContent
+
+            # Check for errors first (following DSPy pattern)
+            if hasattr(result, "isError") and result.isError:
+                # Extract error message from content
+                error_texts = []
+                for content_item in result.content:
+                    if isinstance(content_item, TextContent):
+                        error_texts.append(content_item.text)
+                error_msg = "\n".join(error_texts) if error_texts else "Tool execution failed"
+                logger.warning(f"Tool returned error: {error_msg}")
+                return f"ERROR: {error_msg}"
+
+            # Try structured content first (modern MCP pattern)
+            if hasattr(result, "structuredContent") and result.structuredContent:
+                import json
+
+                return json.dumps(result.structuredContent, indent=2)
+
+            # Parse content array
+            if hasattr(result, "content"):
                 texts = []
-                for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        texts.append(item.get("text", ""))
-                return "\n".join(texts)
-        return str(result)
+                for content_item in result.content:
+                    if isinstance(content_item, TextContent):
+                        texts.append(content_item.text)
+                    elif isinstance(content_item, EmbeddedResource):
+                        # Handle embedded resources
+                        resource = content_item.resource
+                        if hasattr(resource, "text"):
+                            texts.append(resource.text)
+                        else:
+                            texts.append(f"[Resource: {getattr(resource, 'uri', 'unknown')}]")
+                    elif isinstance(content_item, ImageContent):
+                        # Handle images with description
+                        mime_type = getattr(content_item, "mimeType", "unknown")
+                        data_len = len(getattr(content_item, "data", b""))
+                        texts.append(f"[Image: {mime_type}, {data_len} bytes]")
+
+                if texts:
+                    return "\n".join(texts)
+
+            # Fallback to dict access for backward compatibility
+            if isinstance(result, dict):
+                content = result.get("content", [])
+                if isinstance(content, list):
+                    texts = []
+                    for item in content:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            texts.append(item.get("text", ""))
+                    # Return empty string if content list is present but empty
+                    return "\n".join(texts)
+
+            return str(result)
+
+        except Exception as e:
+            logger.exception("Failed to extract tool response")
+            return f"ERROR extracting response: {e!s}"
 
     def make_reflective_dataset(
         self,

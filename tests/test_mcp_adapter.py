@@ -314,6 +314,67 @@ class TestMCPAdapterHelpers:
         extracted = adapter._extract_tool_response(result)
         assert extracted == ""
 
+    def test_extract_tool_response_with_error(self, server_params, simple_metric):
+        """Test extracting error from tool response (DSPy pattern)."""
+        from mcp.types import CallToolResult, TextContent
+
+        adapter = MCPAdapter(
+            tool_names="read_file",
+            task_model="gpt-4o-mini",
+            metric_fn=simple_metric,
+            server_params=server_params,
+        )
+
+        # Create a proper MCP error result
+        error_result = CallToolResult(
+            content=[TextContent(type="text", text="File not found")],
+            isError=True,
+        )
+
+        extracted = adapter._extract_tool_response(error_result)
+        assert "ERROR" in extracted
+        assert "File not found" in extracted
+
+    def test_extract_tool_response_with_structured_content(self, server_params, simple_metric):
+        """Test extracting structured content (modern MCP pattern)."""
+        adapter = MCPAdapter(
+            tool_names="read_file",
+            task_model="gpt-4o-mini",
+            metric_fn=simple_metric,
+            server_params=server_params,
+        )
+
+        # Mock result with structured content
+        result = MagicMock()
+        result.isError = False
+        result.structuredContent = {"name": "John", "age": 30}
+        result.content = []
+
+        extracted = adapter._extract_tool_response(result)
+        assert "John" in extracted
+        assert "30" in extracted
+
+    def test_extract_tool_response_with_image_content(self, server_params, simple_metric):
+        """Test handling image content."""
+        from mcp.types import ImageContent
+
+        adapter = MCPAdapter(
+            tool_names="read_file",
+            task_model="gpt-4o-mini",
+            metric_fn=simple_metric,
+            server_params=server_params,
+        )
+
+        # Mock result with image content
+        result = MagicMock()
+        result.isError = False
+        result.structuredContent = None
+        result.content = [ImageContent(type="image", data=b"fake_image_data", mimeType="image/png")]
+
+        extracted = adapter._extract_tool_response(result)
+        assert "Image" in extracted
+        assert "image/png" in extracted
+
     def test_generate_tool_feedback_success(self, server_params, simple_metric):
         """Test generating feedback for successful execution."""
         adapter = MCPAdapter(
