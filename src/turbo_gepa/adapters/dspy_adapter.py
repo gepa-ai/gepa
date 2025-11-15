@@ -130,10 +130,15 @@ class DSpyAdapter:
         self.sampler = InstanceSampler(list(self.example_map.keys()), seed=sampler_seed)
         env_cache = os.getenv("TURBOGEPA_CACHE_PATH")
         env_logs = os.getenv("TURBOGEPA_LOG_PATH")
+        env_control = os.getenv("TURBOGEPA_CONTROL_PATH")
         self.base_cache_dir = os.path.abspath(cache_dir or env_cache or config.cache_path)
         self.base_log_dir = os.path.abspath(log_dir or env_logs or config.log_path)
         Path(self.base_cache_dir).mkdir(parents=True, exist_ok=True)
         Path(self.base_log_dir).mkdir(parents=True, exist_ok=True)
+        control_path = config.control_dir if config.control_dir is not None else env_control
+        self.control_dir = os.path.abspath(control_path) if control_path else None
+        if self.control_dir:
+            Path(self.control_dir).mkdir(parents=True, exist_ok=True)
         namespace = self.config.shared_cache_namespace or "dspy"
         self.cache = DiskCache(self.base_cache_dir, namespace=namespace)
         self.archive = Archive()
@@ -532,6 +537,7 @@ class DSpyAdapter:
             sampler=self.sampler,
             mutator=self.mutator,
             cache=self.cache,
+            control_dir=self.control_dir,
         )
 
     async def optimize_async(
@@ -568,11 +574,14 @@ class DSpyAdapter:
         seed_candidate = Candidate(text=seed_text, meta={"source": "seed"})
 
         # Run optimization
-        await orchestrator.run(
-            [seed_candidate],
-            max_rounds=max_rounds,
-            max_evaluations=max_evaluations,
-        )
+        try:
+            await orchestrator.run(
+                [seed_candidate],
+                max_rounds=max_rounds,
+                max_evaluations=max_evaluations,
+            )
+        finally:
+            orchestrator.finalize_control()
 
         # Get best result
         pareto_entries = orchestrator.archive.pareto_entries()

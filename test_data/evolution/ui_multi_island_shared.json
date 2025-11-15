@@ -1,0 +1,258 @@
+{
+  "run_id": "ui-multi-island-shared",
+  "run_metadata": {
+    "run_id": "ui-multi-island-shared",
+    "best_quality": 0.95,
+    "best_prompt": "Shared Child C - island 3 finisher",
+    "evaluations": 72,
+    "time_to_target_seconds": 212.0
+  },
+  "metrics": {
+    "time_to_target_seconds": 212.0,
+    "promotions_by_rung": {
+      "0": 4,
+      "1": 3,
+      "2": 1
+    }
+  },
+  "evolution_stats": {
+    "parent_children": {
+      "i0_seed_root": [
+        "i0_branch_a",
+        "i0_branch_b"
+      ],
+      "i1_seed_root": [
+        "i1_branch_a",
+        "i1_branch_b"
+      ],
+      "i2_seed_root": [
+        "i2_branch_a"
+      ],
+      "i2_branch_a": [
+        "i2_best"
+      ],
+      "i3_seed_root": [
+        "i3_branch_a",
+        "i3_branch_b"
+      ],
+      "i2_best": [
+        "shared_child_0",
+        "shared_child_1",
+        "shared_child_3"
+      ],
+      "shared_child_3": [
+        "shared_child_3_final"
+      ]
+    },
+    "migration_events": [
+      {
+        "candidate": "i2_best",
+        "from_island": 2,
+        "to_island": 0,
+        "timestamp": 1710000200.0
+      },
+      {
+        "candidate": "i2_best",
+        "from_island": 2,
+        "to_island": 1,
+        "timestamp": 1710000210.0
+      },
+      {
+        "candidate": "i2_best",
+        "from_island": 2,
+        "to_island": 3,
+        "timestamp": 1710000220.0
+      }
+    ]
+  },
+  "timeline": [
+    {"evaluations": 0, "best_quality": 0.55},
+    {"evaluations": 12, "best_quality": 0.64},
+    {"evaluations": 24, "best_quality": 0.71},
+    {"evaluations": 36, "best_quality": 0.78},
+    {"evaluations": 48, "best_quality": 0.85},
+    {"evaluations": 60, "best_quality": 0.92},
+    {"evaluations": 72, "best_quality": 0.95}
+  ],
+  "lineage": [
+    {
+      "fingerprint": "i0_seed_root",
+      "generation": 0,
+      "quality": 0.58,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Island0 Seed",
+      "prompt_full": "Island0 Seed Root",
+      "origin_island": 0,
+      "current_island": 0
+    },
+    {
+      "fingerprint": "i0_branch_a",
+      "generation": 1,
+      "quality": 0.65,
+      "shard_fraction": 0.5,
+      "status": "other",
+      "prompt": "Island0 Branch A",
+      "prompt_full": "Island0 exploration branch A",
+      "origin_island": 0,
+      "current_island": 0
+    },
+    {
+      "fingerprint": "i0_branch_b",
+      "generation": 1,
+      "quality": 0.66,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Island0 Branch B",
+      "prompt_full": "Island0 exploration branch B",
+      "origin_island": 0,
+      "current_island": 0
+    },
+    {
+      "fingerprint": "i1_seed_root",
+      "generation": 0,
+      "quality": 0.57,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Island1 Seed",
+      "prompt_full": "Island1 Seed Root",
+      "origin_island": 1,
+      "current_island": 1
+    },
+    {
+      "fingerprint": "i1_branch_a",
+      "generation": 1,
+      "quality": 0.64,
+      "shard_fraction": 0.5,
+      "status": "other",
+      "prompt": "Island1 Branch A",
+      "prompt_full": "Island1 exploration branch A",
+      "origin_island": 1,
+      "current_island": 1
+    },
+    {
+      "fingerprint": "i1_branch_b",
+      "generation": 1,
+      "quality": 0.68,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Island1 Branch B",
+      "prompt_full": "Island1 exploration branch B",
+      "origin_island": 1,
+      "current_island": 1
+    },
+    {
+      "fingerprint": "i2_seed_root",
+      "generation": 0,
+      "quality": 0.6,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Island2 Seed",
+      "prompt_full": "Island2 Seed Root",
+      "origin_island": 2,
+      "current_island": 2
+    },
+    {
+      "fingerprint": "i2_branch_a",
+      "generation": 1,
+      "quality": 0.72,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Island2 Branch A",
+      "prompt_full": "Island2 branch leading to best candidate",
+      "origin_island": 2,
+      "current_island": 2
+    },
+    {
+      "fingerprint": "i2_best",
+      "generation": 2,
+      "quality": 0.9,
+      "shard_fraction": 1.0,
+      "status": "promoted",
+      "prompt": "Island2 Best",
+      "prompt_full": "Island2 best prompt ready for sharing",
+      "origin_island": 2,
+      "current_island": 2
+    },
+    {
+      "fingerprint": "i3_seed_root",
+      "generation": 0,
+      "quality": 0.56,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Island3 Seed",
+      "prompt_full": "Island3 Seed Root",
+      "origin_island": 3,
+      "current_island": 3
+    },
+    {
+      "fingerprint": "i3_branch_a",
+      "generation": 1,
+      "quality": 0.63,
+      "shard_fraction": 0.5,
+      "status": "other",
+      "prompt": "Island3 Branch A",
+      "prompt_full": "Island3 exploration branch A",
+      "origin_island": 3,
+      "current_island": 3
+    },
+    {
+      "fingerprint": "i3_branch_b",
+      "generation": 1,
+      "quality": 0.67,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Island3 Branch B",
+      "prompt_full": "Island3 exploration branch B",
+      "origin_island": 3,
+      "current_island": 3
+    },
+    {
+      "fingerprint": "shared_child_0",
+      "generation": 3,
+      "quality": 0.88,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Shared Child A",
+      "prompt_full": "Island0 continuing work on Island2 best",
+      "origin_island": 2,
+      "current_island": 0,
+      "migrated_from_island": 2
+    },
+    {
+      "fingerprint": "shared_child_1",
+      "generation": 3,
+      "quality": 0.9,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Shared Child B",
+      "prompt_full": "Island1 continuing work on Island2 best",
+      "origin_island": 2,
+      "current_island": 1,
+      "migrated_from_island": 2
+    },
+    {
+      "fingerprint": "shared_child_3",
+      "generation": 3,
+      "quality": 0.93,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Shared Child C",
+      "prompt_full": "Island3 continuing work on Island2 best",
+      "origin_island": 2,
+      "current_island": 3,
+      "migrated_from_island": 2
+    },
+    {
+      "fingerprint": "shared_child_3_final",
+      "generation": 4,
+      "quality": 0.95,
+      "shard_fraction": 1.0,
+      "status": "promoted",
+      "prompt": "Shared Child C Final",
+      "prompt_full": "Island3 final refinement of shared candidate",
+      "origin_island": 3,
+      "current_island": 3
+    }
+  ]
+}

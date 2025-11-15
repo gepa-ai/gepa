@@ -53,6 +53,7 @@ def _prepare_adapter(
 def run_worker_from_factory(
     *,
     factory: str | FactoryType,
+    package: str | None = None,
     worker_id: int,
     worker_count: int,
     islands_per_worker: int | None = None,
@@ -61,6 +62,8 @@ def run_worker_from_factory(
     max_evaluations: int | None = None,
     display_progress: bool = True,
     enable_auto_stop: bool = True,
+    control_dir: str | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Instantiate an adapter via ``factory`` and run the assigned islands.
@@ -69,6 +72,9 @@ def run_worker_from_factory(
     (DefaultAdapter, Sequence[str|Candidate]) to provide custom seeds.
     """
 
+    if package:
+        import importlib
+        importlib.import_module(package)
     factory_fn = _resolve_factory(factory)
     built = factory_fn()
     adapter: DefaultAdapter
@@ -87,6 +93,13 @@ def run_worker_from_factory(
         worker_count=worker_count,
         islands_per_worker=islands_per_worker,
     )
+    if control_dir:
+        resolved_control = os.path.abspath(control_dir)
+        os.makedirs(resolved_control, exist_ok=True)
+        adapter.control_dir = resolved_control  # type: ignore[attr-defined]
+        adapter.config.control_dir = resolved_control
+    if run_id:
+        adapter._forced_run_token = run_id  # type: ignore[attr-defined]
     payload = asyncio.run(
         adapter.optimize_async(
             seed_values or ["You are a helpful assistant."],
@@ -122,6 +135,8 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         help="Seed prompt literal (repeatable). Overrides seeds-json and factory defaults.",
     )
+    parser.add_argument("--control-dir", help="Shared directory for control/stop files.")
+    parser.add_argument("--run-id", help="Global run ID shared by all workers (defaults to random).")
     parser.add_argument("--max-rounds", type=int, default=None, help="Optional maximum rounds per worker.")
     parser.add_argument("--max-evaluations", type=int, default=None, help="Optional evaluation budget per worker.")
     parser.add_argument("--quiet", action="store_true", help="Suppress progress logging.")
@@ -144,6 +159,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         max_evaluations=args.max_evaluations,
         display_progress=not args.quiet,
         enable_auto_stop=not args.no_auto_stop,
+        control_dir=args.control_dir,
+        run_id=args.run_id,
     )
     if args.output_json:
         os.makedirs(os.path.dirname(args.output_json) or ".", exist_ok=True)

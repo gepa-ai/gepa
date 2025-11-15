@@ -18,6 +18,7 @@ import random
 import time
 import uuid
 from collections import defaultdict, deque, OrderedDict
+from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
 from turbo_gepa.logging import build_progress_snapshot
@@ -70,6 +71,7 @@ class Orchestrator:
         island_context: IslandContext | None = None,
         island_id: int | None = None,
         migration_backend: MigrationBackend | None = None,
+        control_dir: str | None = None,
         show_progress: bool = True,
         example_sampler: Callable[[int], list[dict[str, object]]] | None = None,
         metrics_callback: Callable | None = None,
@@ -83,6 +85,20 @@ class Orchestrator:
         self.mutator = mutator
         self.cache = cache
         self.island_context = island_context
+        context_island = island_context.island_id if island_context else None
+        resolved_island = island_id if island_id is not None else (context_island if context_island is not None else 0)
+        self.island_id = resolved_island
+        self.worker_id = getattr(self.config, "worker_id", None)
+        self.control_dir: Path | None = None
+        self._control_state_path: Path | None = None
+        self._control_stop_path: Path | None = None
+        self._control_heartbeat_path: Path | None = None
+        self._control_last_heartbeat: float = 0.0
+        self._control_stop_written: bool = False
+        if control_dir:
+            path = Path(control_dir)
+            path.mkdir(parents=True, exist_ok=True)
+            self.control_dir = path
         if migration_backend is not None:
             self.migration_backend: MigrationBackend = migration_backend
         elif island_context is not None:
@@ -211,6 +227,8 @@ class Orchestrator:
         self._lineage_history: defaultdict[str, deque] = defaultdict(lambda: deque(maxlen=8))
         self._sched_to_fingerprint: dict[str, str] = {}
         self._promotion_pending: set[str] = set()
+        self._candidate_island_meta: dict[str, dict[str, Any]] = {}
+        self._migration_events: deque[dict[str, Any]] = deque(maxlen=256)
         self._high_rung_parent_quorum: int = 3
         self._last_mutation_attempt: float = 0.0
         self._candidate_eval_examples: dict[str, list[str]] = {}
@@ -220,6 +238,8 @@ class Orchestrator:
         self._stop_reason: str | None = None
         self._run_started_at: float | None = None
         self._run_id = run_id or uuid.uuid4().hex[:8]
+        if self.control_dir:
+            self._setup_control_paths()
         # Progress timeline for visualization (bounded deque of ProgressSnapshot dicts)
         self._timeline: deque[dict[str, Any]] = deque(maxlen=500)
         # Track candidates by fingerprint so we can recover prompt text for
@@ -346,6 +366,12 @@ class Orchestrator:
                 best_prompt_snippet=(self._north_star_prompt[:180] if isinstance(self._north_star_prompt, str) else None),
                 best_full_quality=(round(self._north_star_quality, 6) if isinstance(self._north_star_quality, (int, float)) else None),
             )
+            self._write_control_stop(elapsed)
+            self._control_heartbeat(
+                "winner",
+                force=True,
+                extra={"time_to_target_seconds": elapsed},
+            )
 
     def _log_structured(self, event: str, level: LogLevel = LogLevel.INFO, **fields: Any) -> None:
         payload = {"event": event, "run_id": self._run_id}
@@ -359,6 +385,76 @@ class Orchestrator:
                 sort_keys=True,
             )
         self.logger.log(message, level)
+
+    def _control_write_json(self, path: Path | None, payload: dict[str, Any]) -> None:
+        if path is None:
+            return
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tmp.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+        tmp.replace(path)
+
+    def _setup_control_paths(self) -> None:
+        if not self.control_dir:
+            return
+        hb_name = f"heartbeat_w{self.worker_id if self.worker_id is not None else 'local'}_i{self.island_id}.json"
+        self._control_state_path = self.control_dir / "state.json"
+        self._control_stop_path = self.control_dir / "stop.json"
+        self._control_heartbeat_path = self.control_dir / hb_name
+        self._control_last_heartbeat = 0.0
+        payload = {
+            "run_id": self._run_id,
+            "target_quality": self.config.target_quality,
+            "target_shard_fraction": self.config.target_shard_fraction,
+            "worker_id": self.worker_id,
+            "island_id": self.island_id,
+            "timestamp": time.time(),
+        }
+        self._control_write_json(self._control_state_path, payload)
+        self._control_heartbeat("starting", force=True)
+
+    def _control_should_stop(self) -> bool:
+        return self._control_stop_path is not None and self._control_stop_path.exists()
+
+    def _control_heartbeat(self, status: str, *, force: bool = False, extra: dict[str, Any] | None = None) -> None:
+        if self._control_heartbeat_path is None:
+            return
+        now = time.time()
+        if (
+            not force
+            and status == "running"
+            and (now - self._control_last_heartbeat) < 2.0
+        ):
+            return
+        payload: dict[str, Any] = {
+            "run_id": self._run_id,
+            "worker_id": self.worker_id,
+            "island_id": self.island_id,
+            "status": status,
+            "timestamp": now,
+        }
+        if extra:
+            payload.update(extra)
+        self._control_write_json(self._control_heartbeat_path, payload)
+        self._control_last_heartbeat = now
+
+    def _write_control_stop(self, elapsed: float | None) -> None:
+        if self._control_stop_written or self._control_stop_path is None:
+            return
+        payload = {
+            "run_id": self._run_id,
+            "worker_id": self.worker_id,
+            "island_id": self.island_id,
+            "timestamp": time.time(),
+            "time_to_target_seconds": elapsed,
+        }
+        self._control_write_json(self._control_stop_path, payload)
+        self._control_stop_written = True
+
+    def finalize_control(self, status: str | None = None) -> None:
+        final_status = status or self._stop_reason or "finished"
+        self._control_heartbeat(final_status, force=True)
 
     @property
     def stop_reason(self) -> str | None:
@@ -430,6 +526,7 @@ class Orchestrator:
         for candidate in candidates:
             if not candidate.text.strip():
                 continue
+            self._stamp_island_metadata(candidate)
             # Remember candidate by fingerprint for later lookup (even if it falls off Pareto)
             try:
                 self._candidates_by_fp[candidate.fingerprint] = candidate
@@ -455,6 +552,50 @@ class Orchestrator:
             self._pending_fingerprints.add(fingerprint)
             # Keep legacy queue in sync for diagnostics and persistence
             self.queue.append(candidate)
+
+    def _ensure_candidate_meta(self, candidate: Candidate) -> dict[str, Any]:
+        meta = candidate.meta
+        if not isinstance(meta, dict):
+            try:
+                meta = dict(meta or {})
+            except Exception:
+                meta = {}
+            candidate.meta = meta
+        return meta
+
+    def _stamp_island_metadata(
+        self,
+        candidate: Candidate,
+        *,
+        source: str | None = None,
+        migrated_from: int | None = None,
+    ) -> None:
+        meta = self._ensure_candidate_meta(candidate)
+        if "origin_island" not in meta:
+            meta["origin_island"] = self.island_id
+        if source:
+            meta["island_source"] = source
+        if migrated_from is not None:
+            meta["migrated_from_island"] = migrated_from
+            meta["previous_island"] = migrated_from
+        meta["current_island"] = self.island_id
+        fp = candidate.fingerprint
+        self._candidate_island_meta[fp] = {
+            "origin": meta.get("origin_island"),
+            "current": meta.get("current_island"),
+        }
+
+    def _record_migration_event(self, candidate: Candidate, from_island: int | None, to_island: int | None) -> None:
+        if from_island is None or to_island is None or from_island == to_island:
+            return
+        self._migration_events.append(
+            {
+                "candidate": candidate.fingerprint,
+                "from_island": int(from_island),
+                "to_island": int(to_island),
+                "timestamp": time.time(),
+            }
+        )
 
     def _buffer_mutation(self, candidate: Candidate) -> None:
         """Store streamed mutations in a bounded buffer until the queue has capacity."""
@@ -857,6 +998,7 @@ class Orchestrator:
         import time
         optimization_start_time = time.time()
         self._run_started_at = optimization_start_time
+        self._control_heartbeat("running", force=True)
 
         # Write evolution pointer immediately so dashboards can connect
         try:
@@ -926,6 +1068,14 @@ class Orchestrator:
             self.metrics.baseline_quality = baseline
 
         while True:
+            if self._control_should_stop():
+                self._set_stop_reason("control_stop")
+                if self._inflight_tasks:
+                    _debug_log(f"   Cancelling {len(self._inflight_tasks)} in-flight evaluations (control stop)...")
+                    for task in self._inflight_tasks.values():
+                        task.cancel()
+                break
+            self._control_heartbeat("running")
             if max_rounds is not None and window_id >= max_rounds:
                 self._set_stop_reason(f"max_rounds({max_rounds})")
                 break
@@ -1927,6 +2077,14 @@ class Orchestrator:
         self._last_shared[key] = now
         incoming = integrate_in(self.island_context)
         if incoming:
+            for candidate in incoming:
+                meta = candidate.meta if isinstance(candidate.meta, dict) else {}
+                prev_island = meta.get("current_island") if isinstance(meta, dict) else None
+                if prev_island is None:
+                    prev_island = meta.get("origin_island") if isinstance(meta, dict) else None
+                if prev_island is not None and prev_island != self.island_id:
+                    self._record_migration_event(candidate, prev_island, self.island_id)
+                self._stamp_island_metadata(candidate, source="migration", migrated_from=prev_island)
             if self.show_progress:
                 ids = ", ".join(c.fingerprint[:8] for c in incoming)
                 self.logger.log(f"🌐 Island {self.island_id}: received {len(incoming)} candidate(s): {ids}")
@@ -2113,6 +2271,7 @@ class Orchestrator:
 
             candidate_with_meta, decision = await self._ingest_result(seed, result)
             self._record_best_quality(quality, shard_fraction)
+            self._stamp_island_metadata(candidate_with_meta, source="seed")
             enriched.append(candidate_with_meta)
 
             if self.show_progress:
@@ -2363,6 +2522,8 @@ class Orchestrator:
             for candidate in mutations:
                 callback(candidate)
         else:
+            for candidate in mutations:
+                self._stamp_island_metadata(candidate, source=candidate.meta.get("source") if isinstance(candidate.meta, dict) else None)
             self.enqueue(mutations)
 
     async def _generate_mutations_batched(
@@ -2557,6 +2718,7 @@ class Orchestrator:
         async def stream_candidate_to_queue(candidate: Candidate) -> None:
             """Called by mutator for each candidate as soon as it's created."""
             # Enqueue immediately - this feeds the priority queue while mutations are still generating
+            self._stamp_island_metadata(candidate, source=candidate.meta.get("source") if isinstance(candidate.meta, dict) else None)
             self._buffer_mutation(candidate)
             self._drain_mutation_buffer()
             if self.show_progress:
@@ -2586,6 +2748,7 @@ class Orchestrator:
         generated = len(mutations)
         self._mutations_generated += generated
         for candidate in mutations:
+            self._stamp_island_metadata(candidate, source=candidate.meta.get("source") if isinstance(candidate.meta, dict) else None)
             meta = candidate.meta if isinstance(candidate.meta, dict) else {}
             child_key = meta.get("_sched_key") if isinstance(meta, dict) else None
             if not isinstance(child_key, str):
@@ -2668,6 +2831,8 @@ class Orchestrator:
             }
             snapshot["children"] = [self._sched_to_fingerprint.get(child, child) for child in self._children_seen]
             snapshot["promoted_children"] = [self._sched_to_fingerprint.get(child, child) for child in self._promoted_children]
+        if self._migration_events:
+            snapshot["migration_events"] = list(self._migration_events)
         return snapshot
 
     def get_candidate_lineage_data(self) -> list[dict[str, Any]]:
@@ -2750,12 +2915,28 @@ class Orchestrator:
         seen_sched: set[str] = set()  # schedule keys to compute generation
         promote_objective = self.config.promote_objective
 
-        def _add_entry(fp: str, key: str, quality: float, shard: float, status: str, cand_text: str | None, coverage: float | None = None) -> None:
+        def _add_entry(
+            fp: str,
+            key: str,
+            quality: float,
+            shard: float,
+            status: str,
+            cand_text: str | None,
+            coverage: float | None = None,
+            origin: int | None = None,
+            current: int | None = None,
+            migrated_from: int | None = None,
+        ) -> None:
             nonlocal data, seen_nodes, seen_sched
             if not isinstance(fp, str) or not fp:
                 return
             if fp in seen_nodes and key in seen_sched:
                 return
+            stored_meta = self._candidate_island_meta.get(fp)
+            if origin is None and stored_meta:
+                origin = stored_meta.get("origin")
+            if current is None and stored_meta:
+                current = stored_meta.get("current")
             snippet = ""
             if isinstance(cand_text, str):
                 snippet = " ".join(cand_text.split())
@@ -2771,10 +2952,18 @@ class Orchestrator:
                     "coverage_fraction": float(coverage) if isinstance(coverage, (int, float)) else None,
                     "prompt": snippet,
                     "prompt_full": cand_text or "",
+                    "origin_island": origin,
+                    "current_island": current,
+                    "migrated_from_island": migrated_from,
                 }
             )
             seen_nodes.add(fp)
             seen_sched.add(key)
+            store = self._candidate_island_meta.setdefault(fp, {"origin": None, "current": None})
+            if origin is not None and store.get("origin") is None:
+                store["origin"] = origin
+            if current is not None:
+                store["current"] = current
 
         # Helper: resolve schedule key -> fingerprint and candidate object
         def _resolve(key: str) -> tuple[str, Any | None]:
@@ -2791,7 +2980,10 @@ class Orchestrator:
             fp, cand = _resolve(key)
             shard = entry.result.shard_fraction or 0.0
             quality = entry.result.objectives.get(promote_objective, 0.0)
-            _add_entry(fp, key, quality, shard, "promoted", entry.candidate.text, None)
+            origin = meta.get("origin_island") if isinstance(meta, dict) else None
+            current = meta.get("current_island") if isinstance(meta, dict) else None
+            migrated = meta.get("migrated_from_island") if isinstance(meta, dict) else None
+            _add_entry(fp, key, quality, shard, "promoted", entry.candidate.text, None, origin, current, migrated)
 
         # 2) Queue (in_flight)
         for candidate in list(self.queue):
@@ -2804,7 +2996,10 @@ class Orchestrator:
             quality = latest.objectives.get(promote_objective, 0.0) if latest else 0.0
             shard = latest.shard_fraction or 0.0 if latest else 0.0
             cov = getattr(latest, "coverage_fraction", None) if latest else None
-            _add_entry(fp, key, quality, shard, "in_flight", candidate.text, cov)
+            origin = meta.get("origin_island") if isinstance(meta, dict) else None
+            current = meta.get("current_island") if isinstance(meta, dict) else None
+            migrated = meta.get("migrated_from_island") if isinstance(meta, dict) else None
+            _add_entry(fp, key, quality, shard, "in_flight", candidate.text, cov, origin, current, migrated)
 
         # 3) Any evaluated candidates from latest_results
         # Build reverse map from candidate_key to Candidate
@@ -2827,7 +3022,10 @@ class Orchestrator:
             fp, _ = _resolve(key)
             quality = res.objectives.get(promote_objective, 0.0)
             shard = res.shard_fraction or 0.0
-            _add_entry(fp, key, quality, shard, "other", cand.text, None)
+            origin = meta.get("origin_island") if isinstance(meta, dict) else None
+            current = meta.get("current_island") if isinstance(meta, dict) else None
+            migrated = meta.get("migrated_from_island") if isinstance(meta, dict) else None
+            _add_entry(fp, key, quality, shard, "other", cand.text, None, origin, current, migrated)
 
         # 4) Add any child/parent nodes from parent_children that haven't been covered
         for parent_key, children in self._parent_children.items():
@@ -2845,7 +3043,10 @@ class Orchestrator:
                             p_shard = lr.shard_fraction or 0.0
                 except Exception:
                     pass
-                _add_entry(p_fp, parent_key, p_quality, p_shard, "other", getattr(p_cand, "text", None), None)
+                stored = self._candidate_island_meta.get(p_fp, {})
+                origin = stored.get("origin")
+                current = stored.get("current")
+                _add_entry(p_fp, parent_key, p_quality, p_shard, "other", getattr(p_cand, "text", None), None, origin, current, None)
             # Children
             for child_key in list(children):
                 c_fp, c_cand = _resolve(child_key)
@@ -2861,7 +3062,10 @@ class Orchestrator:
                             c_shard = lr.shard_fraction or 0.0
                 except Exception:
                     pass
-                _add_entry(c_fp, child_key, c_quality, c_shard, "other", getattr(c_cand, "text", None), None)
+                stored = self._candidate_island_meta.get(c_fp, {})
+                origin = stored.get("origin")
+                current = stored.get("current")
+                _add_entry(c_fp, child_key, c_quality, c_shard, "other", getattr(c_cand, "text", None), None, origin, current, None)
 
         return data
 
@@ -2913,6 +3117,14 @@ class Orchestrator:
         if migration_k <= 0:
             incoming = self.migration_backend.consume(self.island_id)
             if incoming:
+                for candidate in incoming:
+                    meta = candidate.meta if isinstance(candidate.meta, dict) else {}
+                    prev_island = meta.get("current_island") if isinstance(meta, dict) else None
+                    if prev_island is None:
+                        prev_island = meta.get("origin_island") if isinstance(meta, dict) else None
+                    if prev_island is not None and prev_island != self.island_id:
+                        self._record_migration_event(candidate, prev_island, self.island_id)
+                    self._stamp_island_metadata(candidate, source="migration", migrated_from=prev_island)
                 if self.show_progress:
                     ids = ", ".join(candidate.fingerprint[:8] for candidate in incoming)
                     self.logger.log(f"🌐 Island {self.island_id}: received {len(incoming)} candidate(s): {ids}")
@@ -2939,10 +3151,20 @@ class Orchestrator:
             )[:share_count]
             shared = [entry.candidate for entry in top_candidates]
             if shared:
+                for candidate in shared:
+                    self._stamp_island_metadata(candidate, source="share")
                 self.enqueue(shared)
 
         incoming = self.migration_backend.consume(self.island_id)
         if incoming:
+            for candidate in incoming:
+                meta = candidate.meta if isinstance(candidate.meta, dict) else {}
+                prev_island = meta.get("current_island") if isinstance(meta, dict) else None
+                if prev_island is None:
+                    prev_island = meta.get("origin_island") if isinstance(meta, dict) else None
+                if prev_island is not None and prev_island != self.island_id:
+                    self._record_migration_event(candidate, prev_island, self.island_id)
+                self._stamp_island_metadata(candidate, source="migration", migrated_from=prev_island)
             if self.show_progress:
                 ids = ", ".join(candidate.fingerprint[:8] for candidate in incoming)
                 self.logger.log(f"🌐 Island {self.island_id}: received {len(incoming)} candidate(s): {ids}")

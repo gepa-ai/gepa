@@ -306,6 +306,11 @@
       </div>
 
       <div class="card">
+        <div class="card-title">Islands</div>
+        <div id="islandLegend" class="legend"></div>
+      </div>
+
+      <div class="card">
         <div class="card-title">Statistics</div>
         <div class="stats">
           <div class="stat">
@@ -340,6 +345,29 @@
   </div>
 
   <script>
+    const IS_MODAL_HOST = window.location.hostname.endsWith(".modal.run");
+    const EVOLUTION_BASE = IS_MODAL_HOST ? "/evolution" : "/.turbo_gepa/evolution";
+
+    function _withCacheBuster(url) {
+      const separator = url.includes("?") ? "&" : "?";
+      return `${url}${separator}t=${Date.now()}`;
+    }
+
+    function fetchCurrentRun() {
+      const base = IS_MODAL_HOST
+        ? `${EVOLUTION_BASE}?run=current`
+        : `${EVOLUTION_BASE}/current.json`;
+      return fetch(_withCacheBuster(base));
+    }
+
+    function fetchRunData(runId) {
+      const safeRun = encodeURIComponent(runId);
+      const base = IS_MODAL_HOST
+        ? `${EVOLUTION_BASE}?run=${safeRun}`
+        : `${EVOLUTION_BASE}/${safeRun}.json`;
+      return fetch(_withCacheBuster(base));
+    }
+
     let cy = null;
     let nodeData = new Map();
     let refreshInterval = null;
@@ -350,6 +378,69 @@
     let qualityChart = null;
     let lastSeenEval = 0;
     let currentRunId = null;
+    let graphRunId = null;
+
+    // Island color bookkeeping
+    let islandColorMap = new Map();
+    let islandPaletteIndex = 0;
+    const ISLAND_PALETTE = [
+      "#3B82F6",
+      "#F97316",
+      "#F43F5E",
+      "#22C55E",
+      "#A855F7",
+      "#0EA5E9",
+      "#FACC15",
+      "#FB7185",
+      "#34D399",
+      "#E879F9"
+    ];
+
+    function resetIslandColors() {
+      islandColorMap = new Map();
+      islandPaletteIndex = 0;
+    }
+
+    function getIslandColor(islandId) {
+      const key = islandId ?? "unknown";
+      if (!islandColorMap.has(key)) {
+        const color = ISLAND_PALETTE[islandPaletteIndex % ISLAND_PALETTE.length];
+        islandPaletteIndex += 1;
+        islandColorMap.set(key, color);
+      }
+      return islandColorMap.get(key);
+    }
+
+    function formatIsland(islandId) {
+      if (islandId === null || islandId === undefined) {
+        return "Unknown";
+      }
+      return `Island ${islandId}`;
+    }
+
+    function updateIslandLegend(displayIslands) {
+      const legendEl = document.getElementById('islandLegend');
+      if (!legendEl) return;
+      legendEl.innerHTML = '';
+      if (!displayIslands || displayIslands.size === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'detail-value';
+        empty.style.color = '#6b7280';
+        empty.textContent = 'No islands detected yet';
+        legendEl.appendChild(empty);
+        return;
+      }
+      displayIslands.forEach(islandId => {
+        const row = document.createElement('div');
+        row.className = 'legend-item';
+        const color = getIslandColor(islandId);
+        row.innerHTML = `
+          <div class="legend-color" style="background: ${color};"></div>
+          <span>${formatIsland(islandId)}</span>
+        `;
+        legendEl.appendChild(row);
+      });
+    }
 
     // Initialize Cytoscape
     function initCytoscape() {
@@ -361,7 +452,7 @@
           {
             selector: 'node',
             style: {
-              'background-color': '#6366f1',
+              'background-color': 'data(colorCurrent)',
               'label': 'data(label)',
               'color': '#ffffff',
               'text-valign': 'center',
@@ -369,8 +460,10 @@
               'font-size': '12px',
               'width': '60px',
               'height': '60px',
-              'border-width': '2px',
-              'border-color': '#4f46e5',
+              'border-width': '3px',
+              'border-color': 'data(colorOrigin)',
+              'outline-width': 2,
+              'outline-color': '#4b5563',
               'text-wrap': 'wrap',
               'text-max-width': '80px'
             }
@@ -378,15 +471,13 @@
           {
             selector: 'node[status="promoted"]',
             style: {
-              'background-color': '#10b981',
-              'border-color': '#059669'
+              'outline-color': '#10b981'
             }
           },
           {
             selector: 'node[status="in_flight"]',
             style: {
-              'background-color': '#f59e0b',
-              'border-color': '#d97706'
+              'outline-color': '#f59e0b'
             }
           },
           {
@@ -398,6 +489,12 @@
             }
           },
           {
+            selector: 'node[migrated = "true"]',
+            style: {
+              'border-style': 'dashed'
+            }
+          },
+          {
             selector: 'edge',
             style: {
               'width': 2,
@@ -406,6 +503,14 @@
               'target-arrow-shape': 'triangle',
               'curve-style': 'bezier',
               'arrow-scale': 1.5
+            }
+          },
+          {
+            selector: 'edge.cross-island',
+            style: {
+              'line-color': '#f472b6',
+              'target-arrow-color': '#f472b6',
+              'width': 3
             }
           }
         ],
@@ -591,6 +696,11 @@
     function showDetails(data) {
       if (!data) return;
 
+      const originLabel = formatIsland(data.origin_island);
+      const currentLabel = formatIsland(data.current_island ?? data.origin_island);
+      const migratedLabel = data.origin_island != null && data.current_island != null && data.origin_island !== data.current_island
+        ? `Yes (from ${formatIsland(data.origin_island)})`
+        : "No";
       const content = `
         <div class="details">
           <div class="detail-row">
@@ -614,6 +724,18 @@
             <div class="detail-value">${data.status || 'N/A'}</div>
           </div>
           <div class="detail-row">
+            <div class="detail-label">Origin Island</div>
+            <div class="detail-value">${originLabel}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Current Island</div>
+            <div class="detail-value">${currentLabel}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Migrated?</div>
+            <div class="detail-value">${migratedLabel}</div>
+          </div>
+          <div class="detail-row">
             <div class="detail-label">Prompt</div>
             <div class="prompt-text">${data.prompt_full || data.prompt || '(empty)'}</div>
           </div>
@@ -632,63 +754,123 @@
 
       initCytoscape();
 
+      const runMeta = data.run_metadata || {};
+      const runId = runMeta.run_id || data.run_id || null;
+      if (runId && graphRunId !== runId) {
+        graphRunId = runId;
+        resetIslandColors();
+      }
+
       const lineage = data.lineage;
       const parentChildren = data.evolution_stats.parent_children || {};
 
-      // Clear node data
       nodeData.clear();
 
-      // Build nodes from lineage
+      const nodeMap = new Map();
+      lineage.forEach(item => {
+        if (item.fingerprint) {
+          nodeMap.set(item.fingerprint, { ...item });
+        }
+      });
+
+      const ensureNode = (fp) => {
+        if (!fp) return null;
+        if (!nodeMap.has(fp)) {
+          nodeMap.set(fp, { fingerprint: fp, status: 'other' });
+        }
+        return nodeMap.get(fp);
+      };
+
+      Object.entries(parentChildren).forEach(([parent, children]) => {
+        ensureNode(parent);
+        children.forEach(child => ensureNode(child));
+      });
+
       const nodes = [];
       const edges = [];
+      const islandSet = new Set();
 
-      lineage.forEach(item => {
-        const fp = item.fingerprint;
+      nodeMap.forEach((item, fp) => {
         if (!fp) return;
+        const originIsland = item.origin_island ?? null;
+        const currentIsland = item.current_island ?? originIsland ?? null;
+        const islandKey = currentIsland ?? originIsland ?? 'unknown';
+        const quality = typeof item.quality === 'number' ? item.quality : null;
+        const labelQuality = quality !== null ? quality.toFixed(2) : '—';
+        const labelIsland =
+          originIsland === null && currentIsland === null
+            ? 'I?'
+            : originIsland === currentIsland || originIsland === null
+              ? `I${currentIsland ?? originIsland}`
+              : `I${originIsland}→I${currentIsland}`;
+        const label = `${fp.substring(0, 8)}\nq=${labelQuality}\n${labelIsland}`;
+        if (islandKey !== 'unknown') {
+          islandSet.add(islandKey);
+        }
+        const colorCurrent = getIslandColor(currentIsland ?? originIsland ?? 'unknown');
+        const colorOrigin = getIslandColor(originIsland ?? currentIsland ?? 'unknown');
+        const migrated = originIsland !== null && currentIsland !== null && originIsland !== currentIsland;
+        const prompt = item.prompt || '';
+        const promptFull = item.prompt_full || prompt;
 
-        const shortId = fp.substring(0, 8);
-        const label = `${shortId}\nq=${(item.quality || 0).toFixed(2)}`;
+        const details = {
+          fingerprint: fp,
+          generation: item.generation ?? null,
+          quality: quality,
+          shard_fraction: item.shard_fraction ?? null,
+          status: item.status || 'other',
+          prompt,
+          prompt_full: promptFull,
+          origin_island: originIsland,
+          current_island: currentIsland,
+          migrated_from_island: item.migrated_from_island ?? null
+        };
+        nodeData.set(fp, details);
 
         nodes.push({
           data: {
-            id: shortId,
-            label: label,
-            status: item.status || 'other'
+            id: fp,
+            label,
+            status: details.status,
+            colorCurrent,
+            colorOrigin,
+            migrated: migrated ? 'true' : 'false'
           }
         });
-
-        nodeData.set(shortId, item);
       });
 
-      // Build edges from parent_children
+      updateIslandLegend(islandSet);
+
       Object.entries(parentChildren).forEach(([parent, children]) => {
-        const parentShort = parent.substring(0, 8);
         children.forEach(child => {
-          const childShort = child.substring(0, 8);
+          if (!parent || !child) return;
+          const parentInfo = nodeData.get(parent) || {};
+          const childInfo = nodeData.get(child) || {};
+          const parentIsland = parentInfo.origin_island ?? parentInfo.current_island ?? null;
+          const childIsland = childInfo.origin_island ?? childInfo.current_island ?? null;
+          const crossIsland = parentIsland !== null && childIsland !== null && parentIsland !== childIsland;
           edges.push({
             data: {
-              id: `${parentShort}-${childShort}`,
-              source: parentShort,
-              target: childShort
-            }
+              id: `${parent}-${child}`,
+              source: parent,
+              target: child
+            },
+            classes: crossIsland ? 'cross-island' : ''
           });
         });
       });
 
-      // Get current node and edge IDs
       const existingNodeIds = new Set(cy.nodes().map(n => n.id()));
       const existingEdgeIds = new Set(cy.edges().map(e => e.id()));
 
       const newNodeIds = new Set(nodes.map(n => n.data.id));
       const newEdgeIds = new Set(edges.map(e => e.data.id));
 
-      // Check if structure actually changed
       const nodesAdded = [...newNodeIds].some(id => !existingNodeIds.has(id));
       const edgesAdded = [...newEdgeIds].some(id => !existingEdgeIds.has(id));
       const structureChanged = nodesAdded || edgesAdded || existingNodeIds.size !== newNodeIds.size;
 
       if (structureChanged) {
-        // Structure changed - need to rebuild
         cy.elements().remove();
         cy.add([...nodes, ...edges]);
 
@@ -698,12 +880,11 @@
           nodeSep: 80,
           rankSep: 120,
           padding: 50,
-          animate: false
+          spacingFactor: 1.1
         });
 
         layout.run();
 
-        // Cache positions after layout
         setTimeout(() => {
           cy.nodes().forEach(node => {
             const pos = node.position();
@@ -711,46 +892,44 @@
           });
         }, 50);
       } else {
-        // No structure change - just update node attributes in place
         nodes.forEach(nodeObj => {
           const nodeId = nodeObj.data.id;
-          const cyNode = cy.$(`#${nodeId}`);
+          const cyNode = cy.getElementById(nodeId);
 
-          if (cyNode.length > 0) {
-            // Update node data without moving it
+          if (cyNode && cyNode.length > 0) {
             cyNode.data('label', nodeObj.data.label);
             cyNode.data('status', nodeObj.data.status);
+            cyNode.data('colorCurrent', nodeObj.data.colorCurrent);
+            cyNode.data('colorOrigin', nodeObj.data.colorOrigin);
+            cyNode.data('migrated', nodeObj.data.migrated);
           }
         });
       }
 
       lastNodeCount = nodes.length;
 
-      // Update stats
       document.getElementById('nodeCount').textContent = nodes.length;
       document.getElementById('edgeCount').textContent = edges.length;
-      document.getElementById('evalCount').textContent = data.run_metadata?.evaluations || 0;
+      document.getElementById('evalCount').textContent = runMeta?.evaluations || 0;
       document.getElementById('bestQuality').textContent =
-        data.run_metadata?.best_quality != null
-          ? data.run_metadata.best_quality.toFixed(3)
+        runMeta?.best_quality != null
+          ? runMeta.best_quality.toFixed(3)
           : '-';
 
-      // Auto-select best node
-      if (data.run_metadata?.best_prompt) {
+      if (runMeta?.best_prompt) {
         const bestNode = lineage.find(item =>
-          item.prompt === data.run_metadata.best_prompt ||
-          item.prompt_full === data.run_metadata.best_prompt
+          item.prompt === runMeta.best_prompt ||
+          item.prompt_full === runMeta.best_prompt
         );
 
-        if (bestNode) {
-          const shortId = bestNode.fingerprint.substring(0, 8);
+        if (bestNode && bestNode.fingerprint) {
           setTimeout(() => {
-            const node = cy.$(`#${shortId}`);
-            if (node.length > 0) {
+            const node = cy.getElementById(bestNode.fingerprint);
+            if (node && node.length > 0) {
               cy.nodes().removeClass('highlighted');
               node.addClass('highlighted');
               cy.center(node);
-              showDetails(bestNode);
+              showDetails(nodeData.get(bestNode.fingerprint) || bestNode);
             }
           }, 100);
         }
@@ -761,7 +940,7 @@
     async function fetchData() {
       try {
         // First get current run ID
-        const currentResp = await fetch('/.turbo_gepa/evolution/current.json?t=' + Date.now());
+        const currentResp = await fetchCurrentRun();
         if (!currentResp.ok) throw new Error('Failed to fetch current.json');
 
         const current = await currentResp.json();
@@ -773,7 +952,7 @@
         }
 
         // Fetch run data
-        const dataResp = await fetch(`/.turbo_gepa/evolution/${runId}.json?t=` + Date.now());
+        const dataResp = await fetchRunData(runId);
         if (!dataResp.ok) throw new Error('Failed to fetch run data');
 
         const data = await dataResp.json();

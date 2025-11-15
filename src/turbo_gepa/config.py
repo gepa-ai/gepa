@@ -264,6 +264,7 @@ class Config:
     migration_k: int = 3
     cache_path: str = ".turbo_gepa/cache"
     log_path: str = ".turbo_gepa/logs"
+    control_dir: str | None = None
     batch_size: int | None = None  # Auto-scaled to eval_concurrency if None
     queue_limit: int | None = None  # Auto-scaled to 2x eval_concurrency if None
     promote_objective: str = "quality"

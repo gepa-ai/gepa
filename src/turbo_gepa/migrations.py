@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Sequence, TYPE_CHECKING
+import copy
 
 if TYPE_CHECKING:  # pragma: no cover
     from turbo_gepa.islands import IslandContext
@@ -69,11 +70,23 @@ class LocalQueueMigrationBackend(MigrationBackend):
     context: "IslandContext"
 
     def publish(self, from_island: int, candidates: Sequence[Candidate]) -> None:
-        for candidate in candidates:
-            try:
-                self.context.outbound.put_nowait(candidate)
-            except Exception:
-                break
+        if not candidates:
+            return
+        targets: list[asyncio.Queue[Candidate]] = []
+        all_queues = getattr(self.context, "all_queues", None)
+        if all_queues:
+            for idx, queue in enumerate(all_queues):
+                if idx == from_island:
+                    continue
+                targets.append(queue)
+        else:
+            targets.append(self.context.outbound)
+        for queue in targets:
+            for candidate in candidates:
+                try:
+                    queue.put_nowait(copy.deepcopy(candidate))
+                except Exception:
+                    break
 
     def consume(self, island_id: int) -> list[Candidate]:
         received: list[Candidate] = []
@@ -136,13 +149,16 @@ class FileMigrationBackend(MigrationBackend):
     def publish(self, from_island: int, candidates: Sequence[Candidate]) -> None:
         if not candidates:
             return
-        dest = (from_island + 1) % self.total_islands
-        island_file = self._file_for(dest)
-        island_file.parent.mkdir(parents=True, exist_ok=True)
-        with self._file_lock(island_file):
-            with island_file.open("a", encoding="utf-8") as handle:
-                for cand in candidates:
-                    handle.write(json.dumps(_serialize_candidate(cand)) + "\n")
+        for offset in range(1, self.total_islands + 1):
+            dest = (from_island + offset) % self.total_islands
+            if dest == from_island:
+                continue
+            island_file = self._file_for(dest)
+            island_file.parent.mkdir(parents=True, exist_ok=True)
+            with self._file_lock(island_file):
+                with island_file.open("a", encoding="utf-8") as handle:
+                    for cand in candidates:
+                        handle.write(json.dumps(_serialize_candidate(cand)) + "\n")
 
     def consume(self, island_id: int) -> list[Candidate]:
         island_file = self._file_for(island_id)

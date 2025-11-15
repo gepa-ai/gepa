@@ -1,0 +1,282 @@
+{
+  "run_id": "ui-multi-island-demo",
+  "run_metadata": {
+    "run_id": "ui-multi-island-demo",
+    "best_quality": 0.91,
+    "best_prompt": "Prompt H - migrated twice",
+    "evaluations": 64,
+    "time_to_target_seconds": 187.4
+  },
+  "metrics": {
+    "time_to_target_seconds": 187.4,
+    "promotions_by_rung": {
+      "0": 6,
+      "1": 4,
+      "2": 2
+    }
+  },
+  "evolution_stats": {
+    "parent_children": {
+      "0000aaaa1111bbbb": [
+        "1111bbbb2222cccc",
+        "aaaa555577779999"
+      ],
+      "1111bbbb2222cccc": [
+        "2222cccc3333dddd",
+        "bbbb66668888aaaa"
+      ],
+      "2222cccc3333dddd": [
+        "3333dddd4444eeee"
+      ],
+      "3333dddd4444eeee": [
+        "4444eeee5555ffff"
+      ],
+      "aaaa555577779999": [
+        "9999aaaa0000bbbb"
+      ],
+      "bbbb66668888aaaa": [
+        "cccc77779999dddd"
+      ],
+      "5555ffff6666eeee": [
+        "6666eeee7777dddd"
+      ],
+      "8888ccccaaaa3333": [
+        "dddd2222bbbb0000"
+      ]
+    },
+    "migration_events": [
+      {
+        "candidate": "1111bbbb2222cccc",
+        "from_island": 0,
+        "to_island": 1,
+        "timestamp": 1710000000.0
+      },
+      {
+        "candidate": "3333dddd4444eeee",
+        "from_island": 1,
+        "to_island": 2,
+        "timestamp": 1710000030.0
+      },
+      {
+        "candidate": "4444eeee5555ffff",
+        "from_island": 2,
+        "to_island": 3,
+        "timestamp": 1710000060.0
+      },
+      {
+        "candidate": "bbbb66668888aaaa",
+        "from_island": 1,
+        "to_island": 2,
+        "timestamp": 1710000090.0
+      },
+      {
+        "candidate": "cccc77779999dddd",
+        "from_island": 2,
+        "to_island": 3,
+        "timestamp": 1710000120.0
+      },
+      {
+        "candidate": "9999aaaa0000bbbb",
+        "from_island": 0,
+        "to_island": 3,
+        "timestamp": 1710000150.0
+      }
+    ]
+  },
+  "timeline": [
+    {
+      "evaluations": 0,
+      "best_quality": 0.52
+    },
+    {
+      "evaluations": 8,
+      "best_quality": 0.61
+    },
+    {
+      "evaluations": 16,
+      "best_quality": 0.67
+    },
+    {
+      "evaluations": 24,
+      "best_quality": 0.74
+    },
+    {
+      "evaluations": 40,
+      "best_quality": 0.82
+    },
+    {
+      "evaluations": 56,
+      "best_quality": 0.91
+    }
+  ],
+  "lineage": [
+    {
+      "fingerprint": "0000aaaa1111bbbb",
+      "generation": 0,
+      "quality": 0.58,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Prompt A",
+      "prompt_full": "Prompt A - root seed",
+      "origin_island": 0,
+      "current_island": 0,
+      "migrated_from_island": null
+    },
+    {
+      "fingerprint": "1111bbbb2222cccc",
+      "generation": 1,
+      "quality": 0.63,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Prompt B",
+      "prompt_full": "Prompt B - migrated to island 1",
+      "origin_island": 0,
+      "current_island": 1,
+      "migrated_from_island": 0
+    },
+    {
+      "fingerprint": "2222cccc3333dddd",
+      "generation": 2,
+      "quality": 0.69,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Prompt C",
+      "prompt_full": "Prompt C - island 1 refinement",
+      "origin_island": 1,
+      "current_island": 1,
+      "migrated_from_island": null
+    },
+    {
+      "fingerprint": "3333dddd4444eeee",
+      "generation": 3,
+      "quality": 0.75,
+      "shard_fraction": 1.0,
+      "status": "promoted",
+      "prompt": "Prompt D",
+      "prompt_full": "Prompt D - migrated to island 2",
+      "origin_island": 1,
+      "current_island": 2,
+      "migrated_from_island": 1
+    },
+    {
+      "fingerprint": "4444eeee5555ffff",
+      "generation": 4,
+      "quality": 0.82,
+      "shard_fraction": 1.0,
+      "status": "promoted",
+      "prompt": "Prompt E",
+      "prompt_full": "Prompt E - island 3 champion",
+      "origin_island": 2,
+      "current_island": 3,
+      "migrated_from_island": 2
+    },
+    {
+      "fingerprint": "5555ffff6666eeee",
+      "generation": 2,
+      "quality": 0.64,
+      "shard_fraction": 0.5,
+      "status": "in_flight",
+      "prompt": "Prompt F",
+      "prompt_full": "Prompt F - island 2 exploration",
+      "origin_island": 2,
+      "current_island": 2,
+      "migrated_from_island": null
+    },
+    {
+      "fingerprint": "6666eeee7777dddd",
+      "generation": 3,
+      "quality": 0.7,
+      "shard_fraction": 0.5,
+      "status": "other",
+      "prompt": "Prompt G",
+      "prompt_full": "Prompt G - child of Prompt F",
+      "origin_island": 2,
+      "current_island": 2,
+      "migrated_from_island": null
+    },
+    {
+      "fingerprint": "7777dddd8888cccc",
+      "generation": 1,
+      "quality": 0.6,
+      "shard_fraction": 0.5,
+      "status": "other",
+      "prompt": "Prompt Seed B",
+      "prompt_full": "Prompt Seed B - island 3 seed",
+      "origin_island": 3,
+      "current_island": 3,
+      "migrated_from_island": null
+    },
+    {
+      "fingerprint": "8888ccccaaaa3333",
+      "generation": 2,
+      "quality": 0.66,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Prompt G2",
+      "prompt_full": "Prompt G2 - island 3 improvement",
+      "origin_island": 3,
+      "current_island": 3,
+      "migrated_from_island": null
+    },
+    {
+      "fingerprint": "aaaa555577779999",
+      "generation": 1,
+      "quality": 0.62,
+      "shard_fraction": 0.5,
+      "status": "other",
+      "prompt": "Prompt Split A",
+      "prompt_full": "Prompt Split A - branch from seed",
+      "origin_island": 0,
+      "current_island": 0,
+      "migrated_from_island": null
+    },
+    {
+      "fingerprint": "bbbb66668888aaaa",
+      "generation": 2,
+      "quality": 0.68,
+      "shard_fraction": 0.5,
+      "status": "promoted",
+      "prompt": "Prompt H",
+      "prompt_full": "Prompt H - migrated twice",
+      "origin_island": 1,
+      "current_island": 3,
+      "migrated_from_island": 2
+    },
+    {
+      "fingerprint": "cccc77779999dddd",
+      "generation": 3,
+      "quality": 0.74,
+      "shard_fraction": 1.0,
+      "status": "promoted",
+      "prompt": "Prompt H child",
+      "prompt_full": "Prompt H child - final rung success",
+      "origin_island": 2,
+      "current_island": 3,
+      "migrated_from_island": 2
+    },
+    {
+      "fingerprint": "9999aaaa0000bbbb",
+      "generation": 2,
+      "quality": 0.69,
+      "shard_fraction": 0.5,
+      "status": "other",
+      "prompt": "Prompt teleport",
+      "prompt_full": "Prompt teleport - moved from island 0 to 3",
+      "origin_island": 0,
+      "current_island": 3,
+      "migrated_from_island": 0
+    },
+    {
+      "fingerprint": "dddd2222bbbb0000",
+      "generation": 3,
+      "quality": 0.77,
+      "shard_fraction": 1.0,
+      "status": "promoted",
+      "prompt": "Prompt final branch",
+      "prompt_full": "Prompt final branch - built entirely on island 3",
+      "origin_island": 3,
+      "current_island": 3,
+      "migrated_from_island": null
+    }
+  ]
+}

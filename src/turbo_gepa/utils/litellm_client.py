@@ -28,8 +28,23 @@ def configure_litellm_client(max_concurrency: int) -> None:
     keepalive = max(1, min(20, max_concurrency // 4))
     timeout = httpx.Timeout(180.0, connect=30.0)
 
-    _ensure_async_client(litellm, httpx, max_concurrency, keepalive, timeout)
-    _ensure_sync_client(litellm, httpx, max_concurrency, keepalive, timeout)
+    try:
+        _ensure_async_client(litellm, httpx, max_concurrency, keepalive, timeout)
+        _ensure_sync_client(litellm, httpx, max_concurrency, keepalive, timeout)
+        litellm.litellm_client = litellm.client_session
+    except Exception:
+        # If we cannot provision the shared clients (e.g., platform limitations),
+        # fall back to letting litellm create fresh clients per call.
+        try:
+            if hasattr(litellm, "aclient_session"):
+                _close_async_client(litellm.aclient_session)
+            setattr(litellm, "aclient_session", None)
+            setattr(litellm, "client_session", None)
+            setattr(litellm, "litellm_client", None)
+        except Exception:
+            pass
+        return
+
     _register_atexit(litellm)
 
 
@@ -146,4 +161,3 @@ def _close_async_client_blocking(client: Any) -> None:
             loop.run_until_complete(client.aclose())
         finally:
             loop.close()
-

@@ -22,6 +22,7 @@ import shutil
 import tempfile
 from typing import Any, Awaitable, Sequence
 import os
+import uuid
 
 import random
 import re
@@ -224,16 +225,27 @@ class DefaultAdapter:
 
         env_cache = os.getenv("TURBOGEPA_CACHE_PATH")
         env_logs = os.getenv("TURBOGEPA_LOG_PATH")
+        env_control = os.getenv("TURBOGEPA_CONTROL_PATH")
         base_cache = cache_dir or env_cache or config.cache_path
         base_logs = log_dir or env_logs or config.log_path
         self.base_cache_dir = os.path.abspath(base_cache)
         self.base_log_dir = os.path.abspath(base_logs)
         Path(self.base_cache_dir).mkdir(parents=True, exist_ok=True)
         Path(self.base_log_dir).mkdir(parents=True, exist_ok=True)
+        control_path = (
+            config.control_dir
+            if config.control_dir is not None
+            else env_control
+        )
+        self.control_dir = os.path.abspath(control_path) if control_path else None
+        if self.control_dir:
+            Path(self.control_dir).mkdir(parents=True, exist_ok=True)
         self.cache_namespace = self.config.shared_cache_namespace or "main"
         self.cache = DiskCache(self.base_cache_dir, namespace=self.cache_namespace)
         self.archive = Archive()
         self.log_dir = self.base_log_dir
+        self._current_run_token: str | None = None
+        self._forced_run_token: str | None = None
 
         # Configure litellm's httpx client based on eval_concurrency
         configure_litellm_client(self.config.eval_concurrency)
@@ -361,19 +373,6 @@ class DefaultAdapter:
             async with semaphore:
                 return await asyncio.wait_for(acompletion(**kwargs), timeout=timeout)
 
-        if getattr(self, "_httpx_client", None) is not None:
-            # Try both parameter names for maximum compatibility
-            for key in ("httpx_client", "client"):
-                try:
-                    kwargs = dict(completion_kwargs)
-                    kwargs[key] = self._httpx_client
-                    return await _invoke(kwargs)
-                except TypeError as e:
-                    # Unknown kw; try next option
-                    if "unexpected keyword argument" in str(e) and key in str(e):
-                        continue
-                    raise
-        # Fallback: let litellm manage the client
         return await _invoke(completion_kwargs)
 
     def _disable_temperature_support(self, context: str | None = None) -> None:
@@ -745,7 +744,19 @@ class DefaultAdapter:
         metrics_per_island = [
             meta.get("metrics") if isinstance(meta, dict) else None for meta in island_metadata
         ]
-        return {
+        best_meta: dict[str, Any] | None = None
+        best_quality = float("-inf")
+        for meta in island_metadata:
+            if not isinstance(meta, dict):
+                continue
+            quality = meta.get("best_quality")
+            if isinstance(quality, (int, float)) and quality > best_quality:
+                best_quality = quality
+                best_meta = meta
+        if best_meta is None and island_metadata:
+            best_meta = next((m for m in island_metadata if isinstance(m, dict)), None)
+
+        result: dict[str, Any] = {
             "pareto": pareto_candidates,
             "pareto_entries": pareto_entries,
             "qd_elites": [],
@@ -755,6 +766,14 @@ class DefaultAdapter:
             "metrics_per_island": metrics_per_island,
             "metrics": {"per_island": metrics_per_island},
         }
+        if best_meta:
+            result["run_metadata"] = best_meta
+            best_metrics = best_meta.get("metrics") if isinstance(best_meta, dict) else None
+            if isinstance(best_metrics, dict):
+                result["metrics"]["best"] = best_metrics
+        else:
+            result["run_metadata"] = {}
+        return result
 
     def _build_run_metadata(
         self,
@@ -1114,6 +1133,7 @@ class DefaultAdapter:
         metrics_callback: Callable | None = None,
         island_id: int | None = None,
         migration_backend: MigrationBackend | None = None,
+        control_dir: str | None = None,
     ) -> Orchestrator:
         target_mutator = mutator or self.mutator
         if temperature_mutations_enabled and not self.temperature_supported:
@@ -1145,6 +1165,16 @@ class DefaultAdapter:
             promote_objective=self.config.promote_objective,
         )
 
+        base_run_id = getattr(self, "_current_run_token", None) or uuid.uuid4().hex[:8]
+        suffix = None
+        if island_context is not None:
+            suffix = f"island{island_context.island_id}"
+        elif island_id is not None:
+            suffix = f"island{island_id}"
+        if suffix is None:
+            suffix = "solo"
+        run_id = f"{base_run_id}-{suffix}"
+
         return Orchestrator(
             config=self.config,
             evaluator=evaluator,
@@ -1155,10 +1185,12 @@ class DefaultAdapter:
             show_progress=display_progress,
             example_sampler=self._sample_examples,
             island_context=island_context,
-             island_id=island_id,
-             migration_backend=migration_backend,
+            island_id=island_id,
+            migration_backend=migration_backend,
+            control_dir=control_dir or self.control_dir,
             metrics_callback=progress_callback,
             logger=self.logger,
+            run_id=run_id,
         )
 
     async def optimize_async(
@@ -1174,6 +1206,14 @@ class DefaultAdapter:
         enable_auto_stop: bool = True,
         metrics_callback: Callable | None = None,  # Callback for dashboard updates
     ) -> dict[str, Any]:
+        run_token = self._forced_run_token or os.getenv("TURBOGEPA_RUN_ID") or uuid.uuid4().hex[:8]
+        self._current_run_token = run_token
+        if self.config.n_islands > 1 and not self.control_dir:
+            base_cache = Path(self.base_cache_dir).resolve()
+            auto_control = base_cache.parent / "control" / run_token
+            auto_control.mkdir(parents=True, exist_ok=True)
+            self.control_dir = str(auto_control)
+            self.config.control_dir = str(auto_control)
         worker_islands = self._assigned_worker_islands()
         if worker_islands is not None:
             if not getattr(self.config, "migration_backend", None):
@@ -1212,6 +1252,7 @@ class DefaultAdapter:
         orchestrator = self._build_orchestrator(
             display_progress=display_progress,
             metrics_callback=metrics_callback,
+            control_dir=self.control_dir,
         )
         # Store metrics reference in adapter for LLM call tracking
         self._metrics = orchestrator.metrics
@@ -1231,7 +1272,10 @@ class DefaultAdapter:
 
         # Apply global timeout - but don't use asyncio.wait_for() because that cancels tasks
         # Instead, let the orchestrator's own timeout logic handle it gracefully
-        await orchestrator.run(seed_candidates, max_rounds=max_rounds, max_evaluations=max_evaluations)
+        try:
+            await orchestrator.run(seed_candidates, max_rounds=max_rounds, max_evaluations=max_evaluations)
+        finally:
+            orchestrator.finalize_control()
 
         pareto_entries = orchestrator.archive.pareto_entries()
         pareto = [entry.candidate for entry in pareto_entries]
@@ -1281,10 +1325,14 @@ class DefaultAdapter:
         orchestrator1 = self._build_orchestrator(
             display_progress=display_progress,
             temperature_mutations_enabled=False,
+            control_dir=self.control_dir,
         )
         # Pass metrics to mutator for tracking mutation LLM calls
         self.mutator._metrics = orchestrator1.metrics
-        await orchestrator1.run(phase1_seeds, max_rounds=phase1_rounds, max_evaluations=phase1_budget)
+        try:
+            await orchestrator1.run(phase1_seeds, max_rounds=phase1_rounds, max_evaluations=phase1_budget)
+        finally:
+            orchestrator1.finalize_control()
 
         phase1_pareto = orchestrator1.archive.pareto_entries()
         phase1_stats = orchestrator1.evolution_snapshot(include_edges=True)
@@ -1339,10 +1387,14 @@ class DefaultAdapter:
         orchestrator2 = self._build_orchestrator(
             display_progress=display_progress,
             temperature_mutations_enabled=True,
+            control_dir=self.control_dir,
         )
         # Pass metrics to mutator for tracking mutation LLM calls
         self.mutator._metrics = orchestrator2.metrics
-        await orchestrator2.run(temp_seeds, max_rounds=phase2_rounds, max_evaluations=phase2_budget)
+        try:
+            await orchestrator2.run(temp_seeds, max_rounds=phase2_rounds, max_evaluations=phase2_budget)
+        finally:
+            orchestrator2.finalize_control()
 
         phase2_pareto = orchestrator2.archive.pareto_entries()
         phase2_stats = orchestrator2.evolution_snapshot(include_edges=True)
@@ -1412,11 +1464,13 @@ class DefaultAdapter:
                     display_progress=display_local,
                     temperature_mutations_enabled=temperature_mutations_enabled,
                     island_context=context,
+                    island_id=context.island_id,
                     cache=cache,
                     archive=archive,
                     sampler=sampler,
                     mutator=mutator,
                     log_dir=log_dir,
+                    control_dir=self.control_dir,
                 )
                 # Pass metrics to mutator for tracking mutation LLM calls
                 mutator._metrics = orchestrator.metrics
@@ -1424,11 +1478,14 @@ class DefaultAdapter:
                     Candidate(text=seed.text, meta=dict(seed.meta, island=context.island_id))
                     for seed in normalized_seeds
                 ]
-                await orchestrator.run(
-                    island_seeds,
-                    max_rounds=max_rounds,
-                    max_evaluations=max_evaluations,
-                )
+                try:
+                    await orchestrator.run(
+                        island_seeds,
+                        max_rounds=max_rounds,
+                        max_evaluations=max_evaluations,
+                    )
+                finally:
+                    orchestrator.finalize_control()
                 island_results[context.island_id] = orchestrator
 
             tasks = await spawn_islands(n_islands, worker, metrics_queue=None)
@@ -1477,17 +1534,21 @@ class DefaultAdapter:
                 mutator=mutator,
                 log_dir=log_dir,
                 island_id=island_id,
+                control_dir=self.control_dir,
             )
             mutator._metrics = orchestrator.metrics
             island_seeds = [
                 Candidate(text=seed.text, meta=dict(seed.meta, island=island_id))
                 for seed in normalized_seeds
             ]
-            await orchestrator.run(
-                island_seeds,
-                max_rounds=max_rounds,
-                max_evaluations=max_evaluations,
-            )
+            try:
+                await orchestrator.run(
+                    island_seeds,
+                    max_rounds=max_rounds,
+                    max_evaluations=max_evaluations,
+                )
+            finally:
+                orchestrator.finalize_control()
             orchestrators.append(orchestrator)
         return await self._summarize_island_runs(orchestrators)
 

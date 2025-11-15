@@ -17,7 +17,7 @@
 **TurboGEPA** is a high-performance fork of the [GEPA (Genetic-Pareto) framework](https://github.com/gepa-ai/gepa) designed for **maximum speed of prompt evolution**. While preserving GEPA's core innovation of LLM-based reflection for text evolution, TurboGEPA introduces:
 
 - ⚡ **Maximized Concurrency**: Async orchestration scales to available compute (bounded by shard size + `max_total_inflight` per island)
-- 🏝️ **Island-Based Parallelism**: Concurrent islands with an async ring topology preserve diversity without extra processes
+- 🏝️ **Island-Based Parallelism**: Concurrent islands broadcast elites across the swarm to preserve diversity without extra processes
 - 📊 **ASHA Successive Halving**: Prunes most underperformers early to reduce wasted evaluations
 - 🧬 **Dual Mutation Strategy**: Blends reflection edits with Prompt-MII-style spec induction for exploration vs. exploitation
 - 📈 **Parent-Weighted Scheduling**: Recent improvement history boosts promising lineages to the front of the queue
@@ -304,6 +304,8 @@ turbo-gepa-worker \
 ```
 
 Each worker mounts the same cache/log directories (see the Modal docs above) and exchanges elites via the volume-backed migration backend.
+
+Set `TURBOGEPA_CONTROL_PATH` (or pass `--control-dir`) to a shared directory on that volume so workers can drop `stop.json` and heartbeat files there. The first worker that hits the north-star target writes the stop file and everyone else exits as soon as they see it. Use `TURBOGEPA_RUN_ID`/`--run-id` to share a run identifier across processes so the control files stay scoped to a single run.
 
 ### Core Concepts
 
@@ -923,3 +925,4 @@ TurboGEPA's contributions are limited to **performance engineering**:
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=Studio-Intrinsic/turbo-gepa&type=date&legend=top-left)](https://www.star-history.com/#Studio-Intrinsic/turbo-gepa&type=date&legend=top-left)
+Need a turnkey Modal deployment? See `examples/modal_turbo_aime.py` for a distributed benchmark that mounts a Modal Volume, forwards OpenRouter secrets, and orchestrates workers via `turbo-gepa-worker`.

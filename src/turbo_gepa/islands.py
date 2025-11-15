@@ -22,6 +22,7 @@ class IslandContext:
     outbound: asyncio.Queue[Candidate]
     island_id: int
     metrics_queue: asyncio.Queue[dict] | None = None  # Optional metrics reporting
+    all_queues: list[asyncio.Queue[Candidate]] | None = None
 
 
 async def spawn_islands(
@@ -41,7 +42,13 @@ async def spawn_islands(
     for idx in range(n_islands):
         inbound = queues[idx]
         outbound = queues[(idx + 1) % n_islands]
-        context = IslandContext(inbound, outbound, island_id=idx, metrics_queue=metrics_queue)
+        context = IslandContext(
+            inbound,
+            outbound,
+            island_id=idx,
+            metrics_queue=metrics_queue,
+            all_queues=queues,
+        )
         task = asyncio.create_task(worker(context))
         tasks.append(task)
 

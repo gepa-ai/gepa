@@ -153,7 +153,7 @@ def run_gepa(
 
 def _build_turbo_config(dataset_size: int, args: argparse.Namespace) -> Config:
     config = adaptive_config(dataset_size)
-    config.n_islands = 1
+    config.n_islands = max(1, args.turbo_n_islands)
     config.eval_concurrency = max(1, args.turbo_eval_concurrency)
     config.batch_size = max(1, min(dataset_size, config.eval_concurrency))
     config.max_mutations_per_round = max(1, args.turbo_max_mutations)
@@ -322,6 +322,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turbo-max-runtime", type=int, default=None)
     parser.add_argument("--turbo-log-level", default="WARNING")
     parser.add_argument("--turbo-show-progress", action="store_true")
+    parser.add_argument("--turbo-n-islands", type=int, default=1)
     parser.add_argument("--open-ui", action="store_true", help="Open live evolution UI (http://localhost:8080/scripts/evolution_live.html)")
     parser.add_argument(
         "--turbo-strategies",
