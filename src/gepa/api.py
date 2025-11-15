@@ -327,7 +327,7 @@ def optimize(
         run_dir=run_dir,
         evaluator=evaluator,
         valset=val_loader,
-        seed_candidate=seed_candidate,
+        seed_candidate=[seed_candidate],
         perfect_score=perfect_score,
         seed=seed,
         reflective_proposer=reflective_proposer,

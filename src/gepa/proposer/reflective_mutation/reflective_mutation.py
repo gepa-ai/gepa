@@ -37,7 +37,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         candidate_selector: CandidateSelector,
         module_selector: ReflectionComponentSelector,
         batch_sampler: BatchSampler[DataId, DataInst],
-        perfect_score: float,
+        perfect_score: float | None,
         skip_perfect_score: bool,
         experiment_tracker: Any,
         reflection_lm: LanguageModel | None = None,
@@ -53,6 +53,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.skip_perfect_score = skip_perfect_score
         self.experiment_tracker = experiment_tracker
         self.reflection_lm = reflection_lm
+
+        if self.skip_perfect_score and self.perfect_score is None:
+            raise ValueError("perfect_score must be provided when skip_perfect_score is True.")
 
         InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
         self.reflection_prompt_template = reflection_prompt_template
@@ -114,7 +117,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             self.logger.log(f"Iteration {i}: No trajectories captured. Skipping.")
             return None
 
-        if self.skip_perfect_score and all(s >= self.perfect_score for s in eval_curr.scores):
+        if self.skip_perfect_score and self.perfect_score is not None and all(s >= self.perfect_score for s in eval_curr.scores):
             self.logger.log(f"Iteration {i}: All subsample scores perfect. Skipping.")
             return None
 

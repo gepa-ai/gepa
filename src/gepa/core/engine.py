@@ -30,9 +30,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         run_dir: str | None,
         evaluator: EvaluatorFn,
         valset: list[DataInst] | DataLoader[DataId, DataInst] | None,
-        seed_candidate: dict[str, str],
+        seed_candidate: list[dict[str, str]],
         # Controls
-        perfect_score: float,
+        perfect_score: float | None,
         seed: int,
         # Strategies and helpers
         reflective_proposer: ReflectiveMutationProposer,

@@ -212,7 +212,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     def update_state_with_new_program(
         self,
-        parent_program_idx: list[ProgramIdx],
+        parent_program_idx: list[ProgramIdx | None],
         new_program: dict[str, str],
         valset_subscores: dict[DataId, float],
         valset_outputs: dict[DataId, RolloutOutput] | None,
@@ -224,7 +224,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.num_metric_calls_by_discovery.append(num_metric_calls_by_discovery_of_new_program)
 
         max_predictor_id = max(
-            [self.named_predictor_id_to_update_next_for_program_candidate[p] for p in parent_program_idx],
+            [self.named_predictor_id_to_update_next_for_program_candidate[p] for p in parent_program_idx if p is not None],
             default=0,
         )
         self.named_predictor_id_to_update_next_for_program_candidate.append(max_predictor_id)
@@ -248,7 +248,7 @@ def write_eval_scores_to_directory(scores: dict[DataId, float], output_dir: str)
 def initialize_gepa_state(
     run_dir: str | None,
     logger: LoggerProtocol,
-    seed_candidate: dict[str, str],
+    seed_candidate: list[dict[str, str]],
     valset_evaluator: Callable[[dict[str, str]], tuple[dict[DataId, RolloutOutput], dict[DataId, float]]],
     track_best_outputs: bool = False,
 ) -> GEPAState[RolloutOutput, DataId]:
@@ -258,18 +258,26 @@ def initialize_gepa_state(
     else:
         num_evals_run = 0
 
-        seed_val_outputs, seed_val_scores = valset_evaluator(seed_candidate)
+        seed_val_outputs, seed_val_scores = valset_evaluator(seed_candidate[0])
         if run_dir is not None:
             write_eval_scores_to_directory(seed_val_scores, os.path.join(run_dir, "generated_best_outputs_valset"))
         num_evals_run += len(seed_val_scores)
 
         gepa_state = GEPAState(
-            seed_candidate,
+            seed_candidate[0],
             (seed_val_outputs, seed_val_scores),
             track_best_outputs=track_best_outputs,
         )
 
         gepa_state.num_full_ds_evals = 1
         gepa_state.total_num_evals = num_evals_run
+
+        for seed_candidate_2 in seed_candidate[1:]:
+            seed_val_outputs, seed_val_scores = valset_evaluator(seed_candidate_2)
+            if run_dir is not None:
+                write_eval_scores_to_directory(seed_val_scores, os.path.join(run_dir, "generated_best_outputs_valset"))
+            num_evals_run += len(seed_val_scores)
+            gepa_state.update_state_with_new_program(
+                [None], seed_candidate_2, seed_val_scores, seed_val_outputs, run_dir, 0)
 
     return gepa_state
