@@ -85,6 +85,9 @@ class StdioMCPClient(BaseMCPClient):
 
     async def send_request(self, method: str, params: dict | None = None) -> dict:
         """Send JSON-RPC request via stdio."""
+        if not self.process or not self.process.stdin or not self.process.stdout:
+            raise RuntimeError("Process not started or streams not available")
+
         self.request_id += 1
         request = {"jsonrpc": "2.0", "method": method, "id": self.request_id}
 
@@ -107,6 +110,9 @@ class StdioMCPClient(BaseMCPClient):
 
     async def _send_initialized_notification(self):
         """Send initialized notification via stdio."""
+        if not self.process or not self.process.stdin:
+            raise RuntimeError("Process not started or stdin not available")
+
         notification = {"jsonrpc": "2.0", "method": "notifications/initialized"}
         notification_str = json.dumps(notification) + "\n"
         self.process.stdin.write(notification_str.encode())
@@ -114,7 +120,7 @@ class StdioMCPClient(BaseMCPClient):
 
     async def close(self):
         """Close the subprocess."""
-        if self.process:
+        if self.process and self.process.stdin:
             self.process.stdin.close()
             await self.process.wait()
             logger.info("Stdio MCP connection closed")
@@ -134,7 +140,7 @@ class SSEMCPClient(BaseMCPClient):
 
     async def start(self):
         """Start the SSE connection."""
-        from mcp.client.sse import sse_client
+        from mcp.client.sse import sse_client  # type: ignore[import-untyped]
 
         logger.info(f"Connecting to SSE MCP server at {self.url}")
 
@@ -151,8 +157,11 @@ class SSEMCPClient(BaseMCPClient):
 
     async def send_request(self, method: str, params: dict | None = None) -> dict:
         """Send JSON-RPC request via SSE."""
-        from mcp.shared.message import SessionMessage
-        from mcp.types import JSONRPCMessage, JSONRPCRequest
+        from mcp.shared.message import SessionMessage  # type: ignore[import-untyped]
+        from mcp.types import JSONRPCMessage, JSONRPCRequest  # type: ignore[import-untyped]
+
+        if not self.read_stream or not self.write_stream:
+            raise RuntimeError("SSE streams not initialized")
 
         self.request_id += 1
         request_dict = {
@@ -184,8 +193,11 @@ class SSEMCPClient(BaseMCPClient):
 
     async def _send_initialized_notification(self):
         """Send initialized notification via SSE."""
-        from mcp.shared.message import SessionMessage
-        from mcp.types import JSONRPCMessage, JSONRPCNotification
+        from mcp.shared.message import SessionMessage  # type: ignore[import-untyped]
+        from mcp.types import JSONRPCMessage, JSONRPCNotification  # type: ignore[import-untyped]
+
+        if not self.write_stream:
+            raise RuntimeError("SSE write stream not initialized")
 
         notification = JSONRPCNotification(
             jsonrpc="2.0",
@@ -226,7 +238,7 @@ class StreamableHTTPMCPClient(BaseMCPClient):
 
     async def start(self):
         """Start the StreamableHTTP connection."""
-        from mcp.client.streamable_http import streamable_http_client
+        from mcp.client.streamable_http import streamable_http_client  # type: ignore[import-untyped]
 
         logger.info(f"Connecting to StreamableHTTP MCP server at {self.url}")
 
@@ -243,8 +255,11 @@ class StreamableHTTPMCPClient(BaseMCPClient):
 
     async def send_request(self, method: str, params: dict | None = None) -> dict:
         """Send JSON-RPC request via StreamableHTTP."""
-        from mcp.shared.message import SessionMessage
-        from mcp.types import JSONRPCMessage, JSONRPCRequest
+        from mcp.shared.message import SessionMessage  # type: ignore[import-untyped]
+        from mcp.types import JSONRPCMessage, JSONRPCRequest  # type: ignore[import-untyped]
+
+        if not self.read_stream or not self.write_stream:
+            raise RuntimeError("StreamableHTTP streams not initialized")
 
         self.request_id += 1
         request_dict = {
@@ -276,8 +291,11 @@ class StreamableHTTPMCPClient(BaseMCPClient):
 
     async def _send_initialized_notification(self):
         """Send initialized notification via StreamableHTTP."""
-        from mcp.shared.message import SessionMessage
-        from mcp.types import JSONRPCMessage, JSONRPCNotification
+        from mcp.shared.message import SessionMessage  # type: ignore[import-untyped]
+        from mcp.types import JSONRPCMessage, JSONRPCNotification  # type: ignore[import-untyped]
+
+        if not self.write_stream:
+            raise RuntimeError("StreamableHTTP write stream not initialized")
 
         notification = JSONRPCNotification(
             jsonrpc="2.0",
@@ -329,14 +347,18 @@ def create_mcp_client(
 
     if server_params:
         return StdioMCPClient(command=server_params.command, args=server_params.args)
-    elif remote_transport == "sse":
-        return SSEMCPClient(url=remote_url, headers=remote_headers, timeout=remote_timeout)
-    elif remote_transport == "streamable_http":
-        return StreamableHTTPMCPClient(
-            url=remote_url,
-            headers=remote_headers,
-            timeout=remote_timeout,
-            sse_read_timeout=sse_read_timeout,
-        )
+    elif remote_url:  # Type guard ensures remote_url is not None
+        if remote_transport == "sse":
+            return SSEMCPClient(url=remote_url, headers=remote_headers, timeout=remote_timeout)
+        elif remote_transport == "streamable_http":
+            return StreamableHTTPMCPClient(
+                url=remote_url,
+                headers=remote_headers,
+                timeout=remote_timeout,
+                sse_read_timeout=sse_read_timeout,
+            )
+        else:
+            raise ValueError(f"Unknown remote transport: {remote_transport}. Must be 'sse' or 'streamable_http'")
     else:
-        raise ValueError(f"Unknown remote transport: {remote_transport}. Must be 'sse' or 'streamable_http'")
+        # This should never happen due to earlier checks
+        raise ValueError("Must provide either server_params (local) or remote_url (remote)")

@@ -17,7 +17,7 @@ from typing import Any, Callable, TypedDict
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
 
 try:
-    from mcp import StdioServerParameters
+    from mcp import StdioServerParameters  # type: ignore[import-untyped]
 except ImportError as e:
     raise ImportError("MCP Python SDK is required. Install it with: pip install mcp") from e
 
@@ -271,7 +271,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                     scores.append(score)
 
                     # Capture trajectory
-                    if capture_traces:
+                    if capture_traces and trajectories is not None:
                         trajectories.append(
                             {
                                 "user_query": item["user_query"],
@@ -300,7 +300,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                     )
                     scores.append(self.failure_score)
 
-                    if capture_traces:
+                    if capture_traces and trajectories is not None:
                         trajectories.append(
                             {
                                 "user_query": item["user_query"],
@@ -330,7 +330,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                     }
                 )
                 scores.append(self.failure_score)
-                if capture_traces:
+                if capture_traces and trajectories is not None:
                     trajectories.append(
                         {
                             "user_query": item["user_query"],
@@ -381,7 +381,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                     model=self.task_model,
                     messages=messages,
                 )
-                model_output = response.choices[0].message.content.strip()
+                model_output = response.choices[0].message.content.strip()  # type: ignore[union-attr]
                 logger.debug(f"Model output: '{model_output}'")
             else:
                 model_output = self.task_model(messages)
@@ -458,7 +458,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                     model=self.task_model,
                     messages=messages,
                 )
-                return response.choices[0].message.content.strip()
+                return response.choices[0].message.content.strip()  # type: ignore[union-attr]
             else:
                 return self.task_model(messages)
 
@@ -541,7 +541,7 @@ Always respond with valid JSON. No other text.
         """
         try:
             # Import MCP types for proper parsing
-            from mcp.types import EmbeddedResource, ImageContent, TextContent
+            from mcp.types import EmbeddedResource, ImageContent, TextContent  # type: ignore[import-untyped]
 
             # Check for errors first (following DSPy pattern)
             if hasattr(result, "isError") and result.isError:

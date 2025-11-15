@@ -14,6 +14,11 @@ Exports:
     MCPOutput: Output type
 """
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .mcp_adapter import MCPAdapter, MCPDataInst, MCPOutput, MCPTrajectory
+
 __all__ = [
     "MCPAdapter",
     "MCPDataInst",
@@ -22,7 +27,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name):
+def __getattr__(name: str):
     """Lazy import to handle missing MCP SDK gracefully."""
     if name in {"MCPAdapter", "MCPDataInst", "MCPOutput", "MCPTrajectory"}:
         from .mcp_adapter import MCPAdapter, MCPDataInst, MCPOutput, MCPTrajectory
