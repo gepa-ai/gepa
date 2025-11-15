@@ -193,12 +193,12 @@ def run_local_example(task_model: str = "ollama/llama3.1:8b", reflection_model: 
     logger.info("=" * 60)
     logger.info("GEPA MCP Tool Optimization")
     logger.info("=" * 60)
-    
+
     server_file = create_test_server()
     create_test_files()
-    
+
     logger.info(f"MCP Server: Local stdio server ({server_file.name})")
-    logger.info(f"Tools: read_file")
+    logger.info("Tools: read_file")
     logger.info(f"Task Model: {task_model}")
     logger.info(f"Reflection Model: {reflection_model}")
 
@@ -218,7 +218,7 @@ def run_local_example(task_model: str = "ollama/llama3.1:8b", reflection_model: 
     seed_candidate = {
         "tool_description": "Read file contents from disk."
     }
-    
+
     logger.info("")
     logger.info("Seed Prompt (Initial Tool Description):")
     logger.info(f"  {seed_candidate['tool_description']}")
@@ -260,9 +260,9 @@ def run_remote_example(url: str, task_model: str = "ollama/llama3.1:8b", reflect
     logger.info("=" * 60)
     logger.info("GEPA MCP Tool Optimization")
     logger.info("=" * 60)
-    
+
     logger.info(f"MCP Server: Remote SSE server ({url})")
-    logger.info(f"Tools: search")
+    logger.info("Tools: search")
     logger.info(f"Task Model: {task_model}")
     logger.info(f"Reflection Model: {reflection_model}")
 
@@ -287,7 +287,7 @@ def run_remote_example(url: str, task_model: str = "ollama/llama3.1:8b", reflect
     seed_candidate = {
         "tool_description": "Search for information."
     }
-    
+
     logger.info("")
     logger.info("Seed Prompt (Initial Tool Description):")
     logger.info(f"  {seed_candidate['tool_description']}")
@@ -329,12 +329,12 @@ def run_multitool_example(task_model: str = "ollama/llama3.1:8b", reflection_mod
     logger.info("=" * 60)
     logger.info("GEPA MCP Tool Optimization (Multi-Tool)")
     logger.info("=" * 60)
-    
+
     server_file = create_test_server()
     create_test_files()
-    
+
     logger.info(f"MCP Server: Local stdio server ({server_file.name})")
-    logger.info(f"Tools: read_file, write_file, list_files")
+    logger.info("Tools: read_file, write_file, list_files")
     logger.info(f"Task Model: {task_model}")
     logger.info(f"Reflection Model: {reflection_model}")
 
@@ -368,7 +368,7 @@ def run_multitool_example(task_model: str = "ollama/llama3.1:8b", reflection_mod
         "tool_description_write_file": "Write a file.",
         "tool_description_list_files": "List files.",
     }
-    
+
     logger.info("")
     logger.info("Seed Prompts (Initial Tool Descriptions):")
     for tool_name in adapter.tool_names:
