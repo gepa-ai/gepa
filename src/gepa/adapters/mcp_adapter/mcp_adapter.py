@@ -2,38 +2,93 @@
 # https://github.com/gepa-ai/gepa
 
 """
-MCP Adapter for GEPA - Supports local and remote MCP servers.
+MCP Adapter for GEPA - Optimizes tool descriptions and system prompts.
 
-This adapter uses SimpleStdioMCPClient for local servers as a workaround
-for the MCP Python SDK stdio transport bug:
-https://github.com/modelcontextprotocol/python-sdk/issues/1452
-
-Once the SDK bug is fixed, we'll migrate to use the official client while
-maintaining the same interface.
-
-Supports:
-- Local stdio transport (subprocess-based)
-- Remote SSE transport (HTTP Server-Sent Events)
-- Remote StreamableHTTP transport (production-grade HTTP)
+Supports local (stdio) and remote (SSE/StreamableHTTP) MCP servers.
+Enables optimization of tool descriptions, system prompts, and tool selection
+across single or multiple tools.
 """
 
 import asyncio
 import json
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, TypedDict
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
-
-from .mcp_types import MCPDataInst, MCPOutput, MCPTrajectory
 
 try:
     from mcp import StdioServerParameters
 except ImportError as e:
-    raise ImportError("MCP Python SDK is required for MCPAdapter. Install it with: pip install mcp") from e
+    raise ImportError("MCP Python SDK is required. Install it with: pip install mcp") from e
 
-from .simple_stdio_client import SimpleStdioMCPClient
+from .mcp_client import create_mcp_client
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Type Definitions
+# ============================================================================
+
+
+class MCPDataInst(TypedDict):
+    """
+    Dataset item for MCP tool optimization.
+
+    Attributes:
+        user_query: The user's question or request
+        tool_arguments: Expected tool arguments (for validation/guidance)
+        reference_answer: Optional reference answer for scoring
+        additional_context: Optional additional context
+    """
+
+    user_query: str
+    tool_arguments: dict[str, Any]
+    reference_answer: str | None
+    additional_context: dict[str, str]
+
+
+class MCPTrajectory(TypedDict):
+    """
+    Execution trace for MCP tool invocation.
+
+    Captures the full workflow including tool selection, execution,
+    and model behavior at each stage.
+    """
+
+    user_query: str
+    tool_names: list[str]
+    selected_tool: str | None
+    tool_called: bool
+    tool_arguments: dict[str, Any] | None
+    tool_response: str | None
+    tool_description_used: str
+    system_prompt_used: str
+    model_first_pass_output: str
+    model_final_output: str
+    score: float
+
+
+class MCPOutput(TypedDict):
+    """
+    Output from MCP evaluation.
+
+    Attributes:
+        final_answer: The final answer from the model
+        tool_called: Whether a tool was called
+        selected_tool: Which tool was selected (if any)
+        tool_response: The tool's response (if called)
+    """
+
+    final_answer: str
+    tool_called: bool
+    selected_tool: str | None
+    tool_response: str | None
+
+
+# ============================================================================
+# MCP Adapter
+# ============================================================================
 
 
 class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
@@ -41,33 +96,33 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
     GEPA adapter for optimizing MCP tool usage.
 
     This adapter enables optimization of:
-    - Tool descriptions
+    - Tool descriptions (single or multiple tools)
     - System prompts for tool usage guidance
-    - Tool usage guidelines
+    - Tool selection logic
 
-    The adapter uses a two-pass workflow:
-    1. First pass: Model receives user query and decides to call tool
-    2. Second pass: Model receives tool response and generates final answer
-
-    Supports both local (stdio) and remote (SSE/StreamableHTTP) MCP servers.
+    Features:
+    - Multi-tool support: Optimize multiple tools simultaneously
+    - Two-pass workflow: Tool call + answer generation
+    - Multiple transports: stdio (local), SSE, StreamableHTTP (remote)
+    - Reflective datasets: Generate training data for refinement
 
     Example (Local):
         >>> from mcp import StdioServerParameters
         >>> adapter = MCPAdapter(
-        ...     tool_name="read_file",
+        ...     tool_names=["read_file", "write_file"],
         ...     task_model="gpt-4o-mini",
         ...     metric_fn=lambda item, output: 1.0 if item["reference_answer"] in output else 0.0,
         ...     server_params=StdioServerParameters(
         ...         command="python",
-        ...         args=["server.py", "/data"],
+        ...         args=["server.py"],
         ...     ),
         ... )
 
     Example (Remote):
         >>> adapter = MCPAdapter(
-        ...     tool_name="search_web",
+        ...     tool_names="search_web",
         ...     task_model="gpt-4o-mini",
-        ...     metric_fn=lambda item, output: 1.0 if item["reference_answer"] in output else 0.0,
+        ...     metric_fn=accuracy_metric,
         ...     remote_url="https://mcp-server.com/sse",
         ...     remote_transport="sse",
         ... )
@@ -75,17 +130,17 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
 
     def __init__(
         self,
-        tool_names: str | list[str],  # Support both single tool (str) and multiple tools (list[str])
+        tool_names: str | list[str],
         task_model: str | Callable,
         metric_fn: Callable[[MCPDataInst, str], float],
-        # Local server params (for stdio transport)
+        # Local server configuration
         server_params: StdioServerParameters | None = None,
-        # Remote server params (for SSE/StreamableHTTP transport)
+        # Remote server configuration
         remote_url: str | None = None,
-        remote_transport: str = "sse",  # "sse" or "streamable_http"
+        remote_transport: str = "sse",
         remote_headers: dict[str, str] | None = None,
         remote_timeout: float = 30,
-        # Common params
+        # Adapter configuration
         base_system_prompt: str = "You are a helpful assistant with access to tools.",
         enable_two_pass: bool = True,
         failure_score: float = 0.0,
@@ -94,39 +149,29 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
         Initialize MCPAdapter.
 
         Args:
-            tool_names: Name(s) of the tool(s) to optimize. Can be a single tool (str) or multiple tools (list[str])
-            task_model: Model to use for task execution (litellm model string or callable)
-            metric_fn: Function to score outputs: (data_inst, output) -> float
-            server_params: MCP server configuration for local stdio (command, args, env)
-            remote_url: URL for remote MCP server (SSE or StreamableHTTP)
-            remote_transport: Transport type for remote server ("sse" or "streamable_http")
-            remote_headers: Optional headers for remote requests (e.g., auth tokens)
+            tool_names: Name(s) of tool(s) to optimize (str or list[str])
+            task_model: Model for task execution (litellm string or callable)
+            metric_fn: Scoring function: (data_inst, output) -> float
+            server_params: Local MCP server configuration (stdio)
+            remote_url: Remote MCP server URL
+            remote_transport: "sse" or "streamable_http"
+            remote_headers: HTTP headers for remote (e.g., auth tokens)
             remote_timeout: Timeout for remote HTTP operations
-            base_system_prompt: Base system prompt (will be extended with tool info)
-            enable_two_pass: Use two-pass workflow (tool call + answer generation)
-            failure_score: Score to assign when execution fails
-
-        Note:
-            Exactly one of server_params or remote_url must be provided.
+            base_system_prompt: Base system prompt template
+            enable_two_pass: Use two-pass workflow (tool + answer)
+            failure_score: Score assigned when execution fails
         """
-        # Validate transport configuration
-        if server_params and remote_url:
-            raise ValueError("Provide either server_params (local) or remote_url (remote), not both")
-        if not server_params and not remote_url:
-            raise ValueError("Must provide either server_params (local) or remote_url (remote)")
-
+        # Store transport configuration
         self.server_params = server_params
         self.remote_url = remote_url
         self.remote_transport = remote_transport
         self.remote_headers = remote_headers or {}
         self.remote_timeout = remote_timeout
 
-        # Normalize tool_names to always be a list
-        if isinstance(tool_names, str):
-            self.tool_names = [tool_names]
-        else:
-            self.tool_names = tool_names
+        # Normalize tool_names to list
+        self.tool_names = [tool_names] if isinstance(tool_names, str) else tool_names
 
+        # Store adapter configuration
         self.base_system_prompt = base_system_prompt
         self.enable_two_pass = enable_two_pass
         self.failure_score = failure_score
@@ -146,10 +191,10 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
         capture_traces: bool = False,
     ) -> EvaluationBatch[MCPTrajectory, MCPOutput]:
         """
-        Evaluate candidate on batch using MCP tool.
+        Evaluate candidate on batch using MCP tools.
 
         Args:
-            batch: List of dataset items to evaluate
+            batch: Dataset items to evaluate
             candidate: Component mapping (e.g., {"tool_description": "..."})
             capture_traces: Whether to capture detailed trajectories
 
@@ -164,81 +209,52 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
         candidate: dict[str, str],
         capture_traces: bool,
     ) -> EvaluationBatch[MCPTrajectory, MCPOutput]:
-        """Async implementation of evaluation using configured MCP client."""
+        """Async implementation of evaluation."""
         outputs: list[MCPOutput] = []
         scores: list[float] = []
         trajectories: list[MCPTrajectory] | None = [] if capture_traces else None
 
         client = None
         try:
-            # Create MCP client based on configuration
+            # Create MCP client using factory
             logger.info(f"Starting MCP session for batch of {len(batch)} items...")
-
-            if self.server_params:
-                # Local stdio transport
-                from .simple_stdio_client import SimpleStdioMCPClient
-
-                logger.info("Using local stdio transport")
-                client = SimpleStdioMCPClient(command=self.server_params.command, args=self.server_params.args)
-            elif self.remote_url:
-                # Remote transport (SSE or StreamableHTTP)
-                if self.remote_transport == "sse":
-                    from .sse_client import SSEMCPClient
-
-                    logger.info(f"Using remote SSE transport: {self.remote_url}")
-                    client = SSEMCPClient(
-                        url=self.remote_url,
-                        headers=self.remote_headers,
-                        timeout=self.remote_timeout,
-                    )
-                elif self.remote_transport == "streamable_http":
-                    from .streamable_http_client import StreamableHTTPMCPClient
-
-                    logger.info(f"Using remote StreamableHTTP transport: {self.remote_url}")
-                    client = StreamableHTTPMCPClient(
-                        url=self.remote_url,
-                        headers=self.remote_headers,
-                        timeout=self.remote_timeout,
-                    )
-                else:
-                    raise ValueError(
-                        f"Unknown remote transport: {self.remote_transport}. Must be 'sse' or 'streamable_http'"
-                    )
+            client = create_mcp_client(
+                server_params=self.server_params,
+                remote_url=self.remote_url,
+                remote_transport=self.remote_transport,
+                remote_headers=self.remote_headers,
+                remote_timeout=self.remote_timeout,
+            )
 
             await client.start()
-
-            # Initialize session
             init_result = await client.initialize()
             logger.info(f"MCP session initialized: {init_result.get('serverInfo', {}).get('name', 'unknown')}")
 
-            # Get tool information
+            # Get available tools
             tools_list = await client.list_tools()
-
-            # Filter tools to only include the ones we want to optimize
             available_tools = [t for t in tools_list if t.get("name") in self.tool_names]
-            if not available_tools:
-                available_tool_names = [t.get("name") for t in tools_list]
-                raise ValueError(f"None of the specified tools {self.tool_names} found. Available: {available_tool_names}")
 
-            # Build system prompt with all available tools
+            if not available_tools:
+                available_names = [t.get("name") for t in tools_list]
+                raise ValueError(f"Tools {self.tool_names} not found. Available: {available_names}")
+
+            # Build system prompt with tools
             system_prompt = self._build_system_prompt(candidate, available_tools)
 
-            # Evaluate each item in batch
+            # Evaluate each item
             for idx, item in enumerate(batch):
                 try:
                     logger.info(f"Evaluating item {idx + 1}/{len(batch)}: {item['user_query'][:50]}...")
 
                     # First pass: Model calls tool
-                    first_pass_result = await self._first_pass(client, item, system_prompt, available_tools)
+                    first_pass = await self._first_pass(client, item, system_prompt, available_tools)
                     logger.info(f"First pass complete for item {idx + 1}")
 
                     # Second pass: Model uses tool response (if enabled)
-                    if self.enable_two_pass and first_pass_result["tool_called"]:
-                        final_output = await self._second_pass(
-                            client, item, system_prompt, first_pass_result["tool_response"]
-                        )
+                    if self.enable_two_pass and first_pass["tool_called"]:
+                        final_output = await self._second_pass(client, item, system_prompt, first_pass["tool_response"])
                     else:
-                        final_output = first_pass_result["output"]
+                        final_output = first_pass["output"]
 
                     # Score the output
                     score = self.metric_fn(item, final_output)
@@ -247,9 +263,9 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                     outputs.append(
                         {
                             "final_answer": final_output,
-                            "tool_called": first_pass_result["tool_called"],
-                            "selected_tool": first_pass_result["selected_tool"],
-                            "tool_response": first_pass_result["tool_response"],
+                            "tool_called": first_pass["tool_called"],
+                            "selected_tool": first_pass["selected_tool"],
+                            "tool_response": first_pass["tool_response"],
                         }
                     )
                     scores.append(score)
@@ -260,13 +276,13 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                             {
                                 "user_query": item["user_query"],
                                 "tool_names": self.tool_names,
-                                "selected_tool": first_pass_result["selected_tool"],
-                                "tool_called": first_pass_result["tool_called"],
-                                "tool_arguments": first_pass_result["tool_arguments"],
-                                "tool_response": first_pass_result["tool_response"],
+                                "selected_tool": first_pass["selected_tool"],
+                                "tool_called": first_pass["tool_called"],
+                                "tool_arguments": first_pass["tool_arguments"],
+                                "tool_response": first_pass["tool_response"],
                                 "tool_description_used": candidate.get("tool_description", ""),
                                 "system_prompt_used": system_prompt,
-                                "model_first_pass_output": first_pass_result["output"],
+                                "model_first_pass_output": first_pass["output"],
                                 "model_final_output": final_output,
                                 "score": score,
                             }
@@ -338,7 +354,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
 
     async def _first_pass(
         self,
-        client: SimpleStdioMCPClient,
+        client,
         item: MCPDataInst,
         system_prompt: str,
         available_tools: list[dict[str, Any]],
@@ -349,9 +365,9 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
         Returns dict with:
             - output: Raw model output
             - tool_called: Whether tool was called
-            - selected_tool: Which tool was selected (if any)
-            - tool_arguments: Arguments passed to tool (if called)
-            - tool_response: Tool response (if called)
+            - selected_tool: Which tool was selected
+            - tool_arguments: Tool arguments
+            - tool_response: Tool response
         """
         messages = [
             {"role": "system", "content": system_prompt},
@@ -366,8 +382,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                     messages=messages,
                 )
                 model_output = response.choices[0].message.content.strip()
-                logger.debug(f"Model output (raw): '{model_output}'")
-                logger.debug(f"Model output length: {len(model_output)} chars")
+                logger.debug(f"Model output: '{model_output}'")
             else:
                 model_output = self.task_model(messages)
 
@@ -386,18 +401,16 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
 
                     # Validate tool selection
                     if selected_tool not in self.tool_names:
-                        logger.warning(f"Model selected invalid tool '{selected_tool}', available: {self.tool_names}")
+                        logger.warning(f"Invalid tool '{selected_tool}', available: {self.tool_names}")
                         tool_called = False
                         selected_tool = None
                     else:
-                        # Call the selected tool via MCP client
+                        # Call the tool
                         result = await client.call_tool(selected_tool, tool_arguments)
-
-                        # Extract text from tool response
                         tool_response = self._extract_tool_response(result)
 
             except (json.JSONDecodeError, KeyError):
-                # Model didn't follow JSON format, treat as direct answer
+                # Model didn't follow JSON format
                 pass
 
             return {
@@ -420,7 +433,7 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
 
     async def _second_pass(
         self,
-        client: SimpleStdioMCPClient,
+        client,
         item: MCPDataInst,
         system_prompt: str,
         tool_response: str | None,
@@ -454,15 +467,16 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
             return f"ERROR: {e!s}"
 
     def _build_system_prompt(self, candidate: dict[str, str], available_tools: list[dict[str, Any]]) -> str:
-        """Build system prompt with tool information for multiple tools."""
+        """Build system prompt with tool information."""
         custom_system_prompt = candidate.get("system_prompt", self.base_system_prompt)
 
-        # Build tool descriptions - use optimized descriptions if available
+        # Build tool descriptions
         tool_descriptions = {}
         for tool in available_tools:
             tool_name = tool.get("name")
-            # Use optimized description if available, otherwise use original
-            optimized_desc = candidate.get(f"tool_description_{tool_name}", None)
+            # Use optimized description if available
+            # Support both tool_description_{tool_name} (multi-tool) and tool_description (single-tool)
+            optimized_desc = candidate.get(f"tool_description_{tool_name}") or candidate.get("tool_description")
             tool_descriptions[tool_name] = optimized_desc or tool.get("description", "")
 
         # Build tools section
@@ -486,7 +500,6 @@ class MCPAdapter(GEPAAdapter[MCPDataInst, MCPTrajectory, MCPOutput]):
                 else:
                     example_args[param_name] = "value"
 
-            # Fallback if no properties
             if not example_args:
                 example_args = {"param": "value"}
 
@@ -532,7 +545,17 @@ Always respond with valid JSON. No other text.
         eval_batch: EvaluationBatch[MCPTrajectory, MCPOutput],
         components_to_update: list[str],
     ) -> dict[str, list[dict[str, Any]]]:
-        """Build reflective dataset for instruction refinement."""
+        """
+        Build reflective dataset for instruction refinement.
+
+        Args:
+            candidate: Current candidate components
+            eval_batch: Evaluation results with trajectories
+            components_to_update: Which components to generate data for
+
+        Returns:
+            Dictionary mapping component names to reflective examples
+        """
         reflective_data: dict[str, list[dict[str, Any]]] = {}
 
         for component in components_to_update:
@@ -584,45 +607,39 @@ Always respond with valid JSON. No other text.
         if score > 0.5:
             if traj["tool_called"]:
                 return (
-                    f"Good! The tool '{traj['selected_tool']}' was used appropriately and produced a correct answer. "
-                    f"Tool called: {traj['tool_called']}, Score: {score:.2f}"
-                )
-            else:
-                return (
-                    f"Good! The model correctly determined no tool was needed and provided a direct answer. "
+                    f"Good! The tool '{traj['selected_tool']}' was used appropriately. "
                     f"Score: {score:.2f}"
                 )
+            else:
+                return f"Good! No tool needed, direct answer was correct. Score: {score:.2f}"
         else:
-            feedback_parts = [f"The response was incorrect (score: {score:.2f})."]
+            feedback_parts = [f"Incorrect response (score: {score:.2f})."]
 
             if not traj["tool_called"]:
-                feedback_parts.append(
-                    "The tool was not called. Consider whether calling a tool would help answer this query."
-                )
+                feedback_parts.append("Tool was not called. Consider if a tool would help.")
             else:
                 selected_tool = traj["selected_tool"]
                 available_tools = traj["tool_names"]
                 feedback_parts.append(
-                    f"The tool '{selected_tool}' was called with arguments {traj['tool_arguments']}, "
-                    f"but the final answer was still incorrect. "
+                    f"Tool '{selected_tool}' was called with {traj['tool_arguments']}, "
+                    f"but answer was incorrect."
                 )
                 if len(available_tools) > 1:
                     feedback_parts.append(
-                        f"Consider whether a different tool from {available_tools} would be more appropriate, "
-                        f"or if the tool description needs to be clearer."
+                        f"Consider a different tool from {available_tools} or clearer description."
                     )
                 else:
-                    feedback_parts.append("The tool description might need to be clearer.")
+                    feedback_parts.append("Tool description may need improvement.")
 
             return " ".join(feedback_parts)
 
     def _generate_system_prompt_feedback(self, traj: MCPTrajectory, score: float) -> str:
         """Generate feedback focused on system prompt guidance."""
         if score > 0.5:
-            return f"The system prompt provided good guidance. Score: {score:.2f}"
+            return f"System prompt provided good guidance. Score: {score:.2f}"
         else:
             return (
-                f"The system prompt may need improvement (score: {score:.2f}). "
-                f"The model {'called' if traj['tool_called'] else 'did not call'} the tool, "
-                f"but the final answer was incorrect."
+                f"System prompt may need improvement (score: {score:.2f}). "
+                f"Model {'called' if traj['tool_called'] else 'did not call'} tool, "
+                f"but answer was incorrect."
             )

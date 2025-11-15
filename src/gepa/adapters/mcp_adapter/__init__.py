@@ -1,9 +1,18 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-"""MCP Adapter for GEPA - Optimize Model Context Protocol tool usage."""
+"""
+MCP Adapter for GEPA.
 
-from .mcp_types import MCPDataInst, MCPOutput, MCPTrajectory
+This adapter enables optimization of MCP tool descriptions and system prompts
+using GEPA's iterative refinement approach.
+
+Exports:
+    MCPAdapter: Main adapter class
+    MCPDataInst: Dataset item type
+    MCPTrajectory: Execution trace type
+    MCPOutput: Output type
+"""
 
 __all__ = [
     "MCPAdapter",
@@ -14,10 +23,10 @@ __all__ = [
 
 
 def __getattr__(name):
-    """Lazy import MCPAdapter to handle missing MCP SDK gracefully."""
-    if name == "MCPAdapter":
-        from .mcp_adapter import MCPAdapter
+    """Lazy import to handle missing MCP SDK gracefully."""
+    if name in {"MCPAdapter", "MCPDataInst", "MCPOutput", "MCPTrajectory"}:
+        from .mcp_adapter import MCPAdapter, MCPDataInst, MCPOutput, MCPTrajectory
 
-        return MCPAdapter
+        return locals()[name]
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
