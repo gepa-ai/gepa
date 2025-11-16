@@ -529,6 +529,8 @@ class DSpyAdapter:
             min_improve=self.config.eps_improve,
             skip_final_straggler_cutoff=self.config.skip_final_straggler_cutoff,
             promote_objective=objective,
+            cancel_stragglers_immediately=self.config.cancel_stragglers_immediately,
+            replay_stragglers=self.config.replay_stragglers,
         )
         return Orchestrator(
             config=self.config,

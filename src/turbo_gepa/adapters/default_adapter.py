@@ -920,6 +920,8 @@ class DefaultAdapter:
             skip_final_straggler_cutoff=False,
             logger=self.logger,
             promote_objective=self.config.promote_objective,
+            cancel_stragglers_immediately=self.config.cancel_stragglers_immediately,
+            replay_stragglers=self.config.replay_stragglers,
         )
 
         try:
@@ -1170,6 +1172,8 @@ class DefaultAdapter:
             skip_final_straggler_cutoff=False,
             logger=self.logger,
             promote_objective=self.config.promote_objective,
+            cancel_stragglers_immediately=self.config.cancel_stragglers_immediately,
+            replay_stragglers=self.config.replay_stragglers,
         )
 
         base_run_id = getattr(self, "_current_run_token", None) or uuid.uuid4().hex[:8]

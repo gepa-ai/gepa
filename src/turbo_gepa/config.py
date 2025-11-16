@@ -281,6 +281,18 @@ class Config:
     max_final_shard_inflight: int | None = 2  # Limit concurrent full-shard evaluations (None = unlimited)
     straggler_grace_seconds: float = 5.0  # Wait this long for detached stragglers before replaying
     final_rung_straggler_grace_seconds: float | None = 2.0  # Extra-short grace before replay on final rung
+    final_rung_min_inflight: int = 2  # Do not shrink final rung concurrency below this floor
+    final_rung_target_utilization: float = 0.75  # Utilization threshold when deciding to reduce the cap
+    final_rung_backlog_to_expand: int | None = None  # Queue of full-shard candidates that justifies expansion
+    final_rung_saturation_seconds: float = 3.0  # How long saturation must persist before forcing expansion
+    final_rung_cap_max_fraction: float | None = None  # Max share of eval_concurrency allocated to final rung
+    final_rung_cap_latency_expand: float = 1.2  # Expand cap when p95 < expand * p50
+    final_rung_cap_latency_shrink: float = 1.6  # Shrink cap when p95 > shrink * p50
+    final_rung_cap_timeout_threshold: float = 0.2  # Shrink cap when timeout ratio exceeds this
+    final_rung_cap_cooldown_seconds: float = 3.0  # Minimum time between cap adjustments
+    final_rung_cap_straggler_window: float = 20.0  # Sliding window to measure straggler pressure
+    cancel_stragglers_immediately: bool = True  # Cancel detached example tasks right away
+    replay_stragglers: bool = True  # Re-evaluate missing examples after straggler cancellation
     llm_connection_limit: int | None = None  # Cap simultaneous LLM calls (defaults to 1.5x eval_concurrency)
     # Dynamically scale effective evaluation concurrency to maximize throughput
     auto_scale_eval_concurrency: bool = True
@@ -353,6 +365,41 @@ class Config:
         # Auto-generate shrinkage_alpha if not provided
         if self.shrinkage_alpha is None:
             self.shrinkage_alpha = _default_shrinkage_alpha(self.shards)
+
+        # Final rung concurrency guardrails
+        self.final_rung_min_inflight = max(1, int(self.final_rung_min_inflight or 1))
+        self.final_rung_target_utilization = max(
+            0.1, min(float(self.final_rung_target_utilization or 0.75), 1.0)
+        )
+        if self.final_rung_backlog_to_expand is None:
+            self.final_rung_backlog_to_expand = max(1, self.eval_concurrency // 6)
+        else:
+            self.final_rung_backlog_to_expand = max(1, int(self.final_rung_backlog_to_expand))
+        self.final_rung_saturation_seconds = max(0.5, float(self.final_rung_saturation_seconds or 0.5))
+        cap_max_fraction = self.final_rung_cap_max_fraction
+        if cap_max_fraction is None:
+            # Default: allow up to half the evaluators to sit on final rung
+            cap_max_fraction = 0.5
+        cap_max_fraction = max(0.1, min(1.0, float(cap_max_fraction)))
+        self.final_rung_cap_max_fraction = cap_max_fraction
+
+        if self.max_final_shard_inflight is not None:
+            self.max_final_shard_inflight = max(self.final_rung_min_inflight, int(self.max_final_shard_inflight))
+        else:
+            # Auto-set default cap from eval_concurrency and max fraction
+            self.max_final_shard_inflight = max(
+                self.final_rung_min_inflight,
+                int(max(1, self.eval_concurrency) * self.final_rung_cap_max_fraction),
+            )
+
+        self.final_rung_cap_latency_expand = max(1.05, float(self.final_rung_cap_latency_expand or 1.2))
+        self.final_rung_cap_latency_shrink = max(
+            self.final_rung_cap_latency_expand + 0.1,
+            float(self.final_rung_cap_latency_shrink or 1.6),
+        )
+        self.final_rung_cap_timeout_threshold = max(0.0, min(1.0, float(self.final_rung_cap_timeout_threshold or 0.2)))
+        self.final_rung_cap_cooldown_seconds = max(0.5, float(self.final_rung_cap_cooldown_seconds or 0.5))
+        self.final_rung_cap_straggler_window = max(1.0, float(self.final_rung_cap_straggler_window or 20.0))
 
         custom_strategies = list(self.reflection_strategies or ())
         resolved_defaults = list(resolve_reflection_strategy_names(self.reflection_strategy_names))
