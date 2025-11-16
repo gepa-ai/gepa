@@ -32,6 +32,10 @@ def mock_state():
     state.prog_candidate_val_subscores.append({0: 0.6, 1: 0.6, 2: 0.6})
     state.prog_candidate_val_subscores.append({0: 0.8, 1: 0.8, 2: 0.8})
 
+    # Add entries to prog_candidate_objective_scores to maintain consistency
+    state.prog_candidate_objective_scores.append({})
+    state.prog_candidate_objective_scores.append({})
+
     state.parent_program_for_candidate.append([0])
     state.parent_program_for_candidate.append([1])
 
