@@ -5,7 +5,7 @@ import json
 import os
 from collections import defaultdict
 from collections.abc import Callable
-from typing import Any, ClassVar, Generic
+from typing import Any, ClassVar, Generic, Sequence
 
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
@@ -212,7 +212,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     def update_state_with_new_program(
         self,
-        parent_program_idx: list[ProgramIdx | None],
+        parent_program_idx: Sequence[ProgramIdx | None],
         new_program: dict[str, str],
         valset_subscores: dict[DataId, float],
         valset_outputs: dict[DataId, RolloutOutput] | None,
