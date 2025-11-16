@@ -6,16 +6,19 @@ import os
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar, Generic, TypeAlias
+from typing import Any, ClassVar, Generic, TypeAlias, TypeVar
 
-from gepa.core.adapter import RolloutOutput
-from gepa.core.data_loader import DataId
+from gepa.core.adapter import RolloutOutput as RolloutOutputType
+from gepa.core.data_loader import DataId as DataIdType
 from gepa.gepa_utils import json_default
 from gepa.logging.logger import LoggerProtocol
 
+# TypeVars for Generic classes
+RolloutOutput = TypeVar("RolloutOutput")
+ValId = TypeVar("ValId")
+
 # Types for GEPAState
 ProgramIdx = int
-ValId = DataId
 ValScores: TypeAlias = dict[ValId, float]
 ValOutputs: TypeAlias = dict[ValId, RolloutOutput]
 ObjectiveScores: TypeAlias = dict[str, float]
@@ -129,7 +132,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
             pickle.dump(serialized, f)
 
     @staticmethod
-    def load(run_dir: str) -> "GEPAState[RolloutOutput, DataId]":
+    def load(run_dir: str) -> "GEPAState[RolloutOutputType, DataIdType]":
         with open(os.path.join(run_dir, "gepa_state.bin"), "rb") as f:
             import pickle
 
@@ -254,7 +257,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         Valset examples by id and programs that have evaluated them. Keys include only validation
         ids that have been scored at least once.
         """
-        result: dict[DataId, list[ProgramIdx]] = defaultdict(list)
+        result: dict[ValId, list[ProgramIdx]] = defaultdict(list)
         for program_idx, val_scores in enumerate(self.prog_candidate_val_subscores):
             for val_id in val_scores.keys():
                 result[val_id].append(program_idx)
@@ -388,7 +391,7 @@ def initialize_gepa_state(
         tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None],
     ],
     track_best_outputs: bool = False,
-) -> GEPAState[RolloutOutput, DataId]:
+) -> GEPAState[RolloutOutputType, DataIdType]:
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)
