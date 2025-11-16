@@ -18,6 +18,7 @@ def log_detailed_metrics_after_discovering_new_program(
     linear_pareto_front_program_idx,
     valset_size: int,
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst],
+    log_individual_valset_scores_and_programs: bool = False,
 ):
     # best_prog_per_agg_val_score = idxmax(gepa_state.program_full_scores_val_set)
     best_prog_per_agg_val_score = val_evaluation_policy.get_best_program(gepa_state)
@@ -75,8 +76,6 @@ def log_detailed_metrics_after_discovering_new_program(
     metrics = {
         "iteration": gepa_state.i + 1,
         "new_program_idx": new_program_idx,
-        "valset_pareto_front_scores": dict(gepa_state.pareto_front_valset),
-        "individual_valset_score_new_program": dict(valset_scores),
         "valset_pareto_front_agg": pareto_avg,
         "valset_pareto_front_programs": {k: list(v) for k, v in gepa_state.program_at_pareto_front_valset.items()},
         "best_valset_agg_score": best_score_on_valset,
@@ -87,6 +86,13 @@ def log_detailed_metrics_after_discovering_new_program(
         "val_total_count": valset_size,
         "val_program_average": valset_score,
     }
+    if log_individual_valset_scores_and_programs:
+        metrics.update(
+            {
+                "valset_pareto_front_scores": dict(gepa_state.pareto_front_valset),
+                "individual_valset_score_new_program": dict(valset_scores),
+            }
+        )
     if objective_scores:
         metrics["objective_scores_new_program"] = dict(objective_scores)
     if valset_evaluation.objective_scores_by_val_id:

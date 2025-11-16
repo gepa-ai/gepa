@@ -35,6 +35,7 @@ class ScoreWithFeedback(Prediction):
 
 class PredictorFeedbackFn(Protocol):
     def __call__(
+        self,
         predictor_output: dict[str, Any],
         predictor_inputs: dict[str, Any],
         module_inputs: Example,

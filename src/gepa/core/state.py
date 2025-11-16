@@ -4,12 +4,14 @@
 import json
 import os
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, Generic, TypeAlias
+from typing import Any, ClassVar, Generic, TypeAlias
 
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
 from gepa.gepa_utils import json_default
+from gepa.logging.logger import LoggerProtocol
 
 # Types for GEPAState
 ProgramIdx = int
@@ -52,8 +54,8 @@ class GEPAState(Generic[RolloutOutput, ValId]):
 
     num_metric_calls_by_discovery: list[int]
 
-    full_program_trace: list
-    best_outputs_valset: dict[ValId, list[tuple[ProgramIdx, RolloutOutput]]] | None = None
+    full_program_trace: list[dict[str, Any]]
+    best_outputs_valset: dict[ValId, list[tuple[ProgramIdx, RolloutOutput]]] | None
 
     validation_schema_version: int
 
@@ -85,11 +87,12 @@ class GEPAState(Generic[RolloutOutput, ValId]):
 
         self.num_metric_calls_by_discovery = [0]
 
-        self.best_outputs_valset = (
-            {val_id: [(0, output)] for val_id, output in base_evaluation.outputs_by_val_id.items()}
-            if track_best_outputs
-            else None
-        )
+        if track_best_outputs:
+            self.best_outputs_valset = {
+                val_id: [(0, output)] for val_id, output in base_evaluation.outputs_by_val_id.items()
+            }
+        else:
+            self.best_outputs_valset = None
 
         self.full_program_trace = []
         self.validation_schema_version = self._VALIDATION_SCHEMA_VERSION
@@ -118,29 +121,30 @@ class GEPAState(Generic[RolloutOutput, ValId]):
             return
         with open(os.path.join(run_dir, "gepa_state.bin"), "wb") as f:
             if use_cloudpickle:
-                import cloudpickle as pickle  # type: ignore
+                import cloudpickle as pickle  # type: ignore[import-not-found]
             else:
                 import pickle
-            d = dict(self.__dict__.items())
-            d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
-            pickle.dump(d, f)
+            serialized = dict(self.__dict__.items())
+            serialized["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
+            pickle.dump(serialized, f)
 
     @staticmethod
-    def load(run_dir: str) -> "GEPAState":
+    def load(run_dir: str) -> "GEPAState[RolloutOutput, DataId]":
         with open(os.path.join(run_dir, "gepa_state.bin"), "rb") as f:
             import pickle
 
-            d = pickle.load(f)
+            data = pickle.load(f)
 
-        version = d.get("validation_schema_version")
+        # handle schema migration
+        version = data.get("validation_schema_version")
         if version is None or version < 2:
-            GEPAState._migrate_from_legacy_state_v0(d)
-            version = d.get("validation_schema_version")
+            GEPAState._migrate_from_legacy_state_v0(data)
+            version = data.get("validation_schema_version")
         if version is None or version < GEPAState._VALIDATION_SCHEMA_VERSION:
-            GEPAState._upgrade_state_dict(d)
+            GEPAState._upgrade_state_dict(data)
 
         state = GEPAState.__new__(GEPAState)
-        state.__dict__.update(d)
+        state.__dict__.update(data)
 
         state.validation_schema_version = GEPAState._VALIDATION_SCHEMA_VERSION
         assert len(state.program_candidates) == len(state.prog_candidate_val_subscores)
@@ -250,7 +254,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         Valset examples by id and programs that have evaluated them. Keys include only validation
         ids that have been scored at least once.
         """
-        result = defaultdict(list)
+        result: dict[DataId, list[ProgramIdx]] = defaultdict(list)
         for program_idx, val_scores in enumerate(self.prog_candidate_val_subscores):
             for val_id in val_scores.keys():
                 result[val_id].append(program_idx)
@@ -377,14 +381,14 @@ def write_eval_scores_to_directory(scores: ValScores, output_dir: str) -> None:
 
 def initialize_gepa_state(
     run_dir: str | None,
-    logger,
+    logger: LoggerProtocol,
     seed_candidate: dict[str, str],
     valset_evaluator: Callable[
         [dict[str, str]],
         tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None],
     ],
     track_best_outputs: bool = False,
-) -> GEPAState:
+) -> GEPAState[RolloutOutput, DataId]:
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)

@@ -144,7 +144,7 @@ class ChromaVectorStore(VectorStoreInterface):
         try:
             if hasattr(distance, "item"):  # numpy scalar
                 return distance.item()
-            elif hasattr(distance, "__len__") and not isinstance(distance, (str, bytes)) and len(distance) == 1:
+            elif hasattr(distance, "__len__") and not isinstance(distance, str | bytes) and len(distance) == 1:
                 return float(distance[0])
             else:
                 return float(distance)

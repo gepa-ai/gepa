@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="gepa"
 #replace_package_version_marker
-version="0.0.18"
+version="0.0.22"
 description = "A framework for optimizing textual system components (AI prompts, code snippets, etc.) using LLM-based reflection and Pareto-efficient evolutionary search."
 readme = "README.md"
 authors = [
@@ -30,7 +30,8 @@ full = [
 dspy = []
 test = [
     "gepa[full]",
-    "pytest"
+    "pytest",
+    "pyright"
 ]
 build = [
     "setuptools>=77.0.1",
@@ -55,6 +56,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+gepa = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
