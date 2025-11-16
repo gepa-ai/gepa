@@ -57,6 +57,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.custom_parameter_proposer = custom_candidate_proposer
         self.reflection_prompt_template = reflection_prompt_template
 
+        if isinstance(reflection_prompt_template, dict):
+            for param_name, template in reflection_prompt_template.items():
+                InstructionProposalSignature.validate_prompt_template(template)
+        else:
+            InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
+
         if self.skip_perfect_score and self.perfect_score is None:
             raise ValueError("perfect_score must be provided when skip_perfect_score is True.")
 
