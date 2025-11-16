@@ -18,6 +18,7 @@ import random
 import time
 import uuid
 from collections import defaultdict, deque, OrderedDict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
@@ -173,6 +174,16 @@ class FinalRungCapController:
         return None
 
 
+@dataclass(slots=True)
+class ReplayJob:
+    candidate: Candidate
+    base_result: EvalResult
+    missing_ids: list[str]
+    shard_idx: int
+    shard_fraction: float
+    is_final_shard: bool
+
+
 class Orchestrator:
     """Single-island orchestrator loop."""
 
@@ -325,6 +336,9 @@ class Orchestrator:
         self._mutation_buffer_limit: int = max(1, int(self.config.mutation_buffer_limit or (self.config.eval_concurrency * 4)))
         self._mutation_buffer: deque[Candidate] = deque()
         self._buffered_fingerprints: set[str] = set()
+        queue_maxsize = int(self.config.replay_worker_queue_size or 0)
+        self._replay_queue: asyncio.Queue[ReplayJob | None] = asyncio.Queue(maxsize=queue_maxsize if queue_maxsize > 0 else 0)
+        self._replay_workers: list[asyncio.Task] = []
         final_fraction = self._runtime_shards[-1] if self._runtime_shards else 1.0
         self._cost_remaining: list[float] = [
             max(1e-6, final_fraction - (self._runtime_shards[i - 1] if i > 0 else 0.0))
@@ -986,6 +1000,94 @@ class Orchestrator:
         self._rung_launches = [0] * len(self._runtime_shards)
         self._rung_promotions = [0] * len(self._runtime_shards)
 
+    def _start_replay_workers(self) -> None:
+        if not (self.config.replay_stragglers and self.config.replay_workers):
+            return
+        if self._replay_workers:
+            return
+        for worker_id in range(self.config.replay_workers):
+            task = asyncio.create_task(self._replay_worker(worker_id))
+            self._replay_workers.append(task)
+
+    async def _shutdown_replay_workers(self) -> None:
+        if not self._replay_workers:
+            return
+        await self._replay_queue.join()
+        for _ in self._replay_workers:
+            await self._replay_queue.put(None)
+        await asyncio.gather(*self._replay_workers, return_exceptions=True)
+        self._replay_workers.clear()
+
+    async def _replay_worker(self, worker_id: int) -> None:
+        while True:
+            job = await self._replay_queue.get()
+            if job is None:
+                self._replay_queue.task_done()
+                break
+            try:
+                await self._process_replay_job(worker_id, job)
+            finally:
+                self._replay_queue.task_done()
+
+    async def _enqueue_replay_job(
+        self,
+        candidate: Candidate,
+        base_result: EvalResult,
+        missing: Sequence[str],
+        shard_idx: int,
+        shard_fraction: float,
+        is_final_shard: bool,
+    ) -> None:
+        if not missing:
+            return
+        job = ReplayJob(
+            candidate=candidate,
+            base_result=base_result,
+            missing_ids=list(missing),
+            shard_idx=shard_idx,
+            shard_fraction=shard_fraction,
+            is_final_shard=is_final_shard,
+        )
+        await self._replay_queue.put(job)
+        if self.show_progress:
+            self.logger.log(
+                f"🧺 Scheduled replay for {candidate.fingerprint[:12]} ({len(job.missing_ids)} examples, shard {shard_fraction:.0%})"
+            )
+
+    async def _process_replay_job(self, worker_id: int, job: ReplayJob) -> None:
+        try:
+            per_job_concurrency = max(
+                1,
+                min(
+                    self.config.replay_concurrency or 1,
+                    len(job.missing_ids),
+                    self._effective_concurrency,
+                ),
+            )
+            replay = await self.evaluator.eval_on_shard(
+                job.candidate,
+                job.missing_ids,
+                concurrency=per_job_concurrency,
+                shard_fraction=job.shard_fraction,
+                show_progress=False,
+                is_final_shard=job.is_final_shard,
+            )
+            combined = job.base_result.merge(replay)
+            await self._apply_replay_result(job.candidate, combined)
+            if self.show_progress:
+                self.logger.log(
+                    f"♻️  Replay worker {worker_id} merged {len(job.missing_ids)} example(s) for {job.candidate.fingerprint[:12]}"
+                )
+        except Exception as exc:
+            if self.show_progress:
+                self.logger.log(
+                    f"⚠️  Replay worker {worker_id} failed for {job.candidate.fingerprint[:12]}: {exc}"
+                )
+
+    async def _apply_replay_result(self, candidate: Candidate, combined: EvalResult) -> None:
+        self._remember_latest_result(candidate_key(candidate), combined)
+        await self.archive.insert(candidate, combined)
+
     def _adjust_runtime_parameters(self) -> None:
         latencies = list(self._latency_history)
         if len(latencies) < 5:
@@ -1222,6 +1324,8 @@ class Orchestrator:
 
         # DON'T start mutation task here - archive is empty!
         # Let the main loop start it naturally after seeds are evaluated
+
+        self._start_replay_workers()
 
         # Window tracking mirrors the legacy batch counter so downstream logging stays intact
         window_size = max(1, self.config.batch_size)
@@ -1557,6 +1661,8 @@ class Orchestrator:
 
         # Drain any straggling results that finished during cleanup
         await self._stream_drain_results(timeout=0.0)
+
+        await self._shutdown_replay_workers()
 
         # Clean up any pending mutation task
         if self._mutation_task and not self._mutation_task.done():
@@ -2166,6 +2272,11 @@ class Orchestrator:
 
         prev_idx = min(self.scheduler.current_shard_index(candidate_with_meta), len(self._runtime_shards) - 1)
         decision = self.scheduler.record(candidate_with_meta, result, self.config.promote_objective)
+        confidence_met = bool(
+            candidate_with_meta.meta.get("_confidence_met")
+            if isinstance(candidate_with_meta.meta, dict)
+            else False
+        )
 
         if prev_idx >= 0:
             self.metrics.record_promotion_attempt(prev_idx)
@@ -2326,30 +2437,38 @@ class Orchestrator:
             seen_ids = set(result.example_ids or [])
             missing = [ex for ex in expected_ids if ex not in seen_ids]
             if missing:
+                scheduled_replay = False
                 if is_final_shard:
                     self._record_final_straggler_event(len(missing))
-                if self.config.replay_stragglers and self.config.straggler_grace_seconds:
-                    grace = self.config.straggler_grace_seconds
-                    if is_final_shard and self.config.final_rung_straggler_grace_seconds is not None:
-                        grace = min(grace, self.config.final_rung_straggler_grace_seconds)
-                    recovered = await self.evaluator.collect_straggler_results(
-                        candidate,
+            if missing:
+                scheduled_replay = False
+                if (
+                    missing
+                    and self.config.replay_stragglers
+                    and self._replay_workers
+                ):
+                    await self._enqueue_replay_job(
+                        candidate_with_meta,
+                        result,
                         missing,
-                        timeout=grace,
+                        shard_idx,
+                        shard_fraction,
+                        is_final_shard,
                     )
-                    for recovered_result in recovered:
-                        result = result.merge(recovered_result)
-                        if recovered_result.example_ids:
-                            seen_ids.update(recovered_result.example_ids)
-                    if recovered:
-                        missing = [ex for ex in expected_ids if ex not in seen_ids]
-                        if self.show_progress:
-                            self.logger.log(
-                                f"📦 Recovered {len(recovered)} straggler example(s) after {grace:.1f}s grace window"
-                            )
-                missing = [ex for ex in expected_ids if ex not in seen_ids]
-            if missing and self.config.replay_stragglers:
-                self.evaluator.discard_straggler_results(candidate, missing)
+                    scheduled_replay = True
+                    if confidence_met and self.show_progress:
+                        self.logger.log(
+                            f"📐 Confidence gate met for {candidate_with_meta.fingerprint[:12]} "
+                            f"(lower={candidate_with_meta.meta.get('_confidence_lower_bound', 0.0):.3f}); "
+                            f"replay scheduled for auditing only."
+                        )
+                if scheduled_replay:
+                    missing = []
+                else:
+                    missing = [ex for ex in expected_ids if ex not in seen_ids]
+            if missing and (
+                not self.config.replay_stragglers or not self._replay_workers
+            ):
                 self.logger.log(
                     f"♻️  Replaying {len(missing)} missing examples on shard {shard_idx} ({shard_fraction:.0%}) "
                     f"for candidate {candidate.fingerprint[:12]}..."

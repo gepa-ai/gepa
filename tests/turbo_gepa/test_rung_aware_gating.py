@@ -84,3 +84,59 @@ def test_shrinkage_fallback_promotes():
     res_child_r0 = EvalResult(objectives={"quality": 0.50}, traces=[], n_examples=1, shard_fraction=0.2)
     decision = sched.record(child, res_child_r0, "quality")
     assert decision == "promoted"
+
+
+def test_final_rung_confidence_flag():
+    sched = make_scheduler()
+    parent = Candidate(text="parent", meta={})
+    res_parent_r0 = EvalResult(objectives={"quality": 0.70}, traces=[], n_examples=1, shard_fraction=0.2)
+    _ = sched.record(parent, res_parent_r0, "quality")
+    res_parent_r1 = EvalResult(objectives={"quality": 0.75}, traces=[], n_examples=1, shard_fraction=0.5)
+    _ = sched.record(parent, res_parent_r1, "quality")
+
+    child = Candidate(
+        text="child",
+        meta={
+            "parent_objectives": {"quality": 0.75},
+            "parent_sched_key": parent.fingerprint,
+        },
+    )
+    sched._candidate_levels[sched._sched_key(child)] = 2
+    res_child_final = EvalResult(
+        objectives={"quality": 0.90},
+        traces=[],
+        n_examples=80,
+        shard_fraction=1.0,
+        coverage_fraction=0.8,
+    )
+    decision = sched.record(child, res_child_final, "quality")
+    assert decision == "completed"
+    assert child.meta.get("_confidence_met") is True
+
+
+def test_final_rung_confidence_requires_samples():
+    sched = make_scheduler()
+    parent = Candidate(text="parent", meta={})
+    res_parent_r0 = EvalResult(objectives={"quality": 0.70}, traces=[], n_examples=1, shard_fraction=0.2)
+    _ = sched.record(parent, res_parent_r0, "quality")
+    res_parent_r1 = EvalResult(objectives={"quality": 0.75}, traces=[], n_examples=1, shard_fraction=0.5)
+    _ = sched.record(parent, res_parent_r1, "quality")
+
+    child = Candidate(
+        text="child",
+        meta={
+            "parent_objectives": {"quality": 0.75},
+            "parent_sched_key": parent.fingerprint,
+        },
+    )
+    sched._candidate_levels[sched._sched_key(child)] = 2
+    res_child_final = EvalResult(
+        objectives={"quality": 0.90},
+        traces=[],
+        n_examples=5,
+        shard_fraction=1.0,
+        coverage_fraction=0.2,
+    )
+    decision = sched.record(child, res_child_final, "quality")
+    assert decision == "completed"
+    assert child.meta.get("_confidence_met") is not True

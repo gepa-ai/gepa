@@ -293,6 +293,11 @@ class Config:
     final_rung_cap_straggler_window: float = 20.0  # Sliding window to measure straggler pressure
     cancel_stragglers_immediately: bool = True  # Cancel detached example tasks right away
     replay_stragglers: bool = True  # Re-evaluate missing examples after straggler cancellation
+    replay_workers: int | None = None  # Number of background workers for straggler replays
+    replay_worker_queue_size: int | None = None  # Optional bound for replay queue
+    replay_concurrency: int | None = None  # Max concurrency per replay evaluation
+    target_confidence: float = 0.95  # Confidence level for statistical promotion checks
+    min_samples_for_confidence: int = 20  # Require at least this many examples before using CI
     llm_connection_limit: int | None = None  # Cap simultaneous LLM calls (defaults to 1.5x eval_concurrency)
     # Dynamically scale effective evaluation concurrency to maximize throughput
     auto_scale_eval_concurrency: bool = True
@@ -400,6 +405,17 @@ class Config:
         self.final_rung_cap_timeout_threshold = max(0.0, min(1.0, float(self.final_rung_cap_timeout_threshold or 0.2)))
         self.final_rung_cap_cooldown_seconds = max(0.5, float(self.final_rung_cap_cooldown_seconds or 0.5))
         self.final_rung_cap_straggler_window = max(1.0, float(self.final_rung_cap_straggler_window or 20.0))
+        if self.replay_workers is None:
+            # Default: dedicate ~10% of evaluator concurrency, at least 1
+            self.replay_workers = max(1, int(round(self.eval_concurrency * 0.1)))
+        else:
+            self.replay_workers = max(0, int(self.replay_workers))
+        if self.replay_concurrency is None:
+            self.replay_concurrency = max(1, int(max(1, self.eval_concurrency) * 0.1))
+        else:
+            self.replay_concurrency = max(1, int(self.replay_concurrency))
+        if self.replay_worker_queue_size is not None:
+            self.replay_worker_queue_size = max(1, int(self.replay_worker_queue_size))
 
         custom_strategies = list(self.reflection_strategies or ())
         resolved_defaults = list(resolve_reflection_strategy_names(self.reflection_strategy_names))

@@ -157,6 +157,8 @@ class AsyncEvaluator:
         candidate_fp = candidate.fingerprint
         deliver_flags: dict[str, bool] = {ex_id: True for ex_id in example_ids}
         loop = asyncio.get_running_loop()
+        latency_ema: dict[str, float] = {}
+        latency_samples: dict[str, int] = {}
         # Partial publishing accumulators
         partial_sum: dict[str, float] = {}
         partial_n: int = 0
@@ -254,6 +256,14 @@ class AsyncEvaluator:
                             pass
                         last_partial_publish = now
 
+        def _record_latency(example_id: str, duration: float) -> None:
+            prev = latency_ema.get(example_id)
+            count = latency_samples.get(example_id, 0)
+            alpha = 0.2 if count else 1.0
+            base = prev if prev is not None else duration
+            latency_ema[example_id] = (1 - alpha) * base + alpha * duration
+            latency_samples[example_id] = count + 1
+
         async def eval_one(example_id: str, task_start_time: float) -> None:
             nonlocal completed
 
@@ -301,6 +311,7 @@ class AsyncEvaluator:
                 # Ensure inflight counter is decremented even if mapper raises
                 self._inflight_examples = max(0, self._inflight_examples - 1)
                 mapped = self.metrics_mapper(metrics)
+                _record_latency(example_id, _elapsed_api)
                 # Build a lean trace to avoid heavy I/O; keep only fields used by reflection
                 max_len = 2048
                 trace: dict[str, object] = {"example_id": example_id}
@@ -374,6 +385,7 @@ class AsyncEvaluator:
                     "neg_cost": 0.0,
                     "tokens": 0.0,
                 }
+                _record_latency(example_id, self.timeout_seconds or _elapsed_api)
                 mapped = self.metrics_mapper(fallback_metrics)
                 trace = dict(fallback_metrics)
                 trace["example_id"] = example_id
@@ -499,10 +511,15 @@ class AsyncEvaluator:
                     start_time = info["start"]
                     example_id = info["example_id"]
                     elapsed_task = now - start_time
-                    is_straggler = elapsed_task > (threshold + detach_margin)
+                    ex_latency = latency_ema.get(example_id)
+                    if ex_latency is not None:
+                        ex_threshold = max(ex_latency * 1.5, threshold)
+                    else:
+                        ex_threshold = threshold
+                    is_straggler = elapsed_task > (ex_threshold + detach_margin)
                     status = "✅ within" if not is_straggler else "⚠️ EXCEEDS"
                     self.logger.log(
-                        f"   Task {example_id}: elapsed {elapsed_task:.1f}s {status} threshold {threshold:.1f}s (+{detach_margin:.1f}s slack)"
+                        f"   Task {example_id}: elapsed {elapsed_task:.1f}s {status} threshold {ex_threshold:.1f}s (+{detach_margin:.1f}s slack)"
                     )
                     if is_straggler and deliver_flags.get(example_id, True):
                         straggler_count += 1
