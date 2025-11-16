@@ -339,6 +339,8 @@ class Orchestrator:
         queue_maxsize = int(self.config.replay_worker_queue_size or 0)
         self._replay_queue: asyncio.Queue[ReplayJob | None] = asyncio.Queue(maxsize=queue_maxsize if queue_maxsize > 0 else 0)
         self._replay_workers: list[asyncio.Task] = []
+        self._replay_worker_cap: int = max(0, int(self.config.replay_workers or 0))
+        self._replay_worker_cooldown: float = 0.0
         final_fraction = self._runtime_shards[-1] if self._runtime_shards else 1.0
         self._cost_remaining: list[float] = [
             max(1e-6, final_fraction - (self._runtime_shards[i - 1] if i > 0 else 0.0))
@@ -1000,12 +1002,15 @@ class Orchestrator:
         self._rung_launches = [0] * len(self._runtime_shards)
         self._rung_promotions = [0] * len(self._runtime_shards)
 
-    def _start_replay_workers(self) -> None:
-        if not (self.config.replay_stragglers and self.config.replay_workers):
+    def _start_replay_workers(self, target: int | None = None) -> None:
+        if not self.config.replay_stragglers:
             return
-        if self._replay_workers:
+        desired = target if target is not None else self._replay_worker_cap
+        desired = max(0, desired)
+        current = len(self._replay_workers)
+        if desired <= current:
             return
-        for worker_id in range(self.config.replay_workers):
+        for worker_id in range(current, desired):
             task = asyncio.create_task(self._replay_worker(worker_id))
             self._replay_workers.append(task)
 
@@ -1255,6 +1260,7 @@ class Orchestrator:
                             backlog=len(self._priority_queue),
                         )
                         self._mutation_throttle = True
+        self._adjust_replay_workers(now)
 
     async def run(
         self,
