@@ -7,19 +7,18 @@ parameterized system using evolutionary algorithms with LLM-based reflection.
 
 import os
 import random
-from dataclasses import dataclass, field, asdict
-from typing import Any, Callable, Generic, Literal, Mapping, NewType, Protocol, Sequence, Type, TypeAlias, TypeVar, Unpack, cast
+from dataclasses import asdict, dataclass, field
+from typing import (
+    Any,
+    Literal,
+    Protocol,
+    Sequence,
+    TypeAlias,
+)
 
 from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-from gepa.core.adapter import DataInst
-from gepa.core.data_loader import DataId, DataLoader
-from gepa.core.result import GEPAResult
-from gepa.proposer.reflective_mutation.base import CandidateSelector
-from gepa.strategies.batch_sampler import BatchSampler
-
-from gepa.adapters.default_adapter.default_adapter import ChatCompletionCallable, DefaultAdapter
-from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
-from gepa.core.data_loader import DataId, DataLoader, ensure_loader
+from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput
+from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.logging.experiment_tracker import create_experiment_tracker
@@ -152,76 +151,77 @@ Your fitness_fn should construct SideInfo for each evaluation instance. See the
 FitnessFn protocol documentation for the complete evaluation interface.
 """
 
-class FitnessFn[SideInfo, RolloutOutput](Protocol):
+
+class FitnessFn(Protocol):
     def __call__(
-        self, 
-        candidate: Candidate,
-        batch: Sequence[DataInst],
-        **kwargs: Any
+        self, candidate: Candidate, batch: Sequence[DataInst], **kwargs: Any
     ) -> Sequence[tuple[float, RolloutOutput, SideInfo]]:
         """
         Core evaluation interface for GEPA optimization.
-        
+
         Evaluates a candidate (parameterized system) on a batch of data instances,
         returning scores and diagnostic information that guide the optimization process.
-        
+
         **Parameters:**
-        
+
         - **candidate**: Dictionary mapping parameter names to values representing one
           system configuration.
-          
+
           Examples:
           - Prompt optimization: `{"system_prompt": "You are...", "user_prefix": "Answer:"}`
           - Hyperparameter tuning: `{"learning_rate": "0.001", "batch_size": "32"}`
           - Multi-component system: `{"component_1_config": "...", "component_2_config": "..."}`
-        
+
         - **batch**: List of data instances to evaluate on. Each instance is one evaluation
           example (test case, input-output pair, task instance). Batch size controlled by
           GEPA's BatchSampler strategy.
-        
+
         - **kwargs**: Additional keyword arguments passed during evaluation.
-        
+
         **Returns:**
-        
+
         List of evaluation results, one per batch instance. Each result is a 3-tuple:
-        
+
         1. **score** (float): Fitness score for this instance. Higher is better. Must be finite.
            Primary optimization signal.
-        
+
         2. **rollout_output** (RolloutOutput): Actual output produced by the candidate.
            Opaque to GEPA—only tracked for returning best outputs per data instance in
            GEPAResult. Can be any type (str, dict, custom object).
-        
+
         3. **side_info** (SideInfo): Auxiliary evaluation information powering LLM-based
            reflection. See SideInfo documentation for detailed guidance on structure and
            best practices.
-        
+
         **Requirements:**
-        
+
         - Return list length must equal `len(batch)`
         - Include rich diagnostic information in side_info for effective reflection
         - All scores follow "higher is better" convention
         """
         ...
 
+
 # --- Component 1: Engine & Stopping Configuration ---
 # Controls the main GEPAEngine run loop
 @dataclass
 class EngineConfig:
     """Configuration for the GEPA engine run loop."""
+
     run_dir: str | None = None
     seed: int = 0
     display_progress_bar: bool = False
     raise_on_exception: bool = True
     use_cloudpickle: bool = False
     track_best_outputs: bool = False
-    
+
     # Simple stopping conditions
     max_metric_calls: int | None = None
-    
+
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
     candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto"
+
 
 optimize_anything_reflection_prompt_template: str = """I am optimizing a parameter in my system. The current parameter value is:
 ```
@@ -246,11 +246,13 @@ Based on your analysis, propose a new parameter value that addresses the identif
 
 Provide the new parameter value within ``` blocks."""
 
+
 # --- Component 2: Proposer Configurations ---
 # Config for the main reflective proposer
 @dataclass
 class ReflectionConfig:
     """Configuration for the reflective mutation proposer."""
+
     reflection_lm: LanguageModel | str | None = None
     skip_perfect_score: bool = False
     perfect_score: float | None = None
@@ -259,11 +261,13 @@ class ReflectionConfig:
     reflection_prompt_template: str | None = optimize_anything_reflection_prompt_template
     module_selector: ReflectionComponentSelector | Literal["round_robin", "all"] = "round_robin"
 
+
 # Config for the optional merge proposer
 # The existence of this config signals to use merge functionality
 @dataclass
 class MergeConfig:
     """Configuration for the merge proposer."""
+
     max_merge_invocations: int = 5
     merge_val_overlap_floor: int = 5
 
@@ -273,6 +277,7 @@ class MergeConfig:
 @dataclass
 class TrackingConfig:
     """Configuration for experiment tracking and logging."""
+
     logger: LoggerProtocol | None = None
     use_wandb: bool = False
     wandb_api_key: str | None = None
@@ -288,18 +293,19 @@ class TrackingConfig:
 class GEPAConfig:
     """
     Top-level configuration for GEPA optimization.
-    
+
     This config follows a nested structure inspired by Hugging Face Trainer,
     Lightning, and Hydra, where each component has its own configuration class.
     """
+
     # Component configurations
     engine: EngineConfig = field(default_factory=EngineConfig)
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
-    
+
     # Use 'None' as the default to disable this component
     merge: MergeConfig | None = None
-    
+
     # Complex callbacks that aren't serializable
     stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None
 
@@ -313,22 +319,23 @@ class GEPAConfig:
             self.tracking = TrackingConfig(**self.tracking)
         if isinstance(self.merge, dict):
             self.merge = MergeConfig(**self.merge)
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary representation."""
         return asdict(self)
-    
+
     @staticmethod
     def from_dict(d: dict[str, Any]) -> "GEPAConfig":
         """Create config from dictionary representation."""
         return GEPAConfig(**d)
+
 
 def optimize_anything(
     seed_candidate: Candidate | list[Candidate],
     fitness_fn: FitnessFn,
     dataset: list[DataInst],
     valset: list[DataInst] | None = None,
-    config: GEPAConfig | None = None
+    config: GEPAConfig | None = None,
 ) -> GEPAResult:
     # Use default config if not provided
     if config is None:
@@ -342,7 +349,7 @@ def optimize_anything(
 
     # --- 1. Build stoppers from the EngineConfig and root config ---
     stop_callbacks_list: list[StopperProtocol] = []
-    
+
     # Add custom stop callbacks if provided
     if config.stop_callbacks is not None:
         if isinstance(config.stop_callbacks, Sequence):
@@ -359,6 +366,7 @@ def optimize_anything(
     # Add max_metric_calls stopper if provided
     if config.engine.max_metric_calls is not None:
         from gepa.utils import MaxMetricCallsStopper
+
         max_calls_stopper = MaxMetricCallsStopper(config.engine.max_metric_calls)
         stop_callbacks_list.append(max_calls_stopper)
 
@@ -374,6 +382,7 @@ def optimize_anything(
         stop_callback = stop_callbacks_list[0]
     else:
         from gepa.utils import CompositeStopper
+
         stop_callback = CompositeStopper(*stop_callbacks_list)
 
     # --- 2. Validate and setup reflection LM ---
@@ -386,6 +395,7 @@ def optimize_anything(
     # Convert string LM to callable
     if isinstance(config.reflection.reflection_lm, str):
         import litellm
+
         reflection_lm_name = config.reflection.reflection_lm
 
         def _reflection_lm(prompt: str) -> str:
@@ -451,8 +461,7 @@ def optimize_anything(
     # --- 7. Build batch sampler from ReflectionConfig ---
     if config.reflection.batch_sampler == "epoch_shuffled":
         config.reflection.batch_sampler = EpochShuffledBatchSampler(
-            minibatch_size=config.reflection.reflection_minibatch_size or 3, 
-            rng=rng
+            minibatch_size=config.reflection.reflection_minibatch_size or 3, rng=rng
         )
     else:
         assert config.reflection.reflection_minibatch_size is None, (
