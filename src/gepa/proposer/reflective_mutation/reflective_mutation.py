@@ -41,7 +41,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         skip_perfect_score: bool,
         experiment_tracker: Any,
         reflection_lm: LanguageModel | None = None,
-        reflection_prompt_template: str | None = None,
+        reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
     ):
         self.logger = logger
@@ -55,12 +55,10 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.experiment_tracker = experiment_tracker
         self.reflection_lm = reflection_lm
         self.custom_parameter_proposer = custom_candidate_proposer
+        self.reflection_prompt_template = reflection_prompt_template
 
         if self.skip_perfect_score and self.perfect_score is None:
             raise ValueError("perfect_score must be provided when skip_perfect_score is True.")
-
-        InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
-        self.reflection_prompt_template = reflection_prompt_template
 
     def propose_new_texts(
         self,
@@ -86,12 +84,26 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
             base_instruction = candidate[name]
             dataset_with_feedback = reflective_dataset[name]
+
+            # Determine which prompt template to use for this parameter
+            prompt_template = None
+            if isinstance(self.reflection_prompt_template, dict):
+                # Use parameter-specific template if available
+                prompt_template = self.reflection_prompt_template.get(name)
+                if prompt_template is None:
+                    self.logger.log(
+                        f"No reflection_prompt_template found for parameter '{name}'. Using default template."
+                    )
+            else:
+                # Use the single template for all parameters
+                prompt_template = self.reflection_prompt_template
+
             new_texts[name] = InstructionProposalSignature.run(
                 lm=self.reflection_lm,
                 input_dict={
                     "current_instruction_doc": base_instruction,
                     "dataset_with_feedback": dataset_with_feedback,
-                    "prompt_template": self.reflection_prompt_template,
+                    "prompt_template": prompt_template,
                 },
             )["new_instruction"]
         return new_texts

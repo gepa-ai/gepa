@@ -25,7 +25,7 @@ class ReflectionComponentSelector(Protocol):
 
 
 class LanguageModel(Protocol):
-    def __call__(self, prompt: str) -> str: ...
+    def __call__(self, prompt: str | list[dict[str, str]]) -> str: ...
 
 
 @dataclass

@@ -259,7 +259,7 @@ class ReflectionConfig:
     reflection_minibatch_size: int = 3
     module_selector: ReflectionComponentSelector | Literal["round_robin", "all"] = "round_robin"
     reflection_lm: LanguageModel | str | None = None
-    reflection_prompt_template: str | None = optimize_anything_reflection_prompt_template
+    reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
 
 
@@ -399,8 +399,13 @@ def optimize_anything(
 
         reflection_lm_name = config.reflection.reflection_lm
 
-        def _reflection_lm(prompt: str) -> str:
-            completion = litellm.completion(model=reflection_lm_name, messages=[{"role": "user", "content": prompt}])
+        def _reflection_lm(prompt: str | list[dict[str, str]]) -> str:
+            if isinstance(prompt, str):
+                completion = litellm.completion(
+                    model=reflection_lm_name, messages=[{"role": "user", "content": prompt}]
+                )
+            else:
+                completion = litellm.completion(model=reflection_lm_name, messages=prompt)
             return completion.choices[0].message.content  # type: ignore
 
         config.reflection.reflection_lm = _reflection_lm
@@ -485,6 +490,18 @@ def optimize_anything(
             f"Adapter {active_adapter!s} provides its own propose_new_texts method; "
             "reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
         )
+
+        # Validate template(s) - can be a single string or dict of templates
+        from gepa.strategies.instruction_proposal import InstructionProposalSignature
+
+        if isinstance(config.reflection.reflection_prompt_template, dict):
+            for param_name, template in config.reflection.reflection_prompt_template.items():
+                try:
+                    InstructionProposalSignature.validate_prompt_template(template)
+                except ValueError as e:
+                    raise ValueError(f"Invalid reflection_prompt_template for parameter '{param_name}': {e}") from e
+        else:
+            InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
 
     # --- 10. Build reflective proposer from ReflectionConfig ---
     reflective_proposer = ReflectiveMutationProposer(
