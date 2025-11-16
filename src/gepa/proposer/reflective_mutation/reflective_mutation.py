@@ -42,7 +42,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         experiment_tracker: Any,
         reflection_lm: LanguageModel | None = None,
         reflection_prompt_template: str | None = None,
-        custom_parameter_proposer: ProposalFn | None = None,
+        custom_candidate_proposer: ProposalFn | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -54,7 +54,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.skip_perfect_score = skip_perfect_score
         self.experiment_tracker = experiment_tracker
         self.reflection_lm = reflection_lm
-        self.custom_parameter_proposer = custom_parameter_proposer
+        self.custom_parameter_proposer = custom_candidate_proposer
 
         if self.skip_perfect_score and self.perfect_score is None:
             raise ValueError("perfect_score must be provided when skip_perfect_score is True.")

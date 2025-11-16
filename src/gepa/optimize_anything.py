@@ -260,7 +260,7 @@ class ReflectionConfig:
     module_selector: ReflectionComponentSelector | Literal["round_robin", "all"] = "round_robin"
     reflection_lm: LanguageModel | str | None = None
     reflection_prompt_template: str | None = optimize_anything_reflection_prompt_template
-    custom_parameter_proposer: ProposalFn | None = None
+    custom_candidate_proposer: ProposalFn | None = None
 
 
 # Config for the optional merge proposer
@@ -499,7 +499,7 @@ def optimize_anything(
         experiment_tracker=experiment_tracker,
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
-        custom_parameter_proposer=config.reflection.custom_parameter_proposer,
+        custom_candidate_proposer=config.reflection.custom_candidate_proposer,
     )
 
     # Define evaluator for merge proposer
