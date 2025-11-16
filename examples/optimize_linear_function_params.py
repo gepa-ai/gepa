@@ -13,7 +13,7 @@ from typing import Any, Sequence
 from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, SideInfo, optimize_anything
 
 # Dataset: target data points (x, y) that we want to fit
-# The true function is y = 3*x + 2
+# The true function is y = 10.5 * x + 2.3
 dataset = [{"x": x, "target_y": 10.5 * x + 2.3} for x in range(100)]
 
 
@@ -22,7 +22,7 @@ def fitness_fn(candidate: dict[str, str], batch: Sequence[Any], **kwargs) -> lis
     Evaluates how well the candidate parameters fit the data.
 
     Candidate contains: {"a": "3.5", "b": "1.8"}
-    We evaluate: y = a*x + b against target values
+    We evaluate: y = b*x + a against target values
 
     Returns: list of (score, output, side_info) tuples
     """
@@ -82,7 +82,7 @@ def main():
 
     # Run optimization
     print("=" * 60)
-    print("Optimizing y = a*x + b to fit data points")
+    print("Optimizing y = b*x + a to fit data points")
     print("=" * 60)
     print(f"Initial guess: {seed_candidate['function_params']}")
 
