@@ -1,8 +1,10 @@
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
-from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter, ProposalFn, RolloutOutput, Trajectory
+
+from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter, ProposalFn
 
 if TYPE_CHECKING:
     from gepa.optimize_anything import FitnessFn, SideInfo
+
 
 class OptimizeAnythingAdapter(GEPAAdapter):
     def __init__(self, fitness_fn: "FitnessFn"):
@@ -30,7 +32,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         assert side_infos is not None
         ret: dict[str, list[dict[str, Any]]] = {}
         for component_name in components_to_update:
-            ret[component_name] = []    
+            ret[component_name] = []
             for score, side_info in zip(scores, side_infos, strict=False):
                 ret[component_name].append({})
                 for k, v in side_info.items():
