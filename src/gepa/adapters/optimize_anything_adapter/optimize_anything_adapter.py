@@ -1,13 +1,19 @@
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
-from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter, ProposalFn
+from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
+from gepa.proposer.reflective_mutation.base import LanguageModel
 
 if TYPE_CHECKING:
     from gepa.optimize_anything import FitnessFn, SideInfo
 
 
 class OptimizeAnythingAdapter(GEPAAdapter):
-    def __init__(self, fitness_fn: "FitnessFn"):
+    def __init__(
+        self,
+        fitness_fn: "FitnessFn",
+        reflection_lm: LanguageModel | None = None,
+        reflection_prompt_template: str | None = None,
+    ):
         self.fitness_fn = fitness_fn
 
     def evaluate(
@@ -45,5 +51,3 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     else:
                         continue
         return ret
-
-    propose_new_texts: ProposalFn | None = None

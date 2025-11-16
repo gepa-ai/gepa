@@ -17,7 +17,7 @@ from typing import (
 )
 
 from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput
+from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn, RolloutOutput
 from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
@@ -76,7 +76,7 @@ SideInfo has two primary components:
     Qualitative and quantitative information that helps the LLM understand the evaluation
     context and guide parameter improvements. Can include text, numbers, or structured data.
     
-    Common fields:
+    Example fields:
     - "Input" / "Inputs": The input(s) provided to the candidate
     - "Output" / "Outputs": What the candidate actually produced
     - "Expected" / "ExpectedOutput": Ground truth or desired output, if available
@@ -87,7 +87,7 @@ SideInfo has two primary components:
     - "ValidationErrors": Schema validation or constraint violations
     
     Design principle: Include anything that would help a human understand why the
-    candidate succeeded or failed on this instance.
+    candidate succeeded or failed on this instance. Be descriptive in field names and values.
 
 **Parameter-Specific Information** (optional):
 
@@ -253,13 +253,14 @@ Provide the new parameter value within ``` blocks."""
 class ReflectionConfig:
     """Configuration for the reflective mutation proposer."""
 
-    reflection_lm: LanguageModel | str | None = None
     skip_perfect_score: bool = False
     perfect_score: float | None = None
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled"
     reflection_minibatch_size: int = 3
-    reflection_prompt_template: str | None = optimize_anything_reflection_prompt_template
     module_selector: ReflectionComponentSelector | Literal["round_robin", "all"] = "round_robin"
+    reflection_lm: LanguageModel | str | None = None
+    reflection_prompt_template: str | None = optimize_anything_reflection_prompt_template
+    custom_parameter_proposer: ProposalFn | None = None
 
 
 # Config for the optional merge proposer
@@ -498,6 +499,7 @@ def optimize_anything(
         experiment_tracker=experiment_tracker,
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
+        custom_parameter_proposer=config.reflection.custom_parameter_proposer,
     )
 
     # Define evaluator for merge proposer

@@ -4,7 +4,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -42,6 +42,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         experiment_tracker: Any,
         reflection_lm: LanguageModel | None = None,
         reflection_prompt_template: str | None = None,
+        custom_parameter_proposer: ProposalFn | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -53,6 +54,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.skip_perfect_score = skip_perfect_score
         self.experiment_tracker = experiment_tracker
         self.reflection_lm = reflection_lm
+        self.custom_parameter_proposer = custom_parameter_proposer
 
         if self.skip_perfect_score and self.perfect_score is None:
             raise ValueError("perfect_score must be provided when skip_perfect_score is True.")
@@ -69,15 +71,17 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         if self.adapter.propose_new_texts is not None:
             return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update)
 
+        if self.custom_parameter_proposer is not None:
+            return self.custom_parameter_proposer(candidate, reflective_dataset, components_to_update)
+
         if self.reflection_lm is None:
             raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
+
         new_texts: dict[str, str] = {}
         for name in components_to_update:
             # Gracefully handle cases where a selected component has no data in reflective_dataset
             if name not in reflective_dataset or not reflective_dataset.get(name):
-                self.logger.log(
-                    f"Component '{name}' is not in reflective dataset. Skipping."
-                )
+                self.logger.log(f"Component '{name}' is not in reflective dataset. Skipping.")
                 continue
 
             base_instruction = candidate[name]
@@ -117,7 +121,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             self.logger.log(f"Iteration {i}: No trajectories captured. Skipping.")
             return None
 
-        if self.skip_perfect_score and self.perfect_score is not None and all(s >= self.perfect_score for s in eval_curr.scores):
+        if (
+            self.skip_perfect_score
+            and self.perfect_score is not None
+            and all(s >= self.perfect_score for s in eval_curr.scores)
+        ):
             self.logger.log(f"Iteration {i}: All subsample scores perfect. Skipping.")
             return None
 
