@@ -302,10 +302,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             self.logger.log(f"Iteration {i}: No merge candidates scheduled")
             return None
 
-        if hasattr(state, "get_pareto_front_mapping"):
-            pareto_front_programs = state.get_pareto_front_mapping(self.frontier_type)
-        else:
-            pareto_front_programs = state.program_at_pareto_front_valset
+        pareto_front_programs = state.get_pareto_front_mapping()
 
         tracked_scores: Sequence[float] = getattr(
             state, "per_program_tracked_scores", state.program_full_scores_val_set

@@ -121,7 +121,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         )
 
     def _get_pareto_front_programs(self, state: GEPAState[RolloutOutput, DataId]) -> dict[DataId, set[ProgramIdx]]:
-        return state.get_pareto_front_mapping(self.frontier_type)
+        return state.get_pareto_front_mapping()
 
     def _run_full_eval_and_add(
         self,
@@ -226,6 +226,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             seed_candidate=self.seed_candidate,
             valset_evaluator=valset_evaluator,
             track_best_outputs=self.track_best_outputs,
+            frontier_type=self.frontier_type,
         )
 
         # Log base program score

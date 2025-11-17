@@ -70,6 +70,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
             tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None]
         ),
         track_best_outputs: bool = False,
+        frontier_type: FrontierType = "instance",
     ):
         base_evaluation = self._normalize_base_eval_output(base_valset_eval_output)
 
@@ -84,6 +85,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         self.program_at_pareto_front_valset = {val_id: {0} for val_id in base_evaluation.scores_by_val_id.keys()}
         self.objective_pareto_front = dict(base_objective_aggregates)
         self.program_at_pareto_front_objectives = {objective: {0} for objective in base_objective_aggregates.keys()}
+        self.frontier_type: FrontierType = frontier_type
 
         self.list_of_named_predictors = list(seed_candidate.keys())
         self.named_predictor_id_to_update_next_for_program_candidate = [0]
@@ -360,7 +362,8 @@ class GEPAState(Generic[RolloutOutput, ValId]):
 
         return new_program_idx
 
-    def get_pareto_front_mapping(self, frontier_type: FrontierType) -> dict[Any, set[ProgramIdx]]:
+    @staticmethod
+    def _get_pareto_front_mapping(frontier_type: FrontierType) -> dict[Any, set[ProgramIdx]]:
         if frontier_type == "instance":
             return {val_id: set(front) for val_id, front in self.program_at_pareto_front_valset.items()}
         if frontier_type == "objective":
@@ -373,6 +376,9 @@ class GEPAState(Generic[RolloutOutput, ValId]):
                 combined[f"objective::{objective}"] = set(front)
             return combined
         raise ValueError(f"Unknown frontier_type: {frontier_type}")
+
+    def get_pareto_front_mapping(self) -> dict[Any, set[ProgramIdx]]:
+        return self._get_pareto_front_mapping(self.frontier_type)
 
 
 def write_eval_scores_to_directory(scores: ValScores, output_dir: str) -> None:
@@ -392,6 +398,7 @@ def initialize_gepa_state(
         tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None],
     ],
     track_best_outputs: bool = False,
+    frontier_type: FrontierType = "instance",
 ) -> GEPAState[RolloutOutputType, DataIdType]:
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
@@ -427,6 +434,7 @@ def initialize_gepa_state(
                 seed_valset_evaluation.objective_scores_by_val_id,
             ),
             track_best_outputs=track_best_outputs,
+            frontier_type=frontier_type,
         )
 
         gepa_state.num_full_ds_evals = 1
