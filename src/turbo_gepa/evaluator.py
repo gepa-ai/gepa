@@ -209,44 +209,10 @@ class AsyncEvaluator:
             min_detach_samples = int(math.ceil(frac * total))
             return min_detach_samples
 
-        def _ci_ready(samples: int, coverage_fraction: float, min_coverage: float) -> bool:
-            if samples < self.min_samples_for_confidence:
-                return False
-            return coverage_fraction >= min_coverage
-
-        def _confidence_bounds(mean_quality: float, samples: int) -> tuple[float, float]:
-            if samples <= 0:
-                return (mean_quality, mean_quality)
-            p = max(1e-6, min(1 - 1e-6, mean_quality))
-            se = math.sqrt(max(p * (1 - p) / max(samples, 1), 1e-12))
-            delta = self._confidence_z * se
-            return p - delta, p + delta
-
-        def _should_stop_for_failure(samples: int, coverage_fraction: float) -> bool:
-            if parent_target is None:
-                return False
-            min_cov = self.coverage_min_success_final if is_final_shard else self.coverage_min_success_mid
-            if not _ci_ready(samples, coverage_fraction, min_cov):
-                return False
-            mean_quality = running_quality / max(samples, 1)
-            _, upper = _confidence_bounds(mean_quality, samples)
-            return upper + 1e-6 < parent_target
-
-        def _should_stop_for_success(samples: int, coverage_fraction: float) -> bool:
-            threshold = parent_target
-            if is_final_shard and self.target_quality is not None:
-                if threshold is None:
-                    threshold = self.target_quality
-                else:
-                    threshold = max(threshold, self.target_quality)
-            if threshold is None:
-                return False
-            min_cov = self.coverage_min_success_final if is_final_shard else self.coverage_min_success_mid
-            if not _ci_ready(samples, coverage_fraction, min_cov):
-                return False
-            mean_quality = running_quality / max(samples, 1)
-            lower, _ = _confidence_bounds(mean_quality, samples)
-            return lower >= threshold - 1e-6
+        # CI-based early-stop is intentionally disabled for now. Between the
+        # parent-target bound below and the shard-level straggler logic we
+        # already have sufficient safeguards, and keeping this simple avoids
+        # surprising behaviour when the underlying latency distribution shifts.
 
         def _ensure_straggler_future(example_id: str) -> asyncio.Future[EvalResult] | None:
             if not self._use_straggler_futures:
@@ -320,27 +286,9 @@ class AsyncEvaluator:
                             self.logger.log(
                                 f"⚠️ Early stop: candidate {candidate.fingerprint[:12]} cannot beat parent target {parent_target:.1%}"
                             )
-                coverage_fraction = float(completed) / float(total) if total else 0.0
-                samples = completed
-                if not early_stop_flag and samples > 0:
-                    if _should_stop_for_failure(samples, coverage_fraction):
-                        early_stop_flag = True
-                        early_stop_reason = "ci_fail"
-                        if self.metrics:
-                            self.metrics.record_early_stop("ci_fail")
-                        if show_progress:
-                            self.logger.log(
-                                f"⚠️ CI upper bound below parent target for {candidate.fingerprint[:12]} (coverage={coverage_fraction:.0%})"
-                            )
-                    elif _should_stop_for_success(samples, coverage_fraction):
-                        early_stop_flag = True
-                        early_stop_reason = "ci_success"
-                        if self.metrics:
-                            self.metrics.record_early_stop("ci_success")
-                        if show_progress:
-                            self.logger.log(
-                                f"✅ CI lower bound cleared success threshold for {candidate.fingerprint[:12]} (coverage={coverage_fraction:.0%})"
-                            )
+                # CI-based early-stop for success/failure has been removed; we
+                # rely on the parent-target bound above plus shard-level
+                # straggler handling instead.
                 # Partial publish
                 if on_partial is not None and total > 0:
                     now = time.time()

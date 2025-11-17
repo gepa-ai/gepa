@@ -1,0 +1,30 @@
+[
+  {
+    "run_id": "f3a27836-solo",
+    "latency_mean": 0.0,
+    "latency_p50": 0.0,
+    "latency_p95": 0.0,
+    "evaluations": 25,
+    "throughput": 0.21,
+    "peak_concurrency": 10,
+    "time_to_target": 18.2,
+    "latency": "moderate",
+    "strategy": "static",
+    "eval_concurrency": 10,
+    "metrics_path": "/Users/gmiller/code/gregm711/personal-projects/open-source/gepa-fork/gepa/examples/.turbo_gepa/metrics/metrics_1763403402.txt"
+  },
+  {
+    "run_id": "2fc87806-solo",
+    "latency_mean": 0.0,
+    "latency_p50": 0.0,
+    "latency_p95": 0.0,
+    "evaluations": 8,
+    "throughput": 0.33,
+    "peak_concurrency": 10,
+    "time_to_target": null,
+    "latency": "moderate",
+    "strategy": "adaptive",
+    "eval_concurrency": 10,
+    "metrics_path": "/Users/gmiller/code/gregm711/personal-projects/open-source/gepa-fork/gepa/examples/.turbo_gepa/metrics/metrics_1763403432.txt"
+  }
+]

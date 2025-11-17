@@ -1202,6 +1202,14 @@ class Orchestrator:
         await self.archive.insert(candidate, combined)
 
     def _adjust_runtime_parameters(self) -> None:
+        """
+        Runtime adaptation for concurrency and final-rung capacity.
+
+        This version is intentionally conservative: it keeps concurrency
+        at the configured ceiling by default and only scales back when
+        the provider is clearly overloaded (high timeout ratio), while
+        still allowing the final-rung cap controller to react to tails.
+        """
         latencies = list(self._latency_history)
         self._final_rung_cap_floor = self._dynamic_final_cap_floor()
         if len(latencies) < 5:
@@ -1214,98 +1222,7 @@ class Orchestrator:
         lat_mean = statistics.fmean(latencies)
         lat_p95 = _percentile(latencies, 0.95)
 
-        timeout_cap = self.config.eval_timeout_seconds or 60.0
-        high_latency = min(max(10.0, 0.75 * timeout_cap), timeout_cap)
-        low_latency = 6.0
-
-        backlog0 = len(self._priority_queue)
-        launches0 = self._rung_launches[0] if self._rung_launches else 0
-        promotions0 = self._rung_promotions[0] if self._rung_promotions else 0
-        promo_rate0 = promotions0 / max(1, launches0)
-        backlog_high = max(3 * self.config.batch_size, 12)
-        backlog_low = max(self.config.batch_size, 8)
-
-        limit = self.config.eval_concurrency
-        pressure = backlog0 / max(1, self._max_total_inflight)
-        at_cap = self._total_inflight >= max(1, self._max_total_inflight - 1)
-
-        should_expand = (
-            self._max_total_inflight < limit
-            and pressure > 1.2
-            and at_cap
-            and timeout_ratio < 0.04
-            and lat_p95 < high_latency * 0.8
-        )
-        should_reduce = (
-            timeout_ratio > 0.08
-            or lat_p95 > high_latency
-            or (lat_mean > high_latency and self._max_total_inflight > self._adaptive_inflight_floor)
-        )
-
-        adjusted = False
-        if should_expand or should_reduce:
-            if now - self._last_inflight_adjust >= 1.0:
-                old_limit = self._max_total_inflight
-                if should_expand:
-                    step = max(1, max(1, old_limit // 3))
-                    new_limit = min(limit, old_limit + step)
-                else:
-                    step = max(1, max(1, old_limit // 4))
-                    floor = max(self._adaptive_inflight_floor, 1)
-                    new_limit = max(floor, old_limit - step)
-                new_limit = self._clamp_inflight(new_limit)
-                if new_limit != old_limit:
-                    self._max_total_inflight = new_limit
-                    self._recompute_capacities()
-                    self._last_inflight_adjust = now
-                    adjusted = True
-                    direction = "↑" if new_limit > old_limit else "↓"
-                    if self.show_progress:
-                        self.logger.log(
-                            (
-                                f"⚙️  Adaptive inflight {direction} {old_limit}→{new_limit} "
-                                f"| p95={lat_p95:.1f}s mean={lat_mean:.1f}s timeout={timeout_ratio:.1%} backlog={backlog0}"
-                            ),
-                            LogLevel.WARNING,
-                        )
-                    if self.config.max_mutations_per_round:
-                        if new_limit > old_limit:
-                            self.config.max_mutations_per_round = min(
-                                self.config.max_mutations_per_round + 1, self._max_mutations_ceiling
-                            )
-                        else:
-                            self.config.max_mutations_per_round = max(
-                                self._mutation_min, self.config.max_mutations_per_round - 1
-                            )
-                    if new_limit < old_limit:
-                        self._begin_network_throttle(
-                            "eval inflight clamp",
-                            lat_p95=lat_p95,
-                            timeout_ratio=timeout_ratio,
-                            backlog=len(self._priority_queue),
-                        )
-                        self._mutation_throttle = True
-
-        if backlog0 > backlog_high and promo_rate0 < 0.2:
-            self._mutation_throttle = True
-        elif backlog0 < backlog_low:
-            self._mutation_throttle = False
-
-        if self._rung_coverage:
-            final_idx = min(self._final_rung_index, len(self._rung_coverage) - 1)
-            final_coverage = self._rung_coverage[final_idx]
-            final_waiting = self._waiting_by_rung.get(final_idx, 0)
-            replay_backlog = self._replay_queue.qsize() if self.config.replay_stragglers else 0
-            if final_coverage < 0.78 and (final_waiting > 0 or replay_backlog > 0):
-                self._mutation_throttle = True
-            elif final_coverage > 0.92 and backlog0 < max(1, backlog_low // 2):
-                self._mutation_throttle = False
-
-        if adjusted:
-            # Slowly decay launch counters to keep ratios reactive
-            self._rung_launches = [max(0, int(count * 0.8)) for count in self._rung_launches]
-            self._rung_promotions = [max(0, int(count * 0.8)) for count in self._rung_promotions]
-
+        # Maintain a small sliding window for final-rung cap updates
         try:
             lat_p50 = _percentile(latencies, 0.50)
         except Exception:
@@ -1340,54 +1257,31 @@ class Orchestrator:
                             LogLevel.WARNING,
                         )
 
-        # Drop stale straggler samples beyond 60s
+        # Drop stale straggler samples beyond 60s so final-rung cap logic stays fresh.
         prune_before = time.time() - 60.0
         while self._recent_final_straggler_events and self._recent_final_straggler_events[0][0] < prune_before:
             self._recent_final_straggler_events.popleft()
 
-        # Adaptive effective concurrency (network-aware throttle)
-        # Target: maximize throughput by staying near provider sweet spot.
+        # Adaptive effective concurrency is deliberately minimal: always run at
+        # the configured ceiling unless the provider is clearly overloaded
+        # (very high timeout ratio). This keeps concurrency high by default.
         if self.config.auto_scale_eval_concurrency:
-            base_floor = max(1, self.config.min_effective_concurrency or 1)
-            try:
-                speed = max(0.0, min(1.0, float(getattr(self.config, "verification_speed_bias", 0.3))))
-            except Exception:
-                speed = 0.3
-            # Dynamic floor keeps more concurrency at higher speed bias:
-            #   speed=0.0 -> ~50% of eval_concurrency
-            #   speed=1.0 -> ~90% of eval_concurrency
-            dyn_floor = int(max(1, round(self.config.eval_concurrency * (0.5 + 0.4 * speed))))
-            floor = max(base_floor, dyn_floor)
             ceil = max(1, self.config.eval_concurrency)
             old_eff = getattr(self, "_effective_concurrency", ceil)
             eff = old_eff
 
-            high_tail = lat_p95 > max(1.8 * lat_mean, 1.5 * lat_p50)
-            low_tail = lat_p95 < max(1.4 * lat_mean, 1.3 * lat_p50)
-            saturated = self._examples_inflight >= old_eff
-
-            if now - self._last_effconc_adjust >= 1.0:
-                if high_tail and saturated and eff > floor:
-                    eff = max(floor, eff - 1)
-                elif low_tail and backlog0 > backlog_high and eff < ceil:
-                    eff = min(ceil, eff + 1)
+            # Only back off when a significant fraction of calls are timing out.
+            if timeout_ratio > 0.3 and eff > 1 and now - self._last_effconc_adjust >= 1.0:
+                eff = max(1, eff - 1)
                 if eff != old_eff:
                     self._effective_concurrency = eff
                     self._last_effconc_adjust = now
                     if self.show_progress:
-                        direction = "↑" if eff > old_eff else "↓"
                         self.logger.log(
-                            f"⚙️  Adaptive effective concurrency {direction} {old_eff}→{eff} | p95={lat_p95:.1f}s p50={lat_p50:.1f}s mean={lat_mean:.1f}s backlog={backlog0}",
+                            f"⚙️  Effective concurrency ↓ {old_eff}→{eff} due to high timeout ratio={timeout_ratio:.1%}",
                             LogLevel.WARNING,
                         )
-                    if eff < old_eff:
-                        self._begin_network_throttle(
-                            "effective concurrency",
-                            lat_p95=lat_p95,
-                            timeout_ratio=timeout_ratio,
-                            backlog=len(self._priority_queue),
-                        )
-                        self._mutation_throttle = True
+
         self._adjust_replay_workers(now)
 
     def _adjust_replay_workers(self, now: float) -> None:
