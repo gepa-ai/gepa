@@ -227,12 +227,12 @@ class EngineConfig:
 
 optimize_anything_reflection_prompt_template: str = """I am optimizing a parameter in my system. The current parameter value is:
 ```
-<curr_instructions>
+<curr_param>
 ```
 
 Below is evaluation data showing how this parameter value performed across multiple test cases. The data contains performance metrics, diagnostic information, and other relevant details from the evaluation:
 ```
-<inputs_outputs_feedback>
+<side_info>
 ```
 
 Your task is to propose a new, improved parameter value that can be used as a drop-in replacement for the current one.
