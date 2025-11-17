@@ -11,6 +11,7 @@ from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
+from gepa.core.state import FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -39,7 +40,7 @@ def optimize(
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
     candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto",
-    frontier_type: str = "instance",
+    frontier_type: FrontierType = "instance",
     skip_perfect_score: bool = True,
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
     reflection_minibatch_size: int | None = None,

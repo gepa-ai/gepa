@@ -7,7 +7,7 @@ from typing import Generic
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
-from gepa.core.state import GEPAState, ProgramIdx, ValsetEvaluation, initialize_gepa_state
+from gepa.core.state import FrontierType, GEPAState, ProgramIdx, ValsetEvaluation, initialize_gepa_state
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
@@ -40,7 +40,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Strategies and helpers
         reflective_proposer: ReflectiveMutationProposer,
         merge_proposer: MergeProposer | None,
-        frontier_type: str,
+        frontier_type: FrontierType,
         # Logging
         logger: LoggerProtocol,
         experiment_tracker: ExperimentTracker,
@@ -80,7 +80,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         self.reflective_proposer = reflective_proposer
         self.merge_proposer = merge_proposer
-        self.frontier_type = frontier_type
+        self.frontier_type: FrontierType = frontier_type
 
         # Merge scheduling flags (mirroring previous behavior)
         if self.merge_proposer is not None:

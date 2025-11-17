@@ -8,7 +8,7 @@ from copy import deepcopy
 
 from gepa.core.adapter import Candidate, DataInst, EvaluationBatch, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader
-from gepa.core.state import GEPAState, ProgramIdx
+from gepa.core.state import FrontierType, GEPAState, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -220,7 +220,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         max_merge_invocations: int,
         val_overlap_floor: int = 5,
         rng: random.Random | None = None,
-        frontier_type: str = "instance",
+        frontier_type: FrontierType = "instance",
     ):
         self.logger = logger
         self.valset = valset
@@ -232,7 +232,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         if val_overlap_floor <= 0:
             raise ValueError("val_overlap_floor should be a positive integer")
         self.val_overlap_floor = val_overlap_floor
-        self.frontier_type = frontier_type
+        self.frontier_type: FrontierType = frontier_type
         # Internal counters matching original behavior
         self.merges_due = 0
         self.total_merges_tested = 0

@@ -6,7 +6,7 @@ import os
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar, Generic, TypeAlias, TypeVar
+from typing import Any, ClassVar, Generic, Literal, TypeAlias, TypeVar
 
 from gepa.core.adapter import RolloutOutput as RolloutOutputType
 from gepa.core.data_loader import DataId as DataIdType
@@ -23,6 +23,7 @@ ValScores: TypeAlias = dict[ValId, float]
 ValOutputs: TypeAlias = dict[ValId, RolloutOutput]
 ObjectiveScores: TypeAlias = dict[str, float]
 ValObjectiveScores: TypeAlias = dict[ValId, ObjectiveScores]
+FrontierType: TypeAlias = Literal["instance", "objective", "hybrid"]
 
 
 @dataclass(slots=True)
@@ -359,7 +360,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
 
         return new_program_idx
 
-    def get_pareto_front_mapping(self, frontier_type: str) -> dict[Any, set[ProgramIdx]]:
+    def get_pareto_front_mapping(self, frontier_type: FrontierType) -> dict[Any, set[ProgramIdx]]:
         if frontier_type == "instance":
             return {val_id: set(front) for val_id, front in self.program_at_pareto_front_valset.items()}
         if frontier_type == "objective":
