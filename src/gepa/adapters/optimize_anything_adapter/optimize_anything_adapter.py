@@ -24,9 +24,26 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     ) -> EvaluationBatch:
         eval_output = self.fitness_fn(candidate, batch)
         scores = [score for score, _, _ in eval_output]
-        side_info: list[SideInfo] = [info for _, _, info in eval_output]
+        side_infos: list[SideInfo] = [info for _, _, info in eval_output]
         outputs = [output for _, output, _ in eval_output]
-        return EvaluationBatch(outputs=outputs, scores=scores, trajectories=side_info)
+
+        objective_scores = []
+        for side_info in side_infos:
+            objective_score = {}
+            if "scores" in side_info:
+                objective_score.update(side_info["scores"])
+
+            for param_name in candidate.keys():
+                if param_name + "_specific_info" in side_info and "scores" in side_info[param_name + "_specific_info"]:
+                    objective_score.update(
+                        {f"{param_name}::{k}": v for k, v in side_info[param_name + "_specific_info"]["scores"].items()}
+                    )
+
+            objective_scores.append(objective_score)
+
+        return EvaluationBatch(
+            outputs=outputs, scores=scores, trajectories=side_infos, objective_scores=objective_scores
+        )
 
     def make_reflective_dataset(
         self,
