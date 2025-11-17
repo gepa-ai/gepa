@@ -1,13 +1,11 @@
 import random
 from types import SimpleNamespace
 
-import pytest
-
 from gepa.proposer.merge import (
+    MergeProposer,
     does_triplet_have_desirable_predictors,
     filter_ancestors,
     find_common_ancestor_pair,
-    MergeProposer,
     sample_and_attempt_merge_programs_by_common_predictors,
 )
 
@@ -98,9 +96,9 @@ def test_filter_ancestors_returns_viable_common_ancestor():
 def test_find_common_ancestor_pair_returns_expected_triplet(rng):
     rng.seed(0)
     parent_list = [
-        [],     # program 0 (root)
-        [0],    # program 1 -> parent 0
-        [0],    # program 2 -> parent 0
+        [],  # program 0 (root)
+        [0],  # program 1 -> parent 0
+        [0],  # program 2 -> parent 0
     ]
     program_indexes = [1, 2]
     agg_scores = [0.1, 0.6, 0.7]
@@ -161,9 +159,9 @@ def test_sample_and_attempt_merge_creates_combined_program_and_records_triplet(r
     agg_scores = [0.1, 0.6, 0.7]
     merges_performed = ([], [])
     parent_program_for_candidate = [
-        [],    # 0
-        [0],   # 1
-        [0],   # 2
+        [],  # 0
+        [0],  # 1
+        [0],  # 2
     ]
 
     result = sample_and_attempt_merge_programs_by_common_predictors(
@@ -234,7 +232,7 @@ class _StubValset:
 
 
 def _make_state(prog_val_scores):
-    return SimpleNamespace(
+    state = SimpleNamespace(
         i=0,
         full_program_trace=[{}],
         program_at_pareto_front_valset={0: {1, 2}},
@@ -244,6 +242,11 @@ def _make_state(prog_val_scores):
         prog_candidate_val_subscores=prog_val_scores,
         total_num_evals=0,
     )
+    # Add the get_pareto_front_mapping method to match GEPAState interface
+    state.get_pareto_front_mapping = lambda: {
+        val_id: set(front) for val_id, front in state.program_at_pareto_front_valset.items()
+    }
+    return state
 
 
 def test_merge_proposer_skips_pairs_below_overlap_floor(monkeypatch):
