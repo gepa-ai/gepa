@@ -19,7 +19,7 @@ ValScores: TypeAlias = dict[DataId, float]
 ValOutputs: TypeAlias = dict[DataId, RolloutOutput]
 ObjectiveScores: TypeAlias = dict[str, float]
 ValObjectiveScores: TypeAlias = dict[DataId, ObjectiveScores]
-FrontierType: TypeAlias = Literal["instance", "objective", "hybrid"]
+FrontierType: TypeAlias = Literal["instance", "objective", "hybrid", "cartesian"]
 
 
 @dataclass(slots=True)
@@ -43,6 +43,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     program_at_pareto_front_valset: dict[DataId, set[ProgramIdx]]
     objective_pareto_front: ObjectiveScores
     program_at_pareto_front_objectives: dict[str, set[ProgramIdx]]
+    pareto_front_cartesian: dict[tuple[DataId, str], float]
+    program_at_pareto_front_cartesian: dict[tuple[DataId, str], set[ProgramIdx]]
 
     list_of_named_predictors: list[str]
     named_predictor_id_to_update_next_for_program_candidate: list[int]
@@ -62,9 +64,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     def __init__(
         self,
         seed_candidate: dict[str, str],
-        base_valset_eval_output: (
-            tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None]
-        ),
+        base_valset_eval_output: tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None],
         track_best_outputs: bool = False,
         frontier_type: FrontierType = "instance",
     ):
@@ -76,12 +76,29 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         base_objective_aggregates = self._aggregate_objective_scores(base_evaluation.objective_scores_by_val_id)
         self.prog_candidate_objective_scores = [base_objective_aggregates]
 
-        self.pareto_front_valset = {val_id: score for val_id, score in base_evaluation.scores_by_val_id.items()}
         self.parent_program_for_candidate = [[None]]
+
+        self.frontier_type: FrontierType = frontier_type
+        self.pareto_front_valset = {val_id: score for val_id, score in base_evaluation.scores_by_val_id.items()}
         self.program_at_pareto_front_valset = {val_id: {0} for val_id in base_evaluation.scores_by_val_id.keys()}
         self.objective_pareto_front = dict(base_objective_aggregates)
         self.program_at_pareto_front_objectives = {objective: {0} for objective in base_objective_aggregates.keys()}
-        self.frontier_type: FrontierType = frontier_type
+        # Cartesian frontier will be base_evaluation.objective_scores_by_val_id
+        if frontier_type == "cartesian":
+            assert base_evaluation.objective_scores_by_val_id is not None
+            self.pareto_front_cartesian = {
+                (val_id, objective): objective_score
+                for val_id, objective_scores in base_evaluation.objective_scores_by_val_id.items()
+                for objective, objective_score in objective_scores.items()
+            }
+            self.program_at_pareto_front_cartesian = {
+                (val_id, objective): {0}
+                for val_id, objective_scores in base_evaluation.objective_scores_by_val_id.items()
+                for objective in objective_scores.keys()
+            }
+        else:
+            self.pareto_front_cartesian = {}
+            self.program_at_pareto_front_cartesian = {}
 
         self.list_of_named_predictors = list(seed_candidate.keys())
         self.named_predictor_id_to_update_next_for_program_candidate = [0]
@@ -197,29 +214,18 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     @staticmethod
     def _normalize_base_eval_output(
-        base_valset_eval_output: (
-            tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None]
-        ),
+        base_valset_eval_output: tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None],
     ) -> ValsetEvaluation:
-        if len(base_valset_eval_output) == 3:
-            outputs, scores, objective_scores = base_valset_eval_output
-            return ValsetEvaluation(
-                outputs_by_val_id=dict(outputs),
-                scores_by_val_id=dict(scores),
-                objective_scores_by_val_id=(
-                    dict((val_id, dict(obj_scores)) for val_id, obj_scores in objective_scores.items())
-                    if objective_scores is not None
-                    else None
-                ),
-            )
-        if len(base_valset_eval_output) == 2:
-            outputs, scores = base_valset_eval_output
-            return ValsetEvaluation(
-                outputs_by_val_id=dict(outputs),
-                scores_by_val_id=dict(scores),
-                objective_scores_by_val_id=None,
-            )
-        raise ValueError("Unexpected base_valset_eval_output tuple size")
+        outputs, scores, objective_scores = base_valset_eval_output
+        return ValsetEvaluation(
+            outputs_by_val_id=dict(outputs),
+            scores_by_val_id=dict(scores),
+            objective_scores_by_val_id=(
+                dict((val_id, dict(obj_scores)) for val_id, obj_scores in objective_scores.items())
+                if objective_scores is not None
+                else None
+            ),
+        )
 
     @staticmethod
     def _aggregate_objective_scores(
@@ -245,10 +251,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         num_samples = len(scores)
         avg = sum(scores.values()) / num_samples
         return avg, num_samples
-
-    # Backwards-compatible alias for legacy callers.
-    def get_program_average(self, program_idx: int) -> tuple[float, int]:
-        return self.get_program_average_val_subset(program_idx)
 
     @property
     def valset_evaluations(self) -> dict[DataId, list[ProgramIdx]]:
@@ -320,6 +322,21 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             if self.best_outputs_valset is not None and output is not None:
                 self.best_outputs_valset[val_id].append((program_idx, output))
 
+    def _update_pareto_front_for_cartesian(
+        self,
+        val_id: DataId,
+        objective: str,
+        objective_score: float,
+        program_idx: ProgramIdx,
+    ) -> None:
+        prev_score = self.pareto_front_cartesian.get((val_id, objective), float("-inf"))
+        if objective_score > prev_score:
+            self.pareto_front_cartesian[(val_id, objective)] = objective_score
+            self.program_at_pareto_front_cartesian[(val_id, objective)] = {program_idx}
+        elif objective_score == prev_score:
+            front = self.program_at_pareto_front_cartesian.setdefault((val_id, objective), set())
+            front.add(program_idx)
+
     def update_state_with_new_program(
         self,
         parent_program_idx: list[ProgramIdx],
@@ -356,6 +373,17 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         self._update_objective_pareto_front(objective_scores, new_program_idx)
 
+        if self.frontier_type == "cartesian":
+            assert valset_evaluation.objective_scores_by_val_id is not None
+            for val_id, objective_scores in valset_evaluation.objective_scores_by_val_id.items():
+                for objective, objective_score in objective_scores.items():
+                    self._update_pareto_front_for_cartesian(
+                        val_id,
+                        objective,
+                        objective_score,
+                        new_program_idx,
+                    )
+
         return new_program_idx
 
     def _get_pareto_front_mapping(self, frontier_type: FrontierType) -> dict[Any, set[ProgramIdx]]:
@@ -365,11 +393,16 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             return {objective: set(front) for objective, front in self.program_at_pareto_front_objectives.items()}
         if frontier_type == "hybrid":
             combined: dict[Any, set[ProgramIdx]] = {
-                val_id: set(front) for val_id, front in self.program_at_pareto_front_valset.items()
+                ("val_id", val_id): set(front) for val_id, front in self.program_at_pareto_front_valset.items()
             }
             for objective, front in self.program_at_pareto_front_objectives.items():
-                combined[f"objective::{objective}"] = set(front)
+                combined[("objective", objective)] = set(front)
             return combined
+        if frontier_type == "cartesian":
+            return {
+                ("cartesian", val_id, objective): set(front)
+                for (val_id, objective), front in self.program_at_pareto_front_cartesian.items()
+            }
         raise ValueError(f"Unknown frontier_type: {frontier_type}")
 
     def get_pareto_front_mapping(self) -> dict[Any, set[ProgramIdx]]:
@@ -390,7 +423,7 @@ def initialize_gepa_state(
     seed_candidate: dict[str, str],
     valset_evaluator: Callable[
         [dict[str, str]],
-        tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None],
+        tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None],
     ],
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
@@ -402,13 +435,7 @@ def initialize_gepa_state(
         num_evals_run = 0
 
         eval_result = valset_evaluator(seed_candidate)
-        if len(eval_result) == 3:
-            seed_val_outputs, seed_val_scores, seed_objective_scores = eval_result
-        elif len(eval_result) == 2:
-            seed_val_outputs, seed_val_scores = eval_result
-            seed_objective_scores = None
-        else:
-            raise ValueError("Unexpected valset_evaluator return value length")
+        seed_val_outputs, seed_val_scores, seed_objective_scores = eval_result
 
         seed_valset_evaluation = GEPAState._normalize_base_eval_output(
             (seed_val_outputs, seed_val_scores, seed_objective_scores)
