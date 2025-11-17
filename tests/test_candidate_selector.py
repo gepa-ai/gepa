@@ -21,6 +21,7 @@ def mock_state():
     base_valset_eval_output = (
         {0: "out1", 1: "out2", 2: "out3"},
         {0: 0.5, 1: 0.3, 2: 0.7},
+        None,  # objective_scores
     )
     state = GEPAState(seed_candidate, base_valset_eval_output, track_best_outputs=False)
 
@@ -31,6 +32,10 @@ def mock_state():
     # prog_candidate_val_subscores should be dicts, not lists
     state.prog_candidate_val_subscores.append({0: 0.6, 1: 0.6, 2: 0.6})
     state.prog_candidate_val_subscores.append({0: 0.8, 1: 0.8, 2: 0.8})
+
+    # Add entries to prog_candidate_objective_scores to maintain consistency
+    state.prog_candidate_objective_scores.append({})
+    state.prog_candidate_objective_scores.append({})
 
     state.parent_program_for_candidate.append([0])
     state.parent_program_for_candidate.append([1])
