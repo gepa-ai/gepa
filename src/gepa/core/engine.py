@@ -7,7 +7,7 @@ from typing import Generic
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
-from gepa.core.state import FrontierType, GEPAState, ProgramIdx, ValsetEvaluation, initialize_gepa_state
+from gepa.core.state import FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
@@ -119,9 +119,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             scores_by_val_id=scores_by_val_idx,
             objective_scores_by_val_id=objective_by_val_idx,
         )
-
-    def _get_pareto_front_programs(self, state: GEPAState[RolloutOutput, DataId]) -> dict[DataId, set[ProgramIdx]]:
-        return state.get_pareto_front_mapping()
 
     def _run_full_eval_and_add(
         self,

@@ -362,8 +362,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
 
         return new_program_idx
 
-    @staticmethod
-    def _get_pareto_front_mapping(frontier_type: FrontierType) -> dict[Any, set[ProgramIdx]]:
+    def _get_pareto_front_mapping(self, frontier_type: FrontierType) -> dict[Any, set[ProgramIdx]]:
         if frontier_type == "instance":
             return {val_id: set(front) for val_id, front in self.program_at_pareto_front_valset.items()}
         if frontier_type == "objective":
