@@ -21,6 +21,7 @@ from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn, RolloutOutput
 from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
+from gepa.core.state import FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -221,6 +222,7 @@ class EngineConfig:
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
     candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto"
+    frontier_type: FrontierType = "instance"
 
 
 optimize_anything_reflection_prompt_template: str = """I am optimizing a parameter in my system. The current parameter value is:
@@ -539,14 +541,15 @@ def optimize_anything(
 
     # --- 12. Build the main engine from EngineConfig ---
     engine = GEPAEngine(
+        adapter=active_adapter,
         run_dir=config.engine.run_dir,
-        evaluator=evaluator,
         valset=val_loader,
         seed_candidate=[seed_candidate] if not isinstance(seed_candidate, list) else seed_candidate,
         perfect_score=config.reflection.perfect_score,
         seed=config.engine.seed,
         reflective_proposer=reflective_proposer,
         merge_proposer=merge_proposer,
+        frontier_type=config.engine.frontier_type,
         logger=config.tracking.logger,
         experiment_tracker=experiment_tracker,
         track_best_outputs=config.engine.track_best_outputs,
