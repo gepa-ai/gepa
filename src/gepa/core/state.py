@@ -6,15 +6,12 @@ import os
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar, Generic, Literal, TypeAlias, TypeVar
+from typing import Any, ClassVar, Generic, Literal, TypeAlias
 
-from gepa.core.adapter import RolloutOutput as RolloutOutputType
+from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
 from gepa.gepa_utils import json_default
 from gepa.logging.logger import LoggerProtocol
-
-# TypeVars for Generic classes
-RolloutOutput = TypeVar("RolloutOutput")
 
 # Types for GEPAState
 ProgramIdx = int
@@ -134,7 +131,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             pickle.dump(serialized, f)
 
     @staticmethod
-    def load(run_dir: str) -> "GEPAState[RolloutOutputType, DataId]":
+    def load(run_dir: str) -> "GEPAState[RolloutOutput, DataId]":
         with open(os.path.join(run_dir, "gepa_state.bin"), "rb") as f:
             import pickle
 
@@ -397,7 +394,7 @@ def initialize_gepa_state(
     ],
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
-) -> GEPAState[RolloutOutputType, DataId]:
+) -> GEPAState[RolloutOutput, DataId]:
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)
