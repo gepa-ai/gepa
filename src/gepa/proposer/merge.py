@@ -6,9 +6,9 @@ import random
 from collections.abc import Callable, Iterable, Sequence
 from copy import deepcopy
 
-from gepa.core.adapter import Candidate, DataInst, EvaluationBatch, RolloutOutput, Trajectory
+from gepa.core.adapter import Candidate, DataInst, RolloutOutput
 from gepa.core.data_loader import DataId, DataLoader
-from gepa.core.state import FrontierType, GEPAState, ProgramIdx
+from gepa.core.state import GEPAState, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -166,6 +166,9 @@ def sample_and_attempt_merge_programs_by_common_predictors(
                 new_prog_desc = (*new_prog_desc, new_value_idx)
             elif pred_anc != pred_id1 and pred_anc != pred_id2:
                 # Both predictors are different from  the ancestor, and it is difficult to decide which one gives the benefits
+                # We randomly select one of the descendants to update the predictor
+                # The probability of selecting is proportional to the agg_scores of the descendants
+                # prog_to_get_instruction_from = id1 if (rng.random() < (agg_scores[id1] / (agg_scores[id1] + agg_scores[id2]))) else id2
                 prog_to_get_instruction_from = (
                     id1
                     if agg_scores[id1] > agg_scores[id2]
@@ -175,6 +178,9 @@ def sample_and_attempt_merge_programs_by_common_predictors(
                 new_prog_desc = (*new_prog_desc, prog_to_get_instruction_from)
             elif pred_id1 == pred_id2:
                 # Either both predictors are the same, or both are different from the ancestor
+                # If both are different from the ancestor, we should use the new predictor, so selecting either one of the descendants is fine
+                # If both are same as the ancesor, again selecting any one of the descendants is fine
+                # So let's select id1
                 new_program[pred_name] = program_candidates[id1][pred_name]
                 new_prog_desc = (*new_prog_desc, id1)
             else:  # pragma: no cover - defensive
@@ -212,15 +218,12 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         valset: DataLoader[DataId, DataInst],
         evaluator: Callable[
             [list[DataInst], dict[str, str]],
-            EvaluationBatch[Trajectory, RolloutOutput]
-            | tuple[list[RolloutOutput], list[float]]
-            | tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None],
+            tuple[list[RolloutOutput], list[float]],
         ],
         use_merge: bool,
         max_merge_invocations: int,
         val_overlap_floor: int = 5,
         rng: random.Random | None = None,
-        frontier_type: FrontierType = "instance",
     ):
         self.logger = logger
         self.valset = valset
@@ -232,7 +235,6 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         if val_overlap_floor <= 0:
             raise ValueError("val_overlap_floor should be a positive integer")
         self.val_overlap_floor = val_overlap_floor
-        self.frontier_type: FrontierType = frontier_type
         # Internal counters matching original behavior
         self.merges_due = 0
         self.total_merges_tested = 0
@@ -240,22 +242,6 @@ class MergeProposer(ProposeNewCandidate[DataId]):
 
         # Toggle controlled by engine: set True when last iter found new program
         self.last_iter_found_new_program = False
-
-    @staticmethod
-    def _coerce_evaluation_result(
-        evaluation_result: EvaluationBatch[Trajectory, RolloutOutput]
-        | tuple[list[RolloutOutput], list[float]]
-        | tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None],
-    ) -> tuple[list[RolloutOutput], list[float]]:
-        if isinstance(evaluation_result, EvaluationBatch):
-            return evaluation_result.outputs, evaluation_result.scores
-        if len(evaluation_result) == 3:
-            outputs, scores, _ = evaluation_result
-            return outputs, scores
-        if len(evaluation_result) == 2:
-            outputs, scores = evaluation_result
-            return outputs, scores
-        raise ValueError("Unexpected evaluator return signature")
 
     def schedule_if_needed(self) -> None:
         if self.use_merge and self.total_merges_tested < self.max_merge_invocations:
@@ -353,7 +339,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
 
-        _, new_sub_scores = self._coerce_evaluation_result(self.evaluator(mini_devset, new_program))
+        _, new_sub_scores = self.evaluator(mini_devset, new_program)
 
         state.full_program_trace[-1]["id1_subsample_scores"] = id1_sub_scores
         state.full_program_trace[-1]["id2_subsample_scores"] = id2_sub_scores

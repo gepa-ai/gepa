@@ -203,10 +203,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         def valset_evaluator(
             program: dict[str, str],
-        ) -> (
-            tuple[dict[DataId, RolloutOutput], dict[DataId, float]]
-            | tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, dict[str, float]] | None]
-        ):
+        ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, dict[str, float]] | None]:
             all_ids = list(valset.all_ids())
             outputs, scores, objective_scores = self.evaluator(valset.fetch(all_ids), program)
             outputs_dict = dict(zip(all_ids, outputs, strict=False))
