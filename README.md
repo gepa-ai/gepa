@@ -190,6 +190,7 @@ Example:
 
 ```python
 from turbo_gepa.config import Config
+from turbo_gepa.scoring import maximize_metric
 
 config = Config(
     reflection_strategy_names=(
@@ -220,6 +221,36 @@ adapter.config = config
 seed_prompt = "You are a helpful assistant. Provide your final answer as '### <answer>'."
 result = adapter.optimize(seeds=[seed_prompt])
 ```
+
+### Customize scoring and rewards
+
+TurboGEPA always optimizes a single scalar, but you control how that scalar is computed.
+Both `DefaultAdapter` and `DSpyAdapter` accept a `scoring_fn` argument (propagated to
+`Config.scoring_fn`) that receives a `ScoringContext` with the candidate, rung metadata,
+coverage fraction, and the raw objectives produced by your evaluator. Return whatever
+float best matches your north-star reward.
+
+```python
+from turbo_gepa.adapters import DefaultAdapter
+from turbo_gepa.scoring import ScoringContext
+
+def reward(ctx: ScoringContext) -> float:
+    quality = float(ctx.result.objectives.get("quality", 0.0))
+    tokens = float(ctx.result.objectives.get("tokens", 0.0))
+    # Trade 90% weight on accuracy for 10% token efficiency
+    return 0.9 * quality - 0.1 * (tokens / 10_000.0)
+
+adapter = DefaultAdapter(
+    dataset=trainset,
+    task_lm=task_lm,
+    reflection_lm=reflection_lm,
+    scoring_fn=reward,
+)
+```
+
+Need the classic behavior? Use the helper `from turbo_gepa.scoring import maximize_metric`
+to promote any metric key (e.g., `"accuracy"`, `"reward"`, `"bleu"`). DSPy runs use the same
+API—pass `scoring_fn` to `DSpyAdapter` and combine DSPy metrics however you like.
 
 Need strict, reproducible shard boundaries? Manually pass a tuple to `Config(shards=...)` and reuse the same configuration across runs.
 
@@ -629,6 +660,14 @@ config_custom = Config(
     n_islands=4,                # Custom island count
     # Scales to your available API quota and system resources
 )
+
+# Want to plug in a custom reward? Assign a scoring callback directly on the config.
+config_custom.scoring_fn = maximize_metric("reward")  # or any callable returning a float
+
+# Prefer faster verification at the cost of a bit more variance? Tune `verification_speed_bias`.
+#   0.0 = strict / slow (final rung uses full-dataset coverage, no intentional skips)
+#   1.0 = aggressive / fast (fastest, loosest checks with partial coverage)
+config_fast = Config(verification_speed_bias=0.8)
 ```
 
 **Auto-configuration** (recommended):
@@ -652,6 +691,8 @@ adapter.config.reflection_strategy_names = (
     "interleaved_thinking",
 )
 ```
+
+The `verification_speed_bias` knob drives all coverage/confidence trade-offs: at `0.0` the final rung uses full-dataset coverage (no examples are intentionally skipped), while higher values relax coverage and confidence requirements so the evaluator can stop earlier. The derived thresholds flow through the rung controller and evaluator automatically, so you only need to set this one field to shift between accuracy-first and speed-first runs.
 
 ### Rung‑Aware Parent Gating (Fair, Fast Promotion)
 
@@ -808,8 +849,9 @@ Defaults tuned for speed and stability:
 TurboGEPA uses a simple, robust straggler policy that detaches slow examples without cancelling them:
 
 - Threshold = `min(dynamic_cap, max(mean + 1·stdev, 1.3·p70, 1.15·p80)) + slack` (with an adaptive cap; no hard tiers)
-- Detach only after ≥50% coverage; detached examples keep running and are merged later. Missing IDs are replayed to guarantee 100% shard coverage.
-- Final rung allows multiple full‑shard candidates to overlap: cap via `max_final_shard_inflight` (auto‑set from `--turbo-eval-concurrency`).
+- Detach only after ≥50% coverage; detached examples keep running and are merged later. Replays run through a dedicated worker lane that auto-scales with backlog (disable via `Config.replay_stragglers=False` for timing experiments).
+- Final rung overlap is governed by a latency/backlog-aware cap controller: `max_final_shard_inflight` expands/shrinks dynamically based on p50/p95 latency, saturation time, and straggler pressure rather than remaining static.
+- Coverage guards are now adaptive: small shards (e.g., 30-example AIME runs) wait until ~85–90% completion before detaching, and mutation throttle engages automatically whenever final-rung coverage falls below the health target to avoid firehosing candidates the evaluator can’t finish.
 
 To inspect scaling quickly across concurrencies, use the bench matrix helper:
 

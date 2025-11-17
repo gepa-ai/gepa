@@ -53,6 +53,7 @@ from dspy.primitives import Example, Prediction
 from turbo_gepa.archive import Archive
 from turbo_gepa.cache import DiskCache
 from turbo_gepa.config import DEFAULT_CONFIG, Config
+from turbo_gepa.scoring import ScoringFn, SCORE_KEY
 from turbo_gepa.evaluator import AsyncEvaluator
 from turbo_gepa.interfaces import Candidate
 from turbo_gepa.mutator import MutationConfig, Mutator
@@ -94,6 +95,7 @@ class DSpyAdapter:
         log_dir: str | None = None,
         sampler_seed: int = 42,
         rng: random.Random | None = None,
+        scoring_fn: ScoringFn | None = None,
     ) -> None:
         """
         Initialize DSPy adapter.
@@ -110,6 +112,8 @@ class DSpyAdapter:
             log_dir: Log directory (default: config.log_path)
             sampler_seed: Random seed for sampler
             rng: Random number generator
+            scoring_fn: Optional ``ScoringContext`` callback returning the scalar
+                objective to optimize (defaults to ``maximize_metric(\"quality\")``)
         """
         self.student = student_module
         self.metric_fn = metric_fn
@@ -117,6 +121,9 @@ class DSpyAdapter:
         self.failure_score = failure_score
         self.num_threads = num_threads
         self.config = config
+        self.config.promote_objective = SCORE_KEY
+        if scoring_fn is not None:
+            self.config.scoring_fn = scoring_fn
         self.rng = rng or random.Random(0)
 
         # Cache predictor names
@@ -531,6 +538,11 @@ class DSpyAdapter:
             promote_objective=objective,
             cancel_stragglers_immediately=self.config.cancel_stragglers_immediately,
             replay_stragglers=self.config.replay_stragglers,
+            target_confidence=self.config.target_confidence,
+            min_samples_for_confidence=self.config.min_samples_for_confidence,
+            coverage_min_success_mid=self.config.coverage_min_success_mid,
+            coverage_min_success_final=self.config.coverage_min_success_final,
+            target_quality=self.config.target_quality,
         )
         return Orchestrator(
             config=self.config,

@@ -158,7 +158,7 @@ class BudgetedScheduler:
 
         info = self._rung_generations[rung_idx]
         final_rung_index = len(self.shards) - 1
-        at_final_rung = idx >= final_rung_index
+        at_final_rung = rung_idx >= final_rung_index
         stagnant_gens = int(info["stagnant_generations"])
         improved_this_gen = bool(info["improvement_this_gen"])
         stagnant_evals = int(info.get("stagnant_evals", 0))
@@ -257,6 +257,13 @@ class BudgetedScheduler:
             return "pending"
 
         idx = self.current_shard_index(candidate)
+        if not self.shards:
+            return "completed"
+        max_idx = len(self.shards) - 1
+        if idx < 0:
+            idx = 0
+        elif idx > max_idx:
+            idx = max_idx
         final_rung_index = len(self.shards) - 1
         sched_key = self._sched_key(candidate)
         rung_fraction = self.shards[idx]

@@ -34,6 +34,7 @@ from .islands import IslandContext, integrate_in, migrate_out
 from .metrics import Metrics
 from .mutator import Mutator
 from .sampler import InstanceSampler
+from .scoring import ScoringContext, SCORE_KEY
 from .scheduler import BudgetedScheduler, SchedulerConfig
 from .stop_governor import EpochMetrics, StopGovernor, compute_hypervolume_2d
 from .migrations import MigrationBackend, NullMigrationBackend, LocalQueueMigrationBackend, FileMigrationBackend
@@ -237,6 +238,7 @@ class Orchestrator:
         else:
             self.migration_backend = NullMigrationBackend()
         self.example_sampler = example_sampler
+        self._scoring_fn = config.scoring_fn
         self.scheduler = BudgetedScheduler(
             SchedulerConfig(
                 shards=config.shards,
@@ -322,6 +324,13 @@ class Orchestrator:
         self._mutation_min = max(4, base_mut // 4)
         self._rung_launches: list[int] = [0] * len(self._runtime_shards)
         self._rung_promotions: list[int] = [0] * len(self._runtime_shards)
+        self._rung_coverage: list[float] = [1.0] * len(self._runtime_shards)
+        final_baseline = float(getattr(self.config, "coverage_min_success_final", 0.6) or 0.6)
+        mid_baseline = float(getattr(self.config, "coverage_min_success_mid", 0.5) or 0.5)
+        self._coverage_targets: list[float] = [
+            final_baseline if idx == len(self._runtime_shards) - 1 else mid_baseline
+            for idx in range(len(self._runtime_shards))
+        ]
         self._promotion_ema: list[float] = [0.5] * len(self._runtime_shards)  # Initialize at 0.5 (neutral)
         self._final_success_ema: float = 0.3  # Success rate at final rung
         self._ema_alpha: float = 0.1  # EMA smoothing factor
@@ -680,7 +689,7 @@ class Orchestrator:
                 continue
 
             # Add to priority queue with computed priority
-            rung_idx = self.scheduler.current_shard_index(candidate)
+            rung_idx = self._clamp_rung_index(self.scheduler.current_shard_index(candidate))
             priority = self._compute_priority(candidate, rung_idx)
 
             # Use negative priority for max-heap (heapq is min-heap)
@@ -828,7 +837,7 @@ class Orchestrator:
 
         Uses scheduler.current_shard_index to ensure consistency with enqueue logic.
         """
-        idx = self.scheduler.current_shard_index(candidate)
+        idx = self._clamp_rung_index(self.scheduler.current_shard_index(candidate))
         shard_fraction = self._runtime_shards[min(idx, len(self._runtime_shards) - 1)]
         return str(shard_fraction)
 
@@ -842,6 +851,7 @@ class Orchestrator:
         P_finish = (product of promotion_ema from rung_idx to final) × final_success_ema
         Optional quality tie-breaker: multiply by (1 + beta × normalized_quality)
         """
+        rung_idx = max(0, min(rung_idx, len(self._runtime_shards) - 1))
         # Calculate probability of reaching and succeeding at final rung
         p_finish = self._final_success_ema
         for r in range(rung_idx, len(self._runtime_shards) - 1):
@@ -910,10 +920,84 @@ class Orchestrator:
         if timed_out:
             self._timeout_count += 1
 
+    def _record_rung_coverage(self, rung_idx: int, coverage: float | None) -> None:
+        if coverage is None or not self._rung_coverage:
+            return
+        if rung_idx < 0 or rung_idx >= len(self._rung_coverage):
+            return
+        try:
+            value = float(coverage)
+        except (TypeError, ValueError):
+            return
+        if math.isnan(value):
+            return
+        value = max(0.0, min(1.0, value))
+        prev = self._rung_coverage[rung_idx]
+        alpha = 0.3
+        self._rung_coverage[rung_idx] = value if prev is None else (1 - alpha) * prev + alpha * value
+
     def _record_final_straggler_event(self, count: int) -> None:
         if count <= 0:
             return
         self._recent_final_straggler_events.append((time.time(), count))
+
+    def _dynamic_final_cap_floor(self) -> int:
+        base = max(1, getattr(self.config, "final_rung_min_inflight", 1))
+        if not self._runtime_shards or not self._rung_coverage:
+            return base
+        idx = min(self._final_rung_index, len(self._rung_coverage) - 1)
+        coverage = self._rung_coverage[idx]
+        waiting = self._waiting_by_rung.get(idx, 0)
+        backlog_total = len(self.queue) + len(self._priority_queue)
+        replay_backlog = self._replay_queue.qsize() if self.config.replay_stragglers else 0
+        eval_conc = max(1, self.config.eval_concurrency)
+        floor = base
+        if coverage < 0.7:
+            floor = max(floor, min(eval_conc, max(2, eval_conc // 2)))
+        elif coverage < 0.85:
+            floor = max(floor, min(eval_conc, max(2, eval_conc // 3)))
+        if waiting > eval_conc or backlog_total > eval_conc * 2:
+            floor = max(floor, min(eval_conc, max(3, eval_conc // 2)))
+        if replay_backlog > eval_conc // 2:
+            floor = max(floor, min(eval_conc, max(3, eval_conc // 2)))
+        return max(1, min(floor, eval_conc))
+
+    def _revise_coverage_target(self, rung_idx: int, coverage: float | None, confidence_met: bool) -> None:
+        if not self._coverage_targets or rung_idx < 0 or rung_idx >= len(self._coverage_targets):
+            return
+        if rung_idx == self._final_rung_index:
+            base = float(getattr(self.config, "coverage_min_success_final", 0.6) or 0.6)
+            lower_bound = float(getattr(self.config, "coverage_lower_final", base) or base)
+            upper_bound = float(getattr(self.config, "coverage_upper_final", max(lower_bound, 0.95)) or max(lower_bound, 0.95))
+        else:
+            base = float(getattr(self.config, "coverage_min_success_mid", 0.5) or 0.5)
+            lower_bound = float(getattr(self.config, "coverage_lower_mid", base) or base)
+            upper_bound = float(getattr(self.config, "coverage_upper_mid", max(lower_bound, 0.8)) or max(lower_bound, 0.8))
+        try:
+            observed = float(coverage) if coverage is not None else None
+        except (TypeError, ValueError):
+            observed = None
+        target = self._coverage_targets[rung_idx]
+        backlog = len(self.queue) + len(self._priority_queue)
+        waiting = self._waiting_by_rung.get(rung_idx, 0)
+        replay_backlog = self._replay_queue.qsize() if self.config.replay_stragglers else 0
+        eval_conc = max(1, self.config.eval_concurrency)
+        adjust = base
+        if confidence_met:
+            adjust = min(adjust, lower_bound)
+        backlog_factor = math.log1p(backlog / max(1, eval_conc))
+        adjust = max(0.5, adjust - 0.08 * backlog_factor)
+        if waiting > eval_conc:
+            adjust = max(0.55, adjust - 0.05)
+        if replay_backlog > eval_conc:
+            adjust = max(0.6, adjust - 0.1)
+        tail_ratio = getattr(self.evaluator, "tail_latency_ratio", 1.0)
+        if tail_ratio > 1.8:
+            adjust = max(0.5, adjust - 0.05 * (tail_ratio - 1.8))
+        if observed is not None and observed > adjust + 0.05 and not confidence_met:
+            adjust = min(0.95, adjust + 0.05)
+        new_target = max(lower_bound, min(upper_bound, 0.5 * target + 0.5 * adjust))
+        self._coverage_targets[rung_idx] = new_target
 
     def _track_waiting(self, rung_idx: int, delta: int) -> None:
         """Maintain queue depth for each rung."""
@@ -1001,6 +1085,13 @@ class Orchestrator:
 
         self._rung_launches = [0] * len(self._runtime_shards)
         self._rung_promotions = [0] * len(self._runtime_shards)
+        self._rung_coverage = [1.0] * len(self._runtime_shards)
+        final_baseline = float(getattr(self.config, "coverage_min_success_final", 0.6) or 0.6)
+        mid_baseline = float(getattr(self.config, "coverage_min_success_mid", 0.5) or 0.5)
+        self._coverage_targets = [
+            final_baseline if idx == len(self._runtime_shards) - 1 else mid_baseline
+            for idx in range(len(self._runtime_shards))
+        ]
 
     def _start_replay_workers(self, target: int | None = None) -> None:
         if not self.config.replay_stragglers:
@@ -1012,7 +1103,24 @@ class Orchestrator:
             return
         for worker_id in range(current, desired):
             task = asyncio.create_task(self._replay_worker(worker_id))
+            task.add_done_callback(self._on_replay_worker_done)
             self._replay_workers.append(task)
+
+    def _on_replay_worker_done(self, task: asyncio.Task) -> None:
+        try:
+            self._replay_workers.remove(task)
+        except ValueError:  # pragma: no cover - defensive
+            return
+
+    def _retire_replay_workers(self, count: int) -> None:
+        if count <= 0:
+            return
+        retire = min(count, len(self._replay_workers))
+        for _ in range(retire):
+            try:
+                self._replay_queue.put_nowait(None)
+            except asyncio.QueueFull:  # pragma: no cover - bounded queues unlikely
+                break
 
     async def _shutdown_replay_workers(self) -> None:
         if not self._replay_workers:
@@ -1095,6 +1203,7 @@ class Orchestrator:
 
     def _adjust_runtime_parameters(self) -> None:
         latencies = list(self._latency_history)
+        self._final_rung_cap_floor = self._dynamic_final_cap_floor()
         if len(latencies) < 5:
             return
 
@@ -1182,6 +1291,16 @@ class Orchestrator:
         elif backlog0 < backlog_low:
             self._mutation_throttle = False
 
+        if self._rung_coverage:
+            final_idx = min(self._final_rung_index, len(self._rung_coverage) - 1)
+            final_coverage = self._rung_coverage[final_idx]
+            final_waiting = self._waiting_by_rung.get(final_idx, 0)
+            replay_backlog = self._replay_queue.qsize() if self.config.replay_stragglers else 0
+            if final_coverage < 0.78 and (final_waiting > 0 or replay_backlog > 0):
+                self._mutation_throttle = True
+            elif final_coverage > 0.92 and backlog0 < max(1, backlog_low // 2):
+                self._mutation_throttle = False
+
         if adjusted:
             # Slowly decay launch counters to keep ratios reactive
             self._rung_launches = [max(0, int(count * 0.8)) for count in self._rung_launches]
@@ -1229,7 +1348,16 @@ class Orchestrator:
         # Adaptive effective concurrency (network-aware throttle)
         # Target: maximize throughput by staying near provider sweet spot.
         if self.config.auto_scale_eval_concurrency:
-            floor = max(1, self.config.min_effective_concurrency or 1)
+            base_floor = max(1, self.config.min_effective_concurrency or 1)
+            try:
+                speed = max(0.0, min(1.0, float(getattr(self.config, "verification_speed_bias", 0.3))))
+            except Exception:
+                speed = 0.3
+            # Dynamic floor keeps more concurrency at higher speed bias:
+            #   speed=0.0 -> ~50% of eval_concurrency
+            #   speed=1.0 -> ~90% of eval_concurrency
+            dyn_floor = int(max(1, round(self.config.eval_concurrency * (0.5 + 0.4 * speed))))
+            floor = max(base_floor, dyn_floor)
             ceil = max(1, self.config.eval_concurrency)
             old_eff = getattr(self, "_effective_concurrency", ceil)
             eff = old_eff
@@ -1261,6 +1389,35 @@ class Orchestrator:
                         )
                         self._mutation_throttle = True
         self._adjust_replay_workers(now)
+
+    def _adjust_replay_workers(self, now: float) -> None:
+        if not self.config.replay_stragglers:
+            return
+        # Avoid thrashing workers multiple times per second.
+        if now - self._replay_worker_cooldown < 0.5:
+            return
+
+        if self.config.replay_workers is not None:
+            target = max(0, int(self.config.replay_workers))
+        else:
+            backlog = self._replay_queue.qsize()
+            if backlog <= 0:
+                target = 0
+            else:
+                base = max(1, self._effective_concurrency // 8)
+                scale = max(base, (backlog + 1) // 2)
+                max_cap = max(1, self.config.eval_concurrency // 2)
+                target = min(scale, max_cap)
+
+        current = len(self._replay_workers)
+        if target > current:
+            self._replay_worker_cap = target
+            self._start_replay_workers(target)
+            self._replay_worker_cooldown = now
+        elif target < current and self._replay_queue.empty():
+            self._replay_worker_cap = target
+            self._retire_replay_workers(current - target)
+            self._replay_worker_cooldown = now
 
     async def run(
         self,
@@ -1961,7 +2118,7 @@ class Orchestrator:
         if candidate is None:
             return True
 
-        rung_idx = min(self.scheduler.current_shard_index(candidate), len(self._runtime_shards) - 1)
+        rung_idx = self._clamp_rung_index(self.scheduler.current_shard_index(candidate))
         if rung_idx == self._final_rung_index:
             limit = self.config.max_final_shard_inflight
             if limit is not None:
@@ -2038,12 +2195,15 @@ class Orchestrator:
         if len(self._runtime_shards) == 0:
             return False
 
-        shard_idx = min(self.scheduler.current_shard_index(candidate), len(self._runtime_shards) - 1)
+        shard_idx = self._clamp_rung_index(self.scheduler.current_shard_index(candidate))
 
         # REMOVED: No orchestrator-level concurrency limits
         # Only eval_concurrency (in evaluator) + straggler detection control throughput
 
         shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
+        coverage_target = None
+        if self._coverage_targets and shard_idx < len(self._coverage_targets):
+            coverage_target = self._coverage_targets[shard_idx]
         shard_key = ("canonical", shard_fraction)
         shard_ids = self._shard_cache.get(shard_key)
         if shard_ids is None:
@@ -2071,7 +2231,7 @@ class Orchestrator:
                 # Put candidate back on priority queue and try later
                 self._pending_fingerprints.add(candidate.fingerprint)
                 self.queue.append(candidate)
-                rung_idx = self.scheduler.current_shard_index(candidate)
+                rung_idx = self._clamp_rung_index(self.scheduler.current_shard_index(candidate))
                 priority = self._compute_priority(candidate, rung_idx)
                 self._priority_counter += 1
                 heapq.heappush(self._priority_queue, (-priority, -rung_idx, self._priority_counter, candidate))
@@ -2137,6 +2297,7 @@ class Orchestrator:
                     shard_fraction=shard_fraction,
                     show_progress=self.show_progress,  # Show progress for all evaluations
                     is_final_shard=is_final_shard,
+                    coverage_target=coverage_target,
                     on_partial=_on_partial,
                 )
                 eval_duration = time.time() - eval_start
@@ -2276,7 +2437,7 @@ class Orchestrator:
         if isinstance(tokens_obj, (int, float)):
             self._governor_token_buffer += int(tokens_obj)
 
-        prev_idx = min(self.scheduler.current_shard_index(candidate_with_meta), len(self._runtime_shards) - 1)
+        prev_idx = self._clamp_rung_index(self.scheduler.current_shard_index(candidate_with_meta))
         decision = self.scheduler.record(candidate_with_meta, result, self.config.promote_objective)
         confidence_met = bool(
             candidate_with_meta.meta.get("_confidence_met")
@@ -2349,7 +2510,7 @@ class Orchestrator:
         if promotions:
             # Add promoted candidates to priority queue
             for p in promotions:
-                rung_idx = self.scheduler.current_shard_index(p)
+                rung_idx = self._clamp_rung_index(self.scheduler.current_shard_index(p))
                 priority = self._compute_priority(p, rung_idx)
 
                 # Use negative priority for max-heap (heapq is min-heap)
@@ -2419,6 +2580,34 @@ class Orchestrator:
                 self.logger.log(f"🌐 Island {self.island_id}: received {len(incoming)} candidate(s): {ids}")
             self.enqueue(incoming)
 
+    def _score_result(
+        self,
+        candidate: Candidate,
+        result: EvalResult,
+        shard_idx: int,
+        shard_fraction: float,
+        is_final_shard: bool,
+    ) -> float:
+        meta = candidate.meta if isinstance(candidate.meta, dict) else None
+        parent_objectives = meta.get("parent_objectives") if isinstance(meta, dict) else None
+        parent_rung_scores = meta.get("parent_rung_scores") if isinstance(meta, dict) else None
+        context = ScoringContext(
+            candidate=candidate,
+            result=result,
+            rung_index=shard_idx,
+            rung_fraction=shard_fraction,
+            is_final_rung=is_final_shard,
+            parent_objectives=parent_objectives,
+            parent_rung_scores=parent_rung_scores,
+            coverage_fraction=result.coverage_fraction,
+        )
+        try:
+            score = float(self._scoring_fn(context))
+        except Exception:
+            score = 0.0
+        result.objectives[SCORE_KEY] = score
+        return score
+
     async def _stream_process_result(
         self,
         candidate: Candidate,
@@ -2436,6 +2625,12 @@ class Orchestrator:
             return
 
         result: EvalResult = payload
+        self._record_rung_coverage(shard_idx, result.coverage_fraction)
+        candidate_meta = candidate.meta if isinstance(candidate.meta, dict) else {}
+        confidence_met = bool(candidate_meta.get("_confidence_met"))
+        lower_bound = candidate_meta.get("_confidence_lower_bound", 0.0)
+        if not isinstance(lower_bound, (int, float)):
+            lower_bound = 0.0
         expected_ids = self._candidate_eval_examples.pop(candidate.fingerprint, [])
         shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
         is_final_shard = shard_idx == len(self._runtime_shards) - 1
@@ -2454,7 +2649,7 @@ class Orchestrator:
                     and self._replay_workers
                 ):
                     await self._enqueue_replay_job(
-                        candidate_with_meta,
+                        candidate,
                         result,
                         missing,
                         shard_idx,
@@ -2464,8 +2659,8 @@ class Orchestrator:
                     scheduled_replay = True
                     if confidence_met and self.show_progress:
                         self.logger.log(
-                            f"📐 Confidence gate met for {candidate_with_meta.fingerprint[:12]} "
-                            f"(lower={candidate_with_meta.meta.get('_confidence_lower_bound', 0.0):.3f}); "
+                            f"📐 Confidence gate met for {candidate.fingerprint[:12]} "
+                            f"(lower={lower_bound:.3f}); "
                             f"replay scheduled for auditing only."
                         )
                 if scheduled_replay:
@@ -2488,8 +2683,10 @@ class Orchestrator:
                     is_final_shard=is_final_shard,
                 )
                 result = result.merge(replay)
+        score = self._score_result(candidate, result, shard_idx, shard_fraction, is_final_shard)
         self._update_eval_metrics(candidate, result)
         candidate_with_meta, decision = await self._ingest_result(candidate, result)
+        self._revise_coverage_target(shard_idx, result.coverage_fraction, confidence_met)
 
         shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
         quality = result.objectives.get(self.config.promote_objective, 0.0)
@@ -2592,6 +2789,13 @@ class Orchestrator:
             except Exception:
                 # Seed replay is best-effort; do not fail the run if recovery fails
                 pass
+            self._score_result(
+                seed,
+                result,
+                0,
+                shard_fraction,
+                len(self._runtime_shards) - 1 == 0,
+            )
             results.append(result)
 
         if self.show_progress:
@@ -2612,7 +2816,7 @@ class Orchestrator:
             enriched.append(candidate_with_meta)
 
             if self.show_progress:
-                current_rung = self.scheduler.current_shard_index(candidate_with_meta)
+                current_rung = self._clamp_rung_index(self.scheduler.current_shard_index(candidate_with_meta))
                 if decision == "promoted":
                     self.logger.log(
                         f"   ✅ Seed PROMOTED to shard {current_rung} ({self._runtime_shards[current_rung]:.0%}) "
@@ -2743,7 +2947,7 @@ class Orchestrator:
             # Track which rungs we're generating from
             rungs_generating = set()
             for entry in entries:
-                rung_idx = self.scheduler.current_shard_index(entry.candidate)
+                rung_idx = self._clamp_rung_index(self.scheduler.current_shard_index(entry.candidate))
                 rungs_generating.add(rung_idx)
 
             # Adaptive mutation quota: bias budget towards higher rungs
@@ -3764,7 +3968,7 @@ class Orchestrator:
             fingerprint = candidate.fingerprint
             if fingerprint in self._pending_fingerprints or fingerprint in self._inflight_fingerprints:
                 continue
-            rung_idx = self.scheduler.current_shard_index(candidate)
+            rung_idx = self._clamp_rung_index(self.scheduler.current_shard_index(candidate))
             priority = self._compute_priority(candidate, rung_idx)
             self._priority_counter += 1
             heapq.heappush(self._priority_queue, (-priority, -rung_idx, self._priority_counter, candidate))
@@ -3791,3 +3995,12 @@ class Orchestrator:
                     LogLevel.WARNING,
                 )
         return limit
+    def _clamp_rung_index(self, idx: int) -> int:
+        if not self._runtime_shards:
+            return 0
+        upper = len(self._runtime_shards) - 1
+        if idx < 0:
+            return 0
+        if idx > upper:
+            return upper
+        return idx

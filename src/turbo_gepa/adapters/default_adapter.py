@@ -36,6 +36,7 @@ from turbo_gepa.config import (
     adaptive_config,
     recommended_executor_workers,
 )
+from turbo_gepa.scoring import ScoringFn, SCORE_KEY
 from turbo_gepa.evaluator import AsyncEvaluator
 from turbo_gepa.interfaces import Candidate, EvalResult
 from turbo_gepa.islands import IslandContext, spawn_islands
@@ -151,6 +152,8 @@ class DefaultAdapter:
         task_lm_temperature: Temperature for task LLM (None = use model default)
         reflection_lm_temperature: Temperature for reflection LLM (None = use model default)
         auto_config: Enable automatic configuration with principled sharding (default: True)
+        scoring_fn: Optional callback accepting a ``ScoringContext`` that returns the
+            scalar score to optimize (defaults to ``maximize_metric(\"quality\")``)
 
     Example usage::
 
@@ -199,6 +202,7 @@ class DefaultAdapter:
         task_lm_temperature: float | None = None,
         reflection_lm_temperature: float | None = None,
         auto_config: bool = True,
+        scoring_fn: ScoringFn | None = None,
     ) -> None:
         if not dataset:
             raise ValueError("dataset must contain at least one data instance")
@@ -220,6 +224,9 @@ class DefaultAdapter:
             config = adaptive_config(len(dataset))
 
         config = replace(config)
+        config.promote_objective = SCORE_KEY
+        if scoring_fn is not None:
+            config.scoring_fn = scoring_fn
         self.config = config
         self.dataset = list(dataset)
 
@@ -922,6 +929,11 @@ class DefaultAdapter:
             promote_objective=self.config.promote_objective,
             cancel_stragglers_immediately=self.config.cancel_stragglers_immediately,
             replay_stragglers=self.config.replay_stragglers,
+            target_confidence=self.config.target_confidence,
+            min_samples_for_confidence=self.config.min_samples_for_confidence,
+            coverage_min_success_mid=self.config.coverage_min_success_mid,
+            coverage_min_success_final=self.config.coverage_min_success_final,
+            target_quality=self.config.target_quality,
         )
 
         try:
@@ -1174,6 +1186,11 @@ class DefaultAdapter:
             promote_objective=self.config.promote_objective,
             cancel_stragglers_immediately=self.config.cancel_stragglers_immediately,
             replay_stragglers=self.config.replay_stragglers,
+            target_confidence=self.config.target_confidence,
+            min_samples_for_confidence=self.config.min_samples_for_confidence,
+            coverage_min_success_mid=self.config.coverage_min_success_mid,
+            coverage_min_success_final=self.config.coverage_min_success_final,
+            target_quality=self.config.target_quality,
         )
 
         base_run_id = getattr(self, "_current_run_token", None) or uuid.uuid4().hex[:8]

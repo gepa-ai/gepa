@@ -24,10 +24,10 @@ async def test_neg_cost_promote_objective(monkeypatch):
         cfg = Config(
             shards=(0.5, 1.0),
             eval_concurrency=2,
-            promote_objective="neg_cost",
             max_mutations_per_round=0,
             cache_path=os.path.join(tmpdir, "cache"),
             log_path=os.path.join(tmpdir, "logs"),
+            scoring_fn=lambda ctx: float(ctx.result.objectives.get("neg_cost", 0.0)),
         )
 
         adapter = DefaultAdapter(

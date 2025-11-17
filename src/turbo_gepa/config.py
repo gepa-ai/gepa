@@ -18,6 +18,7 @@ from turbo_gepa.strategies import (
     ReflectionStrategy,
     resolve_reflection_strategy_names,
 )
+from turbo_gepa.scoring import ScoringFn, maximize_metric, SCORE_KEY
 
 
 def _default_variance_tolerance(shards: Sequence[float]) -> dict[float, float]:
@@ -267,7 +268,8 @@ class Config:
     control_dir: str | None = None
     batch_size: int | None = None  # Auto-scaled to eval_concurrency if None
     queue_limit: int | None = None  # Auto-scaled to 2x eval_concurrency if None
-    promote_objective: str = "quality"
+    scoring_fn: ScoringFn = maximize_metric("quality")
+    promote_objective: str = SCORE_KEY
     max_mutations_per_round: int | None = None  # Auto-scaled to eval_concurrency if None
     mutation_buffer_limit: int | None = None  # Max pending streamed mutations awaiting queue capacity
     task_lm_temperature: float | None = 1.0
@@ -291,13 +293,23 @@ class Config:
     final_rung_cap_timeout_threshold: float = 0.2  # Shrink cap when timeout ratio exceeds this
     final_rung_cap_cooldown_seconds: float = 3.0  # Minimum time between cap adjustments
     final_rung_cap_straggler_window: float = 20.0  # Sliding window to measure straggler pressure
-    cancel_stragglers_immediately: bool = True  # Cancel detached example tasks right away
+    cancel_stragglers_immediately: bool = False  # Let detached example tasks finish in background
     replay_stragglers: bool = True  # Re-evaluate missing examples after straggler cancellation
     replay_workers: int | None = None  # Number of background workers for straggler replays
     replay_worker_queue_size: int | None = None  # Optional bound for replay queue
     replay_concurrency: int | None = None  # Max concurrency per replay evaluation
-    target_confidence: float = 0.95  # Confidence level for statistical promotion checks
-    min_samples_for_confidence: int = 20  # Require at least this many examples before using CI
+    # Single knob for verification speed/accuracy tradeoff:
+    #   0.0 = strict / slow (full final-rung coverage)
+    #   1.0 = aggressive / fast (lowest coverage & CI)
+    verification_speed_bias: float = 0.3
+    target_confidence: float | None = None  # Confidence level for statistical promotion checks
+    min_samples_for_confidence: int | None = None  # Require at least this many examples before using CI
+    coverage_min_success_mid: float | None = None
+    coverage_min_success_final: float | None = None
+    coverage_lower_mid: float | None = None
+    coverage_upper_mid: float | None = None
+    coverage_lower_final: float | None = None
+    coverage_upper_final: float | None = None
     llm_connection_limit: int | None = None  # Cap simultaneous LLM calls (defaults to 1.5x eval_concurrency)
     # Dynamically scale effective evaluation concurrency to maximize throughput
     auto_scale_eval_concurrency: bool = True
@@ -383,8 +395,14 @@ class Config:
         self.final_rung_saturation_seconds = max(0.5, float(self.final_rung_saturation_seconds or 0.5))
         cap_max_fraction = self.final_rung_cap_max_fraction
         if cap_max_fraction is None:
-            # Default: allow up to half the evaluators to sit on final rung
-            cap_max_fraction = 0.5
+            # Default final-rung share scales with verification_speed_bias:
+            #   slow/strict (0.0) -> ~50% of evaluators on full rung
+            #   fast/aggressive (1.0) -> ~90% allowed on full rung
+            try:
+                speed = max(0.0, min(1.0, float(self.verification_speed_bias)))
+            except Exception:
+                speed = 0.3
+            cap_max_fraction = 0.5 + 0.4 * speed
         cap_max_fraction = max(0.1, min(1.0, float(cap_max_fraction)))
         self.final_rung_cap_max_fraction = cap_max_fraction
 
@@ -417,6 +435,26 @@ class Config:
         if self.replay_worker_queue_size is not None:
             self.replay_worker_queue_size = max(1, int(self.replay_worker_queue_size))
 
+        # If eval_timeout_seconds is still at its default level, allow the
+        # speed-bias knob to shorten timeouts in fast mode so extremely slow
+        # calls do not dominate wall-clock time. Users can override this by
+        # setting eval_timeout_seconds explicitly.
+        try:
+            timeout = float(self.eval_timeout_seconds)
+        except Exception:
+            timeout = 120.0
+        if abs(timeout - 120.0) < 1e-6:
+            try:
+                speed = max(0.0, min(1.0, float(self.verification_speed_bias)))
+            except Exception:
+                speed = 0.3
+            # At speed=0.0 keep 120s; at 1.0 cut to ~60s.
+            factor = 1.0 - 0.5 * (speed**2.5)
+            timeout = max(20.0, 120.0 * factor)
+            self.eval_timeout_seconds = timeout
+
+        self._apply_verification_profile()
+
         custom_strategies = list(self.reflection_strategies or ())
         resolved_defaults = list(resolve_reflection_strategy_names(self.reflection_strategy_names))
         resolved_defaults.extend(custom_strategies)
@@ -426,6 +464,61 @@ class Config:
                 "Provide reflection_strategy_names or reflection_strategies."
             )
         self.reflection_strategies = tuple(resolved_defaults)
+        self.promote_objective = SCORE_KEY
+
+    def _apply_verification_profile(self) -> None:
+        """Derive verification thresholds from the configured risk knob."""
+
+        speed = max(0.0, min(1.0, float(self.verification_speed_bias)))
+        # Expose the clipped value so downstream consumers see the effective bias.
+        self.verification_speed_bias = speed
+        strict_final = speed <= 1e-6
+
+        # Use a non-linear mapping so higher values of the dial have a
+        # disproportionately stronger effect. This keeps low/medium settings
+        # close to the current behaviour but makes 0.8–1.0 meaningfully more
+        # aggressive.
+        fast = speed**2.5
+
+        def _blend(high: float, low: float) -> float:
+            return high + (low - high) * fast
+
+        if self.target_confidence is None:
+            # High confidence at slow end, looser at fast end.
+            confidence = _blend(0.99, 0.80)
+            self.target_confidence = max(0.5, min(0.999, confidence))
+
+        if self.min_samples_for_confidence is None:
+            # Require many samples at slow end, very few at the fastest.
+            samples = int(round(_blend(30, 3)))
+            self.min_samples_for_confidence = max(1, samples)
+
+        # Final rung: from ~80% coverage at slow end down toward ~35% at fast end.
+        final_min = max(0.1, min(0.99, _blend(0.8, 0.35)))
+        if strict_final:
+            final_min = 1.0
+        # Mid rungs: from ~70% down toward ~25%.
+        mid_min = max(0.05, min(0.95, _blend(0.7, 0.25)))
+
+        if self.coverage_min_success_final is None:
+            self.coverage_min_success_final = final_min
+        if self.coverage_min_success_mid is None:
+            self.coverage_min_success_mid = mid_min
+
+        if self.coverage_lower_final is None:
+            self.coverage_lower_final = self.coverage_min_success_final
+        if self.coverage_lower_mid is None:
+            self.coverage_lower_mid = self.coverage_min_success_mid
+
+        final_upper = max(self.coverage_lower_final, min(0.99, _blend(0.98, 0.90)))
+        if strict_final:
+            final_upper = 1.0
+        mid_upper = max(self.coverage_lower_mid, min(0.95, _blend(0.90, 0.75)))
+
+        if self.coverage_upper_final is None:
+            self.coverage_upper_final = final_upper
+        if self.coverage_upper_mid is None:
+            self.coverage_upper_mid = mid_upper
 
 
 DEFAULT_CONFIG = Config()

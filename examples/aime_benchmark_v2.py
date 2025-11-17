@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Tuple
 import gepa
 from turbo_gepa.adapters import DefaultAdapter, DefaultDataInst
 from turbo_gepa.config import Config, adaptive_config
+from turbo_gepa.scoring import ScoringContext
 
 
 # --------------------------------------------------------------------------------------
@@ -78,6 +79,23 @@ def _summarize_prompt(prompt_text: str | None, max_chars: int = 160) -> str:
         return "<empty>"
     text = prompt_text.replace("\n", " ").strip()
     return text[: max_chars - 3] + "..." if len(text) > max_chars else text
+
+
+def _quality_reward(ctx: ScoringContext) -> float:
+    """
+    Simple reward combining accuracy and token efficiency.
+
+    Treat quality as the primary objective, but gently penalize bloated prompts
+    by subtracting 0.01 points for every additional 1k tokens consumed. This
+    mirrors the style of custom reward functions users can plug into the adapter.
+    """
+
+    quality = float(ctx.result.objectives.get("quality", 0.0))
+    tokens = float(ctx.result.objectives.get("tokens", 0.0))
+    # Example alternative: include neg_tokens (e.g., cost savings). Uncomment to flip sign.
+    # neg_tokens = float(ctx.result.objectives.get("neg_tokens", 0.0))
+    # return 0.8 * quality + 0.2 * neg_tokens
+    return quality - 0.01 * (tokens / 1000.0)
 
 
 # --------------------------------------------------------------------------------------
@@ -168,6 +186,8 @@ def _build_turbo_config(dataset_size: int, args: argparse.Namespace) -> Config:
             config.eval_timeout_seconds = float(args.turbo_eval_timeout)
         except Exception:
             pass
+    if getattr(args, "turbo_verification_speed_bias", None) is not None:
+        config.verification_speed_bias = max(0.0, min(1.0, float(args.turbo_verification_speed_bias)))
     # Allow multiple full-shard candidates so slow OSS-20 calls overlap.
     final_cap = max(2, args.turbo_eval_concurrency // 2)
     config.max_final_shard_inflight = min(args.turbo_eval_concurrency, final_cap)
@@ -203,6 +223,7 @@ def run_turbo(
         reflection_lm=reflection_lm,
         config=config,
         auto_config=False,
+        scoring_fn=_quality_reward,
     )
     if getattr(args, "turbo_task_max_tokens", None):
         try:
@@ -323,6 +344,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--turbo-log-level", default="WARNING")
     parser.add_argument("--turbo-show-progress", action="store_true")
     parser.add_argument("--turbo-n-islands", type=int, default=1)
+    parser.add_argument("--turbo-verification-speed-bias", type=float, default=None)
     parser.add_argument("--open-ui", action="store_true", help="Open live evolution UI (http://localhost:8080/scripts/evolution_live.html)")
     parser.add_argument(
         "--turbo-strategies",
