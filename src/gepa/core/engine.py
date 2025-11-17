@@ -2,10 +2,10 @@
 # https://github.com/gepa-ai/gepa
 
 import traceback
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import Generic
 
-from gepa.core.adapter import DataInst, EvaluationBatch, RolloutOutput, Trajectory
+from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState, ProgramIdx, ValsetEvaluation, initialize_gepa_state
 from gepa.logging.experiment_tracker import ExperimentTracker
@@ -30,13 +30,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
     def __init__(
         self,
+        adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput],
         run_dir: str | None,
-        evaluator: Callable[
-            [list[DataInst], dict[str, str]],
-            EvaluationBatch[Trajectory, RolloutOutput]
-            | tuple[list[RolloutOutput], list[float]]
-            | tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None],
-        ],
         valset: list[DataInst] | DataLoader[DataId, DataInst] | None,
         seed_candidate: dict[str, str],
         # Controls
@@ -66,7 +61,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Set up stopping mechanism
         self.stop_callback = stop_callback
+        self.adapter = adapter
+
+        def evaluator(
+            batch: list[DataInst], program: dict[str, str]
+        ) -> tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None]:
+            eval_result = adapter.evaluate(batch, program, capture_traces=False)
+            return eval_result.outputs, eval_result.scores, eval_result.objective_scores
+
         self.evaluator = evaluator
+
         self.valset = ensure_loader(valset) if valset is not None else None
         self.seed_candidate = seed_candidate
 
@@ -91,28 +95,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             val_evaluation_policy if val_evaluation_policy is not None else FullEvaluationPolicy()
         )
 
-    @staticmethod
-    def _coerce_evaluation_result(
-        evaluation_result: (
-            EvaluationBatch[Trajectory, RolloutOutput]
-            | tuple[list[RolloutOutput], list[float]]
-            | tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None]
-        ),
-    ) -> tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None]:
-        if isinstance(evaluation_result, EvaluationBatch):
-            return (
-                evaluation_result.outputs,
-                evaluation_result.scores,
-                evaluation_result.objective_scores,
-            )
-        if len(evaluation_result) == 3:
-            outputs, scores, objective_scores = evaluation_result
-            return outputs, scores, objective_scores
-        if len(evaluation_result) == 2:
-            outputs, scores = evaluation_result
-            return outputs, scores, None
-        raise ValueError("Unexpected evaluator return signature")
-
     def _evaluate_on_valset(
         self,
         program: dict[str, str],
@@ -123,7 +105,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         val_ids = self.val_evaluation_policy.get_eval_batch(valset, state)
         batch = valset.fetch(val_ids)
-        outputs, scores, objective_scores = self._coerce_evaluation_result(self.evaluator(batch, program))
+        outputs, scores, objective_scores = self.evaluator(batch, program)
         assert len(outputs) == len(val_ids), "Eval outputs should match length of selected validation indices"
         assert len(scores) == len(val_ids), "Eval scores should match length of selected validation indices"
 
@@ -229,8 +211,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             | tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, dict[str, float]] | None]
         ):
             all_ids = list(valset.all_ids())
-            eval_result = self.evaluator(valset.fetch(all_ids), program)
-            outputs, scores, objective_scores = self._coerce_evaluation_result(eval_result)
+            outputs, scores, objective_scores = self.evaluator(valset.fetch(all_ids), program)
             outputs_dict = dict(zip(all_ids, outputs, strict=False))
             scores_dict = dict(zip(all_ids, scores, strict=False))
             objective_scores_dict = (

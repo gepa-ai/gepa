@@ -326,8 +326,8 @@ def optimize(
         )
 
     engine = GEPAEngine(
+        adapter=active_adapter,
         run_dir=run_dir,
-        evaluator=evaluator,
         valset=val_loader,
         seed_candidate=seed_candidate,
         perfect_score=perfect_score,
