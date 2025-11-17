@@ -9,31 +9,30 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Generic, Literal, TypeAlias, TypeVar
 
 from gepa.core.adapter import RolloutOutput as RolloutOutputType
-from gepa.core.data_loader import DataId as DataIdType
+from gepa.core.data_loader import DataId
 from gepa.gepa_utils import json_default
 from gepa.logging.logger import LoggerProtocol
 
 # TypeVars for Generic classes
 RolloutOutput = TypeVar("RolloutOutput")
-ValId = TypeVar("ValId")
 
 # Types for GEPAState
 ProgramIdx = int
-ValScores: TypeAlias = dict[ValId, float]
-ValOutputs: TypeAlias = dict[ValId, RolloutOutput]
+ValScores: TypeAlias = dict[DataId, float]
+ValOutputs: TypeAlias = dict[DataId, RolloutOutput]
 ObjectiveScores: TypeAlias = dict[str, float]
-ValObjectiveScores: TypeAlias = dict[ValId, ObjectiveScores]
+ValObjectiveScores: TypeAlias = dict[DataId, ObjectiveScores]
 FrontierType: TypeAlias = Literal["instance", "objective", "hybrid"]
 
 
 @dataclass(slots=True)
-class ValsetEvaluation(Generic[RolloutOutput, ValId]):
+class ValsetEvaluation(Generic[RolloutOutput, DataId]):
     outputs_by_val_id: ValOutputs
     scores_by_val_id: ValScores
     objective_scores_by_val_id: ValObjectiveScores | None = None
 
 
-class GEPAState(Generic[RolloutOutput, ValId]):
+class GEPAState(Generic[RolloutOutput, DataId]):
     """Persistent optimizer state tracking candidates, sparse validation coverage, and objective frontiers."""
 
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 3
@@ -44,7 +43,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
     prog_candidate_objective_scores: list[ObjectiveScores]
 
     pareto_front_valset: ValScores
-    program_at_pareto_front_valset: dict[ValId, set[ProgramIdx]]
+    program_at_pareto_front_valset: dict[DataId, set[ProgramIdx]]
     objective_pareto_front: ObjectiveScores
     program_at_pareto_front_objectives: dict[str, set[ProgramIdx]]
 
@@ -59,7 +58,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
     num_metric_calls_by_discovery: list[int]
 
     full_program_trace: list[dict[str, Any]]
-    best_outputs_valset: dict[ValId, list[tuple[ProgramIdx, RolloutOutput]]] | None
+    best_outputs_valset: dict[DataId, list[tuple[ProgramIdx, RolloutOutput]]] | None
 
     validation_schema_version: int
 
@@ -67,7 +66,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         self,
         seed_candidate: dict[str, str],
         base_valset_eval_output: (
-            tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None]
+            tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None]
         ),
         track_best_outputs: bool = False,
         frontier_type: FrontierType = "instance",
@@ -202,7 +201,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
     @staticmethod
     def _normalize_base_eval_output(
         base_valset_eval_output: (
-            tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None]
+            tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None]
         ),
     ) -> ValsetEvaluation:
         if len(base_valset_eval_output) == 3:
@@ -255,12 +254,12 @@ class GEPAState(Generic[RolloutOutput, ValId]):
         return self.get_program_average_val_subset(program_idx)
 
     @property
-    def valset_evaluations(self) -> dict[ValId, list[ProgramIdx]]:
+    def valset_evaluations(self) -> dict[DataId, list[ProgramIdx]]:
         """
         Valset examples by id and programs that have evaluated them. Keys include only validation
         ids that have been scored at least once.
         """
-        result: dict[ValId, list[ProgramIdx]] = defaultdict(list)
+        result: dict[DataId, list[ProgramIdx]] = defaultdict(list)
         for program_idx, val_scores in enumerate(self.prog_candidate_val_subscores):
             for val_id in val_scores.keys():
                 result[val_id].append(program_idx)
@@ -295,7 +294,7 @@ class GEPAState(Generic[RolloutOutput, ValId]):
 
     def _update_pareto_front_for_val_id(
         self,
-        val_id: ValId,
+        val_id: DataId,
         score: float,
         program_idx: ProgramIdx,
         outputs: ValOutputs | None,
@@ -394,7 +393,7 @@ def initialize_gepa_state(
     seed_candidate: dict[str, str],
     valset_evaluator: Callable[
         [dict[str, str]],
-        tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[ValId, ObjectiveScores] | None],
+        tuple[ValOutputs, ValScores] | tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None],
     ],
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",

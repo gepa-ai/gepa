@@ -39,11 +39,6 @@ def log_detailed_metrics_after_discovering_new_program(
     logger.log(f"Iteration {gepa_state.i + 1}: Individual valset scores for new program: {valset_scores}")
     if objective_scores:
         logger.log(f"Iteration {gepa_state.i + 1}: Objective aggregate scores for new program: {objective_scores}")
-    if valset_evaluation.objective_scores_by_val_id:
-        logger.log(
-            f"Iteration {gepa_state.i + 1}: Objective scores by validation id for new program: "
-            f"{valset_evaluation.objective_scores_by_val_id}"
-        )
     logger.log(f"Iteration {gepa_state.i + 1}: New valset pareto front scores: {gepa_state.pareto_front_valset}")
     if gepa_state.objective_pareto_front:
         logger.log(f"Iteration {gepa_state.i + 1}: Objective pareto front scores: {gepa_state.objective_pareto_front}")
