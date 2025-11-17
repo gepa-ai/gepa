@@ -323,7 +323,6 @@ def optimize(
             max_merge_invocations=max_merge_invocations,
             rng=rng,
             val_overlap_floor=merge_val_overlap_floor,
-            frontier_type=frontier_type,
         )
 
     engine = GEPAEngine(
