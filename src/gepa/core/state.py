@@ -134,7 +134,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             pickle.dump(serialized, f)
 
     @staticmethod
-    def load(run_dir: str) -> "GEPAState[RolloutOutputType, DataIdType]":
+    def load(run_dir: str) -> "GEPAState[RolloutOutputType, DataId]":
         with open(os.path.join(run_dir, "gepa_state.bin"), "rb") as f:
             import pickle
 
@@ -397,7 +397,7 @@ def initialize_gepa_state(
     ],
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
-) -> GEPAState[RolloutOutputType, DataIdType]:
+) -> GEPAState[RolloutOutputType, DataId]:
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)
