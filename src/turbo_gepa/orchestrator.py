@@ -58,123 +58,6 @@ def _percentile(samples: Sequence[float], quantile: float) -> float:
     return float(values[lower] + (values[upper] - values[lower]) * fraction)
 
 
-class FinalRungCapController:
-    """Adaptive controller for final-rung inflight capacity."""
-
-    def __init__(
-        self,
-        *,
-        min_cap: int,
-        max_fraction: float,
-        backlog_threshold: int,
-        saturation_seconds: float,
-        target_utilization: float,
-        latency_expand: float,
-        latency_shrink: float,
-        timeout_threshold: float,
-        straggler_window: float,
-        cooldown_seconds: float,
-    ) -> None:
-        self.min_cap = max(1, int(min_cap))
-        self.max_fraction = max(0.1, min(1.0, float(max_fraction)))
-        self.backlog_threshold = max(1, int(backlog_threshold))
-        self.saturation_seconds = max(0.1, float(saturation_seconds))
-        self.target_utilization = max(0.1, min(1.0, float(target_utilization)))
-        self.latency_expand = max(1.0, float(latency_expand))
-        self.latency_shrink = max(self.latency_expand + 0.05, float(latency_shrink))
-        self.timeout_threshold = max(0.0, min(1.0, float(timeout_threshold)))
-        self.straggler_window = max(1.0, float(straggler_window))
-        self.cooldown_seconds = max(0.5, float(cooldown_seconds))
-        self._cooldown_until: float = 0.0
-
-    @classmethod
-    def from_config(cls, cfg: Config) -> "FinalRungCapController":
-        return cls(
-            min_cap=cfg.final_rung_min_inflight,
-            max_fraction=cfg.final_rung_cap_max_fraction,
-            backlog_threshold=cfg.final_rung_backlog_to_expand,
-            saturation_seconds=cfg.final_rung_saturation_seconds,
-            target_utilization=cfg.final_rung_target_utilization,
-            latency_expand=cfg.final_rung_cap_latency_expand,
-            latency_shrink=cfg.final_rung_cap_latency_shrink,
-            timeout_threshold=cfg.final_rung_cap_timeout_threshold,
-            straggler_window=cfg.final_rung_cap_straggler_window,
-            cooldown_seconds=cfg.final_rung_cap_cooldown_seconds,
-        )
-
-    def impose_cooldown(self, duration: float, *, now: float | None = None) -> None:
-        now = time.time() if now is None else now
-        self._cooldown_until = max(self._cooldown_until, now + max(duration, 0.5))
-
-    def _recent_stragglers(self, events: Sequence[tuple[float, int]], now: float) -> int:
-        total = 0
-        window = self.straggler_window
-        for ts, count in events:
-            if now - ts <= window:
-                total += count
-        return total
-
-    def _max_cap(self, effective_concurrency: int) -> int:
-        return max(self.min_cap, int(max(1, effective_concurrency) * self.max_fraction))
-
-    def update(
-        self,
-        *,
-        current_cap: int | None,
-        effective_concurrency: int,
-        waiting: int,
-        inflight: int,
-        lat_mean: float,
-        lat_p50: float,
-        lat_p95: float,
-        timeout_ratio: float,
-        blocked_since: float | None,
-        straggler_events: Sequence[tuple[float, int]],
-        now: float | None = None,
-    ) -> int | None:
-        now = time.time() if now is None else now
-        max_cap = self._max_cap(effective_concurrency)
-        cap = max(self.min_cap, min(current_cap or self.min_cap, max_cap))
-
-        if cap != (current_cap or self.min_cap):
-            # Force immediate clamp when current cap exceeds allowed ceiling.
-            return cap
-
-        if now < self._cooldown_until:
-            return None
-
-        blocked_duration = 0.0
-        if blocked_since and blocked_since > 0:
-            blocked_duration = max(0.0, now - blocked_since)
-
-        denom = max(lat_p50, 1e-3)
-        latency_ratio = lat_p95 / denom if denom else float("inf")
-        lat_ok = latency_ratio <= self.latency_expand and timeout_ratio <= self.timeout_threshold
-        lat_bad = latency_ratio >= self.latency_shrink or timeout_ratio >= self.timeout_threshold
-
-        straggler_total = self._recent_stragglers(straggler_events, now)
-        straggler_pressure = straggler_total >= max(1, cap)
-
-        utilization = inflight / max(cap, 1)
-        waiting_pressure = waiting >= self.backlog_threshold
-        saturation = waiting > 0 and blocked_duration >= self.saturation_seconds
-
-        desired = cap
-        if waiting > 0 and (lat_ok or saturation or waiting_pressure):
-            target_cap = max(cap + 1, waiting + inflight)
-            desired = min(max_cap, target_cap)
-        if lat_bad or straggler_pressure or (waiting == 0 and utilization < self.target_utilization * 0.6):
-            shrink_target = max(self.min_cap, int(cap * 0.8))
-            desired = min(desired, shrink_target)
-
-        desired = max(self.min_cap, min(desired, max_cap))
-
-        if desired != cap:
-            self._cooldown_until = now + self.cooldown_seconds
-            return desired
-        return None
-
-
 @dataclass(slots=True)
 class ReplayJob:
     candidate: Candidate
@@ -315,8 +198,6 @@ class Orchestrator:
         self._latency_history: deque[float] = deque(maxlen=200)
         self._eval_samples: int = 0
         self._timeout_count: int = 0
-        self._last_inflight_adjust: float = 0.0
-        self._last_finalcap_adjust: float = 0.0
         self._last_effconc_adjust: float = 0.0
         self._mutation_throttle: bool = False
         base_mut = self.config.max_mutations_per_round or max(16, self.config.eval_concurrency // 2)
@@ -325,12 +206,6 @@ class Orchestrator:
         self._rung_launches: list[int] = [0] * len(self._runtime_shards)
         self._rung_promotions: list[int] = [0] * len(self._runtime_shards)
         self._rung_coverage: list[float] = [1.0] * len(self._runtime_shards)
-        final_baseline = float(getattr(self.config, "coverage_min_success_final", 0.6) or 0.6)
-        mid_baseline = float(getattr(self.config, "coverage_min_success_mid", 0.5) or 0.5)
-        self._coverage_targets: list[float] = [
-            final_baseline if idx == len(self._runtime_shards) - 1 else mid_baseline
-            for idx in range(len(self._runtime_shards))
-        ]
         self._promotion_ema: list[float] = [0.5] * len(self._runtime_shards)  # Initialize at 0.5 (neutral)
         self._final_success_ema: float = 0.3  # Success rate at final rung
         self._ema_alpha: float = 0.1  # EMA smoothing factor
@@ -375,15 +250,12 @@ class Orchestrator:
         self._high_rung_parent_quorum: int = 3
         self._last_mutation_attempt: float = 0.0
         self._candidate_eval_examples: dict[str, list[str]] = {}
-        self._recent_final_straggler_events: deque[tuple[float, int]] = deque(maxlen=64)
         self._inflight_by_rung: defaultdict[int, int] = defaultdict(int)
         self._waiting_by_rung: defaultdict[int, int] = defaultdict(int)
         self._final_inflight_peak: int = 0
         self._network_throttle_until: float = 0.0
         self._last_network_warning: float = 0.0
         self._final_rung_blocked_since: float | None = None
-        self._final_rung_cap_floor: int = max(1, getattr(self.config, "final_rung_min_inflight", 1))
-        self._final_cap_controller = FinalRungCapController.from_config(config)
         self._stop_reason: str | None = None
         self._run_started_at: float | None = None
         self._run_id = run_id or uuid.uuid4().hex[:8]
@@ -818,8 +690,6 @@ class Orchestrator:
         expiry = time.time() + max(1.0, duration)
         if expiry > self._network_throttle_until:
             self._network_throttle_until = expiry
-        if getattr(self, "_final_cap_controller", None) is not None:
-            self._final_cap_controller.impose_cooldown(duration, now=time.time())
         now = time.time()
         if self.show_progress and now - self._last_network_warning >= 1.0:
             parts = [f"🚦 Network throttle ({reason})"]
@@ -936,68 +806,11 @@ class Orchestrator:
         alpha = 0.3
         self._rung_coverage[rung_idx] = value if prev is None else (1 - alpha) * prev + alpha * value
 
-    def _record_final_straggler_event(self, count: int) -> None:
-        if count <= 0:
-            return
-        self._recent_final_straggler_events.append((time.time(), count))
-
-    def _dynamic_final_cap_floor(self) -> int:
-        base = max(1, getattr(self.config, "final_rung_min_inflight", 1))
-        if not self._runtime_shards or not self._rung_coverage:
-            return base
-        idx = min(self._final_rung_index, len(self._rung_coverage) - 1)
-        coverage = self._rung_coverage[idx]
-        waiting = self._waiting_by_rung.get(idx, 0)
-        backlog_total = len(self.queue) + len(self._priority_queue)
-        replay_backlog = self._replay_queue.qsize() if self.config.replay_stragglers else 0
-        eval_conc = max(1, self.config.eval_concurrency)
-        floor = base
-        if coverage < 0.7:
-            floor = max(floor, min(eval_conc, max(2, eval_conc // 2)))
-        elif coverage < 0.85:
-            floor = max(floor, min(eval_conc, max(2, eval_conc // 3)))
-        if waiting > eval_conc or backlog_total > eval_conc * 2:
-            floor = max(floor, min(eval_conc, max(3, eval_conc // 2)))
-        if replay_backlog > eval_conc // 2:
-            floor = max(floor, min(eval_conc, max(3, eval_conc // 2)))
-        return max(1, min(floor, eval_conc))
-
     def _revise_coverage_target(self, rung_idx: int, coverage: float | None, confidence_met: bool) -> None:
-        if not self._coverage_targets or rung_idx < 0 or rung_idx >= len(self._coverage_targets):
-            return
-        if rung_idx == self._final_rung_index:
-            base = float(getattr(self.config, "coverage_min_success_final", 0.6) or 0.6)
-            lower_bound = float(getattr(self.config, "coverage_lower_final", base) or base)
-            upper_bound = float(getattr(self.config, "coverage_upper_final", max(lower_bound, 0.95)) or max(lower_bound, 0.95))
-        else:
-            base = float(getattr(self.config, "coverage_min_success_mid", 0.5) or 0.5)
-            lower_bound = float(getattr(self.config, "coverage_lower_mid", base) or base)
-            upper_bound = float(getattr(self.config, "coverage_upper_mid", max(lower_bound, 0.8)) or max(lower_bound, 0.8))
-        try:
-            observed = float(coverage) if coverage is not None else None
-        except (TypeError, ValueError):
-            observed = None
-        target = self._coverage_targets[rung_idx]
-        backlog = len(self.queue) + len(self._priority_queue)
-        waiting = self._waiting_by_rung.get(rung_idx, 0)
-        replay_backlog = self._replay_queue.qsize() if self.config.replay_stragglers else 0
-        eval_conc = max(1, self.config.eval_concurrency)
-        adjust = base
-        if confidence_met:
-            adjust = min(adjust, lower_bound)
-        backlog_factor = math.log1p(backlog / max(1, eval_conc))
-        adjust = max(0.5, adjust - 0.08 * backlog_factor)
-        if waiting > eval_conc:
-            adjust = max(0.55, adjust - 0.05)
-        if replay_backlog > eval_conc:
-            adjust = max(0.6, adjust - 0.1)
-        tail_ratio = getattr(self.evaluator, "tail_latency_ratio", 1.0)
-        if tail_ratio > 1.8:
-            adjust = max(0.5, adjust - 0.05 * (tail_ratio - 1.8))
-        if observed is not None and observed > adjust + 0.05 and not confidence_met:
-            adjust = min(0.95, adjust + 0.05)
-        new_target = max(lower_bound, min(upper_bound, 0.5 * target + 0.5 * adjust))
-        self._coverage_targets[rung_idx] = new_target
+        # Dynamic coverage targets have been removed in favour of the
+        # simpler evaluator-side thresholds driven by verification_speed_bias.
+        # This method is kept as a no-op for backwards compatibility.
+        return
 
     def _track_waiting(self, rung_idx: int, delta: int) -> None:
         """Maintain queue depth for each rung."""
@@ -1086,12 +899,6 @@ class Orchestrator:
         self._rung_launches = [0] * len(self._runtime_shards)
         self._rung_promotions = [0] * len(self._runtime_shards)
         self._rung_coverage = [1.0] * len(self._runtime_shards)
-        final_baseline = float(getattr(self.config, "coverage_min_success_final", 0.6) or 0.6)
-        mid_baseline = float(getattr(self.config, "coverage_min_success_mid", 0.5) or 0.5)
-        self._coverage_targets = [
-            final_baseline if idx == len(self._runtime_shards) - 1 else mid_baseline
-            for idx in range(len(self._runtime_shards))
-        ]
 
     def _start_replay_workers(self, target: int | None = None) -> None:
         if not self.config.replay_stragglers:
@@ -1203,64 +1010,15 @@ class Orchestrator:
 
     def _adjust_runtime_parameters(self) -> None:
         """
-        Runtime adaptation for concurrency and final-rung capacity.
+        Runtime adaptation for concurrency.
 
-        This version is intentionally conservative: it keeps concurrency
-        at the configured ceiling by default and only scales back when
-        the provider is clearly overloaded (high timeout ratio), while
-        still allowing the final-rung cap controller to react to tails.
+        Keep effective concurrency at the configured ceiling by default
+        and only scale back when the provider is clearly overloaded
+        (high timeout ratio). Final-rung capacity is controlled by the
+        static max_final_shard_inflight derived from config.
         """
-        latencies = list(self._latency_history)
-        self._final_rung_cap_floor = self._dynamic_final_cap_floor()
-        if len(latencies) < 5:
-            return
-
-        import statistics
         now = time.time()
-
         timeout_ratio = self._current_timeout_ratio()
-        lat_mean = statistics.fmean(latencies)
-        lat_p95 = _percentile(latencies, 0.95)
-
-        # Maintain a small sliding window for final-rung cap updates
-        try:
-            lat_p50 = _percentile(latencies, 0.50)
-        except Exception:
-            lat_p50 = lat_mean
-
-        controller = getattr(self, "_final_cap_controller", None)
-        if controller is not None:
-            cap_update = controller.update(
-                current_cap=self.config.max_final_shard_inflight,
-                effective_concurrency=self._effective_concurrency,
-                waiting=self._waiting_by_rung.get(self._final_rung_index, 0),
-                inflight=self._inflight_by_rung.get(self._final_rung_index, 0),
-                lat_mean=lat_mean,
-                lat_p50=lat_p50,
-                lat_p95=lat_p95,
-                timeout_ratio=timeout_ratio,
-                blocked_since=self._final_rung_blocked_since,
-                straggler_events=list(self._recent_final_straggler_events),
-                now=now,
-            )
-            if cap_update is not None:
-                old_cap = self.config.max_final_shard_inflight or self._final_rung_cap_floor
-                new_cap = max(self._final_rung_cap_floor, cap_update)
-                if new_cap != old_cap:
-                    self.config.max_final_shard_inflight = new_cap
-                    self._adaptive_inflight_floor = max(1, new_cap, self._final_rung_cap_floor)
-                    self._last_finalcap_adjust = now
-                    if self.show_progress:
-                        direction = "↑" if new_cap > old_cap else "↓"
-                        self.logger.log(
-                            f"⚙️  Adaptive final-rung cap {direction} {old_cap}→{new_cap} | p95={lat_p95:.1f}s p50={lat_p50:.1f}s mean={lat_mean:.1f}s",
-                            LogLevel.WARNING,
-                        )
-
-        # Drop stale straggler samples beyond 60s so final-rung cap logic stays fresh.
-        prune_before = time.time() - 60.0
-        while self._recent_final_straggler_events and self._recent_final_straggler_events[0][0] < prune_before:
-            self._recent_final_straggler_events.popleft()
 
         # Adaptive effective concurrency is deliberately minimal: always run at
         # the configured ceiling unless the provider is clearly overloaded
@@ -2091,13 +1849,7 @@ class Orchestrator:
 
         shard_idx = self._clamp_rung_index(self.scheduler.current_shard_index(candidate))
 
-        # REMOVED: No orchestrator-level concurrency limits
-        # Only eval_concurrency (in evaluator) + straggler detection control throughput
-
         shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
-        coverage_target = None
-        if self._coverage_targets and shard_idx < len(self._coverage_targets):
-            coverage_target = self._coverage_targets[shard_idx]
         shard_key = ("canonical", shard_fraction)
         shard_ids = self._shard_cache.get(shard_key)
         if shard_ids is None:
@@ -2191,7 +1943,6 @@ class Orchestrator:
                     shard_fraction=shard_fraction,
                     show_progress=self.show_progress,  # Show progress for all evaluations
                     is_final_shard=is_final_shard,
-                    coverage_target=coverage_target,
                     on_partial=_on_partial,
                 )
                 eval_duration = time.time() - eval_start
@@ -2520,21 +2271,12 @@ class Orchestrator:
 
         result: EvalResult = payload
         self._record_rung_coverage(shard_idx, result.coverage_fraction)
-        candidate_meta = candidate.meta if isinstance(candidate.meta, dict) else {}
-        confidence_met = bool(candidate_meta.get("_confidence_met"))
-        lower_bound = candidate_meta.get("_confidence_lower_bound", 0.0)
-        if not isinstance(lower_bound, (int, float)):
-            lower_bound = 0.0
         expected_ids = self._candidate_eval_examples.pop(candidate.fingerprint, [])
         shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
         is_final_shard = shard_idx == len(self._runtime_shards) - 1
         if expected_ids:
             seen_ids = set(result.example_ids or [])
             missing = [ex for ex in expected_ids if ex not in seen_ids]
-            if missing:
-                scheduled_replay = False
-                if is_final_shard:
-                    self._record_final_straggler_event(len(missing))
             if missing:
                 scheduled_replay = False
                 if (
@@ -2551,12 +2293,6 @@ class Orchestrator:
                         is_final_shard,
                     )
                     scheduled_replay = True
-                    if confidence_met and self.show_progress:
-                        self.logger.log(
-                            f"📐 Confidence gate met for {candidate.fingerprint[:12]} "
-                            f"(lower={lower_bound:.3f}); "
-                            f"replay scheduled for auditing only."
-                        )
                 if scheduled_replay:
                     missing = []
                 else:
@@ -2580,7 +2316,6 @@ class Orchestrator:
         score = self._score_result(candidate, result, shard_idx, shard_fraction, is_final_shard)
         self._update_eval_metrics(candidate, result)
         candidate_with_meta, decision = await self._ingest_result(candidate, result)
-        self._revise_coverage_target(shard_idx, result.coverage_fraction, confidence_met)
 
         shard_fraction = self._runtime_shards[min(shard_idx, len(self._runtime_shards) - 1)]
         quality = result.objectives.get(self.config.promote_objective, 0.0)

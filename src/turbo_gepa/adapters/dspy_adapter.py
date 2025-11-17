@@ -538,7 +538,6 @@ class DSpyAdapter:
             promote_objective=objective,
             cancel_stragglers_immediately=self.config.cancel_stragglers_immediately,
             replay_stragglers=self.config.replay_stragglers,
-            target_confidence=self.config.target_confidence,
             min_samples_for_confidence=self.config.min_samples_for_confidence,
             coverage_min_success_mid=self.config.coverage_min_success_mid,
             coverage_min_success_final=self.config.coverage_min_success_final,

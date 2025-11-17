@@ -483,11 +483,6 @@ class Config:
         def _blend(high: float, low: float) -> float:
             return high + (low - high) * fast
 
-        if self.target_confidence is None:
-            # High confidence at slow end, looser at fast end.
-            confidence = _blend(0.99, 0.80)
-            self.target_confidence = max(0.5, min(0.999, confidence))
-
         if self.min_samples_for_confidence is None:
             # Require many samples at slow end, very few at the fastest.
             samples = int(round(_blend(30, 3)))

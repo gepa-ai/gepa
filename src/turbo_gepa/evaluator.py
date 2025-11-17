@@ -44,7 +44,6 @@ class AsyncEvaluator:
         promote_objective: str = "quality",
         cancel_stragglers_immediately: bool = True,
         replay_stragglers: bool = True,
-        target_confidence: float = 0.95,
         min_samples_for_confidence: int = 20,
         coverage_min_success_mid: float = 0.5,
         coverage_min_success_final: float = 0.6,
@@ -69,12 +68,10 @@ class AsyncEvaluator:
         self._use_straggler_futures = not self.cancel_stragglers_immediately and self.replay_stragglers
         self._straggler_results: dict[tuple[str, str], asyncio.Future[EvalResult]] = {}
         self._tail_ratio: float = 1.0
-        self.target_confidence = max(0.5, min(0.999, float(target_confidence)))
         self.min_samples_for_confidence = max(1, int(min_samples_for_confidence))
         self.coverage_min_success_mid = max(0.0, min(1.0, float(coverage_min_success_mid)))
         self.coverage_min_success_final = max(0.0, min(1.0, float(coverage_min_success_final)))
         self.target_quality = target_quality
-        self._confidence_z = NormalDist().inv_cdf((1.0 + self.target_confidence) / 2.0)
 
     async def eval_on_shard(
         self,
@@ -188,24 +185,20 @@ class AsyncEvaluator:
             if total <= 0:
                 min_detach_samples = 0
                 return 0
-            # In strict verification mode (risk≈0), require full coverage on the final rung
-            # so we never detach stragglers early and skip examples.
+            # In strict verification mode (speed_bias≈0), require full coverage on
+            # the final rung so we never detach stragglers early and skip examples.
             if is_final_shard and self.coverage_min_success_final >= 0.999:
                 min_detach_samples = total
                 return min_detach_samples
-            if coverage_target is not None:
-                try:
-                    frac = float(coverage_target)
-                except (TypeError, ValueError):
-                    frac = None
-            else:
-                frac = None
-            if frac is None:
-                if is_final_shard:
-                    frac = min(0.95, max(0.8, 1.0 - 8.0 / max(total, 1)))
-                else:
-                    frac = min(0.8, max(0.3, 0.25 + 5.0 / max(total, 1)))
-            frac = max(0.5, min(0.99, frac))
+            # Single simple rule: use the configured minimum coverage for
+            # this rung. The verification_speed_bias dial shapes these
+            # thresholds via Config._apply_verification_profile().
+            frac = self.coverage_min_success_final if is_final_shard else self.coverage_min_success_mid
+            try:
+                frac = float(frac)
+            except (TypeError, ValueError):
+                frac = 0.0
+            frac = max(0.0, min(1.0, frac))
             min_detach_samples = int(math.ceil(frac * total))
             return min_detach_samples
 
@@ -286,9 +279,28 @@ class AsyncEvaluator:
                             self.logger.log(
                                 f"⚠️ Early stop: candidate {candidate.fingerprint[:12]} cannot beat parent target {parent_target:.1%}"
                             )
-                # CI-based early-stop for success/failure has been removed; we
-                # rely on the parent-target bound above plus shard-level
-                # straggler handling instead.
+                # Simple early-stop for success: once we've seen enough samples
+                # and the running mean clears the configured target_quality,
+                # there is no need to wait for remaining examples unless a
+                # stricter policy is desired.
+                if (
+                    not early_stop_flag
+                    and self.target_quality is not None
+                    and total > 0
+                    and completed >= max(1, self.min_samples_for_confidence)
+                ):
+                    running_mean = running_quality / max(completed, 1)
+                    if running_mean >= self.target_quality:
+                        early_stop_flag = True
+                        early_stop_reason = "target_quality"
+                        if self.metrics:
+                            self.metrics.record_early_stop("target_quality")
+                        if show_progress:
+                            self.logger.log(
+                                f"⚡ Early success: candidate {candidate.fingerprint[:12]} "
+                                f"cleared target_quality {self.target_quality:.1%} "
+                                f"(mean={running_mean:.1%} on {completed} examples)"
+                            )
                 # Partial publish
                 if on_partial is not None and total > 0:
                     now = time.time()
@@ -580,37 +592,6 @@ class AsyncEvaluator:
                             f"⚡ Detaching straggler #{straggler_count} (example {example_id}) at {completed}/{total} "
                             f"({completed / denom * 100:.0f}%), elapsed {elapsed_task:.1f}s > threshold {threshold:.1f}s + slack {detach_margin:.1f}s"
                         )
-                # Expedite final rung closure when tails dominate and coverage is high
-                if is_final_shard and total > 0 and len(pending) > 0:
-                    import statistics as _stats
-                    p50 = (
-                        _stats.quantiles(eval_durations, n=100)[49]
-                        if len(eval_durations) >= 5
-                        else mean_duration
-                    )
-                    base_target = coverage_target if coverage_target is not None else 0.9
-                    expedite_frac = max(
-                        (_required_detach_samples() / max(total, 1)),
-                        max(0.75, min(0.98, float(base_target))),
-                    )
-                    if (completed / max(total, 1)) >= expedite_frac and perc80 > max(2.0 * p50, 1.6 * mean_duration):
-                        for task, info in list(pending.items()):
-                            example_id = info["example_id"]
-                            if not deliver_flags.get(example_id, True):
-                                continue
-                            deliver_flags[example_id] = False
-                            if self.cancel_stragglers_immediately:
-                                task.cancel()
-                            else:
-                                _ensure_straggler_future(example_id)
-                            pending.pop(task, None)
-                            await asyncio.sleep(0)
-                            straggler_count += 1
-                            detached = True
-                            self.logger.log(
-                                f"⚡ Detaching tail straggler (final rung expedite) example {example_id}"
-                            )
-
                 if detached and straggler_count:
                     active_total = len(pending) + completed + straggler_count
                     self.logger.log(

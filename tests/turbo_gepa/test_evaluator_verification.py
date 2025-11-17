@@ -34,7 +34,6 @@ async def _run_eval(
         promote_objective="quality",
         cancel_stragglers_immediately=False,
         replay_stragglers=False,
-        target_confidence=0.85,
         min_samples_for_confidence=5,
         coverage_min_success_mid=0.2,
         coverage_min_success_final=0.2,

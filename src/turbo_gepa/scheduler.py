@@ -123,28 +123,6 @@ class BudgetedScheduler:
         # Fallback (shouldn't reach here)
         return 0.02
 
-    def _confidence_gate(
-        self,
-        score: float,
-        parent_score: float | None,
-        tolerance: float,
-        result: EvalResult,
-    ) -> tuple[bool, float]:
-        coverage = result.coverage_fraction or 0.0
-        if coverage >= 0.999:
-            return True, score
-        n = int(result.n_examples or 0)
-        if n < getattr(self.config, "min_samples_for_confidence", 20):
-            return False, score
-        target_conf = float(getattr(self.config, "target_confidence", 0.95))
-        target_conf = max(0.5, min(0.9999, target_conf))
-        z = NormalDist().inv_cdf((1.0 + target_conf) / 2.0)
-        p = max(1e-6, min(1 - 1e-6, score))
-        se = sqrt(max(p * (1 - p) / max(n, 1), 1e-12))
-        lower = p - z * se
-        threshold = (parent_score or 0.0) - tolerance
-        return lower >= threshold, lower
-
     def current_shard_index(self, candidate: Candidate) -> int:
         return self._candidate_levels.get(self._sched_key(candidate), 0)
 
@@ -343,22 +321,19 @@ class BudgetedScheduler:
         # Get rung-specific variance tolerance
         tolerance = self._get_tolerance_for_rung(rung_fraction)
 
-        # FINAL RUNG: always mark completed but annotate confidence state
+        # FINAL RUNG: always mark completed; scheduler does not gate on
+        # statistical confidence here. Any CI-style checks are handled
+        # upstream by the evaluator/coverage logic.
         if at_final_rung:
-            confidence_met, lower = self._confidence_gate(score, parent_score_at_rung, tolerance, result)
             meta = candidate.meta if isinstance(candidate.meta, dict) else None
             if meta is not None:
-                meta["_confidence_met"] = confidence_met
-                meta["_confidence_lower_bound"] = lower
                 meta["_coverage_fraction"] = float(result.coverage_fraction or 0.0)
                 meta["_samples_seen"] = int(result.n_examples or 0)
             logger.debug(
-                "   ✅ ASHA: Final rung coverage=%.1f%%, samples=%s, CI lower=%.1f%% (parent_thresh=%.1f%%, met=%s)",
+                "   ✅ ASHA: Final rung coverage=%.1f%%, samples=%s, score=%.1f%% (parent_thresh=%.1f%%)",
                 (result.coverage_fraction or 0.0) * 100,
                 result.n_examples,
-                lower * 100,
                 (parent_score_at_rung - tolerance) * 100,
-                confidence_met,
             )
             return "completed"
 
