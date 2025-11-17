@@ -21,6 +21,7 @@ def mock_state():
     base_valset_eval_output = (
         {0: "out1", 1: "out2", 2: "out3"},
         {0: 0.5, 1: 0.3, 2: 0.7},
+        None,  # objective_scores
     )
     state = GEPAState(seed_candidate, base_valset_eval_output, track_best_outputs=False)
 
