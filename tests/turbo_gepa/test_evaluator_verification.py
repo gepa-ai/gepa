@@ -35,8 +35,6 @@ async def _run_eval(
         cancel_stragglers_immediately=False,
         replay_stragglers=False,
         min_samples_for_confidence=5,
-        coverage_min_success_mid=0.2,
-        coverage_min_success_final=0.2,
         target_quality=target_quality,
     )
     example_ids = [f"ex{i}" for i in range(40)]

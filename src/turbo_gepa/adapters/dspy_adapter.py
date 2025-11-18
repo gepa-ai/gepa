@@ -539,9 +539,8 @@ class DSpyAdapter:
             cancel_stragglers_immediately=self.config.cancel_stragglers_immediately,
             replay_stragglers=self.config.replay_stragglers,
             min_samples_for_confidence=self.config.min_samples_for_confidence,
-            coverage_min_success_mid=self.config.coverage_min_success_mid,
-            coverage_min_success_final=self.config.coverage_min_success_final,
             target_quality=self.config.target_quality,
+            confidence_z=self.config.confidence_z,
         )
         return Orchestrator(
             config=self.config,

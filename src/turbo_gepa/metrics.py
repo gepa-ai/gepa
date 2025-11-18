@@ -69,7 +69,16 @@ class Metrics:
     # Early Stopping
     early_stops_parent_target: int = 0
     early_stops_stragglers: int = 0
+    early_stops_target_quality: int = 0
+    final_rung_early_stops_target_quality: int = 0
     candidates_early_stopped: int = 0
+
+    # Final-rung evaluation diagnostics
+    final_rung_launches: int = 0
+    final_rung_completions: int = 0
+    final_rung_inflight_peak: int = 0
+    final_rung_inflight_sum: int = 0
+    final_rung_inflight_samples: int = 0
 
     # Operator Success Tracking
     operator_delta_quality: dict[str, list[float]] = field(default_factory=lambda: defaultdict(list))
@@ -226,13 +235,32 @@ class Metrics:
         """Record the quality improvement from a mutation operator."""
         self.operator_delta_quality[operator].append(delta_quality)
 
-    def record_early_stop(self, reason: str) -> None:
+    def record_early_stop(self, reason: str, *, is_final_rung: bool = False) -> None:
         """Record an early stopping event."""
         if reason == "parent_target":
             self.early_stops_parent_target += 1
         elif reason == "stragglers":
             self.early_stops_stragglers += 1
+        elif reason == "target_quality":
+            self.early_stops_target_quality += 1
+            if is_final_rung:
+                self.final_rung_early_stops_target_quality += 1
         self.candidates_early_stopped += 1
+
+    def record_final_rung_launch(self) -> None:
+        """Record launch of a final-rung evaluation."""
+        self.final_rung_launches += 1
+
+    def record_final_rung_completion(self) -> None:
+        """Record completion of a final-rung evaluation."""
+        self.final_rung_completions += 1
+
+    def record_final_rung_inflight(self, current: int) -> None:
+        """Track inflight concurrency for final rung."""
+        if current > self.final_rung_inflight_peak:
+            self.final_rung_inflight_peak = current
+        self.final_rung_inflight_samples += 1
+        self.final_rung_inflight_sum += max(0, int(current))
 
     def update_concurrent_evals(self, current: int) -> None:
         """Update peak concurrent evaluations."""
@@ -300,6 +328,13 @@ class Metrics:
     def mutation_latency_mean(self) -> float:
         """Calculate mean mutation generation latency."""
         return self.mutation_latency_sum / self.mutation_batches if self.mutation_batches > 0 else 0.0
+
+    @property
+    def final_rung_inflight_mean(self) -> float:
+        """Average inflight final-rung concurrency."""
+        if self.final_rung_inflight_samples <= 0:
+            return 0.0
+        return self.final_rung_inflight_sum / self.final_rung_inflight_samples
 
     def operator_success_rate(self, operator: str) -> float:
         """Calculate success rate for a mutation operator (% with positive delta)."""
@@ -372,6 +407,12 @@ class Metrics:
             "time_mutation_total": self.time_mutation_total,
             "time_scheduler_total": self.time_scheduler_total,
             "time_archive_total": self.time_archive_total,
+            "final_rung_launches": self.final_rung_launches,
+            "final_rung_completions": self.final_rung_completions,
+            "final_rung_inflight_peak": self.final_rung_inflight_peak,
+            "final_rung_inflight_mean": self.final_rung_inflight_mean,
+            "early_stops_target_quality": self.early_stops_target_quality,
+            "final_rung_early_stops_target_quality": self.final_rung_early_stops_target_quality,
         }
 
     def format_summary(self) -> str:
@@ -398,6 +439,10 @@ class Metrics:
             f"  Throughput: {self.evals_per_second:.2f} evals/sec",
             f"  Peak concurrency: {self.concurrent_evals_peak}",
             f"  By shard: {dict(self.evaluations_by_shard)}",
+            "",
+            "🧩 Final-Rung Evaluation:",
+            f"  Launches: {self.final_rung_launches}, completions: {self.final_rung_completions}",
+            f"  Inflight peak: {self.final_rung_inflight_peak}, mean inflight: {self.final_rung_inflight_mean:.1f}",
             "",
             "📏 Shard Outcomes:",
         ]
@@ -469,6 +514,8 @@ class Metrics:
             "🚫 Early Stopping:",
             f"  Parent target: {self.early_stops_parent_target}",
             f"  Stragglers: {self.early_stops_stragglers}",
+            f"  Target quality (all rungs): {self.early_stops_target_quality}",
+            f"  Target quality (final rung): {self.final_rung_early_stops_target_quality}",
             f"  Total candidates early-stopped: {self.candidates_early_stopped}",
             "",
             "📦 Archive:",

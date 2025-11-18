@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from math import sqrt
-from statistics import NormalDist
 from typing import Sequence
 
 from .cache import candidate_key

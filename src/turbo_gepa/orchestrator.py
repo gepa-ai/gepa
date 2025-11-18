@@ -20,6 +20,7 @@ import uuid
 from collections import defaultdict, deque, OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import NormalDist
 from typing import Any, Callable, Iterable, Sequence
 
 from turbo_gepa.logging import build_progress_snapshot
@@ -750,7 +751,10 @@ class Orchestrator:
                 boost = max(0.0, min(1.0, recent_avg))
                 priority *= (1 + self._recent_delta_weight * boost)
 
-        # Bias toward the target rung until time_to_target is reached
+        # Bias toward higher rungs (closer to target shard) until
+        # time_to_target is reached. This ensures that candidates on
+        # later rungs are preferred over early scouts once a promising
+        # lineage emerges.
         try:
             target = float(self.config.target_shard_fraction or 1.0)
         except Exception:
@@ -761,8 +765,11 @@ class Orchestrator:
             except ValueError:
                 tgt_idx = min(range(len(self._runtime_shards)), key=lambda i: abs(self._runtime_shards[i] - target))
             dist = max(0, tgt_idx - rung_idx)
-            if dist > 0:
-                priority *= (1.0 + 0.15 * dist)
+            # Closer to target (smaller dist) → larger boost.
+            max_dist = max(1, len(self._runtime_shards) - 1)
+            # Map dist in [0, max_dist] to a multiplier in [1 + 0.3, 1.0]
+            closeness = max(0.0, float(max_dist - dist)) / float(max_dist)
+            priority *= (1.0 + 0.3 * closeness)
 
         return priority
 
@@ -1269,6 +1276,12 @@ class Orchestrator:
                     self._persist_evolution_live()  # throttled internally (~2s)
                 except Exception:
                     pass
+                # Periodically flush metrics snapshot so aborted runs still
+                # leave useful metrics on disk.
+                try:
+                    self._flush_metrics_snapshot()
+                except Exception:
+                    pass
                 # Attempt to move buffered mutations into the live queue now that space freed up
                 self._maybe_refill_queue()
 
@@ -1429,9 +1442,21 @@ class Orchestrator:
                     self._set_stop_reason(f"auto_stop:{debug_info['reason']}")
                     break
 
-            # 6) Target quality guard
-            if await self._stream_check_target(window_id):
+            # 6) Target quality guard - single source of truth:
+            # stop once _maybe_record_target_hit has recorded time_to_target.
+            if (
+                self.config.target_quality is not None
+                and self.metrics.time_to_target_seconds is not None
+            ):
                 self._set_stop_reason("target_quality")
+                # Cancel all in-flight evaluations so we can exit quickly
+                if self._inflight_tasks:
+                    _debug_log(
+                        f"   Cancelling {len(self._inflight_tasks)} in-flight evaluations "
+                        "(target_quality reached)..."
+                    )
+                    for task in self._inflight_tasks.values():
+                        task.cancel()
                 break
 
             self._adjust_runtime_parameters()
@@ -1928,6 +1953,16 @@ class Orchestrator:
                     try:
                         ck = candidate_key(cand)
                         self._remember_latest_result(ck, partial_res)
+                        # For final-rung evaluations, treat partial results as candidates
+                        # for hitting the target so time_to_target and best prompt are
+                        # recorded consistently via the same mechanism as full results.
+                        if is_final_shard:
+                            try:
+                                partial_quality = partial_res.objectives.get(self.config.promote_objective, 0.0)
+                                self._record_best_quality(partial_quality, partial_res.shard_fraction)
+                            except Exception:
+                                # Metrics updates are best-effort; never break evaluation.
+                                pass
                         # Persist a throttled live snapshot so the UI shows mid-shard quality
                         try:
                             self._persist_evolution_live()
@@ -1948,6 +1983,8 @@ class Orchestrator:
                 eval_duration = time.time() - eval_start
                 self.metrics.record_evaluation(shard_fraction, eval_duration)
                 self.metrics.time_eval_total += eval_duration
+                if is_final_shard:
+                    self.metrics.record_final_rung_completion()
                 if self.show_progress:
                     quality = result.objectives.get(self.config.promote_objective, 0.0)
                     generation = self._get_generation(candidate)
@@ -1984,6 +2021,8 @@ class Orchestrator:
         self._inflight_by_rung[shard_idx] += 1
         if shard_idx == self._final_rung_index:
             current = self._inflight_by_rung[shard_idx]
+            self.metrics.record_final_rung_launch()
+            self.metrics.record_final_rung_inflight(current)
             if current > self._final_inflight_peak:
                 self._final_inflight_peak = current
             if self.show_progress:
@@ -2084,12 +2123,6 @@ class Orchestrator:
 
         prev_idx = self._clamp_rung_index(self.scheduler.current_shard_index(candidate_with_meta))
         decision = self.scheduler.record(candidate_with_meta, result, self.config.promote_objective)
-        confidence_met = bool(
-            candidate_with_meta.meta.get("_confidence_met")
-            if isinstance(candidate_with_meta.meta, dict)
-            else False
-        )
-
         if prev_idx >= 0:
             self.metrics.record_promotion_attempt(prev_idx)
 
@@ -2326,41 +2359,6 @@ class Orchestrator:
         if decision in ("promoted", "completed"):
             if self._mutation_task is None or self._mutation_task.done():
                 self._mutation_task = asyncio.create_task(self._streaming_mutation_worker())
-
-    async def _stream_check_target(self, window_id: int) -> bool:
-        # Fast path: if time_to_target is already recorded, stop immediately.
-        if self.config.target_quality is None:
-            return False
-        if self.metrics.time_to_target_seconds is not None:
-            if self.show_progress:
-                self.logger.log(
-                    f"🎯 Target quality {self.config.target_quality:.2%} reached (time_to_target={self.metrics.time_to_target_seconds:.1f}s)."
-                )
-            return True
-
-        pareto = self.archive.pareto_entries()
-        if not pareto:
-            return False
-
-        full_shard = self._runtime_shards[-1]
-        tolerance = 1e-6
-        full_entries = [
-            entry
-            for entry in pareto
-            if entry.result.shard_fraction is not None
-            and abs(entry.result.shard_fraction - full_shard) <= tolerance
-        ]
-        if not full_entries:
-            return False
-
-        best_quality = max(entry.result.objectives.get(self.config.promote_objective, 0.0) for entry in full_entries)
-        if best_quality < self.config.target_quality:
-            return False
-
-        if self.show_progress:
-            self.logger.log(f"🎯 Target quality {self.config.target_quality:.2%} reached! Achieved: {best_quality:.2%}")
-            self.logger.log(f"   (Verified on full dataset: {full_shard:.0%} of examples)")
-        return True
 
     # === Streaming Launch Helpers ===
 
@@ -3604,6 +3602,28 @@ class Orchestrator:
             self._track_waiting(rung_idx, 1)
             self._pending_fingerprints.add(fingerprint)
             self.queue.append(candidate)
+
+    def _flush_metrics_snapshot(self) -> None:
+        """
+        Best-effort metrics snapshot for partially completed runs.
+
+        Writes metrics_<run_id>_latest.txt into .turbo_gepa/metrics so that
+        interrupted runs still leave useful instrumentation on disk.
+        """
+        try:
+            import os
+
+            metrics_dir = ".turbo_gepa/metrics"
+            os.makedirs(metrics_dir, exist_ok=True)
+            summary = self.metrics.format_summary()
+            path = os.path.join(metrics_dir, f"metrics_{self._run_id}_latest.txt")
+            with open(path, "w") as f:
+                f.write(f"Run ID: {self._run_id}\n")
+                f.write(summary)
+        except Exception:
+            # Snapshot is non-critical; ignore all errors.
+            return
+
     def _detect_fd_guard(self) -> int | None:
         try:
             import resource

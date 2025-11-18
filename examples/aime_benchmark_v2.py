@@ -282,6 +282,114 @@ def run_turbo(
     )
 
 
+async def _eval_prompt_on_val_async(
+    prompt: str,
+    valset: List[dict],
+    *,
+    task_lm: str,
+    reflection_lm: str,
+    eval_concurrency: int,
+) -> Tuple[float, float, int]:
+    """
+    Directly evaluate a single prompt on the full validation set.
+
+    This bypasses TurboGEPA's orchestration/straggler logic and simply runs
+    the task LLM once per validation example with bounded concurrency, then
+    returns the mean quality and tokens.
+    """
+
+    from turbo_gepa.interfaces import Candidate
+
+    dataset = [
+        DefaultDataInst(
+            input=example["input"],
+            answer=example["answer"],
+            additional_context=example.get("additional_context"),
+            id=f"val_{idx}",
+        )
+        for idx, example in enumerate(valset)
+    ]
+
+    config = adaptive_config(len(dataset))
+    config.n_islands = 1
+    config.eval_concurrency = max(1, min(eval_concurrency, len(dataset)))
+    config.batch_size = len(dataset)
+    # Disable any target-based early stop; we want full coverage.
+    config.target_quality = None
+
+    adapter = DefaultAdapter(
+        dataset=dataset,
+        task_lm=task_lm,
+        reflection_lm=reflection_lm,
+        config=config,
+        auto_config=False,
+        scoring_fn=_quality_reward,
+    )
+
+    sem = asyncio.Semaphore(config.eval_concurrency)
+    candidate = Candidate(text=prompt, meta={"source": "final_val"})
+    qualities: List[float] = []
+    tokens: List[float] = []
+
+    async def eval_one(example_id: str) -> None:
+        async with sem:
+            metrics = await adapter._task_runner(candidate, example_id)  # type: ignore[attr-defined]
+            q = metrics.get("quality")
+            if isinstance(q, (int, float)):
+                qualities.append(float(q))
+            t = metrics.get("tokens")
+            if isinstance(t, (int, float)):
+                tokens.append(float(t))
+
+    try:
+        await asyncio.gather(*(eval_one(inst.id) for inst in dataset))
+    finally:
+        await adapter.aclose()
+
+    if not qualities:
+        return 0.0, 0.0, 0
+
+    mean_quality = sum(qualities) / len(qualities)
+    mean_tokens = sum(tokens) / len(tokens) if tokens else 0.0
+    return mean_quality, mean_tokens, len(qualities)
+
+
+def run_turbo_validation(
+    valset: List[dict],
+    *,
+    task_lm: str,
+    reflection_lm: str,
+    best_prompt: str,
+    eval_concurrency: int,
+) -> Tuple[float, float, int]:
+    """
+    Public helper: evaluate a TurboGEPA-derived best prompt on the full
+    validation set and return (mean_quality, mean_tokens, n_examples).
+
+    This is intentionally separate from the main TurboGEPA run so callers
+    can choose when to pay the extra validation cost.
+    """
+
+    print("\n=== TurboGEPA validation on full AIME val set ===")
+    print(f"Best prompt (snippet): {_summarize_prompt(best_prompt)}")
+
+    mean_quality, mean_tokens, count = asyncio.run(
+        _eval_prompt_on_val_async(
+            best_prompt,
+            valset,
+            task_lm=task_lm,
+            reflection_lm=reflection_lm,
+            eval_concurrency=eval_concurrency,
+        )
+    )
+
+    print(
+        f"TurboGEPA validation: quality={mean_quality:.3f} "
+        f"(tokens={mean_tokens:.1f}, examples={count})"
+    )
+    return mean_quality, mean_tokens, count
+
+
 # --------------------------------------------------------------------------------------
 # Reporting
 # --------------------------------------------------------------------------------------

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import math
-from statistics import NormalDist
 from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence, Any
 
 from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
@@ -45,9 +44,8 @@ class AsyncEvaluator:
         cancel_stragglers_immediately: bool = True,
         replay_stragglers: bool = True,
         min_samples_for_confidence: int = 20,
-        coverage_min_success_mid: float = 0.5,
-        coverage_min_success_final: float = 0.6,
         target_quality: float | None = None,
+        confidence_z: float | None = None,
     ) -> None:
         self.cache = cache
         self.task_runner = task_runner
@@ -69,9 +67,11 @@ class AsyncEvaluator:
         self._straggler_results: dict[tuple[str, str], asyncio.Future[EvalResult]] = {}
         self._tail_ratio: float = 1.0
         self.min_samples_for_confidence = max(1, int(min_samples_for_confidence))
-        self.coverage_min_success_mid = max(0.0, min(1.0, float(coverage_min_success_mid)))
-        self.coverage_min_success_final = max(0.0, min(1.0, float(coverage_min_success_final)))
         self.target_quality = target_quality
+        # Confidence margin (in standard errors) used for lower-bound checks on
+        # final-rung early success. When zero or None we fall back to using the
+        # plain running mean as before.
+        self.confidence_z: float = float(confidence_z) if confidence_z is not None else 0.0
 
     async def eval_on_shard(
         self,
@@ -163,6 +163,7 @@ class AsyncEvaluator:
         eval_durations: list[float] = []  # Track how long each eval took (excluding cached)
         quality_lock = asyncio.Lock()
         running_quality = 0.0
+        running_sq = 0.0  # Sum of squared qualities (approximate, batch-weighted)
         early_stop_flag = False
         early_stop_reason: str | None = None
         straggler_detached_total = 0
@@ -185,21 +186,11 @@ class AsyncEvaluator:
             if total <= 0:
                 min_detach_samples = 0
                 return 0
-            # In strict verification mode (speed_bias≈0), require full coverage on
-            # the final rung so we never detach stragglers early and skip examples.
-            if is_final_shard and self.coverage_min_success_final >= 0.999:
-                min_detach_samples = total
-                return min_detach_samples
-            # Single simple rule: use the configured minimum coverage for
-            # this rung. The verification_speed_bias dial shapes these
-            # thresholds via Config._apply_verification_profile().
-            frac = self.coverage_min_success_final if is_final_shard else self.coverage_min_success_mid
-            try:
-                frac = float(frac)
-            except (TypeError, ValueError):
-                frac = 0.0
-            frac = max(0.0, min(1.0, frac))
-            min_detach_samples = int(math.ceil(frac * total))
+            # With coverage floors removed in fast profiles, we allow the
+            # straggler detector to operate purely on latency statistics.
+            # As soon as at least one example has completed, slow tasks can
+            # be detached when they exceed the dynamic threshold.
+            min_detach_samples = 0
             return min_detach_samples
 
         # CI-based early-stop is intentionally disabled for now. Between the
@@ -243,7 +234,7 @@ class AsyncEvaluator:
         async def _register_result(result: EvalResult, quality_override: float | None = None) -> None:
             # Update outer-scope accumulators for partial publishing and gating.
             # We mutate these counters here, so declare them nonlocal.
-            nonlocal completed, running_quality, early_stop_flag, partial_n, last_partial_publish, early_stop_reason
+            nonlocal completed, running_quality, running_sq, early_stop_flag, partial_n, last_partial_publish, early_stop_reason
             async with quality_lock:
                 results.append(result)
                 completed += result.n_examples
@@ -260,7 +251,10 @@ class AsyncEvaluator:
                     if isinstance(obj_quality, (int, float)):
                         q_val = float(obj_quality)
                 if isinstance(q_val, (int, float)):
-                    running_quality += float(q_val) * max(1, result.n_examples)
+                    q_val_f = float(q_val)
+                    n = max(1, result.n_examples)
+                    running_quality += q_val_f * n
+                    running_sq += (q_val_f * q_val_f) * n
                 if (
                     not early_stop_flag
                     and parent_target is not None
@@ -274,15 +268,16 @@ class AsyncEvaluator:
                         early_stop_flag = True
                         # Track early stopping event
                         if self.metrics:
-                            self.metrics.record_early_stop("parent_target")
+                            self.metrics.record_early_stop("parent_target", is_final_rung=is_final_shard)
                         if show_progress:
                             self.logger.log(
                                 f"⚠️ Early stop: candidate {candidate.fingerprint[:12]} cannot beat parent target {parent_target:.1%}"
                             )
                 # Simple early-stop for success: once we've seen enough samples
-                # and the running mean clears the configured target_quality,
-                # there is no need to wait for remaining examples unless a
-                # stricter policy is desired.
+                # and the running mean (or its confidence lower bound on the
+                # final rung) clears the configured target_quality, there is no
+                # need to wait for remaining examples unless a stricter policy
+                # is desired.
                 if (
                     not early_stop_flag
                     and self.target_quality is not None
@@ -290,11 +285,28 @@ class AsyncEvaluator:
                     and completed >= max(1, self.min_samples_for_confidence)
                 ):
                     running_mean = running_quality / max(completed, 1)
-                    if running_mean >= self.target_quality:
+                    # Default lower bound is the mean itself; for the final rung
+                    # we optionally subtract a configurable number of standard
+                    # errors derived from verification_speed_bias.
+                    lb = running_mean
+                    if is_final_shard and self.confidence_z > 0.0 and completed >= 2:
+                        try:
+                            import math
+
+                            mean_sq = running_sq / max(completed, 1)
+                            variance = max(0.0, mean_sq - running_mean * running_mean)
+                            if variance > 0.0:
+                                se = math.sqrt(variance / max(completed, 1))
+                                lb = running_mean - self.confidence_z * se
+                        except Exception:
+                            # If anything goes wrong computing the bound, fall
+                            # back to the plain mean-based check.
+                            lb = running_mean
+                    if lb >= self.target_quality:
                         early_stop_flag = True
                         early_stop_reason = "target_quality"
                         if self.metrics:
-                            self.metrics.record_early_stop("target_quality")
+                            self.metrics.record_early_stop("target_quality", is_final_rung=is_final_shard)
                         if show_progress:
                             self.logger.log(
                                 f"⚡ Early success: candidate {candidate.fingerprint[:12]} "
@@ -600,7 +612,7 @@ class AsyncEvaluator:
                     )
                     straggler_detached_total += straggler_count
                     if self.metrics:
-                        self.metrics.record_early_stop("stragglers")
+                        self.metrics.record_early_stop("stragglers", is_final_rung=is_final_shard)
 
             if not pending:
                 break
