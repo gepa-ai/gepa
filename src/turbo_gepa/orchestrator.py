@@ -1944,9 +1944,11 @@ class Orchestrator:
                 if self.show_progress:
                     generation = self._get_generation(candidate)
                     source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
+                    # Detailed per-candidate launch is useful for debugging but noisy at scale.
                     self.logger.log(
                         f"🔬 Evaluating {source} on shard {shard_idx} ({shard_fraction:.0%} = {len(shard_ids)} examples) "
-                        f"[fp={candidate.fingerprint[:12]}... concurrency={per_cand_concurrency}]"
+                        f"[fp={candidate.fingerprint[:12]}... concurrency={per_cand_concurrency}]",
+                        LogLevel.DEBUG,
                     )
                 is_final_shard = shard_idx == len(self._runtime_shards) - 1
                 async def _on_partial(cand: Candidate, partial_res: EvalResult) -> None:
@@ -1989,9 +1991,11 @@ class Orchestrator:
                     quality = result.objectives.get(self.config.promote_objective, 0.0)
                     generation = self._get_generation(candidate)
                     source = "seed" if generation == 0 else f"gen-{generation if generation is not None else '?'}"
+                    # Keep completion detail at the same log level as launch for consistency.
                     self.logger.log(
                         f"✅ Completed {source} on shard {shard_idx} ({shard_fraction:.0%}): "
-                        f"{quality:.1%} quality [fp={candidate.fingerprint[:12]}...]"
+                        f"{quality:.1%} quality [fp={candidate.fingerprint[:12]}...]",
+                        LogLevel.DEBUG,
                     )
                 await self._result_queue.put((candidate, result, shard_idx))
             except Exception as exc:  # pragma: no cover - defensive logging path
@@ -2027,6 +2031,7 @@ class Orchestrator:
                 self._final_inflight_peak = current
             if self.show_progress:
                 limit = self.config.max_final_shard_inflight or "∞"
+                # Final-rung inflight counts are valuable but can be frequent; keep them lightweight.
                 self.logger.log(
                     f"🚀 Final rung launch: inflight={current}/{limit} [fp={candidate.fingerprint[:12]}...]",
                     LogLevel.WARNING,

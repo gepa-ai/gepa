@@ -280,7 +280,7 @@ class Config:
     max_optimization_time_seconds: float | None = None  # Global timeout - stop optimization after this many seconds
     reflection_strategy_names: tuple[str, ...] | None = None  # Default to all known strategies
     reflection_strategies: tuple[ReflectionStrategy, ...] | None = None
-    max_final_shard_inflight: int | None = 2  # Limit concurrent full-shard evaluations (None = unlimited)
+    max_final_shard_inflight: int | None = None  # If None, derive cap from eval_concurrency
     straggler_grace_seconds: float = 5.0  # Wait this long for detached stragglers before replaying
     final_rung_min_inflight: int = 2  # Do not shrink final rung concurrency below this floor
     final_rung_cap_max_fraction: float | None = None  # Max share of eval_concurrency allocated to final rung
@@ -378,11 +378,16 @@ class Config:
         if self.max_final_shard_inflight is not None:
             self.max_final_shard_inflight = max(self.final_rung_min_inflight, int(self.max_final_shard_inflight))
         else:
-            # Auto-set default cap from eval_concurrency and max fraction
-            self.max_final_shard_inflight = max(
-                self.final_rung_min_inflight,
-                int(max(1, self.eval_concurrency) * self.final_rung_cap_max_fraction),
-            )
+            # Auto-set default cap from eval_concurrency:
+            # - Aim for ~half of eval_concurrency allocated to final-rung candidates
+            # - Respect the max fraction guardrail and the minimum inflight floor
+            eval_cap = max(1, int(self.eval_concurrency))
+            half_cap = max(1, eval_cap // 2)
+            frac_cap = int(eval_cap * self.final_rung_cap_max_fraction)
+            if frac_cap <= 0:
+                frac_cap = 1
+            base_cap = min(half_cap, frac_cap)
+            self.max_final_shard_inflight = max(self.final_rung_min_inflight, base_cap)
 
         if self.replay_workers is None:
             # Default: dedicate ~10% of evaluator concurrency, at least 1

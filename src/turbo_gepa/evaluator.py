@@ -12,7 +12,7 @@ import asyncio
 import math
 from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence, Any
 
-from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger
+from turbo_gepa.logging.logger import LoggerProtocol, StdOutLogger, LogLevel
 
 from .cache import DiskCache
 from .interfaces import Candidate, EvalResult
@@ -356,8 +356,16 @@ class AsyncEvaluator:
                     if isinstance(q, (int, float)):
                         quality_val = float(q)
                 await _deliver_result(cached, quality_val, example_id)
-                if show_progress:
-                    self.logger.log(f"Progress: {completed}/{total} examples ({completed / max(total, 1) * 100:.0f}%)")
+                if show_progress and total > 0:
+                    # Debug-level per-example progress; round-level stats are handled elsewhere.
+                    try:
+                        pct = completed / max(total, 1) * 100
+                    except Exception:
+                        pct = 0.0
+                    self.logger.log(
+                        f"Progress: {completed}/{total} examples ({pct:.0f}%)",
+                        LogLevel.DEBUG,
+                    )
                 return
 
             # Track cache miss
@@ -365,8 +373,11 @@ class AsyncEvaluator:
                 self.metrics.record_cache_lookup(hit=False)
 
             try:
-                # ALWAYS log when we're about to start an API call for straggler debugging
-                self.logger.log(f"🔄 Starting eval for example {example_id} at t={time.time() - batch_start_time:.1f}s (inflight: {self._inflight_examples})")
+                # Per-example launch logging kept at a low level to avoid spam.
+                self.logger.log(
+                    f"🔄 Starting eval for example {example_id} at t={time.time() - batch_start_time:.1f}s (inflight: {self._inflight_examples})",
+                    LogLevel.DEBUG,
+                )
 
                 async with semaphore:
                     self._inflight_examples += 1
@@ -381,8 +392,11 @@ class AsyncEvaluator:
                         metrics = await task
                     _elapsed_api = time.time() - _start_api
 
-                    # ALWAYS log completion time for straggler debugging
-                    self.logger.log(f"✅ Completed eval for example {example_id} in {_elapsed_api:.1f}s at t={time.time() - batch_start_time:.1f}s")
+                    # Completion timing is useful for debugging but too verbose for high-level progress.
+                    self.logger.log(
+                        f"✅ Completed eval for example {example_id} in {_elapsed_api:.1f}s at t={time.time() - batch_start_time:.1f}s",
+                        LogLevel.DEBUG,
+                    )
 
                 # Ensure inflight counter is decremented even if mapper raises
                 self._inflight_examples = max(0, self._inflight_examples - 1)
