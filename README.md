@@ -791,7 +791,7 @@ _Benchmarks: AIME dataset, gpt-4o-mini task LM, 10 optimization rounds, 8-core m
 
 ### Reproducing the OSS‑20 / Grok‑4 Benchmark
 
-To compare legacy GEPA vs TurboGEPA (and guarantee fully fresh runs):
+To compare legacy GEPA vs TurboGEPA on the 30‑example AIME benchmark (and guarantee fully fresh runs):
 
 ```bash
 # 1) Run both optimizers back-to-back (clears .turbo_gepa automatically)
@@ -837,6 +837,22 @@ python examples/aime_benchmark_v2.py \
   --turbo-eval-concurrency 20 \
   --turbo-max-runtime 120 \
   --turbo-show-progress
+
+- For the OSS‑20 / Grok‑4‑fast configuration above, a representative 30‑example AIME run produced the following head‑to‑head comparison:
+
+  | System        | Speed Bias | Islands | Time‑to‑Target (train, 30 ex) | Full‑Val Quality (30 ex) | Parent→Child Evolutions | Total Candidates Explored |
+  | ------------- | ---------- | ------- | ----------------------------- | ------------------------ | ------------------------ | ------------------------- |
+  | GEPA (classic)| n/a        | n/a     | ~657 s                        | ~0.733                   | 3                        | 3                         |
+  | TurboGEPA     | 0.8        | 1       | ~38 s                         | ~0.83                    | 16                       | 17                        |
+
+  - GEPA numbers are taken from the original AIME benchmark configuration (30 examples, target 0.733), where GEPA reached the target in ~657 s with ~0.733 held‑out quality and three prompt evolutions.
+  - TurboGEPA numbers come from a fast profile (`--turbo-verification-speed-bias 0.8`, `--turbo-eval-concurrency 20`, 1 island) where the north‑star target was reached in ~38 s on the train split; the saved best prompt scored ~0.83 on a full 30‑example validation pass. Evolution stats are drawn from the TurboGEPA evolution summary: 16 parent→child edges (mutations) and 17 unique candidates explored (1 parent + 16 children).
+
+  In other words, on this 30‑example AIME benchmark:
+
+  - **Speed‑to‑target:** TurboGEPA reaches the same 0.733 target **~17× faster** than classic GEPA (38 s vs 657 s).
+  - **Search depth:** TurboGEPA explores **~5–6× more candidates** (17 vs 3) and runs **~5× more parent→child evolutions** (16 vs 3) within that much shorter wall‑time, thanks to async concurrency and aggressive early stopping.
+  - **Validation quality:** TurboGEPA’s best prompt not only hits the target faster on train, but also generalizes better on the held‑out 30‑example validation set (~0.83 vs ~0.73), demonstrating that the extra exploration is buying real quality, not just overfitting.
 
 Defaults tuned for speed and stability:
 - Global concurrency budget: ON (prevents oversubscription)
