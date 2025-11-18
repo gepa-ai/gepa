@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <strong>Up to 17× faster than classic GEPA on AIME (30-example OSS‑20/Grok‑4 benchmark), exploring ~6× more candidates in the same wall time.</strong>
+</p>
+
+<p align="center">
   <strong>Goal:</strong> Take GEPA's core reflective optimization approach and, trading token efficiency for speed, reach optimal prompts and temperature settings as rapidly as possible.
 </p>
 
