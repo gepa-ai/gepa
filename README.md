@@ -294,6 +294,7 @@ We encourage the community and users to help us develop adapters to allow GEPA t
   - [Contributed Adapters](src/gepa/adapters/) – see our adapter templates and issue tracker to request new integrations.
     - [DefaultAdapter](src/gepa/adapters/default_adapter/) - System Prompt Optimization for a single-turn task.
     - [DSPy Full Program Adapter](src/gepa/adapters/dspy_full_program_adapter/) - Evolves entire DSPy programs including signatures, modules, and control flow. Achieves **93% accuracy** on MATH benchmark (vs 67% with basic DSPy ChainOfThought).
+    - [Opik Optimizer Adapter](src/gepa/adapters/opik_adapter/) - Reuses Comet's `OpikGEPAAdapter` so GEPA can optimize prompts with the Opik evaluation/experiment tooling without double evaluations.
     - [Generic RAG Adapter](src/gepa/adapters/generic_rag_adapter/) - Vector store-agnostic RAG optimization supporting ChromaDB, Weaviate, Qdrant, Pinecone, and more. Optimizes query reformulation, context synthesis, answer generation, and document reranking prompts.
     - [TerminalBench Adapter](src/gepa/adapters/terminal_bench_adapter/) - Easily integrating GEPA into a Terminus, a sophisticated external agentic pipeline, and optimizing the agents' system prompt.
     - [AnyMaths Adapter](src/gepa/adapters/anymaths_adapter/) - Adapter for optimizing mathematical problem-solving and reasoning tasks. Contributed by [@egmaminta](www.linkedin.com/in/egmaminta).
