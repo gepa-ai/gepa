@@ -26,6 +26,8 @@ full = [
     "mlflow>=3.0.0",
     "wandb",
     "tqdm>=4.66.1"
+    # Pull Opik Optimizer from the branch that includes the native adapter
+    "opik_optimizer @ git+https://github.com/comet-ml/opik.git@vk/gepa-native-adapter#subdirectory=sdks/opik_optimizer"
 ]
 dspy = []
 test = [
