@@ -44,9 +44,7 @@ def _extract_system_text(candidate: dict[str, str], fallback: str) -> str:
     return fallback
 
 
-def _apply_system_text(
-    prompt_obj: chat_prompt.ChatPrompt, system_text: str
-) -> chat_prompt.ChatPrompt:
+def _apply_system_text(prompt_obj: chat_prompt.ChatPrompt, system_text: str) -> chat_prompt.ChatPrompt:
     updated = prompt_obj.copy()
     if updated.messages is not None:
         messages = updated.get_messages()
@@ -60,9 +58,7 @@ def _apply_system_text(
     return updated
 
 
-InstantiateAgentFn = Callable[
-    [chat_prompt.ChatPrompt, str | None], OptimizableAgent
-]
+InstantiateAgentFn = Callable[[chat_prompt.ChatPrompt, str | None], OptimizableAgent]
 PrepareExperimentFn = Callable[
     [
         chat_prompt.ChatPrompt,
@@ -151,9 +147,7 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         def _local_evaluation() -> EvaluationBatch[dict[str, Any], dict[str, Any]]:
             outputs: list[dict[str, Any]] = []
             scores: list[float] = []
-            trajectories: list[dict[str, Any]] | None = (
-                [] if capture_traces else None
-            )
+            trajectories: list[dict[str, Any]] | None = [] if capture_traces else None
 
             agent = _create_agent()
             for inst in batch:
@@ -205,45 +199,30 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
                 verbose=0,
             )
         except Exception:
-            logger.exception(
-                "GEPA OpikAdapter evaluation failed; falling back to local evaluation"
-            )
+            logger.exception("GEPA OpikAdapter evaluation failed; falling back to local evaluation")
             return _local_evaluation()
 
         if eval_result is None:
             logger.debug("Opik evaluator returned no results; using local evaluation")
             return _local_evaluation()
 
-        results_by_id = {
-            test_result.test_case.dataset_item_id: test_result
-            for test_result in eval_result.test_results
-        }
+        results_by_id = {test_result.test_case.dataset_item_id: test_result for test_result in eval_result.test_results}
 
         outputs: list[dict[str, Any]] = []
         scores: list[float] = []
-        trajectories: list[dict[str, Any]] | None = (
-            [] if capture_traces else None
-        )
+        trajectories: list[dict[str, Any]] | None = [] if capture_traces else None
 
         for inst in batch:
             dataset_item = inst.opik_item
             dataset_item_id = dataset_item.get("id")
-            test_result = (
-                results_by_id.get(dataset_item_id) if dataset_item_id is not None else None
-            )
+            test_result = results_by_id.get(dataset_item_id) if dataset_item_id is not None else None
 
             output_text = ""
             score_value = 0.0
             if test_result is not None:
-                output_text = str(
-                    test_result.test_case.task_output.get("llm_output", "")
-                ).strip()
+                output_text = str(test_result.test_case.task_output.get("llm_output", "")).strip()
                 score_result = next(
-                    (
-                        sr
-                        for sr in test_result.score_results
-                        if sr.name == self._metric_name
-                    ),
+                    (sr for sr in test_result.score_results if sr.name == self._metric_name),
                     None,
                 )
                 if score_result is not None and score_result.value is not None:
@@ -278,15 +257,10 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
                 dataset_item = traj.get("input", {})
                 output_text = traj.get("output", "")
                 score = traj.get("score", 0.0)
-                feedback = (
-                    f"Observed score={score:.4f}. Expected answer: "
-                    f"{dataset_item.get('answer', '')}"
-                )
+                feedback = f"Observed score={score:.4f}. Expected answer: {dataset_item.get('answer', '')}"
                 yield {
                     "Inputs": {
-                        "text": dataset_item.get("input")
-                        or dataset_item.get("question")
-                        or "",
+                        "text": dataset_item.get("input") or dataset_item.get("question") or "",
                     },
                     "Generated Outputs": output_text,
                     "Feedback": feedback,
@@ -294,9 +268,7 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
 
         reflective_records = list(_records())
         if not reflective_records:
-            logger.debug(
-                "No trajectories captured for candidate; returning empty reflective dataset"
-            )
+            logger.debug("No trajectories captured for candidate; returning empty reflective dataset")
             reflective_records = []
 
         return {component: reflective_records for component in components}
