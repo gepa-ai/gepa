@@ -62,7 +62,7 @@ def test_pareto_frontier_type(mocked_lms, recorder_dir, frontier_type):
         adapter=adapter,
         reflection_lm=reflection_lm,
         frontier_type=frontier_type,
-        max_metric_calls=8,
+        max_metric_calls=32,
         reflection_minibatch_size=3,
         display_progress_bar=False,
     )
