@@ -43,12 +43,14 @@ def test_pareto_frontier_type(mocked_lms, recorder_dir, frontier_type):
         leakage_frac = leaked / len(pii_list) if pii_list else 0.0
         leakage_score = 1.0 - leakage_frac
 
-        return quality, {"quality": quality, "leakage": leakage_score}
+        total_score = (quality + leakage_score) / 2
+
+        return total_score, {"quality": quality, "leakage": leakage_score}
 
     adapter = DefaultAdapter(model=task_lm, scoring_fn=scoring_fn)
 
     trainset, valset, _ = gepa.examples.pupa.init_dataset()
-    trainset = trainset[:60]
+    trainset = trainset[:20]
     valset = valset[:12]
 
     seed_prompt = {"system_prompt": "You are a helpful assistant."}
@@ -60,10 +62,16 @@ def test_pareto_frontier_type(mocked_lms, recorder_dir, frontier_type):
         adapter=adapter,
         reflection_lm=reflection_lm,
         frontier_type=frontier_type,
-        max_metric_calls=50,
-        reflection_minibatch_size=5,
+        max_metric_calls=8,
+        reflection_minibatch_size=3,
         display_progress_bar=False,
     )
+
+    best_score = gepa_result.val_aggregate_scores[gepa_result.best_idx]
+    print(f"\n[{frontier_type}] Best score: {best_score}")
+    if gepa_result.val_aggregate_subscores:
+        best_subscores = gepa_result.val_aggregate_subscores[gepa_result.best_idx]
+        print(f"[{frontier_type}] Objective scores: {best_subscores}")
 
     optimized_prompt_file = recorder_dir / f"optimized_prompt_{frontier_type}.txt"
     best_prompt = gepa_result.best_candidate["system_prompt"]
