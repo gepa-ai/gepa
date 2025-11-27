@@ -2,7 +2,7 @@
 # https://github.com/gepa-ai/gepa
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Protocol, TypedDict
+from typing import Any, Callable, Protocol, TypedDict
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
 
@@ -49,6 +49,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
         failure_score: float = 0.0,
         max_litellm_workers: int = 10,
         litellm_batch_completion_kwargs: dict[str, Any] = {},
+        scoring_fn: (Callable[[DefaultDataInst, str], tuple[float, dict[str, float]]] | None) = None,
     ):
         if isinstance(model, str):
             import litellm
@@ -59,6 +60,8 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
         self.failure_score = failure_score
         self.max_litellm_workers = max_litellm_workers
         self.litellm_batch_completion_kwargs = litellm_batch_completion_kwargs
+        # Optional hook to emit multi-objective scores: (primary_score, {"obj_name": value, ...})
+        self.scoring_fn = scoring_fn
 
     def evaluate(
         self,
@@ -68,6 +71,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
     ) -> EvaluationBatch[DefaultTrajectory, DefaultRolloutOutput]:
         outputs: list[DefaultRolloutOutput] = []
         scores: list[float] = []
+        objective_scores: list[dict[str, float]] = []
         trajectories: list[DefaultTrajectory] | None = [] if capture_traces else None
 
         system_content = next(iter(candidate.values()))
@@ -89,7 +93,10 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
                 responses = [
                     resp.choices[0].message.content.strip()
                     for resp in self.litellm.batch_completion(
-                        model=self.model, messages=litellm_requests, max_workers=self.max_litellm_workers, **self.litellm_batch_completion_kwargs
+                        model=self.model,
+                        messages=litellm_requests,
+                        max_workers=self.max_litellm_workers,
+                        **self.litellm_batch_completion_kwargs,
                     )
                 ]
             else:
@@ -99,15 +106,25 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
 
         for data, assistant_response in zip(batch, responses, strict=False):
             output: DefaultRolloutOutput = {"full_assistant_response": assistant_response}
-            score = 1.0 if data["answer"] in assistant_response else 0.0
+            if self.scoring_fn is not None:
+                score, obj_scores = self.scoring_fn(data, assistant_response)
+            else:
+                score = 1.0 if data["answer"] in assistant_response else 0.0
+                obj_scores = {"score": score}
 
             outputs.append(output)
             scores.append(score)
+            objective_scores.append(obj_scores)
 
             if trajectories is not None:
                 trajectories.append({"data": data, "full_assistant_response": assistant_response})
 
-        return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
+        return EvaluationBatch(
+            outputs=outputs,
+            scores=scores,
+            trajectories=trajectories,
+            objective_scores=objective_scores,
+        )
 
     def make_reflective_dataset(
         self,
