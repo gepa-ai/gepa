@@ -1,0 +1,32 @@
+{
+  "os": "Linux-6.14.0-35-generic-x86_64-with-glibc2.39",
+  "python": "CPython 3.12.3",
+  "startedAt": "2025-12-03T05:45:39.080204Z",
+  "args": [
+    "--max-metric-calls",
+    "10"
+  ],
+  "program": "/data/lukedhlee/gepa_luke/gepa-optimize-anything/examples/polynomial/main.py",
+  "codePath": "examples/polynomial/main.py",
+  "codePathLocal": "examples/polynomial/main.py",
+  "git": {
+    "remote": "git@github.com:gepa-ai/gepa-optimize-anything.git",
+    "commit": "95a62af768aab42f4851bfd8f684e1ba85958aff"
+  },
+  "email": "lukeleeai@gmail.com",
+  "root": "/data/lukedhlee/gepa_luke/gepa-optimize-anything",
+  "host": "havoc",
+  "executable": "/data/lukedhlee/gepa_luke/.optany/bin/python",
+  "cpu_count": 72,
+  "cpu_count_logical": 144,
+  "disk": {
+    "/": {
+      "total": "34359738368",
+      "used": "3548741632"
+    }
+  },
+  "memory": {
+    "total": "1082017275904"
+  },
+  "writerId": "oqnndoenc3ceikmi1cwtzyf24llh1j6k"
+}

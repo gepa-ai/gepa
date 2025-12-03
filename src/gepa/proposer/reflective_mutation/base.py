@@ -45,5 +45,5 @@ class Signature:
     @classmethod
     def run(cls, lm: LanguageModel, input_dict: Mapping[str, Any]) -> dict[str, str]:
         full_prompt = cls.prompt_renderer(input_dict)
-        lm_out = lm(full_prompt).strip()
+        lm_out = lm(full_prompt)[0].strip()
         return cls.output_extractor(lm_out)

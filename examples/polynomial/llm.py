@@ -1,0 +1,72 @@
+import os
+import dspy
+
+REFLECTION_PROMPT = """You are an expert in Global Optimization, AutoML, and Bayesian Optimization.
+
+Your role: Make BREAKTHROUGH improvements by trying fundamentally different search strategies.
+
+YOUR TASK: Generate an intelligent `main` function that returns the numpy array `x` that minimizes the function.
+
+You need to optimize the following code:
+
+```
+<curr_param>
+```
+
+Below is evaluation data showing how this code performed across multiple test cases.
+ The data contains performance metrics, diagnostic information, and other relevant details from the evaluation:
+```
+<side_info>
+```
+
+Each function might be tagged with a list of relevant classifiers:
+  boring - A mostly boring function that only has a small region of action.
+  oscillatory - A function with a general trend and an short range oscillatory component.
+  discrete - A function which can only take discrete values.
+  unimodal - A function with a single local minimum, or no local minimum and only a minimum on the boundary.
+
+  multimodal - A function with multiple local minimum
+  bound_min - A function with its minimum on the boundary.
+  multi_min - A function which takes its minimum value at multiple locations.
+  nonsmooth - A function with discontinuous derivatives.
+  noisy - A function with a base behavior which is clouded by noise.
+  unscaled - A function with max value on a grossly different scale than the average or min value.
+  complicated - These are functions that may fit a behavior, but not in the most obvious or satisfying way.
+
+TIMEOUT: 30 seconds.
+
+CRITICAL CODE FORMAT:
+- You must define a function: `def main():`
+- The function must return: `return x` where x can be directly converted to a numpy array of shape (dim,) when I call `np.array(x)`.
+- For example, you should do 
+```
+global x
+x = 
+```
+so that x can be extracted from the global variables.
+- Your output code will be directly ran in the environment and we will use the key name "x" to extract your best solution. So make sure to store the best solution in the global variable "x". Otherwise, the code will not be able to run.
+- "dim" will be always available in the global variables as a key. You can just use it as a variable in your code.
+- "objective_function" will be available in the global variables as a python function. You can just use it as a variable in your code. You can call it as `objective_function(x)` to get a score for your x. You can use it multiple times to find the best values by using various optimization frameworks.
+- Your code also define a global variable "num_evaluation_calls" that tell us how many times you have called the objective function. Your code should count it. If you're using an Optuna, then the number of trials will be the num_evaluation_calls in that case, for example.
+
+TIPS
+- Assume you have all the packages available in the enviornment already and freely explore any of the packages you need. So don't use any fallback to handle a missing package. Just use it straight away.
+- Any optimization framework like optuna is your friend. The use of Optuna is highly encouraged.
+- Any logs from optuna or your print statements will be available for you as a side information so make sure that you use print statements for future use if needed.
+- For example, say you run a particular optimization library. If you print / log the trajectory of the optimization, it will be available for you as a side information.
+
+OUTPUT REQUIREMENTS:
+- Return ONLY executable Python code (no markdown, no explanations).
+- The code must be self-contained (imports included).
+- The environment will run your code as-is. You are responsible for running the functions and returning the global results. Also, do not suppress any logging. Actively use print statements to log the results, which will be provided to you as a side information.
+"""
+
+
+def create_reflection_lm(model: str, max_tokens: int = 32000, cache: bool = True):
+    reflection_lm = dspy.LM(
+        model=model,
+        api_key=os.environ.get("OPENAI_API_KEY"),
+        max_tokens=max_tokens,
+        cache=cache,
+    )
+    return reflection_lm
