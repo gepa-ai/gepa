@@ -1,0 +1,47 @@
+# JAX - CPU version (default)
+jax>=0.4.0
+jaxlib>=0.4.0
+
+# Scientific computing & data structures
+numpy>=1.24.0
+scipy>=1.11.0
+pandas==2.3.3
+polars==1.33.1
+xarray==2024.7.0
+
+# Symbolic mathematics
+sympy==1.13.1
+
+# Machine learning
+scikit-learn==1.6.1
+statsmodels==0.14.5
+
+# Optimization solvers
+pulp==3.3.0
+cvxpy==1.7.3
+pyomo==6.9.5
+
+# Computational geometry (for circle packing)
+shapely==2.0.7
+networkx==3.2.1
+
+# Performance & JIT compilation
+numba==0.60.0
+cython==3.1.4
+
+# Parallel & distributed computing
+dask==2024.8.0
+
+# Data I/O
+h5py==3.14.0
+duckdb==1.4.1
+openpyxl==3.1.5
+
+# Web & APIs
+fastapi==0.121.1
+beautifulsoup4==4.13.5
+scrapy==2.13.3
+sqlalchemy==2.0.44
+
+# Visualization
+matplotlib==3.7.5

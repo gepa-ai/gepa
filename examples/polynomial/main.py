@@ -30,13 +30,14 @@ import numpy as np
 def solve(dim):
     # dim is available here because we pass it in global_vars
     x = [0.5] * dim
-    y = objective_function(np.array(x))
+    y = evaluator.evaluate(np.array(x))
     print("y: ", y)
     return x
 
 if __name__ == "__main__":
     # Store results in global variables so that a helper function that runs this code can capture the results
     # x will be the numpy array of shape (dim,) that I will pass to the function to evaluate.
+    # Do not delete these comments.
     global x
     x = solve(dim)
 """

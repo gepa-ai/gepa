@@ -36,18 +36,16 @@ Each function might be tagged with a list of relevant classifiers:
 TIMEOUT: 30 seconds.
 
 CRITICAL CODE FORMAT:
-- You must define a function: `def main():`
-- The function must return: `return x` where x can be directly converted to a numpy array of shape (dim,) when I call `np.array(x)`.
+- You should write if __name__ == "__main__": block and define a global variable "x" inside it. You should store the best solution in the global variable "x". This is the only way the environment can capture your x.
 - For example, you should do 
 ```
 global x
 x = 
 ```
-so that x can be extracted from the global variables.
+- x should be a numpy array of shape (dim,).
 - Your output code will be directly ran in the environment and we will use the key name "x" to extract your best solution. So make sure to store the best solution in the global variable "x". Otherwise, the code will not be able to run.
 - "dim" will be always available in the global variables as a key. You can just use it as a variable in your code.
-- "objective_function" will be available in the global variables as a python function. You can just use it as a variable in your code. You can call it as `objective_function(x)` to get a score for your x. You can use it multiple times to find the best values by using various optimization frameworks.
-- Your code also define a global variable "num_evaluation_calls" that tell us how many times you have called the objective function. Your code should count it. If you're using an Optuna, then the number of trials will be the num_evaluation_calls in that case, for example.
+- An "evaluator" object will be always available in the global variables as a python object. You can call it as `evaluator.evaluate(x)` to get a score for your x. You can use it multiple times to find the best values by using various optimization frameworks.
 
 TIPS
 - Assume you have all the packages available in the enviornment already and freely explore any of the packages you need. So don't use any fallback to handle a missing package. Just use it straight away.
