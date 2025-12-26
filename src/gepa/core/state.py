@@ -244,6 +244,21 @@ def write_eval_scores_to_directory(scores: dict[DataId, float], output_dir: str)
         with open(os.path.join(task_dir, f"iter_{0}_prog_0.json"), "w") as f:
             json.dump(score, f, indent=4, default=json_default)
 
+def write_eval_outputs_to_directory(outputs, output_dir: str) -> None:
+    """
+    Write generated rollout outputs (not scalar scores) to disk.
+
+    Structure:
+      {output_dir}/task_{val_id}/iter_0_prog_0.json
+
+    This directory is used to store best outputs for inspection/reuse.
+    """
+    for val_id, output in outputs.items():
+        task_dir = os.path.join(output_dir, f"task_{val_id}")
+        os.makedirs(task_dir, exist_ok=True)
+        with open(os.path.join(task_dir, "iter_0_prog_0.json"), "w") as f:
+            json.dump(output, f, indent=4, default=json_default)
+
 
 def initialize_gepa_state(
     run_dir: str | None,
@@ -260,7 +275,9 @@ def initialize_gepa_state(
 
         seed_val_outputs, seed_val_scores = valset_evaluator(seed_candidate)
         if run_dir is not None:
-            write_eval_scores_to_directory(seed_val_scores, os.path.join(run_dir, "generated_best_outputs_valset"))
+            # write_eval_scores_to_directory(seed_val_scores, os.path.join(run_dir, "generated_best_outputs_valset"))
+            write_eval_outputs_to_directory(seed_val_outputs, os.path.join(run_dir, "generated_best_outputs_valset"))
+
         num_evals_run += len(seed_val_scores)
 
         gepa_state = GEPAState(
