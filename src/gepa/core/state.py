@@ -275,7 +275,6 @@ def initialize_gepa_state(
 
         seed_val_outputs, seed_val_scores = valset_evaluator(seed_candidate)
         if run_dir is not None:
-            # write_eval_scores_to_directory(seed_val_scores, os.path.join(run_dir, "generated_best_outputs_valset"))
             write_eval_outputs_to_directory(seed_val_outputs, os.path.join(run_dir, "generated_best_outputs_valset"))
 
         num_evals_run += len(seed_val_scores)
