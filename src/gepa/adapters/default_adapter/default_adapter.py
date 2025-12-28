@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, NamedTuple, Protocol, TypedDict
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
@@ -146,11 +146,13 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
             scores.append(score)
 
             if trajectories is not None:
-                trajectories.append({
-                    "data": data,
-                    "full_assistant_response": assistant_response,
-                    "feedback": feedback,
-                })
+                trajectories.append(
+                    {
+                        "data": data,
+                        "full_assistant_response": assistant_response,
+                        "feedback": feedback,
+                    }
+                )
 
         return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
 
