@@ -1,8 +1,8 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from collections.abc import Mapping, Sequence
-from typing import Any, Protocol, TypedDict
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, NamedTuple, Protocol, TypedDict
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
 
@@ -14,6 +14,11 @@ class DefaultDataInst(TypedDict):
     answer: str
 
 
+class EvaluationResult(NamedTuple):
+    score: float
+    feedback: str
+
+
 class DefaultTrajectory(TypedDict):
     data: DefaultDataInst
     full_assistant_response: str
@@ -22,8 +27,6 @@ class DefaultTrajectory(TypedDict):
 
 class DefaultRolloutOutput(TypedDict):
     full_assistant_response: str
-    score: float
-    feedback: str
 
 
 DefaultReflectiveRecord = TypedDict(
@@ -42,37 +45,31 @@ class ChatMessage(TypedDict):
 
 
 class ChatCompletionCallable(Protocol):
+    """Protocol for chat completion callables (duck typing for custom model wrappers)."""
+
     def __call__(self, messages: Sequence[ChatMessage]) -> str: ...
 
 
-class DefaultPerExampleEvaluator(Protocol):
-    def __call__(self, data: DefaultDataInst, assistant_response: str) -> tuple[float, str]: ...
+# Callable that evaluates a response and returns (score, feedback)
+class Evaluator(Protocol):
+    def __call__(self, data: DefaultDataInst, response: str) -> EvaluationResult:
+        """
+        Evaluates a response and returns a score and feedback.
+        """
+        ...
 
 
-class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRolloutOutput]):
-    def __init__(
-        self,
-        model: str | ChatCompletionCallable,
-        failure_score: float = 0.0,
-        max_litellm_workers: int = 10,
-        litellm_batch_completion_kwargs: dict[str, Any] = {},
-        per_example_evaluator: DefaultPerExampleEvaluator | None = None,
-    ):
-        if isinstance(model, str):
-            import litellm
+class ContainsAnswerEvaluator:
+    """Default evaluator that checks if the expected answer is contained in the response."""
 
-            self.litellm = litellm
-        self.model = model
-
+    def __init__(self, failure_score: float = 0.0):
         self.failure_score = failure_score
-        self.max_litellm_workers = max_litellm_workers
-        self.litellm_batch_completion_kwargs = litellm_batch_completion_kwargs
-        self.per_example_evaluator = per_example_evaluator
 
-    def _default_score_and_feedback(self, data: DefaultDataInst, assistant_response: str) -> tuple[float, str]:
-        score = 1.0 if data["answer"] in assistant_response else self.failure_score
+    def __call__(self, data: DefaultDataInst, response: str) -> EvaluationResult:
+        is_correct = data["answer"] in response
+        score = 1.0 if is_correct else self.failure_score
 
-        if score > 0.0:
+        if is_correct:
             feedback = f"The generated response is correct. The response include the correct answer '{data['answer']}'"
         else:
             additional_context_str = "\n".join(f"{k}: {v}" for k, v in data["additional_context"].items())
@@ -83,7 +80,25 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
             if additional_context_str:
                 feedback += f" Here is some additional context that might be helpful:\n{additional_context_str}"
 
-        return score, feedback
+        return EvaluationResult(score=score, feedback=feedback)
+
+
+class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRolloutOutput]):
+    def __init__(
+        self,
+        model: str | ChatCompletionCallable,
+        evaluator: Evaluator | None = None,
+        max_litellm_workers: int = 10,
+        litellm_batch_completion_kwargs: dict[str, Any] | None = None,
+    ):
+        if isinstance(model, str):
+            import litellm
+
+            self.litellm = litellm
+        self.model = model
+        self.evaluator = evaluator or ContainsAnswerEvaluator()
+        self.max_litellm_workers = max_litellm_workers
+        self.litellm_batch_completion_kwargs = litellm_batch_completion_kwargs or {}
 
     def evaluate(
         self,
@@ -109,39 +124,33 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
 
             litellm_requests.append(messages)
 
-        try:
-            if isinstance(self.model, str):
-                responses = [
-                    resp.choices[0].message.content.strip()
-                    for resp in self.litellm.batch_completion(
-                        model=self.model,
-                        messages=litellm_requests,
-                        max_workers=self.max_litellm_workers,
-                        **self.litellm_batch_completion_kwargs,
-                    )
-                ]
-            else:
-                responses = [self.model(messages) for messages in litellm_requests]
-        except Exception as e:
-            raise e
+        if isinstance(self.model, str):
+            responses = [
+                resp.choices[0].message.content.strip()
+                for resp in self.litellm.batch_completion(
+                    model=self.model,
+                    messages=litellm_requests,
+                    max_workers=self.max_litellm_workers,
+                    **self.litellm_batch_completion_kwargs,
+                )
+            ]
+        else:
+            responses = [self.model(messages) for messages in litellm_requests]
 
-        for data, assistant_response in zip(batch, responses, strict=False):
-            if self.per_example_evaluator is not None:
-                score, feedback = self.per_example_evaluator(data, assistant_response)
-            else:
-                score, feedback = self._default_score_and_feedback(data, assistant_response)
+        for data, assistant_response in zip(batch, responses, strict=True):
+            score, feedback = self.evaluator(data, assistant_response)
 
-            output: DefaultRolloutOutput = {
-                "full_assistant_response": assistant_response,
-                "score": score,
-                "feedback": feedback,
-            }
+            output: DefaultRolloutOutput = {"full_assistant_response": assistant_response}
 
             outputs.append(output)
             scores.append(score)
 
             if trajectories is not None:
-                trajectories.append({"data": data, "full_assistant_response": assistant_response, "feedback": feedback})
+                trajectories.append({
+                    "data": data,
+                    "full_assistant_response": assistant_response,
+                    "feedback": feedback,
+                })
 
         return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
 
@@ -160,22 +169,12 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
         assert trajectories is not None, "Trajectories are required to build a reflective dataset."
 
         items: list[DefaultReflectiveRecord] = []
-        trace_instances = list(zip(trajectories, eval_batch.scores, eval_batch.outputs, strict=False))
 
-        for trace_instance in trace_instances:
-            traj, score, output = trace_instance
-            data = traj["data"]
-            generated_outputs = traj["full_assistant_response"]
-
-            feedback = traj.get("feedback") or output.get("feedback")
-            if feedback is None:
-                # Backwards-compatible fallback if feedback wasn't captured in evaluate()
-                feedback = self._default_score_and_feedback(data, generated_outputs)[1]
-
+        for traj in trajectories:
             d: DefaultReflectiveRecord = {
-                "Inputs": data["input"],
-                "Generated Outputs": generated_outputs,
-                "Feedback": feedback,
+                "Inputs": traj["data"]["input"],
+                "Generated Outputs": traj["full_assistant_response"],
+                "Feedback": traj["feedback"],
             }
 
             items.append(d)
