@@ -23,7 +23,7 @@ dependencies = []
 full = [
     "litellm>=1.64.0",
     "datasets>=2.14.6",
-    "mlflow>=3.0.0",
+    "mlflow>=3.6.0rc0",
     "wandb",
     "tqdm>=4.66.1"
 ]
