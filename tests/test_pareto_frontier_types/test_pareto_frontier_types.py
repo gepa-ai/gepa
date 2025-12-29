@@ -19,13 +19,17 @@ def test_pareto_frontier_type(mocked_lms, recorder_dir, frontier_type):
     End-to-end test of GEPA optimization on the PUPA dataset with different frontier tracking modes.
     """
     import gepa
-    from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
+    from gepa.adapters.default_adapter.default_adapter import (
+        DefaultAdapter,
+        DefaultDataInst,
+        EvaluationResult,
+    )
 
     task_lm, reflection_lm = mocked_lms
 
-    # scoring_fn returns (primary_score, objective_scores)
+    # Custom evaluator that returns EvaluationResult with objective scores
 
-    def scoring_fn(data, response: str) -> tuple[float, dict[str, float]]:
+    def evaluator(data: DefaultDataInst, response: str) -> EvaluationResult:
         judge_prompt = (
             "You are a strict grader. Compare the assistant response to the gold redaction.\n"
             f"GOLD:\n{data['answer'].strip()}\n\nRESPONSE:\n{response.strip()}\n\n"
@@ -45,9 +49,18 @@ def test_pareto_frontier_type(mocked_lms, recorder_dir, frontier_type):
 
         total_score = (quality + leakage_score) / 2
 
-        return total_score, {"quality": quality, "leakage": leakage_score}
+        if total_score > 0.0:
+            feedback = f"The generated response is correct. The response include the correct answer '{data['answer']}'"
+        else:
+            additional_context_str = "\n".join(f"{k}: {v}" for k, v in data["additional_context"].items())
+            feedback = f"The generated response is incorrect. The correct answer is '{data['answer']}'. Ensure that the correct answer is included in the response exactly as it is. Here is some additional context that might be helpful:\n{additional_context_str}"
+        return EvaluationResult(
+            score=total_score,
+            feedback=feedback,
+            objective_scores={"quality": quality, "leakage": leakage_score},
+        )
 
-    adapter = DefaultAdapter(model=task_lm, scoring_fn=scoring_fn)
+    adapter = DefaultAdapter(model=task_lm, evaluator=evaluator)
 
     trainset, valset, _ = gepa.examples.pupa.init_dataset()
     trainset = trainset[:20]
