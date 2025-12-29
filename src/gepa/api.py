@@ -6,7 +6,10 @@ import random
 from collections.abc import Sequence
 from typing import Any, Literal, cast
 
-from gepa.adapters.default_adapter.default_adapter import ChatCompletionCallable, DefaultAdapter
+from gepa.adapters.default_adapter.default_adapter import (
+    ChatCompletionCallable,
+    DefaultAdapter,
+)
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
