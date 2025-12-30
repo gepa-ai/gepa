@@ -1,5 +1,5 @@
 import os
-import warnings
+import numpy as np
 import dspy
 from gepa.optimize_anything import (
     EngineConfig,
@@ -8,12 +8,14 @@ from gepa.optimize_anything import (
     TrackingConfig,
     optimize_anything,
 )
-import argparse
-
-from config import parse_arguments, get_log_directory
-from data import load_data
-from llm import create_reflection_lm, REFLECTION_PROMPT
+from experiments.arc_agi.config import (
+    parse_arguments,
+    get_experiment_config,
+    get_log_directory,
+)
+from experiments.arc_agi.data import load_data
 from gepa.adapters.dspy_full_program_adapter.full_program_adapter import DspyAdapter
+from src.experiment_io import save_experiment_config
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
@@ -36,153 +38,104 @@ program = dspy.ChainOfThought(SolveTaskSignature)"""
 
 
 def is_valid_matrix(matrix, gold_matrix):
-    """Validate matrix format and correctness."""
-    if not isinstance(matrix, list) or len(matrix) == 0:
+    if not isinstance(matrix, list):
         return (
             False,
-            f"Matrix must be a non-empty List[List[int]]. Expected: {gold_matrix}",
+            f"The matrix must be a List[List[int]]. The correct matrix is {gold_matrix}.",
         )
-
-    n, m = len(matrix), len(matrix[0])
+    n = len(matrix)
+    if n == 0:
+        return (
+            False,
+            f"The matrix must have at least one row. The correct matrix is {gold_matrix}.",
+        )
+    m = len(matrix[0])
     if m == 0:
-        return False, f"Matrix must have at least one column. Expected: {gold_matrix}"
-
-    # Validate structure
+        return (
+            False,
+            f"The matrix must have at least one column. The correct matrix is {gold_matrix}.",
+        )
     for i in range(n):
         if not isinstance(matrix[i], list):
-            return False, f"Row {i} must be a List[int]. Expected: {gold_matrix}"
+            return (
+                False,
+                f"The {i}-th row must be a List[int]. The correct matrix is {gold_matrix}.",
+            )
         if len(matrix[i]) != m:
             return (
                 False,
-                f"Matrix is staggered (row 0 has {m} cols, row {i} has {len(matrix[i])}). Expected: {gold_matrix}",
+                f"The matrix is staggered. Row 0 has {m} columns, but row {i} has {len(matrix[i])} columns. The correct matrix is {gold_matrix}.",
             )
         for j in range(m):
             if not isinstance(matrix[i][j], int):
                 return (
                     False,
-                    f"Element [{i}][{j}] must be int, found {type(matrix[i][j])}. Expected: {gold_matrix}",
+                    f"The {i}-th row, {j}-th column must be an int, found {type(matrix[i][j])}. The correct matrix is {gold_matrix}.",
                 )
 
-    # Check dimensions match gold
-    gold_n, gold_m = len(gold_matrix), len(gold_matrix[0])
+    # Check consistency with gold matrix
+    gold_n = len(gold_matrix)
+    gold_m = len(gold_matrix[0])
     if (n, m) != (gold_n, gold_m):
         return (
             False,
-            f"Dimensions {n}x{m} don't match expected {gold_n}x{gold_m}. Expected: {gold_matrix}",
+            f"The matrix has dimensions {n}x{m}, but the gold matrix has dimensions {gold_n}x{gold_m}. The correct matrix is {gold_matrix}.",
         )
 
-    # Check correctness
-    wrong_indices = [
-        (i, j) for i in range(n) for j in range(m) if matrix[i][j] != gold_matrix[i][j]
-    ]
-    if not wrong_indices:
-        return True, f"Correct. Expected: {gold_matrix}"
-
-    if len(wrong_indices) < 10:
-        return False, f"Incorrect indices: {wrong_indices}. Expected: {gold_matrix}"
-    return False, f"Matrix is incorrect. Expected: {gold_matrix}"
+    same = True
+    wrong_indices = []
+    for i in range(n):
+        for j in range(m):
+            if matrix[i][j] != gold_matrix[i][j]:
+                same = False
+                wrong_indices.append((i, j))
+    if same:
+        return True, f"Your response is correct. The correct matrix is {gold_matrix}."
+    else:
+        if len(wrong_indices) < 10:
+            return (
+                False,
+                f"The matrix is incorrect. The following indices are incorrect: {wrong_indices}. The correct matrix is {gold_matrix}.",
+            )
+        else:
+            return (
+                False,
+                f"The matrix is incorrect. The correct matrix is {gold_matrix}.",
+            )
 
 
 def metric_fn(example, pred, trace=None):
-    """Evaluate prediction against gold outputs."""
-    # Handle both dict and dspy.Prediction/Example formats
-    if isinstance(pred, dict):
-        pred_outputs = pred.get("test_outputs")
-    else:
-        pred_outputs = getattr(pred, "test_outputs", None)
+    task_inputs = example.test_inputs
+    gold_task_outputs = example.test_outputs
+    pred_task_outputs = pred.test_outputs
 
-    if isinstance(example, dict):
-        gold_outputs = example["test_outputs"]
-        test_inputs = example["test_inputs"]
-    else:
-        gold_outputs = example.test_outputs
-        test_inputs = example.test_inputs
-
-    if not isinstance(pred_outputs, list):
+    if not isinstance(pred_task_outputs, list):
         return dspy.Prediction(
             score=0,
-            feedback=f"Response must be a List[List[List[int]]]. Expected: {gold_outputs}",
+            feedback=f"The response must be a List[List[List[int]]]. The correct response is {gold_task_outputs}.",
         )
 
-    if len(test_inputs) != len(pred_outputs):
-        return dspy.Prediction(
-            score=0,
-            feedback=f"Output count ({len(pred_outputs)}) must match input count ({len(test_inputs)}). Expected: {gold_outputs}",
-        )
-
-    results = [
-        is_valid_matrix(pred_out, gold_out)
-        for pred_out, gold_out in zip(pred_outputs, gold_outputs, strict=False)
-    ]
-
-    score = sum(valid for valid, _ in results) / len(results)
-    feedback = "\n".join(f"Test input {i}: {fb}" for i, (_, fb) in enumerate(results))
-
-    return dspy.Prediction(score=score, feedback=feedback)
-
-
-def _create_adapter(task_lm, reflection_lm):
-    """Create DspyAdapter with task and reflection LMs."""
-    return DspyAdapter(
-        task_lm=task_lm,
-        metric_fn=metric_fn,
-        num_threads=32,
-        reflection_lm=lambda x: reflection_lm(x)[0],
-    )
-
-
-# Global adapter - will be set in main()
-_adapter = None
-
-
-def _extract_feedback(traj, score):
-    """Extract feedback from trajectory."""
+    valids = []
+    feedbacks = []
     feedback = ""
+    if len(task_inputs) != len(pred_task_outputs):
+        feedback = f"The number of output matrices ({len(pred_task_outputs)}) must match the number of input matrices ({len(task_inputs)}). The correct response is {gold_task_outputs}."
+        return dspy.Prediction(score=0, feedback=feedback)
+    for i, (input, gold_output, pred_output) in enumerate(
+        zip(task_inputs, gold_task_outputs, pred_task_outputs, strict=False)
+    ):
+        is_valid, feedback = is_valid_matrix(pred_output, gold_output)
+        valids.append(is_valid)
+        feedbacks.append(f"Feedback on test input {i}: {feedback}")
 
-    if isinstance(traj, dict):
-        if "score" in traj and hasattr(traj["score"], "feedback"):
-            feedback = traj["score"].feedback
-        elif traj.get("error"):
-            error_msg = traj["error"]
-            feedback = f"Execution failed: {error_msg}"
-            if "is not defined" in str(error_msg):
-                feedback += ". NameError: ensure all functions are defined before use."
-            elif "token" in str(error_msg).lower():
-                feedback += ". Token limit exceeded: make reasoning more concise."
-
-    if score == 0 and not feedback:
-        feedback = (
-            "Score is 0. Check for runtime errors, token limits, or malformed output."
-        )
-
-    return feedback
+    score = sum(valids) / len(valids)
+    feedback_text = "\n".join(feedbacks)
+    return dspy.Prediction(score=score, feedback=feedback_text)
 
 
-def _add_warnings_to_feedback(feedback, warning_messages):
-    """Add warning messages to feedback string."""
-    if warning_messages:
-        warning_text = "\n".join(warning_messages)
-        feedback += f"\n\nDSPy warnings:\n{warning_text}"
-    return feedback
-
-
-def _sanitize_trace(trace):
-    """Remove signature objects from trace for pickling."""
-    if trace is None:
-        return None
-    return [(inputs, outputs) for _, inputs, outputs in trace]
-
-
-def _create_error_results(
-    program, batch, error_msg, error_type, warning_messages, traceback_str=None
-):
+def _create_error_results(program, batch, error_msg):
     """Create error results for all examples in batch."""
-    error_feedbacks = {
-        "evaluation_error": f"Program evaluation failed: {error_msg}. Check code structure.",
-        "trajectories_none": "Program failed to execute. Check for undefined functions, syntax errors, or missing imports.",
-    }
-    feedback = error_feedbacks.get(error_type, f"Error: {error_msg}")
-    feedback = _add_warnings_to_feedback(feedback, warning_messages)
+    feedback = error_msg
 
     results = []
     for _ in batch:
@@ -191,134 +144,80 @@ def _create_error_results(
             "error": error_msg,
             "program": program,
             "feedback": feedback,
-            "warnings": warning_messages,
         }
-        if traceback_str:
-            side_info["error_traceback"] = traceback_str
 
-        output = {"error": error_type, "program": program}
+        output = {"error": error_msg, "program": program}
         results.append((0.0, output, side_info))
     return results
 
 
-def _create_result_item(score, traj, program, warning_messages):
+def _create_result_item(traj, program):
     """Create a single result item from trajectory."""
-    if not isinstance(traj, dict):
-        feedback = _add_warnings_to_feedback(
-            f"Invalid trajectory format: {type(traj).__name__}", warning_messages
-        )
-        return (
-            score,
-            {"error": "invalid_trajectory", "program": program, "score": score},
-            {
-                "score": score,
-                "feedback": feedback,
-                "program": program,
-                "warnings": warning_messages,
-            },
-        )
+    metric_result = traj.get("score")
+    score = metric_result.get("score")
+    feedback = metric_result.get("feedback")
 
-    feedback = _add_warnings_to_feedback(
-        _extract_feedback(traj, score), warning_messages
-    )
-    example = traj.get("example")
     prediction = traj.get("prediction")
+    model_answer = prediction.get("test_outputs")
+
+    rollout_output = {
+        "program": program,
+        "model_answer": model_answer,
+        "score": score,
+    }
 
     side_info = {
         "score": score,
-        "reasoning": traj.get("reasoning"),
+        "input": traj.get("example"),
+        "reasoning": prediction.get("reasoning"),
         "feedback": feedback,
-        "trace": _sanitize_trace(traj.get("trace")),
-        "prediction": prediction,
-        "input": example,
-        "training_examples": getattr(example, "training_examples", None)
-        if example
-        else None,
-        "test_inputs": getattr(example, "test_inputs", None) if example else None,
-        "test_outputs": getattr(example, "test_outputs", None) if example else None,
-        "program": program,
-        "warnings": warning_messages,
+        "output": model_answer,
     }
-
-    # Convert prediction to dict if it's a dspy.Prediction object
-    if prediction and hasattr(prediction, "__dict__"):
-        try:
-            prediction = {**prediction}
-        except (TypeError, ValueError):
-            prediction = str(prediction)
 
     return (
         score,
-        {"program": program, "score": score, "prediction": prediction},
+        rollout_output,
         side_info,
     )
 
 
-def fitness_fn(candidate, batch):
-    """Evaluate candidate program on batch and return results."""
-    global _adapter
-    program = candidate["program"]
-    print(f"🔍 Evaluating program: {program[:100]}...")
+def create_fitness_fn(adapter):
+    """Create fitness function with adapter in closure."""
 
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+    def fitness_fn(candidate, batch):
+        """Evaluate candidate program on batch and return results."""
+        program = candidate["program"]
+        eval_batch = adapter.evaluate(batch, candidate, capture_traces=True)
 
-        try:
-            eval_batch = _adapter.evaluate(batch, candidate, capture_traces=True)
-        except Exception as e:
-            import traceback
-
-            warning_messages = [str(warning.message) for warning in w]
-            print(f"❌ Evaluation error: {str(e)}")
+        if isinstance(eval_batch.trajectories, str):
+            # program error
+            error_msg = f"All examples failed. Program error message: {eval_batch.trajectories}"
+            print("⚠️  " + error_msg[:200])
             return _create_error_results(
                 program,
                 batch,
-                str(e),
-                "evaluation_error",
-                warning_messages,
-                traceback.format_exc(),
+                error_msg,
             )
 
-    warning_messages = [str(warning.message) for warning in w]
+        if len(eval_batch.trajectories) == 0:
+            # dspy error caused by the program
+            error_msg = (
+                "All examples failed - likely a serialization error. "
+                "Do NOT pass lambdas, functions, classes, or type objects as arguments to dspy modules. "
+                "Keep all logic inside class methods. Only pass serializable data (strings, numbers, lists, dicts)."
+            )
+            return _create_error_results(
+                program,
+                batch,
+                error_msg,
+            )
 
-    # Handle evaluation failures
-    if eval_batch.trajectories is None:
-        print("⚠️  All examples failed - trajectories are None")
-        return _create_error_results(
-            program, batch, "All examples failed", "trajectories_none", warning_messages
-        )
+        # Process successful evaluations with no errors
+        results = [_create_result_item(traj, program) for traj in eval_batch.trajectories]
 
-    if isinstance(eval_batch.trajectories, str):
-        print(f"⚠️  Program build failed: {eval_batch.trajectories[:200]}...")
-        return _create_error_results(
-            program,
-            batch,
-            f"Program build failed: {eval_batch.trajectories}",
-            "build_failed",
-            warning_messages,
-        )
+        return results
 
-    # Process successful evaluations
-    results = [
-        _create_result_item(score, traj, program, warning_messages)
-        for score, traj in zip(eval_batch.scores, eval_batch.trajectories)
-    ]
-
-    # Ensure we always return exactly len(batch) results
-    # If some evaluations failed silently, pad with error results
-    if len(results) < len(batch):
-        num_missing = len(batch) - len(results)
-        print(f"⚠️  Missing {num_missing} results, padding with errors")
-        error_results = _create_error_results(
-            program,
-            batch[:num_missing],
-            "Evaluation failed silently (likely malformed LLM response)",
-            "silent_failure",
-            warning_messages,
-        )
-        results.extend(error_results)
-
-    return results
+    return fitness_fn
 
 
 def main():
@@ -329,39 +228,50 @@ def main():
     print("=" * 80)
 
     args = parse_arguments()
-    log_dir = get_log_directory()
+    config = get_experiment_config(args)
+    log_dir = get_log_directory(resume=args.resume)
     print(f"\n📁 Log directory: {log_dir}")
 
+    save_experiment_config(config, log_dir)
+    print(f"💾 Config saved to: {log_dir / 'config.yaml'}")
+
     # Create LMs
-    llm_model = "openai/gpt-5"  # Fixed model
     task_lm = dspy.LM(
-        model=llm_model,
+        model=config["llm_model"],
+        temperature=1.0,
         max_tokens=32000,
         api_key=OPENAI_API_KEY,
-        seed=args.seed,
+        seed=config["seed"],
     )
-    reflection_lm = create_reflection_lm(
-        llm_model,
+    reflection_lm = dspy.LM(
+        model=config["llm_model"],
+        temperature=1.0,
         api_key=OPENAI_API_KEY,
-        seed=args.seed,
+        max_tokens=32000,
+        seed=config["seed"],
     )
 
-    # Create adapter and set global reference for fitness_fn
-    global _adapter
-    _adapter = _create_adapter(task_lm, reflection_lm)
+    # Create adapter
+    adapter = DspyAdapter(
+        task_lm=task_lm,
+        metric_fn=metric_fn,
+        num_threads=64,
+        reflection_lm=lambda x: reflection_lm(x)[0],
+        add_format_failure_as_feedback=True,
+    )
+    fitness_fn = create_fitness_fn(adapter)
 
     # Configure GEPA
     gepa_config = GEPAConfig(
         engine=EngineConfig(
             run_dir=str(log_dir),
-            seed=args.seed,
-            max_metric_calls=args.max_metric_calls,
+            seed=config["seed"],
+            max_metric_calls=4000,
             track_best_outputs=True,
             use_cloudpickle=True,
         ),
         reflection=ReflectionConfig(
-            reflection_minibatch_size=3,
-            reflection_prompt_template=REFLECTION_PROMPT,
+            reflection_minibatch_size=config["reflection_minibatch_size"],
             reflection_lm=reflection_lm,
             skip_perfect_score=False,
         ),
@@ -374,10 +284,6 @@ def main():
     seed_candidate = {"program": program_src}
 
     train_set, val_set, test_set = load_data()
-
-    # print("Base evaluation:")
-    # base_results = _adapter.evaluate(test_set, seed_candidate, capture_traces=True)
-    # print(f"   Base results: {base_results}")
 
     print("\n🚀 Starting GEPA optimization...\n")
 
@@ -396,14 +302,21 @@ def main():
 
     print("\n✅ GEPA optimization complete!")
 
+    print("Base evaluation:")
+    base_results = adapter.evaluate(test_set, seed_candidate, capture_traces=True)
+    base_score = np.mean(base_results.scores)
+    print(f"   Base results: {base_score}")
+
     best_program = result.best_candidate["program"]
+
     print(f"✅ Best program: {best_program}")
     print(f"   Code length: {len(best_program)} characters")
-    test_results = _adapter.evaluate(
-        test_set, result.best_candidate, capture_traces=True
-    )
-    print(f"   Test results: {test_results}")
+    test_results = adapter.evaluate(test_set, result.best_candidate, capture_traces=True)
+    test_score = np.mean(test_results.scores)
+    print(f"   Test results: {test_score}")
 
+    print(f"   Improvement: {test_score - base_score}")
+    print(f"   Improvement percentage: {(test_score - base_score) / base_score * 100}%")
     print("\n" + "=" * 80)
     print("DONE!")
     print("=" * 80)
