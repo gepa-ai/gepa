@@ -221,8 +221,26 @@ def optimize(
         reflection_lm_name = reflection_lm
 
         def _reflection_lm(prompt: str) -> str:
-            completion = litellm.completion(model=reflection_lm_name, messages=[{"role": "user", "content": prompt}])
-            return completion.choices[0].message.content  # type: ignore
+            try:
+                completion = litellm.completion(model=reflection_lm_name, messages=[{"role": "user", "content": prompt}])
+                return completion.choices[0].message.content  # type: ignore
+            except Exception as e:
+                # Check if this is a Bedrock inference profile error
+                error_msg = str(e)
+                if "bedrock" in reflection_lm_name.lower() and "inference profile" in error_msg.lower():
+                    helpful_msg = (
+                        f"\n\nBedrock Inference Profile Error: The model '{reflection_lm_name}' requires an inference profile.\n"
+                        "To fix this issue:\n"
+                        "1. Use an inference profile ARN instead of the direct model ID\n"
+                        "2. Example: Instead of 'bedrock/anthropic.claude-sonnet-4-5-20250929-v1:0'\n"
+                        "   Use: 'bedrock/us.anthropic.claude-sonnet-4-5-v2:0' (cross-region inference profile)\n"
+                        "   Or: 'bedrock/arn:aws:bedrock:us-west-2:123456789012:inference-profile/your-profile-id'\n"
+                        "3. See AWS Bedrock documentation for available inference profiles:\n"
+                        "   https://docs.aws.amazon.com/bedrock/latest/userguide/cross-region-inference.html\n"
+                    )
+                    raise type(e)(str(e) + helpful_msg) from e
+                # Re-raise the original exception if it's not a Bedrock inference profile error
+                raise
 
         reflection_lm = _reflection_lm
 

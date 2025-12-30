@@ -135,7 +135,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 {f"new_instruction_{pname}": text for pname, text in new_texts.items()}, step=i
             )
         except Exception as e:
-            self.logger.log(f"Iteration {i}: Exception during reflection/proposal: {e}")
+            error_msg = str(e)
+            # Check if this is a Bedrock inference profile error and provide additional context
+            if "inference profile" in error_msg.lower() and "bedrock" in error_msg.lower():
+                self.logger.log(f"Iteration {i}: Bedrock configuration error - {error_msg}")
+            else:
+                self.logger.log(f"Iteration {i}: Exception during reflection/proposal: {e}")
             import traceback
 
             self.logger.log(traceback.format_exc())
