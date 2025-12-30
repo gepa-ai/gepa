@@ -7,6 +7,13 @@ from unittest.mock import Mock, patch
 
 from gepa import optimize
 
+# Test fixture: Sample Bedrock inference profile error message
+BEDROCK_INFERENCE_PROFILE_ERROR = (
+    "BedrockException - {'message':'Invocation of model ID anthropic.claude-sonnet-4-5-20250929-v1:0 "
+    "with on-demand throughput isn't supported. Retry your request with the ID or ARN of an inference "
+    "profile that contains this model.'}"
+)
+
 
 def test_bedrock_inference_profile_error_handling(capsys):
     """Test that Bedrock inference profile errors are caught and provide helpful guidance."""
@@ -23,13 +30,7 @@ def test_bedrock_inference_profile_error_handling(capsys):
 
     # Mock litellm.completion to raise a Bedrock inference profile error
     with patch("litellm.completion") as mock_completion:
-        # Simulate the Bedrock error
-        bedrock_error_msg = (
-            "BedrockException - {'message':'Invocation of model ID anthropic.claude-sonnet-4-5-20250929-v1:0 "
-            "with on-demand throughput isn't supported. Retry your request with the ID or ARN of an inference "
-            "profile that contains this model.'}"
-        )
-        mock_completion.side_effect = Exception(bedrock_error_msg)
+        mock_completion.side_effect = Exception(BEDROCK_INFERENCE_PROFILE_ERROR)
 
         # The optimize function should handle this error gracefully and not crash
         optimize(

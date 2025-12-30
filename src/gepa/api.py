@@ -226,8 +226,16 @@ def optimize(
                 return completion.choices[0].message.content  # type: ignore
             except Exception as e:
                 # Check if this is a Bedrock inference profile error
-                error_msg = str(e)
-                if "bedrock" in reflection_lm_name.lower() and "inference profile" in error_msg.lower():
+                error_msg = str(e).lower()
+                model_name_lower = reflection_lm_name.lower()
+
+                # Detect Bedrock inference profile errors by checking for:
+                # 1. Model name contains 'bedrock' (e.g., 'bedrock/...')
+                # 2. Error message contains 'inference profile'
+                is_bedrock_model = "bedrock" in model_name_lower
+                is_inference_profile_error = "inference profile" in error_msg
+
+                if is_bedrock_model and is_inference_profile_error:
                     helpful_msg = (
                         f"\n\nBedrock Inference Profile Error: The model '{reflection_lm_name}' requires an inference profile.\n"
                         "To fix this issue:\n"
