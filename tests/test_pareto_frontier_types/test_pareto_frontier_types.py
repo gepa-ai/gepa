@@ -1,9 +1,38 @@
 import os
+import random
 from pathlib import Path
 
 import pytest
+from datasets import load_dataset
 
 RECORDER_DIR = Path(__file__).parent
+
+
+def init_pupa_dataset():
+    raw_ds = load_dataset("Columbia-NLP/PUPA", "pupa_tnb")["train"]
+
+    def _to_inst(item):
+        return {
+            "input": item["user_query"],
+            "additional_context": {
+                "predicted_category": str(item.get("predicted_category", "")),
+                "pii_units": str(item.get("pii_units", "")),
+                "target_response": str(item.get("target_response", "")),
+                "redacted_query": str(item.get("redacted_query", "")),
+            },
+            "answer": str(item["redacted_query"]),
+        }
+
+    data = [_to_inst(item) for item in raw_ds]
+    rng = random.Random(0)
+    rng.shuffle(data)
+
+    mid = len(data) // 2
+    trainset = data[:mid]
+    valset = data[mid:]
+    testset = data[: min(20, len(data))]
+
+    return trainset, valset, testset
 
 
 @pytest.fixture(scope="module")
@@ -62,7 +91,7 @@ def test_pareto_frontier_type(mocked_lms, recorder_dir, frontier_type):
 
     adapter = DefaultAdapter(model=task_lm, evaluator=evaluator)
 
-    trainset, valset, _ = gepa.examples.pupa.init_dataset()
+    trainset, valset, _ = init_pupa_dataset()
     trainset = trainset[:20]
     valset = valset[:12]
 
