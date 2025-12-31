@@ -18,8 +18,8 @@ class ParetoCandidateSelector(CandidateSelector):
     def select_candidate_idx(self, state: GEPAState) -> int:
         assert len(state.program_full_scores_val_set) == len(state.program_candidates)
         return select_program_candidate_from_pareto_front(
-            state.program_at_pareto_front_valset,
-            state.program_full_scores_val_set,
+            state.get_pareto_front_mapping(),
+            state.per_program_tracked_scores,
             self.rng,
         )
 

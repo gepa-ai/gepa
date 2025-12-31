@@ -17,6 +17,7 @@ class DefaultDataInst(TypedDict):
 class EvaluationResult(NamedTuple):
     score: float
     feedback: str
+    objective_scores: dict[str, float] | None = None
 
 
 class DefaultTrajectory(TypedDict):
@@ -50,11 +51,11 @@ class ChatCompletionCallable(Protocol):
     def __call__(self, messages: Sequence[ChatMessage]) -> str: ...
 
 
-# Callable that evaluates a response and returns (score, feedback)
+# Callable that evaluates a response and returns (score, feedback, optional objective_scores)
 class Evaluator(Protocol):
     def __call__(self, data: DefaultDataInst, response: str) -> EvaluationResult:
         """
-        Evaluates a response and returns a score and feedback.
+        Evaluates a response and returns a score, feedback, and optional objective scores.
         """
         ...
 
@@ -80,7 +81,7 @@ class ContainsAnswerEvaluator:
             if additional_context_str:
                 feedback += f" Here is some additional context that might be helpful:\n{additional_context_str}"
 
-        return EvaluationResult(score=score, feedback=feedback)
+        return EvaluationResult(score=score, feedback=feedback, objective_scores={"score": score})
 
 
 class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRolloutOutput]):
@@ -108,6 +109,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
     ) -> EvaluationBatch[DefaultTrajectory, DefaultRolloutOutput]:
         outputs: list[DefaultRolloutOutput] = []
         scores: list[float] = []
+        objective_scores: list[dict[str, float]] = []
         trajectories: list[DefaultTrajectory] | None = [] if capture_traces else None
 
         system_content = next(iter(candidate.values()))
@@ -138,12 +140,16 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
             responses = [self.model(messages) for messages in litellm_requests]
 
         for data, assistant_response in zip(batch, responses, strict=True):
-            score, feedback = self.evaluator(data, assistant_response)
+            eval_result = self.evaluator(data, assistant_response)
+            score = eval_result.score
+            feedback = eval_result.feedback
+            obj_scores = eval_result.objective_scores or {"score": score}
 
             output: DefaultRolloutOutput = {"full_assistant_response": assistant_response}
 
             outputs.append(output)
             scores.append(score)
+            objective_scores.append(obj_scores)
 
             if trajectories is not None:
                 trajectories.append(
@@ -154,7 +160,12 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
                     }
                 )
 
-        return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
+        return EvaluationBatch(
+            outputs=outputs,
+            scores=scores,
+            trajectories=trajectories,
+            objective_scores=objective_scores,
+        )
 
     def make_reflective_dataset(
         self,
