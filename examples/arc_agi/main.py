@@ -19,6 +19,35 @@ from src.experiment_io import save_experiment_config
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
+REFLECTION_PROMPT = """
+You are optimizing a DSPy program to solve ARC-AGI tasks.
+
+The current program that solves ARC-AGI tasks is:
+```
+<curr_param>
+```
+
+Below is evaluation data showing how this parameter value performed across multiple test cases. The data contains performance metrics, diagnostic information, and other relevant details from the evaluation:
+```
+<side_info>
+```
+
+Your task is to propose a new, improved parameter value that can be used as a drop-in replacement for the current one.
+
+Carefully analyze all the evaluation data provided above. Look for patterns that indicate what works and what doesn't. Pay special attention to:
+- Performance metrics and how they correlate with parameter behavior
+- Recurring issues, errors, or failure patterns across multiple test cases
+- Successful patterns or behaviors that should be preserved or enhanced
+- Any domain-specific requirements, constraints, or factual information revealed in the evaluation data
+- Specific technical details that are crucial for understanding the parameter's role
+
+Analyze the evaluation data and propose an improved DSPy program that addresses failures and solves the tasks better.
+
+The code must be a valid, self-contained Python script with all necessary imports (e.g. import dspy) and definitions.
+
+Provide complete, executable Python code within ``` blocks.
+"""
+
 program_src = """import dspy
 from typing import List
 import pydantic
@@ -105,9 +134,16 @@ def is_valid_matrix(matrix, gold_matrix):
 
 
 def metric_fn(example, pred, trace=None):
-    task_inputs = example.test_inputs
-    gold_task_outputs = example.test_outputs
-    pred_task_outputs = pred.test_outputs
+    task_inputs = example.get("test_inputs", "empty")
+    gold_task_outputs = example.get("test_outputs", "empty")
+    pred_task_outputs = pred.get("test_outputs", "empty")
+
+    if task_inputs == "empty":
+        print("task inputs are empty")
+    if gold_task_outputs == "empty":
+        print("gold_task_outputs are empty")
+    if pred_task_outputs == "empty":
+        print("pred task outputs are empty")
 
     if not isinstance(pred_task_outputs, list):
         return dspy.Prediction(
@@ -187,11 +223,21 @@ def create_fitness_fn(adapter):
     def fitness_fn(candidate, batch):
         """Evaluate candidate program on batch and return results."""
         program = candidate["program"]
-        eval_batch = adapter.evaluate(batch, candidate, capture_traces=True)
+        try:
+            eval_batch = adapter.evaluate(batch, candidate, capture_traces=True)
+        except Exception as e:
+            print(f"Error evaluating candidate: {e}")
+            return _create_error_results(
+                program,
+                batch,
+                str(e),
+            )
 
         if isinstance(eval_batch.trajectories, str):
             # program error
-            error_msg = f"All examples failed. Program error message: {eval_batch.trajectories}"
+            error_msg = (
+                f"All examples failed. Program error message: {eval_batch.trajectories}"
+            )
             print("⚠️  " + error_msg[:200])
             return _create_error_results(
                 program,
@@ -213,7 +259,9 @@ def create_fitness_fn(adapter):
             )
 
         # Process successful evaluations with no errors
-        results = [_create_result_item(traj, program) for traj in eval_batch.trajectories]
+        results = [
+            _create_result_item(traj, program) for traj in eval_batch.trajectories
+        ]
 
         return results
 
@@ -272,6 +320,7 @@ def main():
         ),
         reflection=ReflectionConfig(
             reflection_minibatch_size=config["reflection_minibatch_size"],
+            reflection_prompt_template=REFLECTION_PROMPT,
             reflection_lm=reflection_lm,
             skip_perfect_score=False,
         ),
@@ -311,7 +360,9 @@ def main():
 
     print(f"✅ Best program: {best_program}")
     print(f"   Code length: {len(best_program)} characters")
-    test_results = adapter.evaluate(test_set, result.best_candidate, capture_traces=True)
+    test_results = adapter.evaluate(
+        test_set, result.best_candidate, capture_traces=True
+    )
     test_score = np.mean(test_results.scores)
     print(f"   Test results: {test_score}")
 
