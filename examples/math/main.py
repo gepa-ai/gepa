@@ -1,7 +1,7 @@
 import os
 import dspy
 from typing import Sequence, Any
-from experiments.math.dataset import load_math_dataset
+from examples.math.dataset import load_math_dataset
 from gepa.optimize_anything import (
     EngineConfig,
     GEPAConfig,
@@ -17,7 +17,7 @@ from gepa.optimize_anything import (
 # ============================================================================
 
 
-def math_metric(example, prediction, trace=None):
+def math_metric(example, prediction):
     """Compute score and detailed feedback for math problems."""
     correct_answer = int(example.answer)
     written_solution = getattr(example, "solution", "")
@@ -43,6 +43,19 @@ def math_metric(example, prediction, trace=None):
         feedback_text += f" Here's the full step-by-step solution:\n{written_solution}\n\nThink about what takeaways you can learn from this solution to improve your future answers and approach to similar problems."
 
     return dspy.Prediction(score=score, feedback=feedback_text)
+
+
+def evaluate_on_dataset(predictor, dataset):
+    """Run a parallel evaluation of a predictor on a dataset using dspy.Evaluate."""
+    evaluator = dspy.Evaluate(
+        devset=dataset,
+        metric=math_metric,
+        num_threads=16,
+        display_progress=True,
+    )
+
+    eval_result = evaluator(predictor)
+    return eval_result.score / 100.0
 
 
 def create_fitness_function(predictor: dspy.Module):
@@ -86,21 +99,6 @@ def create_fitness_function(predictor: dspy.Module):
         return results
 
     return fitness_fn
-
-
-def evaluate_on_dataset(predictor, dataset, name="Evaluation"):
-    """Evaluate a predictor on a dataset using dspy.Evaluate."""
-    print(f"\n--- {name} ---")
-
-    evaluator = dspy.Evaluate(
-        devset=dataset,
-        metric=math_metric,
-        num_threads=16,
-        display_progress=True,
-    )
-
-    eval_result = evaluator(predictor)
-    return eval_result.score / 100.0
 
 
 # ============================================================================

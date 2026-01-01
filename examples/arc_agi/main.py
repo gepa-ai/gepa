@@ -1,6 +1,16 @@
 import os
-import numpy as np
+
 import dspy
+import numpy as np
+
+from examples.arc_agi.config import (
+    get_experiment_config,
+    get_log_directory,
+    parse_arguments,
+)
+from examples.arc_agi.data import load_arc_agi_dataset
+from examples.arc_agi.prompt import REFLECTION_PROMPT
+from gepa.adapters.dspy_full_program_adapter.full_program_adapter import DspyAdapter
 from gepa.optimize_anything import (
     EngineConfig,
     GEPAConfig,
@@ -8,45 +18,8 @@ from gepa.optimize_anything import (
     TrackingConfig,
     optimize_anything,
 )
-from experiments.arc_agi.config import (
-    parse_arguments,
-    get_experiment_config,
-    get_log_directory,
-)
-from experiments.arc_agi.data import load_data
-from gepa.adapters.dspy_full_program_adapter.full_program_adapter import DspyAdapter
-from src.experiment_io import save_experiment_config
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-
-REFLECTION_PROMPT = """
-You are optimizing a DSPy program to solve ARC-AGI tasks.
-
-The current program that solves ARC-AGI tasks is:
-```
-<curr_param>
-```
-
-Below is evaluation data showing how this parameter value performed across multiple test cases. The data contains performance metrics, diagnostic information, and other relevant details from the evaluation:
-```
-<side_info>
-```
-
-Your task is to propose a new, improved parameter value that can be used as a drop-in replacement for the current one.
-
-Carefully analyze all the evaluation data provided above. Look for patterns that indicate what works and what doesn't. Pay special attention to:
-- Performance metrics and how they correlate with parameter behavior
-- Recurring issues, errors, or failure patterns across multiple test cases
-- Successful patterns or behaviors that should be preserved or enhanced
-- Any domain-specific requirements, constraints, or factual information revealed in the evaluation data
-- Specific technical details that are crucial for understanding the parameter's role
-
-Analyze the evaluation data and propose an improved DSPy program that addresses failures and solves the tasks better.
-
-The code must be a valid, self-contained Python script with all necessary imports (e.g. import dspy) and definitions.
-
-Provide complete, executable Python code within ``` blocks.
-"""
 
 program_src = """import dspy
 from typing import List
@@ -138,13 +111,6 @@ def metric_fn(example, pred, trace=None):
     gold_task_outputs = example.get("test_outputs", "empty")
     pred_task_outputs = pred.get("test_outputs", "empty")
 
-    if task_inputs == "empty":
-        print("task inputs are empty")
-    if gold_task_outputs == "empty":
-        print("gold_task_outputs are empty")
-    if pred_task_outputs == "empty":
-        print("pred task outputs are empty")
-
     if not isinstance(pred_task_outputs, list):
         return dspy.Prediction(
             score=0,
@@ -235,9 +201,7 @@ def create_fitness_fn(adapter):
 
         if isinstance(eval_batch.trajectories, str):
             # program error
-            error_msg = (
-                f"All examples failed. Program error message: {eval_batch.trajectories}"
-            )
+            error_msg = f"All examples failed. Program error message: {eval_batch.trajectories}"
             print("⚠️  " + error_msg[:200])
             return _create_error_results(
                 program,
@@ -259,9 +223,7 @@ def create_fitness_fn(adapter):
             )
 
         # Process successful evaluations with no errors
-        results = [
-            _create_result_item(traj, program) for traj in eval_batch.trajectories
-        ]
+        results = [_create_result_item(traj, program) for traj in eval_batch.trajectories]
 
         return results
 
@@ -280,9 +242,6 @@ def main():
     log_dir = get_log_directory(resume=args.resume)
     print(f"\n📁 Log directory: {log_dir}")
 
-    save_experiment_config(config, log_dir)
-    print(f"💾 Config saved to: {log_dir / 'config.yaml'}")
-
     # Create LMs
     task_lm = dspy.LM(
         model=config["llm_model"],
@@ -291,20 +250,13 @@ def main():
         api_key=OPENAI_API_KEY,
         seed=config["seed"],
     )
-    reflection_lm = dspy.LM(
-        model=config["llm_model"],
-        temperature=1.0,
-        api_key=OPENAI_API_KEY,
-        max_tokens=32000,
-        seed=config["seed"],
-    )
 
     # Create adapter
     adapter = DspyAdapter(
         task_lm=task_lm,
         metric_fn=metric_fn,
         num_threads=64,
-        reflection_lm=lambda x: reflection_lm(x)[0],
+        reflection_lm="openai/gpt-5",
         add_format_failure_as_feedback=True,
     )
     fitness_fn = create_fitness_fn(adapter)
@@ -321,7 +273,7 @@ def main():
         reflection=ReflectionConfig(
             reflection_minibatch_size=config["reflection_minibatch_size"],
             reflection_prompt_template=REFLECTION_PROMPT,
-            reflection_lm=reflection_lm,
+            reflection_lm="openai/gpt-5",
             skip_perfect_score=False,
         ),
         tracking=TrackingConfig(
@@ -332,7 +284,7 @@ def main():
 
     seed_candidate = {"program": program_src}
 
-    train_set, val_set, test_set = load_data()
+    train_set, val_set, test_set = load_arc_agi_dataset()
 
     print("\n🚀 Starting GEPA optimization...\n")
 
@@ -360,9 +312,7 @@ def main():
 
     print(f"✅ Best program: {best_program}")
     print(f"   Code length: {len(best_program)} characters")
-    test_results = adapter.evaluate(
-        test_set, result.best_candidate, capture_traces=True
-    )
+    test_results = adapter.evaluate(test_set, result.best_candidate, capture_traces=True)
     test_score = np.mean(test_results.scores)
     print(f"   Test results: {test_score}")
 
