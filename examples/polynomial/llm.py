@@ -19,20 +19,6 @@ Below is evaluation data showing how this code performed across multiple test ca
 <side_info>
 ```
 
-Each function might be tagged with a list of relevant classifiers:
-  boring - A mostly boring function that only has a small region of action.
-  oscillatory - A function with a general trend and an short range oscillatory component.
-  discrete - A function which can only take discrete values.
-  unimodal - A function with a single local minimum, or no local minimum and only a minimum on the boundary.
-
-  multimodal - A function with multiple local minimum
-  bound_min - A function with its minimum on the boundary.
-  multi_min - A function which takes its minimum value at multiple locations.
-  nonsmooth - A function with discontinuous derivatives.
-  noisy - A function with a base behavior which is clouded by noise.
-  unscaled - A function with max value on a grossly different scale than the average or min value.
-  complicated - These are functions that may fit a behavior, but not in the most obvious or satisfying way.
-
 TIMEOUT: 30 seconds.
 
 CRITICAL CODE FORMAT:

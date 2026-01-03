@@ -158,6 +158,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         try:
             reflective_dataset = self.adapter.make_reflective_dataset(curr_prog, eval_curr, predictor_names_to_update)
             new_texts = self.propose_new_texts(curr_prog, reflective_dataset, predictor_names_to_update)
+
             for pname, text in new_texts.items():
                 self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
             self.experiment_tracker.log_metrics(
