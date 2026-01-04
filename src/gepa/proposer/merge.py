@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable, Sequence
 from copy import deepcopy
 
 from gepa.core.adapter import Candidate, DataInst, EvaluatorFn, RolloutOutput
+from gepa.core.callbacks import notify_callbacks
 from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
@@ -220,6 +221,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         max_merge_invocations: int,
         val_overlap_floor: int = 5,
         rng: random.Random | None = None,
+        callbacks: list | None = None,
     ):
         self.logger = logger
         self.valset = valset
@@ -227,6 +229,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         self.use_merge = use_merge
         self.max_merge_invocations = max_merge_invocations
         self.rng = rng if rng is not None else random.Random(0)
+        self.callbacks = callbacks
 
         if val_overlap_floor <= 0:
             raise ValueError("val_overlap_floor should be a positive integer")
@@ -325,7 +328,24 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
 
+        # Notify evaluation start for merged candidate
+        notify_callbacks(
+            self.callbacks,
+            "on_evaluation_start",
+            iteration=i,
+            candidate_idx=id1,  # Use first parent as reference
+            batch_size=len(mini_devset),
+            capture_traces=False,
+        )
         _, new_sub_scores = self.evaluator(mini_devset, new_program)
+        notify_callbacks(
+            self.callbacks,
+            "on_evaluation_end",
+            iteration=i,
+            candidate_idx=id1,  # Use first parent as reference
+            scores=new_sub_scores,
+            has_trajectories=False,
+        )
 
         state.full_program_trace[-1]["id1_subsample_scores"] = id1_sub_scores
         state.full_program_trace[-1]["id2_subsample_scores"] = id2_sub_scores
