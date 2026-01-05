@@ -81,7 +81,7 @@ class ContainsAnswerEvaluator:
             if additional_context_str:
                 feedback += f" Here is some additional context that might be helpful:\n{additional_context_str}"
 
-        return EvaluationResult(score=score, feedback=feedback, objective_scores={"score": score})
+        return EvaluationResult(score=score, feedback=feedback, objective_scores=None)
 
 
 class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRolloutOutput]):
@@ -161,11 +161,12 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
                 )
 
         objective_scores_arg: list[dict[str, float]] | None = None
-        if len(objective_scores) > 0:
-            assert all(x is not None for x in objective_scores) or all(x is None for x in objective_scores), (
-                "Objective scores must either be all None or all not None."
-            )
-            objective_scores_arg = cast(list[dict[str, float]], objective_scores)
+        if objective_scores:
+            all_none = all(x is None for x in objective_scores)
+            all_not_none = all(x is not None for x in objective_scores)
+            assert all_none or all_not_none, "Objective scores must either be all None or all not None."
+            if all_not_none:
+                objective_scores_arg = cast(list[dict[str, float]], objective_scores)
 
         return EvaluationBatch(
             outputs=outputs,

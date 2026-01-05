@@ -226,9 +226,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             track_best_outputs=self.track_best_outputs,
             frontier_type=self.frontier_type,
         )
-        assert state.frontier_type == self.frontier_type, (
-            f"Frontier type mismatch between engine ({self.frontier_type}) and state ({state.frontier_type}). Did you reload a previously saved state (in run_dir) with a different frontier type?"
-        )
 
         # Log base program score
         base_val_avg, base_val_coverage = state.get_program_average_val_subset(0)

@@ -8,8 +8,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, Generic, Literal, TypeAlias
 
-from typing_extensions import TypeAliasType
-
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
 from gepa.gepa_utils import json_default
@@ -18,21 +16,16 @@ from gepa.logging.logger import LoggerProtocol
 # Types for GEPAState
 ProgramIdx = int
 
-# Non-generic type aliases
+# Type aliases
 ObjectiveScores: TypeAlias = dict[str, float]
 FrontierType: TypeAlias = Literal["instance", "objective", "hybrid", "cartesian"]
-
-# Generic type aliases using TypeAliasType for proper TypeVar binding
-ValScores = TypeAliasType("ValScores", dict[DataId, float], type_params=(DataId,))
-ValOutputs = TypeAliasType("ValOutputs", dict[DataId, RolloutOutput], type_params=(DataId, RolloutOutput))
-ValObjectiveScores = TypeAliasType("ValObjectiveScores", dict[DataId, ObjectiveScores], type_params=(DataId,))
 
 
 @dataclass(slots=True)
 class ValsetEvaluation(Generic[RolloutOutput, DataId]):
-    outputs_by_val_id: ValOutputs
-    scores_by_val_id: ValScores
-    objective_scores_by_val_id: ValObjectiveScores | None = None
+    outputs_by_val_id: dict[DataId, RolloutOutput]
+    scores_by_val_id: dict[DataId, float]
+    objective_scores_by_val_id: dict[DataId, ObjectiveScores] | None = None
 
 
 class GEPAState(Generic[RolloutOutput, DataId]):
@@ -42,10 +35,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     program_candidates: list[dict[str, str]]
     parent_program_for_candidate: list[list[ProgramIdx | None]]
-    prog_candidate_val_subscores: list[ValScores]
+    prog_candidate_val_subscores: list[dict[DataId, float]]
     prog_candidate_objective_scores: list[ObjectiveScores]
 
-    pareto_front_valset: ValScores
+    pareto_front_valset: dict[DataId, float]
     program_at_pareto_front_valset: dict[DataId, set[ProgramIdx]]
     objective_pareto_front: ObjectiveScores
     program_at_pareto_front_objectives: dict[str, set[ProgramIdx]]
@@ -220,7 +213,9 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     @staticmethod
     def _normalize_base_eval_output(
-        base_valset_eval_output: tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None],
+        base_valset_eval_output: tuple[
+            dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None
+        ],
     ) -> ValsetEvaluation:
         outputs, scores, objective_scores = base_valset_eval_output
         return ValsetEvaluation(
@@ -235,7 +230,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     @staticmethod
     def _aggregate_objective_scores(
-        val_objective_scores: ValObjectiveScores | None,
+        val_objective_scores: dict[DataId, ObjectiveScores] | None,
     ) -> ObjectiveScores:
         if not val_objective_scores:
             return {}
@@ -302,7 +297,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         val_id: DataId,
         score: float,
         program_idx: ProgramIdx,
-        outputs: ValOutputs | None,
+        outputs: dict[DataId, RolloutOutput] | None,
         run_dir: str | None,
         iteration: int,
     ) -> None:
@@ -415,7 +410,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         return self._get_pareto_front_mapping(self.frontier_type)
 
 
-def write_eval_scores_to_directory(scores: ValScores, output_dir: str) -> None:
+def write_eval_scores_to_directory(scores: dict[DataId, float], output_dir: str) -> None:
     for val_id, score in scores.items():
         task_dir = os.path.join(output_dir, f"task_{val_id}")
         os.makedirs(task_dir, exist_ok=True)
@@ -453,6 +448,11 @@ def initialize_gepa_state(
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)
+        if gepa_state.frontier_type != frontier_type:
+            raise ValueError(
+                f"Frontier type mismatch: requested '{frontier_type}' but loaded state has '{gepa_state.frontier_type}'. "
+                f"Use a different run_dir or match the frontier_type parameter."
+            )
     else:
         num_evals_run = 0
 
