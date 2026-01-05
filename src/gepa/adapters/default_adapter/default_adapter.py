@@ -164,7 +164,8 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
         if objective_scores:
             all_none = all(x is None for x in objective_scores)
             all_not_none = all(x is not None for x in objective_scores)
-            assert all_none or all_not_none, "Objective scores must either be all None or all not None."
+            if not (all_none or all_not_none):
+                raise ValueError("Objective scores must either be all None or all not None.")
             if all_not_none:
                 objective_scores_arg = cast(list[dict[str, float]], objective_scores)
 
