@@ -165,12 +165,9 @@ def optimize(
         assert task_lm is not None, (
             "Since no adapter is provided, GEPA requires a task LM to be provided. Please set the `task_lm` parameter."
         )
-        if evaluator is None:
-            active_adapter = cast(GEPAAdapter[DataInst, Trajectory, RolloutOutput], DefaultAdapter(model=task_lm))
-        else:
-            active_adapter = cast(
-                GEPAAdapter[DataInst, Trajectory, RolloutOutput], DefaultAdapter(model=task_lm, evaluator=evaluator)
-            )
+        active_adapter = cast(
+            GEPAAdapter[DataInst, Trajectory, RolloutOutput], DefaultAdapter(model=task_lm, evaluator=evaluator)
+        )
     else:
         assert task_lm is None, (
             "Since an adapter is provided, GEPA does not require a task LM to be provided. Please set the `task_lm` parameter to None."
@@ -179,9 +176,6 @@ def optimize(
             "Since an adapter is provided, GEPA does not require an evaluator to be provided. Please set the `evaluator` parameter to None."
         )
         active_adapter = adapter
-    assert active_adapter is not None, (
-        "No adapter was provided and no task LM was provided, and no evaluator was provided. Please provide at least one of `adapter`, `task_lm`, or `evaluator`."
-    )
 
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(trainset)

@@ -143,7 +143,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
             eval_result = self.evaluator(data, assistant_response)
             score = eval_result.score
             feedback = eval_result.feedback
-            obj_scores = eval_result.objective_scores
+            obj_scores = eval_result.objective_scores or {"score": score}
 
             output: DefaultRolloutOutput = {"full_assistant_response": assistant_response}
 
@@ -164,7 +164,9 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
             outputs=outputs,
             scores=scores,
             trajectories=trajectories,
-            objective_scores=objective_scores,
+            objective_scores=None
+            if len(objective_scores) == 0 or all(x is None for x in objective_scores)
+            else objective_scores,
         )
 
     def make_reflective_dataset(
