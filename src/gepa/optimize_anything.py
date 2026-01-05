@@ -155,13 +155,13 @@ FitnessFn protocol documentation for the complete evaluation interface.
 
 class FitnessFn(Protocol):
     def __call__(
-        self, candidate: Candidate, batch: Sequence[DataInst], **kwargs: Any
-    ) -> Sequence[tuple[float, RolloutOutput, SideInfo]]:
+        self, candidate: Candidate, example: DataInst, **kwargs: Any
+    ) -> tuple[float, RolloutOutput, SideInfo]:
         """
         Core evaluation interface for GEPA optimization.
 
-        Evaluates a candidate (parameterized system) on a batch of data instances,
-        returning scores and diagnostic information that guide the optimization process.
+        Evaluates a candidate (parameterized system) on a single example,
+        returning a score and diagnostic information that guide the optimization process.
 
         **Parameters:**
 
@@ -173,15 +173,14 @@ class FitnessFn(Protocol):
           - Hyperparameter tuning: `{"learning_rate": "0.001", "batch_size": "32"}`
           - Multi-component system: `{"component_1_config": "...", "component_2_config": "..."}`
 
-        - **batch**: List of data instances to evaluate on. Each instance is one evaluation
-          example (test case, input-output pair, task instance). Batch size controlled by
-          GEPA's BatchSampler strategy.
+        - **example**: A single example from the dataset to evaluate on (test case,
+          input-output pair, task instance).
 
         - **kwargs**: Additional keyword arguments passed during evaluation.
 
         **Returns:**
 
-        List of evaluation results, one per batch instance. Each result is a 3-tuple:
+        A 3-tuple containing the evaluation result:
 
         1. **score** (float): Fitness score for this instance. Higher is better. Must be finite.
            Primary optimization signal.
@@ -196,7 +195,6 @@ class FitnessFn(Protocol):
 
         **Requirements:**
 
-        - Return list length must equal `len(batch)`
         - Include rich diagnostic information in side_info for effective reflection
         - All scores follow "higher is better" convention
         """
@@ -223,6 +221,10 @@ class EngineConfig:
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
     candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto"
     frontier_type: FrontierType = "instance"
+
+    # Parallelization settings for fitness evaluation
+    parallel: bool = False
+    max_workers: int | None = None
 
 
 optimize_anything_reflection_prompt_template: str = """I am optimizing a parameter in my system. The current parameter value is:
@@ -344,7 +346,11 @@ def optimize_anything(
     if config is None:
         config = GEPAConfig()
 
-    active_adapter: GEPAAdapter = OptimizeAnythingAdapter(fitness_fn=fitness_fn)
+    active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
+        fitness_fn=fitness_fn,
+        parallel=config.engine.parallel,
+        max_workers=config.engine.max_workers,
+    )
 
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(dataset)

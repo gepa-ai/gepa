@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
@@ -13,8 +14,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         fitness_fn: "FitnessFn",
         reflection_lm: LanguageModel | None = None,
         reflection_prompt_template: str | None = None,
+        parallel: bool = True,
+        max_workers: int | None = None,
     ):
         self.fitness_fn = fitness_fn
+        self.parallel = parallel
+        self.max_workers = max_workers
 
     def evaluate(
         self,
@@ -22,7 +27,11 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         candidate: dict[str, str],
         capture_traces: bool = False,
     ) -> EvaluationBatch:
-        eval_output = self.fitness_fn(candidate, batch)
+        # Call fitness_fn once per example
+        if self.parallel and len(batch) > 1:
+            eval_output = self._evaluate_parallel(batch, candidate)
+        else:
+            eval_output = [self.fitness_fn(candidate, example) for example in batch]
         scores = [score for score, _, _ in eval_output]
         side_infos: list[SideInfo] = [info for _, _, info in eval_output]
         outputs = [output for _, output, _ in eval_output]
@@ -44,6 +53,29 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         return EvaluationBatch(
             outputs=outputs, scores=scores, trajectories=side_infos, objective_scores=objective_scores
         )
+
+    def _evaluate_parallel(
+        self,
+        batch: list[DataInst],
+        candidate: dict[str, str],
+    ) -> list[tuple[float, Any, "SideInfo"]]:
+        """Evaluate batch in parallel using ThreadPoolExecutor."""
+        results: list[tuple[int, tuple[float, Any, "SideInfo"]]] = []
+
+        with ThreadPoolExecutor(max_workers=self.max_workers or len(batch)) as executor:
+            # Submit all tasks with their index to maintain order
+            future_to_idx = {
+                executor.submit(self.fitness_fn, candidate, example): idx
+                for idx, example in enumerate(batch)
+            }
+
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                results.append((idx, future.result()))
+
+        # Sort by index to maintain original order
+        results.sort(key=lambda x: x[0])
+        return [result for _, result in results]
 
     def make_reflective_dataset(
         self,
