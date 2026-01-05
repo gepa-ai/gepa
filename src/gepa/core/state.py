@@ -80,9 +80,18 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.program_at_pareto_front_valset = {val_id: {0} for val_id in base_evaluation.scores_by_val_id.keys()}
         self.objective_pareto_front = dict(base_objective_aggregates)
         self.program_at_pareto_front_objectives = {objective: {0} for objective in base_objective_aggregates.keys()}
+
+        # Validate that objective scores are provided for frontier types that require them
+        if frontier_type in ("objective", "hybrid", "cartesian"):
+            if not base_evaluation.objective_scores_by_val_id:
+                raise ValueError(
+                    f"frontier_type='{frontier_type}' requires objective_scores to be provided by the evaluator, "
+                    f"but none were found. Use an evaluator that returns objective_scores or use frontier_type='instance'."
+                )
+
         # Cartesian frontier will be base_evaluation.objective_scores_by_val_id
         if frontier_type == "cartesian":
-            assert base_evaluation.objective_scores_by_val_id is not None
+            assert base_evaluation.objective_scores_by_val_id is not None  # Already validated above
             self.pareto_front_cartesian = {
                 (val_id, objective): objective_score
                 for val_id, objective_scores in base_evaluation.objective_scores_by_val_id.items()
@@ -280,7 +289,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         val_id: DataId,
         score: float,
         program_idx: ProgramIdx,
-        outputs: dict[DataId, RolloutOutput] | None,
+        output: RolloutOutput | None,
         run_dir: str | None,
         iteration: int,
     ) -> None:
@@ -288,21 +297,16 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if score > prev_score:
             self.pareto_front_valset[val_id] = score
             self.program_at_pareto_front_valset[val_id] = {program_idx}
-            output = outputs.get(val_id) if outputs is not None else None
             if self.best_outputs_valset is not None and output is not None:
                 self.best_outputs_valset[val_id] = [(program_idx, output)]
                 if run_dir is not None:
                     task_dir = os.path.join(run_dir, "generated_best_outputs_valset", f"task_{val_id}")
                     os.makedirs(task_dir, exist_ok=True)
-                    with open(
-                        os.path.join(task_dir, f"iter_{iteration}_prog_{program_idx}.json"),
-                        "w",
-                    ) as fout:
+                    with open(os.path.join(task_dir, f"iter_{iteration}_prog_{program_idx}.json"), "w") as fout:
                         json.dump(output, fout, indent=4, default=json_default)
         elif score == prev_score:
             pareto_front = self.program_at_pareto_front_valset.setdefault(val_id, set())
             pareto_front.add(program_idx)
-            output = outputs.get(val_id) if outputs is not None else None
             if self.best_outputs_valset is not None and output is not None:
                 self.best_outputs_valset[val_id].append((program_idx, output))
 
@@ -346,19 +350,27 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.prog_candidate_objective_scores.append(objective_scores)
 
         for val_id, score in valset_scores.items():
+            output = valset_evaluation.outputs_by_val_id.get(val_id) if valset_evaluation.outputs_by_val_id else None
             self._update_pareto_front_for_val_id(
                 val_id,
                 score,
                 new_program_idx,
-                valset_evaluation.outputs_by_val_id,
+                output,
                 run_dir,
                 self.i + 1,
             )
 
         self._update_objective_pareto_front(objective_scores, new_program_idx)
 
+        if self.frontier_type in ("objective", "hybrid", "cartesian"):
+            if not valset_evaluation.objective_scores_by_val_id:
+                raise ValueError(
+                    f"frontier_type='{self.frontier_type}' requires objective_scores to be provided by the evaluator, "
+                    f"but none were found in the evaluation result."
+                )
+
         if self.frontier_type == "cartesian":
-            assert valset_evaluation.objective_scores_by_val_id is not None
+            assert valset_evaluation.objective_scores_by_val_id is not None  # Validated above
             for val_id, objective_scores in valset_evaluation.objective_scores_by_val_id.items():
                 for objective, objective_score in objective_scores.items():
                     self._update_pareto_front_for_cartesian(
