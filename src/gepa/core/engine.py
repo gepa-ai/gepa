@@ -2,16 +2,19 @@
 # https://github.com/gepa-ai/gepa
 
 import traceback
+from collections.abc import Sequence
 from typing import Generic
 
-from gepa.core.adapter import DataInst, EvaluatorFn, RolloutOutput, Trajectory
+from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
-from gepa.core.state import GEPAState, ProgramIdx, initialize_gepa_state
+from gepa.core.state import FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.merge import MergeProposer
-from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
+from gepa.proposer.reflective_mutation.reflective_mutation import (
+    ReflectiveMutationProposer,
+)
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import StopperProtocol
 
@@ -27,8 +30,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
     def __init__(
         self,
+        adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput],
         run_dir: str | None,
-        evaluator: EvaluatorFn,
         valset: list[DataInst] | DataLoader[DataId, DataInst] | None,
         seed_candidate: dict[str, str],
         # Controls
@@ -37,6 +40,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Strategies and helpers
         reflective_proposer: ReflectiveMutationProposer,
         merge_proposer: MergeProposer | None,
+        frontier_type: FrontierType,
         # Logging
         logger: LoggerProtocol,
         experiment_tracker: ExperimentTracker,
@@ -57,7 +61,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Set up stopping mechanism
         self.stop_callback = stop_callback
+        self.adapter = adapter
+
+        def evaluator(
+            batch: list[DataInst], program: dict[str, str]
+        ) -> tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None]:
+            eval_result = adapter.evaluate(batch, program, capture_traces=False)
+            return eval_result.outputs, eval_result.scores, eval_result.objective_scores
+
         self.evaluator = evaluator
+
         self.valset = ensure_loader(valset) if valset is not None else None
         self.seed_candidate = seed_candidate
 
@@ -67,6 +80,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         self.reflective_proposer = reflective_proposer
         self.merge_proposer = merge_proposer
+        self.frontier_type: FrontierType = frontier_type
+
+        # Merge scheduling flags (mirroring previous behavior)
         if self.merge_proposer is not None:
             self.merge_proposer.last_iter_found_new_program = False
 
@@ -83,21 +99,26 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self,
         program: dict[str, str],
         state: GEPAState[RolloutOutput, DataId],
-    ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float]]:
+    ) -> ValsetEvaluation[RolloutOutput, DataId]:
         valset = self.valset
         assert valset is not None
 
         val_ids = self.val_evaluation_policy.get_eval_batch(valset, state)
         batch = valset.fetch(val_ids)
-        outputs, scores = self.evaluator(batch, program)
+        outputs, scores, objective_scores = self.evaluator(batch, program)
         assert len(outputs) == len(val_ids), "Eval outputs should match length of selected validation indices"
+        assert len(scores) == len(val_ids), "Eval scores should match length of selected validation indices"
 
         outputs_by_val_idx = dict(zip(val_ids, outputs, strict=False))
         scores_by_val_idx = dict(zip(val_ids, scores, strict=False))
-        return outputs_by_val_idx, scores_by_val_idx
-
-    def _get_pareto_front_programs(self, state: GEPAState[RolloutOutput, DataId]) -> dict[DataId, set[ProgramIdx]]:
-        return state.program_at_pareto_front_valset
+        objective_by_val_idx = (
+            dict(zip(val_ids, objective_scores, strict=False)) if objective_scores is not None else None
+        )
+        return ValsetEvaluation(
+            outputs_by_val_id=outputs_by_val_idx,
+            scores_by_val_id=scores_by_val_idx,
+            objective_scores_by_val_id=objective_by_val_idx,
+        )
 
     def _run_full_eval_and_add(
         self,
@@ -107,21 +128,20 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     ) -> tuple[int, int]:
         num_metric_calls_by_discovery = state.total_num_evals
 
-        valset_outputs, valset_subscores = self._evaluate_on_valset(new_program, state)
+        valset_evaluation = self._evaluate_on_valset(new_program, state)
 
         state.num_full_ds_evals += 1
-        state.total_num_evals += len(valset_subscores)
+        state.total_num_evals += len(valset_evaluation.scores_by_val_id)
 
         new_program_idx = state.update_state_with_new_program(
             parent_program_idx=parent_program_idx,
             new_program=new_program,
-            valset_outputs=valset_outputs,
-            valset_subscores=valset_subscores,
+            valset_evaluation=valset_evaluation,
             run_dir=self.run_dir,
             num_metric_calls_by_discovery_of_new_program=num_metric_calls_by_discovery,
         )
         state.full_program_trace[-1]["new_program_idx"] = new_program_idx
-        state.full_program_trace[-1]["evaluated_val_indices"] = sorted(valset_subscores.keys())
+        state.full_program_trace[-1]["evaluated_val_indices"] = sorted(valset_evaluation.scores_by_val_id.keys())
 
         valset_score = self.val_evaluation_policy.get_valset_score(new_program_idx, state)
 
@@ -136,7 +156,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             logger=self.logger,
             gepa_state=state,
             new_program_idx=new_program_idx,
-            valset_subscores=valset_subscores,
+            valset_evaluation=valset_evaluation,
+            objective_scores=state.prog_candidate_objective_scores[new_program_idx],
             experiment_tracker=self.experiment_tracker,
             linear_pareto_front_program_idx=linear_pareto_front_program_idx,
             valset_size=len(valset),
@@ -180,12 +201,20 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if valset is None:
             raise ValueError("valset must be provided to GEPAEngine.run()")
 
-        def valset_evaluator(program: dict[str, str]) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float]]:
+        def valset_evaluator(
+            program: dict[str, str],
+        ) -> ValsetEvaluation[RolloutOutput, DataId]:
             all_ids = list(valset.all_ids())
-            all_outputs, all_scores = self.evaluator(valset.fetch(all_ids), program)
-            return (
-                dict(zip(all_ids, all_outputs, strict=False)),
-                dict(zip(all_ids, all_scores, strict=False)),
+            outputs, scores, objective_scores = self.evaluator(valset.fetch(all_ids), program)
+            outputs_dict = dict(zip(all_ids, outputs, strict=False))
+            scores_dict = dict(zip(all_ids, scores, strict=False))
+            objective_scores_dict = (
+                dict(zip(all_ids, objective_scores, strict=False)) if objective_scores is not None else None
+            )
+            return ValsetEvaluation(
+                outputs_by_val_id=outputs_dict,
+                scores_by_val_id=scores_dict,
+                objective_scores_by_val_id=objective_scores_dict,
             )
 
         # Initialize state
@@ -195,6 +224,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             seed_candidate=self.seed_candidate,
             valset_evaluator=valset_evaluator,
             track_best_outputs=self.track_best_outputs,
+            frontier_type=self.frontier_type,
         )
 
         # Log base program score
@@ -238,7 +268,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         self.merge_proposer.last_iter_found_new_program = False  # old behavior
 
                         if proposal is not None and proposal.tag == "merge":
-                            parent_sums = proposal.subsample_scores_before or [float("-inf"), float("-inf")]
+                            parent_sums = proposal.subsample_scores_before or [
+                                float("-inf"),
+                                float("-inf"),
+                            ]
                             new_sum = sum(proposal.subsample_scores_after or [])
 
                             if new_sum >= max(parent_sums):

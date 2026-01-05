@@ -5,7 +5,7 @@ import random
 
 import pytest
 
-from gepa.core.state import GEPAState
+from gepa.core.state import GEPAState, ValsetEvaluation
 from gepa.strategies.candidate_selector import (
     CurrentBestCandidateSelector,
     EpsilonGreedyCandidateSelector,
@@ -17,10 +17,11 @@ from gepa.strategies.candidate_selector import (
 def mock_state():
     """Create a mock GEPAState with 3 candidates for testing."""
     seed_candidate = {"system_prompt": "test"}
-    # GEPAState expects dicts for outputs and scores keyed by data IDs
-    base_valset_eval_output = (
-        {0: "out1", 1: "out2", 2: "out3"},
-        {0: 0.5, 1: 0.3, 2: 0.7},
+    # GEPAState expects ValsetEvaluation with dicts for outputs and scores keyed by data IDs
+    base_valset_eval_output = ValsetEvaluation(
+        outputs_by_val_id={0: "out1", 1: "out2", 2: "out3"},
+        scores_by_val_id={0: 0.5, 1: 0.3, 2: 0.7},
+        objective_scores_by_val_id=None,
     )
     state = GEPAState(seed_candidate, base_valset_eval_output, track_best_outputs=False)
 
@@ -31,6 +32,10 @@ def mock_state():
     # prog_candidate_val_subscores should be dicts, not lists
     state.prog_candidate_val_subscores.append({0: 0.6, 1: 0.6, 2: 0.6})
     state.prog_candidate_val_subscores.append({0: 0.8, 1: 0.8, 2: 0.8})
+
+    # Add entries to prog_candidate_objective_scores to maintain consistency
+    state.prog_candidate_objective_scores.append({})
+    state.prog_candidate_objective_scores.append({})
 
     state.parent_program_for_candidate.append([0])
     state.parent_program_for_candidate.append([1])
