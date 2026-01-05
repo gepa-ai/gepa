@@ -441,7 +441,7 @@ def initialize_gepa_state(
     seed_candidate: dict[str, str],
     valset_evaluator: Callable[
         [dict[str, str]],
-        tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None],
+        tuple[ValOutputs, ValScores, ValObjectiveScores | None],
     ],
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
