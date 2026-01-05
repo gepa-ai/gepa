@@ -811,7 +811,7 @@ class TestArgumentValidation:
 def has_callback_support():
     """Check if optimize() supports the callbacks parameter.
 
-    Returns False until the callback integration is implemented.
+    Returns True if the callback integration is implemented, False otherwise.
     """
     import inspect
 
