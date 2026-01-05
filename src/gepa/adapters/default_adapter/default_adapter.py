@@ -2,7 +2,7 @@
 # https://github.com/gepa-ai/gepa
 
 from collections.abc import Mapping, Sequence
-from typing import Any, NamedTuple, Protocol, TypedDict
+from typing import Any, NamedTuple, Protocol, TypedDict, cast
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
 
@@ -109,7 +109,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
     ) -> EvaluationBatch[DefaultTrajectory, DefaultRolloutOutput]:
         outputs: list[DefaultRolloutOutput] = []
         scores: list[float] = []
-        objective_scores: list[dict[str, float]] = []
+        objective_scores: list[dict[str, float] | None] = []
         trajectories: list[DefaultTrajectory] | None = [] if capture_traces else None
 
         system_content = next(iter(candidate.values()))
@@ -143,7 +143,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
             eval_result = self.evaluator(data, assistant_response)
             score = eval_result.score
             feedback = eval_result.feedback
-            obj_scores = eval_result.objective_scores or {"score": score}
+            obj_scores = eval_result.objective_scores
 
             output: DefaultRolloutOutput = {"full_assistant_response": assistant_response}
 
@@ -160,13 +160,15 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
                     }
                 )
 
+        objective_scores_arg: list[dict[str, float]] | None = None
+        if len(objective_scores) > 0 and all(x is not None for x in objective_scores):
+            objective_scores_arg = cast(list[dict[str, float]], objective_scores)
+
         return EvaluationBatch(
             outputs=outputs,
             scores=scores,
             trajectories=trajectories,
-            objective_scores=None
-            if len(objective_scores) == 0 or all(x is None for x in objective_scores)
-            else objective_scores,
+            objective_scores=objective_scores_arg,
         )
 
     def make_reflective_dataset(

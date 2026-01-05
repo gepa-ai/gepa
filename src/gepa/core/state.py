@@ -64,12 +64,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     def __init__(
         self,
         seed_candidate: dict[str, str],
-        base_valset_eval_output: tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None],
+        base_evaluation: ValsetEvaluation[RolloutOutput, DataId],
         track_best_outputs: bool = False,
         frontier_type: FrontierType = "instance",
     ):
-        base_evaluation = self._normalize_base_eval_output(base_valset_eval_output)
-
         self.program_candidates = [dict(seed_candidate)]
         self.prog_candidate_val_subscores = [dict(base_evaluation.scores_by_val_id)]
 
@@ -441,7 +439,7 @@ def initialize_gepa_state(
     seed_candidate: dict[str, str],
     valset_evaluator: Callable[
         [dict[str, str]],
-        tuple[ValOutputs, ValScores, ValObjectiveScores | None],
+        ValsetEvaluation[RolloutOutput, DataId],
     ],
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
@@ -453,24 +451,16 @@ def initialize_gepa_state(
         num_evals_run = 0
 
         eval_result = valset_evaluator(seed_candidate)
-        seed_val_outputs, seed_val_scores, seed_objective_scores = eval_result
-
-        seed_valset_evaluation = GEPAState._normalize_base_eval_output(
-            (seed_val_outputs, seed_val_scores, seed_objective_scores)
-        )
-
         if run_dir is not None:
-            write_eval_outputs_to_directory(seed_val_outputs, os.path.join(run_dir, "generated_best_outputs_valset"))
+            write_eval_outputs_to_directory(
+                eval_result.outputs_by_val_id, os.path.join(run_dir, "generated_best_outputs_valset")
+            )
 
-        num_evals_run += len(seed_val_scores)
+        num_evals_run += len(eval_result.scores_by_val_id)
 
         gepa_state = GEPAState(
             seed_candidate,
-            (
-                seed_valset_evaluation.outputs_by_val_id,
-                seed_valset_evaluation.scores_by_val_id,
-                seed_valset_evaluation.objective_scores_by_val_id,
-            ),
+            eval_result,
             track_best_outputs=track_best_outputs,
             frontier_type=frontier_type,
         )
