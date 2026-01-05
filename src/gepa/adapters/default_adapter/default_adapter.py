@@ -161,7 +161,10 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
                 )
 
         objective_scores_arg: list[dict[str, float]] | None = None
-        if len(objective_scores) > 0 and all(x is not None for x in objective_scores):
+        if len(objective_scores) > 0:
+            assert all(x is not None for x in objective_scores) or all(x is None for x in objective_scores), (
+                "Objective scores must either be all None or all not None."
+            )
             objective_scores_arg = cast(list[dict[str, float]], objective_scores)
 
         return EvaluationBatch(

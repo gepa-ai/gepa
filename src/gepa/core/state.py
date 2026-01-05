@@ -8,6 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, Generic, Literal, TypeAlias
 
+from typing_extensions import TypeAliasType
+
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
 from gepa.gepa_utils import json_default
@@ -15,11 +17,15 @@ from gepa.logging.logger import LoggerProtocol
 
 # Types for GEPAState
 ProgramIdx = int
-ValScores: TypeAlias = dict[DataId, float]
-ValOutputs: TypeAlias = dict[DataId, RolloutOutput]
+
+# Non-generic type aliases
 ObjectiveScores: TypeAlias = dict[str, float]
-ValObjectiveScores: TypeAlias = dict[DataId, ObjectiveScores]
 FrontierType: TypeAlias = Literal["instance", "objective", "hybrid", "cartesian"]
+
+# Generic type aliases using TypeAliasType for proper TypeVar binding
+ValScores = TypeAliasType("ValScores", dict[DataId, float], type_params=(DataId,))
+ValOutputs = TypeAliasType("ValOutputs", dict[DataId, RolloutOutput], type_params=(DataId, RolloutOutput))
+ValObjectiveScores = TypeAliasType("ValObjectiveScores", dict[DataId, ObjectiveScores], type_params=(DataId,))
 
 
 @dataclass(slots=True)
