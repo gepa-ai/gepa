@@ -19,10 +19,16 @@ ProgramIdx = int
 # Type aliases
 ObjectiveScores: TypeAlias = dict[str, float]
 FrontierType: TypeAlias = Literal["instance", "objective", "hybrid", "cartesian"]
+"""Strategy for tracking Pareto frontiers: 'instance' (per validation example), 'objective' (per objective metric), 'hybrid' (both), or 'cartesian' (per example × objective)."""
+
+FrontierKey: TypeAlias = DataId | str | tuple[str, DataId] | tuple[str, DataId, str]
+"""Key type for frontier mappings depending on frontier_type."""
 
 
 @dataclass(slots=True)
 class ValsetEvaluation(Generic[RolloutOutput, DataId]):
+    """Container for evaluation results on a validation set batch."""
+
     outputs_by_val_id: dict[DataId, RolloutOutput]
     scores_by_val_id: dict[DataId, float]
     objective_scores_by_val_id: dict[DataId, ObjectiveScores] | None = None
@@ -218,6 +224,9 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             d["program_at_pareto_front_objectives"] = {}
         if "frontier_type" not in d:
             d["frontier_type"] = "instance"
+            # Since frontier_type instance does not require "pareto_front_cartesian" and "program_at_pareto_front_cartesian", we can safely set them to empty dicts.
+            d["pareto_front_cartesian"] = {}
+            d["program_at_pareto_front_cartesian"] = {}
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
@@ -382,13 +391,13 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         return new_program_idx
 
-    def _get_pareto_front_mapping(self, frontier_type: FrontierType) -> dict[Any, set[ProgramIdx]]:
+    def _get_pareto_front_mapping(self, frontier_type: FrontierType) -> dict[FrontierKey, set[ProgramIdx]]:
         if frontier_type == "instance":
             return {val_id: set(front) for val_id, front in self.program_at_pareto_front_valset.items()}
         if frontier_type == "objective":
             return {objective: set(front) for objective, front in self.program_at_pareto_front_objectives.items()}
         if frontier_type == "hybrid":
-            combined: dict[Any, set[ProgramIdx]] = {
+            combined: dict[FrontierKey, set[ProgramIdx]] = {
                 ("val_id", val_id): set(front) for val_id, front in self.program_at_pareto_front_valset.items()
             }
             for objective, front in self.program_at_pareto_front_objectives.items():
@@ -401,7 +410,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             }
         raise ValueError(f"Unknown frontier_type: {frontier_type}")
 
-    def get_pareto_front_mapping(self) -> dict[Any, set[ProgramIdx]]:
+    def get_pareto_front_mapping(self) -> dict[FrontierKey, set[ProgramIdx]]:
+        """Return frontier key to best-program-indices mapping based on configured frontier_type."""
         return self._get_pareto_front_mapping(self.frontier_type)
 
 
