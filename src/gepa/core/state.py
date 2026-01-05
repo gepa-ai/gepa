@@ -212,23 +212,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
-    def _normalize_base_eval_output(
-        base_valset_eval_output: tuple[
-            dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None
-        ],
-    ) -> ValsetEvaluation:
-        outputs, scores, objective_scores = base_valset_eval_output
-        return ValsetEvaluation(
-            outputs_by_val_id=dict(outputs),
-            scores_by_val_id=dict(scores),
-            objective_scores_by_val_id=(
-                dict((val_id, dict(obj_scores)) for val_id, obj_scores in objective_scores.items())
-                if objective_scores is not None
-                else None
-            ),
-        )
-
-    @staticmethod
     def _aggregate_objective_scores(
         val_objective_scores: dict[DataId, ObjectiveScores] | None,
     ) -> ObjectiveScores:
