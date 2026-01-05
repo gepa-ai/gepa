@@ -143,7 +143,7 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
             eval_result = self.evaluator(data, assistant_response)
             score = eval_result.score
             feedback = eval_result.feedback
-            obj_scores = eval_result.objective_scores or {"score": score}
+            obj_scores = eval_result.objective_scores
 
             output: DefaultRolloutOutput = {"full_assistant_response": assistant_response}
 

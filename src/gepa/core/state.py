@@ -210,6 +210,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             d["objective_pareto_front"] = {}
         if "program_at_pareto_front_objectives" not in d:
             d["program_at_pareto_front_objectives"] = {}
+        if "frontier_type" not in d:
+            d["frontier_type"] = "instance"
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
