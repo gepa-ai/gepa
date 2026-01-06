@@ -128,6 +128,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         )
 
         # 1) Evaluate current program with traces
+        curr_parent_ids = [p for p in state.parent_program_for_candidate[curr_prog_id] if p is not None]
         notify_callbacks(
             self.callbacks,
             "on_evaluation_start",
@@ -135,6 +136,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             candidate_idx=curr_prog_id,
             batch_size=len(minibatch),
             capture_traces=True,
+            parent_ids=curr_parent_ids,
         )
         eval_curr = self.adapter.evaluate(minibatch, curr_prog, capture_traces=True)
         state.total_num_evals += len(subsample_ids)
@@ -146,6 +148,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             candidate_idx=curr_prog_id,
             scores=eval_curr.scores,
             has_trajectories=bool(eval_curr.trajectories),
+            parent_ids=curr_parent_ids,
         )
 
         if not eval_curr.trajectories or len(eval_curr.trajectories) == 0:
@@ -215,14 +218,15 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             assert pname in new_candidate, f"{pname} missing in candidate"
             new_candidate[pname] = text
 
-        # Evaluate new candidate (use parent's candidate_idx as reference)
+        # Evaluate new candidate (not yet in state)
         notify_callbacks(
             self.callbacks,
             "on_evaluation_start",
             iteration=i,
-            candidate_idx=curr_prog_id,
+            candidate_idx=None,
             batch_size=len(minibatch),
             capture_traces=False,
+            parent_ids=[curr_prog_id],
         )
         eval_new = self.adapter.evaluate(minibatch, new_candidate, capture_traces=False)
         state.total_num_evals += len(subsample_ids)
@@ -231,9 +235,10 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             self.callbacks,
             "on_evaluation_end",
             iteration=i,
-            candidate_idx=curr_prog_id,
+            candidate_idx=None,
             scores=eval_new.scores,
             has_trajectories=False,
+            parent_ids=[curr_prog_id],
         )
 
         new_sum = sum(eval_new.scores)

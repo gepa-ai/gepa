@@ -156,34 +156,42 @@ class GEPACallback(Protocol):
     def on_evaluation_start(
         self,
         iteration: int,
-        candidate_idx: int,
+        candidate_idx: int | None,
         batch_size: int,
         capture_traces: bool,
+        parent_ids: list[int],
     ) -> None:
         """Called before evaluating a candidate.
 
         Args:
             iteration: Current iteration number.
-            candidate_idx: Index of the candidate being evaluated.
+            candidate_idx: Index of candidate in state, or None if evaluating
+                a new candidate not yet added to state.
             batch_size: Number of examples in the evaluation batch.
             capture_traces: Whether execution traces are being captured.
+            parent_ids: Parent candidate indices. Empty for seed candidate,
+                single element for mutations, multiple for merges.
         """
         ...
 
     def on_evaluation_end(
         self,
         iteration: int,
-        candidate_idx: int,
+        candidate_idx: int | None,
         scores: list[float],
         has_trajectories: bool,
+        parent_ids: list[int],
     ) -> None:
         """Called after evaluating a candidate.
 
         Args:
             iteration: Current iteration number.
-            candidate_idx: Index of the candidate evaluated.
+            candidate_idx: Index of candidate in state, or None if evaluating
+                a new candidate not yet added to state.
             scores: Per-example scores from the evaluation.
             has_trajectories: Whether trajectories were captured.
+            parent_ids: Parent candidate indices. Empty for seed candidate,
+                single element for mutations, multiple for merges.
         """
         ...
 

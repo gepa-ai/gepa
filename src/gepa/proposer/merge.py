@@ -347,18 +347,20 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             self.callbacks,
             "on_evaluation_start",
             iteration=i,
-            candidate_idx=id1,  # Use first parent as reference
+            candidate_idx=None,
             batch_size=len(mini_devset),
             capture_traces=False,
+            parent_ids=[id1, id2],
         )
         _, new_sub_scores = self.evaluator(mini_devset, new_program)
         notify_callbacks(
             self.callbacks,
             "on_evaluation_end",
             iteration=i,
-            candidate_idx=id1,  # Use first parent as reference
+            candidate_idx=None,
             scores=new_sub_scores,
             has_trajectories=False,
+            parent_ids=[id1, id2],
         )
 
         state.full_program_trace[-1]["id1_subsample_scores"] = id1_sub_scores

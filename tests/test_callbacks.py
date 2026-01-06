@@ -381,12 +381,14 @@ class TestEvaluationEvents:
             candidate_idx=1,
             batch_size=35,
             capture_traces=True,
+            parent_ids=[0],
         )
 
         calls = callback.get_calls("on_evaluation_start")
         assert len(calls) == 1
         assert calls[0]["batch_size"] == 35
         assert calls[0]["capture_traces"] is True
+        assert calls[0]["parent_ids"] == [0]
 
     def test_on_evaluation_end_scores_are_list_of_floats(self):
         """Verify scores argument is correctly typed."""
@@ -399,6 +401,7 @@ class TestEvaluationEvents:
             candidate_idx=1,
             scores=[0.8, 0.9, 1.0, 0.7, 0.85],
             has_trajectories=True,
+            parent_ids=[0],
         )
 
         calls = callback.get_calls("on_evaluation_end")
@@ -406,6 +409,83 @@ class TestEvaluationEvents:
         assert isinstance(calls[0]["scores"], list)
         assert all(isinstance(s, float) for s in calls[0]["scores"])
         assert calls[0]["has_trajectories"] is True
+        assert calls[0]["parent_ids"] == [0]
+
+    def test_on_evaluation_start_with_new_candidate(self):
+        """Verify evaluation of new candidate has candidate_idx=None and parent_ids set."""
+        callback = RecordingCallback()
+
+        # New mutation candidate (1 parent)
+        notify_callbacks(
+            [callback],
+            "on_evaluation_start",
+            iteration=5,
+            candidate_idx=None,
+            batch_size=10,
+            capture_traces=False,
+            parent_ids=[3],
+        )
+
+        calls = callback.get_calls("on_evaluation_start")
+        assert len(calls) == 1
+        assert calls[0]["candidate_idx"] is None
+        assert calls[0]["parent_ids"] == [3]
+
+    def test_on_evaluation_with_merge_parents(self):
+        """Verify merge evaluation has candidate_idx=None and parent_ids with 2 elements."""
+        callback = RecordingCallback()
+
+        # Merged candidate (2 parents)
+        notify_callbacks(
+            [callback],
+            "on_evaluation_start",
+            iteration=10,
+            candidate_idx=None,
+            batch_size=5,
+            capture_traces=False,
+            parent_ids=[2, 7],
+        )
+
+        notify_callbacks(
+            [callback],
+            "on_evaluation_end",
+            iteration=10,
+            candidate_idx=None,
+            scores=[0.9, 0.85, 0.95, 0.88, 0.92],
+            has_trajectories=False,
+            parent_ids=[2, 7],
+        )
+
+        start_calls = callback.get_calls("on_evaluation_start")
+        end_calls = callback.get_calls("on_evaluation_end")
+
+        assert len(start_calls) == 1
+        assert start_calls[0]["candidate_idx"] is None
+        assert start_calls[0]["parent_ids"] == [2, 7]
+
+        assert len(end_calls) == 1
+        assert end_calls[0]["candidate_idx"] is None
+        assert end_calls[0]["parent_ids"] == [2, 7]
+
+    def test_on_evaluation_with_seed_candidate(self):
+        """Verify seed candidate evaluation has empty parent_ids."""
+        callback = RecordingCallback()
+
+        # Seed candidate (no parents)
+        notify_callbacks(
+            [callback],
+            "on_evaluation_start",
+            iteration=1,
+            candidate_idx=0,
+            batch_size=20,
+            capture_traces=True,
+            parent_ids=[],
+        )
+
+        calls = callback.get_calls("on_evaluation_start")
+        assert len(calls) == 1
+        assert calls[0]["candidate_idx"] == 0
+        assert calls[0]["parent_ids"] == []
 
 
 # =============================================================================
