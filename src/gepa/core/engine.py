@@ -137,6 +137,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         state.num_full_ds_evals += 1
         state.total_num_evals += len(valset_evaluation.scores_by_val_id)
 
+        # Snapshot Pareto front before update
+        front_before = state.get_pareto_front_mapping()
+        candidates_before: set[int] = set()
+        for program_set in front_before.values():
+            candidates_before.update(program_set)
+
         new_program_idx = state.update_state_with_new_program(
             parent_program_idx=parent_program_idx,
             new_program=new_program,
@@ -144,6 +150,24 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             run_dir=self.run_dir,
             num_metric_calls_by_discovery_of_new_program=num_metric_calls_by_discovery,
         )
+
+        # Snapshot Pareto front after update and notify callback
+        front_after = state.get_pareto_front_mapping()
+        candidates_after: set[int] = set()
+        for program_set in front_after.values():
+            candidates_after.update(program_set)
+
+        new_front = sorted(candidates_after)
+        displaced_candidates = sorted(candidates_before - candidates_after)
+
+        notify_callbacks(
+            self.callbacks,
+            "on_pareto_front_updated",
+            iteration=state.i + 1,
+            new_front=new_front,
+            displaced_candidates=displaced_candidates,
+        )
+
         state.full_program_trace[-1]["new_program_idx"] = new_program_idx
         state.full_program_trace[-1]["evaluated_val_indices"] = sorted(valset_evaluation.scores_by_val_id.keys())
 
