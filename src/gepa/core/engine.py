@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Generic
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.callbacks import notify_callbacks
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
 from gepa.logging.experiment_tracker import ExperimentTracker

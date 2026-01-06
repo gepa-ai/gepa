@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable, Sequence
 from copy import deepcopy
 
 from gepa.core.adapter import Candidate, DataInst, RolloutOutput
+from gepa.core.callbacks import notify_callbacks
 from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
