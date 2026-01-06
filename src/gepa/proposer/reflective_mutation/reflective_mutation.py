@@ -153,10 +153,26 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
         if not eval_curr.trajectories or len(eval_curr.trajectories) == 0:
             self.logger.log(f"Iteration {i}: No trajectories captured. Skipping.")
+            notify_callbacks(
+                self.callbacks,
+                "on_evaluation_skipped",
+                iteration=i,
+                candidate_idx=curr_prog_id,
+                reason="no_trajectories",
+                scores=eval_curr.scores,
+            )
             return None
 
         if self.skip_perfect_score and all(s >= self.perfect_score for s in eval_curr.scores):
             self.logger.log(f"Iteration {i}: All subsample scores perfect. Skipping.")
+            notify_callbacks(
+                self.callbacks,
+                "on_evaluation_skipped",
+                iteration=i,
+                candidate_idx=curr_prog_id,
+                reason="all_scores_perfect",
+                scores=eval_curr.scores,
+            )
             return None
 
         self.experiment_tracker.log_metrics({"subsample_score": sum(eval_curr.scores)}, step=i)

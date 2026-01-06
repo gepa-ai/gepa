@@ -195,6 +195,29 @@ class GEPACallback(Protocol):
         """
         ...
 
+    def on_evaluation_skipped(
+        self,
+        iteration: int,
+        candidate_idx: int,
+        reason: str,
+        scores: list[float] | None,
+    ) -> None:
+        """Called when an evaluation is skipped or its results are not used.
+
+        This callback is triggered when an evaluation completes but the results
+        cannot be used to proceed with mutation, such as when no trajectories
+        are captured or when all scores are already perfect.
+
+        Args:
+            iteration: Current iteration number.
+            candidate_idx: Index of the candidate that was evaluated.
+            reason: Machine-readable reason for skipping. One of:
+                - "no_trajectories": Evaluation captured no trajectories.
+                - "all_scores_perfect": All scores met the perfect score threshold.
+            scores: Per-example scores from the evaluation, or None if unavailable.
+        """
+        ...
+
     # =========================================================================
     # Reflection Events
     # =========================================================================
@@ -474,6 +497,9 @@ class CompositeCallback:
 
     def on_evaluation_end(self, **kwargs: Any) -> None:
         self._notify("on_evaluation_end", **kwargs)
+
+    def on_evaluation_skipped(self, **kwargs: Any) -> None:
+        self._notify("on_evaluation_skipped", **kwargs)
 
     def on_reflective_dataset_built(self, **kwargs: Any) -> None:
         self._notify("on_reflective_dataset_built", **kwargs)

@@ -63,6 +63,9 @@ class RecordingCallback:
     def on_evaluation_end(self, **kwargs):
         self._record("on_evaluation_end", **kwargs)
 
+    def on_evaluation_skipped(self, **kwargs):
+        self._record("on_evaluation_skipped", **kwargs)
+
     def on_reflective_dataset_built(self, **kwargs):
         self._record("on_reflective_dataset_built", **kwargs)
 
@@ -486,6 +489,63 @@ class TestEvaluationEvents:
         assert len(calls) == 1
         assert calls[0]["candidate_idx"] == 0
         assert calls[0]["parent_ids"] == []
+
+    def test_on_evaluation_skipped_no_trajectories(self):
+        """Verify on_evaluation_skipped called when no trajectories captured."""
+        callback = RecordingCallback()
+
+        notify_callbacks(
+            [callback],
+            "on_evaluation_skipped",
+            iteration=3,
+            candidate_idx=1,
+            reason="no_trajectories",
+            scores=[0.8, 0.9, 0.7],
+        )
+
+        calls = callback.get_calls("on_evaluation_skipped")
+        assert len(calls) == 1
+        assert calls[0]["iteration"] == 3
+        assert calls[0]["candidate_idx"] == 1
+        assert calls[0]["reason"] == "no_trajectories"
+        assert calls[0]["scores"] == [0.8, 0.9, 0.7]
+
+    def test_on_evaluation_skipped_perfect_scores(self):
+        """Verify on_evaluation_skipped called when all scores are perfect."""
+        callback = RecordingCallback()
+
+        notify_callbacks(
+            [callback],
+            "on_evaluation_skipped",
+            iteration=5,
+            candidate_idx=2,
+            reason="all_scores_perfect",
+            scores=[1.0, 1.0, 1.0, 1.0],
+        )
+
+        calls = callback.get_calls("on_evaluation_skipped")
+        assert len(calls) == 1
+        assert calls[0]["iteration"] == 5
+        assert calls[0]["candidate_idx"] == 2
+        assert calls[0]["reason"] == "all_scores_perfect"
+        assert all(s == 1.0 for s in calls[0]["scores"])
+
+    def test_on_evaluation_skipped_with_none_scores(self):
+        """Verify on_evaluation_skipped handles None scores gracefully."""
+        callback = RecordingCallback()
+
+        notify_callbacks(
+            [callback],
+            "on_evaluation_skipped",
+            iteration=4,
+            candidate_idx=0,
+            reason="no_trajectories",
+            scores=None,
+        )
+
+        calls = callback.get_calls("on_evaluation_skipped")
+        assert len(calls) == 1
+        assert calls[0]["scores"] is None
 
 
 # =============================================================================
