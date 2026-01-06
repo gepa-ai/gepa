@@ -352,15 +352,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                 self.merge_proposer.total_merges_tested += 1
                                 proposal_accepted = True
 
-                                # Notify budget updated
-                                notify_callbacks(
-                                    self.callbacks,
-                                    "on_budget_updated",
-                                    iteration=state.i,
-                                    metric_calls_used=state.total_num_evals,
-                                    metric_calls_remaining=self._get_remaining_budget(state),
-                                )
-
                                 # Notify merge accepted
                                 notify_callbacks(
                                     self.callbacks,
@@ -434,15 +425,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 )
                 proposal_accepted = True
 
-                # Notify budget updated
-                notify_callbacks(
-                    self.callbacks,
-                    "on_budget_updated",
-                    iteration=state.i,
-                    metric_calls_used=state.total_num_evals,
-                    metric_calls_remaining=self._get_remaining_budget(state),
-                )
-
                 # Notify candidate accepted
                 notify_callbacks(
                     self.callbacks,
@@ -482,6 +464,15 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     iteration=state.i,
                     state=state,
                     proposal_accepted=proposal_accepted,
+                )
+
+                # Notify budget updated (always called to reflect any budget consumed)
+                notify_callbacks(
+                    self.callbacks,
+                    "on_budget_updated",
+                    iteration=state.i,
+                    metric_calls_used=state.total_num_evals,
+                    metric_calls_remaining=self._get_remaining_budget(state),
                 )
 
         # Close progress bar if it exists
