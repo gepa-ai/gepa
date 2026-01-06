@@ -368,7 +368,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         state.full_program_trace[-1]["new_program_subsample_scores"] = new_sub_scores
 
         # Count evals
-        state.total_num_evals += len(subsample_ids)
+        state.increment_evals(len(subsample_ids))
 
         # Acceptance will be evaluated by engine (>= max(parents))
         return CandidateProposal(

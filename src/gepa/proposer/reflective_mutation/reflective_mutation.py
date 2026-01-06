@@ -139,7 +139,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             parent_ids=curr_parent_ids,
         )
         eval_curr = self.adapter.evaluate(minibatch, curr_prog, capture_traces=True)
-        state.total_num_evals += len(subsample_ids)
+        state.increment_evals(len(subsample_ids))
         state.full_program_trace[-1]["subsample_scores"] = eval_curr.scores
         notify_callbacks(
             self.callbacks,
@@ -229,7 +229,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             parent_ids=[curr_prog_id],
         )
         eval_new = self.adapter.evaluate(minibatch, new_candidate, capture_traces=False)
-        state.total_num_evals += len(subsample_ids)
+        state.increment_evals(len(subsample_ids))
         state.full_program_trace[-1]["new_subsample_scores"] = eval_new.scores
         notify_callbacks(
             self.callbacks,

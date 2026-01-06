@@ -373,6 +373,7 @@ class GEPACallback(Protocol):
         self,
         iteration: int,
         metric_calls_used: int,
+        metric_calls_delta: int,
         metric_calls_remaining: int | None,
     ) -> None:
         """Called when the evaluation budget is updated.
@@ -380,6 +381,7 @@ class GEPACallback(Protocol):
         Args:
             iteration: Current iteration number.
             metric_calls_used: Total metric calls consumed so far.
+            metric_calls_delta: Number of metric calls consumed in this update.
             metric_calls_remaining: Remaining calls, or None if unlimited.
         """
         ...

@@ -135,7 +135,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         valset_evaluation = self._evaluate_on_valset(new_program, state)
 
         state.num_full_ds_evals += 1
-        state.total_num_evals += len(valset_evaluation.scores_by_val_id)
+        state.increment_evals(len(valset_evaluation.scores_by_val_id))
 
         # Snapshot Pareto front before update
         front_before = state.get_pareto_front_mapping()
@@ -284,6 +284,19 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 "track_best_outputs": self.track_best_outputs,
             },
         )
+
+        # Register budget hook to fire on_budget_updated callback in real-time
+        def budget_hook(new_total: int, delta: int) -> None:
+            notify_callbacks(
+                self.callbacks,
+                "on_budget_updated",
+                iteration=state.i,
+                metric_calls_used=new_total,
+                metric_calls_delta=delta,
+                metric_calls_remaining=self._get_remaining_budget(state),
+            )
+
+        state.add_budget_hook(budget_hook)
 
         # Merge scheduling
         if self.merge_proposer is not None:
@@ -464,15 +477,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     iteration=state.i,
                     state=state,
                     proposal_accepted=proposal_accepted,
-                )
-
-                # Notify budget updated (always called to reflect any budget consumed)
-                notify_callbacks(
-                    self.callbacks,
-                    "on_budget_updated",
-                    iteration=state.i,
-                    metric_calls_used=state.total_num_evals,
-                    metric_calls_remaining=self._get_remaining_budget(state),
                 )
 
         # Close progress bar if it exists

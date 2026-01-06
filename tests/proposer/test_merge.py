@@ -246,6 +246,8 @@ def _make_state(prog_val_scores):
     state.get_pareto_front_mapping = lambda: {
         val_id: set(front) for val_id, front in state.program_at_pareto_front_valset.items()
     }
+    # Add increment_evals method to match GEPAState interface
+    state.increment_evals = lambda count: setattr(state, "total_num_evals", state.total_num_evals + count)
     return state
 
 

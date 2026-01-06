@@ -147,6 +147,30 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         return True
 
+    # Budget Hook Mechanism
+    def add_budget_hook(self, hook: Callable[[int, int], None]) -> None:
+        """Register a callback to be called whenever total_num_evals changes.
+
+        Args:
+            hook: A callable that receives (new_total, delta) when evals are incremented.
+        """
+        if not hasattr(self, "_budget_hooks"):
+            self._budget_hooks: list[Callable[[int, int], None]] = []
+        self._budget_hooks.append(hook)
+
+    def increment_evals(self, count: int) -> None:
+        """Increment total_num_evals and notify all registered hooks.
+
+        Args:
+            count: Number of evaluations to add.
+        """
+        self.total_num_evals += count
+        # Lazy init handles states loaded from disk (which won't have _budget_hooks)
+        hooks = getattr(self, "_budget_hooks", None)
+        if hooks:
+            for hook in hooks:
+                hook(self.total_num_evals, count)
+
     def save(self, run_dir: str | None, *, use_cloudpickle: bool = False) -> None:
         if run_dir is None:
             return
@@ -155,7 +179,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 import cloudpickle as pickle  # type: ignore[import-not-found]
             else:
                 import pickle
-            serialized = dict(self.__dict__.items())
+            # Exclude runtime-only attributes that can't be serialized (e.g., callback hooks)
+            serialized = {k: v for k, v in self.__dict__.items() if k != "_budget_hooks"}
             serialized["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
             pickle.dump(serialized, f)
 
