@@ -15,18 +15,23 @@ from gepa.logging.logger import LoggerProtocol
 
 # Types for GEPAState
 ProgramIdx = int
-ValScores: TypeAlias = dict[DataId, float]
-ValOutputs: TypeAlias = dict[DataId, RolloutOutput]
+
+# Type aliases
 ObjectiveScores: TypeAlias = dict[str, float]
-ValObjectiveScores: TypeAlias = dict[DataId, ObjectiveScores]
 FrontierType: TypeAlias = Literal["instance", "objective", "hybrid", "cartesian"]
+"""Strategy for tracking Pareto frontiers: 'instance' (per validation example), 'objective' (per objective metric), 'hybrid' (both), or 'cartesian' (per example × objective)."""
+
+FrontierKey: TypeAlias = DataId | str | tuple[str, DataId] | tuple[str, DataId, str]
+"""Key type for frontier mappings depending on frontier_type."""
 
 
 @dataclass(slots=True)
 class ValsetEvaluation(Generic[RolloutOutput, DataId]):
-    outputs_by_val_id: ValOutputs
-    scores_by_val_id: ValScores
-    objective_scores_by_val_id: ValObjectiveScores | None = None
+    """Container for evaluation results on a validation set batch."""
+
+    outputs_by_val_id: dict[DataId, RolloutOutput]
+    scores_by_val_id: dict[DataId, float]
+    objective_scores_by_val_id: dict[DataId, ObjectiveScores] | None = None
 
 
 class GEPAState(Generic[RolloutOutput, DataId]):
@@ -36,10 +41,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     program_candidates: list[dict[str, str]]
     parent_program_for_candidate: list[list[ProgramIdx | None]]
-    prog_candidate_val_subscores: list[ValScores]
+    prog_candidate_val_subscores: list[dict[DataId, float]]
     prog_candidate_objective_scores: list[ObjectiveScores]
 
-    pareto_front_valset: ValScores
+    pareto_front_valset: dict[DataId, float]
     program_at_pareto_front_valset: dict[DataId, set[ProgramIdx]]
     objective_pareto_front: ObjectiveScores
     program_at_pareto_front_objectives: dict[str, set[ProgramIdx]]
@@ -64,12 +69,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     def __init__(
         self,
         seed_candidate: dict[str, str],
-        base_valset_eval_output: tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None],
+        base_evaluation: ValsetEvaluation[RolloutOutput, DataId],
         track_best_outputs: bool = False,
         frontier_type: FrontierType = "instance",
     ):
-        base_evaluation = self._normalize_base_eval_output(base_valset_eval_output)
-
         self.program_candidates = [dict(seed_candidate)]
         self.prog_candidate_val_subscores = [dict(base_evaluation.scores_by_val_id)]
 
@@ -83,9 +86,18 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.program_at_pareto_front_valset = {val_id: {0} for val_id in base_evaluation.scores_by_val_id.keys()}
         self.objective_pareto_front = dict(base_objective_aggregates)
         self.program_at_pareto_front_objectives = {objective: {0} for objective in base_objective_aggregates.keys()}
+
+        # Validate that objective scores are provided for frontier types that require them
+        if frontier_type in ("objective", "hybrid", "cartesian"):
+            if not base_evaluation.objective_scores_by_val_id:
+                raise ValueError(
+                    f"frontier_type='{frontier_type}' requires objective_scores to be provided by the evaluator, "
+                    f"but none were found. Use an evaluator that returns objective_scores or use frontier_type='instance'."
+                )
+
         # Cartesian frontier will be base_evaluation.objective_scores_by_val_id
         if frontier_type == "cartesian":
-            assert base_evaluation.objective_scores_by_val_id is not None
+            assert base_evaluation.objective_scores_by_val_id is not None  # Already validated above
             self.pareto_front_cartesian = {
                 (val_id, objective): objective_score
                 for val_id, objective_scores in base_evaluation.objective_scores_by_val_id.items()
@@ -210,26 +222,16 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             d["objective_pareto_front"] = {}
         if "program_at_pareto_front_objectives" not in d:
             d["program_at_pareto_front_objectives"] = {}
+        if "frontier_type" not in d:
+            d["frontier_type"] = "instance"
+            # Since frontier_type instance does not require "pareto_front_cartesian" and "program_at_pareto_front_cartesian", we can safely set them to empty dicts.
+            d["pareto_front_cartesian"] = {}
+            d["program_at_pareto_front_cartesian"] = {}
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
-    def _normalize_base_eval_output(
-        base_valset_eval_output: tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None],
-    ) -> ValsetEvaluation:
-        outputs, scores, objective_scores = base_valset_eval_output
-        return ValsetEvaluation(
-            outputs_by_val_id=dict(outputs),
-            scores_by_val_id=dict(scores),
-            objective_scores_by_val_id=(
-                dict((val_id, dict(obj_scores)) for val_id, obj_scores in objective_scores.items())
-                if objective_scores is not None
-                else None
-            ),
-        )
-
-    @staticmethod
     def _aggregate_objective_scores(
-        val_objective_scores: ValObjectiveScores | None,
+        val_objective_scores: dict[DataId, ObjectiveScores] | None,
     ) -> ObjectiveScores:
         if not val_objective_scores:
             return {}
@@ -296,7 +298,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         val_id: DataId,
         score: float,
         program_idx: ProgramIdx,
-        outputs: ValOutputs | None,
+        output: RolloutOutput | None,
         run_dir: str | None,
         iteration: int,
     ) -> None:
@@ -304,21 +306,16 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if score > prev_score:
             self.pareto_front_valset[val_id] = score
             self.program_at_pareto_front_valset[val_id] = {program_idx}
-            output = outputs.get(val_id) if outputs is not None else None
             if self.best_outputs_valset is not None and output is not None:
                 self.best_outputs_valset[val_id] = [(program_idx, output)]
                 if run_dir is not None:
                     task_dir = os.path.join(run_dir, "generated_best_outputs_valset", f"task_{val_id}")
                     os.makedirs(task_dir, exist_ok=True)
-                    with open(
-                        os.path.join(task_dir, f"iter_{iteration}_prog_{program_idx}.json"),
-                        "w",
-                    ) as fout:
+                    with open(os.path.join(task_dir, f"iter_{iteration}_prog_{program_idx}.json"), "w") as fout:
                         json.dump(output, fout, indent=4, default=json_default)
         elif score == prev_score:
             pareto_front = self.program_at_pareto_front_valset.setdefault(val_id, set())
             pareto_front.add(program_idx)
-            output = outputs.get(val_id) if outputs is not None else None
             if self.best_outputs_valset is not None and output is not None:
                 self.best_outputs_valset[val_id].append((program_idx, output))
 
@@ -366,19 +363,27 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.prog_candidate_objective_scores.append(objective_scores)
 
         for val_id, score in valset_scores.items():
+            output = valset_evaluation.outputs_by_val_id.get(val_id) if valset_evaluation.outputs_by_val_id else None
             self._update_pareto_front_for_val_id(
                 val_id,
                 score,
                 new_program_idx,
-                valset_evaluation.outputs_by_val_id,
+                output,
                 run_dir,
                 self.i + 1,
             )
 
         self._update_objective_pareto_front(objective_scores, new_program_idx)
 
+        if self.frontier_type in ("objective", "hybrid", "cartesian"):
+            if not valset_evaluation.objective_scores_by_val_id:
+                raise ValueError(
+                    f"frontier_type='{self.frontier_type}' requires objective_scores to be provided by the evaluator, "
+                    f"but none were found in the evaluation result."
+                )
+
         if self.frontier_type == "cartesian":
-            assert valset_evaluation.objective_scores_by_val_id is not None
+            assert valset_evaluation.objective_scores_by_val_id is not None  # Validated above
             for val_id, objective_scores in valset_evaluation.objective_scores_by_val_id.items():
                 for objective, objective_score in objective_scores.items():
                     self._update_pareto_front_for_cartesian(
@@ -390,13 +395,13 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         return new_program_idx
 
-    def _get_pareto_front_mapping(self, frontier_type: FrontierType) -> dict[Any, set[ProgramIdx]]:
+    def _get_pareto_front_mapping(self, frontier_type: FrontierType) -> dict[FrontierKey, set[ProgramIdx]]:
         if frontier_type == "instance":
             return {val_id: set(front) for val_id, front in self.program_at_pareto_front_valset.items()}
         if frontier_type == "objective":
             return {objective: set(front) for objective, front in self.program_at_pareto_front_objectives.items()}
         if frontier_type == "hybrid":
-            combined: dict[Any, set[ProgramIdx]] = {
+            combined: dict[FrontierKey, set[ProgramIdx]] = {
                 ("val_id", val_id): set(front) for val_id, front in self.program_at_pareto_front_valset.items()
             }
             for objective, front in self.program_at_pareto_front_objectives.items():
@@ -409,16 +414,33 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             }
         raise ValueError(f"Unknown frontier_type: {frontier_type}")
 
-    def get_pareto_front_mapping(self) -> dict[Any, set[ProgramIdx]]:
+    def get_pareto_front_mapping(self) -> dict[FrontierKey, set[ProgramIdx]]:
+        """Return frontier key to best-program-indices mapping based on configured frontier_type."""
         return self._get_pareto_front_mapping(self.frontier_type)
 
 
-def write_eval_scores_to_directory(scores: ValScores, output_dir: str) -> None:
+def write_eval_scores_to_directory(scores: dict[DataId, float], output_dir: str) -> None:
     for val_id, score in scores.items():
         task_dir = os.path.join(output_dir, f"task_{val_id}")
         os.makedirs(task_dir, exist_ok=True)
         with open(os.path.join(task_dir, f"iter_{0}_prog_0.json"), "w") as f:
             json.dump(score, f, indent=4, default=json_default)
+
+
+def write_eval_outputs_to_directory(outputs, output_dir: str) -> None:
+    """
+    Write generated rollout outputs (not scalar scores) to disk.
+
+    Structure:
+      {output_dir}/task_{val_id}/iter_0_prog_0.json
+
+    This directory is used to store best outputs for inspection/reuse.
+    """
+    for val_id, output in outputs.items():
+        task_dir = os.path.join(output_dir, f"task_{val_id}")
+        os.makedirs(task_dir, exist_ok=True)
+        with open(os.path.join(task_dir, "iter_0_prog_0.json"), "w") as f:
+            json.dump(output, f, indent=4, default=json_default)
 
 
 def initialize_gepa_state(
@@ -427,7 +449,7 @@ def initialize_gepa_state(
     seed_candidate: list[dict[str, str]],
     valset_evaluator: Callable[
         [dict[str, str]],
-        tuple[ValOutputs, ValScores, dict[DataId, ObjectiveScores] | None],
+        ValsetEvaluation[RolloutOutput, DataId],
     ],
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
@@ -435,30 +457,25 @@ def initialize_gepa_state(
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)
+        if gepa_state.frontier_type != frontier_type:
+            raise ValueError(
+                f"Frontier type mismatch: requested '{frontier_type}' but loaded state has '{gepa_state.frontier_type}'. "
+                f"Use a different run_dir or match the frontier_type parameter."
+            )
     else:
         num_evals_run = 0
 
         eval_result = valset_evaluator(seed_candidate[0])
-        seed_val_outputs, seed_val_scores, seed_objective_scores = eval_result
-
-        seed_valset_evaluation = GEPAState._normalize_base_eval_output(
-            (seed_val_outputs, seed_val_scores, seed_objective_scores)
-        )
-
         if run_dir is not None:
-            write_eval_scores_to_directory(
-                seed_valset_evaluation.scores_by_val_id,
-                os.path.join(run_dir, "generated_best_outputs_valset"),
+            write_eval_outputs_to_directory(
+                eval_result.outputs_by_val_id, os.path.join(run_dir, "generated_best_outputs_valset")
             )
-        num_evals_run += len(seed_valset_evaluation.scores_by_val_id)
+
+        num_evals_run += len(eval_result.scores_by_val_id)
 
         gepa_state = GEPAState(
             seed_candidate[0],
-            (
-                seed_valset_evaluation.outputs_by_val_id,
-                seed_valset_evaluation.scores_by_val_id,
-                seed_valset_evaluation.objective_scores_by_val_id,
-            ),
+            eval_result,
             track_best_outputs=track_best_outputs,
             frontier_type=frontier_type,
         )

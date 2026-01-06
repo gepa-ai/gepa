@@ -91,6 +91,11 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     def evaluate(self, batch, candidate, capture_traces=False):
         program = self.build_program(candidate)
 
+        outputs: list[Prediction] = []
+        scores: list[float] = []
+        subscores: list[dict[str, float]] = []
+        trajs: list[TraceData] | None = None
+
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
             from dspy.teleprompt.bootstrap_trace import bootstrap_trace_data
@@ -105,9 +110,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                 failure_score=self.failure_score,
                 format_failure_score=self.failure_score,
             )
-            outputs: list[Prediction] = []
-            scores: list[float] = []
-            subscores: list[dict[str, float]] = []
             for t in trajs:
                 outputs.append(t["prediction"])
                 score_val, subscore_dict = self._extract_score_and_subscores(t.get("score"))
@@ -115,14 +117,6 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
                     score_val = self.failure_score
                 scores.append(score_val)
                 subscores.append(subscore_dict)
-            has_subscores = any(subscores)
-            # Map DSPy "subscores" into GEPA objective score payloads.
-            return EvaluationBatch(
-                outputs=outputs,
-                scores=scores,
-                trajectories=trajs,
-                objective_scores=subscores if has_subscores else None,
-            )
         else:
             evaluator = Evaluate(
                 devset=batch,
@@ -137,22 +131,21 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             res = evaluator(program)
             outputs = [r[1] for r in res.results]
             raw_scores = [r[2] for r in res.results]
-            scores: list[float] = []
-            subscores: list[dict[str, float]] = []
             for raw_score in raw_scores:
                 score_val, subscore_dict = self._extract_score_and_subscores(raw_score)
                 if score_val is None:
                     score_val = self.failure_score
                 scores.append(score_val)
                 subscores.append(subscore_dict)
-            has_subscores = any(subscores)
-            # Map DSPy "subscores" into GEPA objective score payloads.
-            return EvaluationBatch(
-                outputs=outputs,
-                scores=scores,
-                trajectories=None,
-                objective_scores=subscores if has_subscores else None,
-            )
+
+        has_subscores = any(subscores)
+        # Map DSPy "subscores" into GEPA objective score payloads.
+        return EvaluationBatch(
+            outputs=outputs,
+            scores=scores,
+            trajectories=trajs,
+            objective_scores=subscores if has_subscores else None,
+        )
 
     def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
         from dspy.teleprompt.bootstrap_trace import FailedPrediction
@@ -284,7 +277,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
             return score_val, dict(subscores)
         try:
             return float(score_obj), {}
-        except Exception:
+        except (TypeError, ValueError):
             return None, {}
 
     # TODO: The current DSPyAdapter implementation uses the GEPA default propose_new_texts.

@@ -5,7 +5,7 @@ import random
 
 import pytest
 
-from gepa.core.state import GEPAState
+from gepa.core.state import GEPAState, ValsetEvaluation
 from gepa.strategies.candidate_selector import (
     CurrentBestCandidateSelector,
     EpsilonGreedyCandidateSelector,
@@ -17,11 +17,11 @@ from gepa.strategies.candidate_selector import (
 def mock_state():
     """Create a mock GEPAState with 3 candidates for testing."""
     seed_candidate = {"system_prompt": "test"}
-    # GEPAState expects dicts for outputs and scores keyed by data IDs
-    base_valset_eval_output = (
-        {0: "out1", 1: "out2", 2: "out3"},
-        {0: 0.5, 1: 0.3, 2: 0.7},
-        None,  # objective_scores
+    # GEPAState expects ValsetEvaluation with dicts for outputs and scores keyed by data IDs
+    base_valset_eval_output = ValsetEvaluation(
+        outputs_by_val_id={0: "out1", 1: "out2", 2: "out3"},
+        scores_by_val_id={0: 0.5, 1: 0.3, 2: 0.7},
+        objective_scores_by_val_id=None,
     )
     state = GEPAState(seed_candidate, base_valset_eval_output, track_best_outputs=False)
 
