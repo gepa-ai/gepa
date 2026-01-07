@@ -46,12 +46,12 @@ class Signature:
     def run(cls, lm: LanguageModel, input_dict: Mapping[str, Any]) -> dict[str, str]:
         full_prompt = cls.prompt_renderer(input_dict)
         lm_out = lm(full_prompt)
-        
+
         if type(lm_out) == str:
             text_out = lm_out.strip()
         elif type(lm_out) == dict:
-            text_out = lm_out["text"].strip()            
+            text_out = lm_out["text"].strip()
         else:
             raise TypeError("The output of the lm call should be str or dict!")
-        
+
         return cls.output_extractor(text_out)
