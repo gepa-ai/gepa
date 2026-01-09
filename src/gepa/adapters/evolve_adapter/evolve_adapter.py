@@ -1,22 +1,19 @@
 from __future__ import annotations
 
-import asyncio
 import importlib
 import importlib.util
 import logging
 import os
-import shutil
-import subprocess
 import sys
 import tempfile
 import traceback
 from pathlib import Path
-from types import ModuleType
-from typing import Any, Callable, Dict, Mapping, Optional, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import yaml
+from openevolve.evaluation_result import EvaluationResult  # type: ignore
+
 from gepa import EvaluationBatch, GEPAAdapter
-from openevolve.evaluation_result import EvaluationResult
 from gepa.adapters.evolve_adapter.evolve_program_proposal_signature import (
     EvolveProgramProposalSignature,
 )
@@ -43,7 +40,7 @@ def _process_evaluation_result(result: Any) -> EvaluationResult:
         return EvaluationResult(metrics={"error": 0.0})
 
 
-def _passes_threshold(metrics: Dict[str, float], threshold: float) -> bool:
+def _passes_threshold(metrics: dict[str, float], threshold: float) -> bool:
     """
     Check if metrics pass a threshold
 
@@ -85,17 +82,15 @@ def _passes_threshold(metrics: Dict[str, float], threshold: float) -> bool:
     return avg_score >= threshold
 
 
-
-
 class EvaluationStrategy:
     def evaluate(self, program_path: str, batch: list[Any]) -> list[EvaluationResult]:
         """
         Evaluate the program on a batch of data instances.
-        
+
         Args:
             program_path: Path to the program file to evaluate
             batch: List of data instances
-            
+
         Returns:
             List of EvaluationResult objects, one per batch item
         """
@@ -106,30 +101,27 @@ class DefaultEvaluationStrategy(EvaluationStrategy):
     def __init__(self, path: Path):
         self.path = path
         spec = importlib.util.spec_from_file_location("evaluator", self.path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load evaluator module from {self.path}")
         module = importlib.util.module_from_spec(spec)
         sys.modules[self.path.stem] = module
         spec.loader.exec_module(module)
         if not hasattr(module, "evaluate"):
             raise AttributeError(f"evaluate function not found in {self.path}")
-        self.module = getattr(module, "evaluate")
+        self.module = module.evaluate
 
     def evaluate(self, program_path: str, batch: list[Any]) -> list[EvaluationResult]:
         try:
             results = self.module(program_path, batch)
-            
+
             # Ensure results is a list
             if not isinstance(results, list):
-                raise TypeError(
-                    f"evaluate function must return a list of results, got {type(results)}"
-                )
-            
+                raise TypeError(f"evaluate function must return a list of results, got {type(results)}")
+
             # Ensure we have one result per batch item
             if len(results) != len(batch):
-                raise ValueError(
-                    f"evaluate function returned {len(results)} results, "
-                    f"but batch has {len(batch)} items"
-                )
-            
+                raise ValueError(f"evaluate function returned {len(results)} results, but batch has {len(batch)} items")
+
             # Process each result
             eval_results = []
             for i, result in enumerate(results):
@@ -139,29 +131,33 @@ class DefaultEvaluationStrategy(EvaluationStrategy):
                 except Exception as e:
                     logging.error(f"Error processing result for batch item {i}: {e}")
                     # Return error result for this item
-                    eval_results.append(EvaluationResult(
-                        metrics={"passed": 0.0, "error": 0.0},
-                        artifacts={
-                            "stderr": str(e),
-                            "traceback": traceback.format_exc(),
-                            "batch_item_index": i,
-                        },
-                    ))
-            
+                    eval_results.append(
+                        EvaluationResult(
+                            metrics={"passed": 0.0, "error": 0.0},
+                            artifacts={
+                                "stderr": str(e),
+                                "traceback": traceback.format_exc(),
+                                "batch_item_index": i,
+                            },
+                        )
+                    )
+
             return eval_results
         except Exception as e:
             logging.error(f"Error evaluating {program_path}: {e}")
             # Return error results for all batch items
             error_results = []
             for i in range(len(batch)):
-                error_results.append(EvaluationResult(
-                    metrics={"passed": 0.0, "error": 0.0},
-                    artifacts={
-                        "stderr": str(e),
-                        "traceback": traceback.format_exc(),
-                        "batch_item_index": i,
-                    },
-                ))
+                error_results.append(
+                    EvaluationResult(
+                        metrics={"passed": 0.0, "error": 0.0},
+                        artifacts={
+                            "stderr": str(e),
+                            "traceback": traceback.format_exc(),
+                            "batch_item_index": i,
+                        },
+                    )
+                )
             return error_results
 
 
@@ -177,6 +173,8 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
         stages = {}
         # import
         spec = importlib.util.spec_from_file_location("evaluator", self.path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load evaluator module from {self.path}")
         module = importlib.util.module_from_spec(spec)
         sys.modules[self.path.stem] = module
         spec.loader.exec_module(module)
@@ -193,7 +191,7 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
     def evaluate(self, program_path: str, batch: list[Any]) -> list[EvaluationResult]:
         """
         Evaluate in cascading stages using the thresholds.
-        
+
         Applies cascade logic per-instance: each instance is evaluated through stages
         based on its stage1 score meeting the thresholds.
         """
@@ -201,41 +199,40 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
         try:
             stage1 = self.stages["evaluate_stage1"]
             stage1_results = stage1(program_path, batch)
-            
+
             if not isinstance(stage1_results, list):
-                raise TypeError(
-                    f"evaluate_stage1 must return a list of results, got {type(stage1_results)}"
-                )
+                raise TypeError(f"evaluate_stage1 must return a list of results, got {type(stage1_results)}")
             if len(stage1_results) != len(batch):
                 raise ValueError(
-                    f"evaluate_stage1 returned {len(stage1_results)} results, "
-                    f"but batch has {len(batch)} items"
+                    f"evaluate_stage1 returned {len(stage1_results)} results, but batch has {len(batch)} items"
                 )
-            
+
             stage1_eval_results = [_process_evaluation_result(r) for r in stage1_results]
         except Exception as e:
-            logging.error(f"Error in stage 1 evaluation: {str(e)}")
+            logging.error(f"Error in stage 1 evaluation: {e!s}")
             # Return error results for all batch items
             error_results = []
             for i in range(len(batch)):
-                error_results.append(EvaluationResult(
-                    metrics={"stage1_passed": 0.0, "error": 0.0},
-                    artifacts={
-                        "stderr": str(e),
-                        "traceback": traceback.format_exc(),
-                        "batch_item_index": i,
-                    },
-                ))
+                error_results.append(
+                    EvaluationResult(
+                        metrics={"stage1_passed": 0.0, "error": 0.0},
+                        artifacts={
+                            "stderr": str(e),
+                            "traceback": traceback.format_exc(),
+                            "batch_item_index": i,
+                        },
+                    )
+                )
             return error_results
 
         # Initialize final results with stage1
         final_results = []
         stage2_indices = []
         stage3_indices = []
-        
+
         for i, stage1_result in enumerate(stage1_eval_results):
             final_results.append(stage1_result)
-            
+
             if "evaluate_stage2" in self.stages:
                 if _passes_threshold(stage1_result.metrics, self.cascade_thresholds[0]):
                     stage2_indices.append(i)
@@ -252,21 +249,19 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
             try:
                 stage2 = self.stages["evaluate_stage2"]
                 stage2_results = stage2(program_path, stage2_batch)
-                
+
                 if not isinstance(stage2_results, list):
-                    raise TypeError(
-                        f"evaluate_stage2 must return a list of results, got {type(stage2_results)}"
-                    )
+                    raise TypeError(f"evaluate_stage2 must return a list of results, got {type(stage2_results)}")
                 if len(stage2_results) != len(stage2_batch):
                     raise ValueError(
                         f"evaluate_stage2 returned {len(stage2_results)} results, "
                         f"but stage2_batch has {len(stage2_batch)} items"
                     )
-                
+
                 stage2_eval_results = [_process_evaluation_result(r) for r in stage2_results]
-                
+
                 # Merge stage2 results back into final_results
-                for idx, stage2_result in zip(stage2_indices, stage2_eval_results):
+                for idx, stage2_result in zip(stage2_indices, stage2_eval_results, strict=False):
                     merged_metrics = {}
                     # Convert all values to float to avoid type errors
                     for name, value in final_results[idx].metrics.items():
@@ -275,24 +270,24 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
                     for name, value in stage2_result.metrics.items():
                         if isinstance(value, (int, float)) and name != "error":
                             merged_metrics[name] = float(value)
-                    
+
                     # Merge artifacts
                     merged_artifacts = {}
                     merged_artifacts.update(final_results[idx].artifacts)
                     merged_artifacts.update(stage2_result.artifacts)
-                    
-                    final_results[idx] = EvaluationResult(
-                        metrics=merged_metrics, artifacts=merged_artifacts
-                    )
+
+                    final_results[idx] = EvaluationResult(metrics=merged_metrics, artifacts=merged_artifacts)
             except Exception as e:
-                logging.error(f"Error in stage 2 evaluation: {str(e)}")
+                logging.error(f"Error in stage 2 evaluation: {e!s}")
                 # Mark stage2 as failed for qualifying instances
                 for idx in stage2_indices:
                     final_results[idx].metrics["stage2_passed"] = 0.0
-                    final_results[idx].artifacts.update({
-                        "stage2_stderr": str(e),
-                        "stage2_traceback": traceback.format_exc(),
-                    })
+                    final_results[idx].artifacts.update(
+                        {
+                            "stage2_stderr": str(e),
+                            "stage2_traceback": traceback.format_exc(),
+                        }
+                    )
 
         # Run stage3 for qualifying instances
         if stage3_indices and "evaluate_stage3" in self.stages:
@@ -300,37 +295,37 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
             try:
                 stage3 = self.stages["evaluate_stage3"]
                 stage3_results = stage3(program_path, stage3_batch)
-                
+
                 if not isinstance(stage3_results, list):
-                    raise TypeError(
-                        f"evaluate_stage3 must return a list of results, got {type(stage3_results)}"
-                    )
+                    raise TypeError(f"evaluate_stage3 must return a list of results, got {type(stage3_results)}")
                 if len(stage3_results) != len(stage3_batch):
                     raise ValueError(
                         f"evaluate_stage3 returned {len(stage3_results)} results, "
                         f"but stage3_batch has {len(stage3_batch)} items"
                     )
-                
+
                 stage3_eval_results = [_process_evaluation_result(r) for r in stage3_results]
-                
+
                 # Merge stage3 results back into final_results
-                for idx, stage3_result in zip(stage3_indices, stage3_eval_results):
+                for idx, stage3_result in zip(stage3_indices, stage3_eval_results, strict=False):
                     # Merge metrics
                     for name, value in stage3_result.metrics.items():
                         if isinstance(value, (int, float)) and name != "error":
                             final_results[idx].metrics[name] = float(value)
-                    
+
                     # Merge artifacts
                     final_results[idx].artifacts.update(stage3_result.artifacts)
             except Exception as e:
                 logging.error(f"Error in stage 3: {e}")
                 # Capture stage 3 failure, but keep previous results
                 for idx in stage3_indices:
-                    final_results[idx].artifacts.update({
-                        "stage3_stderr": str(e),
-                        "stage3_traceback": traceback.format_exc(),
-                        "failure_stage": "stage3",
-                    })
+                    final_results[idx].artifacts.update(
+                        {
+                            "stage3_stderr": str(e),
+                            "stage3_traceback": traceback.format_exc(),
+                            "failure_stage": "stage3",
+                        }
+                    )
                     final_results[idx].metrics["stage3_passed"] = 0.0
 
         return final_results
@@ -345,31 +340,27 @@ class EvolveAdapter(GEPAAdapter):
     ):
         super().__init__(*args, **kwargs)
         self.path = path
-        self.config = yaml.safe_load(open(path / "config.yaml", "r"))
+        self.config = yaml.safe_load(open(path / "config.yaml"))
         self.cascade = self.config["evaluator"].get("cascade_evaluation", False)
         self.evaluator_path = path / "evaluator.py"
         self.temp_env_path = Path(tempfile.mkdtemp())
         self.evaluation_strategy = (
-            CascadeEvaluationStrategy(
-                self.evaluator_path, self.config["evaluator"]["cascade_thresholds"]
-            )
+            CascadeEvaluationStrategy(self.evaluator_path, self.config["evaluator"]["cascade_thresholds"])
             if self.cascade
             else DefaultEvaluationStrategy(self.evaluator_path)
         )
-        
+
         # Store the original program template for reconstructing complete programs
         # This preserves fixed code outside EVOLVE-BLOCK markers
         self.original_program_template = None
         initial_program_path = path / "initial_program.py"
         if initial_program_path.exists():
-            with open(initial_program_path, "r") as f:
+            with open(initial_program_path) as f:
                 self.original_program_template = f.read()
 
         # Pick the model with the highest weight (first if already sorted)
         if "models" in self.config["llm"]:
-            primary = sorted(
-                self.config["llm"]["models"], key=lambda m: m["weight"], reverse=True
-            )[0]
+            primary = sorted(self.config["llm"]["models"], key=lambda m: m["weight"], reverse=True)[0]
             model_name = primary["name"]
             api_key = primary.get("api_key") or self.config["llm"].get("api_key") or os.environ.get("OPENAI_API_KEY")
             if not api_key:
@@ -382,9 +373,7 @@ class EvolveAdapter(GEPAAdapter):
             max_tokens = primary.get("max_tokens", 4000)
         else:
             # Sensible fall-back
-            model_name = (
-                self.config["llm"].get("primary_model") or "gpt-3.5-turbo"
-            )
+            model_name = self.config["llm"].get("primary_model") or "gpt-3.5-turbo"
             api_key = self.config["llm"].get("api_key") or os.environ.get("OPENAI_API_KEY")
             if not api_key:
                 raise ValueError(
@@ -401,7 +390,7 @@ class EvolveAdapter(GEPAAdapter):
         # - EvolveAdapter matches what users would be more familiar with (OpenAI-compatible endpoint + API key only)
         #   to make porting existing projects to GEPA using the adapter a bit easier.
         import litellm  # type: ignore
-        
+
         self.litellm = litellm
 
         def _call_lm(prompt: str) -> str:
@@ -414,6 +403,7 @@ class EvolveAdapter(GEPAAdapter):
                 # Use OpenAI client directly (matches OpenEvolve's approach for Gemini + OpenAI-compatible endpoints)
                 try:
                     from openai import OpenAI
+
                     client = OpenAI(
                         api_key=api_key,
                         base_url=api_base,
@@ -432,7 +422,7 @@ class EvolveAdapter(GEPAAdapter):
                 except Exception as e:
                     # If OpenAI client fails, fall back to litellm
                     logging.warning(f"OpenAI client failed: {e}, falling back to litellm")
-            
+
             # use litellm (for non-Gemini models or when OpenAI client unavailable)
             completion_kwargs = {
                 "model": model_name,
@@ -441,45 +431,48 @@ class EvolveAdapter(GEPAAdapter):
                 "top_p": top_p,
                 "max_tokens": max_tokens,
             }
-            
+
             if api_key:
                 completion_kwargs["api_key"] = api_key
-            
+
             if api_base:
                 completion_kwargs["base_url"] = api_base
-            
+
             completion = self.litellm.completion(**completion_kwargs)
-            return completion.choices[0].message.content or ""
+
+            if hasattr(completion, "choices") and len(completion.choices) > 0:  # type: ignore
+                return completion.choices[0].message.content or ""  # type: ignore
+            return ""
 
         self.reflection_lm = _call_lm
-        
+
         # Load prompt config for proposal signature
         self.prompt_config = self.config.get("prompt", {})
 
     def _construct_complete_program(self, candidate_program: str) -> str:
         """
         Construct a complete program by replacing the EVOLVE-BLOCK section.
-        
+
         This ensures that fixed code (evaluate_function, run_search, etc.) is always
         preserved, even if the LLM only proposes the evolved block.
-        
+
         Args:
             candidate_program: The program text from the candidate (may be full program
                              or just the evolved block)
-        
+
         Returns:
             Complete program with evolved block inserted into template
         """
         if self.original_program_template is None:
             return candidate_program
-        
+
         start_marker = "# EVOLVE-BLOCK-START"
         end_marker = "# EVOLVE-BLOCK-END"
-        
+
         # Extract the evolved block content from the candidate
         candidate_start = candidate_program.find(start_marker)
         candidate_end = candidate_program.find(end_marker)
-        
+
         if candidate_start != -1 and candidate_end != -1 and candidate_start < candidate_end:
             # Candidate has markers, extract just the content between them
             block_content_start = candidate_start + len(start_marker)
@@ -487,21 +480,21 @@ class EvolveAdapter(GEPAAdapter):
         else:
             # No markers found, assume the entire candidate is the evolved block content
             block_content = candidate_program.strip()
-        
+
         # Reconstruct the full program by replacing the EVOLVE-BLOCK in the template
         template_start = self.original_program_template.find(start_marker)
         template_end = self.original_program_template.find(end_marker)
-        
+
         if template_start != -1 and template_end != -1:
             # Replace the EVOLVE-BLOCK section in the template
             before_block = self.original_program_template[:template_start]
-            after_block = self.original_program_template[template_end + len(end_marker):]
+            after_block = self.original_program_template[template_end + len(end_marker) :]
             complete_program = f"{before_block}{start_marker}\n{block_content}\n{end_marker}{after_block}"
         else:
             # Template doesn't have markers
             logging.warning("Original program template missing EVOLVE-BLOCK markers, using candidate as-is")
             complete_program = candidate_program
-        
+
         return complete_program
 
     def evaluate(
@@ -514,7 +507,7 @@ class EvolveAdapter(GEPAAdapter):
         # Construct complete program by replacing EVOLVE-BLOCK section
         candidate_program = candidate.get("program", "")
         complete_program = self._construct_complete_program(candidate_program)
-        
+
         # write the code to a temporary file
         tmp_code_path = self.temp_env_path / "temp_code.py"
         # Delete file if it exists
@@ -522,47 +515,41 @@ class EvolveAdapter(GEPAAdapter):
             tmp_code_path.unlink()
         elif tmp_code_path.exists():
             tmp_code_path.rmdir()
-        
+
         try:
             with open(tmp_code_path, "w") as f:
                 f.write(complete_program)
         except Exception as e:
             # Return error results for all batch items
-            error_output = {
-                "metrics": {"error": 0.0},
-                "artifacts": {"error": f"Failed to write code: {str(e)}"}
-            }
+            error_output = {"metrics": {"error": 0.0}, "artifacts": {"error": f"Failed to write code: {e!s}"}}
             return EvaluationBatch(
                 outputs=[error_output] * len(batch),
                 scores=[0.0] * len(batch),
-                trajectories=[None] * len(batch) if capture_traces else None
+                trajectories=[None] * len(batch) if capture_traces else None,
             )
-        
+
         # Run the evaluate method with the temporary file and batch
         eval_results = self.evaluation_strategy.evaluate(str(tmp_code_path), batch)
-        
+
         # Ensure we have one result per batch item
         if len(eval_results) != len(batch):
-            raise ValueError(
-                f"Evaluation returned {len(eval_results)} results, "
-                f"but batch has {len(batch)} items"
-            )
-        
+            raise ValueError(f"Evaluation returned {len(eval_results)} results, but batch has {len(batch)} items")
+
         # Convert list[EvaluationResult] to EvaluationBatch
         all_outputs = []
         all_scores = []
         all_trajectories = [] if capture_traces else None
-        
+
         for i, eval_result in enumerate(eval_results):
             score = eval_result.metrics.get("combined_score", 0.0)
             output = {
                 "metrics": eval_result.metrics,
                 "artifacts": eval_result.artifacts,
             }
-            
+
             all_outputs.append(output)
             all_scores.append(score)
-            
+
             if capture_traces:
                 # Create trajectory with input data and evaluation result
                 trajectory = {
@@ -573,12 +560,11 @@ class EvolveAdapter(GEPAAdapter):
                     },
                     "program_path": str(tmp_code_path),
                 }
+                assert all_trajectories is not None
                 all_trajectories.append(trajectory)
-        
+
         return EvaluationBatch(
-            outputs=all_outputs,
-            scores=all_scores,
-            trajectories=all_trajectories
+            outputs=all_outputs, scores=all_scores, trajectories=all_trajectories if capture_traces else None
         )
 
     def make_reflective_dataset(
@@ -591,67 +577,62 @@ class EvolveAdapter(GEPAAdapter):
             return {}
 
         reflective_examples = []
-        
+
         program_code = candidate.get("program", "")
-        
+
         # Process each output/score pair to create reflective examples
         # Use trajectories if available for more detailed input information
         trajectories = eval_batch.trajectories or [None] * len(eval_batch.outputs)
-        
-        for output, score, trajectory in zip(eval_batch.outputs, eval_batch.scores, trajectories):
+
+        for output, score, trajectory in zip(eval_batch.outputs, eval_batch.scores, trajectories, strict=False):
             metrics = output.get("metrics", {})
             artifacts = output.get("artifacts", {})
-            
+
             combined_score = metrics.get("combined_score", score)
             error = metrics.get("error", 0.0)
-            
+
             feedback = self._create_feedback(metrics, artifacts, combined_score, error)
-            
+
             # Extract input data from trajectory if available, otherwise use generic
             if trajectory and "data" in trajectory:
                 inputs = {"data": trajectory["data"]}
             else:
                 inputs = {"problem": "Program evaluation task"}
-            
 
             example = {
                 "Inputs": inputs,
-                "Generated Outputs": {
-                    "program": program_code,
-                    "metrics": metrics,
-                    "artifacts": artifacts
-                },
-                "Feedback": feedback
+                "Generated Outputs": {"program": program_code, "metrics": metrics, "artifacts": artifacts},
+                "Feedback": feedback,
             }
-            
+
             reflective_examples.append(example)
-        
+
         if len(reflective_examples) == 0:
             raise Exception("No valid predictions found for any module.")
-        
+
         return {"program": reflective_examples}
-    
+
     def _create_feedback(
         self,
-        metrics: Dict[str, float],
-        artifacts: Dict[str, Any],
+        metrics: dict[str, float],
+        artifacts: dict[str, Any],
         combined_score: float,
         error: float,
     ) -> str:
         """
         Create feedback string from metrics and artifacts.
-        
+
         Args:
             metrics: Dictionary of metric names to values
             artifacts: Dictionary of artifact information
             combined_score: The combined score for this evaluation
             error: Error metric (0.0 if no error, >0.0 if error occurred)
-            
+
         Returns:
             Feedback string for the LLM
         """
         feedback_parts = []
-        
+
         if error > 0.0 or combined_score == 0.0:
             error_msg = artifacts.get("error", "Unknown error occurred")
             feedback_parts.append(f"The program evaluation failed (score: {combined_score:.3f}).")
@@ -659,19 +640,19 @@ class EvolveAdapter(GEPAAdapter):
 
             if "traceback" in artifacts:
                 feedback_parts.append(f"Traceback: {artifacts['traceback']}")
-            
+
             feedback_parts.append("The program needs improvement to handle this evaluation correctly.")
         else:
             feedback_parts.append(f"The program achieved a combined score of {combined_score:.3f}.")
-            
+
             metric_info = []
             for key, value in metrics.items():
                 if key not in ("combined_score", "error") and isinstance(value, (int, float)):
                     metric_info.append(f"{key}: {value:.3f}")
-            
+
             if metric_info:
                 feedback_parts.append(f"Metrics: {', '.join(metric_info)}.")
-            
+
             # Add artifact information if available
             if artifacts:
                 artifact_info = []
@@ -679,7 +660,7 @@ class EvolveAdapter(GEPAAdapter):
                     if key not in ("error", "traceback") and value is not None:
                         # Convert key from snake_case to readable format
                         readable_key = key.replace("_", " ").title()
-                        
+
                         # Format the value appropriately
                         if isinstance(value, (str, int, float)):
                             artifact_info.append(f"{readable_key}: {value}")
@@ -689,24 +670,24 @@ class EvolveAdapter(GEPAAdapter):
                             except UnicodeDecodeError:
                                 artifact_info.append(f"{readable_key}: <binary data>")
                         else:
-                            artifact_info.append(f"{readable_key}: {str(value)}")
-                
+                            artifact_info.append(f"{readable_key}: {value!s}")
+
                 if artifact_info:
                     feedback_parts.append(" ".join(artifact_info) + ".")
-        
+
         return " ".join(feedback_parts)
 
-    def propose_new_texts(
+    def propose_new_texts(  # type: ignore[override]
         self,
         candidate: dict[str, str],
         reflective_dataset: dict[str, list[dict[str, Any]]],
         components_to_update: list[str],
     ) -> dict[str, str]:
         new_texts: dict[str, str] = {}
-        
+
         # Get the appropriate signature class (custom if config provided, else default)
         SignatureClass = EvolveProgramProposalSignature.from_config(self.prompt_config)
-        
+
         for name in components_to_update:
             base_instruction = candidate[name]
             dataset_with_feedback = reflective_dataset.get(name, [])
