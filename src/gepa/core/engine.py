@@ -163,7 +163,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         notify_callbacks(
             self.callbacks,
             "on_pareto_front_updated",
-            iteration=state.i + 1,
+            iteration=state.i,
             new_front=new_front,
             displaced_candidates=displaced_candidates,
         )
@@ -350,7 +350,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                 self.callbacks,
                                 "on_merge_attempted",
                                 iteration=state.i,
-                                parent_indices=proposal.parent_program_ids,
+                                parent_ids=proposal.parent_program_ids,
                                 merged_candidate=proposal.candidate,
                             )
 
@@ -371,7 +371,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                     "on_merge_accepted",
                                     iteration=state.i,
                                     new_candidate_idx=new_idx,
-                                    parent_indices=proposal.parent_program_ids,
+                                    parent_ids=proposal.parent_program_ids,
                                 )
                                 notify_callbacks(
                                     self.callbacks,
@@ -379,7 +379,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                     iteration=state.i,
                                     new_candidate_idx=new_idx,
                                     new_score=new_sum,
-                                    parent_idx=proposal.parent_program_ids[0],
+                                    parent_ids=proposal.parent_program_ids,
                                 )
                                 continue  # skip reflective this iteration
                             else:
@@ -393,7 +393,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                     self.callbacks,
                                     "on_merge_rejected",
                                     iteration=state.i,
-                                    parent_indices=proposal.parent_program_ids,
+                                    parent_ids=proposal.parent_program_ids,
                                     reason=f"Merged score {new_sum} worse than both parents {parent_sums}",
                                 )
                                 # Skip reflective this iteration (old behavior)
@@ -445,7 +445,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     iteration=state.i,
                     new_candidate_idx=new_idx,
                     new_score=new_sum,
-                    parent_idx=proposal.parent_program_ids[0],
+                    parent_ids=proposal.parent_program_ids,
                 )
 
                 # Schedule merge attempts like original behavior

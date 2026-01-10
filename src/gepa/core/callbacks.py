@@ -27,10 +27,11 @@ Example usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from gepa.core.state import GEPAState
+    from gepa.core.state import GEPAState, ProgramIdx
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +160,7 @@ class GEPACallback(Protocol):
         candidate_idx: int | None,
         batch_size: int,
         capture_traces: bool,
-        parent_ids: list[int],
+        parent_ids: Sequence[ProgramIdx],
     ) -> None:
         """Called before evaluating a candidate.
 
@@ -180,7 +181,7 @@ class GEPACallback(Protocol):
         candidate_idx: int | None,
         scores: list[float],
         has_trajectories: bool,
-        parent_ids: list[int],
+        parent_ids: Sequence[ProgramIdx],
     ) -> None:
         """Called after evaluating a candidate.
 
@@ -278,7 +279,7 @@ class GEPACallback(Protocol):
         iteration: int,
         new_candidate_idx: int,
         new_score: float,
-        parent_idx: int,
+        parent_ids: Sequence[ProgramIdx],
     ) -> None:
         """Called when a new candidate is accepted.
 
@@ -286,7 +287,8 @@ class GEPACallback(Protocol):
             iteration: Current iteration number.
             new_candidate_idx: Index assigned to the new candidate.
             new_score: The new candidate's validation score.
-            parent_idx: Index of the parent candidate.
+            parent_ids: Parent candidate indices. Single element for mutations,
+                multiple for merges.
         """
         ...
 
@@ -314,14 +316,14 @@ class GEPACallback(Protocol):
     def on_merge_attempted(
         self,
         iteration: int,
-        parent_indices: list[int],
+        parent_ids: Sequence[ProgramIdx],
         merged_candidate: dict[str, str],
     ) -> None:
         """Called when a merge is attempted.
 
         Args:
             iteration: Current iteration number.
-            parent_indices: Indices of the parent candidates being merged.
+            parent_ids: Indices of the parent candidates being merged.
             merged_candidate: The merged candidate instructions.
         """
         ...
@@ -330,28 +332,28 @@ class GEPACallback(Protocol):
         self,
         iteration: int,
         new_candidate_idx: int,
-        parent_indices: list[int],
+        parent_ids: Sequence[ProgramIdx],
     ) -> None:
         """Called when a merge is accepted.
 
         Args:
             iteration: Current iteration number.
             new_candidate_idx: Index assigned to the merged candidate.
-            parent_indices: Indices of the parent candidates.
+            parent_ids: Indices of the parent candidates.
         """
         ...
 
     def on_merge_rejected(
         self,
         iteration: int,
-        parent_indices: list[int],
+        parent_ids: Sequence[ProgramIdx],
         reason: str,
     ) -> None:
         """Called when a merge is rejected.
 
         Args:
             iteration: Current iteration number.
-            parent_indices: Indices of the parent candidates.
+            parent_ids: Indices of the parent candidates.
             reason: Explanation for rejection.
         """
         ...
