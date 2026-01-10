@@ -14,7 +14,33 @@ from unittest.mock import Mock
 
 import pytest
 
-from gepa.core.callbacks import CompositeCallback, GEPACallback, notify_callbacks
+from gepa.core.callbacks import (
+    BudgetUpdatedEvent,
+    CandidateAcceptedEvent,
+    CandidateRejectedEvent,
+    CandidateSelectedEvent,
+    CompositeCallback,
+    ErrorEvent,
+    EvaluationEndEvent,
+    EvaluationSkippedEvent,
+    EvaluationStartEvent,
+    GEPACallback,
+    IterationEndEvent,
+    IterationStartEvent,
+    MergeAcceptedEvent,
+    MergeAttemptedEvent,
+    MergeRejectedEvent,
+    MinibatchSampledEvent,
+    OptimizationEndEvent,
+    # Event TypedDicts:
+    OptimizationStartEvent,
+    ParetoFrontUpdatedEvent,
+    ProposalEndEvent,
+    ProposalStartEvent,
+    ReflectiveDatasetBuiltEvent,
+    StateSavedEvent,
+    notify_callbacks,
+)
 
 # =============================================================================
 # Test Fixtures and Helpers
@@ -32,75 +58,75 @@ class RecordingCallback:
     def __init__(self):
         self.calls = []
 
-    def _record(self, method_name, **kwargs):
-        self.calls.append((method_name, kwargs))
+    def _record(self, method_name, event):
+        self.calls.append((method_name, dict(event)))
 
     def get_calls(self, method_name):
         """Get all calls to a specific method."""
         return [kwargs for name, kwargs in self.calls if name == method_name]
 
-    def on_optimization_start(self, **kwargs):
-        self._record("on_optimization_start", **kwargs)
+    def on_optimization_start(self, event):
+        self._record("on_optimization_start", event)
 
-    def on_optimization_end(self, **kwargs):
-        self._record("on_optimization_end", **kwargs)
+    def on_optimization_end(self, event):
+        self._record("on_optimization_end", event)
 
-    def on_iteration_start(self, **kwargs):
-        self._record("on_iteration_start", **kwargs)
+    def on_iteration_start(self, event):
+        self._record("on_iteration_start", event)
 
-    def on_iteration_end(self, **kwargs):
-        self._record("on_iteration_end", **kwargs)
+    def on_iteration_end(self, event):
+        self._record("on_iteration_end", event)
 
-    def on_candidate_selected(self, **kwargs):
-        self._record("on_candidate_selected", **kwargs)
+    def on_candidate_selected(self, event):
+        self._record("on_candidate_selected", event)
 
-    def on_minibatch_sampled(self, **kwargs):
-        self._record("on_minibatch_sampled", **kwargs)
+    def on_minibatch_sampled(self, event):
+        self._record("on_minibatch_sampled", event)
 
-    def on_evaluation_start(self, **kwargs):
-        self._record("on_evaluation_start", **kwargs)
+    def on_evaluation_start(self, event):
+        self._record("on_evaluation_start", event)
 
-    def on_evaluation_end(self, **kwargs):
-        self._record("on_evaluation_end", **kwargs)
+    def on_evaluation_end(self, event):
+        self._record("on_evaluation_end", event)
 
-    def on_evaluation_skipped(self, **kwargs):
-        self._record("on_evaluation_skipped", **kwargs)
+    def on_evaluation_skipped(self, event):
+        self._record("on_evaluation_skipped", event)
 
-    def on_reflective_dataset_built(self, **kwargs):
-        self._record("on_reflective_dataset_built", **kwargs)
+    def on_reflective_dataset_built(self, event):
+        self._record("on_reflective_dataset_built", event)
 
-    def on_proposal_start(self, **kwargs):
-        self._record("on_proposal_start", **kwargs)
+    def on_proposal_start(self, event):
+        self._record("on_proposal_start", event)
 
-    def on_proposal_end(self, **kwargs):
-        self._record("on_proposal_end", **kwargs)
+    def on_proposal_end(self, event):
+        self._record("on_proposal_end", event)
 
-    def on_candidate_accepted(self, **kwargs):
-        self._record("on_candidate_accepted", **kwargs)
+    def on_candidate_accepted(self, event):
+        self._record("on_candidate_accepted", event)
 
-    def on_candidate_rejected(self, **kwargs):
-        self._record("on_candidate_rejected", **kwargs)
+    def on_candidate_rejected(self, event):
+        self._record("on_candidate_rejected", event)
 
-    def on_merge_attempted(self, **kwargs):
-        self._record("on_merge_attempted", **kwargs)
+    def on_merge_attempted(self, event):
+        self._record("on_merge_attempted", event)
 
-    def on_merge_accepted(self, **kwargs):
-        self._record("on_merge_accepted", **kwargs)
+    def on_merge_accepted(self, event):
+        self._record("on_merge_accepted", event)
 
-    def on_merge_rejected(self, **kwargs):
-        self._record("on_merge_rejected", **kwargs)
+    def on_merge_rejected(self, event):
+        self._record("on_merge_rejected", event)
 
-    def on_pareto_front_updated(self, **kwargs):
-        self._record("on_pareto_front_updated", **kwargs)
+    def on_pareto_front_updated(self, event):
+        self._record("on_pareto_front_updated", event)
 
-    def on_state_saved(self, **kwargs):
-        self._record("on_state_saved", **kwargs)
+    def on_state_saved(self, event):
+        self._record("on_state_saved", event)
 
-    def on_budget_updated(self, **kwargs):
-        self._record("on_budget_updated", **kwargs)
+    def on_budget_updated(self, event):
+        self._record("on_budget_updated", event)
 
-    def on_error(self, **kwargs):
-        self._record("on_error", **kwargs)
+    def on_error(self, event):
+        self._record("on_error", event)
 
 
 class FailingCallback:
@@ -113,11 +139,11 @@ class FailingCallback:
     def __init__(self, fail_on=None):
         self.fail_on = fail_on
 
-    def on_optimization_start(self, **kwargs):
+    def on_optimization_start(self, event):
         if self.fail_on == "on_optimization_start":
             raise ValueError("Intentional failure")
 
-    def on_iteration_start(self, **kwargs):
+    def on_iteration_start(self, event):
         if self.fail_on == "on_iteration_start":
             raise ValueError("Intentional failure")
 
@@ -133,9 +159,7 @@ class TestCallbackProtocol:
     def test_callback_protocol_is_runtime_checkable(self):
         """Verify GEPACallback can be checked at runtime."""
         # Protocol should be runtime checkable
-        assert hasattr(GEPACallback, "__protocol_attrs__") or hasattr(
-            GEPACallback, "_is_runtime_protocol"
-        )
+        assert hasattr(GEPACallback, "__protocol_attrs__") or hasattr(GEPACallback, "_is_runtime_protocol")
 
         # RecordingCallback should satisfy the protocol
         callback = RecordingCallback()
@@ -150,7 +174,11 @@ class TestCallbackProtocol:
         # Empty class should still be usable (duck typing)
         callback = EmptyCallback()
         # Should not raise when trying to call missing methods
-        notify_callbacks([callback], "on_optimization_start", seed_candidate={})
+        notify_callbacks(
+            [callback],
+            "on_optimization_start",
+            OptimizationStartEvent(seed_candidate={}, trainset_size=0, valset_size=0, config={}),
+        )
 
     def test_partial_callback_implementation(self):
         """Verify callbacks with only some methods work."""
@@ -159,22 +187,24 @@ class TestCallbackProtocol:
             def __init__(self):
                 self.called = False
 
-            def on_optimization_start(self, **kwargs):
+            def on_optimization_start(self, event):
                 self.called = True
 
         callback = PartialCallback()
         notify_callbacks(
             [callback],
             "on_optimization_start",
-            seed_candidate={},
-            trainset_size=10,
-            valset_size=5,
-            config={},
+            OptimizationStartEvent(
+                seed_candidate={},
+                trainset_size=10,
+                valset_size=5,
+                config={},
+            ),
         )
         assert callback.called
 
         # Calling a method that doesn't exist should not raise
-        notify_callbacks([callback], "on_iteration_start", iteration=1, state=None)
+        notify_callbacks([callback], "on_iteration_start", IterationStartEvent(iteration=1, state=None))
 
 
 # =============================================================================
@@ -192,10 +222,12 @@ class TestOptimizationLifecycle:
         notify_callbacks(
             [callback],
             "on_optimization_start",
-            seed_candidate={"instructions": "test"},
-            trainset_size=100,
-            valset_size=20,
-            config={"max_metric_calls": 500},
+            OptimizationStartEvent(
+                seed_candidate={"instructions": "test"},
+                trainset_size=100,
+                valset_size=20,
+                config={"max_metric_calls": 500},
+            ),
         )
 
         calls = callback.get_calls("on_optimization_start")
@@ -213,10 +245,12 @@ class TestOptimizationLifecycle:
         notify_callbacks(
             [callback],
             "on_optimization_end",
-            best_candidate_idx=3,
-            total_iterations=50,
-            total_metric_calls=450,
-            final_state=mock_state,
+            OptimizationEndEvent(
+                best_candidate_idx=3,
+                total_iterations=50,
+                total_metric_calls=450,
+                final_state=mock_state,
+            ),
         )
 
         calls = callback.get_calls("on_optimization_end")
@@ -243,8 +277,10 @@ class TestIterationLifecycle:
         notify_callbacks(
             [callback],
             "on_iteration_start",
-            iteration=5,
-            state=mock_state,
+            IterationStartEvent(
+                iteration=5,
+                state=mock_state,
+            ),
         )
 
         calls = callback.get_calls("on_iteration_start")
@@ -261,18 +297,22 @@ class TestIterationLifecycle:
         notify_callbacks(
             [callback],
             "on_iteration_end",
-            iteration=5,
-            state=mock_state,
-            proposal_accepted=True,
+            IterationEndEvent(
+                iteration=5,
+                state=mock_state,
+                proposal_accepted=True,
+            ),
         )
 
         # Test rejected case
         notify_callbacks(
             [callback],
             "on_iteration_end",
-            iteration=6,
-            state=mock_state,
-            proposal_accepted=False,
+            IterationEndEvent(
+                iteration=6,
+                state=mock_state,
+                proposal_accepted=False,
+            ),
         )
 
         calls = callback.get_calls("on_iteration_end")
@@ -296,10 +336,12 @@ class TestCandidateEvents:
         notify_callbacks(
             [callback],
             "on_candidate_selected",
-            iteration=3,
-            candidate_idx=2,
-            candidate={"instructions": "selected instructions"},
-            score=0.85,
+            CandidateSelectedEvent(
+                iteration=3,
+                candidate_idx=2,
+                candidate={"instructions": "selected instructions"},
+                score=0.85,
+            ),
         )
 
         calls = callback.get_calls("on_candidate_selected")
@@ -316,9 +358,11 @@ class TestCandidateEvents:
         notify_callbacks(
             [callback],
             "on_minibatch_sampled",
-            iteration=3,
-            minibatch_ids=[0, 5, 12, 23, 45],
-            trainset_size=100,
+            MinibatchSampledEvent(
+                iteration=3,
+                minibatch_ids=[0, 5, 12, 23, 45],
+                trainset_size=100,
+            ),
         )
 
         calls = callback.get_calls("on_minibatch_sampled")
@@ -333,17 +377,19 @@ class TestCandidateEvents:
         notify_callbacks(
             [callback],
             "on_candidate_accepted",
-            iteration=5,
-            new_candidate_idx=3,
-            new_score=0.92,
-            parent_idx=1,
+            CandidateAcceptedEvent(
+                iteration=5,
+                new_candidate_idx=3,
+                new_score=0.92,
+                parent_ids=[1],
+            ),
         )
 
         calls = callback.get_calls("on_candidate_accepted")
         assert len(calls) == 1
         assert calls[0]["new_candidate_idx"] == 3
         assert calls[0]["new_score"] == 0.92
-        assert calls[0]["parent_idx"] == 1
+        assert calls[0]["parent_ids"] == [1]
 
     def test_on_candidate_rejected_called_on_no_improvement(self):
         """Verify rejection callback called with scores and reason."""
@@ -352,10 +398,12 @@ class TestCandidateEvents:
         notify_callbacks(
             [callback],
             "on_candidate_rejected",
-            iteration=5,
-            old_score=0.85,
-            new_score=0.80,
-            reason="New subsample score not better than old",
+            CandidateRejectedEvent(
+                iteration=5,
+                old_score=0.85,
+                new_score=0.80,
+                reason="New subsample score not better than old",
+            ),
         )
 
         calls = callback.get_calls("on_candidate_rejected")
@@ -380,11 +428,13 @@ class TestEvaluationEvents:
         notify_callbacks(
             [callback],
             "on_evaluation_start",
-            iteration=3,
-            candidate_idx=1,
-            batch_size=35,
-            capture_traces=True,
-            parent_ids=[0],
+            EvaluationStartEvent(
+                iteration=3,
+                candidate_idx=1,
+                batch_size=35,
+                capture_traces=True,
+                parent_ids=[0],
+            ),
         )
 
         calls = callback.get_calls("on_evaluation_start")
@@ -400,11 +450,13 @@ class TestEvaluationEvents:
         notify_callbacks(
             [callback],
             "on_evaluation_end",
-            iteration=3,
-            candidate_idx=1,
-            scores=[0.8, 0.9, 1.0, 0.7, 0.85],
-            has_trajectories=True,
-            parent_ids=[0],
+            EvaluationEndEvent(
+                iteration=3,
+                candidate_idx=1,
+                scores=[0.8, 0.9, 1.0, 0.7, 0.85],
+                has_trajectories=True,
+                parent_ids=[0],
+            ),
         )
 
         calls = callback.get_calls("on_evaluation_end")
@@ -422,11 +474,13 @@ class TestEvaluationEvents:
         notify_callbacks(
             [callback],
             "on_evaluation_start",
-            iteration=5,
-            candidate_idx=None,
-            batch_size=10,
-            capture_traces=False,
-            parent_ids=[3],
+            EvaluationStartEvent(
+                iteration=5,
+                candidate_idx=None,
+                batch_size=10,
+                capture_traces=False,
+                parent_ids=[3],
+            ),
         )
 
         calls = callback.get_calls("on_evaluation_start")
@@ -442,21 +496,25 @@ class TestEvaluationEvents:
         notify_callbacks(
             [callback],
             "on_evaluation_start",
-            iteration=10,
-            candidate_idx=None,
-            batch_size=5,
-            capture_traces=False,
-            parent_ids=[2, 7],
+            EvaluationStartEvent(
+                iteration=10,
+                candidate_idx=None,
+                batch_size=5,
+                capture_traces=False,
+                parent_ids=[2, 7],
+            ),
         )
 
         notify_callbacks(
             [callback],
             "on_evaluation_end",
-            iteration=10,
-            candidate_idx=None,
-            scores=[0.9, 0.85, 0.95, 0.88, 0.92],
-            has_trajectories=False,
-            parent_ids=[2, 7],
+            EvaluationEndEvent(
+                iteration=10,
+                candidate_idx=None,
+                scores=[0.9, 0.85, 0.95, 0.88, 0.92],
+                has_trajectories=False,
+                parent_ids=[2, 7],
+            ),
         )
 
         start_calls = callback.get_calls("on_evaluation_start")
@@ -478,11 +536,13 @@ class TestEvaluationEvents:
         notify_callbacks(
             [callback],
             "on_evaluation_start",
-            iteration=1,
-            candidate_idx=0,
-            batch_size=20,
-            capture_traces=True,
-            parent_ids=[],
+            EvaluationStartEvent(
+                iteration=1,
+                candidate_idx=0,
+                batch_size=20,
+                capture_traces=True,
+                parent_ids=[],
+            ),
         )
 
         calls = callback.get_calls("on_evaluation_start")
@@ -497,10 +557,12 @@ class TestEvaluationEvents:
         notify_callbacks(
             [callback],
             "on_evaluation_skipped",
-            iteration=3,
-            candidate_idx=1,
-            reason="no_trajectories",
-            scores=[0.8, 0.9, 0.7],
+            EvaluationSkippedEvent(
+                iteration=3,
+                candidate_idx=1,
+                reason="no_trajectories",
+                scores=[0.8, 0.9, 0.7],
+            ),
         )
 
         calls = callback.get_calls("on_evaluation_skipped")
@@ -517,10 +579,12 @@ class TestEvaluationEvents:
         notify_callbacks(
             [callback],
             "on_evaluation_skipped",
-            iteration=5,
-            candidate_idx=2,
-            reason="all_scores_perfect",
-            scores=[1.0, 1.0, 1.0, 1.0],
+            EvaluationSkippedEvent(
+                iteration=5,
+                candidate_idx=2,
+                reason="all_scores_perfect",
+                scores=[1.0, 1.0, 1.0, 1.0],
+            ),
         )
 
         calls = callback.get_calls("on_evaluation_skipped")
@@ -537,10 +601,12 @@ class TestEvaluationEvents:
         notify_callbacks(
             [callback],
             "on_evaluation_skipped",
-            iteration=4,
-            candidate_idx=0,
-            reason="no_trajectories",
-            scores=None,
+            EvaluationSkippedEvent(
+                iteration=4,
+                candidate_idx=0,
+                reason="no_trajectories",
+                scores=None,
+            ),
         )
 
         calls = callback.get_calls("on_evaluation_skipped")
@@ -573,10 +639,12 @@ class TestReflectionEvents:
         notify_callbacks(
             [callback],
             "on_reflective_dataset_built",
-            iteration=3,
-            candidate_idx=1,
-            components=["predictor"],
-            dataset=dataset,
+            ReflectiveDatasetBuiltEvent(
+                iteration=3,
+                candidate_idx=1,
+                components=["predictor"],
+                dataset=dataset,
+            ),
         )
 
         calls = callback.get_calls("on_reflective_dataset_built")
@@ -593,18 +661,22 @@ class TestReflectionEvents:
         notify_callbacks(
             [callback],
             "on_proposal_start",
-            iteration=3,
-            parent_candidate={"instructions": "Original instructions"},
-            components=["instructions"],
-            reflective_dataset={"instructions": []},
+            ProposalStartEvent(
+                iteration=3,
+                parent_candidate={"instructions": "Original instructions"},
+                components=["instructions"],
+                reflective_dataset={"instructions": []},
+            ),
         )
 
         # Proposal end
         notify_callbacks(
             [callback],
             "on_proposal_end",
-            iteration=3,
-            new_instructions={"instructions": "Improved instructions"},
+            ProposalEndEvent(
+                iteration=3,
+                new_instructions={"instructions": "Improved instructions"},
+            ),
         )
 
         start_calls = callback.get_calls("on_proposal_start")
@@ -632,14 +704,16 @@ class TestMergeEvents:
         notify_callbacks(
             [callback],
             "on_merge_attempted",
-            iteration=10,
-            parent_indices=[1, 3],
-            merged_candidate={"instructions": "merged"},
+            MergeAttemptedEvent(
+                iteration=10,
+                parent_ids=[1, 3],
+                merged_candidate={"instructions": "merged"},
+            ),
         )
 
         calls = callback.get_calls("on_merge_attempted")
         assert len(calls) == 1
-        assert calls[0]["parent_indices"] == [1, 3]
+        assert calls[0]["parent_ids"] == [1, 3]
 
     def test_on_merge_accepted_called_on_improvement(self):
         """Verify merge acceptance callback includes new index."""
@@ -648,15 +722,17 @@ class TestMergeEvents:
         notify_callbacks(
             [callback],
             "on_merge_accepted",
-            iteration=10,
-            new_candidate_idx=5,
-            parent_indices=[1, 3],
+            MergeAcceptedEvent(
+                iteration=10,
+                new_candidate_idx=5,
+                parent_ids=[1, 3],
+            ),
         )
 
         calls = callback.get_calls("on_merge_accepted")
         assert len(calls) == 1
         assert calls[0]["new_candidate_idx"] == 5
-        assert calls[0]["parent_indices"] == [1, 3]
+        assert calls[0]["parent_ids"] == [1, 3]
 
     def test_on_merge_rejected_called_on_failure(self):
         """Verify merge rejection includes reason."""
@@ -665,9 +741,11 @@ class TestMergeEvents:
         notify_callbacks(
             [callback],
             "on_merge_rejected",
-            iteration=10,
-            parent_indices=[1, 3],
-            reason="Merged score worse than both parents",
+            MergeRejectedEvent(
+                iteration=10,
+                parent_ids=[1, 3],
+                reason="Merged score worse than both parents",
+            ),
         )
 
         calls = callback.get_calls("on_merge_rejected")
@@ -690,9 +768,11 @@ class TestStateEvents:
         notify_callbacks(
             [callback],
             "on_pareto_front_updated",
-            iteration=5,
-            new_front=[0, 2, 4],
-            displaced_candidates=[1],
+            ParetoFrontUpdatedEvent(
+                iteration=5,
+                new_front=[0, 2, 4],
+                displaced_candidates=[1],
+            ),
         )
 
         calls = callback.get_calls("on_pareto_front_updated")
@@ -707,8 +787,10 @@ class TestStateEvents:
         notify_callbacks(
             [callback],
             "on_state_saved",
-            iteration=5,
-            run_dir="/tmp/gepa_run_123",
+            StateSavedEvent(
+                iteration=5,
+                run_dir="/tmp/gepa_run_123",
+            ),
         )
 
         calls = callback.get_calls("on_state_saved")
@@ -722,9 +804,12 @@ class TestStateEvents:
         notify_callbacks(
             [callback],
             "on_budget_updated",
-            iteration=5,
-            metric_calls_used=150,
-            metric_calls_remaining=350,
+            BudgetUpdatedEvent(
+                iteration=5,
+                metric_calls_used=150,
+                metric_calls_delta=10,
+                metric_calls_remaining=350,
+            ),
         )
 
         calls = callback.get_calls("on_budget_updated")
@@ -749,9 +834,11 @@ class TestErrorHandling:
         notify_callbacks(
             [callback],
             "on_error",
-            iteration=5,
-            exception=exc,
-            will_continue=True,
+            ErrorEvent(
+                iteration=5,
+                exception=exc,
+                will_continue=True,
+            ),
         )
 
         calls = callback.get_calls("on_error")
@@ -768,10 +855,12 @@ class TestErrorHandling:
         notify_callbacks(
             [failing, recording],
             "on_optimization_start",
-            seed_candidate={},
-            trainset_size=10,
-            valset_size=5,
-            config={},
+            OptimizationStartEvent(
+                seed_candidate={},
+                trainset_size=10,
+                valset_size=5,
+                config={},
+            ),
         )
 
         # Recording callback should still have been called
@@ -788,10 +877,12 @@ class TestErrorHandling:
             notify_callbacks(
                 [failing],
                 "on_optimization_start",
-                seed_candidate={},
-                trainset_size=10,
-                valset_size=5,
-                config={},
+                OptimizationStartEvent(
+                    seed_candidate={},
+                    trainset_size=10,
+                    valset_size=5,
+                    config={},
+                ),
             )
 
         assert "failed on on_optimization_start" in caplog.text
@@ -812,10 +903,12 @@ class TestComposition:
 
         composite = CompositeCallback([callback1, callback2])
         composite.on_optimization_start(
-            seed_candidate={},
-            trainset_size=10,
-            valset_size=5,
-            config={},
+            OptimizationStartEvent(
+                seed_candidate={},
+                trainset_size=10,
+                valset_size=5,
+                config={},
+            )
         )
 
         assert len(callback1.get_calls("on_optimization_start")) == 1
@@ -828,8 +921,10 @@ class TestComposition:
         notify_callbacks(
             callbacks,
             "on_iteration_start",
-            iteration=1,
-            state=None,
+            IterationStartEvent(
+                iteration=1,
+                state=None,
+            ),
         )
 
         for callback in callbacks:
@@ -843,17 +938,19 @@ class TestComposition:
             def __init__(self, name):
                 self.name = name
 
-            def on_optimization_start(self, **kwargs):
+            def on_optimization_start(self, event):
                 order.append(self.name)
 
         callbacks = [OrderCallback("first"), OrderCallback("second"), OrderCallback("third")]
         notify_callbacks(
             callbacks,
             "on_optimization_start",
-            seed_candidate={},
-            trainset_size=10,
-            valset_size=5,
-            config={},
+            OptimizationStartEvent(
+                seed_candidate={},
+                trainset_size=10,
+                valset_size=5,
+                config={},
+            ),
         )
 
         assert order == ["first", "second", "third"]
@@ -865,10 +962,12 @@ class TestComposition:
 
         composite.add(callback)
         composite.on_optimization_start(
-            seed_candidate={},
-            trainset_size=10,
-            valset_size=5,
-            config={},
+            OptimizationStartEvent(
+                seed_candidate={},
+                trainset_size=10,
+                valset_size=5,
+                config={},
+            )
         )
 
         assert len(callback.get_calls("on_optimization_start")) == 1
@@ -876,12 +975,20 @@ class TestComposition:
     def test_notify_callbacks_with_none(self):
         """Verify notify_callbacks handles None gracefully."""
         # Should not raise
-        notify_callbacks(None, "on_optimization_start", seed_candidate={})
+        notify_callbacks(
+            None,
+            "on_optimization_start",
+            OptimizationStartEvent(seed_candidate={}, trainset_size=0, valset_size=0, config={}),
+        )
 
     def test_notify_callbacks_with_empty_list(self):
         """Verify notify_callbacks handles empty list gracefully."""
         # Should not raise
-        notify_callbacks([], "on_optimization_start", seed_candidate={})
+        notify_callbacks(
+            [],
+            "on_optimization_start",
+            OptimizationStartEvent(seed_candidate={}, trainset_size=0, valset_size=0, config={}),
+        )
 
 
 # =============================================================================
@@ -910,10 +1017,12 @@ class TestArgumentValidation:
         notify_callbacks(
             [callback],
             "on_reflective_dataset_built",
-            iteration=1,
-            candidate_idx=0,
-            components=["predictor_name"],
-            dataset=dataset,
+            ReflectiveDatasetBuiltEvent(
+                iteration=1,
+                candidate_idx=0,
+                components=["predictor_name"],
+                dataset=dataset,
+            ),
         )
 
         calls = callback.get_calls("on_reflective_dataset_built")
@@ -935,8 +1044,10 @@ class TestArgumentValidation:
         notify_callbacks(
             [callback],
             "on_iteration_start",
-            iteration=1,
-            state=None,
+            IterationStartEvent(
+                iteration=1,
+                state=None,
+            ),
         )
 
         calls = callback.get_calls("on_iteration_start")
