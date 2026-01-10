@@ -7,7 +7,11 @@ from collections.abc import Callable, Iterable, Sequence
 from copy import deepcopy
 
 from gepa.core.adapter import Candidate, DataInst, RolloutOutput
-from gepa.core.callbacks import notify_callbacks
+from gepa.core.callbacks import (
+    EvaluationEndEvent,
+    EvaluationStartEvent,
+    notify_callbacks,
+)
 from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
@@ -346,21 +350,25 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         notify_callbacks(
             self.callbacks,
             "on_evaluation_start",
-            iteration=i,
-            candidate_idx=None,
-            batch_size=len(mini_devset),
-            capture_traces=False,
-            parent_ids=[id1, id2],
+            EvaluationStartEvent(
+                iteration=i,
+                candidate_idx=None,
+                batch_size=len(mini_devset),
+                capture_traces=False,
+                parent_ids=[id1, id2],
+            ),
         )
         _, new_sub_scores = self.evaluator(mini_devset, new_program)
         notify_callbacks(
             self.callbacks,
             "on_evaluation_end",
-            iteration=i,
-            candidate_idx=None,
-            scores=new_sub_scores,
-            has_trajectories=False,
-            parent_ids=[id1, id2],
+            EvaluationEndEvent(
+                iteration=i,
+                candidate_idx=None,
+                scores=new_sub_scores,
+                has_trajectories=False,
+                parent_ids=[id1, id2],
+            ),
         )
 
         state.full_program_trace[-1]["id1_subsample_scores"] = id1_sub_scores

@@ -5,7 +5,17 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
-from gepa.core.callbacks import notify_callbacks
+from gepa.core.callbacks import (
+    CandidateSelectedEvent,
+    EvaluationEndEvent,
+    EvaluationSkippedEvent,
+    EvaluationStartEvent,
+    MinibatchSampledEvent,
+    ProposalEndEvent,
+    ProposalStartEvent,
+    ReflectiveDatasetBuiltEvent,
+    notify_callbacks,
+)
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -106,10 +116,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         notify_callbacks(
             self.callbacks,
             "on_candidate_selected",
-            iteration=i,
-            candidate_idx=curr_prog_id,
-            candidate=curr_prog,
-            score=state.program_full_scores_val_set[curr_prog_id],
+            CandidateSelectedEvent(
+                iteration=i,
+                candidate_idx=curr_prog_id,
+                candidate=curr_prog,
+                score=state.program_full_scores_val_set[curr_prog_id],
+            ),
         )
 
         self.experiment_tracker.log_metrics({"iteration": i, "selected_program_candidate": curr_prog_id}, step=i)
@@ -122,9 +134,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         notify_callbacks(
             self.callbacks,
             "on_minibatch_sampled",
-            iteration=i,
-            minibatch_ids=subsample_ids,
-            trainset_size=len(self.trainset),
+            MinibatchSampledEvent(
+                iteration=i,
+                minibatch_ids=subsample_ids,
+                trainset_size=len(self.trainset),
+            ),
         )
 
         # 1) Evaluate current program with traces
@@ -132,11 +146,13 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         notify_callbacks(
             self.callbacks,
             "on_evaluation_start",
-            iteration=i,
-            candidate_idx=curr_prog_id,
-            batch_size=len(minibatch),
-            capture_traces=True,
-            parent_ids=curr_parent_ids,
+            EvaluationStartEvent(
+                iteration=i,
+                candidate_idx=curr_prog_id,
+                batch_size=len(minibatch),
+                capture_traces=True,
+                parent_ids=curr_parent_ids,
+            ),
         )
         eval_curr = self.adapter.evaluate(minibatch, curr_prog, capture_traces=True)
         state.increment_evals(len(subsample_ids))
@@ -144,11 +160,13 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         notify_callbacks(
             self.callbacks,
             "on_evaluation_end",
-            iteration=i,
-            candidate_idx=curr_prog_id,
-            scores=eval_curr.scores,
-            has_trajectories=bool(eval_curr.trajectories),
-            parent_ids=curr_parent_ids,
+            EvaluationEndEvent(
+                iteration=i,
+                candidate_idx=curr_prog_id,
+                scores=eval_curr.scores,
+                has_trajectories=bool(eval_curr.trajectories),
+                parent_ids=curr_parent_ids,
+            ),
         )
 
         if not eval_curr.trajectories or len(eval_curr.trajectories) == 0:
@@ -156,10 +174,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             notify_callbacks(
                 self.callbacks,
                 "on_evaluation_skipped",
-                iteration=i,
-                candidate_idx=curr_prog_id,
-                reason="no_trajectories",
-                scores=eval_curr.scores,
+                EvaluationSkippedEvent(
+                    iteration=i,
+                    candidate_idx=curr_prog_id,
+                    reason="no_trajectories",
+                    scores=eval_curr.scores,
+                ),
             )
             return None
 
@@ -168,10 +188,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             notify_callbacks(
                 self.callbacks,
                 "on_evaluation_skipped",
-                iteration=i,
-                candidate_idx=curr_prog_id,
-                reason="all_scores_perfect",
-                scores=eval_curr.scores,
+                EvaluationSkippedEvent(
+                    iteration=i,
+                    candidate_idx=curr_prog_id,
+                    reason="all_scores_perfect",
+                    scores=eval_curr.scores,
+                ),
             )
             return None
 
@@ -190,20 +212,24 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             notify_callbacks(
                 self.callbacks,
                 "on_reflective_dataset_built",
-                iteration=i,
-                candidate_idx=curr_prog_id,
-                components=predictor_names_to_update,
-                dataset=dict(reflective_dataset),
+                ReflectiveDatasetBuiltEvent(
+                    iteration=i,
+                    candidate_idx=curr_prog_id,
+                    components=predictor_names_to_update,
+                    dataset=dict(reflective_dataset),
+                ),
             )
 
             # Notify proposal start
             notify_callbacks(
                 self.callbacks,
                 "on_proposal_start",
-                iteration=i,
-                parent_candidate=curr_prog,
-                components=predictor_names_to_update,
-                reflective_dataset=dict(reflective_dataset),
+                ProposalStartEvent(
+                    iteration=i,
+                    parent_candidate=curr_prog,
+                    components=predictor_names_to_update,
+                    reflective_dataset=dict(reflective_dataset),
+                ),
             )
 
             new_texts = self.propose_new_texts(curr_prog, reflective_dataset, predictor_names_to_update)
@@ -212,8 +238,10 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             notify_callbacks(
                 self.callbacks,
                 "on_proposal_end",
-                iteration=i,
-                new_instructions=new_texts,
+                ProposalEndEvent(
+                    iteration=i,
+                    new_instructions=new_texts,
+                ),
             )
 
             for pname, text in new_texts.items():
@@ -238,11 +266,13 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         notify_callbacks(
             self.callbacks,
             "on_evaluation_start",
-            iteration=i,
-            candidate_idx=None,
-            batch_size=len(minibatch),
-            capture_traces=False,
-            parent_ids=[curr_prog_id],
+            EvaluationStartEvent(
+                iteration=i,
+                candidate_idx=None,
+                batch_size=len(minibatch),
+                capture_traces=False,
+                parent_ids=[curr_prog_id],
+            ),
         )
         eval_new = self.adapter.evaluate(minibatch, new_candidate, capture_traces=False)
         state.increment_evals(len(subsample_ids))
@@ -250,11 +280,13 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         notify_callbacks(
             self.callbacks,
             "on_evaluation_end",
-            iteration=i,
-            candidate_idx=None,
-            scores=eval_new.scores,
-            has_trajectories=False,
-            parent_ids=[curr_prog_id],
+            EvaluationEndEvent(
+                iteration=i,
+                candidate_idx=None,
+                scores=eval_new.scores,
+                has_trajectories=False,
+                parent_ids=[curr_prog_id],
+            ),
         )
 
         new_sum = sum(eval_new.scores)
