@@ -78,7 +78,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 continue
 
             base_instruction = candidate[name]
-            dataset_with_feedback = reflective_dataset[name]
+            dataset_with_feedback = reflective_dataset.get(name, None)
+            if dataset_with_feedback == None:
+                continue
             new_texts[name] = InstructionProposalSignature.run(
                 lm=self.reflection_lm,
                 input_dict={
