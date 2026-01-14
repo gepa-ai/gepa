@@ -60,12 +60,12 @@ DSPy Improvement Strategies:
 
 Here's my current code:
 ```
-<curr_program>
+<curr_param>
 ```
 
 Here is the execution trace of the current code on example inputs, their outputs, and detailed feedback on improvements:
 ```
-<dataset_with_feedback>
+<side_info>
 ```
 
 Assignment:
