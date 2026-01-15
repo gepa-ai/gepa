@@ -215,6 +215,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         try:
             reflective_dataset = self.adapter.make_reflective_dataset(curr_prog, eval_curr, predictor_names_to_update)
 
+            # Convert to concrete types for callback
+            reflective_dataset_concrete: dict[str, list[dict[str, Any]]] = {
+                k: [dict(item) for item in v] for k, v in reflective_dataset.items()
+            }
+
             # Notify reflective dataset built
             notify_callbacks(
                 self.callbacks,
@@ -223,7 +228,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                     iteration=i,
                     candidate_idx=curr_prog_id,
                     components=predictor_names_to_update,
-                    dataset=dict(reflective_dataset),
+                    dataset=reflective_dataset_concrete,
                 ),
             )
 
@@ -235,7 +240,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                     iteration=i,
                     parent_candidate=curr_prog,
                     components=predictor_names_to_update,
-                    reflective_dataset=dict(reflective_dataset),
+                    reflective_dataset=reflective_dataset_concrete,
                 ),
             )
 
