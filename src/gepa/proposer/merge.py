@@ -356,9 +356,11 @@ class MergeProposer(ProposeNewCandidate[DataId]):
                 batch_size=len(mini_devset),
                 capture_traces=False,
                 parent_ids=[id1, id2],
+                inputs=mini_devset,
+                is_seed=False,
             ),
         )
-        _, new_sub_scores = self.evaluator(mini_devset, new_program)
+        outputs, new_sub_scores = self.evaluator(mini_devset, new_program)
         notify_callbacks(
             self.callbacks,
             "on_evaluation_end",
@@ -368,6 +370,10 @@ class MergeProposer(ProposeNewCandidate[DataId]):
                 scores=new_sub_scores,
                 has_trajectories=False,
                 parent_ids=[id1, id2],
+                outputs=outputs,
+                trajectories=None,
+                objective_scores=None,
+                is_seed=False,
             ),
         )
 

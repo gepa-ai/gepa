@@ -85,9 +85,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         for name in components_to_update:
             # Gracefully handle cases where a selected component has no data in reflective_dataset
             if name not in reflective_dataset or not reflective_dataset.get(name):
-                self.logger.log(
-                    f"Component '{name}' is not in reflective dataset. Skipping."
-                )
+                self.logger.log(f"Component '{name}' is not in reflective dataset. Skipping.")
                 continue
 
             base_instruction = candidate[name]
@@ -143,6 +141,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
         # 1) Evaluate current program with traces
         curr_parent_ids = [p for p in state.parent_program_for_candidate[curr_prog_id] if p is not None]
+        is_seed = curr_prog_id == 0
         notify_callbacks(
             self.callbacks,
             "on_evaluation_start",
@@ -152,6 +151,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 batch_size=len(minibatch),
                 capture_traces=True,
                 parent_ids=curr_parent_ids,
+                inputs=minibatch,
+                is_seed=is_seed,
             ),
         )
         eval_curr = self.adapter.evaluate(minibatch, curr_prog, capture_traces=True)
@@ -166,6 +167,10 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 scores=eval_curr.scores,
                 has_trajectories=bool(eval_curr.trajectories),
                 parent_ids=curr_parent_ids,
+                outputs=eval_curr.outputs,
+                trajectories=eval_curr.trajectories,
+                objective_scores=eval_curr.objective_scores,
+                is_seed=is_seed,
             ),
         )
 
@@ -179,6 +184,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                     candidate_idx=curr_prog_id,
                     reason="no_trajectories",
                     scores=eval_curr.scores,
+                    is_seed=is_seed,
                 ),
             )
             return None
@@ -193,6 +199,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                     candidate_idx=curr_prog_id,
                     reason="all_scores_perfect",
                     scores=eval_curr.scores,
+                    is_seed=is_seed,
                 ),
             )
             return None
@@ -272,6 +279,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 batch_size=len(minibatch),
                 capture_traces=False,
                 parent_ids=[curr_prog_id],
+                inputs=minibatch,
+                is_seed=False,
             ),
         )
         eval_new = self.adapter.evaluate(minibatch, new_candidate, capture_traces=False)
@@ -286,6 +295,10 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 scores=eval_new.scores,
                 has_trajectories=False,
                 parent_ids=[curr_prog_id],
+                outputs=eval_new.outputs,
+                trajectories=None,
+                objective_scores=eval_new.objective_scores,
+                is_seed=False,
             ),
         )
 

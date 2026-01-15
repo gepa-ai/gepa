@@ -32,13 +32,13 @@ from gepa.core.callbacks import (
     MergeRejectedEvent,
     MinibatchSampledEvent,
     OptimizationEndEvent,
-    # Event TypedDicts:
     OptimizationStartEvent,
     ParetoFrontUpdatedEvent,
     ProposalEndEvent,
     ProposalStartEvent,
     ReflectiveDatasetBuiltEvent,
     StateSavedEvent,
+    ValsetEvaluatedEvent,
     notify_callbacks,
 )
 
@@ -127,6 +127,9 @@ class RecordingCallback:
 
     def on_error(self, event):
         self._record("on_error", event)
+
+    def on_valset_evaluated(self, event):
+        self._record("on_valset_evaluated", event)
 
 
 class FailingCallback:
@@ -422,8 +425,10 @@ class TestEvaluationEvents:
     """Tests for evaluation start/end callbacks."""
 
     def test_on_evaluation_start_called_with_batch_info(self):
-        """Verify on_evaluation_start receives batch size and trace flag."""
+        """Verify on_evaluation_start receives batch size, trace flag, and inputs."""
         callback = RecordingCallback()
+
+        test_inputs = [{"question": "What is 2+2?"}, {"question": "What is 3+3?"}]
 
         notify_callbacks(
             [callback],
@@ -434,6 +439,8 @@ class TestEvaluationEvents:
                 batch_size=35,
                 capture_traces=True,
                 parent_ids=[0],
+                inputs=test_inputs,
+                is_seed=False,
             ),
         )
 
@@ -442,10 +449,22 @@ class TestEvaluationEvents:
         assert calls[0]["batch_size"] == 35
         assert calls[0]["capture_traces"] is True
         assert calls[0]["parent_ids"] == [0]
+        assert calls[0]["inputs"] == test_inputs
+        assert calls[0]["is_seed"] is False
 
     def test_on_evaluation_end_scores_are_list_of_floats(self):
         """Verify scores argument is correctly typed."""
         callback = RecordingCallback()
+
+        test_outputs = ["answer1", "answer2", "answer3", "answer4", "answer5"]
+        test_trajectories = [{"trace": "t1"}, {"trace": "t2"}, {"trace": "t3"}, {"trace": "t4"}, {"trace": "t5"}]
+        test_objective_scores = [
+            {"accuracy": 0.8},
+            {"accuracy": 0.9},
+            {"accuracy": 1.0},
+            {"accuracy": 0.7},
+            {"accuracy": 0.85},
+        ]
 
         notify_callbacks(
             [callback],
@@ -456,6 +475,10 @@ class TestEvaluationEvents:
                 scores=[0.8, 0.9, 1.0, 0.7, 0.85],
                 has_trajectories=True,
                 parent_ids=[0],
+                outputs=test_outputs,
+                trajectories=test_trajectories,
+                objective_scores=test_objective_scores,
+                is_seed=False,
             ),
         )
 
@@ -465,10 +488,16 @@ class TestEvaluationEvents:
         assert all(isinstance(s, float) for s in calls[0]["scores"])
         assert calls[0]["has_trajectories"] is True
         assert calls[0]["parent_ids"] == [0]
+        assert calls[0]["outputs"] == test_outputs
+        assert calls[0]["trajectories"] == test_trajectories
+        assert calls[0]["objective_scores"] == test_objective_scores
+        assert calls[0]["is_seed"] is False
 
     def test_on_evaluation_start_with_new_candidate(self):
         """Verify evaluation of new candidate has candidate_idx=None and parent_ids set."""
         callback = RecordingCallback()
+
+        test_inputs = [{"q": "test"}]
 
         # New mutation candidate (1 parent)
         notify_callbacks(
@@ -480,6 +509,8 @@ class TestEvaluationEvents:
                 batch_size=10,
                 capture_traces=False,
                 parent_ids=[3],
+                inputs=test_inputs,
+                is_seed=False,
             ),
         )
 
@@ -487,10 +518,15 @@ class TestEvaluationEvents:
         assert len(calls) == 1
         assert calls[0]["candidate_idx"] is None
         assert calls[0]["parent_ids"] == [3]
+        assert calls[0]["inputs"] == test_inputs
+        assert calls[0]["is_seed"] is False
 
     def test_on_evaluation_with_merge_parents(self):
         """Verify merge evaluation has candidate_idx=None and parent_ids with 2 elements."""
         callback = RecordingCallback()
+
+        test_inputs = [{"q": f"q{i}"} for i in range(5)]
+        test_outputs = [f"out{i}" for i in range(5)]
 
         # Merged candidate (2 parents)
         notify_callbacks(
@@ -502,6 +538,8 @@ class TestEvaluationEvents:
                 batch_size=5,
                 capture_traces=False,
                 parent_ids=[2, 7],
+                inputs=test_inputs,
+                is_seed=False,
             ),
         )
 
@@ -514,6 +552,10 @@ class TestEvaluationEvents:
                 scores=[0.9, 0.85, 0.95, 0.88, 0.92],
                 has_trajectories=False,
                 parent_ids=[2, 7],
+                outputs=test_outputs,
+                trajectories=None,
+                objective_scores=None,
+                is_seed=False,
             ),
         )
 
@@ -523,14 +565,22 @@ class TestEvaluationEvents:
         assert len(start_calls) == 1
         assert start_calls[0]["candidate_idx"] is None
         assert start_calls[0]["parent_ids"] == [2, 7]
+        assert start_calls[0]["inputs"] == test_inputs
+        assert start_calls[0]["is_seed"] is False
 
         assert len(end_calls) == 1
         assert end_calls[0]["candidate_idx"] is None
         assert end_calls[0]["parent_ids"] == [2, 7]
+        assert end_calls[0]["outputs"] == test_outputs
+        assert end_calls[0]["trajectories"] is None
+        assert end_calls[0]["objective_scores"] is None
+        assert end_calls[0]["is_seed"] is False
 
     def test_on_evaluation_with_seed_candidate(self):
-        """Verify seed candidate evaluation has empty parent_ids."""
+        """Verify seed candidate evaluation has empty parent_ids and is_seed=True."""
         callback = RecordingCallback()
+
+        test_inputs = [{"seed_input": i} for i in range(20)]
 
         # Seed candidate (no parents)
         notify_callbacks(
@@ -542,6 +592,8 @@ class TestEvaluationEvents:
                 batch_size=20,
                 capture_traces=True,
                 parent_ids=[],
+                inputs=test_inputs,
+                is_seed=True,
             ),
         )
 
@@ -549,6 +601,8 @@ class TestEvaluationEvents:
         assert len(calls) == 1
         assert calls[0]["candidate_idx"] == 0
         assert calls[0]["parent_ids"] == []
+        assert calls[0]["inputs"] == test_inputs
+        assert calls[0]["is_seed"] is True
 
     def test_on_evaluation_skipped_no_trajectories(self):
         """Verify on_evaluation_skipped called when no trajectories captured."""
@@ -562,6 +616,7 @@ class TestEvaluationEvents:
                 candidate_idx=1,
                 reason="no_trajectories",
                 scores=[0.8, 0.9, 0.7],
+                is_seed=False,
             ),
         )
 
@@ -571,6 +626,7 @@ class TestEvaluationEvents:
         assert calls[0]["candidate_idx"] == 1
         assert calls[0]["reason"] == "no_trajectories"
         assert calls[0]["scores"] == [0.8, 0.9, 0.7]
+        assert calls[0]["is_seed"] is False
 
     def test_on_evaluation_skipped_perfect_scores(self):
         """Verify on_evaluation_skipped called when all scores are perfect."""
@@ -584,6 +640,7 @@ class TestEvaluationEvents:
                 candidate_idx=2,
                 reason="all_scores_perfect",
                 scores=[1.0, 1.0, 1.0, 1.0],
+                is_seed=False,
             ),
         )
 
@@ -593,6 +650,7 @@ class TestEvaluationEvents:
         assert calls[0]["candidate_idx"] == 2
         assert calls[0]["reason"] == "all_scores_perfect"
         assert all(s == 1.0 for s in calls[0]["scores"])
+        assert calls[0]["is_seed"] is False
 
     def test_on_evaluation_skipped_with_none_scores(self):
         """Verify on_evaluation_skipped handles None scores gracefully."""
@@ -606,12 +664,14 @@ class TestEvaluationEvents:
                 candidate_idx=0,
                 reason="no_trajectories",
                 scores=None,
+                is_seed=True,
             ),
         )
 
         calls = callback.get_calls("on_evaluation_skipped")
         assert len(calls) == 1
         assert calls[0]["scores"] is None
+        assert calls[0]["is_seed"] is True
 
 
 # =============================================================================
@@ -819,7 +879,180 @@ class TestStateEvents:
 
 
 # =============================================================================
-# I. Error Handling Tests
+# I. Valset Evaluated Event Tests
+# =============================================================================
+
+
+class TestValsetEvaluatedEvent:
+    """Tests for on_valset_evaluated callback."""
+
+    def test_on_valset_evaluated_called_with_correct_args(self):
+        """Verify on_valset_evaluated receives all expected fields."""
+        callback = RecordingCallback()
+
+        notify_callbacks(
+            [callback],
+            "on_valset_evaluated",
+            ValsetEvaluatedEvent(
+                iteration=5,
+                candidate_idx=3,
+                candidate={"instructions": "test instructions"},
+                scores_by_val_id={"val_0": 0.8, "val_1": 0.9, "val_2": 0.7},
+                average_score=0.8,
+                num_examples_evaluated=3,
+                total_valset_size=10,
+                parent_ids=[1],
+                is_best_program=True,
+                outputs_by_val_id={"val_0": "output_0", "val_1": "output_1", "val_2": "output_2"},
+            ),
+        )
+
+        calls = callback.get_calls("on_valset_evaluated")
+        assert len(calls) == 1
+        assert calls[0]["iteration"] == 5
+        assert calls[0]["candidate_idx"] == 3
+        assert calls[0]["candidate"] == {"instructions": "test instructions"}
+        assert calls[0]["scores_by_val_id"] == {"val_0": 0.8, "val_1": 0.9, "val_2": 0.7}
+        assert calls[0]["average_score"] == 0.8
+        assert calls[0]["num_examples_evaluated"] == 3
+        assert calls[0]["total_valset_size"] == 10
+        assert calls[0]["parent_ids"] == [1]
+        assert calls[0]["is_best_program"] is True
+        assert calls[0]["outputs_by_val_id"] == {"val_0": "output_0", "val_1": "output_1", "val_2": "output_2"}
+
+    def test_on_valset_evaluated_with_seed_candidate(self):
+        """Verify seed candidate has empty parent_ids."""
+        callback = RecordingCallback()
+
+        notify_callbacks(
+            [callback],
+            "on_valset_evaluated",
+            ValsetEvaluatedEvent(
+                iteration=1,
+                candidate_idx=0,
+                candidate={"instructions": "seed instructions"},
+                scores_by_val_id={0: 0.5, 1: 0.6},
+                average_score=0.55,
+                num_examples_evaluated=2,
+                total_valset_size=2,
+                parent_ids=[],
+                is_best_program=True,
+                outputs_by_val_id={0: "out_0", 1: "out_1"},
+            ),
+        )
+
+        calls = callback.get_calls("on_valset_evaluated")
+        assert len(calls) == 1
+        assert calls[0]["candidate_idx"] == 0
+        assert calls[0]["parent_ids"] == []
+        assert calls[0]["is_best_program"] is True
+
+    def test_on_valset_evaluated_with_mutation(self):
+        """Verify mutation has single parent in parent_ids."""
+        callback = RecordingCallback()
+
+        notify_callbacks(
+            [callback],
+            "on_valset_evaluated",
+            ValsetEvaluatedEvent(
+                iteration=3,
+                candidate_idx=2,
+                candidate={"instructions": "mutated instructions"},
+                scores_by_val_id={0: 0.7, 1: 0.8},
+                average_score=0.75,
+                num_examples_evaluated=2,
+                total_valset_size=5,
+                parent_ids=[1],
+                is_best_program=False,
+                outputs_by_val_id={0: "out_0", 1: "out_1"},
+            ),
+        )
+
+        calls = callback.get_calls("on_valset_evaluated")
+        assert len(calls) == 1
+        assert calls[0]["parent_ids"] == [1]
+        assert calls[0]["is_best_program"] is False
+
+    def test_on_valset_evaluated_with_merge(self):
+        """Verify merge has two parents in parent_ids."""
+        callback = RecordingCallback()
+
+        notify_callbacks(
+            [callback],
+            "on_valset_evaluated",
+            ValsetEvaluatedEvent(
+                iteration=10,
+                candidate_idx=5,
+                candidate={"instructions": "merged instructions"},
+                scores_by_val_id={"a": 0.9, "b": 0.85},
+                average_score=0.875,
+                num_examples_evaluated=2,
+                total_valset_size=2,
+                parent_ids=[2, 4],
+                is_best_program=True,
+                outputs_by_val_id={"a": "out_a", "b": "out_b"},
+            ),
+        )
+
+        calls = callback.get_calls("on_valset_evaluated")
+        assert len(calls) == 1
+        assert calls[0]["parent_ids"] == [2, 4]
+
+    def test_on_valset_evaluated_with_none_outputs(self):
+        """Verify outputs_by_val_id can be None."""
+        callback = RecordingCallback()
+
+        notify_callbacks(
+            [callback],
+            "on_valset_evaluated",
+            ValsetEvaluatedEvent(
+                iteration=2,
+                candidate_idx=1,
+                candidate={"instructions": "test"},
+                scores_by_val_id={0: 0.6},
+                average_score=0.6,
+                num_examples_evaluated=1,
+                total_valset_size=5,
+                parent_ids=[0],
+                is_best_program=False,
+                outputs_by_val_id=None,
+            ),
+        )
+
+        calls = callback.get_calls("on_valset_evaluated")
+        assert len(calls) == 1
+        assert calls[0]["outputs_by_val_id"] is None
+
+    def test_on_valset_evaluated_partial_coverage(self):
+        """Verify num_examples_evaluated can differ from total_valset_size."""
+        callback = RecordingCallback()
+
+        notify_callbacks(
+            [callback],
+            "on_valset_evaluated",
+            ValsetEvaluatedEvent(
+                iteration=4,
+                candidate_idx=3,
+                candidate={"instructions": "partial eval"},
+                scores_by_val_id={0: 0.8, 2: 0.9, 5: 0.7},
+                average_score=0.8,
+                num_examples_evaluated=3,
+                total_valset_size=10,
+                parent_ids=[2],
+                is_best_program=False,
+                outputs_by_val_id={0: "o0", 2: "o2", 5: "o5"},
+            ),
+        )
+
+        calls = callback.get_calls("on_valset_evaluated")
+        assert len(calls) == 1
+        assert calls[0]["num_examples_evaluated"] == 3
+        assert calls[0]["total_valset_size"] == 10
+        assert len(calls[0]["scores_by_val_id"]) == 3
+
+
+# =============================================================================
+# J. Error Handling Tests
 # =============================================================================
 
 

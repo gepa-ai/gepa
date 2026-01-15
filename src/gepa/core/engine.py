@@ -20,6 +20,7 @@ from gepa.core.callbacks import (
     OptimizationStartEvent,
     ParetoFrontUpdatedEvent,
     StateSavedEvent,
+    ValsetEvaluatedEvent,
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
@@ -196,6 +197,25 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         valset = self.valset
         assert valset is not None
+
+        notify_callbacks(
+            self.callbacks,
+            "on_valset_evaluated",
+            ValsetEvaluatedEvent(
+                iteration=state.i,
+                candidate_idx=new_program_idx,
+                candidate=new_program,
+                scores_by_val_id=dict(valset_evaluation.scores_by_val_id),
+                average_score=valset_score,
+                num_examples_evaluated=len(valset_evaluation.scores_by_val_id),
+                total_valset_size=len(valset),
+                parent_ids=parent_program_idx,
+                is_best_program=(new_program_idx == linear_pareto_front_program_idx),
+                outputs_by_val_id=(
+                    dict(valset_evaluation.outputs_by_val_id) if valset_evaluation.outputs_by_val_id else None
+                ),
+            ),
+        )
 
         log_detailed_metrics_after_discovering_new_program(
             logger=self.logger,

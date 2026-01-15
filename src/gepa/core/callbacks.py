@@ -105,6 +105,8 @@ class EvaluationStartEvent(TypedDict):
     batch_size: int
     capture_traces: bool
     parent_ids: Sequence[ProgramIdx]
+    inputs: list[Any]
+    is_seed: bool
 
 
 class EvaluationEndEvent(TypedDict):
@@ -115,6 +117,10 @@ class EvaluationEndEvent(TypedDict):
     scores: list[float]
     has_trajectories: bool
     parent_ids: Sequence[ProgramIdx]
+    outputs: list[Any]
+    trajectories: list[Any] | None
+    objective_scores: list[dict[str, float]] | None
+    is_seed: bool
 
 
 class EvaluationSkippedEvent(TypedDict):
@@ -124,6 +130,7 @@ class EvaluationSkippedEvent(TypedDict):
     candidate_idx: int
     reason: str
     scores: list[float] | None
+    is_seed: bool
 
 
 class ReflectiveDatasetBuiltEvent(TypedDict):
@@ -199,6 +206,21 @@ class ParetoFrontUpdatedEvent(TypedDict):
     iteration: int
     new_front: list[int]
     displaced_candidates: list[int]
+
+
+class ValsetEvaluatedEvent(TypedDict):
+    """Event for on_valset_evaluated callback."""
+
+    iteration: int
+    candidate_idx: int
+    candidate: dict[str, str]
+    scores_by_val_id: dict[Any, float]
+    average_score: float
+    num_examples_evaluated: int
+    total_valset_size: int
+    parent_ids: Sequence[ProgramIdx]
+    is_best_program: bool
+    outputs_by_val_id: dict[Any, Any] | None
 
 
 class StateSavedEvent(TypedDict):
@@ -283,6 +305,10 @@ class GEPACallback(Protocol):
 
     def on_evaluation_skipped(self, event: EvaluationSkippedEvent) -> None:
         """Called when an evaluation is skipped or its results are not used."""
+        ...
+
+    def on_valset_evaluated(self, event: ValsetEvaluatedEvent) -> None:
+        """Called after a candidate is evaluated on the validation set."""
         ...
 
     # =========================================================================
@@ -429,6 +455,9 @@ class CompositeCallback:
 
     def on_evaluation_skipped(self, event: EvaluationSkippedEvent) -> None:
         self._notify("on_evaluation_skipped", event)
+
+    def on_valset_evaluated(self, event: ValsetEvaluatedEvent) -> None:
+        self._notify("on_valset_evaluated", event)
 
     def on_reflective_dataset_built(self, event: ReflectiveDatasetBuiltEvent) -> None:
         self._notify("on_reflective_dataset_built", event)
