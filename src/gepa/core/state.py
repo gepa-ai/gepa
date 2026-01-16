@@ -38,6 +38,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     """Persistent optimizer state tracking candidates, sparse validation coverage, and objective frontiers."""
 
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 3
+    # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
+    _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
 
     program_candidates: list[dict[str, str]]
     parent_program_for_candidate: list[list[ProgramIdx | None]]
@@ -180,7 +182,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             else:
                 import pickle
             # Exclude runtime-only attributes that can't be serialized (e.g., callback hooks)
-            serialized = {k: v for k, v in self.__dict__.items() if k != "_budget_hooks"}
+            serialized = {k: v for k, v in self.__dict__.items() if k not in self._EXCLUDED_FROM_SERIALIZATION}
             serialized["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
             pickle.dump(serialized, f)
 

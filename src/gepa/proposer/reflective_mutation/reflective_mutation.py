@@ -10,6 +10,7 @@ from gepa.core.callbacks import (
     EvaluationEndEvent,
     EvaluationSkippedEvent,
     EvaluationStartEvent,
+    GEPACallback,
     MinibatchSampledEvent,
     ProposalEndEvent,
     ProposalStartEvent,
@@ -53,7 +54,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         experiment_tracker: Any,
         reflection_lm: LanguageModel | None = None,
         reflection_prompt_template: str | None = None,
-        callbacks: list | None = None,
+        callbacks: list[GEPACallback] | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)

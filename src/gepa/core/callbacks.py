@@ -402,7 +402,17 @@ class CompositeCallback:
             callbacks: List of callback objects. Each should implement
                        some or all of the GEPACallback methods.
         """
-        self.callbacks = callbacks or []
+        self._callbacks: list[Any] = []
+        # Cache: method_name -> list of (callback, bound_method) tuples
+        self._method_cache: dict[str, list[tuple[Any, Any]]] = {}
+        if callbacks:
+            for cb in callbacks:
+                self.add(cb)
+
+    @property
+    def callbacks(self) -> list[Any]:
+        """Return the list of registered callbacks."""
+        return self._callbacks
 
     def add(self, callback: Any) -> None:
         """Add a callback to the composite.
@@ -410,7 +420,12 @@ class CompositeCallback:
         Args:
             callback: A callback object to add.
         """
-        self.callbacks.append(callback)
+        self._callbacks.append(callback)
+        # Update cache for all known method names
+        for method_name in self._method_cache:
+            method = getattr(callback, method_name, None)
+            if method is not None:
+                self._method_cache[method_name].append((callback, method))
 
     def _notify(self, method_name: str, event: Any) -> None:
         """Notify all callbacks of an event.
@@ -419,13 +434,20 @@ class CompositeCallback:
             method_name: Name of the callback method to invoke.
             event: The event TypedDict to pass to the callback method.
         """
-        for callback in self.callbacks:
-            method = getattr(callback, method_name, None)
-            if method is not None:
-                try:
-                    method(event)
-                except Exception as e:
-                    logger.warning(f"Callback {callback} failed on {method_name}: {e}")
+        # Build cache on first access for this method_name
+        if method_name not in self._method_cache:
+            self._method_cache[method_name] = []
+            for callback in self._callbacks:
+                method = getattr(callback, method_name, None)
+                if method is not None:
+                    self._method_cache[method_name].append((callback, method))
+
+        # Use cached methods
+        for callback, method in self._method_cache[method_name]:
+            try:
+                method(event)
+            except Exception as e:
+                logger.warning(f"Callback {callback} failed on {method_name}: {e}")
 
     # Delegate all callback methods
 

@@ -10,6 +10,7 @@ from gepa.core.adapter import Candidate, DataInst, RolloutOutput
 from gepa.core.callbacks import (
     EvaluationEndEvent,
     EvaluationStartEvent,
+    GEPACallback,
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader
@@ -229,7 +230,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         max_merge_invocations: int,
         val_overlap_floor: int = 5,
         rng: random.Random | None = None,
-        callbacks: list | None = None,
+        callbacks: list[GEPACallback] | None = None,
     ):
         self.logger = logger
         self.valset = valset

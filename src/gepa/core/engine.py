@@ -11,6 +11,7 @@ from gepa.core.callbacks import (
     CandidateAcceptedEvent,
     CandidateRejectedEvent,
     ErrorEvent,
+    GEPACallback,
     IterationEndEvent,
     IterationStartEvent,
     MergeAcceptedEvent,
@@ -62,7 +63,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         logger: LoggerProtocol,
         experiment_tracker: ExperimentTracker,
         # Callbacks
-        callbacks: list | None = None,
+        callbacks: list[GEPACallback] | None = None,
         # Optional parameters
         track_best_outputs: bool = False,
         display_progress_bar: bool = False,
@@ -167,6 +168,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             num_metric_calls_by_discovery_of_new_program=num_metric_calls_by_discovery,
         )
 
+        # Compute best program immediately after state update (before callbacks)
+        # to ensure is_best_program reflects the updated Pareto front
+        valset_score = self.val_evaluation_policy.get_valset_score(new_program_idx, state)
+        linear_pareto_front_program_idx = self.val_evaluation_policy.get_best_program(state)
+        is_best_program = new_program_idx == linear_pareto_front_program_idx
+
         # Snapshot Pareto front after update and notify callback
         front_after = state.get_pareto_front_mapping()
         candidates_after: set[int] = set()
@@ -189,10 +196,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         state.full_program_trace[-1]["new_program_idx"] = new_program_idx
         state.full_program_trace[-1]["evaluated_val_indices"] = sorted(valset_evaluation.scores_by_val_id.keys())
 
-        valset_score = self.val_evaluation_policy.get_valset_score(new_program_idx, state)
-
-        linear_pareto_front_program_idx = self.val_evaluation_policy.get_best_program(state)
-        if new_program_idx == linear_pareto_front_program_idx:
+        if is_best_program:
             self.logger.log(f"Iteration {state.i + 1}: Found a better program on the valset with score {valset_score}.")
 
         valset = self.valset
@@ -210,7 +214,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 num_examples_evaluated=len(valset_evaluation.scores_by_val_id),
                 total_valset_size=len(valset),
                 parent_ids=parent_program_idx,
-                is_best_program=(new_program_idx == linear_pareto_front_program_idx),
+                is_best_program=is_best_program,
                 outputs_by_val_id=(
                     dict(valset_evaluation.outputs_by_val_id) if valset_evaluation.outputs_by_val_id else None
                 ),
@@ -353,6 +357,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
             assert state.is_consistent()
             proposal_accepted = False
+            iteration_started = False
             try:
                 state.save(self.run_dir, use_cloudpickle=self.use_cloudpickle)
                 notify_callbacks(
@@ -376,6 +381,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         state=state,
                     ),
                 )
+                iteration_started = True
 
                 # 1) Attempt merge first if scheduled and last iter found new program
                 if self.merge_proposer is not None and self.merge_proposer.use_merge:
@@ -529,16 +535,18 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 else:
                     continue
             finally:
-                # Notify iteration end (always called, even on continue/exception)
-                notify_callbacks(
-                    self.callbacks,
-                    "on_iteration_end",
-                    IterationEndEvent(
-                        iteration=state.i,
-                        state=state,
-                        proposal_accepted=proposal_accepted,
-                    ),
-                )
+                # Notify iteration end only if the iteration actually started
+                # (i.e., on_iteration_start was called successfully)
+                if iteration_started:
+                    notify_callbacks(
+                        self.callbacks,
+                        "on_iteration_end",
+                        IterationEndEvent(
+                            iteration=state.i,
+                            state=state,
+                            proposal_accepted=proposal_accepted,
+                        ),
+                    )
 
         # Close progress bar if it exists
         if self.display_progress_bar and progress_bar is not None:
