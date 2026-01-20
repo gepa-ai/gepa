@@ -8,7 +8,7 @@ from copy import deepcopy
 
 from gepa.core.adapter import Candidate, DataInst, RolloutOutput
 from gepa.core.data_loader import DataId, DataLoader
-from gepa.core.state import GEPAState, ProgramIdx
+from gepa.core.state import EvaluationCache, GEPAState, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -224,6 +224,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         max_merge_invocations: int,
         val_overlap_floor: int = 5,
         rng: random.Random | None = None,
+        evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
     ):
         self.logger = logger
         self.valset = valset
@@ -231,6 +232,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         self.use_merge = use_merge
         self.max_merge_invocations = max_merge_invocations
         self.rng = rng if rng is not None else random.Random(0)
+        self.evaluation_cache = evaluation_cache
 
         if val_overlap_floor <= 0:
             raise ValueError("val_overlap_floor should be a positive integer")
@@ -242,6 +244,24 @@ class MergeProposer(ProposeNewCandidate[DataId]):
 
         # Toggle controlled by engine: set True when last iter found new program
         self.last_iter_found_new_program = False
+
+    def _evaluate_with_cache(self, candidate: Candidate, example_ids: list, batch: list) -> tuple[list[float], int]:
+        """Evaluate candidate using cache if available. Returns (scores, num_actual_evals)."""
+        if self.evaluation_cache is None:
+            _, scores = self.evaluator(batch, candidate)
+            return scores, len(example_ids)
+
+        cached, uncached_ids = self.evaluation_cache.get_batch(candidate, example_ids)
+        id_to_score = {eid: c.score for eid, c in cached.items()}
+
+        if uncached_ids:
+            uncached_batch = self.valset.fetch(uncached_ids)
+            outputs, scores = self.evaluator(uncached_batch, candidate)
+            for idx, eid in enumerate(uncached_ids):
+                id_to_score[eid] = scores[idx]
+            self.evaluation_cache.put_batch(candidate, uncached_ids, outputs, scores, None)
+
+        return [id_to_score[eid] for eid in example_ids], len(uncached_ids)
 
     def schedule_if_needed(self) -> None:
         if self.use_merge and self.total_merges_tested < self.max_merge_invocations:
@@ -332,21 +352,17 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             return None
 
         mini_devset = self.valset.fetch(subsample_ids)
-        # below is a post condition of `select_eval_subsample_for_merged_program`
         assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id1].keys())
         assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id2].keys())
         id1_sub_scores = [state.prog_candidate_val_subscores[id1][k] for k in subsample_ids]
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
 
-        _, new_sub_scores = self.evaluator(mini_devset, new_program)
-
+        new_sub_scores, actual_evals_count = self._evaluate_with_cache(new_program, subsample_ids, mini_devset)
         state.full_program_trace[-1]["id1_subsample_scores"] = id1_sub_scores
         state.full_program_trace[-1]["id2_subsample_scores"] = id2_sub_scores
         state.full_program_trace[-1]["new_program_subsample_scores"] = new_sub_scores
-
-        # Count evals
-        state.total_num_evals += len(subsample_ids)
+        state.total_num_evals += actual_evals_count
 
         # Acceptance will be evaluated by engine (>= max(parents))
         return CandidateProposal(

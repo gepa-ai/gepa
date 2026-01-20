@@ -15,7 +15,7 @@ from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
-from gepa.core.state import FrontierType
+from gepa.core.state import EvaluationCache, FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -72,6 +72,8 @@ def optimize(
     track_best_outputs: bool = False,
     display_progress_bar: bool = False,
     use_cloudpickle: bool = False,
+    # Evaluation caching
+    cache_evaluation: bool = False,
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
@@ -155,6 +157,9 @@ def optimize(
     - track_best_outputs: Whether to track the best outputs on the validation set. If True, GEPAResult will contain the best outputs obtained for each task in the validation set.
     - display_progress_bar: Show a tqdm progress bar over metric calls when enabled.
     - use_cloudpickle: Use cloudpickle instead of pickle. This can be helpful when the serialized state contains dynamically generated DSPy signatures.
+
+    # Evaluation caching
+    - cache_evaluation: Whether to cache the (score, output, objective_scores) of (candidate, example) pairs. If True and a cache entry exists, GEPA will skip the fitness evaluation and use the cached results. This helps avoid redundant evaluations and saves metric calls. Defaults to False.
 
     # Reproducibility
     - seed: The seed to use for the random number generator.
@@ -306,6 +311,11 @@ def optimize(
             "Set reflection_prompt_template to None."
         )
 
+    # Create evaluation cache if enabled
+    evaluation_cache: EvaluationCache | None = None
+    if cache_evaluation:
+        evaluation_cache = EvaluationCache()
+
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
         trainset=train_loader,
@@ -318,6 +328,7 @@ def optimize(
         experiment_tracker=experiment_tracker,
         reflection_lm=reflection_lm,
         reflection_prompt_template=reflection_prompt_template,
+        evaluation_cache=evaluation_cache,
     )
 
     def evaluator_fn(inputs: list[DataInst], prog: dict[str, str]) -> tuple[list[RolloutOutput], list[float]]:
@@ -334,6 +345,7 @@ def optimize(
             max_merge_invocations=max_merge_invocations,
             rng=rng,
             val_overlap_floor=merge_val_overlap_floor,
+            evaluation_cache=evaluation_cache,
         )
 
     engine = GEPAEngine(
@@ -354,6 +366,7 @@ def optimize(
         stop_callback=stop_callback,
         val_evaluation_policy=val_evaluation_policy,
         use_cloudpickle=use_cloudpickle,
+        evaluation_cache=evaluation_cache,
     )
 
     with experiment_tracker:

@@ -1,11 +1,12 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import hashlib
 import json
 import os
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ClassVar, Generic, Literal, TypeAlias
 
 from gepa.core.adapter import RolloutOutput
@@ -20,9 +21,71 @@ ProgramIdx = int
 ObjectiveScores: TypeAlias = dict[str, float]
 FrontierType: TypeAlias = Literal["instance", "objective", "hybrid", "cartesian"]
 """Strategy for tracking Pareto frontiers: 'instance' (per validation example), 'objective' (per objective metric), 'hybrid' (both), or 'cartesian' (per example × objective)."""
-
 FrontierKey: TypeAlias = DataId | str | tuple[str, DataId] | tuple[str, DataId, str]
 """Key type for frontier mappings depending on frontier_type."""
+
+CandidateHash: TypeAlias = str
+CacheKey: TypeAlias = tuple[CandidateHash, DataId]
+
+
+def _candidate_hash(candidate: dict[str, str]) -> CandidateHash:
+    """Compute a deterministic hash of a candidate dictionary."""
+    return hashlib.sha256(json.dumps(sorted(candidate.items())).encode()).hexdigest()
+
+
+@dataclass
+class CachedEvaluation(Generic[RolloutOutput]):
+    """Cached evaluation result for a (candidate, example) pair."""
+
+    output: RolloutOutput
+    score: float
+    objective_scores: ObjectiveScores | None
+
+
+@dataclass
+class EvaluationCache(Generic[RolloutOutput, DataId]):
+    """Cache for storing evaluation results of (candidate, example) pairs."""
+
+    _cache: dict[CacheKey, CachedEvaluation[RolloutOutput]] = field(default_factory=dict)
+
+    def get(self, candidate: dict[str, str], example_id: DataId) -> CachedEvaluation[RolloutOutput] | None:
+        """Retrieve cached evaluation result if it exists."""
+        return self._cache.get((_candidate_hash(candidate), example_id))
+
+    def put(
+        self,
+        candidate: dict[str, str],
+        example_id: DataId,
+        output: RolloutOutput,
+        score: float,
+        objective_scores: ObjectiveScores | None = None,
+    ) -> None:
+        """Store an evaluation result in the cache."""
+        self._cache[(_candidate_hash(candidate), example_id)] = CachedEvaluation(output, score, objective_scores)
+
+    def get_batch(
+        self, candidate: dict[str, str], example_ids: list[DataId]
+    ) -> tuple[dict[DataId, CachedEvaluation[RolloutOutput]], list[DataId]]:
+        """Look up cached results for a batch. Returns (cached_results, uncached_ids)."""
+        cached, uncached = {}, []
+        for eid in example_ids:
+            if entry := self.get(candidate, eid):
+                cached[eid] = entry
+            else:
+                uncached.append(eid)
+        return cached, uncached
+
+    def put_batch(
+        self,
+        candidate: dict[str, str],
+        example_ids: list[DataId],
+        outputs: list[RolloutOutput],
+        scores: list[float],
+        objective_scores_list: list[ObjectiveScores] | None = None,
+    ) -> None:
+        """Store evaluation results for a batch of examples."""
+        for i, eid in enumerate(example_ids):
+            self.put(candidate, eid, outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None)
 
 
 @dataclass(slots=True)

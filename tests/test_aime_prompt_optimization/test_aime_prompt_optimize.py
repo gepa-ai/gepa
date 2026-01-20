@@ -44,10 +44,11 @@ def test_aime_prompt_optimize(mocked_lms, recorder_dir):
         trainset=trainset,
         valset=valset,
         adapter=adapter,
-        max_metric_calls=30,
+        max_metric_calls=17,
         reflection_lm=reflection_lm,
         display_progress_bar=True,
     )
+    assert gepa_result.total_metric_calls == 32
 
     # 3. Assertion: Verify the result against the golden file
     optimized_prompt_file = recorder_dir / "optimized_prompt.txt"
@@ -67,3 +68,45 @@ def test_aime_prompt_optimize(mocked_lms, recorder_dir):
         with open(optimized_prompt_file) as f:
             expected_prompt = f.read()
         assert best_prompt == expected_prompt
+
+
+def test_aime_prompt_optimize_with_cache(mocked_lms, recorder_dir):
+    """
+    Tests the GEPA optimization process with evaluation caching enabled.
+    Uses the same recorded/replayed LLM calls as the non-cached test.
+    """
+    import gepa
+    from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
+
+    task_lm, reflection_lm = mocked_lms
+    adapter = DefaultAdapter(model=task_lm)
+
+    trainset, valset, _ = gepa.examples.aime.init_dataset()
+    trainset = trainset[:10]
+    valset = valset[:10]
+
+    seed_prompt = {
+        "system_prompt": "You are a helpful assistant. You are given a question and you need to answer it. The answer should be given at the end of your response in exactly the format '### <final answer>'"
+    }
+
+    # Run with cache_evaluation=True
+    gepa_result = gepa.optimize(
+        seed_candidate=seed_prompt,
+        trainset=trainset,
+        valset=valset,
+        adapter=adapter,
+        max_metric_calls=4,
+        reflection_lm=reflection_lm,
+        display_progress_bar=True,
+        cache_evaluation=True,
+    )
+
+    # Verify the optimization completed and produced a valid result
+    assert gepa_result is not None
+    assert gepa_result.total_metric_calls is not None and gepa_result.total_metric_calls > 0
+    assert gepa_result.total_metric_calls == 10
+    best_prompt = gepa_result.best_candidate["system_prompt"]
+    assert isinstance(best_prompt, str) and len(best_prompt) > 0
+    # With caching, we may use fewer metric calls since cached results are reused
+    # The result may differ slightly from non-cached due to different eval counts
+    # affecting stopping conditions, but should still be a valid optimization result
