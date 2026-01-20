@@ -33,6 +33,7 @@ full = [
     "wandb>=0.23.0; python_version >= '3.14'",
     "pyarrow>=22.0.0; python_version >= '3.14'",
     "pydantic>=2.12.0; python_version >= '3.14'",
+    "tiktoken>=0.12.0; python_version >= '3.14'",
     # Common dependencies
     "tqdm>=4.66.1"
 ]
