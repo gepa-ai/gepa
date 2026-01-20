@@ -15,7 +15,7 @@ authors = [
   { name = "Lakshya A Agrawal", email = "lakshyaaagrawal@berkeley.edu" }
 ]
 license = { text = "MIT" }
-requires-python = ">=3.10"
+requires-python = ">=3.10, <3.15"
 
 dependencies = []
 
@@ -24,6 +24,7 @@ full = [
     "litellm>=1.64.0",
     "tiktoken>=0.12.0; python_version >= '3.14'",
     "datasets>=2.14.6",
+    "cloudpickle>=3.1.0; python_version >= '3.14'"
     "pyarrow>=22.0.0; python_version >= '3.14'",
     "mlflow-skinny>=3.8.1",
     "wandb",
