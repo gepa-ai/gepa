@@ -15,16 +15,26 @@ authors = [
   { name = "Lakshya A Agrawal", email = "lakshyaaagrawal@berkeley.edu" }
 ]
 license = { text = "MIT" }
-requires-python = ">=3.10, <3.14"
+requires-python = ">=3.10, <3.15"
 
 dependencies = []
 
 [project.optional-dependencies]
 full = [
-    "litellm>=1.64.0",
-    "datasets>=2.14.6",
-    "mlflow>=3.0.0",
-    "wandb",
+    # Original dependencies for Python < 3.14
+    "litellm>=1.64.0; python_version < '3.14'",
+    "datasets>=2.14.6; python_version < '3.14'",
+    "mlflow>=3.0.0; python_version < '3.14'",
+    "wandb; python_version < '3.14'",
+    # Updated dependencies for Python 3.14+
+    "litellm>=1.81.0; python_version >= '3.14'",
+    "datasets>=4.5.0; python_version >= '3.14'",
+    "mlflow-skinny>=3.8.1; python_version >= '3.14'",
+    "wandb>=0.23.0; python_version >= '3.14'",
+    "pyarrow>=22.0.0; python_version >= '3.14'",
+    "pydantic>=2.12.0; python_version >= '3.14'",
+    "tiktoken>=0.12.0; python_version >= '3.14'",
+    # Common dependencies
     "tqdm>=4.66.1"
 ]
 dspy = []
