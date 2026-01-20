@@ -24,8 +24,7 @@ full = [
     "litellm>=1.64.0",
     "tiktoken>=0.12.0; python_version >= '3.14'",
     "datasets>=2.14.6",
-    "mlflow>=3.6.0rc0",
-    "pyarrow>=22.0.0; python_version >= '3.14'",
+    "mlflow-skinny>=3.8.1",
     "wandb",
     "pydantic>=2.12.0; python_version >= '3.14'",
     "tqdm>=4.66.1"
