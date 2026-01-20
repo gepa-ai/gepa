@@ -67,23 +67,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             eval_result = self.adapter.evaluate(batch, candidate, capture_traces=False)
             return eval_result.scores, len(example_ids)
 
-        cached, uncached_ids = self.evaluation_cache.get_batch(candidate, example_ids)
-        id_to_score = {eid: c.score for eid, c in cached.items()}
+        def evaluator(b, c):
+            r = self.adapter.evaluate(b, c, capture_traces=False)
+            return r.outputs, r.scores, list(r.objective_scores) if r.objective_scores else None
 
-        if uncached_ids:
-            uncached_batch = self.trainset.fetch(uncached_ids)
-            eval_result = self.adapter.evaluate(uncached_batch, candidate, capture_traces=False)
-            for idx, eid in enumerate(uncached_ids):
-                id_to_score[eid] = eval_result.scores[idx]
-            self.evaluation_cache.put_batch(
-                candidate,
-                uncached_ids,
-                eval_result.outputs,
-                eval_result.scores,
-                list(eval_result.objective_scores) if eval_result.objective_scores else None,
-            )
-
-        return [id_to_score[eid] for eid in example_ids], len(uncached_ids)
+        return self.evaluation_cache.evaluate_with_cache(candidate, example_ids, self.trainset.fetch, evaluator)
 
     def propose_new_texts(
         self,

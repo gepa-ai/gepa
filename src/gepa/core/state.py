@@ -67,9 +67,10 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         self, candidate: dict[str, str], example_ids: list[DataId]
     ) -> tuple[dict[DataId, CachedEvaluation[RolloutOutput]], list[DataId]]:
         """Look up cached results for a batch. Returns (cached_results, uncached_ids)."""
+        h = _candidate_hash(candidate)
         cached, uncached = {}, []
         for eid in example_ids:
-            if entry := self.get(candidate, eid):
+            if entry := self._cache.get((h, eid)):
                 cached[eid] = entry
             else:
                 uncached.append(eid)
@@ -84,8 +85,30 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         objective_scores_list: list[ObjectiveScores] | None = None,
     ) -> None:
         """Store evaluation results for a batch of examples."""
+        h = _candidate_hash(candidate)
         for i, eid in enumerate(example_ids):
-            self.put(candidate, eid, outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None)
+            self._cache[(h, eid)] = CachedEvaluation(
+                outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None
+            )
+
+    def evaluate_with_cache(
+        self,
+        candidate: dict[str, str],
+        example_ids: list[DataId],
+        fetcher: Callable[[list[DataId]], list],
+        evaluator: Callable[
+            [list, dict[str, str]], tuple[list[RolloutOutput], list[float], list[ObjectiveScores] | None]
+        ],
+    ) -> tuple[list[float], int]:
+        """Evaluate using cache. Returns (scores_in_order, num_actual_evals)."""
+        cached, uncached_ids = self.get_batch(candidate, example_ids)
+        id_to_score = {eid: c.score for eid, c in cached.items()}
+        if uncached_ids:
+            outputs, scores, obj_scores = evaluator(fetcher(uncached_ids), candidate)
+            for idx, eid in enumerate(uncached_ids):
+                id_to_score[eid] = scores[idx]
+            self.put_batch(candidate, uncached_ids, outputs, scores, obj_scores)
+        return [id_to_score[eid] for eid in example_ids], len(uncached_ids)
 
 
 @dataclass(slots=True)

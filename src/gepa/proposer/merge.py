@@ -250,18 +250,9 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         if self.evaluation_cache is None:
             _, scores = self.evaluator(batch, candidate)
             return scores, len(example_ids)
-
-        cached, uncached_ids = self.evaluation_cache.get_batch(candidate, example_ids)
-        id_to_score = {eid: c.score for eid, c in cached.items()}
-
-        if uncached_ids:
-            uncached_batch = self.valset.fetch(uncached_ids)
-            outputs, scores = self.evaluator(uncached_batch, candidate)
-            for idx, eid in enumerate(uncached_ids):
-                id_to_score[eid] = scores[idx]
-            self.evaluation_cache.put_batch(candidate, uncached_ids, outputs, scores, None)
-
-        return [id_to_score[eid] for eid in example_ids], len(uncached_ids)
+        return self.evaluation_cache.evaluate_with_cache(
+            candidate, example_ids, self.valset.fetch, lambda b, c: (*self.evaluator(b, c), None)
+        )
 
     def schedule_if_needed(self) -> None:
         if self.use_merge and self.total_merges_tested < self.max_merge_invocations:
