@@ -26,6 +26,7 @@ full = [
     "mlflow>=3.6.0rc0",
     "pyarrow>=22.0.0; python_version >= '3.14'",
     "wandb",
+    "pydantic>=2.12.0; python_version >= '3.14'",
     "tqdm>=4.66.1"
 ]
 dspy = []
