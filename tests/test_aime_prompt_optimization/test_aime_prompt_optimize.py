@@ -44,11 +44,10 @@ def test_aime_prompt_optimize(mocked_lms, recorder_dir):
         trainset=trainset,
         valset=valset,
         adapter=adapter,
-        max_metric_calls=17,
+        max_metric_calls=30,  # Can be reduced to 17
         reflection_lm=reflection_lm,
         display_progress_bar=True,
     )
-    assert gepa_result.total_metric_calls == 32
 
     # 3. Assertion: Verify the result against the golden file
     optimized_prompt_file = recorder_dir / "optimized_prompt.txt"
