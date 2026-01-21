@@ -1,51 +1,37 @@
-import io
-import signal
-import traceback
-from contextlib import redirect_stderr, redirect_stdout
 from typing import Any, Sequence
 
 import numpy as np
 
 from examples.polynomial.evalset import problems
 from gepa.optimize_anything import SideInfo
-
-
-class TimeLimitError(Exception):
-    pass
-
-
-def _alarm_handler(signum, frame):
-    raise TimeLimitError("Time Limit Exceeded")
+from gepa.utils.code_execution import execute_code as _execute_code, ExecutionMode
 
 
 def execute_code(code_string, global_vars=None, timeout=5):
-    f_out = io.StringIO()
-    f_err = io.StringIO()
+    """Execute code with timeout support using shared code execution utility.
+    
+    Returns dict with keys matching the original API for backwards compatibility:
+        - output: stdout
+        - logs: stderr
+        - results: execution context variables
+        - error: error message (includes traceback)
+    """
+    result = _execute_code(
+        code=code_string,
+        timeout=timeout,
+        mode=ExecutionMode.IN_PROCESS,
+        global_vars=global_vars,
+    )
 
-    if global_vars is None:
-        context = {"__name__": "__main__"}
-    else:
-        context = global_vars.copy()
-        context["__name__"] = "__main__"
-
-    error = ""
-    signal.signal(signal.SIGALRM, _alarm_handler)
-    signal.alarm(timeout)
-
-    try:
-        with redirect_stdout(f_out), redirect_stderr(f_err):
-            exec(code_string, context)
-    except TimeLimitError:
-        error = f"TimeLimitError: Code execution exceeded {timeout} seconds."
-    except Exception as e:
-        error = str(e) + "\n" + traceback.format_exc()
-    finally:
-        signal.alarm(0)
+    # Combine error and traceback for backwards compatibility
+    error = result.error
+    if result.traceback and result.traceback not in error:
+        error = f"{error}\n{result.traceback}" if error else result.traceback
 
     return {
-        "output": f_out.getvalue(),
-        "logs": f_err.getvalue(),
-        "results": context,
+        "output": result.stdout,
+        "logs": result.stderr,
+        "results": result.variables,
         "error": error,
     }
 

@@ -1,12 +1,9 @@
 from typing import Any, Sequence
 import numpy as np
 import traceback
-import io
-from contextlib import redirect_stdout, redirect_stderr
-import signal
-import hashlib
 
 from gepa.optimize_anything import SideInfo
+from gepa.utils.code_execution import execute_code as _execute_code, ExecutionMode, get_code_hash
 from examples.polynomial.evalset import problems
 
 # Track unique code variants with IDs
@@ -21,9 +18,7 @@ def get_code_id(code: str) -> tuple[int, bool]:
     Returns:
         tuple: (code_id, is_new) where is_new=True if this is a new variant
     """
-
-    normalized = "\n".join(line.rstrip() for line in code.strip().split("\n"))
-    code_hash = hashlib.md5(normalized.encode()).hexdigest()[:8]
+    code_hash = get_code_hash(code)
 
     is_new = code_hash not in code_registry
     if is_new:
@@ -33,46 +28,31 @@ def get_code_id(code: str) -> tuple[int, bool]:
     return code_registry[code_hash], is_new
 
 
-class TimeLimitError(Exception):
-    pass
-
-
-def _alarm_handler(signum, frame):
-    raise TimeLimitError("Time Limit Exceeded")
-
-
 def execute_code(code_string, global_vars=None, timeout=5):
-    f_out = io.StringIO()
-    f_err = io.StringIO()
+    """Execute code with timeout support using shared code execution utility.
+    
+    Returns dict with keys matching the original API for backwards compatibility:
+        - output: stdout
+        - logs: stderr
+        - results: execution context variables
+        - error: error message (includes traceback)
+    """
+    result = _execute_code(
+        code=code_string,
+        timeout=timeout,
+        mode=ExecutionMode.IN_PROCESS,
+        global_vars=global_vars,
+    )
 
-    if global_vars is None:
-        context = {"__name__": "__main__"}
-    else:
-        context = global_vars.copy()
-        context["__name__"] = "__main__"
-
-    error = ""
-
-    # Register the signal function handler
-    signal.signal(signal.SIGALRM, _alarm_handler)
-    # Set the alarm (in seconds)
-    signal.alarm(timeout)
-
-    try:
-        with redirect_stdout(f_out), redirect_stderr(f_err):
-            exec(code_string, context)
-    except TimeLimitError:
-        error = f"TimeLimitError: Code execution exceeded {timeout} seconds."
-    except Exception as e:
-        error = str(e) + "\n" + traceback.format_exc()
-    finally:
-        # CRITICAL: Disable the alarm so it doesn't kill your script later
-        signal.alarm(0)
+    # Combine error and traceback for backwards compatibility
+    error = result.error
+    if result.traceback and result.traceback not in error:
+        error = f"{error}\n{result.traceback}" if error else result.traceback
 
     return {
-        "output": f_out.getvalue(),
-        "logs": f_err.getvalue(),
-        "results": context,
+        "output": result.stdout,
+        "logs": result.stderr,
+        "results": result.variables,
         "error": error,
     }
 

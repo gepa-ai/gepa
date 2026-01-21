@@ -9,16 +9,16 @@ Contains:
 - create_circle_packing_dataset: Create DSPy dataset
 """
 
-import subprocess
-import tempfile
-import pickle
-import os
-import sys
 import time
 from typing import Any, Tuple
 
 import numpy as np
 import dspy
+
+from gepa.utils.code_execution import (
+    execute_code as _execute_code,
+    ExecutionMode,
+)
 
 
 # =============================================================================
@@ -56,224 +56,111 @@ def execute_code(
     """
     start_time = time.time()
 
-    # Create temp files for args and results
-    with tempfile.NamedTemporaryFile(
-        mode="wb", suffix=".pkl", delete=False
-    ) as args_file:
-        args_path = args_file.name
-        pickle.dump(
-            {
-                "timeout": timeout,
-                "current_best_solution": current_best_solution,
-                "num_circles": num_circles,
-            },
-            args_file,
-        )
-
-    results_path = args_path + ".results"
-
-    # Build the wrapper script with validation
-    wrapper_script = f"""
-import sys
-import pickle
-import traceback
-import numpy as np
-
-# Load arguments
-with open({repr(args_path)}, 'rb') as f:
-    _args = pickle.load(f)
-
-_timeout = _args['timeout']
-_current_best_solution = _args['current_best_solution']
-_num_circles = _args['num_circles']
-
-
-def _validate_packing(n, circles, atol=1e-6):
-    \"\"\"Validate circles: shape, bounds, no overlaps.\"\"\"
-    details = {{
-        "expected_circles": n,
-        "actual_circles": circles.shape[0],
-        "boundary_violations": [],
-        "overlaps": [],
-        "negative_radii": [],
-        "shape_errors": [],
-    }}
-
-    # Check shape
-    if circles.shape != (n, 3):
-        details["shape_errors"].append(f"Expected ({{n}}, 3), got {{circles.shape}}")
-        return False, details
-
-    # Check for NaN
-    if np.isnan(circles).any():
-        details["shape_errors"].append("NaN values detected")
-        return False, details
-
-    centers = circles[:, :2]
-    radii = circles[:, 2]
-
-    # Check negative radii
-    for i in range(n):
-        if radii[i] < 0:
-            details["negative_radii"].append(f"Circle {{i}}: r={{radii[i]:.6f}}")
-
-    if details["negative_radii"]:
-        return False, details
-
-    # Check boundary
-    for i in range(n):
-        x, y, r = circles[i]
-        if x - r < -atol or x + r > 1 + atol or y - r < -atol or y + r > 1 + atol:
-            details["boundary_violations"].append(
-                f"Circle {{i}} at ({{x:.4f}}, {{y:.4f}}) r={{r:.4f}} outside [0,1]"
-            )
-
-    # Check overlaps
-    for i in range(n):
-        for j in range(i + 1, n):
-            dist = np.sqrt(np.sum((centers[i] - centers[j]) ** 2))
-            if dist < radii[i] + radii[j] - atol:
-                details["overlaps"].append(
-                    f"Circles {{i}},{{j}}: dist={{dist:.4f}} < r1+r2={{radii[i]+radii[j]:.4f}}"
-                )
-
-    # Stats
-    details["sum_radii"] = float(np.sum(radii))
-    details["min_radius"] = float(np.min(radii))
-    details["max_radius"] = float(np.max(radii))
-
-    is_valid = (
-        len(details["boundary_violations"]) == 0
-        and len(details["overlaps"]) == 0
-        and len(details["shape_errors"]) == 0
-        and len(details["negative_radii"]) == 0
+    # Execute code using shared utility with entry point
+    result = _execute_code(
+        code=code,
+        timeout=timeout,
+        mode=ExecutionMode.SUBPROCESS,
+        entry_point="main",
+        entry_point_args=(),
+        entry_point_kwargs={
+            "timeout": timeout,
+            "current_best_solution": current_best_solution,
+        },
     )
-    return is_valid, details
 
+    execution_time = time.time() - start_time
 
-# === USER CODE ===
-{code}
-# === END USER CODE ===
+    # Handle execution failure
+    if not result.success:
+        return {
+            "success": False,
+            "error": result.error or "Execution failed",
+            "traceback": result.traceback,
+            "execution_time": execution_time,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
 
-_output = {{'success': False, 'error': 'main() was not called'}}
-
-try:
-    _result = main(_timeout, _current_best_solution)
+    # Get main() return value
+    main_result = result.variables.get("__return__")
 
     # Validate result has required keys
-    if not isinstance(_result, dict):
-        raise TypeError(f"main() must return a dict, got {{type(_result).__name__}}")
-    if 'circles' not in _result:
-        raise KeyError("main() return dict must contain 'circles' key")
-    if 'all_scores' not in _result:
-        raise KeyError("main() return dict must contain 'all_scores' key")
+    if not isinstance(main_result, dict):
+        return {
+            "success": False,
+            "error": f"main() must return a dict, got {type(main_result).__name__}",
+            "traceback": "",
+            "execution_time": execution_time,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
 
-    # Validate the packing
-    _circles = np.array(_result['circles'])
-    _is_valid, _validation_details = _validate_packing(_num_circles, _circles)
-    _result['validation_details'] = _validation_details
+    if "circles" not in main_result:
+        return {
+            "success": False,
+            "error": "main() return dict must contain 'circles' key",
+            "traceback": "",
+            "execution_time": execution_time,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
 
-    if _is_valid:
-        _output = {{'success': True, 'result': _result}}
+    if "all_scores" not in main_result:
+        return {
+            "success": False,
+            "error": "main() return dict must contain 'all_scores' key",
+            "traceback": "",
+            "execution_time": execution_time,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+
+    # Validate the packing (wrapped in try-except to match original subprocess behavior)
+    try:
+        circles = np.array(main_result["circles"])
+        is_valid, validation_details = validate_packing(num_circles, circles)
+        main_result["validation_details"] = validation_details
+    except Exception as e:
+        import traceback as tb
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": tb.format_exc(),
+            "execution_time": execution_time,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+
+    if is_valid:
+        return {
+            "success": True,
+            "result": main_result,
+            "execution_time": execution_time,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
     else:
         # Build error message from validation details
-        _errors = []
-        if _validation_details["shape_errors"]:
-            _errors.append(f"Shape: {{_validation_details['shape_errors']}}")
-        if _validation_details["boundary_violations"]:
-            _errors.append(f"{{len(_validation_details['boundary_violations'])}} boundary violations")
-        if _validation_details["overlaps"]:
-            _errors.append(f"{{len(_validation_details['overlaps'])}} overlaps")
-        if _validation_details["negative_radii"]:
-            _errors.append(f"{{len(_validation_details['negative_radii'])}} negative radii")
+        errors = []
+        if validation_details["shape_errors"]:
+            errors.append(f"Shape: {validation_details['shape_errors']}")
+        if validation_details["boundary_violations"]:
+            errors.append(f"{len(validation_details['boundary_violations'])} boundary violations")
+        if validation_details["overlaps"]:
+            errors.append(f"{len(validation_details['overlaps'])} overlaps")
+        if validation_details["negative_radii"]:
+            errors.append(f"{len(validation_details['negative_radii'])} negative radii")
 
-        _output = {{
-            'success': False,
-            'error': "Validation failed: " + "; ".join(_errors),
-            'result': _result,  # Still include result for debugging
-            'validation_details': _validation_details,
-        }}
-
-except Exception as _e:
-    _output = {{
-        'success': False,
-        'error': str(_e),
-        'traceback': traceback.format_exc(),
-    }}
-
-with open({repr(results_path)}, 'wb') as f:
-    pickle.dump(_output, f)
-"""
-
-    # Write wrapper script to temp file
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", delete=False
-    ) as script_file:
-        script_path = script_file.name
-        script_file.write(wrapper_script)
-
-    try:
-        # Find Python executable (prefer venv if available)
-        python_executable = sys.executable
-        venv_python = os.path.join(os.getcwd(), ".venv", "bin", "python")
-        if os.path.exists(venv_python):
-            python_executable = venv_python
-
-        # Run subprocess with timeout
-        process = subprocess.Popen(
-            [python_executable, script_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-
-        try:
-            stdout, stderr = process.communicate(timeout=timeout)
-            stdout_str = stdout.decode("utf-8", errors="replace")
-            stderr_str = stderr.decode("utf-8", errors="replace")
-
-            execution_time = time.time() - start_time
-
-            # Load results
-            if os.path.exists(results_path):
-                with open(results_path, "rb") as f:
-                    output = pickle.load(f)
-
-                return {
-                    **output,
-                    "execution_time": execution_time,
-                    "stdout": stdout_str,
-                    "stderr": stderr_str,
-                }
-            else:
-                # Results file not created - script crashed before writing
-                return {
-                    "success": False,
-                    "error": "Script crashed before completing",
-                    "traceback": stderr_str,
-                    "execution_time": execution_time,
-                    "stdout": stdout_str,
-                    "stderr": stderr_str,
-                }
-
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-            execution_time = time.time() - start_time
-
-            return {
-                "success": False,
-                "error": f"Timeout: execution exceeded {timeout} seconds",
-                "traceback": "",
-                "execution_time": execution_time,
-                "stdout": "",
-                "stderr": "",
-            }
-
-    finally:
-        # Cleanup temp files
-        for path in [args_path, results_path, script_path]:
-            if os.path.exists(path):
-                os.unlink(path)
+        return {
+            "success": False,
+            "error": "Validation failed: " + "; ".join(errors),
+            "result": main_result,  # Still include result for debugging
+            "validation_details": validation_details,
+            "execution_time": execution_time,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
 
 
 # =============================================================================

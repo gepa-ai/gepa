@@ -1,31 +1,14 @@
 from typing import Any
 import numpy as np
-import traceback
-import io
-from contextlib import redirect_stdout, redirect_stderr
-import signal
 import hashlib
 import json
 from pathlib import Path
-import os
-import time
 
 from gepa.optimize_anything import SideInfo
 from gepa.core.adapter import DataInst
+from gepa.utils.code_execution import execute_code as _execute_code, ExecutionMode
 from experiments.polynomial.evalset import Rastrigin
 from experiments.polynomial.problems import problems, problem_configs
-
-# Try to import psutil for killing child processes
-try:
-    import psutil
-
-    HAS_PSUTIL = True
-except ImportError:
-    HAS_PSUTIL = False
-
-
-class TimeLimitError(Exception):
-    pass
 
 
 def _json_default(obj):
@@ -37,108 +20,32 @@ def _json_default(obj):
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
-def _alarm_handler(signum, frame):
-    raise TimeLimitError("Time Limit Exceeded")
-
-
 def execute_code(code_string, global_vars=None, timeout=5, seed=None):
-    """Execute code with timeout support.
-
-    Note: signal.alarm() only works for the current process/thread.
-    If the code spawns subprocesses, they won't be killed automatically.
-    We try to kill child processes using psutil if available.
+    """Execute code with timeout support using shared code execution utility.
+    
+    Returns dict with keys matching the original API for backwards compatibility:
+        - output: stdout
+        - logs: stderr
+        - results: execution context variables
+        - error: error message (includes traceback)
     """
-    if seed is not None:
-        import random
+    result = _execute_code(
+        code=code_string,
+        timeout=timeout,
+        mode=ExecutionMode.IN_PROCESS,
+        global_vars=global_vars,
+        seed=seed,
+    )
 
-        random.seed(seed)
-        try:
-            import numpy as np
-
-            np.random.seed(seed)
-        except ImportError:
-            pass
-        try:
-            import torch
-
-            torch.manual_seed(seed)
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed_all(seed)
-        except ImportError:
-            pass
-
-    f_out = io.StringIO()
-    f_err = io.StringIO()
-
-    if global_vars is None:
-        context = {"__name__": "__main__"}
-    else:
-        context = global_vars.copy()
-        context["__name__"] = "__main__"
-
-    error = ""
-    start_time = time.time()
-    current_pid = os.getpid()
-
-    # Set up signal handler for timeout
-    old_handler = None
-    if timeout is not None and timeout > 0 and hasattr(signal, "SIGALRM"):
-        old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
-        # Use setitimer for more precision if available, otherwise fall back to alarm
-        try:
-            signal.setitimer(signal.ITIMER_REAL, timeout)
-        except AttributeError:
-            signal.alarm(int(timeout))
-
-    try:
-        with redirect_stdout(f_out), redirect_stderr(f_err):
-            exec(code_string, context)
-    except TimeLimitError:
-        error = f"TimeLimitError: Code execution exceeded {timeout} seconds."
-        # Try to kill any child processes if psutil is available
-        if HAS_PSUTIL:
-            try:
-                parent = psutil.Process(current_pid)
-                # Kill all children recursively
-                for child in parent.children(recursive=True):
-                    try:
-                        child.kill()
-                    except psutil.NoSuchProcess:
-                        pass
-            except Exception:
-                pass  # Ignore errors in cleanup
-    except Exception as e:
-        error = str(e) + "\n" + traceback.format_exc()
-    finally:
-        # Disable the alarm and restore previous handler
-        if timeout is not None and timeout > 0 and hasattr(signal, "SIGALRM"):
-            try:
-                signal.setitimer(signal.ITIMER_REAL, 0)
-            except AttributeError:
-                signal.alarm(0)
-            if old_handler is not None:
-                signal.signal(signal.SIGALRM, old_handler)
-
-        # Double-check: if we've exceeded timeout but no exception was raised, add error
-        elapsed = time.time() - start_time
-        if timeout is not None and timeout > 0 and elapsed > timeout and not error:
-            error = f"TimeLimitError: Code execution exceeded {timeout} seconds (elapsed: {elapsed:.2f}s)."
-            # Try to kill children even if signal didn't fire
-            if HAS_PSUTIL:
-                try:
-                    parent = psutil.Process(current_pid)
-                    for child in parent.children(recursive=True):
-                        try:
-                            child.kill()
-                        except psutil.NoSuchProcess:
-                            pass
-                except Exception:
-                    pass
+    # Combine error and traceback for backwards compatibility
+    error = result.error
+    if result.traceback and result.traceback not in error:
+        error = f"{error}\n{result.traceback}" if error else result.traceback
 
     return {
-        "output": f_out.getvalue(),
-        "logs": f_err.getvalue(),
-        "results": context,
+        "output": result.stdout,
+        "logs": result.stderr,
+        "results": result.variables,
         "error": error,
     }
 
