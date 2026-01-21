@@ -312,9 +312,9 @@ def optimize(
         )
 
     # Create evaluation cache if enabled
-    evaluation_cache: EvaluationCache | None = None
+    evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None
     if cache_evaluation:
-        evaluation_cache = EvaluationCache()
+        evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
@@ -330,9 +330,11 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
     )
 
-    def evaluator_fn(inputs: list[DataInst], prog: dict[str, str]) -> tuple[list[RolloutOutput], list[float]]:
+    def evaluator_fn(
+        inputs: list[DataInst], prog: dict[str, str]
+    ) -> tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None]:
         eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
-        return eval_out.outputs, eval_out.scores
+        return eval_out.outputs, eval_out.scores, eval_out.objective_scores
 
     merge_proposer: MergeProposer | None = None
     if use_merge:

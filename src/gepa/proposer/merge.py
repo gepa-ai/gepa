@@ -8,7 +8,7 @@ from copy import deepcopy
 
 from gepa.core.adapter import Candidate, DataInst, RolloutOutput
 from gepa.core.data_loader import DataId, DataLoader
-from gepa.core.state import GEPAState, ProgramIdx
+from gepa.core.state import GEPAState, ObjectiveScores, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -218,7 +218,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         valset: DataLoader[DataId, DataInst],
         evaluator: Callable[
             [list[DataInst], dict[str, str]],
-            tuple[list[RolloutOutput], list[float]],
+            tuple[list[RolloutOutput], list[float], Sequence[ObjectiveScores] | None],
         ],
         use_merge: bool,
         max_merge_invocations: int,
@@ -339,19 +339,14 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
 
         if state.evaluation_cache is not None:
-
-            def cache_evaluator(b: list, c: dict[str, str]):
-                outputs, scores = self.evaluator(b, c)
-                return outputs, scores, None
-
             new_sub_scores, actual_evals_count = state.evaluation_cache.evaluate_with_cache(
                 new_program,
                 subsample_ids,
                 self.valset.fetch,
-                cache_evaluator,  # type: ignore[arg-type]
+                self.evaluator,  # type: ignore[arg-type]  # Generic variance issue
             )
         else:
-            _, new_sub_scores = self.evaluator(mini_devset, new_program)
+            _, new_sub_scores, _ = self.evaluator(mini_devset, new_program)
             actual_evals_count = len(subsample_ids)
         state.full_program_trace[-1]["id1_subsample_scores"] = id1_sub_scores
         state.full_program_trace[-1]["id2_subsample_scores"] = id2_sub_scores

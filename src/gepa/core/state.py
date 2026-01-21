@@ -590,10 +590,12 @@ def initialize_gepa_state(
                 f"Frontier type mismatch: requested '{frontier_type}' but loaded state has '{gepa_state.frontier_type}'. "
                 f"Use a different run_dir or match the frontier_type parameter."
             )
-        # If a new cache is provided but state was loaded, use the new cache
-        # (allows resuming with caching enabled even if original run didn't have it)
-        if evaluation_cache is not None and gepa_state.evaluation_cache is None:
-            gepa_state.evaluation_cache = evaluation_cache
+        # Sync cache with current run's cache_evaluation setting:
+        # - If caching is enabled (evaluation_cache is not None), use the new cache
+        #   (allows resuming with caching enabled even if original run didn't have it)
+        # - If caching is disabled (evaluation_cache is None), clear any loaded cache
+        #   to respect the current run's cache_evaluation=False setting
+        gepa_state.evaluation_cache = evaluation_cache
     else:
         num_evals_run = 0
 

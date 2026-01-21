@@ -254,7 +254,7 @@ def test_merge_proposer_skips_pairs_below_overlap_floor(monkeypatch):
     proposer = MergeProposer(
         logger=_StubLogger(),
         valset=_StubValset(),
-        evaluator=lambda batch, prog: (batch, [0.0 for _ in batch]),
+        evaluator=lambda batch, prog: (batch, [0.0 for _ in batch], None),
         use_merge=True,
         max_merge_invocations=5,
         val_overlap_floor=2,
@@ -313,7 +313,7 @@ def test_merge_proposer_allows_pairs_meeting_overlap_floor(monkeypatch):
     proposer = MergeProposer(
         logger=_StubLogger(),
         valset=_StubValset(),
-        evaluator=lambda batch, prog: (batch, [0.9 for _ in batch]),
+        evaluator=lambda batch, prog: (batch, [0.9 for _ in batch], None),
         use_merge=True,
         max_merge_invocations=5,
         val_overlap_floor=2,
