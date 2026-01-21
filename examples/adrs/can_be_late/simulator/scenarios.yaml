@@ -1,0 +1,57 @@
+# This file is deprecated. Do not use it.
+
+SingleRegion_Baseline_SingleTask:
+  task:
+    type: SingleTask
+    config:
+      duration: 47.0
+  env:
+    type: trace
+    trace_files:
+      - data/real/ping_based/random_start_time/us-west-2a_v100_1
+    # env_start_hours: 0
+  deadline_hours: 52.0
+  restart_overhead_hours: [0.2]
+
+MultiRegion_ChainedTask:
+  task:
+    type: ChainedTask
+    config:
+      sub_tasks:
+        - duration: 48.0
+        - duration: 2.0
+  env:
+    type: multi_trace
+    trace_files:
+      - data/real/ping_based/random_start_time/us-west-2a_v100_1
+      - data/real/ping_based/random_start_time/us-west-2b_v100_1
+    # env_start_hours: 0
+  deadline_hours: 52.0
+  restart_overhead_hours: [0.2]
+
+ChainedTask_With_SubEnvs:
+  task:
+    type: ChainedTask
+    config:
+      sub_tasks:
+        - duration: 25.0 # Sub-task 1 duration
+        - duration: 22.0 # Sub-task 2 duration
+  env:
+    # Use the new switcher type
+    type: subtask_multi_env_switcher 
+    # Define the environments for each sub-task in a list
+    sub_task_envs: 
+      - # Config for sub-task 0 env (MultiTraceEnv)
+        trace_files:
+          - data/real/ping_based/random_start_time/us-west-2a_v100_1 # Region A
+          - data/real/ping_based/random_start_time/us-west-2b_v100_1 # Region B (example)
+        # env_start_hours: 0 # Optional, defaults to global/0
+      - # Config for sub-task 1 env (MultiTraceEnv)
+        trace_files:
+          - data/real/ping_based/random_start_time/us-west-2a_k80_1
+          - data/real/ping_based/random_start_time/us-west-2b_k80_1
+        env_start_hours: 10 # Example: This sub-task's env starts later in trace
+    # default_env_start_hours is handled by main.py logic already
+  # Global deadline for the whole ChainedTask
+  deadline_hours: 52.0 
+  restart_overhead_hours: [0.2, 0.15] 
