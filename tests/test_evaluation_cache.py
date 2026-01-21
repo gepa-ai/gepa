@@ -208,67 +208,17 @@ def test_aime_prompt_optimize_with_cache(mocked_lms, recorder_dir):
 # --- Pareto Frontier Tests with Cache ---
 # Source: tests/test_pareto_frontier_types/test_pareto_frontier_types.py
 
+# Import the helper from conftest to avoid duplicating fixture logic
+from conftest import create_mocked_lms_context
+
 
 @pytest.fixture(scope="module")
 def pareto_mocked_lms(pareto_recorder_dir):
     """
     Fixture for Pareto frontier tests using their own recorder directory.
-    Re-uses the mocked_lms pattern from conftest.py but with the pareto recorder.
+    Re-uses the mocked_lms helper from conftest.py with the pareto recorder.
     """
-    import json
-    import os
-
-    should_record = os.environ.get("RECORD_TESTS", "false").lower() == "true"
-    cache_file = pareto_recorder_dir / "llm_cache.json"
-    cache = {}
-
-    def get_task_key(messages):
-        return str(("task_lm", json.dumps(messages, sort_keys=True)))
-
-    def get_reflection_key(prompt):
-        return str(("reflection_lm", prompt))
-
-    if should_record:
-        import litellm
-
-        def task_lm(messages):
-            key = get_task_key(messages)
-            if key not in cache:
-                response = litellm.completion(model="openai/gpt-4.1-nano", messages=messages)
-                cache[key] = response.choices[0].message.content.strip()
-            return cache[key]
-
-        def reflection_lm(prompt):
-            key = get_reflection_key(prompt)
-            if key not in cache:
-                response = litellm.completion(model="openai/gpt-4.1", messages=[{"role": "user", "content": prompt}])
-                cache[key] = response.choices[0].message.content.strip()
-            return cache[key]
-
-        yield task_lm, reflection_lm
-
-        with open(cache_file, "w") as f:
-            json.dump(cache, f, indent=2)
-    else:
-        try:
-            with open(cache_file) as f:
-                cache = json.load(f)
-        except FileNotFoundError:
-            pytest.fail(f"Cache file not found: {cache_file}. Run with 'RECORD_TESTS=true pytest' to generate it.")
-
-        def task_lm(messages):
-            key = get_task_key(messages)
-            if key not in cache:
-                pytest.fail(f"Unseen input for task_lm in replay mode. Key: {key}")
-            return cache[key]
-
-        def reflection_lm(prompt):
-            key = get_reflection_key(prompt)
-            if key not in cache:
-                pytest.fail(f"Unseen input for reflection_lm in replay mode. Key: {key}")
-            return cache[key]
-
-        yield task_lm, reflection_lm
+    yield from create_mocked_lms_context(pareto_recorder_dir)
 
 
 @pytest.mark.parametrize("frontier_type", ["objective", "hybrid", "instance"])
@@ -369,11 +319,6 @@ def test_pareto_frontier_type_with_cache(pareto_mocked_lms, pareto_recorder_dir,
         cache_evaluation=True,
     )
     assert gepa_result.total_metric_calls == 12
-
-    best_score = gepa_result.val_aggregate_scores[gepa_result.best_idx]
-    if gepa_result.val_aggregate_subscores:
-        best_subscores = gepa_result.val_aggregate_subscores[gepa_result.best_idx]
-
     assert gepa_result is not None
     assert gepa_result.total_metric_calls is not None and gepa_result.total_metric_calls > 0
     best_prompt = gepa_result.best_candidate["system_prompt"]

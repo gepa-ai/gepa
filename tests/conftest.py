@@ -1,38 +1,37 @@
 import json
 import os
 import random
+from pathlib import Path
 
 import pytest
 
 
-# --- Pytest Fixtures ---
-@pytest.fixture(scope="module")
-def mocked_lms(recorder_dir):
+def create_mocked_lms_context(cache_dir: Path):
     """
-    A pytest fixture to handle record/replay logic for LLM calls.
+    Generator for mocked LLM functions that handle record/replay logic.
 
     In 'record' mode, it calls the actual LLM API and saves the results.
     In 'replay' mode (default), it loads results from a cached JSON file.
 
-    Takes as input `recorder_dir`, a fixture returning the path to store the llm cache in.
+    Args:
+        cache_dir: Path to directory containing llm_cache.json
+
+    Yields:
+        tuple: (task_lm, reflection_lm) callable functions
     """
     should_record = os.environ.get("RECORD_TESTS", "false").lower() == "true"
-    cache_file = recorder_dir / "llm_cache.json"
+    cache_file = cache_dir / "llm_cache.json"
     cache = {}
 
     def get_task_key(messages):
         """Creates a deterministic key from a list of message dicts."""
-        # json.dumps with sort_keys=True provides a canonical representation.
-        # The tuple prefix distinguishes it from reflection_lm calls.
         return str(("task_lm", json.dumps(messages, sort_keys=True)))
 
     def get_reflection_key(prompt):
         """Creates a deterministic key for the reflection prompt string."""
         return str(("reflection_lm", prompt))
 
-    # --- Record Mode ---
     if should_record:
-        # Lazy import litellm only when needed to avoid dependency in replay mode.
         import litellm
 
         print("\n--- Running in RECORD mode. Making live API calls. ---")
@@ -51,14 +50,11 @@ def mocked_lms(recorder_dir):
                 cache[key] = response.choices[0].message.content.strip()
             return cache[key]
 
-        # Yield the live functions to the test, then save the cache on teardown.
         yield task_lm, reflection_lm
 
         print(f"--- Saving cache to {cache_file} ---")
         with open(cache_file, "w") as f:
             json.dump(cache, f, indent=2)
-
-    # --- Replay Mode ---
     else:
         print("\n--- Running in REPLAY mode. Using cached API calls. ---")
         try:
@@ -80,6 +76,16 @@ def mocked_lms(recorder_dir):
             return cache[key]
 
         yield task_lm, reflection_lm
+
+
+@pytest.fixture(scope="module")
+def mocked_lms(recorder_dir):
+    """
+    A pytest fixture to handle record/replay logic for LLM calls.
+
+    Takes as input `recorder_dir`, a fixture returning the path to store the llm cache in.
+    """
+    yield from create_mocked_lms_context(recorder_dir)
 
 
 @pytest.fixture

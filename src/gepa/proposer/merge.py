@@ -331,23 +331,15 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             )
             return None
 
-        mini_devset = self.valset.fetch(subsample_ids)
         assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id1].keys())
         assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id2].keys())
         id1_sub_scores = [state.prog_candidate_val_subscores[id1][k] for k in subsample_ids]
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
 
-        if state.evaluation_cache is not None:
-            new_sub_scores, actual_evals_count = state.evaluation_cache.evaluate_with_cache(
-                new_program,
-                subsample_ids,
-                self.valset.fetch,
-                self.evaluator,
-            )
-        else:
-            _, new_sub_scores, _ = self.evaluator(mini_devset, new_program)
-            actual_evals_count = len(subsample_ids)
+        new_sub_scores, actual_evals_count = state.cached_evaluate(
+            new_program, subsample_ids, self.valset.fetch, self.evaluator
+        )
         state.full_program_trace[-1]["id1_subsample_scores"] = id1_sub_scores
         state.full_program_trace[-1]["id2_subsample_scores"] = id2_sub_scores
         state.full_program_trace[-1]["new_program_subsample_scores"] = new_sub_scores

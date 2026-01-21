@@ -541,6 +541,36 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         """Return frontier key to best-program-indices mapping based on configured frontier_type."""
         return self._get_pareto_front_mapping(self.frontier_type)
 
+    def cached_evaluate(
+        self,
+        candidate: dict[str, str],
+        example_ids: list[DataId],
+        fetcher: Callable[[list[DataId]], Any],
+        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+    ) -> tuple[list[float], int]:
+        """Evaluate with optional caching. Returns (scores, num_actual_evals)."""
+        if self.evaluation_cache is not None:
+            return self.evaluation_cache.evaluate_with_cache(candidate, example_ids, fetcher, evaluator)
+        _, scores, _ = evaluator(fetcher(example_ids), candidate)
+        return scores, len(example_ids)
+
+    def cached_evaluate_full(
+        self,
+        candidate: dict[str, str],
+        example_ids: list[DataId],
+        fetcher: Callable[[list[DataId]], Any],
+        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+    ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
+        """Evaluate with optional caching, returning full results."""
+        if self.evaluation_cache is not None:
+            return self.evaluation_cache.evaluate_with_cache_full(candidate, example_ids, fetcher, evaluator)
+        batch = fetcher(example_ids)
+        outputs, scores, objective_scores = evaluator(batch, candidate)
+        outputs_by_id = dict(zip(example_ids, outputs, strict=False))
+        scores_by_id = dict(zip(example_ids, scores, strict=False))
+        objective_by_id = dict(zip(example_ids, objective_scores, strict=False)) if objective_scores else None
+        return outputs_by_id, scores_by_id, objective_by_id, len(example_ids)
+
 
 def write_eval_scores_to_directory(scores: dict[DataId, float], output_dir: str) -> None:
     for val_id, score in scores.items():

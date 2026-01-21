@@ -231,7 +231,7 @@ class _StubValset:
         return [{"id": idx} for idx in ids]
 
 
-def _make_state(prog_val_scores):
+def _make_state(prog_val_scores, evaluator=None):
     state = SimpleNamespace(
         i=0,
         full_program_trace=[{}],
@@ -247,6 +247,13 @@ def _make_state(prog_val_scores):
     state.get_pareto_front_mapping = lambda: {
         val_id: set(front) for val_id, front in state.program_at_pareto_front_valset.items()
     }
+
+    # Add cached_evaluate method to match GEPAState interface (no caching for stubs)
+    def cached_evaluate(candidate, example_ids, fetcher, eval_fn):
+        _, scores, _ = eval_fn(fetcher(example_ids), candidate)
+        return scores, len(example_ids)
+
+    state.cached_evaluate = cached_evaluate
     return state
 
 

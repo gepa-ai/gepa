@@ -110,25 +110,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         val_ids = self.val_evaluation_policy.get_eval_batch(valset, state)
 
-        if state.evaluation_cache is not None:
-            # Use cache for evaluation
-            outputs_by_val_idx, scores_by_val_idx, objective_by_val_idx, num_actual_evals = (
-                state.evaluation_cache.evaluate_with_cache_full(program, list(val_ids), valset.fetch, self.evaluator)
-            )
-            state.total_num_evals += num_actual_evals
-        else:
-            # Direct evaluation without cache
-            batch = valset.fetch(list(val_ids))
-            outputs, scores, objective_scores = self.evaluator(batch, program)
-            assert len(outputs) == len(val_ids), "Eval outputs should match length of selected validation indices"
-            assert len(scores) == len(val_ids), "Eval scores should match length of selected validation indices"
-
-            outputs_by_val_idx = dict(zip(val_ids, outputs, strict=False))
-            scores_by_val_idx = dict(zip(val_ids, scores, strict=False))
-            objective_by_val_idx = (
-                dict(zip(val_ids, objective_scores, strict=False)) if objective_scores is not None else None
-            )
-            state.total_num_evals += len(val_ids)
+        outputs_by_val_idx, scores_by_val_idx, objective_by_val_idx, num_actual_evals = state.cached_evaluate_full(
+            program, list(val_ids), valset.fetch, self.evaluator
+        )
+        state.total_num_evals += num_actual_evals
 
         return ValsetEvaluation(
             outputs_by_val_id=outputs_by_val_idx,

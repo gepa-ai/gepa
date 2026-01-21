@@ -153,18 +153,13 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             assert pname in new_candidate, f"{pname} missing in candidate"
             new_candidate[pname] = text
 
-        if state.evaluation_cache is not None:
+        def evaluator(b, c):
+            r = self.adapter.evaluate(b, c, capture_traces=False)
+            return r.outputs, r.scores, list(r.objective_scores) if r.objective_scores else None
 
-            def evaluator(b, c):
-                r = self.adapter.evaluate(b, c, capture_traces=False)
-                return r.outputs, r.scores, list(r.objective_scores) if r.objective_scores else None
-
-            new_scores, actual_evals_count = state.evaluation_cache.evaluate_with_cache(
-                new_candidate, subsample_ids, self.trainset.fetch, evaluator
-            )
-        else:
-            eval_result = self.adapter.evaluate(minibatch, new_candidate, capture_traces=False)
-            new_scores, actual_evals_count = eval_result.scores, len(subsample_ids)
+        new_scores, actual_evals_count = state.cached_evaluate(
+            new_candidate, subsample_ids, self.trainset.fetch, evaluator
+        )
         state.total_num_evals += actual_evals_count
         state.full_program_trace[-1]["new_subsample_scores"] = new_scores
 
