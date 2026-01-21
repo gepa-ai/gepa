@@ -227,6 +227,101 @@ class EngineConfig:
     max_workers: int | None = None
 
 
+def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
+    """
+    Build a reflection prompt template dynamically based on provided objective and background.
+
+    Only includes sections that have content, ensuring the prompt feels natural
+    regardless of which optional parameters are provided.
+
+    Args:
+        objective: High-level goal describing what the optimized component should achieve.
+        background: Domain knowledge, constraints, strategies, or implementation requirements.
+
+    Returns:
+        A reflection prompt template string with <curr_param> and <side_info> placeholders.
+    """
+    sections = []
+
+    # System context - always present
+    sections.append(
+        "You are an expert optimization assistant. Your task is to analyze evaluation "
+        "feedback and propose an improved version of a system component."
+    )
+
+    # Objective section
+    if objective:
+        sections.append(f"""
+## Optimization Goal
+
+{objective}""")
+
+    # Background/context section
+    if background:
+        sections.append(f"""
+## Domain Context & Constraints
+
+{background}""")
+
+    # Current component and evaluation data - always present
+    sections.append("""
+## Current Component
+
+The component being optimized:
+
+```
+<curr_param>
+```
+
+## Evaluation Results
+
+Performance data from evaluating the current component across test cases:
+
+```
+<side_info>
+```""")
+
+    # Analysis instructions - tailored based on what context is available
+    analysis_points = []
+    if objective:
+        analysis_points.append(
+            "- **Goal alignment**: How well does the current component achieve the stated optimization goal?"
+        )
+    analysis_points.extend([
+        "- **Failure patterns**: What specific errors, edge cases, or failure modes appear in the evaluation data?",
+        "- **Success patterns**: What behaviors or approaches worked well and should be preserved?",
+        "- **Root causes**: What underlying issues explain the observed failures?",
+    ])
+    if background:
+        analysis_points.append(
+            "- **Constraint compliance**: Does the component satisfy all requirements from the domain context?"
+        )
+
+    analysis_section = "\n".join(analysis_points)
+    constraint_line = "\n4. Adheres to all constraints and requirements from the domain context" if background else ""
+    sections.append(f"""
+## Your Task
+
+Analyze the evaluation results systematically:
+
+{analysis_section}
+
+Based on your analysis, propose an improved version that:
+1. Addresses the identified failure patterns and root causes
+2. Preserves successful behaviors from the current version
+3. Makes meaningful improvements rather than superficial changes{constraint_line}""")
+
+    # Output format - always present
+    sections.append("""
+## Output Format
+
+Provide ONLY the improved version within ``` blocks. The output must be a complete, 
+drop-in replacement for the current component (whether it's a prompt, configuration, 
+code, or any other parameter type).
+Do not include explanations, commentary, or markdown outside the ``` blocks.""")
+
+    return "\n".join(sections)
+
 optimize_anything_reflection_prompt_template: str = """I am optimizing a parameter in my system. The current parameter value is:
 ```
 <curr_param>
@@ -340,8 +435,52 @@ def optimize_anything(
     fitness_fn: FitnessFn,
     dataset: list[DataInst],
     valset: list[DataInst] | None = None,
+    objective: str | None = None,
+    background: str | None = None,
     config: GEPAConfig | None = None,
 ) -> GEPAResult:
+    """
+    Optimize any parameterized system using evolutionary algorithms with LLM-based reflection.
+
+    This is the main entry point for GEPA optimization. It accepts a seed candidate (initial
+    parameter configuration), a fitness function for evaluation, and a dataset of test cases.
+
+    Args:
+        seed_candidate: Initial candidate(s) to start optimization from. Can be a single
+            candidate dict or a list of candidates for population-based initialization.
+        fitness_fn: Function that evaluates a candidate on a single example, returning
+            (score, output, side_info). See FitnessFn protocol for details.
+        dataset: List of examples/test cases to evaluate candidates on during optimization.
+        valset: Optional separate validation set. If not provided, uses dataset for validation.
+        objective: High-level description of what the optimized component should achieve.
+            Used to generate a reflection prompt that guides the LLM proposer. Example:
+            "Generate Python code that solves competitive programming problems efficiently."
+            Cannot be used together with a custom reflection_prompt_template in config.
+        background: Domain knowledge, constraints, algorithms, or implementation requirements
+            that should guide optimization. Used alongside objective to generate reflection
+            prompts. Example: "Solutions must use only standard library. Time limit is 2 seconds.
+            Consider dynamic programming and greedy approaches." Cannot be used together with
+            a custom reflection_prompt_template in config.
+        config: Optional GEPAConfig for fine-grained control over optimization behavior.
+            If not provided, uses sensible defaults.
+
+    Returns:
+        GEPAResult containing the best candidate(s), optimization history, and metrics.
+
+    Raises:
+        ValueError: If both objective/background and a custom reflection_prompt_template
+            are provided (mutually exclusive options).
+
+    Example:
+        >>> result = optimize_anything(
+        ...     seed_candidate={"prompt": "Solve this math problem:"},
+        ...     fitness_fn=my_evaluator,
+        ...     dataset=test_cases,
+        ...     objective="Generate prompts that help solve math word problems accurately.",
+        ...     config=GEPAConfig(engine=EngineConfig(max_metric_calls=100)),
+        ... )
+        >>> print(result.best_candidate)
+    """
     # Use default config if not provided
     if config is None:
         config = GEPAConfig()
@@ -492,7 +631,32 @@ def optimize_anything(
         mlflow_experiment_name=config.tracking.mlflow_experiment_name,
     )
 
-    # --- 9. Validate reflection prompt template ---
+    # --- 9. Build reflection prompt template from objective/background if provided ---
+    # Check for conflicting configuration: user cannot provide both objective/background
+    # AND a custom reflection_prompt_template (these are mutually exclusive approaches)
+    user_provided_custom_template = (
+        config.reflection.reflection_prompt_template is not None
+        and config.reflection.reflection_prompt_template != optimize_anything_reflection_prompt_template
+    )
+    # Treat empty strings as "not provided" - only non-empty strings count
+    user_provided_objective_or_background = bool(objective) or bool(background)
+
+    if user_provided_custom_template and user_provided_objective_or_background:
+        raise ValueError(
+            "Cannot specify both 'objective'/'background' parameters and a custom "
+            "'config.reflection.reflection_prompt_template'. These are mutually exclusive options. "
+            "Either use objective/background to auto-generate a reflection prompt, or provide "
+            "your own custom template via config.reflection.reflection_prompt_template."
+        )
+
+    # If objective or background are provided, build a custom reflection prompt template
+    # with those values filled in, creating a template with <curr_param> and <side_info> placeholders
+    if user_provided_objective_or_background:
+        config.reflection.reflection_prompt_template = _build_reflection_prompt_template(
+            objective=objective, background=background
+        )
+
+    # --- 10. Validate reflection prompt template ---
     if config.reflection.reflection_prompt_template is not None:
         assert not (active_adapter is not None and getattr(active_adapter, "propose_new_texts", None) is not None), (
             f"Adapter {active_adapter!s} provides its own propose_new_texts method; "
@@ -511,7 +675,7 @@ def optimize_anything(
         else:
             InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
 
-    # --- 10. Build reflective proposer from ReflectionConfig ---
+    # --- 11. Build reflective proposer from ReflectionConfig ---
     reflective_proposer = ReflectiveMutationProposer(
         logger=config.tracking.logger,
         trainset=train_loader,
@@ -532,7 +696,7 @@ def optimize_anything(
         eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
         return eval_out.outputs, eval_out.scores
 
-    # --- 11. Build merge proposer from MergeConfig (if provided) ---
+    # --- 12. Build merge proposer from MergeConfig (if provided) ---
     merge_proposer: MergeProposer | None = None
     if config.merge is not None:
         merge_proposer = MergeProposer(
@@ -545,7 +709,7 @@ def optimize_anything(
             val_overlap_floor=config.merge.merge_val_overlap_floor,
         )
 
-    # --- 12. Build the main engine from EngineConfig ---
+    # --- 13. Build the main engine from EngineConfig ---
     engine = GEPAEngine(
         adapter=active_adapter,
         run_dir=config.engine.run_dir,
@@ -566,7 +730,7 @@ def optimize_anything(
         use_cloudpickle=config.engine.use_cloudpickle,
     )
 
-    # --- 13. Run optimization ---
+    # --- 14. Run optimization ---
     with experiment_tracker:
         state = engine.run()
 
