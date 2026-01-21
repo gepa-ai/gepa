@@ -91,23 +91,6 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
                 outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None
             )
 
-    def evaluate_with_cache(
-        self,
-        candidate: dict[str, str],
-        example_ids: list[DataId],
-        fetcher: Callable[[list[DataId]], Any],
-        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
-    ) -> tuple[list[float], int]:
-        """Evaluate using cache. Returns (scores_in_order, num_actual_evals)."""
-        cached, uncached_ids = self.get_batch(candidate, example_ids)
-        id_to_score = {eid: c.score for eid, c in cached.items()}
-        if uncached_ids:
-            outputs, scores, obj_scores = evaluator(fetcher(uncached_ids), candidate)
-            for idx, eid in enumerate(uncached_ids):
-                id_to_score[eid] = scores[idx]
-            self.put_batch(candidate, uncached_ids, outputs, scores, obj_scores)
-        return [id_to_score[eid] for eid in example_ids], len(uncached_ids)
-
     def evaluate_with_cache_full(
         self,
         candidate: dict[str, str],
@@ -549,10 +532,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
     ) -> tuple[list[float], int]:
         """Evaluate with optional caching. Returns (scores, num_actual_evals)."""
-        if self.evaluation_cache is not None:
-            return self.evaluation_cache.evaluate_with_cache(candidate, example_ids, fetcher, evaluator)
-        _, scores, _ = evaluator(fetcher(example_ids), candidate)
-        return scores, len(example_ids)
+        _, scores_by_id, _, num_actual_evals = self.cached_evaluate_full(candidate, example_ids, fetcher, evaluator)
+        return [scores_by_id[eid] for eid in example_ids], num_actual_evals
 
     def cached_evaluate_full(
         self,
