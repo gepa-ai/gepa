@@ -142,7 +142,7 @@ class ValsetEvaluation(Generic[RolloutOutput, DataId]):
 class GEPAState(Generic[RolloutOutput, DataId]):
     """Persistent optimizer state tracking candidates, sparse validation coverage, and objective frontiers."""
 
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 3
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 4
 
     program_candidates: list[dict[str, str]]
     parent_program_for_candidate: list[list[ProgramIdx | None]]
@@ -337,6 +337,9 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             # Since frontier_type instance does not require "pareto_front_cartesian" and "program_at_pareto_front_cartesian", we can safely set them to empty dicts.
             d["pareto_front_cartesian"] = {}
             d["program_at_pareto_front_cartesian"] = {}
+        # evaluation_cache is not persisted across runs by default; initialize to None if missing
+        if "evaluation_cache" not in d:
+            d["evaluation_cache"] = None
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
