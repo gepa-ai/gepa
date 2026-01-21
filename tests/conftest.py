@@ -25,13 +25,17 @@ def create_mocked_lms_context(cache_dir: Path):
 
     def get_task_key(messages):
         """Creates a deterministic key from a list of message dicts."""
+        # json.dumps with sort_keys=True provides a canonical representation.
+        # The tuple prefix distinguishes it from reflection_lm calls.
         return str(("task_lm", json.dumps(messages, sort_keys=True)))
 
     def get_reflection_key(prompt):
         """Creates a deterministic key for the reflection prompt string."""
         return str(("reflection_lm", prompt))
 
+    # --- Record Mode ---
     if should_record:
+        # Lazy import litellm only when needed to avoid dependency in replay mode.
         import litellm
 
         print("\n--- Running in RECORD mode. Making live API calls. ---")
@@ -50,11 +54,14 @@ def create_mocked_lms_context(cache_dir: Path):
                 cache[key] = response.choices[0].message.content.strip()
             return cache[key]
 
+        # Yield the live functions to the test, then save the cache on teardown.
         yield task_lm, reflection_lm
 
         print(f"--- Saving cache to {cache_file} ---")
         with open(cache_file, "w") as f:
             json.dump(cache, f, indent=2)
+
+    # --- Replay Mode ---
     else:
         print("\n--- Running in REPLAY mode. Using cached API calls. ---")
         try:
