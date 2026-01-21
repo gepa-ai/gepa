@@ -1,15 +1,30 @@
 import os
+from typing import Any
+
 import dspy
-from typing import Sequence, Any
+
 from examples.math.dataset import load_math_dataset
+from gepa.core.adapter import DataInst
 from gepa.optimize_anything import (
     EngineConfig,
     GEPAConfig,
     ReflectionConfig,
-    TrackingConfig,
     SideInfo,
+    TrackingConfig,
     optimize_anything,
 )
+
+# ============================================================================
+# DSPY SIGNATURES
+# ============================================================================
+
+
+class MathSolverSignature(dspy.Signature):
+    input = dspy.InputField(desc="The math problem to solve.")
+    answer = dspy.OutputField(desc="The final numerical answer.")
+
+
+predictor = dspy.ChainOfThought(MathSolverSignature)
 
 
 # ============================================================================
@@ -17,7 +32,13 @@ from gepa.optimize_anything import (
 # ============================================================================
 
 
-def math_metric(example, prediction):
+def run_llm(example: DataInst, prompt: str) -> dspy.Prediction:
+    """Run the LLM with the given prompt and return the prediction."""
+    predictor.predict.signature.instructions = prompt
+    return predictor(example)
+
+
+def math_metric(example: DataInst, prediction: dspy.Prediction) -> dspy.Prediction:
     """Compute score and detailed feedback for math problems."""
     correct_answer = int(example.answer)
     written_solution = getattr(example, "solution", "")
@@ -45,70 +66,48 @@ def math_metric(example, prediction):
     return dspy.Prediction(score=score, feedback=feedback_text)
 
 
-def evaluate_on_dataset(predictor, dataset):
-    """Run a parallel evaluation of a predictor on a dataset using dspy.Evaluate."""
-    evaluator = dspy.Evaluate(
-        devset=dataset,
-        metric=math_metric,
-        num_threads=16,
-        display_progress=True,
-    )
-
-    eval_result = evaluator(predictor)
-    return eval_result.score / 100.0
-
-
 def create_fitness_function(predictor: dspy.Module):
     """Create fitness function for GEPA optimization using dspy.Evaluate for parallel rollouts."""
 
-    def fitness_fn(candidate: dict[str, str], batch: Sequence[Any], **kwargs) -> list[tuple[float, Any, SideInfo]]:
-        # Update the single prompt (instructions)
-        predictor.predict.signature.instructions = candidate["prompt"]
+    def fitness_fn(candidate: dict[str, str], example: Any, **kwargs) -> list[tuple[float, Any, SideInfo]]:
+        prediction = run_llm(predictor, example, candidate["prompt"])
+        metric_result = math_metric(example, prediction)
+        score = metric_result.score
+        feedback = metric_result.feedback
 
-        evaluator = dspy.Evaluate(
-            devset=list(batch),
-            metric=math_metric,
-            num_threads=16,
-            display_progress=True,
-            display_table=False,
-        )
+        output = {
+            "prompt": candidate["prompt"],
+            "answer": prediction.answer,
+            "score": score,
+        }
 
-        eval_result = evaluator(predictor)
+        side_info = {
+            "Input": example.input,
+            "Output": prediction.answer,
+            "Reasoning": getattr(prediction, "reasoning", ""),
+            "ExecutionFeedback": feedback,
+        }
 
-        results = []
-
-        for example, prediction, metric_result in eval_result.results:
-            score = metric_result.score
-            feedback = metric_result.feedback
-
-            output = {
-                "prompt": candidate["prompt"],
-                "answer": prediction.answer,
-                "score": score,
-            }
-
-            side_info = {
-                "Input": example.input,
-                "Output": prediction.answer,
-                "Reasoning": getattr(prediction, "reasoning", ""),
-                "ExecutionFeedback": feedback,
-            }
-
-            results.append((score, output, side_info))
-
-        return results
+        return (score, output, side_info)
 
     return fitness_fn
 
 
-# ============================================================================
-# DSPY SIGNATURES
-# ============================================================================
+def evaluate_on_dataset(prompt: str, dataset: list[DataInst]) -> float:
+    predictor.predict.signature.instructions = prompt
+    evaluator = dspy.Evaluate(
+        devset=dataset,
+        metric=math_metric,
+        num_threads=32,
+        display_progress=True,
+    )
+    eval_result = evaluator(predictor)
+    return eval_result.score / 100.0
 
 
-class MathSolverSignature(dspy.Signature):
-    input = dspy.InputField(desc="The math problem to solve.")
-    answer = dspy.OutputField(desc="The final numerical answer.")
+# ============================================================================
+# Candidate
+# ============================================================================
 
 
 INITIAL_PROMPT = (
@@ -126,12 +125,10 @@ def main():
     if not api_key:
         print("Warning: OPENAI_API_KEY not set.")
 
-    solver_lm = dspy.LM("gpt-4.1-mini", api_key=api_key, temperature=1.0, max_tokens=32000)
-    proposal_lm = dspy.LM("openai/gpt-5", api_key=api_key, temperature=1.0, max_tokens=32000)
-    dspy.configure(lm=solver_lm)
+    lm = dspy.LM("gpt-4.1-mini", api_key=api_key, temperature=1.0, max_tokens=32000)
+    dspy.configure(lm=lm)
 
     trainset, valset, testset = load_math_dataset()
-    predictor = dspy.ChainOfThought(MathSolverSignature)
 
     task_name = "math"
     artifacts_dir = f"outputs/artifacts/{task_name}"
@@ -144,14 +141,15 @@ def main():
     gepa_config = GEPAConfig(
         engine=EngineConfig(
             run_dir=artifacts_dir,
-            seed=42,
             max_metric_calls=600,
             track_best_outputs=True,
+            parallel=True,
+            max_workers=32,
         ),
         reflection=ReflectionConfig(
             reflection_minibatch_size=3,
             skip_perfect_score=False,
-            reflection_lm=proposal_lm,
+            reflection_lm="openai/gpt-5.1",
         ),
         tracking=TrackingConfig(use_wandb=False),
     )
@@ -170,16 +168,14 @@ def main():
 
     # Baseline Evaluation
     print("\nEvaluating Baseline (Initial Prompt)...")
-    predictor.predict.signature.instructions = INITIAL_PROMPT
-    baseline_score = evaluate_on_dataset(predictor, testset, name="Baseline Test")
+    baseline_score = evaluate_on_dataset(INITIAL_PROMPT, testset)
 
     # Optimized Evaluation
     print("\nEvaluating Best Optimized Program...")
     best_prompt = result.best_candidate["prompt"]
     print(f"Best Prompt Found:\n{best_prompt}")
 
-    predictor.predict.signature.instructions = best_prompt
-    optimized_score = evaluate_on_dataset(predictor, testset, name="Optimized Test")
+    optimized_score = evaluate_on_dataset(best_prompt, testset)
 
     print(f"Baseline Score: {baseline_score:.2%}")
     print(f"Optimized Score: {optimized_score:.2%}")

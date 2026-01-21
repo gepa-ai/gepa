@@ -135,97 +135,49 @@ def metric_fn(example, pred, trace=None):
     return dspy.Prediction(score=score, feedback=feedback_text)
 
 
-def _create_error_results(program, batch, error_msg):
-    """Create error results for all examples in batch."""
-    feedback = error_msg
-
-    results = []
-    for _ in batch:
-        side_info = {
-            "score": 0.0,
-            "error": error_msg,
-            "program": program,
-            "feedback": feedback,
-        }
-
-        output = {"error": error_msg, "program": program}
-        results.append((0.0, output, side_info))
-    return results
-
-
-def _create_result_item(traj, program):
-    """Create a single result item from trajectory."""
-    metric_result = traj.get("score")
-    score = metric_result.get("score")
-    feedback = metric_result.get("feedback")
-
-    prediction = traj.get("prediction")
-    model_answer = prediction.get("test_outputs")
-
-    rollout_output = {
-        "program": program,
-        "model_answer": model_answer,
-        "score": score,
-    }
-
-    side_info = {
-        "score": score,
-        "input": traj.get("example"),
-        "reasoning": prediction.get("reasoning"),
-        "feedback": feedback,
-        "output": model_answer,
-    }
-
-    return (
-        score,
-        rollout_output,
-        side_info,
-    )
-
-
 def create_fitness_fn(adapter):
     """Create fitness function with adapter in closure."""
 
-    def fitness_fn(candidate, batch):
-        """Evaluate candidate program on batch and return results."""
+    def fitness_fn(candidate, example):
+        """Evaluate candidate program on a single example."""
         program = candidate["program"]
+
         try:
-            eval_batch = adapter.evaluate(batch, candidate, capture_traces=True)
+            evaluation_results = adapter.evaluate([example], candidate, capture_traces=True)
         except Exception as e:
-            print(f"Error evaluating candidate: {e}")
-            return _create_error_results(
-                program,
-                batch,
-                str(e),
-            )
+            side_info = {
+                "input": example,
+                "error": str(e),
+                "program": program
+            }
+            return (0.0, side_info, side_info)
 
-        if isinstance(eval_batch.trajectories, str):
-            # program error
-            error_msg = f"All examples failed. Program error message: {eval_batch.trajectories}"
-            print("⚠️  " + error_msg[:200])
-            return _create_error_results(
-                program,
-                batch,
-                error_msg,
-            )
+        # Program error
+        if not isinstance(evaluation_results.trajectories, list) or len(evaluation_results.trajectories) == 0:
+            print("Error: ")
+            print(evaluation_results.trajectories)
+            side_info = {
+                "input": example,
+                "error": f"All examples failed. Program error: {str(evaluation_results.trajectories)}",
+                "program": program
+            }
+            return (0.0, side_info, side_info)
 
-        if len(eval_batch.trajectories) == 0:
-            # dspy error caused by the program
-            error_msg = (
-                "All examples failed - likely a serialization error. "
-                "Do NOT pass lambdas, functions, classes, or type objects as arguments to dspy modules. "
-                "Keep all logic inside class methods. Only pass serializable data (strings, numbers, lists, dicts)."
-            )
-            return _create_error_results(
-                program,
-                batch,
-                error_msg,
-            )
+        # Process evaluations with no program errors
+        trajectory = evaluation_results.trajectories[0]
+        metric_result = trajectory.get("score")
+        score = metric_result.get("score")
+        feedback = metric_result.get("feedback")
+        prediction = trajectory.get("prediction")
 
-        # Process successful evaluations with no errors
-        results = [_create_result_item(traj, program) for traj in eval_batch.trajectories]
+        side_info = {
+            "input": example,
+            "reasoning": prediction.get("reasoning"),
+            "feedback": feedback,
+            "output": prediction.get("test_outputs"),
+        }
 
-        return results
+        return (score, side_info, side_info)
 
     return fitness_fn
 
