@@ -108,6 +108,7 @@ def test_pareto_frontier_type(mocked_lms, recorder_dir, frontier_type):
         reflection_minibatch_size=3,
         display_progress_bar=False,
     )
+    assert gepa_result.total_metric_calls in [36, 48]
 
     best_score = gepa_result.val_aggregate_scores[gepa_result.best_idx]
     print(f"\n[{frontier_type}] Best score: {best_score}")

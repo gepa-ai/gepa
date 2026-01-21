@@ -1,11 +1,13 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import hashlib
 import json
 import os
 from collections import defaultdict
-from collections.abc import Callable
-from dataclasses import dataclass
+
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from typing import Any, ClassVar, Generic, Literal, Sequence, TypeAlias
 
 from gepa.core.adapter import RolloutOutput
@@ -20,9 +22,113 @@ ProgramIdx = int
 ObjectiveScores: TypeAlias = dict[str, float]
 FrontierType: TypeAlias = Literal["instance", "objective", "hybrid", "cartesian"]
 """Strategy for tracking Pareto frontiers: 'instance' (per validation example), 'objective' (per objective metric), 'hybrid' (both), or 'cartesian' (per example × objective)."""
-
 FrontierKey: TypeAlias = DataId | str | tuple[str, DataId] | tuple[str, DataId, str]
 """Key type for frontier mappings depending on frontier_type."""
+
+CandidateHash: TypeAlias = str
+CacheKey: TypeAlias = tuple[CandidateHash, DataId]
+
+
+def _candidate_hash(candidate: dict[str, str]) -> CandidateHash:
+    """Compute a deterministic hash of a candidate dictionary."""
+    return hashlib.sha256(json.dumps(sorted(candidate.items())).encode()).hexdigest()
+
+
+@dataclass
+class CachedEvaluation(Generic[RolloutOutput]):
+    """Cached evaluation result for a (candidate, example) pair."""
+
+    output: RolloutOutput
+    score: float
+    objective_scores: ObjectiveScores | None
+
+
+@dataclass
+class EvaluationCache(Generic[RolloutOutput, DataId]):
+    """Cache for storing evaluation results of (candidate, example) pairs."""
+
+    _cache: dict[CacheKey, CachedEvaluation[RolloutOutput]] = field(default_factory=dict)
+
+    def get(self, candidate: dict[str, str], example_id: DataId) -> CachedEvaluation[RolloutOutput] | None:
+        """Retrieve cached evaluation result if it exists."""
+        return self._cache.get((_candidate_hash(candidate), example_id))
+
+    def put(
+        self,
+        candidate: dict[str, str],
+        example_id: DataId,
+        output: RolloutOutput,
+        score: float,
+        objective_scores: ObjectiveScores | None = None,
+    ) -> None:
+        """Store an evaluation result in the cache."""
+        self._cache[(_candidate_hash(candidate), example_id)] = CachedEvaluation(output, score, objective_scores)
+
+    def get_batch(
+        self, candidate: dict[str, str], example_ids: list[DataId]
+    ) -> tuple[dict[DataId, CachedEvaluation[RolloutOutput]], list[DataId]]:
+        """Look up cached results for a batch. Returns (cached_results, uncached_ids)."""
+        h = _candidate_hash(candidate)
+        cached, uncached = {}, []
+        for eid in example_ids:
+            if entry := self._cache.get((h, eid)):
+                cached[eid] = entry
+            else:
+                uncached.append(eid)
+        return cached, uncached
+
+    def put_batch(
+        self,
+        candidate: dict[str, str],
+        example_ids: list[DataId],
+        outputs: list[RolloutOutput],
+        scores: list[float],
+        objective_scores_list: Sequence[ObjectiveScores] | None = None,
+    ) -> None:
+        """Store evaluation results for a batch of examples."""
+        h = _candidate_hash(candidate)
+        for i, eid in enumerate(example_ids):
+            self._cache[(h, eid)] = CachedEvaluation(
+                outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None
+            )
+
+    def evaluate_with_cache_full(
+        self,
+        candidate: dict[str, str],
+        example_ids: list[DataId],
+        fetcher: Callable[[list[DataId]], Any],
+        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+    ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
+        """
+        Evaluate using cache, returning full results.
+
+        Returns (outputs_by_id, scores_by_id, objective_scores_by_id, num_actual_evals).
+        """
+        cached, uncached_ids = self.get_batch(candidate, example_ids)
+
+        outputs_by_id: dict[DataId, RolloutOutput] = {eid: c.output for eid, c in cached.items()}
+        scores_by_id: dict[DataId, float] = {eid: c.score for eid, c in cached.items()}
+        objective_by_id: dict[DataId, ObjectiveScores] | None = None
+
+        # Populate objective scores from cache
+        for eid, c in cached.items():
+            if c.objective_scores is not None:
+                objective_by_id = objective_by_id or {}
+                objective_by_id[eid] = c.objective_scores
+
+        # Evaluate uncached examples
+        if uncached_ids:
+            batch = fetcher(uncached_ids)
+            outputs, scores, obj_scores = evaluator(batch, candidate)
+            for idx, eid in enumerate(uncached_ids):
+                outputs_by_id[eid] = outputs[idx]
+                scores_by_id[eid] = scores[idx]
+                if obj_scores is not None:
+                    objective_by_id = objective_by_id or {}
+                    objective_by_id[eid] = obj_scores[idx]
+            self.put_batch(candidate, uncached_ids, outputs, scores, obj_scores)
+
+        return outputs_by_id, scores_by_id, objective_by_id, len(uncached_ids)
 
 
 @dataclass(slots=True)
@@ -37,7 +143,7 @@ class ValsetEvaluation(Generic[RolloutOutput, DataId]):
 class GEPAState(Generic[RolloutOutput, DataId]):
     """Persistent optimizer state tracking candidates, sparse validation coverage, and objective frontiers."""
 
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 3
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 4
 
     program_candidates: list[dict[str, str]]
     parent_program_for_candidate: list[list[ProgramIdx | None]]
@@ -66,12 +172,16 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     validation_schema_version: int
 
+    # Optional evaluation cache for (candidate, example) pairs
+    evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None"
+
     def __init__(
         self,
         seed_candidate: dict[str, str],
         base_evaluation: ValsetEvaluation[RolloutOutput, DataId],
         track_best_outputs: bool = False,
         frontier_type: FrontierType = "instance",
+        evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None" = None,
     ):
         self.program_candidates = [dict(seed_candidate)]
         self.prog_candidate_val_subscores = [dict(base_evaluation.scores_by_val_id)]
@@ -127,6 +237,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         self.full_program_trace = []
         self.validation_schema_version = self._VALIDATION_SCHEMA_VERSION
+        self.evaluation_cache = evaluation_cache
 
     def is_consistent(self) -> bool:
         assert len(self.program_candidates) == len(self.parent_program_for_candidate)
@@ -227,6 +338,9 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             # Since frontier_type instance does not require "pareto_front_cartesian" and "program_at_pareto_front_cartesian", we can safely set them to empty dicts.
             d["pareto_front_cartesian"] = {}
             d["program_at_pareto_front_cartesian"] = {}
+        # evaluation_cache is not persisted across runs by default; initialize to None if missing
+        if "evaluation_cache" not in d:
+            d["evaluation_cache"] = None
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
@@ -418,6 +532,34 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         """Return frontier key to best-program-indices mapping based on configured frontier_type."""
         return self._get_pareto_front_mapping(self.frontier_type)
 
+    def cached_evaluate(
+        self,
+        candidate: dict[str, str],
+        example_ids: list[DataId],
+        fetcher: Callable[[list[DataId]], Any],
+        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+    ) -> tuple[list[float], int]:
+        """Evaluate with optional caching. Returns (scores, num_actual_evals)."""
+        _, scores_by_id, _, num_actual_evals = self.cached_evaluate_full(candidate, example_ids, fetcher, evaluator)
+        return [scores_by_id[eid] for eid in example_ids], num_actual_evals
+
+    def cached_evaluate_full(
+        self,
+        candidate: dict[str, str],
+        example_ids: list[DataId],
+        fetcher: Callable[[list[DataId]], Any],
+        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
+    ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
+        """Evaluate with optional caching, returning full results."""
+        if self.evaluation_cache is not None:
+            return self.evaluation_cache.evaluate_with_cache_full(candidate, example_ids, fetcher, evaluator)
+        batch = fetcher(example_ids)
+        outputs, scores, objective_scores = evaluator(batch, candidate)
+        outputs_by_id = dict(zip(example_ids, outputs, strict=False))
+        scores_by_id = dict(zip(example_ids, scores, strict=False))
+        objective_by_id = dict(zip(example_ids, objective_scores, strict=False)) if objective_scores else None
+        return outputs_by_id, scores_by_id, objective_by_id, len(example_ids)
+
 
 def write_eval_scores_to_directory(scores: dict[DataId, float], output_dir: str) -> None:
     for val_id, score in scores.items():
@@ -453,6 +595,7 @@ def initialize_gepa_state(
     ],
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
+    evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None" = None,
 ) -> GEPAState[RolloutOutput, DataId]:
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
@@ -462,6 +605,17 @@ def initialize_gepa_state(
                 f"Frontier type mismatch: requested '{frontier_type}' but loaded state has '{gepa_state.frontier_type}'. "
                 f"Use a different run_dir or match the frontier_type parameter."
             )
+        # Sync cache with current run's cache_evaluation setting:
+        # - If caching is disabled (evaluation_cache is None), clear any loaded cache
+        #   to respect the current run's cache_evaluation=False setting
+        # - If caching is enabled and the loaded state has a cache, preserve it
+        #   (allows resuming with cached results from previous run)
+        # - If caching is enabled but no cache exists in loaded state, use the new empty cache
+        if evaluation_cache is None:
+            gepa_state.evaluation_cache = None
+        elif gepa_state.evaluation_cache is None:
+            gepa_state.evaluation_cache = evaluation_cache
+        # else: keep the loaded cache (gepa_state.evaluation_cache is already set)
     else:
         num_evals_run = 0
 
@@ -478,6 +632,7 @@ def initialize_gepa_state(
             eval_result,
             track_best_outputs=track_best_outputs,
             frontier_type=frontier_type,
+            evaluation_cache=evaluation_cache,
         )
 
         gepa_state.num_full_ds_evals = 1

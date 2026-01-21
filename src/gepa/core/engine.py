@@ -7,7 +7,7 @@ from typing import Generic
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
-from gepa.core.state import FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
+from gepa.core.state import EvaluationCache, FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
@@ -52,6 +52,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Budget and Stop Condition
         stop_callback: StopperProtocol | None = None,
         val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
+        # Evaluation caching (stored in state, passed here for initialization)
+        evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -62,6 +64,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Set up stopping mechanism
         self.stop_callback = stop_callback
         self.adapter = adapter
+
+        # Store cache reference for state initialization (actual cache lives in GEPAState)
+        self._initial_evaluation_cache = evaluation_cache
 
         def evaluator(
             batch: list[DataInst], program: dict[str, str]
@@ -104,16 +109,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         assert valset is not None
 
         val_ids = self.val_evaluation_policy.get_eval_batch(valset, state)
-        batch = valset.fetch(val_ids)
-        outputs, scores, objective_scores = self.evaluator(batch, program)
-        assert len(outputs) == len(val_ids), "Eval outputs should match length of selected validation indices"
-        assert len(scores) == len(val_ids), "Eval scores should match length of selected validation indices"
 
-        outputs_by_val_idx = dict(zip(val_ids, outputs, strict=False))
-        scores_by_val_idx = dict(zip(val_ids, scores, strict=False))
-        objective_by_val_idx = (
-            dict(zip(val_ids, objective_scores, strict=False)) if objective_scores is not None else None
+        outputs_by_val_idx, scores_by_val_idx, objective_by_val_idx, num_actual_evals = state.cached_evaluate_full(
+            program, list(val_ids), valset.fetch, self.evaluator
         )
+        state.total_num_evals += num_actual_evals
+
         return ValsetEvaluation(
             outputs_by_val_id=outputs_by_val_idx,
             scores_by_val_id=scores_by_val_idx,
@@ -127,11 +128,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         parent_program_idx: list[int],
     ) -> tuple[int, int]:
         num_metric_calls_by_discovery = state.total_num_evals
-
         valset_evaluation = self._evaluate_on_valset(new_program, state)
-
         state.num_full_ds_evals += 1
-        state.total_num_evals += len(valset_evaluation.scores_by_val_id)
 
         new_program_idx = state.update_state_with_new_program(
             parent_program_idx=parent_program_idx,
@@ -225,6 +223,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             valset_evaluator=valset_evaluator,
             track_best_outputs=self.track_best_outputs,
             frontier_type=self.frontier_type,
+            evaluation_cache=self._initial_evaluation_cache,
         )
 
         # Log base program score

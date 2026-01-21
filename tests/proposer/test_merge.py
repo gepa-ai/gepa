@@ -231,7 +231,7 @@ class _StubValset:
         return [{"id": idx} for idx in ids]
 
 
-def _make_state(prog_val_scores):
+def _make_state(prog_val_scores, evaluator=None):
     state = SimpleNamespace(
         i=0,
         full_program_trace=[{}],
@@ -241,11 +241,19 @@ def _make_state(prog_val_scores):
         parent_program_for_candidate=[[None], [0], [0]],
         prog_candidate_val_subscores=prog_val_scores,
         total_num_evals=0,
+        evaluation_cache=None,  # No cache for tests
     )
     # Add the get_pareto_front_mapping method to match GEPAState interface
     state.get_pareto_front_mapping = lambda: {
         val_id: set(front) for val_id, front in state.program_at_pareto_front_valset.items()
     }
+
+    # Add cached_evaluate method to match GEPAState interface (no caching for stubs)
+    def cached_evaluate(candidate, example_ids, fetcher, eval_fn):
+        _, scores, _ = eval_fn(fetcher(example_ids), candidate)
+        return scores, len(example_ids)
+
+    state.cached_evaluate = cached_evaluate
     return state
 
 
@@ -253,7 +261,7 @@ def test_merge_proposer_skips_pairs_below_overlap_floor(monkeypatch):
     proposer = MergeProposer(
         logger=_StubLogger(),
         valset=_StubValset(),
-        evaluator=lambda batch, prog: (batch, [0.0 for _ in batch]),
+        evaluator=lambda batch, prog: (batch, [0.0 for _ in batch], None),
         use_merge=True,
         max_merge_invocations=5,
         val_overlap_floor=2,
@@ -312,7 +320,7 @@ def test_merge_proposer_allows_pairs_meeting_overlap_floor(monkeypatch):
     proposer = MergeProposer(
         logger=_StubLogger(),
         valset=_StubValset(),
-        evaluator=lambda batch, prog: (batch, [0.9 for _ in batch]),
+        evaluator=lambda batch, prog: (batch, [0.9 for _ in batch], None),
         use_merge=True,
         max_merge_invocations=5,
         val_overlap_floor=2,
