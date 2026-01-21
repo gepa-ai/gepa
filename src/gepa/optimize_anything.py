@@ -155,7 +155,7 @@ FitnessFn protocol documentation for the complete evaluation interface.
 
 class FitnessFn(Protocol):
     def __call__(
-        self, candidate: Candidate, example: DataInst, **kwargs: Any
+        self, candidate: Candidate, example: DataInst | None = None, **kwargs: Any
     ) -> tuple[float, RolloutOutput, SideInfo]:
         """
         Core evaluation interface for GEPA optimization.
@@ -174,7 +174,8 @@ class FitnessFn(Protocol):
           - Multi-component system: `{"component_1_config": "...", "component_2_config": "..."}`
 
         - **example**: A single example from the dataset to evaluate on (test case,
-          input-output pair, task instance).
+          input-output pair, task instance). In single-instance mode (when `dataset=None`
+          is passed to `optimize_anything`), this parameter will be `None`.
 
         - **kwargs**: Additional keyword arguments passed during evaluation.
 
@@ -197,6 +198,20 @@ class FitnessFn(Protocol):
 
         - Include rich diagnostic information in side_info for effective reflection
         - All scores follow "higher is better" convention
+
+        **Single-Instance Mode (Holistic Optimization):**
+
+        When `dataset=None` is passed to `optimize_anything`, the fitness function is called
+        with `example=None`. For single-instance problems like code evolution or mathematical
+        optimization, simply ignore the `example` parameter:
+
+        ```python
+        def fitness_fn(candidate, example=None):
+            # example is None in single-instance mode - ignore it
+            result = execute_my_code(candidate["code"])
+            score = compute_score(result)
+            return score, result, {"Output": str(result)}
+        ```
         """
         ...
 
@@ -433,7 +448,7 @@ class GEPAConfig:
 def optimize_anything(
     seed_candidate: Candidate | list[Candidate],
     fitness_fn: FitnessFn,
-    dataset: list[DataInst],
+    dataset: list[DataInst] | None = None,
     valset: list[DataInst] | None = None,
     objective: str | None = None,
     background: str | None = None,
@@ -443,14 +458,30 @@ def optimize_anything(
     Optimize any parameterized system using evolutionary algorithms with LLM-based reflection.
 
     This is the main entry point for GEPA optimization. It accepts a seed candidate (initial
-    parameter configuration), a fitness function for evaluation, and a dataset of test cases.
+    parameter configuration), a fitness function for evaluation, and optionally a dataset
+    of test cases.
+
+    **Two modes of operation:**
+
+    1. **Per-instance mode** (when `dataset` is provided): The fitness function is called
+       once per example in the dataset, and scores are aggregated. This is ideal for
+       prompt optimization, supervised learning tasks, etc.
+
+    2. **Single-instance mode** (default, when `dataset=None`): For optimization problems like
+       code evolution or circle packing where there's no dataset—just a single optimization
+       target defined implicitly by the fitness function. The fitness function receives
+       `example=None`, which can be ignored.
 
     Args:
         seed_candidate: Initial candidate(s) to start optimization from. Can be a single
             candidate dict or a list of candidates for population-based initialization.
         fitness_fn: Function that evaluates a candidate on a single example, returning
             (score, output, side_info). See FitnessFn protocol for details.
+            In single-instance mode, the `example` argument will be `None`.
         dataset: List of examples/test cases to evaluate candidates on during optimization.
+            If None, operates in single-instance mode where the optimization target is
+            defined entirely within the fitness function (e.g., code evolution, mathematical
+            optimization). Default: None.
         valset: Optional separate validation set. If not provided, uses dataset for validation.
         objective: High-level description of what the optimized component should achieve.
             Used to generate a reflection prompt that guides the LLM proposer. Example:
@@ -471,7 +502,7 @@ def optimize_anything(
         ValueError: If both objective/background and a custom reflection_prompt_template
             are provided (mutually exclusive options).
 
-    Example:
+    Example (per-instance mode):
         >>> result = optimize_anything(
         ...     seed_candidate={"prompt": "Solve this math problem:"},
         ...     fitness_fn=my_evaluator,
@@ -480,10 +511,29 @@ def optimize_anything(
         ...     config=GEPAConfig(engine=EngineConfig(max_metric_calls=100)),
         ... )
         >>> print(result.best_candidate)
+
+    Example (single-instance mode - code evolution):
+        >>> def fitness_fn(candidate, example=None):
+        ...     # example is None in single-instance mode - ignore it
+        ...     result = executor.execute(candidate["code"], entry_point="solve")
+        ...     score = compute_score(result)
+        ...     return score, result, {"Output": result, "Error": result.error}
+        ...
+        >>> result = optimize_anything(
+        ...     seed_candidate={"code": "def solve(): return 0"},
+        ...     fitness_fn=fitness_fn,
+        ...     dataset=None,  # Single-instance mode
+        ...     objective="Evolve code to maximize the objective function.",
+        ...     config=GEPAConfig(engine=EngineConfig(max_metric_calls=500)),
+        ... )
     """
     # Use default config if not provided
     if config is None:
         config = GEPAConfig()
+
+    # Handle single-instance mode: when dataset=None, create a placeholder dataset
+    # with a single None element. The fitness function will receive example=None.
+    effective_dataset: list[DataInst] = dataset if dataset is not None else [None]  # type: ignore[list-item]
 
     active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
         fitness_fn=fitness_fn,
@@ -492,7 +542,7 @@ def optimize_anything(
     )
 
     # Normalize datasets to DataLoader instances
-    train_loader = ensure_loader(dataset)
+    train_loader = ensure_loader(effective_dataset)
     val_loader = ensure_loader(valset) if valset is not None else train_loader
 
     # --- 1. Build stoppers from the EngineConfig and root config ---
