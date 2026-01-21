@@ -95,10 +95,8 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         self,
         candidate: dict[str, str],
         example_ids: list[DataId],
-        fetcher: Callable[[list[DataId]], list],
-        evaluator: Callable[
-            [list, dict[str, str]], tuple[list[RolloutOutput], list[float], Sequence[ObjectiveScores] | None]
-        ],
+        fetcher: Callable[[list[DataId]], Any],
+        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
     ) -> tuple[list[float], int]:
         """Evaluate using cache. Returns (scores_in_order, num_actual_evals)."""
         cached, uncached_ids = self.get_batch(candidate, example_ids)
@@ -114,10 +112,8 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         self,
         candidate: dict[str, str],
         example_ids: list[DataId],
-        fetcher: Callable[[list[DataId]], list],
-        evaluator: Callable[
-            [list, dict[str, str]], tuple[list[RolloutOutput], list[float], Sequence[ObjectiveScores] | None]
-        ],
+        fetcher: Callable[[list[DataId]], Any],
+        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
     ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
         """
         Evaluate using cache, returning full results.
@@ -591,11 +587,16 @@ def initialize_gepa_state(
                 f"Use a different run_dir or match the frontier_type parameter."
             )
         # Sync cache with current run's cache_evaluation setting:
-        # - If caching is enabled (evaluation_cache is not None), use the new cache
-        #   (allows resuming with caching enabled even if original run didn't have it)
         # - If caching is disabled (evaluation_cache is None), clear any loaded cache
         #   to respect the current run's cache_evaluation=False setting
-        gepa_state.evaluation_cache = evaluation_cache
+        # - If caching is enabled and the loaded state has a cache, preserve it
+        #   (allows resuming with cached results from previous run)
+        # - If caching is enabled but no cache exists in loaded state, use the new empty cache
+        if evaluation_cache is None:
+            gepa_state.evaluation_cache = None
+        elif gepa_state.evaluation_cache is None:
+            gepa_state.evaluation_cache = evaluation_cache
+        # else: keep the loaded cache (gepa_state.evaluation_cache is already set)
     else:
         num_evals_run = 0
 

@@ -343,7 +343,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
                 new_program,
                 subsample_ids,
                 self.valset.fetch,
-                self.evaluator,  # type: ignore[arg-type]  # Generic variance issue
+                self.evaluator,
             )
         else:
             _, new_sub_scores, _ = self.evaluator(mini_devset, new_program)
