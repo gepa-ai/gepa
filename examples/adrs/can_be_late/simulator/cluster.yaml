@@ -1,0 +1,65 @@
+workdir: .
+
+file_mounts:
+  ~/sky_workdir/data: data
+
+setup: |
+  pip install -e .
+  pip install -r requirements.txt
+
+run: |
+  export LOG_LEVEL=INFO
+  # ./scripts/run.sh
+  # python analysis/f_vs_gap.py
+  # python analysis/strategy_real_performance.py --task 76 --overhead 0.3 --no-ilp --date 2023-02-15
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0.3 --no-ilp
+  set -e
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0.2 --result-dir results-plot --exp exp-for-plot --dump-history --strategy quick_optimal_paranoid
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0  --dump-history --strategy strawman --overhead 0.01 --result-dir results-plot --exp exp-for-plot --no-ilp
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0.2 
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0.3
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0.5
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0.1
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0.4
+  # wait
+
+
+  python analysis/strategy_real_performance.py --task 48 --date 2023-02-15  --dump-history --strategy strawman --overhead 0.01 --result-dir results-plot --exp exp-for-plot --no-ilp
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0.2 --date 2023-02-15 --strategy quick_optimal_more_sliced_by_num --result-dir results-plot --exp exp-for-plot --no-ilp
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0.3 --date 2023-02-15 --strategy quick_optimal_more_sliced_by_num --result-dir results-plot --exp exp-for-plot --no-ilp
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0.5 --date 2023-02-15 --strategy quick_optimal_more_sliced_by_num --result-dir results-plot --exp exp-for-plot --no-ilp
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0.1 --date 2023-02-15 --strategy quick_optimal_more_sliced_by_num --result-dir results-plot --exp exp-for-plot --no-ilp
+  # python analysis/strategy_real_performance.py --task 48 --overhead 0.4 --date 2023-02-15 --strategy quick_optimal_more_sliced_by_num --result-dir results-plot --exp exp-for-plot --no-ilp
+
+  # python analysis/strategy_real_performance.py --task 48 --ddl 60 --overhead 0.2 --dump-history
+
+  # ML workload
+  DATE="2023-04-22-29"
+  TASK=76
+  # DDL=100
+  DDL=84
+  OVERHEAD=0.3
+  TRACE_LENGTH=None
+
+
+  # # Spark workload
+  DATE="2023-04-19-29"
+  TASK=27
+  # DDL=36
+  DDL=30
+  OVERHEAD=0.2
+  TRACE_LENGTH=None
+
+  # # Bioinformatics
+  DATE="gcp-2023-04-30"
+  TASK=22.5
+  DDL=30
+  TRACE_LENGTH=28
+  # DDL=24
+  # TRACE_LENGTH=25
+  OVERHEAD=0.16
+
+  # python analysis/strategy_real_performance.py --real --date $DATE --num-traces 20 --task $TASK --ddl $DDL --overhead $OVERHEAD --strategy rc_cr_threshold --dump-history --trace-length $TRACE_LENGTH --result-dir results-plot --exp exp-for-plot
+  # python analysis/strategy_real_performance.py --real --date $DATE --num-traces 20 --task $TASK --ddl $DDL --overhead $OVERHEAD --strategy strawman --dump-history  --trace-length $TRACE_LENGTH --result-dir results-plot --exp exp-for-plot
+  # python analysis/strategy_real_performance.py --real --date $DATE --num-traces 20 --task $TASK --ddl $DDL --overhead $OVERHEAD --strategy quick_optimal --dump-history  --trace-length $TRACE_LENGTH --result-dir results-plot --exp exp-for-plot
+  # python analysis/strategy_real_performance.py --real --date $DATE --num-traces 20 --task $TASK --ddl $DDL --overhead $OVERHEAD --strategy on_demand --dump-history  --trace-length $TRACE_LENGTH --result-dir results-plot --exp exp-for-plot

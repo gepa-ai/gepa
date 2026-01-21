@@ -1,0 +1,28 @@
+name: roberta
+
+resources:
+    accelerators: V100:1
+    cloud: aws
+    zone: us-west-2a
+    image_id: ami-00001adf2ded12a84
+    use_spot: true
+
+num_nodes: 1
+
+file_mounts:
+    /checkpoint:
+        name: roberta-spot-nsdi
+        mode: MOUNT
+
+run: |
+  export WANDB_MODE=offline
+  cd fairseq
+  DATA_DIR=/data
+  OMP_NUM_THREADS=48 fairseq-hydra-train -m --config-dir examples/roberta/config/pretraining \
+  --config-name base task.data=$DATA_DIR \
+  common.wandb_project=fairseq \
+  checkpoint.save_dir=/checkpoint \
+  checkpoint.save_interval_updates=500 \
+  checkpoint.keep_interval_updates=3 \
+  common.log_format=simple \
+  common.fp16_init_scale=16

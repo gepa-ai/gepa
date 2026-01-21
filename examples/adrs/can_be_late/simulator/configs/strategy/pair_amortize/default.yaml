@@ -1,0 +1,3 @@
+strategy: pair_amortize
+
+pair-interval-hours: 4

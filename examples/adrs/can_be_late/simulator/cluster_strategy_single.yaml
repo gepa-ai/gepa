@@ -1,0 +1,48 @@
+resources:
+  any_of:
+    - cloud: gcp
+    - cloud: aws
+  cpus: 16+  # At least 16 cores for Ray parallel processing
+  memory: 32+  # At least 32GB memory
+  use_spot: true  # Use cheaper spot instances
+
+workdir: .
+
+file_mounts:
+  ~/sky_workdir/data: data
+
+setup: |
+  pip install -e .
+  pip install -r requirements.txt
+
+run: |
+  export LOG_LEVEL=INFO
+
+  if [ -z "$STRATEGY_NAME" ]; then
+    echo "❌ Error: STRATEGY_NAME environment variable is not set."
+    exit 1
+  fi
+
+  echo "🚀 Generating data for single strategy: $STRATEGY_NAME"
+  echo "Using Ray for parallel processing, cores: $(nproc)"
+  
+  # Generate data for all overhead values for the single strategy
+  for overhead in ${OVERHEADS}; do
+    echo "🔄 Processing overhead=$overhead"
+    python analysis/strategy_real_performance.py \
+      --update-strategy "$STRATEGY_NAME" \
+      --task 48 \
+      --overhead "$overhead" \
+      --num-traces 300 \
+      --result-dir results \
+      --exp-dir exp
+    echo "✅ overhead=$overhead Completed"
+  done
+
+
+  
+  echo "✅ All overhead strategy data for '$STRATEGY_NAME' generated!"
+  echo "Results saved in: results/real/ddl=search+task=48+overhead=*/"
+  
+  # List generated files
+  ls -la results/real/ddl=search+task=48+overhead=*/*.csv | head -10 

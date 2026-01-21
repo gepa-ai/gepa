@@ -1,0 +1,43 @@
+resources:
+  any_of:
+    - cloud: gcp
+    - cloud: aws
+  cpus: 16+  # At least 16 cores for Ray parallel processing
+  memory: 32+  # At least 32GB memory
+  use_spot: true  # Use cheaper spot instances
+
+workdir: .
+
+file_mounts:
+  ~/sky_workdir/data: data
+
+setup: |
+  pip install -e .
+  pip install -r requirements.txt
+
+run: |
+  export LOG_LEVEL=INFO
+  
+  echo "🧹 Cleaning up previous results to ensure full regeneration..."
+  rm -rf results/real/ddl=search+task=48+overhead=*
+  
+  echo "🚀 Generating strategy data - all overhead values"
+  echo "Using Ray for parallel processing, cores: $(nproc)"
+  
+  # Generate data for all overhead values
+  for overhead in ${OVERHEADS}; do
+    echo "🔄 Processing overhead=$overhead"
+    python analysis/strategy_real_performance.py \
+      --task 48 \
+      --overhead $overhead \
+      --num-traces 300 \
+      --result-dir results \
+      --exp-dir exp
+    echo "✅ overhead=$overhead Completed"
+  done
+  
+  echo "✅ All overhead strategy data generated!"
+  echo "Results saved in: results/real/ddl=search+task=48+overhead=*/"
+  
+  # List generated files
+  ls -la results/real/ddl=search+task=48+overhead=*/*.csv | head -10 
