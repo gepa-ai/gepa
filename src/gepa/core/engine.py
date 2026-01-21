@@ -52,7 +52,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Budget and Stop Condition
         stop_callback: StopperProtocol | None = None,
         val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
-        # Evaluation caching
+        # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
     ):
         self.logger = logger
@@ -65,8 +65,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.stop_callback = stop_callback
         self.adapter = adapter
 
-        # Set up evaluation cache (shared with proposers)
-        self.evaluation_cache = evaluation_cache
+        # Store cache reference for state initialization (actual cache lives in GEPAState)
+        self._initial_evaluation_cache = evaluation_cache
 
         def evaluator(
             batch: list[DataInst], program: dict[str, str]
@@ -109,49 +109,26 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         assert valset is not None
 
         val_ids = self.val_evaluation_policy.get_eval_batch(valset, state)
-        ids_to_evaluate = list(val_ids)
-        outputs_by_val_idx: dict[DataId, RolloutOutput] = {}
-        scores_by_val_idx: dict[DataId, float] = {}
-        objective_by_val_idx: dict[DataId, dict[str, float]] | None = None
 
-        # Check cache for already evaluated examples
-        if self.evaluation_cache is not None:
-            cached_results, ids_to_evaluate = self.evaluation_cache.get_batch(program, list(val_ids))
-            for val_id, cached in cached_results.items():
-                outputs_by_val_idx[val_id] = cached.output
-                scores_by_val_idx[val_id] = cached.score
-                if cached.objective_scores is not None:
-                    objective_by_val_idx = objective_by_val_idx or {}
-                    objective_by_val_idx[val_id] = cached.objective_scores
-
-        # Evaluate uncached examples
-        if ids_to_evaluate:
-            batch = valset.fetch(ids_to_evaluate)
-            outputs, scores, objective_scores = self.evaluator(batch, program)
-            assert len(outputs) == len(ids_to_evaluate), (
-                "Eval outputs should match length of selected validation indices"
+        if state.evaluation_cache is not None:
+            # Use cache for evaluation
+            outputs_by_val_idx, scores_by_val_idx, objective_by_val_idx, num_actual_evals = (
+                state.evaluation_cache.evaluate_with_cache_full(program, list(val_ids), valset.fetch, self.evaluator)
             )
-            assert len(scores) == len(ids_to_evaluate), "Eval scores should match length of selected validation indices"
+            state.total_num_evals += num_actual_evals
+        else:
+            # Direct evaluation without cache
+            batch = valset.fetch(list(val_ids))
+            outputs, scores, objective_scores = self.evaluator(batch, program)
+            assert len(outputs) == len(val_ids), "Eval outputs should match length of selected validation indices"
+            assert len(scores) == len(val_ids), "Eval scores should match length of selected validation indices"
 
-            for i, val_id in enumerate(ids_to_evaluate):
-                outputs_by_val_idx[val_id] = outputs[i]
-                scores_by_val_idx[val_id] = scores[i]
-                if objective_scores is not None:
-                    objective_by_val_idx = objective_by_val_idx or {}
-                    objective_by_val_idx[val_id] = objective_scores[i]
-
-            # Update cache with new evaluations
-            if self.evaluation_cache is not None:
-                self.evaluation_cache.put_batch(
-                    program,
-                    ids_to_evaluate,
-                    outputs,
-                    scores,
-                    list(objective_scores) if objective_scores is not None else None,
-                )
-
-        # Track actual evaluations (excluding cache hits)
-        state.total_num_evals += len(ids_to_evaluate)
+            outputs_by_val_idx = dict(zip(val_ids, outputs, strict=False))
+            scores_by_val_idx = dict(zip(val_ids, scores, strict=False))
+            objective_by_val_idx = (
+                dict(zip(val_ids, objective_scores, strict=False)) if objective_scores is not None else None
+            )
+            state.total_num_evals += len(val_ids)
 
         return ValsetEvaluation(
             outputs_by_val_id=outputs_by_val_idx,
@@ -261,6 +238,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             valset_evaluator=valset_evaluator,
             track_best_outputs=self.track_best_outputs,
             frontier_type=self.frontier_type,
+            evaluation_cache=self._initial_evaluation_cache,
         )
 
         # Log base program score

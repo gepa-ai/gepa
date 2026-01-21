@@ -6,7 +6,7 @@ from typing import Any
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
-from gepa.core.state import EvaluationCache, GEPAState
+from gepa.core.state import GEPAState
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 from gepa.proposer.reflective_mutation.base import (
     CandidateSelector,
@@ -42,7 +42,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         experiment_tracker: Any,
         reflection_lm: LanguageModel | None = None,
         reflection_prompt_template: str | None = None,
-        evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -54,24 +53,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.skip_perfect_score = skip_perfect_score
         self.experiment_tracker = experiment_tracker
         self.reflection_lm = reflection_lm
-        self.evaluation_cache = evaluation_cache
 
         InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
         self.reflection_prompt_template = reflection_prompt_template
-
-    def _evaluate_with_cache(
-        self, candidate: dict[str, str], example_ids: list, batch: list
-    ) -> tuple[list[float], int]:
-        """Evaluate candidate using cache if available. Returns (scores, num_actual_evals)."""
-        if self.evaluation_cache is None:
-            eval_result = self.adapter.evaluate(batch, candidate, capture_traces=False)
-            return eval_result.scores, len(example_ids)
-
-        def evaluator(b, c):
-            r = self.adapter.evaluate(b, c, capture_traces=False)
-            return r.outputs, r.scores, list(r.objective_scores) if r.objective_scores else None
-
-        return self.evaluation_cache.evaluate_with_cache(candidate, example_ids, self.trainset.fetch, evaluator)
 
     def propose_new_texts(
         self,
@@ -126,9 +110,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         state.full_program_trace[-1]["subsample_scores"] = eval_curr.scores
 
         # Update cache with current program evaluation results (for future reuse when capture_traces=False)
-        if self.evaluation_cache is not None:
+        if state.evaluation_cache is not None:
             objective_scores_list = list(eval_curr.objective_scores) if eval_curr.objective_scores else None
-            self.evaluation_cache.put_batch(
+            state.evaluation_cache.put_batch(
                 curr_prog, subsample_ids, eval_curr.outputs, eval_curr.scores, objective_scores_list
             )
 
@@ -169,7 +153,18 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             assert pname in new_candidate, f"{pname} missing in candidate"
             new_candidate[pname] = text
 
-        new_scores, actual_evals_count = self._evaluate_with_cache(new_candidate, subsample_ids, minibatch)
+        if state.evaluation_cache is not None:
+
+            def evaluator(b, c):
+                r = self.adapter.evaluate(b, c, capture_traces=False)
+                return r.outputs, r.scores, list(r.objective_scores) if r.objective_scores else None
+
+            new_scores, actual_evals_count = state.evaluation_cache.evaluate_with_cache(
+                new_candidate, subsample_ids, self.trainset.fetch, evaluator
+            )
+        else:
+            eval_result = self.adapter.evaluate(minibatch, new_candidate, capture_traces=False)
+            new_scores, actual_evals_count = eval_result.scores, len(subsample_ids)
         state.total_num_evals += actual_evals_count
         state.full_program_trace[-1]["new_subsample_scores"] = new_scores
 

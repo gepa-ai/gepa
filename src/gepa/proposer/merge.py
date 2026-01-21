@@ -8,7 +8,7 @@ from copy import deepcopy
 
 from gepa.core.adapter import Candidate, DataInst, RolloutOutput
 from gepa.core.data_loader import DataId, DataLoader
-from gepa.core.state import EvaluationCache, GEPAState, ProgramIdx
+from gepa.core.state import GEPAState, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -224,7 +224,6 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         max_merge_invocations: int,
         val_overlap_floor: int = 5,
         rng: random.Random | None = None,
-        evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
     ):
         self.logger = logger
         self.valset = valset
@@ -232,7 +231,6 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         self.use_merge = use_merge
         self.max_merge_invocations = max_merge_invocations
         self.rng = rng if rng is not None else random.Random(0)
-        self.evaluation_cache = evaluation_cache
 
         if val_overlap_floor <= 0:
             raise ValueError("val_overlap_floor should be a positive integer")
@@ -244,15 +242,6 @@ class MergeProposer(ProposeNewCandidate[DataId]):
 
         # Toggle controlled by engine: set True when last iter found new program
         self.last_iter_found_new_program = False
-
-    def _evaluate_with_cache(self, candidate: Candidate, example_ids: list, batch: list) -> tuple[list[float], int]:
-        """Evaluate candidate using cache if available. Returns (scores, num_actual_evals)."""
-        if self.evaluation_cache is None:
-            _, scores = self.evaluator(batch, candidate)
-            return scores, len(example_ids)
-        return self.evaluation_cache.evaluate_with_cache(
-            candidate, example_ids, self.valset.fetch, lambda b, c: (*self.evaluator(b, c), None)
-        )
 
     def schedule_if_needed(self) -> None:
         if self.use_merge and self.total_merges_tested < self.max_merge_invocations:
@@ -349,7 +338,21 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
 
-        new_sub_scores, actual_evals_count = self._evaluate_with_cache(new_program, subsample_ids, mini_devset)
+        if state.evaluation_cache is not None:
+
+            def cache_evaluator(b: list, c: dict[str, str]):
+                outputs, scores = self.evaluator(b, c)
+                return outputs, scores, None
+
+            new_sub_scores, actual_evals_count = state.evaluation_cache.evaluate_with_cache(
+                new_program,
+                subsample_ids,
+                self.valset.fetch,
+                cache_evaluator,  # type: ignore[arg-type]
+            )
+        else:
+            _, new_sub_scores = self.evaluator(mini_devset, new_program)
+            actual_evals_count = len(subsample_ids)
         state.full_program_trace[-1]["id1_subsample_scores"] = id1_sub_scores
         state.full_program_trace[-1]["id2_subsample_scores"] = id2_sub_scores
         state.full_program_trace[-1]["new_program_subsample_scores"] = new_sub_scores

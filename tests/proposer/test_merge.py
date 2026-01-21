@@ -241,6 +241,7 @@ def _make_state(prog_val_scores):
         parent_program_for_candidate=[[None], [0], [0]],
         prog_candidate_val_subscores=prog_val_scores,
         total_num_evals=0,
+        evaluation_cache=None,  # No cache for tests
     )
     # Add the get_pareto_front_mapping method to match GEPAState interface
     state.get_pareto_front_mapping = lambda: {

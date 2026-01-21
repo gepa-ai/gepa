@@ -328,7 +328,6 @@ def optimize(
         experiment_tracker=experiment_tracker,
         reflection_lm=reflection_lm,
         reflection_prompt_template=reflection_prompt_template,
-        evaluation_cache=evaluation_cache,
     )
 
     def evaluator_fn(inputs: list[DataInst], prog: dict[str, str]) -> tuple[list[RolloutOutput], list[float]]:
@@ -345,7 +344,6 @@ def optimize(
             max_merge_invocations=max_merge_invocations,
             rng=rng,
             val_overlap_floor=merge_val_overlap_floor,
-            evaluation_cache=evaluation_cache,
         )
 
     engine = GEPAEngine(
