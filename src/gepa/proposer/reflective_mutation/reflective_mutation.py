@@ -141,6 +141,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         )
 
         # 1) Evaluate current program with traces
+        # Note: We don't use cache for capture_traces=True evaluations since we need fresh traces for reflection
         curr_parent_ids = [p for p in state.parent_program_for_candidate[curr_prog_id] if p is not None]
         is_seed = curr_prog_id == 0
         notify_callbacks(
@@ -174,6 +175,13 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 is_seed=is_seed,
             ),
         )
+
+        # Update cache with current program evaluation results (for future reuse when capture_traces=False)
+        if state.evaluation_cache is not None:
+            objective_scores_list = list(eval_curr.objective_scores) if eval_curr.objective_scores else None
+            state.evaluation_cache.put_batch(
+                curr_prog, subsample_ids, eval_curr.outputs, eval_curr.scores, objective_scores_list
+            )
 
         if not eval_curr.trajectories or len(eval_curr.trajectories) == 0:
             self.logger.log(f"Iteration {i}: No trajectories captured. Skipping.")
@@ -275,6 +283,10 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             assert pname in new_candidate, f"{pname} missing in candidate"
             new_candidate[pname] = text
 
+        def evaluator(b, c):
+            r = self.adapter.evaluate(b, c, capture_traces=False)
+            return r.outputs, r.scores, list(r.objective_scores) if r.objective_scores else None
+
         # Evaluate new candidate (not yet in state)
         notify_callbacks(
             self.callbacks,
@@ -289,26 +301,33 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 is_seed=False,
             ),
         )
-        eval_new = self.adapter.evaluate(minibatch, new_candidate, capture_traces=False)
-        state.increment_evals(len(subsample_ids))
-        state.full_program_trace[-1]["new_subsample_scores"] = eval_new.scores
+
+        outputs_by_id, scores_by_id, objective_by_id, actual_evals_count = state.cached_evaluate_full(
+            new_candidate, subsample_ids, self.trainset.fetch, evaluator
+        )
+        new_scores = [scores_by_id[eid] for eid in subsample_ids]
+        outputs = [outputs_by_id[eid] for eid in subsample_ids]
+
         notify_callbacks(
             self.callbacks,
             "on_evaluation_end",
             EvaluationEndEvent(
                 iteration=i,
                 candidate_idx=None,
-                scores=eval_new.scores,
+                scores=new_scores,
                 has_trajectories=False,
                 parent_ids=[curr_prog_id],
-                outputs=eval_new.outputs,
+                outputs=outputs,
                 trajectories=None,
-                objective_scores=eval_new.objective_scores,
+                objective_scores=[objective_by_id[eid] for eid in subsample_ids] if objective_by_id else None,
                 is_seed=False,
             ),
         )
 
-        new_sum = sum(eval_new.scores)
+        state.increment_evals(actual_evals_count)
+        state.full_program_trace[-1]["new_subsample_scores"] = new_scores
+
+        new_sum = sum(new_scores)
         self.experiment_tracker.log_metrics({"new_subsample_score": new_sum}, step=i)
 
         return CandidateProposal(
@@ -316,6 +335,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             parent_program_ids=[curr_prog_id],
             subsample_indices=subsample_ids,
             subsample_scores_before=eval_curr.scores,
-            subsample_scores_after=eval_new.scores,
+            subsample_scores_after=new_scores,
             tag="reflective_mutation",
         )

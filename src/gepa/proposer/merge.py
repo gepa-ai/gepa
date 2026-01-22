@@ -14,7 +14,7 @@ from gepa.core.callbacks import (
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader
-from gepa.core.state import GEPAState, ProgramIdx
+from gepa.core.state import GEPAState, ObjectiveScores, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -224,7 +224,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         valset: DataLoader[DataId, DataInst],
         evaluator: Callable[
             [list[DataInst], dict[str, str]],
-            tuple[list[RolloutOutput], list[float]],
+            tuple[list[RolloutOutput], list[float], Sequence[ObjectiveScores] | None],
         ],
         use_merge: bool,
         max_merge_invocations: int,
@@ -339,13 +339,13 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             )
             return None
 
-        mini_devset = self.valset.fetch(subsample_ids)
-        # below is a post condition of `select_eval_subsample_for_merged_program`
         assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id1].keys())
         assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id2].keys())
         id1_sub_scores = [state.prog_candidate_val_subscores[id1][k] for k in subsample_ids]
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
+
+        mini_devset = self.valset.fetch(subsample_ids)
 
         # Notify evaluation start for merged candidate
         notify_callbacks(
@@ -361,7 +361,13 @@ class MergeProposer(ProposeNewCandidate[DataId]):
                 is_seed=False,
             ),
         )
-        outputs, new_sub_scores = self.evaluator(mini_devset, new_program)
+
+        outputs_by_id, scores_by_id, objective_by_id, actual_evals_count = state.cached_evaluate_full(
+            new_program, subsample_ids, self.valset.fetch, self.evaluator
+        )
+        new_sub_scores = [scores_by_id[eid] for eid in subsample_ids]
+        outputs = [outputs_by_id[eid] for eid in subsample_ids]
+
         notify_callbacks(
             self.callbacks,
             "on_evaluation_end",
@@ -373,7 +379,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
                 parent_ids=[id1, id2],
                 outputs=outputs,
                 trajectories=None,
-                objective_scores=None,
+                objective_scores=[objective_by_id[eid] for eid in subsample_ids] if objective_by_id else None,
                 is_seed=False,
             ),
         )
@@ -382,8 +388,8 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         state.full_program_trace[-1]["id2_subsample_scores"] = id2_sub_scores
         state.full_program_trace[-1]["new_program_subsample_scores"] = new_sub_scores
 
-        # Count evals
-        state.increment_evals(len(subsample_ids))
+        # Count evals via hook mechanism
+        state.increment_evals(actual_evals_count)
 
         # Acceptance will be evaluated by engine (>= max(parents))
         return CandidateProposal(

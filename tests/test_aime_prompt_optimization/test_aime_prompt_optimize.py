@@ -44,7 +44,7 @@ def test_aime_prompt_optimize(mocked_lms, recorder_dir):
         trainset=trainset,
         valset=valset,
         adapter=adapter,
-        max_metric_calls=30,
+        max_metric_calls=30,  # Can be reduced to 17
         reflection_lm=reflection_lm,
         display_progress_bar=True,
     )

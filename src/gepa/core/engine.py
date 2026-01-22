@@ -25,7 +25,7 @@ from gepa.core.callbacks import (
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
-from gepa.core.state import FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
+from gepa.core.state import EvaluationCache, FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
@@ -72,6 +72,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Budget and Stop Condition
         stop_callback: StopperProtocol | None = None,
         val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
+        # Evaluation caching (stored in state, passed here for initialization)
+        evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -83,6 +85,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Set up stopping mechanism
         self.stop_callback = stop_callback
         self.adapter = adapter
+
+        # Store cache reference for state initialization (actual cache lives in GEPAState)
+        self._initial_evaluation_cache = evaluation_cache
 
         def evaluator(
             batch: list[DataInst], program: dict[str, str]
@@ -125,16 +130,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         assert valset is not None
 
         val_ids = self.val_evaluation_policy.get_eval_batch(valset, state)
-        batch = valset.fetch(val_ids)
-        outputs, scores, objective_scores = self.evaluator(batch, program)
-        assert len(outputs) == len(val_ids), "Eval outputs should match length of selected validation indices"
-        assert len(scores) == len(val_ids), "Eval scores should match length of selected validation indices"
 
-        outputs_by_val_idx = dict(zip(val_ids, outputs, strict=False))
-        scores_by_val_idx = dict(zip(val_ids, scores, strict=False))
-        objective_by_val_idx = (
-            dict(zip(val_ids, objective_scores, strict=False)) if objective_scores is not None else None
+        outputs_by_val_idx, scores_by_val_idx, objective_by_val_idx, num_actual_evals = state.cached_evaluate_full(
+            program, list(val_ids), valset.fetch, self.evaluator
         )
+        state.increment_evals(num_actual_evals)
+
         return ValsetEvaluation(
             outputs_by_val_id=outputs_by_val_idx,
             scores_by_val_id=scores_by_val_idx,
@@ -148,11 +149,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         parent_program_idx: list[int],
     ) -> tuple[int, int]:
         num_metric_calls_by_discovery = state.total_num_evals
-
         valset_evaluation = self._evaluate_on_valset(new_program, state)
-
         state.num_full_ds_evals += 1
-        state.increment_evals(len(valset_evaluation.scores_by_val_id))
 
         # Snapshot Pareto front before update
         front_before = state.get_pareto_front_mapping()
@@ -187,7 +185,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.callbacks,
             "on_pareto_front_updated",
             ParetoFrontUpdatedEvent(
-                iteration=state.i,
+                iteration=state.i + 1,
                 new_front=new_front,
                 displaced_candidates=displaced_candidates,
             ),
@@ -206,7 +204,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.callbacks,
             "on_valset_evaluated",
             ValsetEvaluatedEvent(
-                iteration=state.i,
+                iteration=state.i + 1,
                 candidate_idx=new_program_idx,
                 candidate=new_program,
                 scores_by_val_id=dict(valset_evaluation.scores_by_val_id),
@@ -294,6 +292,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             valset_evaluator=valset_evaluator,
             track_best_outputs=self.track_best_outputs,
             frontier_type=self.frontier_type,
+            evaluation_cache=self._initial_evaluation_cache,
         )
 
         # Log base program score
@@ -334,7 +333,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 self.callbacks,
                 "on_budget_updated",
                 BudgetUpdatedEvent(
-                    iteration=state.i,
+                    iteration=state.i + 1,
                     metric_calls_used=new_total,
                     metric_calls_delta=delta,
                     metric_calls_remaining=self._get_remaining_budget(state),
@@ -364,7 +363,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     self.callbacks,
                     "on_state_saved",
                     StateSavedEvent(
-                        iteration=state.i,
+                        iteration=state.i + 1,
                         run_dir=self.run_dir,
                     ),
                 )
@@ -377,7 +376,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     self.callbacks,
                     "on_iteration_start",
                     IterationStartEvent(
-                        iteration=state.i,
+                        iteration=state.i + 1,
                         state=state,
                     ),
                 )
@@ -401,7 +400,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                 self.callbacks,
                                 "on_merge_attempted",
                                 MergeAttemptedEvent(
-                                    iteration=state.i,
+                                    iteration=state.i + 1,
                                     parent_ids=proposal.parent_program_ids,
                                     merged_candidate=proposal.candidate,
                                 ),
@@ -423,7 +422,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                     self.callbacks,
                                     "on_merge_accepted",
                                     MergeAcceptedEvent(
-                                        iteration=state.i,
+                                        iteration=state.i + 1,
                                         new_candidate_idx=new_idx,
                                         parent_ids=proposal.parent_program_ids,
                                     ),
@@ -432,7 +431,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                     self.callbacks,
                                     "on_candidate_accepted",
                                     CandidateAcceptedEvent(
-                                        iteration=state.i,
+                                        iteration=state.i + 1,
                                         new_candidate_idx=new_idx,
                                         new_score=new_sum,
                                         parent_ids=proposal.parent_program_ids,
@@ -450,7 +449,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                     self.callbacks,
                                     "on_merge_rejected",
                                     MergeRejectedEvent(
-                                        iteration=state.i,
+                                        iteration=state.i + 1,
                                         parent_ids=proposal.parent_program_ids,
                                         reason=f"Merged score {new_sum} worse than both parents {parent_sums}",
                                     ),
@@ -479,7 +478,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         self.callbacks,
                         "on_candidate_rejected",
                         CandidateRejectedEvent(
-                            iteration=state.i,
+                            iteration=state.i + 1,
                             old_score=old_sum,
                             new_score=new_sum,
                             reason=f"New subsample score {new_sum} not better than old score {old_sum}",
@@ -504,7 +503,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     self.callbacks,
                     "on_candidate_accepted",
                     CandidateAcceptedEvent(
-                        iteration=state.i,
+                        iteration=state.i + 1,
                         new_candidate_idx=new_idx,
                         new_score=new_sum,
                         parent_ids=proposal.parent_program_ids,
@@ -525,7 +524,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     self.callbacks,
                     "on_error",
                     ErrorEvent(
-                        iteration=state.i,
+                        iteration=state.i + 1,
                         exception=e,
                         will_continue=not self.raise_on_exception,
                     ),
@@ -542,7 +541,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         self.callbacks,
                         "on_iteration_end",
                         IterationEndEvent(
-                            iteration=state.i,
+                            iteration=state.i + 1,
                             state=state,
                             proposal_accepted=proposal_accepted,
                         ),
@@ -552,7 +551,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if self.display_progress_bar and progress_bar is not None:
             progress_bar.close()
 
-        state.save(self.run_dir)
+        state.save(self.run_dir, use_cloudpickle=self.use_cloudpickle)
 
         # Notify optimization end
         best_candidate_idx = self.val_evaluation_policy.get_best_program(state)
