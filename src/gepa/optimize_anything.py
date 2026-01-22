@@ -156,7 +156,7 @@ FitnessFn protocol documentation for the complete evaluation interface.
 class FitnessFn(Protocol):
     def __call__(
         self, candidate: Candidate, example: DataInst | None = None, **kwargs: Any
-    ) -> tuple[float, RolloutOutput, SideInfo]:
+    ) -> tuple[float, RolloutOutput, SideInfo]: # candidate.evaluate(example), Use run_state.
         """
         Core evaluation interface for GEPA optimization.
 
@@ -450,8 +450,8 @@ def optimize_anything(
     fitness_fn: FitnessFn,
     dataset: list[DataInst] | None = None,
     valset: list[DataInst] | None = None,
-    objective: str | None = None,
-    background: str | None = None,
+    objective: str | None = None, # FitnessFn description. Objective can be a tuple (objective, objective_fn)
+    background: str | None = None, # Maybe we need different types
     config: GEPAConfig | None = None,
 ) -> GEPAResult:
     """
