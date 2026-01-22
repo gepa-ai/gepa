@@ -519,22 +519,19 @@ def create_fitness_function(timeout: int = 300):
     """
 
     def fitness_fn(
-        candidate: dict[str, str], batch: Sequence[Any], **kwargs
-    ) -> list[tuple[float, Any, SideInfo]]:
+        candidate: dict[str, str], example: dict[str, Any], **kwargs
+    ) -> tuple[float, Any, SideInfo]:
         """
-        Evaluate a candidate strategy on a batch of trace samples.
+        Evaluate a candidate strategy on a single trace sample.
 
         Args:
             candidate: Dict with "program" key containing strategy code
-            batch: Sequence of sample dicts with 'trace_file' and 'config'
+            example: Sample dict with 'trace_file' and 'config'
 
         Returns:
-            List of (score, output, side_info) tuples, one per batch item
+            Tuple of (score, output, side_info)
         """
         program_code = candidate["program"]
-
-        print(f"Evaluating candidate: \n\n{program_code}", flush=True)
-        results = []
 
         # Write program to temp file
         tmpdir = tempfile.mkdtemp(prefix="cant_be_late_eval_")
@@ -547,106 +544,100 @@ def create_fitness_function(timeout: int = 300):
             # Stage 1: Syntax check
             stage1_result = evaluate_stage1(program_path)
             if stage1_result.get("runs_successfully", 0.0) < 1.0:
-                # Syntax error - return failed score for all batch items
+                # Syntax error - return failed score
                 error_msg = stage1_result.get("error", "Syntax validation failed")
-                for sample in batch:
-                    side_info: SideInfo = {
-                        "scores": {"cost": FAILED_SCORE},
-                        "Input": {
-                            "trace_file": sample.get("trace_file", "unknown"),
-                            "config": sample.get("config", {}),
-                        },
-                        "Error": error_msg,
-                        "stage": "stage1",
-                    }
-                    output = {"error": error_msg, "stage": "stage1"}
-                    results.append((FAILED_SCORE, output, side_info))
-                return results
+                side_info: SideInfo = {
+                    "scores": {"cost": FAILED_SCORE},
+                    "Input": {
+                        "trace_file": example.get("trace_file", "unknown"),
+                        "config": example.get("config", {}),
+                    },
+                    "Error": error_msg,
+                    "stage": "stage1",
+                }
+                output = {"error": error_msg, "stage": "stage1"}
+                return (FAILED_SCORE, output, side_info)
 
-            # Stage 2: Run simulations
-            for sample in batch:
-                trace_file = sample.get("trace_file")
-                config = sample.get("config")
+            # Stage 2: Run simulation
+            trace_file = example.get("trace_file")
+            config = example.get("config")
 
-                if not trace_file or not config:
-                    # Invalid sample
-                    side_info = {
-                        "scores": {"cost": FAILED_SCORE},
-                        "Input": {"trace_file": trace_file, "config": config},
-                        "Error": "Invalid sample: missing trace_file or config",
-                    }
-                    results.append((FAILED_SCORE, {"error": "Invalid sample"}, side_info))
-                    continue
+            if not trace_file or not config:
+                # Invalid sample
+                side_info = {
+                    "scores": {"cost": FAILED_SCORE},
+                    "Input": {"trace_file": trace_file, "config": config},
+                    "Error": "Invalid sample: missing trace_file or config",
+                }
+                return (FAILED_SCORE, {"error": "Invalid sample"}, side_info)
 
-                # Run simulation
-                success, cost, error_msg, detailed_info = run_single_simulation(
-                    program_path, trace_file, config
-                )
+            # Run simulation
+            success, cost, error_msg, detailed_info = run_single_simulation(
+                program_path, trace_file, config
+            )
 
-                if success:
-                    # Score is negative cost (lower cost = higher score)
-                    score = -cost
+            if success:
+                # Score is negative cost (lower cost = higher score)
+                score = -cost
 
-                    # Extract CLI segments for detailed feedback
-                    cli_segments = detailed_info.get("cli_segments", {})
-                    spot_availability = cli_segments.get("spot_availability", "N/A")
-                    timeline_events = cli_segments.get("timeline_events", [])
+                # Extract CLI segments for detailed feedback
+                cli_segments = detailed_info.get("cli_segments", {})
+                spot_availability = cli_segments.get("spot_availability", "N/A")
+                timeline_events = cli_segments.get("timeline_events", [])
 
-                    # Build timeline string for LLM
-                    if timeline_events:
-                        timeline_str = " | ".join(timeline_events[:12])  # Limit for prompt size
-                        if len(timeline_events) > 12:
-                            timeline_str += " | ..."
-                    else:
-                        timeline_str = "N/A"
-
-                    side_info = {
-                        "scores": {"cost": score},
-                        "Input": {
-                            "trace_file": os.path.basename(trace_file),
-                            "duration": f"{config['duration']}h",
-                            "deadline": f"{config['deadline']}h",
-                            "overhead": f"{config['overhead']}h",
-                            "spot_availability": spot_availability,
-                        },
-                        "Output": {
-                            "cost": f"${cost:.2f}",
-                            "timeline": timeline_str,
-                            "segments": f"SPOT={cli_segments.get('spot_segments', 0)}, ON_DEMAND={cli_segments.get('ondemand_segments', 0)}, restarts={cli_segments.get('restart_count', 0)}",
-                        },
-                    }
-                    output = {
-                        "trace_file": trace_file,
-                        "config": config,
-                        "cost": cost,
-                        "score": score,
-                        "cli_segments": cli_segments,
-                    }
+                # Build timeline string for LLM
+                if timeline_events:
+                    timeline_str = " | ".join(timeline_events[:12])  # Limit for prompt size
+                    if len(timeline_events) > 12:
+                        timeline_str += " | ..."
                 else:
-                    score = FAILED_SCORE
-                    side_info = {
-                        "scores": {"cost": score},
-                        "Input": {
-                            "trace_file": os.path.basename(trace_file) if trace_file else "unknown",
-                            "duration": f"{config.get('duration', 'N/A')}h",
-                            "deadline": f"{config.get('deadline', 'N/A')}h",
-                            "overhead": f"{config.get('overhead', 'N/A')}h",
-                        },
-                        "Error": error_msg,
-                    }
-                    output = {
-                        "trace_file": trace_file,
-                        "config": config,
-                        "error": error_msg,
-                    }
+                    timeline_str = "N/A"
 
-                results.append((score, output, side_info))
+                side_info = {
+                    "scores": {"cost": score},
+                    "Input": {
+                        "trace_file": os.path.basename(trace_file),
+                        "duration": f"{config['duration']}h",
+                        "deadline": f"{config['deadline']}h",
+                        "overhead": f"{config['overhead']}h",
+                        "spot_availability": spot_availability,
+                    },
+                    "Output": {
+                        "cost": f"${cost:.2f}",
+                        "timeline": timeline_str,
+                        "segments": f"SPOT={cli_segments.get('spot_segments', 0)}, ON_DEMAND={cli_segments.get('ondemand_segments', 0)}, restarts={cli_segments.get('restart_count', 0)}",
+                    },
+                }
+                output = {
+                    "trace_file": trace_file,
+                    "config": config,
+                    "cost": cost,
+                    "score": score,
+                    "cli_segments": cli_segments,
+                }
+                return (score, output, side_info)
+            else:
+                score = FAILED_SCORE
+                side_info = {
+                    "scores": {"cost": score},
+                    "Input": {
+                        "trace_file": os.path.basename(trace_file) if trace_file else "unknown",
+                        "duration": f"{config.get('duration', 'N/A')}h",
+                        "deadline": f"{config.get('deadline', 'N/A')}h",
+                        "overhead": f"{config.get('overhead', 'N/A')}h",
+                    },
+                    "Error": error_msg,
+                }
+                output = {
+                    "trace_file": trace_file,
+                    "config": config,
+                    "error": error_msg,
+                }
+                return (score, output, side_info)
 
         finally:
             # Cleanup temp directory
             shutil.rmtree(tmpdir, ignore_errors=True)
-
-        return results
 
     return fitness_fn
 

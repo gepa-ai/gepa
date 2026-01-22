@@ -6,6 +6,7 @@ attrs
 certifi
 charset-normalizer
 click
+colorama
 ConfigArgParse
 contourpy
 cycler

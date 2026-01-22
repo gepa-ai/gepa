@@ -32,6 +32,11 @@ From the repository root:
 pip install -e .
 ```
 
+Install simulator dependencies:
+```bash
+pip install -r examples/adrs/can_be_late/simulator/requirements.txt
+```
+
 For Gemini models, also install:
 ```bash
 pip install google-genai
