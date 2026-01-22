@@ -110,41 +110,32 @@ class EvolveSingleRegionStrategy(Strategy):
         return cls(args)
 """
 
-# Reflection prompt template for the Can't Be Late problem
-REFLECTION_PROMPT = """You are optimizing a cloud scheduling strategy for the "Can't Be Late" problem.
+# Optimization objective for the Can't Be Late problem
+OPTIMIZATION_OBJECTIVE = """Optimize a cloud scheduling strategy for the "Can't Be Late" problem.
 
-## Context:
-The strategy decides when to use SPOT instances (cheap but can be preempted) vs ON_DEMAND instances (expensive but reliable) to complete a task before its deadline. The goal is to minimize cost while ensuring the task completes on time.
+The strategy decides when to use SPOT instances (cheap but can be preempted) vs ON_DEMAND 
+instances (expensive but reliable) to complete a task before its deadline. The goal is to 
+minimize cost while ensuring the task completes on time."""
 
-## Current Strategy Implementation:
-```python
-<curr_param>
-```
+# Domain background and constraints for the optimization
+OPTIMIZATION_BACKGROUND = """Key information about the problem domain:
 
-## Performance Results and Feedback:
-The current strategy was evaluated on multiple real-world traces with different spot availability patterns, job durations, and deadlines. Here are the results:
+- ClusterType.SPOT: Use spot instances (cheap, ~$0.3/hour, but can be preempted at any time)
+- ClusterType.ON_DEMAND: Use on-demand instances (expensive, ~$1/hour, but guaranteed availability)
+- ClusterType.NONE: Wait without using any instances (no cost, but no progress)
+- restart_overhead: Time penalty incurred when switching from one instance type to another
+- The strategy MUST ensure task completion before the deadline (hard constraint)
+- Lower cost is better (scores are negative, representing cost in dollars)
 
-<side_info>
-
-## Key Information:
-- Lower cost is better (negative scores mean cost in dollars)
-- ClusterType.SPOT: Use spot instances (cheap, ~$0.3/hour, but can be preempted)
-- ClusterType.ON_DEMAND: Use on-demand instances (expensive, ~$1/hour, but guaranteed)
-- ClusterType.NONE: Wait without using any instances
-- restart_overhead: Time penalty when switching from an instance to another instance
-- The strategy must ensure task completion before the deadline
-- Timeline format: start-end:TYPE@REGION[progress%] (e.g., "0.0-5.0:S@R0[50%]" means SPOT from hour 0-5 at 50% progress)
+Evaluation feedback format:
+- Timeline format: start-end:TYPE@REGION[progress%] (e.g., "0.0-5.0:S@R0[50%]" means SPOT from hour 0-5 reaching 50% progress)
 - Spot availability: S=available, X=unavailable (e.g., "0.0-10.0:S | 10.0-15.0:X" means spot available first 10h, then unavailable)
 
-## Your Task:
-Analyze the performance feedback and rewrite the strategy to:
+Optimization targets:
 1. Reduce overall cost while maintaining deadline guarantees
 2. Make better decisions about when to use SPOT vs ON_DEMAND
 3. Handle spot unavailability more intelligently
-4. Consider the trade-offs between waiting for spot and using on-demand
-
-Provide the complete improved strategy implementation in Python within ``` blocks.
-"""
+4. Consider the trade-offs between waiting for spot and using on-demand"""
 
 # Dataset root for trace files
 # NOTE: Update this path to point to your trace dataset
@@ -335,7 +326,6 @@ def main():
         ),
         reflection=ReflectionConfig(
             reflection_minibatch_size=reflection_minibatch_size,
-            reflection_prompt_template=REFLECTION_PROMPT,
             reflection_lm=llm_model,
             skip_perfect_score=False,
         ),
@@ -359,6 +349,8 @@ def main():
         fitness_fn=fitness_fn,
         dataset=train_set,
         valset=val_set,
+        objective=OPTIMIZATION_OBJECTIVE,
+        background=OPTIMIZATION_BACKGROUND,
         config=gepa_config,
     )
 
