@@ -96,6 +96,7 @@ def test_gepa_state_save_and_initialize(run_dir):
     state.total_num_evals = 10
     assert state.is_consistent()
 
+    # Ensure cloudpickle doesn't break things (these SHOULD be different)
     state.save(run_dir)
     result = state_mod.initialize_gepa_state(
         run_dir=str(run_dir),
