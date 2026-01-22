@@ -21,7 +21,7 @@ from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn, RolloutOutput
 from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
-from gepa.core.state import FrontierType
+from gepa.core.state import EvaluationCache, FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -240,6 +240,9 @@ class EngineConfig:
     # Parallelization settings for fitness evaluation
     parallel: bool = False
     max_workers: int | None = None
+
+    # Evaluation caching
+    cache_evaluation: bool = False
 
 
 def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
@@ -759,7 +762,12 @@ def optimize_anything(
             val_overlap_floor=config.merge.merge_val_overlap_floor,
         )
 
-    # --- 13. Build the main engine from EngineConfig ---
+    # --- 13. Create evaluation cache if enabled ---
+    evaluation_cache: EvaluationCache[RolloutOutput, Any] | None = None
+    if config.engine.cache_evaluation:
+        evaluation_cache = EvaluationCache[RolloutOutput, Any]()
+
+    # --- 14. Build the main engine from EngineConfig ---
     engine = GEPAEngine(
         adapter=active_adapter,
         run_dir=config.engine.run_dir,
@@ -778,9 +786,10 @@ def optimize_anything(
         stop_callback=stop_callback,
         val_evaluation_policy=config.engine.val_evaluation_policy,
         use_cloudpickle=config.engine.use_cloudpickle,
+        evaluation_cache=evaluation_cache,
     )
 
-    # --- 14. Run optimization ---
+    # --- 15. Run optimization ---
     with experiment_tracker:
         state = engine.run()
 
