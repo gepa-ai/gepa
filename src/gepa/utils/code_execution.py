@@ -500,8 +500,19 @@ with open({repr(results_path)}, 'wb') as f:
 
             # Load results
             if os.path.exists(results_path):
-                with open(results_path, "rb") as f:
-                    output = pickle.load(f)
+                try:
+                    with open(results_path, "rb") as f:
+                        output = pickle.load(f)
+                except (EOFError, pickle.UnpicklingError) as e:
+                    return CodeExecutionResult(
+                        success=False,
+                        stdout=stdout_str,
+                        stderr=stderr_str,
+                        error=f"Failed to load results: {e}",
+                        traceback=stderr_str,
+                        execution_time=execution_time,
+                        code_hash=code_hash,
+                    )
 
                 return CodeExecutionResult(
                     success=output.get("success", False),
