@@ -31,7 +31,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         if self.parallel and len(batch) > 1:
             eval_output = self._evaluate_parallel(batch, candidate)
         else:
-            eval_output = [self.fitness_fn(candidate, example) for example in batch]
+            eval_output = [self.fitness_fn(candidate, example=example) for example in batch]
         scores = [score for score, _, _ in eval_output]
         side_infos: list[SideInfo] = [info for _, _, info in eval_output]
         outputs = [output for _, output, _ in eval_output]
@@ -65,7 +65,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         with ThreadPoolExecutor(max_workers=self.max_workers or len(batch)) as executor:
             # Submit all tasks with their index to maintain order
             future_to_idx = {
-                executor.submit(self.fitness_fn, candidate, example): idx
+                executor.submit(self.fitness_fn, candidate, example=example): idx
                 for idx, example in enumerate(batch)
             }
 
