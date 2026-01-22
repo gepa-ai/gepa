@@ -1,8 +1,9 @@
-from unittest.mock import Mock
 import re
-from gepa.core.adapter import EvaluationBatch
-from gepa import optimize
+from unittest.mock import Mock
+
 import pytest
+
+from gepa import optimize
 
 
 def test_reflection_prompt_template():
@@ -100,7 +101,7 @@ def test_empty_seed_candidate():
         return "```\nimproved instructions\n```"
 
     # Test with empty dict
-    with pytest.raises(ValueError, match="seed_candidate must contain at least one component text."):
+    with pytest.raises(ValueError, match=r"seed_candidate must contain at least one component text\."):
         optimize(
             seed_candidate={},
             trainset=mock_data,
@@ -128,7 +129,7 @@ def test_none_seed_candidate():
         return "```\nimproved instructions\n```"
 
     # Test with None - Note: this will be caught by type checker, but we test runtime behavior
-    with pytest.raises(ValueError, match="seed_candidate must contain at least one component text."):
+    with pytest.raises(ValueError, match=r"seed_candidate must contain at least one component text\."):
         optimize(
             seed_candidate=None,  # type: ignore
             trainset=mock_data,
