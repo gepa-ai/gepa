@@ -9,30 +9,23 @@ This version optimizes TWO components:
 2. refiner_prompt: Instructions for how to refine code per-problem
 """
 
-import json
-import os
-import time
-from typing import Any, Optional
-
 import dspy
+import os
+from typing import Any, Optional
+import json
+import time
 import numpy as np
-from examples.circle_packing_blog.config import (
-    parse_arguments,
+
+
+from examples.circle_packing.utils import (
+    execute_code,
+    SEED_CODE,
 )
-from examples.circle_packing_blog.llms import (
-    CODE_REFLECTION_PROMPT_TEMPLATE,
-    REFINEMENT_PROMPT_REFLECTION_INSTRUCTIONS,
+from examples.circle_packing.llms import (
+    CIRCLE_PACKING_BACKGROUND,
     SEED_REFINEMENT_PROMPT,
     RefinerSignature,
 )
-from examples.circle_packing_blog.utils import (
-    BASELINE_CODE_TEMPLATE,
-    create_circle_packing_dataset,
-    execute_code,
-)
-from src.experiment_io import save_experiment_config
-
-from gepa.core.adapter import DataInst
 from gepa.optimize_anything import (
     EngineConfig,
     GEPAConfig,
@@ -40,6 +33,7 @@ from gepa.optimize_anything import (
     SideInfo,
     optimize_anything,
 )
+
 
 # Constants
 NUM_CIRCLES = 26
@@ -53,7 +47,7 @@ class StateTracker:
     Tracks the best solution found so far, the number of metric calls, and the cache.
     """
 
-    def __init__(self, log_dir: str, max_metric_calls: int):
+    def __init__(self, log_dir: str=None, max_metric_calls: int=200):
         self.max_metric_calls = max_metric_calls
         self.metric_calls = 0
         self.cache = {}
@@ -65,7 +59,10 @@ class StateTracker:
 
     def _key_to_str(self, key_items: tuple) -> str:
         # Convert numpy arrays to lists, leave other items as-is
-        serialized = [item.tolist() if isinstance(item, np.ndarray) else item for item in key_items]
+        serialized = [
+            item.tolist() if isinstance(item, np.ndarray) else item
+            for item in key_items
+        ]
         return json.dumps(serialized)
 
     def get(self, key: tuple) -> tuple[float, Any, SideInfo] | None:
@@ -125,8 +122,12 @@ class StateTracker:
         log = {
             "metric_calls": self.metric_calls,
             "best_score": self.best_score,
-            "best_solution": json.dumps(self.best_solution.tolist()),
+            "best_solution": json.dumps(self.best_solution.tolist()) if self.best_solution is not None else None,
         }
+        if self.best_artifact is None:
+            self.logs.append(log)
+            self.save_logs()
+            return
         for key, value in self.best_artifact.items():
             if isinstance(value, np.ndarray):
                 log[f"best_artifact_{key}"] = json.dumps(value.tolist())
@@ -136,12 +137,19 @@ class StateTracker:
         self.save_logs()
 
     def save_logs(self) -> None:
+        if self.log_dir is None:
+            return
+        
         with open(os.path.join(self.log_dir, "state_tracker_logs.json"), "w") as f:
             json.dump(self.logs, f, indent=2)
-        print(f"State tracker logs saved to: {os.path.join(self.log_dir, 'state_tracker_logs.json')}")
+        print(
+            f"State tracker logs saved to: {os.path.join(self.log_dir, 'state_tracker_logs.json')}"
+        )
 
 
-def compute_multiple_metrics(global_best_score: float, all_scores: list[float]) -> dict[str, float]:
+def compute_multiple_metrics(
+    global_best_score: float, all_scores: list[float]
+) -> dict[str, float]:
     candidate_best_score = max(all_scores)
     alpha_fixed = 0.1
     ema_fixed = all_scores[0]
@@ -157,7 +165,8 @@ def compute_multiple_metrics(global_best_score: float, all_scores: list[float]) 
         "mean_score": sum(all_scores) / len(all_scores),
         "ema_score_fixed": ema_fixed,
         "ema_score_adaptive": ema_adaptive,
-        "score_improvement_from_previous_best": candidate_best_score - global_best_score,
+        "score_improvement_from_previous_best": candidate_best_score
+        - global_best_score,
     }
 
 
@@ -191,16 +200,26 @@ def refine_code(
                 code_results=code_side_info,
             )
 
-        refined_code = refined_result.refined_code.strip().replace("```python", "").replace("```", "")
+        refined_code = (
+            refined_result.refined_code.strip()
+            .replace("```python", "")
+            .replace("```", "")
+        )
 
         res = execute_code(refined_code, timeout, global_best_solution)
         refined_circles = None
 
         if res["success"]:
             refined_circles = res["result"]["circles"]
-            multiple_metrics = compute_multiple_metrics(global_best_score, res["result"]["all_scores"])
+            multiple_metrics = compute_multiple_metrics(
+                global_best_score, res["result"]["all_scores"]
+            )
             refiner_score = res["result"]["validation_details"]["sum_radii"]
-            refiner_improvement_rate = (refiner_score - code_score) / code_score if code_score > 0 else refiner_score
+            refiner_improvement_rate = (
+                (refiner_score - code_score) / code_score
+                if code_score > 0
+                else refiner_score
+            )
 
             refined_side_info = {
                 "scores": {
@@ -225,7 +244,9 @@ def refine_code(
                 "Refined code": refined_code,
                 "Error": res.get("error", "Unknown error"),
                 "Traceback": res.get("traceback", ""),
-                "Validation Details": res.get("result", {}).get("validation_details", {}),
+                "Validation Details": res.get("result", {}).get(
+                    "validation_details", {}
+                ),
                 "Stdout": res.get("stdout", ""),
             }
 
@@ -261,7 +282,9 @@ def create_fitness_function(
     """
     refiner_predictor = dspy.Predict(RefinerSignature)
 
-    def fitness_fn(candidate: dict[str, str], example: DataInst, **kwargs) -> list[tuple[float, Any, SideInfo]]:
+    def fitness_fn(
+        candidate: dict[str, str], **kwargs
+    ) -> list[tuple[float, Any, SideInfo]]:
         """
         Evaluate code candidate on batch of problems with optional refinement.
         """
@@ -370,7 +393,6 @@ def create_fitness_function(
                 "refiner_prompt": refiner_score,
             },
             "Input": {
-                "problem_description": example.problem_description,
                 "Timeout (s)": timeout,
             },
             "code_specific_info": code_side_info,
@@ -384,9 +406,8 @@ def create_fitness_function(
 
 def main():
     # Parse arguments
-    args = parse_arguments()
-    # log_dir = f"outputs/artifacts/circle_packing_blog/objective_frontier/{time.strftime('%y%m%d_%H:%M:%S')}"
-    log_dir = f"outputs/artifacts/circle_packing_blog/caching_without_best_solution/{time.strftime('%y%m%d_%H:%M:%S')}"
+    max_metric_calls = 200
+    log_dir = f"outputs/artifacts/circle_packing/{time.strftime('%y%m%d_%H:%M:%S')}"
     os.makedirs(log_dir, exist_ok=True)
 
     print("\n" + "=" * 70)
@@ -394,7 +415,7 @@ def main():
     print("=" * 70)
     print(f"LLM Model: {LLM_MODEL}")
     print(f"Problem size: N={NUM_CIRCLES}")
-    print(f"Max metric calls: {args.max_metric_calls}")
+    print(f"Max metric calls: {max_metric_calls}")
     print(f"Log directory: {log_dir}")
     print("=" * 70 + "\n")
 
@@ -404,22 +425,13 @@ def main():
         raise ValueError("OPENAI_API_KEY not set")
 
     # Create trackers
-    state_tracker = StateTracker(log_dir=log_dir, max_metric_calls=args.max_metric_calls)
-
-    # Create dataset
-    dataset = create_circle_packing_dataset()
-
-    # Save experiment configuration
-    config_to_save = {
-        "llm_model": LLM_MODEL,
-        "max_metric_calls": args.max_metric_calls,
-        "mode": "blog",
-    }
-    save_experiment_config(config_to_save, log_dir)
+    state_tracker = StateTracker(
+        log_dir=log_dir, max_metric_calls=max_metric_calls
+    )
 
     # Create seed candidate
     seed_candidate = {
-        "code": BASELINE_CODE_TEMPLATE,
+        "code": SEED_CODE,
         "refiner_prompt": SEED_REFINEMENT_PROMPT,
     }
 
@@ -435,18 +447,14 @@ def main():
     gepa_config = GEPAConfig(
         engine=EngineConfig(
             run_dir=log_dir,
-            max_metric_calls=args.max_metric_calls,
+            max_metric_calls=max_metric_calls,
             track_best_outputs=True,
             frontier_type="objective",
+            cache_evaluation=True,
         ),
         reflection=ReflectionConfig(
             reflection_minibatch_size=1,
-            reflection_prompt_template={
-                "code": CODE_REFLECTION_PROMPT_TEMPLATE,
-                "refiner_prompt": REFINEMENT_PROMPT_REFLECTION_INSTRUCTIONS,
-            },
             reflection_lm="openai/gpt-5",
-            skip_perfect_score=False,
         ),
     )
 
@@ -464,8 +472,9 @@ def main():
     result = optimize_anything(
         seed_candidate=seed_candidate,
         fitness_fn=fitness_fn,
-        dataset=dataset,
         config=gepa_config,
+        objective="Optimize circle packing code and refiner prompt to maximize sum of circle radii within a unit square for N=26 circles.",
+        background=CIRCLE_PACKING_BACKGROUND,
     )
 
     # Save results

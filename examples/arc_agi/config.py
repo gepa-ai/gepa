@@ -30,15 +30,15 @@ def parse_arguments():
     parser.add_argument(
         "--llm_model",
         type=str,
-        default="openai/gpt-4.1-nano",
+        default="openai/gpt-5",
         help="LLM model for reflection (default: openai/gpt-5)",
     )
 
     parser.add_argument(
         "--seed",
         type=int,
-        default=42,
-        help="Random seed (default: 42)",
+        default=0,
+        help="Random seed (default: 0)",
     )
 
     parser.add_argument(

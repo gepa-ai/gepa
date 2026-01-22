@@ -56,7 +56,7 @@ def execute_code(
     """
     start_time = time.time()
 
-    # Execute code using shared utility with entry point
+    # Execute code using GEPA's shared utility with entry point
     result = _execute_code(
         code=code,
         timeout=timeout,
@@ -86,37 +86,18 @@ def execute_code(
     main_result = result.variables.get("__return__")
 
     # Validate result has required keys
+    def _error(msg: str) -> dict:
+        return {"success": False, "error": msg, "traceback": "",
+                "execution_time": execution_time, "stdout": result.stdout, "stderr": result.stderr}
+
     if not isinstance(main_result, dict):
-        return {
-            "success": False,
-            "error": f"main() must return a dict, got {type(main_result).__name__}",
-            "traceback": "",
-            "execution_time": execution_time,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
-
+        return _error(f"main() must return a dict, got {type(main_result).__name__}")
     if "circles" not in main_result:
-        return {
-            "success": False,
-            "error": "main() return dict must contain 'circles' key",
-            "traceback": "",
-            "execution_time": execution_time,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
-
+        return _error("main() return dict must contain 'circles' key")
     if "all_scores" not in main_result:
-        return {
-            "success": False,
-            "error": "main() return dict must contain 'all_scores' key",
-            "traceback": "",
-            "execution_time": execution_time,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
+        return _error("main() return dict must contain 'all_scores' key")
 
-    # Validate the packing (wrapped in try-except to match original subprocess behavior)
+    # Validate the packing
     try:
         circles = np.array(main_result["circles"])
         is_valid, validation_details = validate_packing(num_circles, circles)
@@ -142,15 +123,13 @@ def execute_code(
         }
     else:
         # Build error message from validation details
-        errors = []
-        if validation_details["shape_errors"]:
-            errors.append(f"Shape: {validation_details['shape_errors']}")
-        if validation_details["boundary_violations"]:
-            errors.append(f"{len(validation_details['boundary_violations'])} boundary violations")
-        if validation_details["overlaps"]:
-            errors.append(f"{len(validation_details['overlaps'])} overlaps")
-        if validation_details["negative_radii"]:
-            errors.append(f"{len(validation_details['negative_radii'])} negative radii")
+        d = validation_details
+        errors = [msg for (cond, msg) in [
+            (d["shape_errors"], f"Shape: {d['shape_errors']}"),
+            (d["boundary_violations"], f"{len(d['boundary_violations'])} boundary violations"),
+            (d["overlaps"], f"{len(d['overlaps'])} overlaps"),
+            (d["negative_radii"], f"{len(d['negative_radii'])} negative radii"),
+        ] if cond]
 
         return {
             "success": False,
@@ -258,7 +237,7 @@ def validate_packing(
 # BASELINE CODE TEMPLATE
 # =============================================================================
 
-BASELINE_CODE_TEMPLATE = '''
+SEED_CODE = '''
 import numpy as np
 
 def main(timeout, current_best_solution):
@@ -327,41 +306,15 @@ def compute_max_radii(centers):
 '''
 
 
-# =============================================================================
-# DATASET
-# =============================================================================
+SIMPLEST_SEED_CODE = '''
+import numpy as np
 
-
-def create_circle_packing_dataset():
-    """Create dataset for circle packing problem (N=26)."""
-    description = """Circle Packing Problem (N=26)
-
-Pack 26 non-overlapping circles inside a UNIT SQUARE [0,1] x [0,1].
-Goal: MAXIMIZE the sum of all circle radii.
-
-CONSTRAINTS:
-1. All circles must be non-overlapping: distance between centers >= r1 + r2
-2. All circles must be fully inside [0,1] x [0,1]
-3. All radii must be non-negative
-
-Your code must define:
-    def main(timeout, current_best_solution) -> dict
-
-Args:
-    timeout: Time budget in seconds
-    current_best_solution: Previous best (n,3) array or None
-
-Returns:
-    {'circles': np.ndarray (n,3), 'all_scores': list[float]}
-
-SCORING: Sum of all circle radii (higher is better!)
-"""
-
-    example = dspy.Example(
-        {
-            "problem_description": description,
-            "baseline_code": BASELINE_CODE_TEMPLATE,
-        }
-    ).with_inputs("problem_description", "baseline_code")
-
-    return [example]
+def main(timeout, current_best_solution):
+    # Fit 26 circles into a 6x6 grid structure (radius = 1 / (2*6) = 1/12)
+    r = 1.0 / 12.0
+    i = np.arange(26)
+    # Calculate x (col) and y (row) positions based on grid index
+    circles = np.column_stack((r + (i % 6) * 2 * r, r + (i // 6) * 2 * r, np.full(26, r)))
+    
+    return {'circles': circles, 'all_scores': [np.sum(circles[:, 2])]}
+'''

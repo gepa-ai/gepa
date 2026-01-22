@@ -2,25 +2,32 @@ from datasets import load_dataset
 import random
 import dspy
 
-
 def load_math_dataset():
-    # Load datasets
-    train_data = load_dataset("AI-MO/aimo-validation-aime", split="train")
-    test_data = load_dataset("MathArena/aime_2025", split="train")
+    train_split = []
+    test_split = []
+    
+    train_load_dataset = load_dataset("AI-MO/aimo-validation-aime", "default", split="train")
+    for item in train_load_dataset:
+        question = item["problem"]
+        solution = item["solution"]
+        answer = item["answer"]
 
-    # Convert to DSPy Examples using list comprehensions
-    train_split = [
-        dspy.Example(input=ex["problem"], solution=ex["solution"], answer=ex["answer"]).with_inputs("input")
-        for ex in train_data
-    ]
+        train_split.append(dspy.Example(input=question, solution=solution, answer=answer).with_inputs("input"))
 
-    testset = [dspy.Example(input=ex["problem"], answer=ex["answer"]).with_inputs("input") for ex in test_data]
-
-    # Shuffle and Slice
     random.Random(0).shuffle(train_split)
-    mid = len(train_split) // 2
-    trainset, valset = train_split[:mid], train_split[mid:]
 
+    test_load_dataset = load_dataset("MathArena/aime_2025", "default", split="train")
+    for item in test_load_dataset:
+        question = item["problem"]
+        answer = item["answer"]
+
+        test_split.append(dspy.Example(input=question, answer=answer).with_inputs("input"))
+
+    train_size = len(train_split)
+    trainset = train_split[: train_size // 2]
+    valset = train_split[train_size // 2 :]
+    testset = test_split
+    
     print(f"Loaded {len(trainset)} training examples")
     print(f"Loaded {len(valset)} validation examples")
     print(f"Loaded {len(testset)} test examples")

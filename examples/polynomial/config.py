@@ -1,4 +1,4 @@
-"""Configuration and setup utilities for circle packing optimization."""
+"""Configuration and setup utilities for gepa_blog blackbox optimization."""
 
 import argparse
 import os
@@ -13,21 +13,14 @@ def parse_arguments():
     parser.add_argument(
         "--llm-model",
         type=str,
-        default="openai/gpt-5-nano",
-        help="LLM model to use (default: openai/gpt-5-nano)",
+        default="openai/gpt-5",
+        help="LLM model to use (default: openai/gpt-5)",
     )
     parser.add_argument(
         "--run-name",
         type=str,
-        default="",
+        default="gepa_blog",
         help="Optional suffix for log and wandb run names",
-    )
-    parser.add_argument(
-        "--optimization-level",
-        type=str,
-        default="light",
-        choices=["light", "medium", "heavy"],
-        help="GEPA optimization level: light (fast), medium, heavy (thorough) (default: light)",
     )
     parser.add_argument(
         "--log-dir",
@@ -41,6 +34,30 @@ def parse_arguments():
         default=None,
         help="Maximum number of metric calls (overrides optimization level)",
     )
+    parser.add_argument(
+        "--evaluation-budget",
+        type=int,
+        default=100,
+        help="Evaluation budget per candidate (max number of evaluation calls per code candidate)",
+    )
+    parser.add_argument(
+        "--problem-index",
+        type=int,
+        default=None,
+        help="Index of the problem in experiments/polynomial/problems.py (0-55).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Random seed for reproducibility",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help="Timeout in seconds for code execution (default: 300 = 5 minutes)",
+    )
     return parser.parse_args()
 
 
@@ -50,10 +67,8 @@ def get_log_directory(args):
         log_dir = args.log_dir
     else:
         timestamp = time.strftime("%y%m%d_%H:%M:%S")
-        run_id = f"{timestamp}"
-        if args.run_name:
-            run_id += f"_{args.run_name}"
-        log_dir = f"logs/polynomial/{run_id}"
+        model_name = args.llm_model.replace("openai/", "").replace("/", "_")
+        log_dir = f"outputs/artifacts/polynomial/{args.run_name}/problem_{args.problem_index}/{model_name}/{args.seed}/{timestamp}"
 
     os.makedirs(log_dir, exist_ok=True)
     return log_dir

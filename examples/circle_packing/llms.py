@@ -10,40 +10,13 @@ This module contains:
 import dspy
 
 
-CODE_REFLECTION_PROMPT_TEMPLATE = """You are an expert mathematician and computational geometry specialist.
+CIRCLE_PACKING_BACKGROUND = """
+Make BREAKTHROUGH improvements by trying fundamentally different approaches.
 
-**YOU ARE A GLOBAL IMPROVER - Think Big Picture!**
+Pack 26 non-overlapping circles inside a UNIT SQUARE [0,1] x [0,1].
+Goal: MAXIMIZE the sum of all circle radii.
 
-Your role: Evolve the **Global Circle Packing Strategy (code)**.
-Your goal: Make BREAKTHROUGH improvements by trying fundamentally different approaches.
-NOT your role: Fixing small bugs or tweaking parameters (the refiner does that locally per-problem using the `refiner_prompt`).
-
-YOUR TASK: Generate innovative circle packing code that makes BIG LEAPS in performance.
-
-Current code (the component you are optimizing):
-```python
-<curr_param>
-```
-
-Below is evaluation data showing how this code performed:
-```
-<side_info>
-```
-
-**Learning from Refinement Results:**
-The evaluation data shows BOTH:
-- Initial code (what you generated) and its score
-- Best refined code (after local refinement) and its score
-
-If refiner improved your code significantly:
-→ Study WHAT principle made it better (not just copy the code)
-→ Apply that insight in a MORE INNOVATIVE way across all problem sizes
-→ Make even bigger improvements than the refiner could
-- Don't replicate its improvements, make even bigger improvements.
-
-If refiner couldn't improve much:
-→ Either the approach is already good (keep evolving it)
-→ OR it needs a COMPLETELY different algorithmic strategy
+SCORING: Sum of all circle radii (higher is better!)
 
 CRITICAL CODE FORMAT:
 - Function name MUST be: `def main(timeout, current_best_solution):`
@@ -129,30 +102,8 @@ class RefinerSignature(dspy.Signature):
     )
 
 
-REFINEMENT_PROMPT_REFLECTION_INSTRUCTIONS = """**Your Role: Evolve the Local Improver LLM's prompt (refiner_prompt)**
-
-The **refiner_prompt** (the component you are optimizing) guides an LLM that acts as a sequential improver of the code. It:
-- Makes targeted fixes and improvements based on execution feedback.
-- Runs a single refinement attempt per code candidate.
-
-YOUR TASK: Analyze refinement results and improve the **refiner_prompt** for more effective code refinement.
-
-**What You're Optimizing:**
-The **refiner_prompt** guides how the refiner improves code based on its current `code_results` (scores, stdout, errors). Analyze performance:
-- Did the refiner consistently improve scores compared to the initial code?
-- Which refinement instructions led to better error fixes, algorithm tweaks, or parameter tuning?
-- Where did the refiner get stuck or cause regressions?
-
-Current refinement prompt (the component you are optimizing):
-```
-<curr_param>
-```
-
-Below is evaluation data showing how this refinement prompt performed:
-```
-<side_info>
-```
-
+REFINEMENT_PROMPT_BACKGROUND = """
+**Your Role: Evolve the Local Improver LLM's prompt (refiner_prompt)**
 **What Makes a Good Refinement Prompt:**
 1. **Clear priorities**: "First fix execution errors, then satisfy constraints, then optimize the score"
 2. **Result utilization**: "Instruct the refiner to use `code_results` (stdout, errors) to diagnose issues"

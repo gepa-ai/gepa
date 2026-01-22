@@ -1,16 +1,7 @@
 import os
-
-import dspy
+import random
 import numpy as np
-
-from examples.arc_agi.config import (
-    get_experiment_config,
-    get_log_directory,
-    parse_arguments,
-)
-from examples.arc_agi.data import load_arc_agi_dataset
-from examples.arc_agi.prompt import REFLECTION_PROMPT
-from gepa.adapters.dspy_full_program_adapter.full_program_adapter import DspyAdapter
+import dspy
 from gepa.optimize_anything import (
     EngineConfig,
     GEPAConfig,
@@ -18,6 +9,14 @@ from gepa.optimize_anything import (
     TrackingConfig,
     optimize_anything,
 )
+from examples.arc_agi.config import (
+    parse_arguments,
+    get_experiment_config,
+    get_log_directory,
+)
+from examples.arc_agi.data import load_data
+from gepa.adapters.dspy_full_program_adapter.full_program_adapter import DspyAdapter
+from examples.arc_agi.prompt import BACKGROUND
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
@@ -139,27 +138,27 @@ def create_fitness_fn(adapter):
     """Create fitness function with adapter in closure."""
 
     def fitness_fn(candidate, example):
-        """Evaluate candidate program on a single example."""
         program = candidate["program"]
 
         try:
-            evaluation_results = adapter.evaluate([example], candidate, capture_traces=True)
+            evaluation_results = adapter.evaluate(
+                [example], candidate, capture_traces=True
+            )
         except Exception as e:
-            side_info = {
-                "input": example,
-                "error": str(e),
-                "program": program
-            }
+            side_info = {"input": example, "error": str(e), "program": program}
             return (0.0, side_info, side_info)
 
         # Program error
-        if not isinstance(evaluation_results.trajectories, list) or len(evaluation_results.trajectories) == 0:
+        if (
+            not isinstance(evaluation_results.trajectories, list)
+            or len(evaluation_results.trajectories) == 0
+        ):
             print("Error: ")
             print(evaluation_results.trajectories)
             side_info = {
                 "input": example,
                 "error": f"All examples failed. Program error: {str(evaluation_results.trajectories)}",
-                "program": program
+                "program": program,
             }
             return (0.0, side_info, side_info)
 
@@ -201,6 +200,7 @@ def main():
         max_tokens=32000,
         api_key=OPENAI_API_KEY,
         seed=config["seed"],
+        cache=False,
     )
 
     # Create adapter
@@ -210,6 +210,7 @@ def main():
         num_threads=64,
         reflection_lm="openai/gpt-5",
         add_format_failure_as_feedback=True,
+        rng=random.Random(config["seed"]),
     )
     fitness_fn = create_fitness_fn(adapter)
 
@@ -221,12 +222,13 @@ def main():
             max_metric_calls=4000,
             track_best_outputs=True,
             use_cloudpickle=True,
+            parallel=True,
+            max_workers=64,
+            cache_evaluation=True,
         ),
         reflection=ReflectionConfig(
             reflection_minibatch_size=config["reflection_minibatch_size"],
-            reflection_prompt_template=REFLECTION_PROMPT,
             reflection_lm="openai/gpt-5",
-            skip_perfect_score=False,
         ),
         tracking=TrackingConfig(
             use_wandb=False,
@@ -236,7 +238,7 @@ def main():
 
     seed_candidate = {"program": program_src}
 
-    train_set, val_set, test_set = load_arc_agi_dataset()
+    train_set, val_set, test_set = load_data()
 
     print("\n🚀 Starting GEPA optimization...\n")
 
@@ -247,6 +249,8 @@ def main():
         dataset=train_set,
         valset=val_set,
         config=gepa_config,
+        objective="Optimize the dspy agent program to solve ARC-AGI tasks effectively.",
+        background=BACKGROUND
     )
 
     print("\n" + "=" * 80)
@@ -264,7 +268,9 @@ def main():
 
     print(f"✅ Best program: {best_program}")
     print(f"   Code length: {len(best_program)} characters")
-    test_results = adapter.evaluate(test_set, result.best_candidate, capture_traces=True)
+    test_results = adapter.evaluate(
+        test_set, result.best_candidate, capture_traces=True
+    )
     test_score = np.mean(test_results.scores)
     print(f"   Test results: {test_score}")
 

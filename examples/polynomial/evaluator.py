@@ -1,268 +1,136 @@
-from typing import Any, Sequence
+"""Fitness evaluator for gepa_blog blackbox optimization."""
+
+from typing import Any
 import numpy as np
-import traceback
+import json
+from pathlib import Path
 
 from gepa.optimize_anything import SideInfo
-from gepa.utils.code_execution import execute_code as _execute_code, ExecutionMode, get_code_hash
-from examples.polynomial.evalset import problems
-
-# Track unique code variants with IDs
-code_registry = {}  # hash -> id
-code_counter = [0]  # Use list to allow mutation
+from gepa.utils.code_execution import execute_code as _execute_code, ExecutionMode
+from examples.polynomial.evalset.problems import problems, problem_configs
 
 
-def get_code_id(code: str) -> tuple[int, bool]:
-    """
-    Get or create an ID for a code variant.
 
-    Returns:
-        tuple: (code_id, is_new) where is_new=True if this is a new variant
-    """
-    code_hash = get_code_hash(code)
+class FitnessEvaluator:
+    """Fitness evaluator for GEPA blackbox optimization."""
 
-    is_new = code_hash not in code_registry
-    if is_new:
-        code_counter[0] += 1
-        code_registry[code_hash] = code_counter[0]
+    def __init__(
+        self,
+        problem_index: int,
+        timeout: int = 300,
+        evaluation_budget: int = 100,
+        log_dir: str = None,
+        seed: int = 0,
+    ):
+        self.problem_index = problem_index
+        self.timeout = timeout
+        self.evaluation_budget = evaluation_budget
+        self.log_dir = Path(log_dir) if log_dir else None
+        self.seed = seed
 
-    return code_registry[code_hash], is_new
+        # State tracking for warm-start (minimization: lower is better)
+        self.evaluation_history = []
+        self.best_score = float("inf")
+        self.best_x = None
 
-
-def execute_code(code_string, global_vars=None, timeout=5):
-    """Execute code with timeout support using shared code execution utility.
-    
-    Returns dict with keys matching the original API for backwards compatibility:
-        - output: stdout
-        - logs: stderr
-        - results: execution context variables
-        - error: error message (includes traceback)
-    """
-    result = _execute_code(
-        code=code_string,
-        timeout=timeout,
-        mode=ExecutionMode.IN_PROCESS,
-        global_vars=global_vars,
-    )
-
-    # Combine error and traceback for backwards compatibility
-    error = result.error
-    if result.traceback and result.traceback not in error:
-        error = f"{error}\n{result.traceback}" if error else result.traceback
-
-    return {
-        "output": result.stdout,
-        "logs": result.stderr,
-        "results": result.variables,
-        "error": error,
-    }
-
-
-class Evaluator:
-    def __init__(self):
-        self.problem = None
-        self.global_evaluation_calls = 0
-        self.local_evaluation_calls = 0
-
-    def set_problem(self, problem):
-        self.problem = problem
-        self.local_evaluation_calls = 0
-
-    def evaluate(self, x) -> float:
-        self.global_evaluation_calls += 1
-        self.local_evaluation_calls += 1
-        return self.problem.do_evaluate(np.array(x))
-
-    def get_num_evaluation_calls(self) -> tuple[int, int]:
-        return self.global_evaluation_calls, self.local_evaluation_calls
-
-
-def create_fitness_function(timeout=30):
-    """
-    Create fitness function that evaluates code with optional refinement.
-
-    Args:
-        timeout: Timeout in seconds for code execution
-
-    Returns:
-        Fitness function compatible with GEPA
-    """
-
-    evaluator = Evaluator()
-
-    def fitness_fn(
-        candidate: dict[str, str], batch: Sequence[Any], **kwargs
-    ) -> list[tuple[float, Any, SideInfo]]:
-        """
-        Evaluate code candidate on batch of problems to minimize the polynomial.
-
-        Args:
-            candidate: Dict with "code"
-            batch: Sequence of dspy.Example objects with problem description
-
-        Returns:
-            List of (score, output, feedback_dict) tuples
-        """
+    def evaluate(self, candidate: dict[str, str], **kwargs) -> tuple[float, Any, SideInfo]:
+        """Evaluate code candidate on a single problem."""
         code = candidate["code"]
-        code_id, _ = get_code_id(code)
+        function = problems[self.problem_index]
+        problem_config = problem_configs[self.problem_index]
 
-        results = []
+        # Track state for this candidate
+        eval_count = 0
+        best_candidate_score = float("inf")
+        errors = []
 
-        for example in batch:
-            example_dict = example.toDict()
-            problem_name = example["problem_name"]
-            problem_description = example_dict["problem_description"]
-            y_dist = None
-            score = -99999
-            x = "x is not found in the global variables"
+        def objective_function(x):
+            nonlocal eval_count, best_candidate_score
+            if eval_count >= self.evaluation_budget:
+                raise ValueError(f"Evaluation budget exceeded: {eval_count} >= {self.evaluation_budget}")
+            eval_count += 1
 
-            function = problems[problem_name]
+            score = function.do_evaluate(np.array(x))
 
-            print(f"\n{'=' * 70}")
-            print(f"Evaluating code #{code_id} for {problem_name}")
-            print(f"{'=' * 70}")
+            if score < best_candidate_score:
+                best_candidate_score = score
+            if score < self.best_score:
+                self.best_score = score
+                self.best_x = np.array(x).copy()
 
-            evaluator.set_problem(function)
+            self.evaluation_history.append({
+                "score": score,
+                "best_score": self.best_score,
+            })
+            return score
 
-            execution_data = execute_code(
-                code,
-                {"dim": function.dim, "evaluator": evaluator},
-                timeout=timeout,
-            )
+        # Execute code
+        result = _execute_code(
+            code=code,
+            timeout=self.timeout,
+            mode=ExecutionMode.IN_PROCESS,
+            entry_point="solve",
+            entry_point_kwargs={
+                "objective_function": objective_function,
+                "config": {"bounds": function.bounds, "dim": function.dim, "budget": self.evaluation_budget},
+                "prev_best_x": self.best_x,
+            },
+            seed=self.seed,
+        )
 
-            code_results = execution_data["results"]
-            code_prints = execution_data["output"]
-            code_logs = execution_data["logs"]
-            code_error = execution_data["error"]
-            global_evaluation_calls, local_evaluation_calls = (
-                evaluator.get_num_evaluation_calls()
-            )
-            print("global_evaluation_calls: ", global_evaluation_calls)
-            print("local_evaluation_calls: ", local_evaluation_calls)
+        x = result.variables.get("__return__")
+        stdout = self._truncate(result.stdout)
+        stderr = self._truncate(result.stderr)
 
-            if "x" not in code_results.keys() or code_results["x"] is None:
-                code_error += "x not found in the global variables"
-                print("code_error: ", code_error)
-            else:
-                x = code_results["x"]
-                print("x: ", x)
-                try:
-                    x_array = np.array(x)
-                    score = -function.do_evaluate(x_array)
-                    if np.isnan(score):
-                        code_error += "Score is nan. Returning -99999."
-                        score = -99999
-                        print("code_error: ", code_error)
-                    print("Score: ", score)
+        if result.error:
+            errors.append(result.error)
+        if result.traceback and result.traceback not in (result.error or ""):
+            errors.append(result.traceback)
+        if x is None or not isinstance(x, np.ndarray):
+            errors.append("Code did not return a valid numpy array.")
+        if eval_count == 0:
+            errors.append("No objective_function calls were made.")
 
-                    true_minimum = function.min_loc
-                    x_dist = np.linalg.norm(x_array - true_minimum)
-                    y_dist = np.abs(function.fmin + score)
-                    print(f"x Distance from true minimum: {x_dist}")
-                    print(f"y Distance from true minimum: {y_dist}")
-                except Exception as e:
-                    full_traceback = traceback.format_exc()
-                    code_error += f"\nError evaluating the code: {str(e)}\nTraceback:\n{full_traceback}"
-                    print("Error evaluating the code: ", code_error)
-                    traceback.print_exc()
+        # Use best score found, or inf if none
+        score = best_candidate_score if best_candidate_score < float("inf") else float("inf")
+        print(f"Best score from {eval_count} calls: {score}")
 
-            side_info = {
-                "scores": {
-                    "score": score,
-                },
-                "Input": {
-                    "problem_description": problem_description,
-                },
-                "code_side_info": {
-                    "X": x,
-                    "Prints": {code_prints},
-                    "Logs": {code_logs},
-                    "Error": {code_error},
-                    "Total evaluation calls so far": global_evaluation_calls,
-                    "Num evaluation calls for this candidate": local_evaluation_calls,
-                },
-            }
+        side_info = {
+            "score": score,
+            "Input": problem_config["name"],
+            "Prints": stdout,
+            "Logs": stderr,
+            "Error": "\n".join(errors) if errors else "",
+        }
 
-            output = side_info.copy()
-            output["code"] = code
-            output["problem_name"] = problem_name
-            output["y_dist"] = y_dist
-            if type(x) is dict:
-                x = [x[i] for i in x.keys()]
-            elif type(x) is list:
-                x = x
-            else:
-                x = [x]
-            output["code_side_info"]["X"] = " ".join([str(i) for i in x])
+        output = {
+            **side_info,
+            "code": code,
+            "X": " ".join(map(str, x.ravel())) if x is not None else "not found",
+        }
 
-            results.append((score, output, side_info))
+        self.save()
+        gepa_score = -score if score < float("inf") else -1e9
+        return (gepa_score, output, side_info)
 
-        return results
+    def save(self, verbose: bool = False):
+        """Save evaluation history to JSON."""
+        if not self.log_dir:
+            return
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        filename = self.log_dir / f"evaluation_history.json"
+        try:
+            with open(filename, "w") as f:
+                json.dump(self.evaluation_history, f, indent=2, default=lambda o: o.tolist() if isinstance(o, np.ndarray) else o)
+            if verbose:
+                print(f"Saved to {filename}")
+        except Exception as e:
+            print(f"Warning: Failed to save: {e}")
+            
+    def  _truncate(self, text: str, limit: int = 4000) -> str:
+        """Truncate text to avoid token limits."""
+        if len(text) <= limit:
+            return text
+        half = limit // 2
+        return text[:half] + "\n...[truncated]...\n" + text[-half:]
 
-    return fitness_fn
-
-
-if __name__ == "__main__":
-    code_to_run = """
-import optuna
-import numpy as np  # <--- 1. Import numpy
-from examples.polynomial.evalset import problems, Rastrigin
-
-def create_objective(problem):
-    print("Bounds: ", problem.bounds)
-    def objective(trial):
-        x = []
-        for i in range(problem.dim):
-            val = trial.suggest_float(
-                f"x{i}", problem.bounds[i][0], problem.bounds[i][1]
-            )
-            x.append(val)
-        
-        # <--- 2. CONVERT TO NUMPY ARRAY BEFORE EVALUATING --->
-        x_array = np.array(x)
-        result = evaluator.evaluate(x_array)
-        
-        return result
-
-    return objective
-
-def main():
-    problem = Rastrigin(dim)
-    print(dim)
-    objective = create_objective(problem)
-    study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=10)
-    
-    # Store results in global variables so 'execute_code_string' can capture them
-    global x, y
-    x = study.best_trial.params
-    x = np.array(x)
-    y = study.best_trial.value
-    
-    print("Best x: ", x)
-    print("Best y: ", y)
-
-if __name__ == "__main__":
-    main()
-"""
-    problem_name = "Rastrigin"
-    problem = problems[problem_name]
-    evaluator = Evaluator(problem_name)
-    execution_data = execute_code(
-        code_to_run, {"dim": problem.dim, "evaluator": evaluator}, timeout=300
-    )
-
-    print("*****num_evaluation_calls: ", evaluator.get_num_evaluation_calls())
-
-    print("code_results: ", execution_data["results"]["x"])
-
-    print("--------------------------------")
-    print("code_prints: ", execution_data["output"][:500])
-
-    print("--------------------------------")
-    print("code_logs: ", execution_data["logs"][:500])
-    print("--------------------------------")
-
-    if execution_data["error"]:
-        print("code_error: ", execution_data["error"])
-    else:
-        print("code_error: None")

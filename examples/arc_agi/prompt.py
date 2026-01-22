@@ -1,6 +1,4 @@
-REFLECTION_PROMPT = """
-I am trying to solve a task using the DSPy framework. Here's a comprehensive overview of DSPy concepts to guide your improvements:
-
+BACKGROUND = """
 Signatures:
 - Signatures define tasks declaratively through input/output fields and explicit instructions.
 - They serve as blueprints for what the LM needs to accomplish.
@@ -57,16 +55,6 @@ DSPy Improvement Strategies:
 4. Balance LM and Python: Use Python for symbolic/logical operations (e.g., loops, conditionals); delegate complex reasoning or generation to LM calls.
 5. Incorporate control flow: Add loops, conditionals, sub-modules in custom modules if the task requires iteration (e.g., multi-turn reasoning, selection, voting, etc.).
 6. Leverage LM strengths: For code-heavy tasks, define signatures with 'code' outputs, extract and execute the generated code in the module's forward pass.
-
-Here's my current code:
-```
-<curr_param>
-```
-
-Here is the execution trace of the current code on example inputs, their outputs, and detailed feedback on improvements:
-```
-<side_info>
-```
 
 Assignment:
 - Think step-by-step: First, deeply analyze the current code, traces, and feedback to identify failure modes, strengths, and opportunities.

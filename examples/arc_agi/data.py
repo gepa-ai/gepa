@@ -1,32 +1,41 @@
-import random
-
-import dspy
 from datasets import load_dataset
+import dspy
+import random
+from typing import List
+import pydantic
+
+MATRIX = List[List[int]]
 
 
-def format_dataset(data):
-    return [
+class TrainingExample(pydantic.BaseModel):
+    input: MATRIX
+    output: MATRIX
+
+
+def load_data():
+    ds = load_dataset("dataartist/arc-agi")
+    trainset = [
         dspy.Example(
-            training_examples=ex["train"],
+            training_examples=[TrainingExample(**train_ex) for train_ex in ex["train"]],
             test_inputs=[x["input"] for x in ex["test"]],
             test_outputs=[x["output"] for x in ex["test"]],
         ).with_inputs("training_examples", "test_inputs")
-        for ex in data
+        for ex in ds["training"]
+    ]
+    testset = [
+        dspy.Example(
+            training_examples=[TrainingExample(**train_ex) for train_ex in ex["train"]],
+            test_inputs=[x["input"] for x in ex["test"]],
+            test_outputs=[x["output"] for x in ex["test"]],
+        ).with_inputs("training_examples", "test_inputs")
+        for ex in ds["evaluation"]
     ]
 
+    random.Random(0).shuffle(trainset)
 
-def load_arc_agi_dataset():
-    ds = load_dataset("dataartist/arc-agi")
-
-    full_train = format_dataset(ds["training"])
-    test_set = format_dataset(ds["evaluation"])
-
-    random.Random(0).shuffle(full_train)
-
-    # Using the split logic from the notebook (50/50 split)
-    split_idx = len(full_train) // 2
-    train_set, val_set = full_train[:split_idx], full_train[split_idx:]
-
+    test_set = testset
+    val_set = trainset[-200:]
+    train_set = [ex for ex in trainset[:-200]]
     print(f"Train set: {len(train_set)}")
     print(f"Val set: {len(val_set)}")
     print(f"Test set: {len(test_set)}")
