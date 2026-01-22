@@ -339,7 +339,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if self.display_progress_bar and progress_bar is not None:
             progress_bar.close()
 
-        state.save(self.run_dir)
+        state.save(self.run_dir, use_cloudpickle=self.use_cloudpickle)
         return state
 
     def _should_stop(self, state: GEPAState[RolloutOutput, DataId]) -> bool:
