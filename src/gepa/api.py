@@ -166,6 +166,10 @@ def optimize(
     - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
     - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
     """
+    # Validate seed_candidate is not None or empty
+    if seed_candidate is None or not seed_candidate:
+        raise ValueError("seed_candidate must contain at least one component text.")
+
     active_adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None
     if adapter is None:
         assert task_lm is not None, (
