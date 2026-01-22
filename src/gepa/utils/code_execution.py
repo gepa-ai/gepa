@@ -451,10 +451,14 @@ try:
         _context["__return__"] = _result
 
     # Extract variables (exclude Python dunder variables, but keep user private vars)
+    import types
+    def _is_picklable(v):
+        return not isinstance(v, (types.ModuleType, types.FunctionType, type))
+
     if _capture_variables:
-        _variables = {{k: _context.get(k) for k in _capture_variables}}
+        _variables = {{k: _context.get(k) for k in _capture_variables if _is_picklable(_context.get(k))}}
     else:
-        _variables = {{k: v for k, v in _context.items() if not k.startswith("__")}}
+        _variables = {{k: v for k, v in _context.items() if not k.startswith("__") and _is_picklable(v)}}
 
     if "__return__" in _context:
         _variables["__return__"] = _context["__return__"]
