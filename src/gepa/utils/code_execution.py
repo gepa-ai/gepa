@@ -401,14 +401,14 @@ def _execute_subprocess(
     results_path = args_path + ".results"
 
     # Build wrapper script
-    wrapper_script = f'''
+    wrapper_script = f"""
 import sys
 import pickle
 import traceback
 import random
 
 # Load arguments
-with open({repr(args_path)}, 'rb') as f:
+with open({args_path!r}, 'rb') as f:
     _args = pickle.load(f)
 
 _code = _args['code']
@@ -468,9 +468,9 @@ except Exception as _e:
         "traceback": traceback.format_exc(),
     }}
 
-with open({repr(results_path)}, 'wb') as f:
+with open({results_path!r}, 'wb') as f:
     pickle.dump(_output, f)
-'''
+"""
 
     # Write wrapper script
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as script_file:

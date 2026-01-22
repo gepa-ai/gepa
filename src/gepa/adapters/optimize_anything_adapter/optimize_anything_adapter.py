@@ -60,7 +60,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         candidate: dict[str, str],
     ) -> list[tuple[float, Any, "SideInfo"]]:
         """Evaluate batch in parallel using ThreadPoolExecutor."""
-        results: list[tuple[int, tuple[float, Any, "SideInfo"]]] = []
+        results: list[tuple[int, tuple[float, Any, SideInfo]]] = []
 
         with ThreadPoolExecutor(max_workers=self.max_workers or len(batch)) as executor:
             # Submit all tasks with their index to maintain order

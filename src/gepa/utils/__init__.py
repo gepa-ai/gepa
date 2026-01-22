@@ -6,6 +6,14 @@ This module provides:
 - Code execution utilities for safely running generated code in fitness functions
 """
 
+# Code execution utilities for fitness functions that evaluate generated code
+from .code_execution import (
+    CodeExecutionResult,
+    ExecutionMode,
+    TimeLimitError,
+    execute_code,
+    get_code_hash,
+)
 from .stop_condition import (
     CompositeStopper,
     FileStopper,
@@ -15,15 +23,6 @@ from .stop_condition import (
     SignalStopper,
     StopperProtocol,
     TimeoutStopCondition,
-)
-
-# Code execution utilities for fitness functions that evaluate generated code
-from .code_execution import (
-    CodeExecutionResult,
-    ExecutionMode,
-    TimeLimitError,
-    execute_code,
-    get_code_hash,
 )
 
 __all__ = [
