@@ -1,0 +1,9 @@
+{
+    "score": 8.017791361647967,
+    "Input": "RosenbrockLog",
+    "Prints": "",
+    "Logs": "",
+    "Error": "",
+    "code": "\nimport numpy as np\n\ndef solve(objective_function, config, prev_best_x=None):\n    bounds = np.array(config['bounds'])\n    x = np.random.uniform(bounds[:, 0], bounds[:, 1])\n    y = objective_function(x)\n    return x\n",
+    "X": "0.195254015709299 0.2170870357545005 1.4041450641074658 0.17953273198758746 1.3083857592066857 0.2606293957332966 -0.24965115494922996 0.8536736025026554 1.952761588651338 -0.4662339246968892 1.1669001523306584"
+}
