@@ -105,7 +105,7 @@ class ExperimentTracker:
                 import mlflow  # type: ignore
 
                 # MLflow only accepts numeric metrics, filter out non-numeric values
-                numeric_metrics = {k: v for k, v in metrics.items() if isinstance(v, int | float)}
+                numeric_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, int | float)}
                 if numeric_metrics:
                     mlflow.log_metrics(numeric_metrics, step=step)
             except Exception as e:
