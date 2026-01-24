@@ -142,6 +142,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             new_texts = self.propose_new_texts(curr_prog, reflective_dataset, predictor_names_to_update)
             for pname, text in new_texts.items():
                 self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
+            self.experiment_tracker.log_metrics(
+                {f"new_instruction_{pname}": text for pname, text in new_texts.items()}, step=i
+            )
         except Exception as e:
             self.logger.log(f"Iteration {i}: Exception during reflection/proposal: {e}")
             import traceback

@@ -226,15 +226,17 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             evaluation_cache=self._initial_evaluation_cache,
         )
 
-        # Log base program score and initial metric tracking
+        # Log base program score
         base_val_avg, base_val_coverage = state.get_program_average_val_subset(0)
-        base_metrics = {
-            "base_program_full_valset_score": base_val_avg,
-            "base_program_val_coverage": base_val_coverage,
-            "iteration": state.i + 1,
-            "metric_calls_issued": state.total_num_evals,
-        }
-        self.experiment_tracker.log_metrics(base_metrics, step=state.i + 1)
+        self.experiment_tracker.log_metrics(
+            {
+                "base_program_full_valset_score": base_val_avg,
+                "base_program_val_coverage": base_val_coverage,
+                "iteration": state.i + 1,
+                "metric_calls_issued": state.total_num_evals,
+            },
+            step=state.i + 1,
+        )
 
         self.logger.log(
             f"Iteration {state.i + 1}: Base program full valset score: {base_val_avg} "
