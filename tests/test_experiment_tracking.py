@@ -619,7 +619,7 @@ class TestExperimentTrackerIntegration:
                     "loss": 0.5,
                     "accuracy": 0.9,
                     "iteration": 10,
-                    "metric_calls_issued": 100,
+                    "total_metric_calls": 100,
                     # Non-numeric values that should be filtered out for mlflow
                     "model_name": "gpt-4",
                     "config": {"lr": 0.001, "batch_size": 32},
@@ -643,11 +643,11 @@ class TestExperimentTrackerIntegration:
         assert "loss" in metrics
         assert "accuracy" in metrics
         assert "iteration" in metrics
-        assert "metric_calls_issued" in metrics
+        assert "total_metric_calls" in metrics
         assert metrics["loss"] == 0.5
         assert metrics["accuracy"] == 0.9
         assert metrics["iteration"] == 10
-        assert metrics["metric_calls_issued"] == 100
+        assert metrics["total_metric_calls"] == 100
 
         # Non-numeric metrics should NOT be present
         assert "model_name" not in metrics
