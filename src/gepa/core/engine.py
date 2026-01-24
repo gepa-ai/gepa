@@ -233,6 +233,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 "base_program_full_valset_score": base_val_avg,
                 "base_program_val_coverage": base_val_coverage,
                 "iteration": state.i + 1,
+                "total_metric_calls": state.total_num_evals,
             },
             step=state.i + 1,
         )
