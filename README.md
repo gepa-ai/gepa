@@ -10,7 +10,7 @@
 
 [![PyPI - Version](https://img.shields.io/pypi/v/gepa)](https://pypi.org/project/gepa/) [![PyPI Downloads](https://static.pepy.tech/badge/gepa)](https://pepy.tech/projects/gepa)
 
-[![Chat on Slack](https://img.shields.io/badge/Chat-on_Slack-4A154B?logo=slack&logoColor=white&style=flat)](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/WXFSeVGdbW?style=flat)](https://discord.gg/WXFSeVGdbW) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/A7dABbtmFw?style=flat)](https://discord.gg/A7dABbtmFw)
+[![GEPA](https://badgen.net/badge/icon/GEPA?icon=slack&label&color=4A154B)](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/WXFSeVGdbW?style=flat)](https://discord.gg/WXFSeVGdbW) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/A7dABbtmFw?style=flat)](https://discord.gg/A7dABbtmFw)
 
 ## Overview
 
