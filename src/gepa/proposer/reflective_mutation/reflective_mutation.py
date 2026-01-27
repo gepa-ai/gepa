@@ -123,7 +123,10 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             ),
         )
 
-        self.experiment_tracker.log_metrics({"iteration": i, "selected_program_candidate": curr_prog_id}, step=i)
+        self.experiment_tracker.log_metrics(
+            {"iteration": i, "selected_program_candidate": curr_prog_id, "total_metric_calls": state.total_num_evals},
+            step=i,
+        )
 
         subsample_ids = self.batch_sampler.next_minibatch_ids(self.trainset, state)
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
@@ -213,7 +216,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             )
             return None
 
-        self.experiment_tracker.log_metrics({"subsample_score": sum(eval_curr.scores)}, step=i)
+        self.experiment_tracker.log_metrics(
+            {"subsample_score": sum(eval_curr.scores), "total_metric_calls": state.total_num_evals}, step=i
+        )
 
         # 2) Decide which predictors to update
         predictor_names_to_update = self.module_selector(
@@ -328,7 +333,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         state.full_program_trace[-1]["new_subsample_scores"] = new_scores
 
         new_sum = sum(new_scores)
-        self.experiment_tracker.log_metrics({"new_subsample_score": new_sum}, step=i)
+        self.experiment_tracker.log_metrics(
+            {"new_subsample_score": new_sum, "total_metric_calls": state.total_num_evals}, step=i
+        )
 
         return CandidateProposal(
             candidate=new_candidate,

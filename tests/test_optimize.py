@@ -1,8 +1,9 @@
-from unittest.mock import Mock
 import re
-from gepa.core.adapter import EvaluationBatch
-from gepa import optimize
+from unittest.mock import Mock
+
 import pytest
+
+from gepa import optimize
 
 
 def test_reflection_prompt_template():
@@ -78,6 +79,62 @@ def test_reflection_prompt_template_missing_placeholders():
             task_lm=task_lm,
             reflection_lm=mock_reflection_lm,
             reflection_prompt_template=custom_template,
+            max_metric_calls=2,
+            reflection_minibatch_size=1,
+        )
+
+
+def test_empty_seed_candidate():
+    """Test that optimize() fails gracefully with empty seed_candidate."""
+    mock_data = [
+        {
+            "input": "my_input",
+            "answer": "my_answer",
+            "additional_context": {"context": "my_context"},
+        }
+    ]
+
+    task_lm = Mock()
+    task_lm.return_value = "test response"
+
+    def mock_reflection_lm(prompt):
+        return "```\nimproved instructions\n```"
+
+    # Test with empty dict
+    with pytest.raises(ValueError, match=r"seed_candidate must contain at least one component text\."):
+        optimize(
+            seed_candidate={},
+            trainset=mock_data,
+            task_lm=task_lm,
+            reflection_lm=mock_reflection_lm,
+            max_metric_calls=2,
+            reflection_minibatch_size=1,
+        )
+
+
+def test_none_seed_candidate():
+    """Test that optimize() fails gracefully with None seed_candidate."""
+    mock_data = [
+        {
+            "input": "my_input",
+            "answer": "my_answer",
+            "additional_context": {"context": "my_context"},
+        }
+    ]
+
+    task_lm = Mock()
+    task_lm.return_value = "test response"
+
+    def mock_reflection_lm(prompt):
+        return "```\nimproved instructions\n```"
+
+    # Test with None - Note: this will be caught by type checker, but we test runtime behavior
+    with pytest.raises(ValueError, match=r"seed_candidate must contain at least one component text\."):
+        optimize(
+            seed_candidate=None,  # type: ignore
+            trainset=mock_data,
+            task_lm=task_lm,
+            reflection_lm=mock_reflection_lm,
             max_metric_calls=2,
             reflection_minibatch_size=1,
         )

@@ -8,7 +8,9 @@
   <em>Optimize text components—AI prompts, code, or instructions—of any system using reflective text evolution.</em>
 </p>
 
-[![PyPI - Version](https://img.shields.io/pypi/v/gepa)](https://pypi.org/project/gepa/) [![PyPI Downloads](https://static.pepy.tech/badge/gepa)](https://pepy.tech/projects/gepa) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/A7dABbtmFw?style=flat)](https://discord.gg/A7dABbtmFw)
+[![PyPI - Version](https://img.shields.io/pypi/v/gepa)](https://pypi.org/project/gepa/) [![PyPI Downloads](https://static.pepy.tech/badge/gepa)](https://pepy.tech/projects/gepa)
+
+[![GEPA](https://badgen.net/badge/icon/GEPA?icon=slack&label&color=4A154B)](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/WXFSeVGdbW?style=flat)](https://discord.gg/WXFSeVGdbW) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/A7dABbtmFw?style=flat)](https://discord.gg/A7dABbtmFw)
 
 ## Overview
 

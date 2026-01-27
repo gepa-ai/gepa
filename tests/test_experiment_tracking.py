@@ -601,3 +601,55 @@ class TestExperimentTrackerIntegration:
         assert metrics["learning_rate"] == 0.001
         assert metrics["final_loss"] == 0.1
         assert metrics["test_metric"] == 42
+
+    @pytest.mark.skipif(not has_mlflow(), reason="mlflow not available")
+    def test_mlflow_filters_non_numeric_metrics(self, temp_dir):
+        """Test that mlflow filters out non-numeric metrics (strings, dicts, lists)."""
+        tracker = ExperimentTracker(
+            use_wandb=False,
+            use_mlflow=True,
+            mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+            mlflow_experiment_name="test-experiment",
+        )
+
+        with tracker:
+            # Log a mix of numeric and non-numeric metrics
+            tracker.log_metrics(
+                {
+                    "loss": 0.5,
+                    "accuracy": 0.9,
+                    "iteration": 10,
+                    "total_metric_calls": 100,
+                    # Non-numeric values that should be filtered out for mlflow
+                    "model_name": "gpt-4",
+                    "config": {"lr": 0.001, "batch_size": 32},
+                    "tags": ["train", "v1"],
+                },
+                step=1,
+            )
+
+        # Verify only numeric metrics were logged to mlflow
+        from mlflow.tracking import MlflowClient
+
+        client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
+        experiment = client.get_experiment_by_name("test-experiment")
+        runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+        assert len(runs) > 0
+
+        run = runs[0]
+        metrics = run.data.metrics
+
+        # Numeric metrics should be present
+        assert "loss" in metrics
+        assert "accuracy" in metrics
+        assert "iteration" in metrics
+        assert "total_metric_calls" in metrics
+        assert metrics["loss"] == 0.5
+        assert metrics["accuracy"] == 0.9
+        assert metrics["iteration"] == 10
+        assert metrics["total_metric_calls"] == 100
+
+        # Non-numeric metrics should NOT be present
+        assert "model_name" not in metrics
+        assert "config" not in metrics
+        assert "tags" not in metrics
