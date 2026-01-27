@@ -106,7 +106,7 @@ class EvaluationStartEvent(TypedDict):
     capture_traces: bool
     parent_ids: Sequence[ProgramIdx]
     inputs: list[Any]
-    is_seed: bool
+    is_seed_candidate: bool
 
 
 class EvaluationEndEvent(TypedDict):
@@ -120,7 +120,7 @@ class EvaluationEndEvent(TypedDict):
     outputs: list[Any]
     trajectories: list[Any] | None
     objective_scores: list[dict[str, float]] | None
-    is_seed: bool
+    is_seed_candidate: bool
 
 
 class EvaluationSkippedEvent(TypedDict):
@@ -130,7 +130,7 @@ class EvaluationSkippedEvent(TypedDict):
     candidate_idx: int
     reason: str
     scores: list[float] | None
-    is_seed: bool
+    is_seed_candidate: bool
 
 
 class ReflectiveDatasetBuiltEvent(TypedDict):

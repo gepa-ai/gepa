@@ -146,7 +146,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         # 1) Evaluate current program with traces
         # Note: We don't use cache for capture_traces=True evaluations since we need fresh traces for reflection
         curr_parent_ids = [p for p in state.parent_program_for_candidate[curr_prog_id] if p is not None]
-        is_seed = curr_prog_id == 0
+        is_seed_candidate = curr_prog_id == 0
         notify_callbacks(
             self.callbacks,
             "on_evaluation_start",
@@ -157,7 +157,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 capture_traces=True,
                 parent_ids=curr_parent_ids,
                 inputs=minibatch,
-                is_seed=is_seed,
+                is_seed_candidate=is_seed_candidate,
             ),
         )
         eval_curr = self.adapter.evaluate(minibatch, curr_prog, capture_traces=True)
@@ -175,7 +175,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 outputs=eval_curr.outputs,
                 trajectories=eval_curr.trajectories,
                 objective_scores=eval_curr.objective_scores,
-                is_seed=is_seed,
+                is_seed_candidate=is_seed_candidate,
             ),
         )
 
@@ -196,7 +196,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                     candidate_idx=curr_prog_id,
                     reason="no_trajectories",
                     scores=eval_curr.scores,
-                    is_seed=is_seed,
+                    is_seed_candidate=is_seed_candidate,
                 ),
             )
             return None
@@ -211,7 +211,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                     candidate_idx=curr_prog_id,
                     reason="all_scores_perfect",
                     scores=eval_curr.scores,
-                    is_seed=is_seed,
+                    is_seed_candidate=is_seed_candidate,
                 ),
             )
             return None
@@ -303,7 +303,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 capture_traces=False,
                 parent_ids=[curr_prog_id],
                 inputs=minibatch,
-                is_seed=False,
+                is_seed_candidate=False,
             ),
         )
 
@@ -325,7 +325,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 outputs=outputs,
                 trajectories=None,
                 objective_scores=[objective_by_id[eid] for eid in subsample_ids] if objective_by_id else None,
-                is_seed=False,
+                is_seed_candidate=False,
             ),
         )
 

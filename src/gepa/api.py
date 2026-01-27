@@ -4,7 +4,10 @@
 import os
 import random
 from collections.abc import Sequence
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+if TYPE_CHECKING:
+    from gepa.core.callbacks import GEPACallback
 
 from gepa.adapters.default_adapter.default_adapter import (
     ChatCompletionCallable,
@@ -63,7 +66,7 @@ def optimize(
     # Logging and Callbacks
     logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
-    callbacks: list[Any] | None = None,
+    callbacks: "list[GEPACallback] | None" = None,
     use_wandb: bool = False,
     wandb_api_key: str | None = None,
     wandb_init_kwargs: dict[str, Any] | None = None,

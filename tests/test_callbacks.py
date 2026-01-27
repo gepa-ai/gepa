@@ -440,7 +440,7 @@ class TestEvaluationEvents:
                 capture_traces=True,
                 parent_ids=[0],
                 inputs=test_inputs,
-                is_seed=False,
+                is_seed_candidate=False,
             ),
         )
 
@@ -450,7 +450,7 @@ class TestEvaluationEvents:
         assert calls[0]["capture_traces"] is True
         assert calls[0]["parent_ids"] == [0]
         assert calls[0]["inputs"] == test_inputs
-        assert calls[0]["is_seed"] is False
+        assert calls[0]["is_seed_candidate"] is False
 
     def test_on_evaluation_end_scores_are_list_of_floats(self):
         """Verify scores argument is correctly typed."""
@@ -478,7 +478,7 @@ class TestEvaluationEvents:
                 outputs=test_outputs,
                 trajectories=test_trajectories,
                 objective_scores=test_objective_scores,
-                is_seed=False,
+                is_seed_candidate=False,
             ),
         )
 
@@ -491,7 +491,7 @@ class TestEvaluationEvents:
         assert calls[0]["outputs"] == test_outputs
         assert calls[0]["trajectories"] == test_trajectories
         assert calls[0]["objective_scores"] == test_objective_scores
-        assert calls[0]["is_seed"] is False
+        assert calls[0]["is_seed_candidate"] is False
 
     def test_on_evaluation_start_with_new_candidate(self):
         """Verify evaluation of new candidate has candidate_idx=None and parent_ids set."""
@@ -510,7 +510,7 @@ class TestEvaluationEvents:
                 capture_traces=False,
                 parent_ids=[3],
                 inputs=test_inputs,
-                is_seed=False,
+                is_seed_candidate=False,
             ),
         )
 
@@ -519,7 +519,7 @@ class TestEvaluationEvents:
         assert calls[0]["candidate_idx"] is None
         assert calls[0]["parent_ids"] == [3]
         assert calls[0]["inputs"] == test_inputs
-        assert calls[0]["is_seed"] is False
+        assert calls[0]["is_seed_candidate"] is False
 
     def test_on_evaluation_with_merge_parents(self):
         """Verify merge evaluation has candidate_idx=None and parent_ids with 2 elements."""
@@ -539,7 +539,7 @@ class TestEvaluationEvents:
                 capture_traces=False,
                 parent_ids=[2, 7],
                 inputs=test_inputs,
-                is_seed=False,
+                is_seed_candidate=False,
             ),
         )
 
@@ -555,7 +555,7 @@ class TestEvaluationEvents:
                 outputs=test_outputs,
                 trajectories=None,
                 objective_scores=None,
-                is_seed=False,
+                is_seed_candidate=False,
             ),
         )
 
@@ -566,7 +566,7 @@ class TestEvaluationEvents:
         assert start_calls[0]["candidate_idx"] is None
         assert start_calls[0]["parent_ids"] == [2, 7]
         assert start_calls[0]["inputs"] == test_inputs
-        assert start_calls[0]["is_seed"] is False
+        assert start_calls[0]["is_seed_candidate"] is False
 
         assert len(end_calls) == 1
         assert end_calls[0]["candidate_idx"] is None
@@ -574,10 +574,10 @@ class TestEvaluationEvents:
         assert end_calls[0]["outputs"] == test_outputs
         assert end_calls[0]["trajectories"] is None
         assert end_calls[0]["objective_scores"] is None
-        assert end_calls[0]["is_seed"] is False
+        assert end_calls[0]["is_seed_candidate"] is False
 
     def test_on_evaluation_with_seed_candidate(self):
-        """Verify seed candidate evaluation has empty parent_ids and is_seed=True."""
+        """Verify seed candidate evaluation has empty parent_ids and is_seed_candidate=True."""
         callback = RecordingCallback()
 
         test_inputs = [{"seed_input": i} for i in range(20)]
@@ -593,7 +593,7 @@ class TestEvaluationEvents:
                 capture_traces=True,
                 parent_ids=[],
                 inputs=test_inputs,
-                is_seed=True,
+                is_seed_candidate=True,
             ),
         )
 
@@ -602,7 +602,7 @@ class TestEvaluationEvents:
         assert calls[0]["candidate_idx"] == 0
         assert calls[0]["parent_ids"] == []
         assert calls[0]["inputs"] == test_inputs
-        assert calls[0]["is_seed"] is True
+        assert calls[0]["is_seed_candidate"] is True
 
     def test_on_evaluation_skipped_no_trajectories(self):
         """Verify on_evaluation_skipped called when no trajectories captured."""
@@ -616,7 +616,7 @@ class TestEvaluationEvents:
                 candidate_idx=1,
                 reason="no_trajectories",
                 scores=[0.8, 0.9, 0.7],
-                is_seed=False,
+                is_seed_candidate=False,
             ),
         )
 
@@ -626,7 +626,7 @@ class TestEvaluationEvents:
         assert calls[0]["candidate_idx"] == 1
         assert calls[0]["reason"] == "no_trajectories"
         assert calls[0]["scores"] == [0.8, 0.9, 0.7]
-        assert calls[0]["is_seed"] is False
+        assert calls[0]["is_seed_candidate"] is False
 
     def test_on_evaluation_skipped_perfect_scores(self):
         """Verify on_evaluation_skipped called when all scores are perfect."""
@@ -640,7 +640,7 @@ class TestEvaluationEvents:
                 candidate_idx=2,
                 reason="all_scores_perfect",
                 scores=[1.0, 1.0, 1.0, 1.0],
-                is_seed=False,
+                is_seed_candidate=False,
             ),
         )
 
@@ -650,7 +650,7 @@ class TestEvaluationEvents:
         assert calls[0]["candidate_idx"] == 2
         assert calls[0]["reason"] == "all_scores_perfect"
         assert all(s == 1.0 for s in calls[0]["scores"])
-        assert calls[0]["is_seed"] is False
+        assert calls[0]["is_seed_candidate"] is False
 
     def test_on_evaluation_skipped_with_none_scores(self):
         """Verify on_evaluation_skipped handles None scores gracefully."""
@@ -664,14 +664,14 @@ class TestEvaluationEvents:
                 candidate_idx=0,
                 reason="no_trajectories",
                 scores=None,
-                is_seed=True,
+                is_seed_candidate=True,
             ),
         )
 
         calls = callback.get_calls("on_evaluation_skipped")
         assert len(calls) == 1
         assert calls[0]["scores"] is None
-        assert calls[0]["is_seed"] is True
+        assert calls[0]["is_seed_candidate"] is True
 
 
 # =============================================================================
