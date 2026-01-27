@@ -328,6 +328,26 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ),
         )
 
+        # Notify callbacks of seed candidate's initial valset evaluation (iteration 0)
+        # This provides the baseline performance before any optimization
+        seed_scores = state.prog_candidate_val_subscores[0]
+        notify_callbacks(
+            self.callbacks,
+            "on_valset_evaluated",
+            ValsetEvaluatedEvent(
+                iteration=0,
+                candidate_idx=0,
+                candidate=self.seed_candidate,
+                scores_by_val_id=dict(seed_scores),
+                average_score=base_val_avg,
+                num_examples_evaluated=len(seed_scores),
+                total_valset_size=len(valset),
+                parent_ids=[],
+                is_best_program=True,  # Seed is always best at iteration 0
+                outputs_by_val_id=None,  # Outputs not tracked at initialization unless track_best_outputs=True
+            ),
+        )
+
         # Register budget hook to fire on_budget_updated callback in real-time
         def budget_hook(new_total: int, delta: int) -> None:
             notify_callbacks(
