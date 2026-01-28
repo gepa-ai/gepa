@@ -1,0 +1,16 @@
+# MkDocs and theme
+mkdocs-material
+mkdocs-material[imaging]
+
+# API documentation
+mkdocstrings
+mkdocstrings-python
+
+# Jupyter notebook support
+mkdocs-jupyter
+
+# Search
+mkdocs
+
+# GEPA package (for API doc generation)
+-e ../[full]
