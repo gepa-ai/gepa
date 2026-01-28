@@ -1,6 +1,6 @@
-# CandidateSelector
+# ParetoCandidateSelector
 
-::: gepa.proposer.reflective_mutation.base.CandidateSelector
+::: gepa.strategies.candidate_selector.ParetoCandidateSelector
     handler: python
     options:
         show_source: true

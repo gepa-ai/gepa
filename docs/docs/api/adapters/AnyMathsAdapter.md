@@ -1,6 +1,6 @@
-# CandidateSelector
+# AnyMathsAdapter
 
-::: gepa.proposer.reflective_mutation.base.CandidateSelector
+::: gepa.adapters.anymaths_adapter.anymaths_adapter.AnyMathsAdapter
     handler: python
     options:
         show_source: true

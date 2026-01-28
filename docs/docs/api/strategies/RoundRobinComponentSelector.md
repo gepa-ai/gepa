@@ -1,6 +1,6 @@
-# CandidateSelector
+# RoundRobinComponentSelector
 
-::: gepa.proposer.reflective_mutation.base.CandidateSelector
+::: gepa.strategies.component_selector.RoundRobinReflectionComponentSelector
     handler: python
     options:
         show_source: true

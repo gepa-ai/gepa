@@ -1,6 +1,6 @@
-# CandidateSelector
+# ProposeNewCandidate
 
-::: gepa.proposer.reflective_mutation.base.CandidateSelector
+::: gepa.proposer.base.ProposeNewCandidate
     handler: python
     options:
         show_source: true

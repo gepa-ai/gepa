@@ -1,6 +1,6 @@
-# CandidateSelector
+# LanguageModel
 
-::: gepa.proposer.reflective_mutation.base.CandidateSelector
+::: gepa.proposer.reflective_mutation.base.LanguageModel
     handler: python
     options:
         show_source: true

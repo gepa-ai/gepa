@@ -1,6 +1,6 @@
-# CandidateSelector
+# EpochShuffledBatchSampler
 
-::: gepa.proposer.reflective_mutation.base.CandidateSelector
+::: gepa.strategies.batch_sampler.EpochShuffledBatchSampler
     handler: python
     options:
         show_source: true

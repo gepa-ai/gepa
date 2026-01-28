@@ -1,6 +1,6 @@
-# CandidateSelector
+# InstructionProposalSignature
 
-::: gepa.proposer.reflective_mutation.base.CandidateSelector
+::: gepa.strategies.instruction_proposal.InstructionProposalSignature
     handler: python
     options:
         show_source: true

@@ -1,6 +1,6 @@
-# CandidateSelector
+# EpsilonGreedyCandidateSelector
 
-::: gepa.proposer.reflective_mutation.base.CandidateSelector
+::: gepa.strategies.candidate_selector.EpsilonGreedyCandidateSelector
     handler: python
     options:
         show_source: true

@@ -31,8 +31,24 @@ API_MAPPING = {
     ],
     "adapters": [
         ("gepa.adapters.default_adapter.default_adapter", "DefaultAdapter", "DefaultAdapter"),
+        ("gepa.adapters.dspy_adapter.dspy_adapter", "DspyAdapter", "DSPyAdapter"),
+        ("gepa.adapters.dspy_full_program_adapter.full_program_adapter", "DspyAdapter", "DSPyFullProgramAdapter"),
         ("gepa.adapters.generic_rag_adapter.generic_rag_adapter", "GenericRAGAdapter", "RAGAdapter"),
         ("gepa.adapters.mcp_adapter.mcp_adapter", "MCPAdapter", "MCPAdapter"),
+        ("gepa.adapters.terminal_bench_adapter.terminal_bench_adapter", "TerminusAdapter", "TerminalBenchAdapter"),
+        ("gepa.adapters.anymaths_adapter.anymaths_adapter", "AnyMathsAdapter", "AnyMathsAdapter"),
+    ],
+    "proposers": [
+        ("gepa.proposer.base", "CandidateProposal", "CandidateProposal"),
+        ("gepa.proposer.base", "ProposeNewCandidate", "ProposeNewCandidate"),
+        (
+            "gepa.proposer.reflective_mutation.reflective_mutation",
+            "ReflectiveMutationProposer",
+            "ReflectiveMutationProposer",
+        ),
+        ("gepa.proposer.merge", "MergeProposer", "MergeProposer"),
+        ("gepa.proposer.reflective_mutation.base", "Signature", "Signature"),
+        ("gepa.proposer.reflective_mutation.base", "LanguageModel", "LanguageModel"),
     ],
     "logging": [
         ("gepa.logging.logger", "LoggerProtocol", "LoggerProtocol"),
@@ -40,8 +56,17 @@ API_MAPPING = {
     ],
     "strategies": [
         ("gepa.strategies.batch_sampler", "BatchSampler", "BatchSampler"),
-        ("gepa.strategies.candidate_selector", "CandidateSelector", "CandidateSelector"),
+        ("gepa.strategies.batch_sampler", "EpochShuffledBatchSampler", "EpochShuffledBatchSampler"),
+        ("gepa.proposer.reflective_mutation.base", "CandidateSelector", "CandidateSelector"),
+        ("gepa.strategies.candidate_selector", "ParetoCandidateSelector", "ParetoCandidateSelector"),
+        ("gepa.strategies.candidate_selector", "CurrentBestCandidateSelector", "CurrentBestCandidateSelector"),
+        ("gepa.strategies.candidate_selector", "EpsilonGreedyCandidateSelector", "EpsilonGreedyCandidateSelector"),
+        ("gepa.proposer.reflective_mutation.base", "ReflectionComponentSelector", "ComponentSelector"),
+        ("gepa.strategies.component_selector", "RoundRobinReflectionComponentSelector", "RoundRobinComponentSelector"),
+        ("gepa.strategies.component_selector", "AllReflectionComponentSelector", "AllComponentSelector"),
         ("gepa.strategies.eval_policy", "EvaluationPolicy", "EvaluationPolicy"),
+        ("gepa.strategies.eval_policy", "FullEvaluationPolicy", "FullEvaluationPolicy"),
+        ("gepa.strategies.instruction_proposal", "InstructionProposalSignature", "InstructionProposalSignature"),
     ],
 }
 
@@ -118,8 +143,22 @@ Stop conditions control when optimization terminates.
 Adapters integrate GEPA with different systems and frameworks.
 
 - [`DefaultAdapter`](adapters/DefaultAdapter.md) - Default single-turn LLM adapter
+- [`DSPyAdapter`](adapters/DSPyAdapter.md) - DSPy program adapter
+- [`DSPyFullProgramAdapter`](adapters/DSPyFullProgramAdapter.md) - DSPy full program evolution adapter
 - [`RAGAdapter`](adapters/RAGAdapter.md) - Generic RAG system adapter
 - [`MCPAdapter`](adapters/MCPAdapter.md) - Model Context Protocol adapter
+- [`TerminalBenchAdapter`](adapters/TerminalBenchAdapter.md) - Terminal benchmark adapter
+
+## Proposers
+
+Proposers generate new candidate programs during optimization.
+
+- [`CandidateProposal`](proposers/CandidateProposal.md) - Data class for candidate proposals
+- [`ProposeNewCandidate`](proposers/ProposeNewCandidate.md) - Protocol for proposer strategies
+- [`ReflectiveMutationProposer`](proposers/ReflectiveMutationProposer.md) - LLM-based reflective mutation proposer
+- [`MergeProposer`](proposers/MergeProposer.md) - Merge-based candidate proposer
+- [`Signature`](proposers/Signature.md) - Base class for LLM prompt signatures
+- [`LanguageModel`](proposers/LanguageModel.md) - Protocol for language models
 
 ## Logging
 
@@ -132,9 +171,32 @@ Logging utilities for tracking optimization progress.
 
 Strategies for various aspects of the optimization process.
 
-- [`BatchSampler`](strategies/BatchSampler.md) - Training batch sampling
-- [`CandidateSelector`](strategies/CandidateSelector.md) - Candidate selection for mutation
-- [`EvaluationPolicy`](strategies/EvaluationPolicy.md) - Validation evaluation policy
+### Batch Sampling
+
+- [`BatchSampler`](strategies/BatchSampler.md) - Protocol for batch sampling
+- [`EpochShuffledBatchSampler`](strategies/EpochShuffledBatchSampler.md) - Epoch-based shuffled batch sampler
+
+### Candidate Selection
+
+- [`CandidateSelector`](strategies/CandidateSelector.md) - Protocol for candidate selection
+- [`ParetoCandidateSelector`](strategies/ParetoCandidateSelector.md) - Selects from Pareto front
+- [`CurrentBestCandidateSelector`](strategies/CurrentBestCandidateSelector.md) - Selects current best candidate
+- [`EpsilonGreedyCandidateSelector`](strategies/EpsilonGreedyCandidateSelector.md) - Epsilon-greedy selection
+
+### Component Selection
+
+- [`ComponentSelector`](strategies/ComponentSelector.md) - Protocol for component selection
+- [`RoundRobinComponentSelector`](strategies/RoundRobinComponentSelector.md) - Round-robin component selection
+- [`AllComponentSelector`](strategies/AllComponentSelector.md) - Selects all components
+
+### Evaluation Policy
+
+- [`EvaluationPolicy`](strategies/EvaluationPolicy.md) - Protocol for evaluation policies
+- [`FullEvaluationPolicy`](strategies/FullEvaluationPolicy.md) - Evaluates all validation instances
+
+### Instruction Proposal
+
+- [`InstructionProposalSignature`](strategies/InstructionProposalSignature.md) - Signature for instruction proposal prompts
 """
     (api_dir / "index.md").write_text(index_content)
 

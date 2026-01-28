@@ -1,4 +1,4 @@
-# TerminalBench Adapter
+# TerminalBenchAdapter
 
 ::: gepa.adapters.terminal_bench_adapter.terminal_bench_adapter.TerminusAdapter
     handler: python

@@ -1,6 +1,6 @@
-# CandidateSelector
+# MergeProposer
 
-::: gepa.proposer.reflective_mutation.base.CandidateSelector
+::: gepa.proposer.merge.MergeProposer
     handler: python
     options:
         show_source: true

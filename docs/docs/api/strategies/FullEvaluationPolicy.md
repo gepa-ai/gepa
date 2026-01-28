@@ -1,6 +1,6 @@
-# CandidateSelector
+# FullEvaluationPolicy
 
-::: gepa.proposer.reflective_mutation.base.CandidateSelector
+::: gepa.strategies.eval_policy.FullEvaluationPolicy
     handler: python
     options:
         show_source: true

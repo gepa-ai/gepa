@@ -1,6 +1,6 @@
-# CandidateSelector
+# CurrentBestCandidateSelector
 
-::: gepa.proposer.reflective_mutation.base.CandidateSelector
+::: gepa.strategies.candidate_selector.CurrentBestCandidateSelector
     handler: python
     options:
         show_source: true

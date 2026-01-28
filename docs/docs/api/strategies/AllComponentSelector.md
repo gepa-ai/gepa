@@ -1,6 +1,6 @@
-# CandidateSelector
+# AllComponentSelector
 
-::: gepa.proposer.reflective_mutation.base.CandidateSelector
+::: gepa.strategies.component_selector.AllReflectionComponentSelector
     handler: python
     options:
         show_source: true

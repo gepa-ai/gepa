@@ -44,13 +44,30 @@ nav:
             - RAG Adapter: api/adapters/RAGAdapter.md
             - MCP Adapter: api/adapters/MCPAdapter.md
             - TerminalBench Adapter: api/adapters/TerminalBenchAdapter.md
+        - Proposers:
+            - Proposers Overview: api/proposers/index.md
+            - CandidateProposal: api/proposers/CandidateProposal.md
+            - ProposeNewCandidate: api/proposers/ProposeNewCandidate.md
+            - ReflectiveMutationProposer: api/proposers/ReflectiveMutationProposer.md
+            - MergeProposer: api/proposers/MergeProposer.md
+            - Signature: api/proposers/Signature.md
+            - LanguageModel: api/proposers/LanguageModel.md
         - Logging:
             - LoggerProtocol: api/logging/LoggerProtocol.md
             - ExperimentTracker: api/logging/ExperimentTracker.md
         - Strategies:
             - BatchSampler: api/strategies/BatchSampler.md
+            - EpochShuffledBatchSampler: api/strategies/EpochShuffledBatchSampler.md
             - CandidateSelector: api/strategies/CandidateSelector.md
+            - ParetoCandidateSelector: api/strategies/ParetoCandidateSelector.md
+            - CurrentBestCandidateSelector: api/strategies/CurrentBestCandidateSelector.md
+            - EpsilonGreedyCandidateSelector: api/strategies/EpsilonGreedyCandidateSelector.md
+            - ComponentSelector: api/strategies/ComponentSelector.md
+            - RoundRobinComponentSelector: api/strategies/RoundRobinComponentSelector.md
+            - AllComponentSelector: api/strategies/AllComponentSelector.md
             - EvaluationPolicy: api/strategies/EvaluationPolicy.md
+            - FullEvaluationPolicy: api/strategies/FullEvaluationPolicy.md
+            - InstructionProposalSignature: api/strategies/InstructionProposalSignature.md
 
 theme:
     name: material

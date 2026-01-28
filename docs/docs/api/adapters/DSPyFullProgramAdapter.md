@@ -1,4 +1,4 @@
-# DSPy Full Program Adapter
+# DSPyFullProgramAdapter
 
 ::: gepa.adapters.dspy_full_program_adapter.full_program_adapter.DspyAdapter
     handler: python
