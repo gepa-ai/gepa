@@ -22,7 +22,7 @@ class MyCallback:
         print(f"Iteration {event['iteration']}: {status}")
     
     def on_optimization_end(self, event):
-        print(f"Optimization complete! Best score: {event['total_iterations']} iterations")
+        print(f"Optimization complete! {event['total_iterations']} iterations")
 
 # Use with optimize
 result = gepa.optimize(

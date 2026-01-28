@@ -130,7 +130,7 @@ theme:
         edit: material/pencil
         view: material/eye
     logo: static/img/gepa_logo.svg
-    favicon: static/img/gepa_logo.png
+    favicon: static/img/gepa_logo.svg
 
 plugins:
     - search:
