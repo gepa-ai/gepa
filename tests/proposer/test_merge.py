@@ -247,6 +247,8 @@ def _make_state(prog_val_scores, evaluator=None):
     state.get_pareto_front_mapping = lambda: {
         val_id: set(front) for val_id, front in state.program_at_pareto_front_valset.items()
     }
+    # Add increment_evals method to match GEPAState interface
+    state.increment_evals = lambda count: setattr(state, "total_num_evals", state.total_num_evals + count)
 
     # Add cached_evaluate method to match GEPAState interface (no caching for stubs)
     def cached_evaluate(candidate, example_ids, fetcher, eval_fn):
@@ -254,6 +256,16 @@ def _make_state(prog_val_scores, evaluator=None):
         return scores, len(example_ids)
 
     state.cached_evaluate = cached_evaluate
+
+    # Add cached_evaluate_full method to match GEPAState interface (no caching for stubs)
+    def cached_evaluate_full(candidate, example_ids, fetcher, eval_fn):
+        outputs, scores, obj_scores = eval_fn(fetcher(example_ids), candidate)
+        outputs_by_id = dict(zip(example_ids, outputs, strict=False))
+        scores_by_id = dict(zip(example_ids, scores, strict=False))
+        objective_by_id = dict(zip(example_ids, obj_scores, strict=False)) if obj_scores else None
+        return outputs_by_id, scores_by_id, objective_by_id, len(example_ids)
+
+    state.cached_evaluate_full = cached_evaluate_full
     return state
 
 

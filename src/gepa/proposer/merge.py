@@ -7,6 +7,12 @@ from collections.abc import Callable, Iterable, Sequence
 from copy import deepcopy
 
 from gepa.core.adapter import Candidate, DataInst, RolloutOutput
+from gepa.core.callbacks import (
+    EvaluationEndEvent,
+    EvaluationStartEvent,
+    GEPACallback,
+    notify_callbacks,
+)
 from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState, ObjectiveScores, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
@@ -224,6 +230,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         max_merge_invocations: int,
         val_overlap_floor: int = 5,
         rng: random.Random | None = None,
+        callbacks: list[GEPACallback] | None = None,
     ):
         self.logger = logger
         self.valset = valset
@@ -231,6 +238,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         self.use_merge = use_merge
         self.max_merge_invocations = max_merge_invocations
         self.rng = rng if rng is not None else random.Random(0)
+        self.callbacks = callbacks
 
         if val_overlap_floor <= 0:
             raise ValueError("val_overlap_floor should be a positive integer")
@@ -337,13 +345,51 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
 
-        new_sub_scores, actual_evals_count = state.cached_evaluate(
+        mini_devset = self.valset.fetch(subsample_ids)
+
+        # Notify evaluation start for merged candidate
+        notify_callbacks(
+            self.callbacks,
+            "on_evaluation_start",
+            EvaluationStartEvent(
+                iteration=i,
+                candidate_idx=None,
+                batch_size=len(mini_devset),
+                capture_traces=False,
+                parent_ids=[id1, id2],
+                inputs=mini_devset,
+                is_seed_candidate=False,
+            ),
+        )
+
+        outputs_by_id, scores_by_id, objective_by_id, actual_evals_count = state.cached_evaluate_full(
             new_program, subsample_ids, self.valset.fetch, self.evaluator
         )
+        new_sub_scores = [scores_by_id[eid] for eid in subsample_ids]
+        outputs = [outputs_by_id[eid] for eid in subsample_ids]
+
+        notify_callbacks(
+            self.callbacks,
+            "on_evaluation_end",
+            EvaluationEndEvent(
+                iteration=i,
+                candidate_idx=None,
+                scores=new_sub_scores,
+                has_trajectories=False,
+                parent_ids=[id1, id2],
+                outputs=outputs,
+                trajectories=None,
+                objective_scores=[objective_by_id[eid] for eid in subsample_ids] if objective_by_id else None,
+                is_seed_candidate=False,
+            ),
+        )
+
         state.full_program_trace[-1]["id1_subsample_scores"] = id1_sub_scores
         state.full_program_trace[-1]["id2_subsample_scores"] = id2_sub_scores
         state.full_program_trace[-1]["new_program_subsample_scores"] = new_sub_scores
-        state.total_num_evals += actual_evals_count
+
+        # Count evals via hook mechanism
+        state.increment_evals(actual_evals_count)
 
         # Acceptance will be evaluated by engine (>= max(parents))
         return CandidateProposal(
