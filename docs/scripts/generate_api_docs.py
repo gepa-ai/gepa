@@ -4,9 +4,16 @@ Generate API documentation for GEPA using mkdocstrings.
 
 This script creates markdown files with mkdocstrings directives for
 automatic API documentation generation.
+
+Features:
+- Auto-generates API documentation from API_MAPPING
+- Auto-generates mkdocs nav structure
+- Validates consistency between API_MAPPING and generated files
 """
 
 from pathlib import Path
+
+import yaml
 
 # API documentation mapping
 # Maps category -> list of (module_path, class_or_function_name, display_name)
@@ -18,6 +25,29 @@ API_MAPPING = {
         ("gepa.core.result", "GEPAResult", "GEPAResult"),
         ("gepa.core.callbacks", "GEPACallback", "GEPACallback"),
         ("gepa.core.data_loader", "DataLoader", "DataLoader"),
+        ("gepa.core.state", "GEPAState", "GEPAState"),
+        ("gepa.core.state", "EvaluationCache", "EvaluationCache"),
+    ],
+    "callbacks": [
+        ("gepa.core.callbacks", "GEPACallback", "GEPACallback"),
+        ("gepa.core.callbacks", "CompositeCallback", "CompositeCallback"),
+        ("gepa.core.callbacks", "OptimizationStartEvent", "OptimizationStartEvent"),
+        ("gepa.core.callbacks", "OptimizationEndEvent", "OptimizationEndEvent"),
+        ("gepa.core.callbacks", "IterationStartEvent", "IterationStartEvent"),
+        ("gepa.core.callbacks", "IterationEndEvent", "IterationEndEvent"),
+        ("gepa.core.callbacks", "CandidateSelectedEvent", "CandidateSelectedEvent"),
+        ("gepa.core.callbacks", "CandidateAcceptedEvent", "CandidateAcceptedEvent"),
+        ("gepa.core.callbacks", "CandidateRejectedEvent", "CandidateRejectedEvent"),
+        ("gepa.core.callbacks", "EvaluationStartEvent", "EvaluationStartEvent"),
+        ("gepa.core.callbacks", "EvaluationEndEvent", "EvaluationEndEvent"),
+        ("gepa.core.callbacks", "ValsetEvaluatedEvent", "ValsetEvaluatedEvent"),
+        ("gepa.core.callbacks", "ParetoFrontUpdatedEvent", "ParetoFrontUpdatedEvent"),
+        ("gepa.core.callbacks", "MergeAttemptedEvent", "MergeAttemptedEvent"),
+        ("gepa.core.callbacks", "MergeAcceptedEvent", "MergeAcceptedEvent"),
+        ("gepa.core.callbacks", "MergeRejectedEvent", "MergeRejectedEvent"),
+        ("gepa.core.callbacks", "BudgetUpdatedEvent", "BudgetUpdatedEvent"),
+        ("gepa.core.callbacks", "ErrorEvent", "ErrorEvent"),
+        ("gepa.core.callbacks", "StateSavedEvent", "StateSavedEvent"),
     ],
     "stop_conditions": [
         ("gepa.utils.stop_condition", "StopperProtocol", "StopperProtocol"),
@@ -36,7 +66,6 @@ API_MAPPING = {
         ("gepa.adapters.generic_rag_adapter.generic_rag_adapter", "GenericRAGAdapter", "RAGAdapter"),
         ("gepa.adapters.mcp_adapter.mcp_adapter", "MCPAdapter", "MCPAdapter"),
         ("gepa.adapters.terminal_bench_adapter.terminal_bench_adapter", "TerminusAdapter", "TerminalBenchAdapter"),
-        ("gepa.adapters.anymaths_adapter.anymaths_adapter", "AnyMathsAdapter", "AnyMathsAdapter"),
     ],
     "proposers": [
         ("gepa.proposer.base", "CandidateProposal", "CandidateProposal"),
@@ -52,7 +81,10 @@ API_MAPPING = {
     ],
     "logging": [
         ("gepa.logging.logger", "LoggerProtocol", "LoggerProtocol"),
+        ("gepa.logging.logger", "StdOutLogger", "StdOutLogger"),
+        ("gepa.logging.logger", "Logger", "Logger"),
         ("gepa.logging.experiment_tracker", "ExperimentTracker", "ExperimentTracker"),
+        ("gepa.logging.experiment_tracker", "create_experiment_tracker", "create_experiment_tracker"),
     ],
     "strategies": [
         ("gepa.strategies.batch_sampler", "BatchSampler", "BatchSampler"),
@@ -68,6 +100,38 @@ API_MAPPING = {
         ("gepa.strategies.eval_policy", "FullEvaluationPolicy", "FullEvaluationPolicy"),
         ("gepa.strategies.instruction_proposal", "InstructionProposalSignature", "InstructionProposalSignature"),
     ],
+}
+
+# Category display names and descriptions for index page
+CATEGORY_INFO = {
+    "core": {
+        "title": "Core",
+        "description": "The core module contains the main optimization function and fundamental classes.",
+    },
+    "callbacks": {
+        "title": "Callbacks",
+        "description": "Callback system for observing and instrumenting GEPA optimization runs.",
+    },
+    "stop_conditions": {
+        "title": "Stop Conditions",
+        "description": "Stop conditions control when optimization terminates.",
+    },
+    "adapters": {
+        "title": "Adapters",
+        "description": "Adapters integrate GEPA with different systems and frameworks.",
+    },
+    "proposers": {
+        "title": "Proposers",
+        "description": "Proposers generate new candidate programs during optimization.",
+    },
+    "logging": {
+        "title": "Logging",
+        "description": "Logging utilities for tracking optimization progress.",
+    },
+    "strategies": {
+        "title": "Strategies",
+        "description": "Strategies for various aspects of the optimization process.",
+    },
 }
 
 
@@ -93,10 +157,10 @@ def generate_api_doc(module_path: str, name: str, display_name: str) -> str:
 
 def generate_category_index(category: str, items: list) -> str:
     """Generate index page for a category."""
-    title = category.replace("_", " ").title()
-    content = f"""# {title}
+    info = CATEGORY_INFO.get(category, {"title": category.replace("_", " ").title(), "description": ""})
+    content = f"""# {info["title"]}
 
-This section contains API documentation for GEPA {title.lower()}.
+{info["description"]}
 
 """
     for module_path, name, display_name in items:
@@ -105,99 +169,97 @@ This section contains API documentation for GEPA {title.lower()}.
     return content
 
 
-def main():
-    api_dir = Path("docs/api")
-    api_dir.mkdir(parents=True, exist_ok=True)
-
-    # Generate API index
-    index_content = """# API Reference
+def generate_index_content() -> str:
+    """Auto-generate the API index content from API_MAPPING."""
+    content = """# API Reference
 
 Welcome to the GEPA API Reference. This documentation is auto-generated from the source code docstrings.
 
-## Core
-
-The core module contains the main optimization function and fundamental classes.
-
-- [`optimize`](core/optimize.md) - Main optimization function
-- [`GEPAAdapter`](core/GEPAAdapter.md) - Adapter protocol for integrating GEPA with your system
-- [`EvaluationBatch`](core/EvaluationBatch.md) - Container for evaluation results
-- [`GEPAResult`](core/GEPAResult.md) - Result container from optimization
-- [`GEPACallback`](core/GEPACallback.md) - Callback protocol for optimization events
-- [`DataLoader`](core/DataLoader.md) - Data loading protocol
-
-## Stop Conditions
-
-Stop conditions control when optimization terminates.
-
-- [`StopperProtocol`](stop_conditions/StopperProtocol.md) - Protocol for custom stop conditions
-- [`MaxMetricCallsStopper`](stop_conditions/MaxMetricCallsStopper.md) - Stop after N metric evaluations
-- [`TimeoutStopCondition`](stop_conditions/TimeoutStopCondition.md) - Stop after time limit
-- [`NoImprovementStopper`](stop_conditions/NoImprovementStopper.md) - Stop if no improvement
-- [`ScoreThresholdStopper`](stop_conditions/ScoreThresholdStopper.md) - Stop when score threshold reached
-- [`FileStopper`](stop_conditions/FileStopper.md) - Stop when file exists
-- [`SignalStopper`](stop_conditions/SignalStopper.md) - Stop on OS signal
-- [`CompositeStopper`](stop_conditions/CompositeStopper.md) - Combine multiple stop conditions
-
-## Adapters
-
-Adapters integrate GEPA with different systems and frameworks.
-
-- [`DefaultAdapter`](adapters/DefaultAdapter.md) - Default single-turn LLM adapter
-- [`DSPyAdapter`](adapters/DSPyAdapter.md) - DSPy program adapter
-- [`DSPyFullProgramAdapter`](adapters/DSPyFullProgramAdapter.md) - DSPy full program evolution adapter
-- [`RAGAdapter`](adapters/RAGAdapter.md) - Generic RAG system adapter
-- [`MCPAdapter`](adapters/MCPAdapter.md) - Model Context Protocol adapter
-- [`TerminalBenchAdapter`](adapters/TerminalBenchAdapter.md) - Terminal benchmark adapter
-
-## Proposers
-
-Proposers generate new candidate programs during optimization.
-
-- [`CandidateProposal`](proposers/CandidateProposal.md) - Data class for candidate proposals
-- [`ProposeNewCandidate`](proposers/ProposeNewCandidate.md) - Protocol for proposer strategies
-- [`ReflectiveMutationProposer`](proposers/ReflectiveMutationProposer.md) - LLM-based reflective mutation proposer
-- [`MergeProposer`](proposers/MergeProposer.md) - Merge-based candidate proposer
-- [`Signature`](proposers/Signature.md) - Base class for LLM prompt signatures
-- [`LanguageModel`](proposers/LanguageModel.md) - Protocol for language models
-
-## Logging
-
-Logging utilities for tracking optimization progress.
-
-- [`LoggerProtocol`](logging/LoggerProtocol.md) - Protocol for custom loggers
-- [`ExperimentTracker`](logging/ExperimentTracker.md) - MLflow/WandB integration
-
-## Strategies
-
-Strategies for various aspects of the optimization process.
-
-### Batch Sampling
-
-- [`BatchSampler`](strategies/BatchSampler.md) - Protocol for batch sampling
-- [`EpochShuffledBatchSampler`](strategies/EpochShuffledBatchSampler.md) - Epoch-based shuffled batch sampler
-
-### Candidate Selection
-
-- [`CandidateSelector`](strategies/CandidateSelector.md) - Protocol for candidate selection
-- [`ParetoCandidateSelector`](strategies/ParetoCandidateSelector.md) - Selects from Pareto front
-- [`CurrentBestCandidateSelector`](strategies/CurrentBestCandidateSelector.md) - Selects current best candidate
-- [`EpsilonGreedyCandidateSelector`](strategies/EpsilonGreedyCandidateSelector.md) - Epsilon-greedy selection
-
-### Component Selection
-
-- [`ComponentSelector`](strategies/ComponentSelector.md) - Protocol for component selection
-- [`RoundRobinComponentSelector`](strategies/RoundRobinComponentSelector.md) - Round-robin component selection
-- [`AllComponentSelector`](strategies/AllComponentSelector.md) - Selects all components
-
-### Evaluation Policy
-
-- [`EvaluationPolicy`](strategies/EvaluationPolicy.md) - Protocol for evaluation policies
-- [`FullEvaluationPolicy`](strategies/FullEvaluationPolicy.md) - Evaluates all validation instances
-
-### Instruction Proposal
-
-- [`InstructionProposalSignature`](strategies/InstructionProposalSignature.md) - Signature for instruction proposal prompts
 """
+    for category, items in API_MAPPING.items():
+        info = CATEGORY_INFO.get(category, {"title": category.replace("_", " ").title(), "description": ""})
+        content += f"## {info['title']}\n\n"
+        content += f"{info['description']}\n\n"
+        for module_path, name, display_name in items:
+            content += f"- [`{display_name}`]({category}/{display_name}.md)\n"
+        content += "\n"
+
+    return content
+
+
+def generate_nav_structure() -> list:
+    """Generate the nav structure for mkdocs.yml API Reference section."""
+    nav = [{"API Overview": "api/index.md"}]
+
+    for category, items in API_MAPPING.items():
+        info = CATEGORY_INFO.get(category, {"title": category.replace("_", " ").title()})
+        category_nav = {}
+        category_entries = []
+
+        for module_path, name, display_name in items:
+            category_entries.append({display_name: f"api/{category}/{display_name}.md"})
+
+        category_nav[info["title"]] = category_entries
+        nav.append(category_nav)
+
+    return nav
+
+
+def validate_api_mapping():
+    """Validate that all items in API_MAPPING can be imported."""
+    errors = []
+    import importlib
+
+    for category, items in API_MAPPING.items():
+        for module_path, name, display_name in items:
+            try:
+                module = importlib.import_module(module_path)
+                if not hasattr(module, name):
+                    errors.append(f"Module {module_path} does not have attribute {name}")
+            except ImportError as e:
+                errors.append(f"Cannot import {module_path}: {e}")
+
+    return errors
+
+
+def print_nav_yaml():
+    """Print the nav structure as YAML for manual copy into mkdocs.yml."""
+    nav = generate_nav_structure()
+    print("\n# Auto-generated API Reference nav structure:")
+    print("# Copy this into mkdocs.yml under the 'API Reference:' section\n")
+    print("        - API Reference:")
+    for item in nav:
+        print(yaml.dump([item], default_flow_style=False, indent=12).rstrip())
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate GEPA API documentation")
+    parser.add_argument("--validate", action="store_true", help="Validate API_MAPPING imports")
+    parser.add_argument("--print-nav", action="store_true", help="Print nav structure for mkdocs.yml")
+    args = parser.parse_args()
+
+    if args.validate:
+        print("Validating API_MAPPING...")
+        errors = validate_api_mapping()
+        if errors:
+            print("Validation errors:")
+            for e in errors:
+                print(f"  - {e}")
+            return 1
+        print("All API_MAPPING entries validated successfully!")
+        return 0
+
+    if args.print_nav:
+        print_nav_yaml()
+        return 0
+
+    api_dir = Path("docs/api")
+    api_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate API index (auto-generated from API_MAPPING)
+    index_content = generate_index_content()
     (api_dir / "index.md").write_text(index_content)
 
     # Generate individual API docs
@@ -210,6 +272,14 @@ Strategies for various aspects of the optimization process.
             (category_dir / f"{display_name}.md").write_text(doc_content)
 
     print("API documentation generated successfully!")
+    print(
+        f"Generated docs for {sum(len(items) for items in API_MAPPING.values())} API items across {len(API_MAPPING)} categories"
+    )
+
+    # Print summary of what was generated
+    for category, items in API_MAPPING.items():
+        info = CATEGORY_INFO.get(category, {"title": category})
+        print(f"  - {info['title']}: {len(items)} items")
 
 
 if __name__ == "__main__":

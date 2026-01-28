@@ -14,6 +14,7 @@ nav:
         - Guides Overview: guides/index.md
         - Quick Start: guides/quickstart.md
         - Creating Adapters: guides/adapters.md
+        - Using Callbacks: guides/callbacks.md
         - Contributing: guides/contributing.md
     - Tutorials:
         - Tutorials Overview: tutorials/index.md
@@ -28,6 +29,28 @@ nav:
             - GEPAResult: api/core/GEPAResult.md
             - GEPACallback: api/core/GEPACallback.md
             - DataLoader: api/core/DataLoader.md
+            - GEPAState: api/core/GEPAState.md
+            - EvaluationCache: api/core/EvaluationCache.md
+        - Callbacks:
+            - GEPACallback: api/callbacks/GEPACallback.md
+            - CompositeCallback: api/callbacks/CompositeCallback.md
+            - OptimizationStartEvent: api/callbacks/OptimizationStartEvent.md
+            - OptimizationEndEvent: api/callbacks/OptimizationEndEvent.md
+            - IterationStartEvent: api/callbacks/IterationStartEvent.md
+            - IterationEndEvent: api/callbacks/IterationEndEvent.md
+            - CandidateSelectedEvent: api/callbacks/CandidateSelectedEvent.md
+            - CandidateAcceptedEvent: api/callbacks/CandidateAcceptedEvent.md
+            - CandidateRejectedEvent: api/callbacks/CandidateRejectedEvent.md
+            - EvaluationStartEvent: api/callbacks/EvaluationStartEvent.md
+            - EvaluationEndEvent: api/callbacks/EvaluationEndEvent.md
+            - ValsetEvaluatedEvent: api/callbacks/ValsetEvaluatedEvent.md
+            - ParetoFrontUpdatedEvent: api/callbacks/ParetoFrontUpdatedEvent.md
+            - MergeAttemptedEvent: api/callbacks/MergeAttemptedEvent.md
+            - MergeAcceptedEvent: api/callbacks/MergeAcceptedEvent.md
+            - MergeRejectedEvent: api/callbacks/MergeRejectedEvent.md
+            - BudgetUpdatedEvent: api/callbacks/BudgetUpdatedEvent.md
+            - ErrorEvent: api/callbacks/ErrorEvent.md
+            - StateSavedEvent: api/callbacks/StateSavedEvent.md
         - Stop Conditions:
             - StopperProtocol: api/stop_conditions/StopperProtocol.md
             - MaxMetricCallsStopper: api/stop_conditions/MaxMetricCallsStopper.md
@@ -54,7 +77,10 @@ nav:
             - LanguageModel: api/proposers/LanguageModel.md
         - Logging:
             - LoggerProtocol: api/logging/LoggerProtocol.md
+            - StdOutLogger: api/logging/StdOutLogger.md
+            - Logger: api/logging/Logger.md
             - ExperimentTracker: api/logging/ExperimentTracker.md
+            - create_experiment_tracker: api/logging/create_experiment_tracker.md
         - Strategies:
             - BatchSampler: api/strategies/BatchSampler.md
             - EpochShuffledBatchSampler: api/strategies/EpochShuffledBatchSampler.md

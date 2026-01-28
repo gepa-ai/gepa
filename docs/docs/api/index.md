@@ -6,82 +6,98 @@ Welcome to the GEPA API Reference. This documentation is auto-generated from the
 
 The core module contains the main optimization function and fundamental classes.
 
-- [`optimize`](core/optimize.md) - Main optimization function
-- [`GEPAAdapter`](core/GEPAAdapter.md) - Adapter protocol for integrating GEPA with your system
-- [`EvaluationBatch`](core/EvaluationBatch.md) - Container for evaluation results
-- [`GEPAResult`](core/GEPAResult.md) - Result container from optimization
-- [`GEPACallback`](core/GEPACallback.md) - Callback protocol for optimization events
-- [`DataLoader`](core/DataLoader.md) - Data loading protocol
+- [`optimize`](core/optimize.md)
+- [`GEPAAdapter`](core/GEPAAdapter.md)
+- [`EvaluationBatch`](core/EvaluationBatch.md)
+- [`GEPAResult`](core/GEPAResult.md)
+- [`GEPACallback`](core/GEPACallback.md)
+- [`DataLoader`](core/DataLoader.md)
+- [`GEPAState`](core/GEPAState.md)
+- [`EvaluationCache`](core/EvaluationCache.md)
+
+## Callbacks
+
+Callback system for observing and instrumenting GEPA optimization runs.
+
+- [`GEPACallback`](callbacks/GEPACallback.md)
+- [`CompositeCallback`](callbacks/CompositeCallback.md)
+- [`OptimizationStartEvent`](callbacks/OptimizationStartEvent.md)
+- [`OptimizationEndEvent`](callbacks/OptimizationEndEvent.md)
+- [`IterationStartEvent`](callbacks/IterationStartEvent.md)
+- [`IterationEndEvent`](callbacks/IterationEndEvent.md)
+- [`CandidateSelectedEvent`](callbacks/CandidateSelectedEvent.md)
+- [`CandidateAcceptedEvent`](callbacks/CandidateAcceptedEvent.md)
+- [`CandidateRejectedEvent`](callbacks/CandidateRejectedEvent.md)
+- [`EvaluationStartEvent`](callbacks/EvaluationStartEvent.md)
+- [`EvaluationEndEvent`](callbacks/EvaluationEndEvent.md)
+- [`ValsetEvaluatedEvent`](callbacks/ValsetEvaluatedEvent.md)
+- [`ParetoFrontUpdatedEvent`](callbacks/ParetoFrontUpdatedEvent.md)
+- [`MergeAttemptedEvent`](callbacks/MergeAttemptedEvent.md)
+- [`MergeAcceptedEvent`](callbacks/MergeAcceptedEvent.md)
+- [`MergeRejectedEvent`](callbacks/MergeRejectedEvent.md)
+- [`BudgetUpdatedEvent`](callbacks/BudgetUpdatedEvent.md)
+- [`ErrorEvent`](callbacks/ErrorEvent.md)
+- [`StateSavedEvent`](callbacks/StateSavedEvent.md)
 
 ## Stop Conditions
 
 Stop conditions control when optimization terminates.
 
-- [`StopperProtocol`](stop_conditions/StopperProtocol.md) - Protocol for custom stop conditions
-- [`MaxMetricCallsStopper`](stop_conditions/MaxMetricCallsStopper.md) - Stop after N metric evaluations
-- [`TimeoutStopCondition`](stop_conditions/TimeoutStopCondition.md) - Stop after time limit
-- [`NoImprovementStopper`](stop_conditions/NoImprovementStopper.md) - Stop if no improvement
-- [`ScoreThresholdStopper`](stop_conditions/ScoreThresholdStopper.md) - Stop when score threshold reached
-- [`FileStopper`](stop_conditions/FileStopper.md) - Stop when file exists
-- [`SignalStopper`](stop_conditions/SignalStopper.md) - Stop on OS signal
-- [`CompositeStopper`](stop_conditions/CompositeStopper.md) - Combine multiple stop conditions
+- [`StopperProtocol`](stop_conditions/StopperProtocol.md)
+- [`MaxMetricCallsStopper`](stop_conditions/MaxMetricCallsStopper.md)
+- [`TimeoutStopCondition`](stop_conditions/TimeoutStopCondition.md)
+- [`NoImprovementStopper`](stop_conditions/NoImprovementStopper.md)
+- [`ScoreThresholdStopper`](stop_conditions/ScoreThresholdStopper.md)
+- [`FileStopper`](stop_conditions/FileStopper.md)
+- [`SignalStopper`](stop_conditions/SignalStopper.md)
+- [`CompositeStopper`](stop_conditions/CompositeStopper.md)
 
 ## Adapters
 
 Adapters integrate GEPA with different systems and frameworks.
 
-- [`DefaultAdapter`](adapters/DefaultAdapter.md) - Default single-turn LLM adapter
-- [`DSPyAdapter`](adapters/DSPyAdapter.md) - DSPy program adapter
-- [`DSPyFullProgramAdapter`](adapters/DSPyFullProgramAdapter.md) - DSPy full program evolution adapter
-- [`RAGAdapter`](adapters/RAGAdapter.md) - Generic RAG system adapter
-- [`MCPAdapter`](adapters/MCPAdapter.md) - Model Context Protocol adapter
-- [`TerminalBenchAdapter`](adapters/TerminalBenchAdapter.md) - Terminal benchmark adapter
+- [`DefaultAdapter`](adapters/DefaultAdapter.md)
+- [`DSPyAdapter`](adapters/DSPyAdapter.md)
+- [`DSPyFullProgramAdapter`](adapters/DSPyFullProgramAdapter.md)
+- [`RAGAdapter`](adapters/RAGAdapter.md)
+- [`MCPAdapter`](adapters/MCPAdapter.md)
+- [`TerminalBenchAdapter`](adapters/TerminalBenchAdapter.md)
 
 ## Proposers
 
 Proposers generate new candidate programs during optimization.
 
-- [`CandidateProposal`](proposers/CandidateProposal.md) - Data class for candidate proposals
-- [`ProposeNewCandidate`](proposers/ProposeNewCandidate.md) - Protocol for proposer strategies
-- [`ReflectiveMutationProposer`](proposers/ReflectiveMutationProposer.md) - LLM-based reflective mutation proposer
-- [`MergeProposer`](proposers/MergeProposer.md) - Merge-based candidate proposer
-- [`Signature`](proposers/Signature.md) - Base class for LLM prompt signatures
-- [`LanguageModel`](proposers/LanguageModel.md) - Protocol for language models
+- [`CandidateProposal`](proposers/CandidateProposal.md)
+- [`ProposeNewCandidate`](proposers/ProposeNewCandidate.md)
+- [`ReflectiveMutationProposer`](proposers/ReflectiveMutationProposer.md)
+- [`MergeProposer`](proposers/MergeProposer.md)
+- [`Signature`](proposers/Signature.md)
+- [`LanguageModel`](proposers/LanguageModel.md)
 
 ## Logging
 
 Logging utilities for tracking optimization progress.
 
-- [`LoggerProtocol`](logging/LoggerProtocol.md) - Protocol for custom loggers
-- [`ExperimentTracker`](logging/ExperimentTracker.md) - MLflow/WandB integration
+- [`LoggerProtocol`](logging/LoggerProtocol.md)
+- [`StdOutLogger`](logging/StdOutLogger.md)
+- [`Logger`](logging/Logger.md)
+- [`ExperimentTracker`](logging/ExperimentTracker.md)
+- [`create_experiment_tracker`](logging/create_experiment_tracker.md)
 
 ## Strategies
 
 Strategies for various aspects of the optimization process.
 
-### Batch Sampling
+- [`BatchSampler`](strategies/BatchSampler.md)
+- [`EpochShuffledBatchSampler`](strategies/EpochShuffledBatchSampler.md)
+- [`CandidateSelector`](strategies/CandidateSelector.md)
+- [`ParetoCandidateSelector`](strategies/ParetoCandidateSelector.md)
+- [`CurrentBestCandidateSelector`](strategies/CurrentBestCandidateSelector.md)
+- [`EpsilonGreedyCandidateSelector`](strategies/EpsilonGreedyCandidateSelector.md)
+- [`ComponentSelector`](strategies/ComponentSelector.md)
+- [`RoundRobinComponentSelector`](strategies/RoundRobinComponentSelector.md)
+- [`AllComponentSelector`](strategies/AllComponentSelector.md)
+- [`EvaluationPolicy`](strategies/EvaluationPolicy.md)
+- [`FullEvaluationPolicy`](strategies/FullEvaluationPolicy.md)
+- [`InstructionProposalSignature`](strategies/InstructionProposalSignature.md)
 
-- [`BatchSampler`](strategies/BatchSampler.md) - Protocol for batch sampling
-- [`EpochShuffledBatchSampler`](strategies/EpochShuffledBatchSampler.md) - Epoch-based shuffled batch sampler
-
-### Candidate Selection
-
-- [`CandidateSelector`](strategies/CandidateSelector.md) - Protocol for candidate selection
-- [`ParetoCandidateSelector`](strategies/ParetoCandidateSelector.md) - Selects from Pareto front
-- [`CurrentBestCandidateSelector`](strategies/CurrentBestCandidateSelector.md) - Selects current best candidate
-- [`EpsilonGreedyCandidateSelector`](strategies/EpsilonGreedyCandidateSelector.md) - Epsilon-greedy selection
-
-### Component Selection
-
-- [`ComponentSelector`](strategies/ComponentSelector.md) - Protocol for component selection
-- [`RoundRobinComponentSelector`](strategies/RoundRobinComponentSelector.md) - Round-robin component selection
-- [`AllComponentSelector`](strategies/AllComponentSelector.md) - Selects all components
-
-### Evaluation Policy
-
-- [`EvaluationPolicy`](strategies/EvaluationPolicy.md) - Protocol for evaluation policies
-- [`FullEvaluationPolicy`](strategies/FullEvaluationPolicy.md) - Evaluates all validation instances
-
-### Instruction Proposal
-
-- [`InstructionProposalSignature`](strategies/InstructionProposalSignature.md) - Signature for instruction proposal prompts

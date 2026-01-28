@@ -1,6 +1,6 @@
-# AnyMathsAdapter
+# ValsetEvaluatedEvent
 
-::: gepa.adapters.anymaths_adapter.anymaths_adapter.AnyMathsAdapter
+::: gepa.core.callbacks.ValsetEvaluatedEvent
     handler: python
     options:
         show_source: true
