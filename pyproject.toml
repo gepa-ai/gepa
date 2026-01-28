@@ -119,6 +119,7 @@ line-ending = "auto"
 
 [tool.ruff.lint.isort]
 known-first-party = ["gepa"]
+known-third-party = ["dspy"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"

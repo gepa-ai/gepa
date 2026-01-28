@@ -72,7 +72,10 @@ def test_reflection_prompt_template_missing_placeholders():
 
     custom_template = "Missing both placeholders."
 
-    with pytest.raises(ValueError, match=re.escape("Missing placeholder(s) in prompt template: <curr_instructions>, <inputs_outputs_feedback>")):
+    with pytest.raises(
+        ValueError,
+        match=re.escape("Missing placeholder(s) in prompt template: <curr_instructions>, <inputs_outputs_feedback>"),
+    ):
         result = optimize(
             seed_candidate={"instructions": "initial instructions"},
             trainset=mock_data,
