@@ -60,12 +60,12 @@ print("Best score:", result.best_score)
 
 ### Option 2: Using DSPy (Recommended)
 
-For more complex programs, use GEPA through DSPy:
+For more complex programs, use GEPA through DSPy. GEPA works best with **feedback metrics** that provide textual explanations, not just scores:
 
 ```python
 import dspy
 
-# Configure the LM
+# Configure the task LM
 lm = dspy.LM("openai/gpt-4o-mini")
 dspy.configure(lm=lm)
 
@@ -77,21 +77,53 @@ class QAProgram(dspy.Module):
     def forward(self, question):
         return self.generate(question=question)
 
-# Prepare data
+# Define a metric WITH feedback - this is key for GEPA!
+def metric_with_feedback(example, pred, trace=None):
+    correct = example.answer.lower() in pred.answer.lower()
+    score = 1.0 if correct else 0.0
+    
+    # Provide textual feedback to guide GEPA's reflection
+    if correct:
+        feedback = f"Correct! The answer '{pred.answer}' matches the expected answer '{example.answer}'."
+    else:
+        feedback = (
+            f"Incorrect. Expected '{example.answer}' but got '{pred.answer}'. "
+            f"Think about how to reason more carefully to arrive at the correct answer."
+        )
+    
+    return dspy.Prediction(score=score, feedback=feedback)
+
+# Prepare data (aim for 30-300 examples for best results)
 trainset = [
     dspy.Example(question="What is 2+2?", answer="4").with_inputs("question"),
+    dspy.Example(question="What is the capital of France?", answer="Paris").with_inputs("question"),
     # ... more examples
 ]
 
 # Optimize with GEPA
 optimizer = dspy.GEPA(
-    metric=lambda example, pred: pred.answer == example.answer,
-    max_bootstrapped_demos=0,
-    max_labeled_demos=0,
+    metric=metric_with_feedback,
+    reflection_lm=dspy.LM("openai/gpt-4o"),  # Strong model for reflection
+    auto="light",  # Automatic budget configuration
+    num_threads=8,
+    track_stats=True,
 )
 
 optimized_program = optimizer.compile(QAProgram(), trainset=trainset)
+
+# View the optimized prompt
+print(optimized_program.generate.signature.instructions)
 ```
+
+!!! tip "Feedback is Key"
+    GEPA's strength lies in leveraging textual feedback. The more informative your feedback, the better GEPA can reflect and propose improvements. Include details like:
+    
+    - What went wrong and what was expected
+    - Hints for improvement
+    - Reference solutions (if available)
+    - Breakdown of sub-scores for multi-objective tasks
+
+For more detailed examples, see the [dspy.GEPA tutorials](https://dspy.ai/tutorials/gepa_ai_program/).
 
 ## Understanding the Output
 
