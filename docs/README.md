@@ -76,4 +76,18 @@ docs/
 
 ## Deployment
 
-Documentation is automatically built and deployed on push to main via GitHub Actions.
+Documentation is automatically built and deployed to GitHub Pages on push to main via GitHub Actions.
+
+### Troubleshooting
+
+**Build fails with import errors:**
+- Ensure all GEPA dependencies are installed
+- Check that `src/gepa` is importable
+
+**Pages not updating:**
+- Check the Actions tab for failed deployments
+- Verify GitHub Pages is set to "GitHub Actions" source
+
+**Local build works but CI fails:**
+- CI installs from `pyproject.toml`, not editable mode
+- Ensure all imports work without editable install

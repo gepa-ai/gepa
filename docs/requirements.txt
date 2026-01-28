@@ -1,16 +1,15 @@
 # MkDocs and theme
-mkdocs-material
+mkdocs>=1.6.0
+mkdocs-material>=9.5.0
 mkdocs-material[imaging]
 
 # API documentation
-mkdocstrings
-mkdocstrings-python
+mkdocstrings>=0.25.0
+mkdocstrings-python>=1.10.0
 
 # Jupyter notebook support
-mkdocs-jupyter
-
-# Search
-mkdocs
+mkdocs-jupyter>=0.24.0
 
 # GEPA package (for API doc generation)
--e ../[full]
+# In CI, this is installed from the repo root
+# For local development, run: pip install -e ../[full]
