@@ -230,5 +230,7 @@ def test_batch_sampler_invalid_configuration(base_optimize_kwargs):
     """Test that invalid batch_sampler configurations raise appropriate errors."""
     custom_batch_sampler = EpochShuffledBatchSampler(minibatch_size=5)
 
-    with pytest.raises(AssertionError, match="reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"):
+    with pytest.raises(
+        AssertionError, match="reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"
+    ):
         optimize(**base_optimize_kwargs, batch_sampler=custom_batch_sampler, reflection_minibatch_size=3)

@@ -16,6 +16,7 @@ from dspy.adapters.types.tool import Tool
 from dspy.evaluate import Evaluate
 from dspy.primitives import Example, Module, Prediction
 from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
+
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
 from gepa.strategies.instruction_proposal import InstructionProposalSignature

@@ -40,9 +40,7 @@ Provide the new instructions within ``` blocks."""
             if placeholder not in prompt_template
         ]
         if missing_placeholders:
-            raise ValueError(
-                f"Missing placeholder(s) in prompt template: {', '.join(missing_placeholders)}"
-            )
+            raise ValueError(f"Missing placeholder(s) in prompt template: {', '.join(missing_placeholders)}")
 
     @classmethod
     def prompt_renderer(cls, input_dict: Mapping[str, Any]) -> str:
@@ -53,6 +51,7 @@ Provide the new instructions within ``` blocks."""
         dataset = input_dict.get("dataset_with_feedback")
         if not isinstance(dataset, Sequence) or isinstance(dataset, (str, bytes)):
             raise TypeError("dataset_with_feedback must be a sequence of records")
+
         def format_samples(samples):
             def render_value(value, level=3):
                 # level controls markdown header depth (###, ####, etc.)

@@ -4,6 +4,7 @@ from typing import Any
 
 import dspy
 from dspy.adapters.types.base_type import Type
+
 from gepa.core.adapter import ProposalFn
 
 logger = logging.getLogger(__name__)
