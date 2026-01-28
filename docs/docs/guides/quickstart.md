@@ -184,6 +184,8 @@ result = gepa.optimize(
 
 ## Next Steps
 
+For best practices, tips on data preparation, feedback quality, model selection, and more, see the [FAQ](faq.md).
+
 - [Creating Adapters](adapters.md) - Build custom adapters for your system
 - [API Reference](../api/index.md) - Detailed API documentation
 - [Tutorials](../tutorials/index.md) - Step-by-step examples

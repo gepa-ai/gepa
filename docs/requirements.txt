@@ -6,6 +6,7 @@ mkdocs-material[imaging]
 # API documentation
 mkdocstrings>=0.25.0
 mkdocstrings-python>=1.10.0
+pyyaml>=6.0
 
 # Jupyter notebook support
 mkdocs-jupyter>=0.24.0

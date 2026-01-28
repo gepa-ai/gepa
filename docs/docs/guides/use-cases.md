@@ -2,6 +2,25 @@
 
 Discover how organizations and researchers are using GEPA to optimize AI systems across diverse domains. These examples showcase the versatility and impact of reflective prompt evolution.
 
+!!! tip "Living Document"
+    This page is continuously updated with new use cases from the community. Have a GEPA success story? Share it on [Discord](https://discord.gg/A7dABbtmFw) or [Twitter/X](https://x.com/LakshyAAAgrawal)!
+
+**Quick Navigation:**
+
+- [:material-office-building: Enterprise & Production](#enterprise-production)
+- [:material-code-braces: AI Coding Agents & Research Tools](#ai-coding-agents-research-tools)
+- [:material-hospital-building: Domain-Specific Applications](#domain-specific-applications)
+- [:material-lightbulb: Advanced Capabilities](#advanced-capabilities)
+- [:material-trophy: Research & Academic](#research-academic)
+- [:material-newspaper: Media & Press Coverage](#media-press-coverage)
+- [:material-trending-up: Emerging Applications](#emerging-applications)
+- [:material-source-branch: Community Integrations](#community-integrations)
+- [:material-cloud-outline: Infrastructure & DevOps](#infrastructure-devops)
+- [:material-account-voice: Creative & Generative](#creative-generative-applications)
+- [:material-database-sync: Data Processing & Synthesis](#data-processing-synthesis)
+- [:material-book-open-variant: Community Tutorials](#community-tutorials-guides)
+- [:material-earth: International Coverage](#international-coverage)
+
 ---
 
 ## :material-office-building: Enterprise & Production
@@ -111,6 +130,22 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Learn more](https://www.arc.computer/blog/atlas-sre-diagnosis)
 
+-   **ATLAS Augmented: +142% Student Performance**
+
+    ---
+
+    ![ATLAS Augmented](../static/img/use-cases/atlas_augmented.jpg){ .card-image }
+
+    GEPA can **augment even RL-tuned models**. The Intelligence Arc team uses GEPA in their ATLAS framework to improve an already powerful and RL-tuned teacher model.
+
+    **Key Result:**
+
+    - **+142% student performance improvement** when guided by the GEPA-improved teacher
+    - Demonstrates that GEPA works alongside RL, not just as an alternative
+    - Shows GEPA's value even for already-optimized models
+
+    [:material-arrow-right: Read the technical blog](https://www.arc.computer/blog/supercharging-rl-with-online-optimization)
+
 -   **Data Analysis Coding Agents**
 
     ---
@@ -215,6 +250,8 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the research](https://www.intrinsic-labs.ai/research/ocr-gepa-v1.pdf)
 
+    [:material-arrow-right: Resources page](https://www.intrinsic-labs.ai/resources/prompt-optimized-ocr-for-production)
+
 -   **Market Research AI Personas**
 
     ---
@@ -232,20 +269,6 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Learn more](https://x.com/hammer_mt/status/1984269888979116061)
 
--   **Sanskrit QA with EmbeddingGemma**
-
-    ---
-
-    Boosting Sanskrit question-answering by finetuning EmbeddingGemma with **50k GEPA-generated synthetic samples**.
-
-    **Approach:**
-
-    - Synthetic data generation using GEPA
-    - Fine-tuned embedding models
-    - Improved performance on low-resource language tasks
-
-    [:material-arrow-right: View code](https://github.com/ganarajpr/rgfe)
-
 -   **Fiction Writing with Small Models**
 
     ---
@@ -257,16 +280,6 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     Demonstrates that small models can handle creative tasks with the right prompts.
 
     [:material-arrow-right: Read on Substack](https://meandnotes.substack.com/p/i-taught-a-small-llm-to-write-fiction?triedRedirect=true)
-
--   **Naruto-Style Dialogues with GPT-4o-mini**
-
-    ---
-
-    Generating anime-style character dialogues using GEPA-optimized prompts.
-
-    A creative application demonstrating GEPA's versatility for stylized content generation.
-
-    [:material-arrow-right: Read the article (Japanese)](https://zenn.dev/cybernetics/articles/39fb763aca746c)
 
 </div>
 
@@ -284,15 +297,17 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     GEPA improves **Multimodal/VLM Performance** for OCR tasks through optimized prompting strategies.
 
-    [:material-arrow-right: Try the example](https://tinyurl.com/gepa-ocr-example)
+    [:material-arrow-right: Try the example](https://www.intrinsic-labs.ai/research/ocr-gepa-v1.pdf)
 
 -   **Agent Architecture Discovery**
 
     ---
 
-    ![Architecture Discovery](../static/img/use-cases/architecture_discovery.png){ .card-image }
+    ![Architecture Discovery](../static/img/use-cases/arc_agi_image.png){ .card-image }
 
     GEPA for **automated agent architecture discovery** - finding optimal agent designs through evolutionary search.
+
+    [:material-arrow-right: View ARC-AGI tutorial](../tutorials/arc_agi.ipynb)
 
 -   **Adversarial Prompt Search**
 
@@ -301,6 +316,8 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     ![Adversarial Prompt Search](../static/img/use-cases/adversarial_prompt.png){ .card-image }
 
     GEPA for **adversarial prompt search** - discovering edge cases and failure modes in AI systems.
+
+    *Advanced application for AI safety research*
 
 -   **Unverifiable Tasks (Evaluator-Optimizer)**
 
@@ -316,46 +333,238 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
 ---
 
-## :material-school: Learning Resources & Tutorials
+## :material-trophy: Research & Academic
 
 <div class="grid cards" markdown>
 
--   **Official DSPy Tutorials**
+-   **Berkeley AI Summit: GEPA Deep Dive**
 
     ---
 
-    Step-by-step notebooks for practical optimization tasks.
+    @matei_zaharia presents GEPA at Berkeley AI Summit, explaining how reflective prompt evolution works even with few rollouts.
 
-    **Topics Covered:**
+    **Key Insight:**
 
-    - **AIME Math**: 10% gains on AIME 2025 with GPT-4.1 Mini
-    - **Structured Data Extraction**: Enterprise facility support analysis
-    - **Privacy-Conscious Delegation**: Secure task handling
+    > "FLOPs are getting cheaper, but rollouts for complex agentic tasks are not. The next frontier of AI will be limited by rollouts budget!"
 
-    [:material-arrow-right: Start learning](https://dspy.ai/tutorials/gepa_ai_program)
+    [:material-arrow-right: Watch the presentation](https://youtu.be/c39fJ2WAj6A?t=6386)
 
--   **Video Tutorials**
+-   **NeurIPS 2025 Workshop: 12.5% → 62.5% Gains**
 
     ---
 
-    Visual learning resources from the community.
+    ![NeurIPS Poster](../static/img/use-cases/neurips_poster.jpg){ .card-image }
 
-    **Featured Videos:**
+    Veris.AI used GEPA in their RAISE framework to achieve **12.5% → 62.5% gains** in task correctness accuracy, demonstrating GEPA's immediate practical impact for training reliable domain-specific AI agents through simulated environments.
 
-    - 🎬 **Weaviate**: DSPy GEPA for Listwise Reranker optimization
-    - 🎬 **Matei Zaharia**: Reflective Optimization of Agents with GEPA and DSPy
+    **Key Results:**
 
-    [:material-arrow-right: Weaviate Video](https://www.youtube.com/watch?v=H4o7h6ZbA4o)
+    - RAISE: Simulation-first experiential learning framework
+    - GEPA prompt optimization for 4 epochs
+    - Poster session at NeurIPS 2025 San Diego
 
-    [:material-arrow-right: Matei Zaharia Talk](https://www.youtube.com/watch?v=rrtxyZ4Vnv8)
+    [:material-arrow-right: View the announcement](https://x.com/solidwillity/status/1997747867629633971)
 
 -   **100% on Clock Hands Problem**
 
     ---
 
-    Achieving perfect accuracy on the challenging clock hands mathematical reasoning problem.
+    Achieving **perfect accuracy** on the challenging clock hands mathematical reasoning problem using GEPA optimization.
+
+    **Application:**
+
+    - Complex spatial reasoning
+    - Mathematical problem-solving
+    - Demonstrates GEPA on hard reasoning tasks
 
     [:material-arrow-right: Try the notebook](https://colab.research.google.com/drive/1W-XNxKL2CXFoUTwrL7GLCZ7J7uZgXsut?usp=sharing)
+
+</div>
+
+---
+
+## :material-newspaper: Media & Press Coverage
+
+<div class="grid cards" markdown>
+
+-   **VentureBeat: GEPA Optimizes LLMs Without Costly RL**
+
+    ---
+
+    VentureBeat coverage of GEPA's approach to optimizing LLMs without expensive reinforcement learning.
+
+    **Highlights:**
+
+    - Explains reflective prompt evolution to a broader audience
+    - Discusses cost and efficiency benefits
+    - Industry perspective on GEPA's impact
+
+    [:material-arrow-right: Read the article](https://venturebeat.com/ai/gepa-optimizes-llms-without-costly-reinforcement-learning/)
+
+-   **DAIR.AI: Top AI Papers of the Week**
+
+    ---
+
+    GEPA featured in DAIR.AI's "Top AI Papers of The Week" roundup, alongside other breakthrough research.
+
+    **Recognition:**
+
+    - Listed among Graph-R1, AlphaEarth, Self-Evolving Agents
+    - Highlighted natural language reflection approach
+
+    [:material-arrow-right: View DAIR.AI newsletter](https://github.com/dair-ai/ML-Papers-of-the-Week)
+
+-   **DSPy Weekly Newsletter**
+
+    ---
+
+    GEPA regularly featured in the DSPy Weekly newsletter, tracking adoption and new use cases.
+
+    **Coverage:**
+
+    - Issue #4: "GEPA is 🌶️🔥 and on a hype 🚄 as people discover GEPA"
+    - Regular updates on community applications
+
+    [:material-arrow-right: Read DSPy Weekly](https://dspyweekly.com/newsletter/4/)
+
+-   **LinkedIn AI Talk: Automatic Prompt Optimization**
+
+    ---
+
+    Vaibhav Gupta (CEO @ Boundary / BAML) provides a detailed GEPA tutorial, first explaining the algorithm and then walking through a code example.
+
+    **What's Covered:**
+
+    - GEPA algorithm explanation
+    - Step-by-step code walkthrough
+    - Practical implementation guidance
+
+    [:material-arrow-right: Watch the event](https://www.linkedin.com/events/automaticpromptoptimization-ait7404883890873618433/theater/)
+
+</div>
+
+---
+
+## :material-trending-up: Emerging Applications
+
+<div class="grid cards" markdown>
+
+-   **The State of AI Coding 2025**
+
+    ---
+
+    ![Greptile State of AI Coding](../static/img/use-cases/greptile_state_of_ai_coding.jpg){ .card-image }
+
+    GEPA was highlighted in Greptile's comprehensive **State of AI Coding 2025** report as a key advancement in AI coding capabilities.
+
+    **Key Insight:**
+
+    GEPA evolves prompts via trace analysis, matching RL performance with far fewer rollouts—making it ideal for coding agent optimization.
+
+    [:material-arrow-right: Read the report](https://greptile.com/state-of-ai-coding-2025)
+
+-   **Model Migration Workflows**
+
+    ---
+
+    GEPA is proving valuable for **migrating existing LLM-based workflows** to new models across model families.
+
+    **Pattern:**
+
+    - Keep your DSPy program structure
+    - Change only the LM initialization  
+    - Re-run GEPA optimization for the new model
+    - Much faster than manually re-tuning prompts
+
+    This is especially useful as new models are released and organizations need to migrate quickly.
+
+-   **Evaluator-Optimizer Pattern**
+
+    ---
+
+    ![Evaluator Optimizer](../static/img/use-cases/evaluator_optimizer.jpg){ .card-image }
+
+    @hammer_mt shares the powerful **Evaluator-Optimizer pattern** for fuzzy generative tasks where evals are informal and subjective.
+
+    **Use Case:**
+
+    - Creative writing tasks
+    - Persona generation
+    - Tasks without ground-truth labels
+
+    [:material-arrow-right: Watch the talk](https://www.youtube.com/watch?v=H4o7h6ZbA4o)
+
+-   **Program Synthesis & Kernel Optimization**
+
+    ---
+
+    GEPA shows promise for **program synthesis** tasks:
+
+    **Applications:**
+
+    - CUDA kernel optimization
+    - AMD NPU kernel generation
+    - Outperforms RAG and iterative refinement (Section 6 of paper)
+
+    Especially valuable for tasks with expensive rollouts (simulation, long runtime).
+
+-   **GPU Parallelization (OpenACC)**
+
+    ---
+
+    ![GPU Optimization](../static/img/use-cases/gpu_optimization.png){ .card-image }
+
+    Jhaveri & @cristalopes applied GEPA to **GPU optimization**, targeting OpenACC parallelization.
+
+    **Results:**
+
+    - Boosted GPT-5 Nano to generate pragmas improving compilation success from 87% → 100%
+    - Models saw up to **50% increase** in # functional GPU speedups
+
+    Demonstrates GEPA's applicability to code synthesis beyond prompts.
+
+-   **Material Science Applications**
+
+    ---
+
+    GEPA being explored for **material science** workflows where simulations are costly.
+
+    **Why GEPA:**
+
+    - High sample efficiency
+    - Works with expensive evaluation functions
+    - Can optimize simulation parameters
+
+    *Exploratory use case from the research community*
+
+-   **Continuous Learning & Self-Improvement**
+
+    ---
+
+    GEPA enables **continual learning** patterns:
+
+    **Emerging Pattern:**
+
+    1. Deploy optimized agent
+    2. Collect feedback from production
+    3. Batch feedback and re-optimize
+    4. Redeploy improved agent
+
+    Works alongside RL (see BetterTogether paper) for even better results.
+
+-   **Letta: Continual Learning in Token Space**
+
+    ---
+
+    Letta's blog post explores **continual learning in token space**, discussing how GEPA and similar approaches enable agents to learn and improve over time.
+
+    **Concepts:**
+
+    - Memory-augmented agents
+    - Long-term learning patterns
+    - Token-space optimization
+
+    [:material-arrow-right: Read the blog](https://www.letta.com/blog/continual-learning)
 
 </div>
 
@@ -364,6 +573,42 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 ## :material-source-branch: Community Integrations
 
 <div class="grid cards" markdown>
+
+-   **Weaviate Podcast #127: Deep Dive on GEPA**
+
+    ---
+
+    Comprehensive podcast episode covering GEPA in depth with Lakshya A. Agrawal.
+
+    **Topics Covered:**
+
+    - Natural Language Rewards
+    - Reflective prompt evolution principles
+    - Production deployment patterns
+
+    [:material-arrow-right: Listen to podcast](https://www.youtube.com/watch?v=rrtxyZ4Vnv8)
+
+-   **Weaviate GEPA Hands-On Notebook**
+
+    ---
+
+    Interactive notebook demonstrating GEPA for reranking optimization in RAG pipelines.
+
+    **What's Inside:**
+
+    - End-to-end GEPA optimization
+    - Integration with Weaviate vector store
+    - Practical reranking examples
+
+    [:material-arrow-right: View notebook](https://github.com/weaviate/recipes/blob/main/integrations/llm-agent-frameworks/dspy/GEPA-Hands-On-Reranker.ipynb)
+
+-   **LangStruct GEPA Examples**
+
+    ---
+
+    Strong examples demonstrating GEPA's effectiveness with Gemini Flash and other models.
+
+    [:material-arrow-right: Explore examples](https://langstruct.dev/examples/gepa/)
 
 -   **GEPA in Go**
 
@@ -382,6 +627,8 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 -   **Observable JavaScript**
 
     ---
+
+    ![Observable JavaScript](../static/img/use-cases/observable_js.jpeg){ .card-image }
 
     Interactive JavaScript notebooks exploring GEPA for web-based optimization.
 
@@ -418,6 +665,280 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     SuperOptiX uses GEPA as its **framework-agnostic optimizer** across multiple agent frameworks including DSPy, OpenAI SDK, CrewAI, Google ADK, and more.
 
     [:material-arrow-right: Explore SuperOptiX](https://superagenticai.github.io/superoptix-ai/guides/gepa-optimization/)
+
+    [:material-arrow-right: Read the blog post](https://super-agentic.ai/resources/super-posts/gepa-dspy-optimizer-superoptix-revolutionizing-ai-agent-optimization)
+
+</div>
+
+---
+
+## :material-cloud-outline: Infrastructure & DevOps
+
+<div class="grid cards" markdown>
+
+-   **Multi-Cloud Data Transfer Cost Optimization**
+
+    ---
+
+    ![Multi-Cloud Data Transfer](../static/img/use-cases/multi_cloud_transfer.jpeg){ .card-image }
+
+    The ADRS team used GEPA to minimize multi-cloud data transfer costs.
+
+    **Results:**
+
+    - GEPA autonomously evolved a naive replication strategy into a sophisticated "shared-tree" topology
+    - **31% cost reduction** with just $5 of optimization spend
+    - Demonstrates GEPA's ability to optimize complex infrastructure configurations
+
+    [:material-arrow-right: View research](https://x.com/LakshyAAAgrawal/status/2014459447364694154)
+
+-   **Sales Support Multi-Agent Routing**
+
+    ---
+
+    ![Databricks Sales Support](../static/img/use-cases/sales_support_routing.jpeg){ .card-image }
+
+    Databricks used GEPA to optimize a sales-support multi-agent system's routing component.
+
+    **Key Results:**
+
+    - **75% relative gains** in routing accuracy
+    - Demonstrates multi-agent orchestration optimization
+    - Production-ready deployment patterns
+
+    [:material-arrow-right: Read the blog](https://medium.com/@AI-on-Databricks/multi-ai-powered-sales-support-databricks-with-langchain-gepa-prompt-optimization-8104654bb538)
+
+-   **Self-Improving Agent Systems (GEPA + TRM)**
+
+    ---
+
+    Building self-improving AI agents that combine GEPA with TRM (Test-time Reasoning Modification) for both orchestration optimization and reasoning enhancement.
+
+    **Architecture:**
+
+    - GEPA for orchestration/prompt optimization
+    - TRM for reasoning enhancement
+    - Continuous monitoring and feedback loops
+    - Automated retraining without human intervention
+
+    [:material-arrow-right: Read the guide](https://medium.com/@bindupriya117/building-self-improving-ai-agents-gepa-for-orchestration-trm-for-reasoning-1602e96f3e2b)
+
+</div>
+
+---
+
+## :material-account-voice: Creative & Generative Applications
+
+<div class="grid cards" markdown>
+
+-   **AI Voice/Persona Discovery**
+
+    ---
+
+    GEPA's multi-objective guided optimization can find an authentic "AI voice" using an 8-dimensional score representing different voice characteristics.
+
+    **Dimensions Optimized:**
+
+    - Point of view
+    - Authority level
+    - Cadence and rhythm
+    - And 5 more characteristics
+
+    [:material-arrow-right: Read the guide](https://augchan42.github.io/2025/09/02/dspy-voice-evolution-authenticity/)
+
+-   **Human-Like Response Generation**
+
+    ---
+
+    GEPA+DSPy can optimize AI to generate human-like responses, passing sophisticated detection systems.
+
+    **Application:**
+
+    - More natural conversational AI
+    - Better user engagement
+    - Authentic persona maintenance
+
+    *Community-reported application*
+
+-   **Non-Obvious GEPA Insights**
+
+    ---
+
+    ![Non-Obvious GEPA Insights](../static/img/use-cases/non_obvious_insights.png){ .card-image }
+
+    Deep dive into non-obvious lessons learned from practical GEPA usage, covering edge cases, unexpected behaviors, and advanced patterns.
+
+    [:material-arrow-right: Read the blog](https://www.elicited.blog/posts/non-obvious-things-about-gepa)
+
+</div>
+
+---
+
+## :material-database-sync: Data Processing & Synthesis
+
+<div class="grid cards" markdown>
+
+-   **Synthetic Data Generation**
+
+    ---
+
+    Use GEPA to optimize query generation pipelines for creating high-quality synthetic datasets.
+
+    **Example: Sanskrit NLP**
+
+    - GEPA+DSPy optimizes a query generation pipeline
+    - Differentiates between document pairs
+    - Generated 50k samples for Gemma embedding fine-tuning
+
+    [:material-arrow-right: View project](https://github.com/ganarajpr/rgfe)
+
+-   **Text2SQL Optimization**
+
+    ---
+
+    GEPA has been successfully used for Text2SQL tasks with a system prompt/user prompt breakdown.
+
+    **Pattern:**
+
+    - System prompt specifies the task (evolved by GEPA)
+    - User prompt contains dynamic content
+    - Alternatively: use DSPy signature for text2sql
+
+    [:material-arrow-right: See SQL Generator tutorial](https://www.rajapatnaik.com/blog/2025/10/20/sql-generator)
+
+-   **Enterprise Agents Blog**
+
+    ---
+
+    ![Enterprise Agents](../static/img/use-cases/enterprise_agents_blog.jpg){ .card-image }
+
+    Building enterprise agents for real-world workflows with GEPA: tackling unstructured data, task decomposition, and context blowup.
+
+    **Key Topics:**
+
+    - Modular agent design
+    - Low-data optimization strategies
+    - Cost-effective deployment
+
+    [:material-arrow-right: Read the blog](https://slavozard.bearblog.dev/experiences-from-building-enterprise-agents-with-dspy-and-gepa/)
+
+</div>
+
+---
+
+## :material-book-open-variant: Community Tutorials & Guides
+
+<div class="grid cards" markdown>
+
+-   **DSPy 3 + GEPA: Advanced RAG Framework**
+
+    ---
+
+    Comprehensive guide on building powerful AI agents with DSPy 3 and GEPA.
+
+    **What's Covered:**
+
+    - Auto reasoning and prompting
+    - Step-by-step agent building
+    - Professional-level RAG optimization
+
+    [:material-arrow-right: Read the guide](https://gaodalie.substack.com/p/dspy-3-gepa-the-most-advanced-rag)
+
+-   **Teaching AI to Spot Fake XKCD Comics**
+
+    ---
+
+    ![Teaching AI to Spot Fake XKCD](../static/img/use-cases/xkcd_fake_detection.png){ .card-image }
+
+    Fun, accessible explanation of GEPA concepts with XKCD-inspired visualizations.
+
+    [:material-arrow-right: Read the blog](https://danprice.ai/blog/xkcd-dspy-gepa)
+
+-   **20% Improvement in Structured Extraction with DSPy + GEPA**
+
+    ---
+
+    ![DSPy Optimization](../static/img/use-cases/dspy_structured_extraction.png){ .card-image }
+
+    Achieving **20+ percentage-point improvement** in exact match accuracy for structured extraction tasks using DSPy and GEPA.
+
+    **Key Insight:**
+
+    The benefit is not only improved performance, but that optimization allows transferring capability to cheaper models while retaining acceptable accuracy, improving the cost profile of applications.
+
+    [:material-arrow-right: Read the guide](https://kmad.ai/DSPy-Optimization)
+
+-   **GEPA Impact Analysis: 81% → 90% Accuracy**
+
+    ---
+
+    Practical analysis achieving **81% → 90% accuracy** on sales call transcript analysis in just 3 hours and ~$0.50.
+
+    **Key Insight:**
+
+    > "I stopped thinking of prompts as things I _write_ and started thinking of them as things I _evolve_. My job shifted from 'craft the perfect prompt' to 'define what good looks like and let the system find it.'"
+
+    GEPA's genetic mutations work best with precise feedback—targeted feedback like "you're conflating greetings with rapport" produces targeted fixes.
+
+    [:material-arrow-right: Read the analysis](https://risheekkumar.in/posts/gepa-impact/gepa_impact_final.html)
+
+-   **Lakshya's GEPA Blog**
+
+    ---
+
+    Personal blog post explaining GEPA concepts and applications.
+
+    [:material-arrow-right: Read the blog](https://lakshyaag.com/blogs/gepa)
+
+-   **GEPA for De-identification**
+
+    ---
+
+    Tutorial on using GEPA for PII de-identification tasks with DSPy.
+
+    [:material-arrow-right: Read the tutorial](https://www.rajapatnaik.com/blog/2025/10/14/dspy-gepa-deidentification)
+
+-   **SQL Generator with GEPA**
+
+    ---
+
+    Building optimized Text2SQL systems with DSPy and GEPA.
+
+    [:material-arrow-right: Read the tutorial](https://www.rajapatnaik.com/blog/2025/10/20/sql-generator)
+
+</div>
+
+---
+
+## :material-earth: International Coverage
+
+GEPA has gained significant attention in the global AI community, with tutorials, blogs, and discussions in multiple languages.
+
+<div class="grid cards" markdown>
+
+-   **Japanese AI Community**
+
+    ---
+
+    GEPA has seen strong adoption in the Japanese AI community with multiple tutorials and explanations.
+
+    **Resources:**
+
+    - [GEPA Explained (Japanese)](https://youtu.be/P5mW0IbotlY) - Video explaining GEPA's reflective learning approach
+    - [MLflow + GEPA on Databricks Free Edition](https://qiita.com/isanakamishiro2/items/f15c4c4c79bd22222ccf) - Qiita tutorial
+    - [Naruto-Style Dialogues with GEPA](https://zenn.dev/cybernetics/articles/39fb763aca746c) - Creative application
+    - Multiple AI Daily News Japan features
+
+-   **Chinese AI Community**
+
+    ---
+
+    GEPA has been featured in Chinese AI publications and discussions.
+
+    **Resources:**
+
+    - [GEPA Revolutionary Breakthrough](https://jieyibu.net/a/65905) - 35x efficiency improvement explained
+    - Technical translations and explanations
 
 </div>
 
