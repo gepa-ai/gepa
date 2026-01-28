@@ -329,8 +329,35 @@ result = gepa.optimize(
 )
 ```
 
+## Built-in Adapters
+
+GEPA provides several ready-to-use adapters for common use cases:
+
+| Adapter | Description | Use Case |
+|---------|-------------|----------|
+| [DefaultAdapter](../api/adapters/DefaultAdapter.md) | Simple adapter for prompt optimization with any LLM | General prompt tuning, Q&A systems |
+| [DSPy Adapter](../api/adapters/DSPyAdapter.md) | Optimizes DSPy program instructions and prompts | DSPy module optimization |
+| [DSPy Full Program Adapter](../api/adapters/DSPyFullProgramAdapter.md) | Evolves entire DSPy programs including structure | Full program evolution, architecture search |
+| [RAG Adapter](../api/adapters/RAGAdapter.md) | Optimizes RAG pipeline components | Retrieval-augmented generation systems |
+| [MCP Adapter](../api/adapters/MCPAdapter.md) | Optimizes MCP tool descriptions and system prompts | Tool-using agents, MCP servers |
+| [TerminalBench Adapter](../api/adapters/TerminalBenchAdapter.md) | Optimizes agents for terminal-based tasks | CLI agents, shell automation |
+
+### When to Use Each Adapter
+
+- **DefaultAdapter**: Start here for simple prompt optimization tasks. Works with any LLM via litellm.
+
+- **DSPy Adapter**: Use when you have a DSPy program and want to optimize the instructions for individual predictors while keeping the program structure fixed.
+
+- **DSPy Full Program Adapter**: Use when you want GEPA to evolve the entire DSPy program, including its structure and module composition.
+
+- **RAG Adapter**: Use for optimizing retrieval-augmented generation systems. Supports multiple vector stores (ChromaDB, Weaviate, Qdrant, Milvus, etc.) and optimizes query reformulation, context synthesis, and answer generation prompts.
+
+- **MCP Adapter**: Use for optimizing Model Context Protocol tool usage. Supports both local (stdio) and remote (SSE/StreamableHTTP) MCP servers.
+
+- **TerminalBench Adapter**: Use for optimizing agents that interact with terminal/shell environments.
+
 ## Next Steps
 
-- See the [API Reference](../api/core/GEPAAdapter.md) for complete documentation
-- Check out built-in adapters in `gepa.adapters` for more examples
-- Read the [DefaultAdapter](../api/adapters/DefaultAdapter.md) source for a full implementation
+- See the [API Reference](../api/core/GEPAAdapter.md) for complete `GEPAAdapter` protocol documentation
+- Explore the built-in adapters above for your specific use case
+- Read the [DefaultAdapter](../api/adapters/DefaultAdapter.md) source for a reference implementation

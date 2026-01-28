@@ -39,8 +39,11 @@ nav:
             - CompositeStopper: api/stop_conditions/CompositeStopper.md
         - Adapters:
             - DefaultAdapter: api/adapters/DefaultAdapter.md
+            - DSPy Adapter: api/adapters/DSPyAdapter.md
+            - DSPy Full Program Adapter: api/adapters/DSPyFullProgramAdapter.md
             - RAG Adapter: api/adapters/RAGAdapter.md
             - MCP Adapter: api/adapters/MCPAdapter.md
+            - TerminalBench Adapter: api/adapters/TerminalBenchAdapter.md
         - Logging:
             - LoggerProtocol: api/logging/LoggerProtocol.md
             - ExperimentTracker: api/logging/ExperimentTracker.md
@@ -114,6 +117,9 @@ plugins:
     - mkdocs-jupyter:
         ignore_h1_titles: true
         include_source: true
+
+extra_css:
+    - static/css/custom.css
 
 extra:
     social:

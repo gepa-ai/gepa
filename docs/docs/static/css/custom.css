@@ -1,0 +1,23 @@
+/* Custom styles for GEPA documentation */
+
+/* Make the header logo larger (2.5x default size) */
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+    height: 60px;  /* Default is 24px, this is 2.5x */
+    width: auto;
+}
+
+/* Adjust the header to accommodate the larger logo */
+.md-header__button.md-logo {
+    padding: 4px;
+}
+
+/* Make the site title (GEPA) text larger */
+.md-header__title {
+    font-size: 1.4rem;  /* Default is ~0.9rem */
+    font-weight: 600;
+}
+
+.md-header__topic {
+    font-size: 1.4rem;
+}
