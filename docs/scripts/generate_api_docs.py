@@ -205,9 +205,16 @@ def generate_nav_structure() -> list:
     return nav
 
 
-def validate_api_mapping():
-    """Validate that all items in API_MAPPING can be imported."""
+def validate_api_mapping(skip_adapters: bool = False):
+    """Validate that all items in API_MAPPING can be imported.
+
+    Args:
+        skip_adapters: If True, skip import errors for gepa.adapters.* modules.
+                       Adapters often depend on external packages (dspy, mcp, etc.)
+                       that may not be installed in all environments.
+    """
     errors = []
+    skipped = []
     import importlib
 
     for category, items in API_MAPPING.items():
@@ -217,9 +224,13 @@ def validate_api_mapping():
                 if not hasattr(module, name):
                     errors.append(f"Module {module_path} does not have attribute {name}")
             except ImportError as e:
-                errors.append(f"Cannot import {module_path}: {e}")
+                # Skip adapter import errors if requested (they have external deps)
+                if skip_adapters and module_path.startswith("gepa.adapters."):
+                    skipped.append(f"Skipped {module_path}: {e}")
+                else:
+                    errors.append(f"Cannot import {module_path}: {e}")
 
-    return errors
+    return errors, skipped
 
 
 def print_nav_yaml():
@@ -237,12 +248,21 @@ def main():
 
     parser = argparse.ArgumentParser(description="Generate GEPA API documentation")
     parser.add_argument("--validate", action="store_true", help="Validate API_MAPPING imports")
+    parser.add_argument(
+        "--skip-adapters",
+        action="store_true",
+        help="Skip import errors for gepa.adapters.* (they have external dependencies)",
+    )
     parser.add_argument("--print-nav", action="store_true", help="Print nav structure for mkdocs.yml")
     args = parser.parse_args()
 
     if args.validate:
         print("Validating API_MAPPING...")
-        errors = validate_api_mapping()
+        errors, skipped = validate_api_mapping(skip_adapters=args.skip_adapters)
+        if skipped:
+            print(f"Skipped {len(skipped)} adapter imports (external dependencies):")
+            for s in skipped:
+                print(f"  - {s}")
         if errors:
             print("Validation errors:")
             for e in errors:

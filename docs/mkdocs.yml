@@ -197,4 +197,4 @@ markdown_extensions:
         emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 copyright: |
-    &copy; 2025 <a href="https://github.com/gepa-ai" target="_blank" rel="noopener">GEPA</a>
+    &copy; 2026 <a href="https://github.com/gepa-ai" target="_blank" rel="noopener">GEPA</a>

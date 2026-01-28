@@ -63,6 +63,11 @@ jobs:
           cd docs
           uv pip install -r requirements.txt -p ../.venv
 
+      - name: Validate API documentation
+        run: |
+          cd docs
+          uv run -p ../.venv python scripts/generate_api_docs.py --validate --skip-adapters
+
       - name: Generate API documentation
         run: |
           cd docs
