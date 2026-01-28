@@ -10,10 +10,10 @@ docs_dir: "docs/"
 
 nav:
     - Get Started: index.md
+    - GEPA in Action: guides/use-cases.md
     - Guides:
         - Guides Overview: guides/index.md
         - Quick Start: guides/quickstart.md
-        - Use Cases: guides/use-cases.md
         - Creating Adapters: guides/adapters.md
         - Using Callbacks: guides/callbacks.md
         - Contributing: guides/contributing.md

@@ -252,6 +252,60 @@ Finally:
   </tr>
 </table>
 
+## GEPA in Action
+
+Discover how organizations and researchers are using GEPA to optimize AI systems across diverse domains.
+
+<div class="grid cards" markdown>
+
+-   :material-office-building: **Enterprise & Production**
+
+    ---
+
+    - [**DataBricks**](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization): 90x cost reduction with open-source models outperforming Claude Opus 4.1, Sonnet 4, and GPT-5
+    - [**OpenAI Cookbook**](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining): Self-evolving agents and autonomous retraining loops
+    - [**HuggingFace Cookbook**](https://huggingface.co/learn/cookbook/en/dspy_gepa): Prompt optimization with DSPy and GEPA
+    - [**Comet-ml Opik**](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer): GEPA as core optimization algorithm
+
+    [:material-arrow-right: View all enterprise use cases](guides/use-cases.md#enterprise-production)
+
+-   :material-code-braces: **AI Coding Agents**
+
+    ---
+
+    - [**Arc.computer ATLAS**](https://www.arc.computer/blog/atlas-sre-diagnosis): Production incident diagnosis and root cause analysis
+    - [**FireBird Auto-Analyst**](https://medium.com/firebird-technologies/context-engineering-improving-ai-coding-agents-using-dspy-gepa-df669c632766): Data analysis coding agents with 4 specialized agents
+    - [**AI Code Safety**](https://www.lesswrong.com/posts/bALBxf3yGGx4bvvem/prompt-optimization-can-enable-ai-control-research): Backdoor detection and safety monitoring
+    - [**DeepResearch Agent**](https://www.rajapatnaik.com/blog/2025/10/23/langgraph-dspy-gepa-researcher): LangGraph + DSPy + GEPA research system
+
+    [:material-arrow-right: View all coding agent use cases](guides/use-cases.md#ai-coding-agents-research-tools)
+
+-   :material-hospital-building: **Domain-Specific Applications**
+
+    ---
+
+    - [**Healthcare**](https://kargarisaac.medium.com/building-and-optimizing-multi-agent-rag-systems-with-dspy-and-gepa-2b88b5838ce2): Multi-agent RAG for diabetes and COPD
+    - [**OCR**](https://www.intrinsic-labs.ai/research/ocr-gepa-v1.pdf): Up to 38% error reduction across Gemini models
+    - [**Market Research**](https://x.com/hammer_mt/status/1984269888979116061): AI personas for realistic focus groups
+    - [**Creative Writing**](https://meandnotes.substack.com/p/i-taught-a-small-llm-to-write-fiction): Fiction generation with small models
+
+    [:material-arrow-right: View all domain applications](guides/use-cases.md#domain-specific-applications)
+
+-   :material-lightbulb: **Advanced Capabilities**
+
+    ---
+
+    - [**Multimodal/VLM**](https://tinyurl.com/gepa-ocr-example): OCR performance optimization
+    - **Agent Architecture Discovery**: Automated design search
+    - **Adversarial Prompt Search**: Edge case discovery
+    - [**Unverifiable Tasks**](https://x.com/AsfiShaheen/status/1967866903331999807): Evaluator-optimizer patterns
+
+    [:material-arrow-right: View all advanced capabilities](guides/use-cases.md#advanced-capabilities)
+
+</div>
+
+[:material-arrow-right: **Explore all use cases and community integrations**](guides/use-cases.md)
+
 ## Further Resources
 
 - **Paper**: [arXiv:2507.19457](https://arxiv.org/abs/2507.19457)

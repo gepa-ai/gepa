@@ -1,4 +1,4 @@
-# Real-World Use Cases
+# GEPA in Action
 
 Discover how organizations and researchers are using GEPA to optimize AI systems across diverse domains. These examples showcase the versatility and impact of reflective prompt evolution.
 
@@ -459,6 +459,6 @@ Ready to optimize your own AI systems with GEPA?
 
     Connect with other GEPA users and contributors.
 
-    [:material-arrow-right: Discord](https://discord.gg/A7dABbtmFw) | [:material-arrow-right: Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
+    [:material-arrow-right: Discord](https://discord.gg/A7dABbtmFw) [:material-arrow-right: Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
 
 </div>
