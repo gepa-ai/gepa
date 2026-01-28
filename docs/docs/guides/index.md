@@ -5,6 +5,7 @@ Welcome to the GEPA guides! These guides will help you understand and use GEPA e
 ## Getting Started
 
 - [Quick Start](quickstart.md) - Get up and running with GEPA in minutes
+- [Use Cases](use-cases.md) - Real-world applications of GEPA across industries
 - [Creating Adapters](adapters.md) - Learn how to integrate GEPA with your system
 - [Using Callbacks](callbacks.md) - Monitor and instrument optimization runs
 - [Contributing](contributing.md) - How to contribute to GEPA development
