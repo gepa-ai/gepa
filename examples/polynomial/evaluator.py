@@ -10,6 +10,14 @@ from gepa.utils.code_execution import execute_code as _execute_code, ExecutionMo
 from examples.polynomial.evalset.problems import problems, problem_configs
 
 
+def _truncate(text: str, limit: int = 4000) -> str:
+    """Truncate text to avoid token limits."""
+    if len(text) <= limit:
+        return text
+    half = limit // 2
+    return text[:half] + "\n...[truncated]...\n" + text[-half:]
+
+
 
 class FitnessEvaluator:
     """Fitness evaluator for GEPA blackbox optimization."""
@@ -79,8 +87,8 @@ class FitnessEvaluator:
         )
 
         x = result.variables.get("__return__")
-        stdout = self._truncate(result.stdout)
-        stderr = self._truncate(result.stderr)
+        stdout = _truncate(result.stdout)
+        stderr = _truncate(result.stderr)
 
         if result.error:
             errors.append(result.error)
@@ -126,11 +134,4 @@ class FitnessEvaluator:
                 print(f"Saved to {filename}")
         except Exception as e:
             print(f"Warning: Failed to save: {e}")
-            
-    def  _truncate(self, text: str, limit: int = 4000) -> str:
-        """Truncate text to avoid token limits."""
-        if len(text) <= limit:
-            return text
-        half = limit // 2
-        return text[:half] + "\n...[truncated]...\n" + text[-half:]
 

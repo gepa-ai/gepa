@@ -9,11 +9,13 @@ This version optimizes TWO components:
 2. refiner_prompt: Instructions for how to refine code per-problem
 """
 
-import dspy
-import os
-from typing import Any, Optional
+import argparse
 import json
+import os
 import time
+from typing import Any, Optional
+
+import dspy
 import numpy as np
 
 
@@ -47,7 +49,7 @@ class StateTracker:
     Tracks the best solution found so far, the number of metric calls, and the cache.
     """
 
-    def __init__(self, log_dir: str=None, max_metric_calls: int=200):
+    def __init__(self, log_dir: str, max_metric_calls: int):
         self.max_metric_calls = max_metric_calls
         self.metric_calls = 0
         self.cache = {}
@@ -137,9 +139,6 @@ class StateTracker:
         self.save_logs()
 
     def save_logs(self) -> None:
-        if self.log_dir is None:
-            return
-        
         with open(os.path.join(self.log_dir, "state_tracker_logs.json"), "w") as f:
             json.dump(self.logs, f, indent=2)
         print(
@@ -406,8 +405,28 @@ def create_fitness_function(
 
 def main():
     # Parse arguments
-    max_metric_calls = 200
-    log_dir = f"outputs/artifacts/circle_packing/{time.strftime('%y%m%d_%H:%M:%S')}"
+    parser = argparse.ArgumentParser(description="Circle Packing Optimization")
+    parser.add_argument(
+        "--run-name",
+        type=str,
+        default=None,
+        help="Run name suffix for artifact directory",
+    )
+    parser.add_argument(
+        "--max-metric-calls",
+        type=int,
+        default=150,
+        help="Maximum number of metric calls",
+    )
+    args = parser.parse_args()
+
+    max_metric_calls = args.max_metric_calls
+
+    # Build log directory with optional run_name suffix
+    if args.run_name:
+        log_dir = f"outputs/artifacts/circle_packing/{args.run_name}"
+    else:
+        log_dir = f"outputs/artifacts/circle_packing/{time.strftime('%y%m%d_%H%M%S')}"
     os.makedirs(log_dir, exist_ok=True)
 
     print("\n" + "=" * 70)
@@ -425,9 +444,7 @@ def main():
         raise ValueError("OPENAI_API_KEY not set")
 
     # Create trackers
-    state_tracker = StateTracker(
-        log_dir=log_dir, max_metric_calls=max_metric_calls
-    )
+    state_tracker = StateTracker(log_dir=log_dir, max_metric_calls=max_metric_calls)
 
     # Create seed candidate
     seed_candidate = {
@@ -455,6 +472,7 @@ def main():
         reflection=ReflectionConfig(
             reflection_minibatch_size=1,
             reflection_lm="openai/gpt-5",
+            skip_perfect_score=False,
         ),
     )
 

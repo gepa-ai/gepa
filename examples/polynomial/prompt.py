@@ -17,6 +17,7 @@ def solve(objective_function, config, prev_best_x=None):
 - Return the best solution found as a numpy array of shape (dim,)
 - Use `objective_function(x)` to evaluate candidates (counts against budget, lower score is better)
 - Stay within `config['budget']` calls
+- Full use of all the allowed evaluation budget leads to better performance
 - Use `prev_best_x` to warm-start search if available
 
 ## Mutation Strategies

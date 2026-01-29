@@ -1,0 +1,1157 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-us" xml:lang="en-us">
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <meta name="copyright" content="(C) Copyright 2005">
+      <meta name="DC.rights.owner" content="(C) Copyright 2005">
+      <meta name="DC.Type" content="cppModule">
+      <meta name="DC.Title" content="Direct3D 9 Interoperability [DEPRECATED]">
+      <meta name="abstract" content="">
+      <meta name="description" content="">
+      <meta name="DC.Format" content="XHTML">
+      <meta name="DC.Identifier" content="group__CUDART__D3D9__DEPRECATED">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/commonltr.css">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/site.css">
+      <title>CUDA Runtime API :: CUDA Toolkit Documentation</title>
+      <!--[if lt IE 9]>
+      <script src="../common/formatting/html5shiv-printshiv.min.js"></script>
+      <![endif]-->
+      <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-svg.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.ba-hashchange.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.scrollintoview.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/scripts/geoip/geoip.js"></script>
+      <script type="text/javascript" src="../search/htmlFileList.js"></script>
+      <script type="text/javascript" src="../search/htmlFileInfoList.js"></script>
+      <script type="text/javascript" src="../search/nwSearchFnt.min.js"></script>
+      <script type="text/javascript" src="../search/stemmers/en_stemmer.min.js"></script>
+      <script type="text/javascript" src="../search/index-1.js"></script>
+      <script type="text/javascript" src="../search/index-2.js"></script>
+      <script type="text/javascript" src="../search/index-3.js"></script>
+      <link rel="canonical" href="https://docs.nvidia.com/cuda/cuda-runtime-api/index.html">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/qwcode.highlight.css">
+   </head>
+   <body>
+      
+      <header id="header"><span id="company">NVIDIA</span><span id="site-title">CUDA Toolkit Documentation</span><form id="search" method="get" action="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-runtime-api/search">
+            <input type="text" name="search-text"><fieldset id="search-location">
+               <legend>Search In:</legend>
+               <label><input type="radio" name="search-type" value="site">Entire Site</label>
+               <label><input type="radio" name="search-type" value="document">Just This Document</label>
+</fieldset>
+            <button type="reset">clear search</button>
+            <button id="submit" type="submit">search</button>
+</form>
+      </header>
+      <div id="site-content">
+         <nav id="site-nav">
+            <div class="category closed"><a href="https://docs.nvidia.com/cuda/archive/12.4.0/index.html" title="The root of the site.">CUDA Toolkit 
+                  
+                  
+                  v12.4.0</a></div>
+            <div class="category"><a href="index.html" title="CUDA Runtime API">CUDA Runtime API</a></div>
+            <ul>
+               <li>
+                  <div class="section-link"><a href="driver-vs-runtime-api.html#driver-vs-runtime-api">1. Difference between the driver and runtime APIs </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="api-sync-behavior.html#api-sync-behavior">2. API synchronization behavior </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="stream-sync-behavior.html#stream-sync-behavior">3. Stream synchronization behavior</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="graphs-thread-safety.html#graphs-thread-safety">4. Graph object thread safety</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="version-mixing-rules.html#version-mixing-rules">5. Rules for version mixing </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="modules.html#modules">6. Modules</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DEVICE.html#group__CUDART__DEVICE">6.1. Device Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DEVICE__DEPRECATED.html#group__CUDART__DEVICE__DEPRECATED">6.2. Device Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__THREAD__DEPRECATED.html#group__CUDART__THREAD__DEPRECATED">6.3. Thread Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__ERROR.html#group__CUDART__ERROR">6.4. Error Handling</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__STREAM.html#group__CUDART__STREAM">6.5. Stream Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT">6.6. Event Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXTRES__INTEROP.html#group__CUDART__EXTRES__INTEROP">6.7. External Resource Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION">6.8. Execution Control</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXECUTION__DEPRECATED.html#group__CUDART__EXECUTION__DEPRECATED">6.9. Execution Control [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OCCUPANCY.html#group__CUDART__OCCUPANCY">6.10. Occupancy</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY.html#group__CUDART__MEMORY">6.11. Memory Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY__DEPRECATED.html#group__CUDART__MEMORY__DEPRECATED">6.12. Memory Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY__POOLS.html#group__CUDART__MEMORY__POOLS">6.13. Stream Ordered Memory Allocator</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__UNIFIED.html#group__CUDART__UNIFIED">6.14. Unified Addressing</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__PEER.html#group__CUDART__PEER">6.15. Peer Device Memory Access</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OPENGL.html#group__CUDART__OPENGL">6.16. OpenGL Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OPENGL__DEPRECATED.html#group__CUDART__OPENGL__DEPRECATED">6.17. OpenGL Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D9.html#group__CUDART__D3D9">6.18. Direct3D 9 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED">6.19. Direct3D 9 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D10.html#group__CUDART__D3D10">6.20. Direct3D 10 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D10__DEPRECATED.html#group__CUDART__D3D10__DEPRECATED">6.21. Direct3D 10 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D11.html#group__CUDART__D3D11">6.22. Direct3D 11 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D11__DEPRECATED.html#group__CUDART__D3D11__DEPRECATED">6.23. Direct3D 11 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__VDPAU.html#group__CUDART__VDPAU">6.24. VDPAU Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EGL.html#group__CUDART__EGL">6.25. EGL Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__INTEROP.html#group__CUDART__INTEROP">6.26. Graphics Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__TEXTURE__OBJECT.html#group__CUDART__TEXTURE__OBJECT">6.27. Texture Object Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__SURFACE__OBJECT.html#group__CUDART__SURFACE__OBJECT">6.28. Surface Object Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART____VERSION.html#group__CUDART____VERSION">6.29. Version Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__GRAPH.html#group__CUDART__GRAPH">6.30. Graph Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DRIVER__ENTRY__POINT.html#group__CUDART__DRIVER__ENTRY__POINT">6.31. Driver Entry Point Access</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL">6.32. C++ API Routines</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DRIVER.html#group__CUDART__DRIVER">6.33. Interactions with the CUDA Driver API</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__PROFILER.html#group__CUDART__PROFILER">6.34. Profiler Control</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__TYPES.html#group__CUDART__TYPES">6.35. Data types used by CUDA Runtime</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="annotated.html#annotated">7. Data Structures</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="class____cudaOccupancyB2DHelper.html#class____cudaOccupancyB2DHelper">7.1. __cudaOccupancyB2DHelper</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaAccessPolicyWindow.html#structcudaAccessPolicyWindow">7.2. cudaAccessPolicyWindow</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaArrayMemoryRequirements.html#structcudaArrayMemoryRequirements">7.3. cudaArrayMemoryRequirements</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaArraySparseProperties.html#structcudaArraySparseProperties">7.4. cudaArraySparseProperties</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaAsyncNotificationInfo__t.html#structcudaAsyncNotificationInfo__t">7.5. cudaAsyncNotificationInfo_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaChannelFormatDesc.html#structcudaChannelFormatDesc">7.6. cudaChannelFormatDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaChildGraphNodeParams.html#structcudaChildGraphNodeParams">7.7. cudaChildGraphNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaConditionalNodeParams.html#structcudaConditionalNodeParams">7.8. cudaConditionalNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaDeviceProp.html#structcudaDeviceProp">7.9. cudaDeviceProp</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEglFrame.html#structcudaEglFrame">7.10. cudaEglFrame</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEglPlaneDesc.html#structcudaEglPlaneDesc">7.11. cudaEglPlaneDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEventRecordNodeParams.html#structcudaEventRecordNodeParams">7.12. cudaEventRecordNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEventWaitNodeParams.html#structcudaEventWaitNodeParams">7.13. cudaEventWaitNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExtent.html#structcudaExtent">7.14. cudaExtent</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryBufferDesc.html#structcudaExternalMemoryBufferDesc">7.15. cudaExternalMemoryBufferDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryHandleDesc.html#structcudaExternalMemoryHandleDesc">7.16. cudaExternalMemoryHandleDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryMipmappedArrayDesc.html#structcudaExternalMemoryMipmappedArrayDesc">7.17. cudaExternalMemoryMipmappedArrayDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreHandleDesc.html#structcudaExternalSemaphoreHandleDesc">7.18. cudaExternalSemaphoreHandleDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalNodeParams.html#structcudaExternalSemaphoreSignalNodeParams">7.19. cudaExternalSemaphoreSignalNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalNodeParamsV2.html#structcudaExternalSemaphoreSignalNodeParamsV2">7.20. cudaExternalSemaphoreSignalNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalParams.html#structcudaExternalSemaphoreSignalParams">7.21. cudaExternalSemaphoreSignalParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalParams__v1.html#structcudaExternalSemaphoreSignalParams__v1">7.22. cudaExternalSemaphoreSignalParams_v1</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitNodeParams.html#structcudaExternalSemaphoreWaitNodeParams">7.23. cudaExternalSemaphoreWaitNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitNodeParamsV2.html#structcudaExternalSemaphoreWaitNodeParamsV2">7.24. cudaExternalSemaphoreWaitNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitParams.html#structcudaExternalSemaphoreWaitParams">7.25. cudaExternalSemaphoreWaitParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitParams__v1.html#structcudaExternalSemaphoreWaitParams__v1">7.26. cudaExternalSemaphoreWaitParams_v1</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaFuncAttributes.html#structcudaFuncAttributes">7.27. cudaFuncAttributes</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphEdgeData.html#structcudaGraphEdgeData">7.28. cudaGraphEdgeData</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphExecUpdateResultInfo.html#structcudaGraphExecUpdateResultInfo">7.29. cudaGraphExecUpdateResultInfo</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphInstantiateParams.html#structcudaGraphInstantiateParams">7.30. cudaGraphInstantiateParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphKernelNodeUpdate.html#structcudaGraphKernelNodeUpdate">7.31. cudaGraphKernelNodeUpdate</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphNodeParams.html#structcudaGraphNodeParams">7.32. cudaGraphNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaHostNodeParams.html#structcudaHostNodeParams">7.33. cudaHostNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaHostNodeParamsV2.html#structcudaHostNodeParamsV2">7.34. cudaHostNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaIpcEventHandle__t.html#structcudaIpcEventHandle__t">7.35. cudaIpcEventHandle_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaIpcMemHandle__t.html#structcudaIpcMemHandle__t">7.36. cudaIpcMemHandle_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaKernelNodeParams.html#structcudaKernelNodeParams">7.37. cudaKernelNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaKernelNodeParamsV2.html#structcudaKernelNodeParamsV2">7.38. cudaKernelNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchAttribute.html#structcudaLaunchAttribute">7.39. cudaLaunchAttribute</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="unioncudaLaunchAttributeValue.html#unioncudaLaunchAttributeValue">7.40. cudaLaunchAttributeValue</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchConfig__t.html#structcudaLaunchConfig__t">7.41. cudaLaunchConfig_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchMemSyncDomainMap.html#structcudaLaunchMemSyncDomainMap">7.42. cudaLaunchMemSyncDomainMap</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchParams.html#structcudaLaunchParams">7.43. cudaLaunchParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAccessDesc.html#structcudaMemAccessDesc">7.44. cudaMemAccessDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAllocNodeParams.html#structcudaMemAllocNodeParams">7.45. cudaMemAllocNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAllocNodeParamsV2.html#structcudaMemAllocNodeParamsV2">7.46. cudaMemAllocNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpy3DParms.html#structcudaMemcpy3DParms">7.47. cudaMemcpy3DParms</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpy3DPeerParms.html#structcudaMemcpy3DPeerParms">7.48. cudaMemcpy3DPeerParms</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpyNodeParams.html#structcudaMemcpyNodeParams">7.49. cudaMemcpyNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemFreeNodeParams.html#structcudaMemFreeNodeParams">7.50. cudaMemFreeNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemLocation.html#structcudaMemLocation">7.51. cudaMemLocation</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemPoolProps.html#structcudaMemPoolProps">7.52. cudaMemPoolProps</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemPoolPtrExportData.html#structcudaMemPoolPtrExportData">7.53. cudaMemPoolPtrExportData</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemsetParams.html#structcudaMemsetParams">7.54. cudaMemsetParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemsetParamsV2.html#structcudaMemsetParamsV2">7.55. cudaMemsetParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPitchedPtr.html#structcudaPitchedPtr">7.56. cudaPitchedPtr</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPointerAttributes.html#structcudaPointerAttributes">7.57. cudaPointerAttributes</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPos.html#structcudaPos">7.58. cudaPos</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaResourceDesc.html#structcudaResourceDesc">7.59. cudaResourceDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaResourceViewDesc.html#structcudaResourceViewDesc">7.60. cudaResourceViewDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaTextureDesc.html#structcudaTextureDesc">7.61. cudaTextureDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structCUuuid__st.html#structCUuuid__st">7.62. CUuuid_st</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="functions.html#functions">8. Data Fields</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="deprecated.html#deprecated">9. Deprecated List</a></div>
+               </li>
+            </ul>
+         </nav>
+         <div id="resize-nav"></div>
+         <nav id="search-results">
+            <h2>Search Results</h2>
+            <ol></ol>
+         </nav>
+         
+         <div id="contents-container">
+            <div id="breadcrumbs-container">
+               <div id="breadcrumbs">
+<a href="group__CUDART__D3D9.html" shape="rect">&lt; Previous</a> | <a href="group__CUDART__D3D10.html" shape="rect">Next &gt;</a>
+</div>
+               <div id="release-info">CUDA Runtime API
+                  (<a href="https://docs.nvidia.com/cuda/archive/12.4.0/pdf/CUDA_Runtime_API.pdf">PDF</a>)
+                  -
+                   
+                  
+                  
+                  v12.4.0
+                  (<a href="https://developer.nvidia.com/cuda-toolkit-archive">older</a>)
+                  -
+                  Last updated March 5, 2024
+                  -
+                  <a href="mailto:CUDAIssues@nvidia.com?subject=CUDA%20Toolkit%20Documentation%20Feedback:%20CUDA%20Runtime%20API">Send Feedback</a>
+</div>
+            </div>
+            <article id="contents">
+               <div class="topic reference apiRef apiPackage cppModule" id="group__CUDART__D3D9__DEPRECATED">
+<a name="group__CUDART__D3D9__DEPRECATED" shape="rect">
+                     <!-- --></a><h2 class="topictitle2 cppModule">6.19. Direct3D 9 Interoperability [DEPRECATED]</h2>
+                  <div class="section">
+                     <p>This section describes deprecated Direct3D 9 interoperability functions. </p>
+                  </div>
+                  <h3 class="fake_sectiontitle member_header">Enumerations</h3>
+                  <dl class="members">
+                     <dt>
+<span class="member_type">enum </span><span class="member_name"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g77fb48ace0d2da465b6f4bcc00ef750b" shape="rect">cudaD3D9MapFlags</a></span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type">enum </span><span class="member_name"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1gcdebbc14eb83032da31bd75503cddfea" shape="rect">cudaD3D9RegisterFlags</a></span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                  </dl>
+                  <h3 class="fake_sectiontitle member_header">Functions</h3>
+                  <dl class="members">
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g37e568318e2f937fe06020a675497b1e" shape="rect">cudaD3D9MapResources</a> (  int <span> </span><span class="keyword keyword apiItemName">count</span>, IDirect3DResource9**<span> </span><span class="keyword keyword apiItemName">ppResources</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Map Direct3D resources for access by CUDA. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g81b436ab21219ad7192f2d1d1331a365" shape="rect">cudaD3D9RegisterResource</a> (  IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">flags</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Registers a Direct3D resource for access by CUDA. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1gbf66161e2462ff7ef17cbccef3d6b098" shape="rect">cudaD3D9ResourceGetMappedArray</a> (  cudaArray**<span> </span><span class="keyword keyword apiItemName">ppArray</span>, IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">face</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">level</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Get an array through which to access a subresource of a Direct3D resource which has been mapped for access by CUDA. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g38876ed7e596f58ee0ec550dd168b4e8" shape="rect">cudaD3D9ResourceGetMappedPitch</a> (  size_t*<span> </span><span class="keyword keyword apiItemName">pPitch</span>, size_t*<span> </span><span class="keyword keyword apiItemName">pPitchSlice</span>, IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">face</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">level</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Get the pitch of a subresource of a Direct3D resource which has been mapped for access by CUDA. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g7d367e7ea6e0e3c8884ea2a473f75749" shape="rect">cudaD3D9ResourceGetMappedPointer</a> (  void**<span> </span><span class="keyword keyword apiItemName">pPointer</span>, IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">face</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">level</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Get a pointer through which to access a subresource of a Direct3D resource which has been mapped for access by CUDA. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g80531533ff24e1c3a5201edf2d05f89f" shape="rect">cudaD3D9ResourceGetMappedSize</a> (  size_t*<span> </span><span class="keyword keyword apiItemName">pSize</span>, IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">face</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">level</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Get the size of a subresource of a Direct3D resource which has been mapped for access by CUDA. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g2963f7235b75594ca2947ff84d7000c1" shape="rect">cudaD3D9ResourceGetSurfaceDimensions</a> (  size_t*<span> </span><span class="keyword keyword apiItemName">pWidth</span>, size_t*<span> </span><span class="keyword keyword apiItemName">pHeight</span>, size_t*<span> </span><span class="keyword keyword apiItemName">pDepth</span>, IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">face</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">level</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Get the dimensions of a registered Direct3D surface. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1ge9a5aef299347c403cd8f96855d61fb4" shape="rect">cudaD3D9ResourceSetMapFlags</a> (  IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">flags</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Set usage flags for mapping a Direct3D resource. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g4597fa217d5e7e3f735f233882292fe7" shape="rect">cudaD3D9UnmapResources</a> (  int <span> </span><span class="keyword keyword apiItemName">count</span>, IDirect3DResource9**<span> </span><span class="keyword keyword apiItemName">ppResources</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Unmap Direct3D resources for access by CUDA. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g81dd5ad8f5ec63e31a3d32f67dc1ca4c" shape="rect">cudaD3D9UnregisterResource</a> (  IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Unregisters a Direct3D resource for access by CUDA. </span>
+</dd>
+                  </dl>
+                  <div class="description">
+                     <h3 class="sectiontitle">Enumerations</h3>
+                     <dl class="description">
+                        <dt class="description">
+<a name="group__CUDART__D3D9__DEPRECATED_1g77fb48ace0d2da465b6f4bcc00ef750b" id="group__CUDART__D3D9__DEPRECATED_1g77fb48ace0d2da465b6f4bcc00ef750b" shape="rect">
+                              <!-- --></a><span>enum cudaD3D9MapFlags</span>
+</dt>
+                        <dd class="description">
+                           <div class="section">
+                              <p>CUDA D3D9 Map Flags </p>
+                           </div>
+                           <div class="enum-members">
+                              <h6 class="enumerator_header">
+                                 Values
+                                 
+                              </h6>
+                              <dl class="enumerator">
+                                 <dt><span class="enum-member-name-def">cudaD3D9MapFlagsNone = <span class="ph ph apiData">0</span></span></dt>
+                                 <dd>Default; Assume resource can be read/written </dd>
+                                 <dt><span class="enum-member-name-def">cudaD3D9MapFlagsReadOnly = <span class="ph ph apiData">1</span></span></dt>
+                                 <dd>CUDA kernels will not write to this resource </dd>
+                                 <dt><span class="enum-member-name-def">cudaD3D9MapFlagsWriteDiscard = <span class="ph ph apiData">2</span></span></dt>
+                                 <dd>CUDA kernels will only write to and will not read from this resource </dd>
+                              </dl>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__D3D9__DEPRECATED_1gcdebbc14eb83032da31bd75503cddfea" id="group__CUDART__D3D9__DEPRECATED_1gcdebbc14eb83032da31bd75503cddfea" shape="rect">
+                              <!-- --></a><span>enum cudaD3D9RegisterFlags</span>
+</dt>
+                        <dd class="description">
+                           <div class="section">
+                              <p>CUDA D3D9 Register Flags </p>
+                           </div>
+                           <div class="enum-members">
+                              <h6 class="enumerator_header">
+                                 Values
+                                 
+                              </h6>
+                              <dl class="enumerator">
+                                 <dt><span class="enum-member-name-def">cudaD3D9RegisterFlagsNone = <span class="ph ph apiData">0</span></span></dt>
+                                 <dd>Default; Resource can be accessed througa void* </dd>
+                                 <dt><span class="enum-member-name-def">cudaD3D9RegisterFlagsArray = <span class="ph ph apiData">1</span></span></dt>
+                                 <dd>Resource can be accessed through a CUarray* </dd>
+                              </dl>
+                           </div>
+                        </dd>
+                     </dl>
+                  </div>
+                  <div class="description">
+                     <h3 class="sectiontitle">Functions</h3>
+                     <dl class="description">
+                        <dt class="description">
+<a name="group__CUDART__D3D9__DEPRECATED_1g37e568318e2f937fe06020a675497b1e" id="group__CUDART__D3D9__DEPRECATED_1g37e568318e2f937fe06020a675497b1e" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaD3D9MapResources (  int <span> </span><span class="keyword keyword apiItemName">count</span>, IDirect3DResource9**<span> </span><span class="keyword keyword apiItemName">ppResources</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Map Direct3D resources for access by CUDA. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">count</span></tt></dt>
+                                 <dd>- Number of resources to map for CUDA </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">ppResources</span></tt></dt>
+                                 <dd>- Resources to map for CUDA</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000020" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 3.0.</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>Maps the <tt class="ph tt code">count</tt> Direct3D resources in <tt class="ph tt code">ppResources</tt> for access by CUDA.
+                              </p>
+                              <p class="p">The resources in <tt class="ph tt code">ppResources</tt> may be accessed in CUDA kernels until they are unmapped. Direct3D should not access any resources while they are mapped by
+                                 CUDA. If an application does so, the results are undefined.
+                              </p>
+                              <p class="p">This function provides the synchronization guarantee that any Direct3D calls issued before <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g37e568318e2f937fe06020a675497b1e" title="Map Direct3D resources for access by CUDA." shape="rect">cudaD3D9MapResources()</a> will complete before any CUDA kernels issued after <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g37e568318e2f937fe06020a675497b1e" title="Map Direct3D resources for access by CUDA." shape="rect">cudaD3D9MapResources()</a> begin.
+                              </p>
+                              <p class="p">If any of <tt class="ph tt code">ppResources</tt> have not been registered for use with CUDA or if <tt class="ph tt code">ppResources</tt> contains any duplicate entries then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If any of <tt class="ph tt code">ppResources</tt> are presently mapped for access by CUDA then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a> is returned.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches.</p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__INTEROP.html#group__CUDART__INTEROP_1gad8fbe74d02adefb8e7efb4971ee6322" title="Map graphics resources for access by CUDA." shape="rect">cudaGraphicsMapResources</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__D3D9__DEPRECATED_1g81b436ab21219ad7192f2d1d1331a365" id="group__CUDART__D3D9__DEPRECATED_1g81b436ab21219ad7192f2d1d1331a365" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaD3D9RegisterResource (  IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">flags</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Registers a Direct3D resource for access by CUDA. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pResource</span></tt></dt>
+                                 <dd>- Resource to register </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">flags</span></tt></dt>
+                                 <dd>- Parameters for resource registration</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000018" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 3.0.</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>Registers the Direct3D resource <tt class="ph tt code">pResource</tt> for access by CUDA.
+                              </p>
+                              <p class="p">If this call is successful, then the application will be able to map and unmap this resource until it is unregistered through
+                                 <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g81dd5ad8f5ec63e31a3d32f67dc1ca4c" title="Unregisters a Direct3D resource for access by CUDA." shape="rect">cudaD3D9UnregisterResource()</a>. Also on success, this call will increase the internal reference count on <tt class="ph tt code">pResource</tt>. This reference count will be decremented when this resource is unregistered through <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g81dd5ad8f5ec63e31a3d32f67dc1ca4c" title="Unregisters a Direct3D resource for access by CUDA." shape="rect">cudaD3D9UnregisterResource()</a>.
+                              </p>
+                              <p class="p">This call potentially has a high-overhead and should not be called every frame in interactive applications.</p>
+                              <p class="p">The type of <tt class="ph tt code">pResource</tt> must be one of the following.
+                              </p>
+                              <p class="p">
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p">IDirect3DVertexBuffer9: No notes.</p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p">IDirect3DIndexBuffer9: No notes.</p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p">IDirect3DSurface9: Only stand-alone objects of type IDirect3DSurface9 may be explicitly shared. In particular, individual
+                                          mipmap levels and faces of cube maps may not be registered directly. To access individual surfaces associated with a texture,
+                                          one must register the base texture object.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p">IDirect3DBaseTexture9: When a texture is registered, all surfaces associated with all mipmap levels of all faces of the texture
+                                          will be accessible to CUDA.
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p">The <tt class="ph tt code">flags</tt> argument specifies the mechanism through which CUDA will access the Direct3D resource. The following value is allowed:
+                              </p>
+                              <p class="p">
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1ggcdebbc14eb83032da31bd75503cddfea10cd58f205c593368626b4ec54a54744" shape="rect">cudaD3D9RegisterFlagsNone</a>: Specifies that CUDA will access this resource through a <tt class="ph tt code">void*</tt>. The pointer, size, and pitch for each subresource of this resource may be queried through <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g7d367e7ea6e0e3c8884ea2a473f75749" title="Get a pointer through which to access a subresource of a Direct3D resource which has been mapped for access by CUDA." shape="rect">cudaD3D9ResourceGetMappedPointer()</a>, <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g80531533ff24e1c3a5201edf2d05f89f" title="Get the size of a subresource of a Direct3D resource which has been mapped for access by CUDA." shape="rect">cudaD3D9ResourceGetMappedSize()</a>, and <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g38876ed7e596f58ee0ec550dd168b4e8" title="Get the pitch of a subresource of a Direct3D resource which has been mapped for access by CUDA." shape="rect">cudaD3D9ResourceGetMappedPitch()</a> respectively. This option is valid for all resource types.
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p">Not all Direct3D resources of the above types may be used for interoperability with CUDA. The following are some limitations:</p>
+                              <p class="p">
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p">The primary rendertarget may not be registered with CUDA.</p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p">Resources allocated as shared may not be registered with CUDA.</p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p">Any resources allocated in D3DPOOL_SYSTEMMEM or D3DPOOL_MANAGED may not be registered with CUDA.</p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p">Textures which are not of a format which is 1, 2, or 4 channels of 8, 16, or 32-bit integer or floating-point data cannot
+                                          be shared.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p">Surfaces of depth or stencil formats cannot be shared.</p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p">If Direct3D interoperability is not initialized on this context, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038938c6e8b96ecde62e3ab5137156f739a" shape="rect">cudaErrorInvalidDevice</a> is returned. If <tt class="ph tt code">pResource</tt> is of incorrect type (e.g, is a non-stand-alone IDirect3DSurface9) or is already registered, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If <tt class="ph tt code">pResource</tt> cannot be registered then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a> is returned.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches.</p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__D3D9.html#group__CUDART__D3D9_1gab5efa8a8882a6e0ee99717a434730b0" title="Register a Direct3D 9 resource for access by CUDA." shape="rect">cudaGraphicsD3D9RegisterResource</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__D3D9__DEPRECATED_1gbf66161e2462ff7ef17cbccef3d6b098" id="group__CUDART__D3D9__DEPRECATED_1gbf66161e2462ff7ef17cbccef3d6b098" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaD3D9ResourceGetMappedArray (  cudaArray**<span> </span><span class="keyword keyword apiItemName">ppArray</span>, IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">face</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">level</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Get an array through which to access a subresource of a Direct3D resource which has been mapped for access by CUDA. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">ppArray</span></tt></dt>
+                                 <dd>- Returned array corresponding to subresource </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pResource</span></tt></dt>
+                                 <dd>- Mapped resource to access </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">face</span></tt></dt>
+                                 <dd>- Face of resource to access </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">level</span></tt></dt>
+                                 <dd>- Level of resource to access</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000024" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 3.0.</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>Returns in <tt class="ph tt code">*pArray</tt> an array through which the subresource of the mapped Direct3D resource <tt class="ph tt code">pResource</tt>, which corresponds to <tt class="ph tt code">face</tt> and <tt class="ph tt code">level</tt> may be accessed. The value set in <tt class="ph tt code">pArray</tt> may change every time that <tt class="ph tt code">pResource</tt> is mapped.
+                              </p>
+                              <p class="p">If <tt class="ph tt code">pResource</tt> is not registered then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If <tt class="ph tt code">pResource</tt> was not registered with usage flags <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1ggcdebbc14eb83032da31bd75503cddfeaa4c940a582866d5cf40ede9dbfa1f5e5" shape="rect">cudaD3D9RegisterFlagsArray</a>, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If <tt class="ph tt code">pResource</tt> is not mapped, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a> is returned.
+                              </p>
+                              <p class="p">For usage requirements of <tt class="ph tt code">face</tt> and <tt class="ph tt code">level</tt> parameters, see <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g7d367e7ea6e0e3c8884ea2a473f75749" title="Get a pointer through which to access a subresource of a Direct3D resource which has been mapped for access by CUDA." shape="rect">cudaD3D9ResourceGetMappedPointer()</a>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches.</p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__INTEROP.html#group__CUDART__INTEROP_1g0dd6b5f024dfdcff5c28a08ef9958031" title="Get an array through which to access a subresource of a mapped graphics resource." shape="rect">cudaGraphicsSubResourceGetMappedArray</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__D3D9__DEPRECATED_1g38876ed7e596f58ee0ec550dd168b4e8" id="group__CUDART__D3D9__DEPRECATED_1g38876ed7e596f58ee0ec550dd168b4e8" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaD3D9ResourceGetMappedPitch (  size_t*<span> </span><span class="keyword keyword apiItemName">pPitch</span>, size_t*<span> </span><span class="keyword keyword apiItemName">pPitchSlice</span>, IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">face</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">level</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Get the pitch of a subresource of a Direct3D resource which has been mapped for access by CUDA. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pPitch</span></tt></dt>
+                                 <dd>- Returned pitch of subresource </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pPitchSlice</span></tt></dt>
+                                 <dd>- Returned Z-slice pitch of subresource </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pResource</span></tt></dt>
+                                 <dd>- Mapped resource to access </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">face</span></tt></dt>
+                                 <dd>- Face of resource to access </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">level</span></tt></dt>
+                                 <dd>- Level of resource to access</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000027" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 3.0.</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>Returns in <tt class="ph tt code">*pPitch</tt> and <tt class="ph tt code">*pPitchSlice</tt> the pitch and Z-slice pitch of the subresource of the mapped Direct3D resource <tt class="ph tt code">pResource</tt>, which corresponds to <tt class="ph tt code">face</tt> and <tt class="ph tt code">level</tt>. The values set in <tt class="ph tt code">pPitch</tt> and <tt class="ph tt code">pPitchSlice</tt> may change every time that <tt class="ph tt code">pResource</tt> is mapped.
+                              </p>
+                              <p class="p">The pitch and Z-slice pitch values may be used to compute the location of a sample on a surface as follows.</p>
+                              <p class="p">For a 2D surface, the byte offset of the sample at position <strong class="ph b">x</strong>, <strong class="ph b">y</strong> from the base pointer of the surface is:
+                              </p>
+                              <p class="p"><strong class="ph b">y</strong> * <strong class="ph b">pitch</strong> + (<strong class="ph b">bytes per pixel</strong>) * <strong class="ph b">x</strong></p>
+                              <p class="p">For a 3D surface, the byte offset of the sample at position <strong class="ph b">x</strong>, <strong class="ph b">y</strong>, <strong class="ph b">z</strong> from the base pointer of the surface is:
+                              </p>
+                              <p class="p"><strong class="ph b">z*</strong><strong class="ph b">slicePitch</strong> + <strong class="ph b">y</strong> * <strong class="ph b">pitch</strong> + (<strong class="ph b">bytes per pixel</strong>) * <strong class="ph b">x</strong></p>
+                              <p class="p">Both parameters <tt class="ph tt code">pPitch</tt> and <tt class="ph tt code">pPitchSlice</tt> are optional and may be set to NULL.
+                              </p>
+                              <p class="p">If <tt class="ph tt code">pResource</tt> is not of type IDirect3DBaseTexture9 or one of its sub-types or if <tt class="ph tt code">pResource</tt> has not been registered for use with CUDA, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If <tt class="ph tt code">pResource</tt> was not registered with usage flags <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1ggcdebbc14eb83032da31bd75503cddfea10cd58f205c593368626b4ec54a54744" shape="rect">cudaD3D9RegisterFlagsNone</a>, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If <tt class="ph tt code">pResource</tt> is not mapped for access by CUDA then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a> is returned.
+                              </p>
+                              <p class="p">For usage requirements of <tt class="ph tt code">face</tt> and <tt class="ph tt code">level</tt> parameters, see <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g7d367e7ea6e0e3c8884ea2a473f75749" title="Get a pointer through which to access a subresource of a Direct3D resource which has been mapped for access by CUDA." shape="rect">cudaD3D9ResourceGetMappedPointer()</a>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches.</p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__INTEROP.html#group__CUDART__INTEROP_1ga36881081c8deb4df25c256158e1ac99" title="Get an device pointer through which to access a mapped graphics resource." shape="rect">cudaGraphicsResourceGetMappedPointer</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__D3D9__DEPRECATED_1g7d367e7ea6e0e3c8884ea2a473f75749" id="group__CUDART__D3D9__DEPRECATED_1g7d367e7ea6e0e3c8884ea2a473f75749" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaD3D9ResourceGetMappedPointer (  void**<span> </span><span class="keyword keyword apiItemName">pPointer</span>, IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">face</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">level</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Get a pointer through which to access a subresource of a Direct3D resource which has been mapped for access by CUDA. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pPointer</span></tt></dt>
+                                 <dd>- Returned pointer corresponding to subresource </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pResource</span></tt></dt>
+                                 <dd>- Mapped resource to access </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">face</span></tt></dt>
+                                 <dd>- Face of resource to access </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">level</span></tt></dt>
+                                 <dd>- Level of resource to access</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000025" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 3.0.</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>Returns in <tt class="ph tt code">*pPointer</tt> the base pointer of the subresource of the mapped Direct3D resource <tt class="ph tt code">pResource</tt>, which corresponds to <tt class="ph tt code">face</tt> and <tt class="ph tt code">level</tt>. The value set in <tt class="ph tt code">pPointer</tt> may change every time that <tt class="ph tt code">pResource</tt> is mapped.
+                              </p>
+                              <p class="p">If <tt class="ph tt code">pResource</tt> is not registered, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If <tt class="ph tt code">pResource</tt> was not registered with usage flags <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1ggcdebbc14eb83032da31bd75503cddfea10cd58f205c593368626b4ec54a54744" shape="rect">cudaD3D9RegisterFlagsNone</a>, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If <tt class="ph tt code">pResource</tt> is not mapped, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a> is returned.
+                              </p>
+                              <p class="p">If <tt class="ph tt code">pResource</tt> is of type IDirect3DCubeTexture9, then <tt class="ph tt code">face</tt> must one of the values enumerated by type D3DCUBEMAP_FACES. For all other types, <tt class="ph tt code">face</tt> must be 0. If <tt class="ph tt code">face</tt> is invalid, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a> is returned.
+                              </p>
+                              <p class="p">If <tt class="ph tt code">pResource</tt> is of type IDirect3DBaseTexture9, then <tt class="ph tt code">level</tt> must correspond to a valid mipmap level. Only mipmap level 0 is supported for now. For all other types <tt class="ph tt code">level</tt> must be 0. If <tt class="ph tt code">level</tt> is invalid, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a> is returned.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches.</p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__INTEROP.html#group__CUDART__INTEROP_1ga36881081c8deb4df25c256158e1ac99" title="Get an device pointer through which to access a mapped graphics resource." shape="rect">cudaGraphicsResourceGetMappedPointer</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__D3D9__DEPRECATED_1g80531533ff24e1c3a5201edf2d05f89f" id="group__CUDART__D3D9__DEPRECATED_1g80531533ff24e1c3a5201edf2d05f89f" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaD3D9ResourceGetMappedSize (  size_t*<span> </span><span class="keyword keyword apiItemName">pSize</span>, IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">face</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">level</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Get the size of a subresource of a Direct3D resource which has been mapped for access by CUDA. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pSize</span></tt></dt>
+                                 <dd>- Returned size of subresource </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pResource</span></tt></dt>
+                                 <dd>- Mapped resource to access </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">face</span></tt></dt>
+                                 <dd>- Face of resource to access </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">level</span></tt></dt>
+                                 <dd>- Level of resource to access</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000026" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 3.0.</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>Returns in <tt class="ph tt code">*pSize</tt> the size of the subresource of the mapped Direct3D resource <tt class="ph tt code">pResource</tt>, which corresponds to <tt class="ph tt code">face</tt> and <tt class="ph tt code">level</tt>. The value set in <tt class="ph tt code">pSize</tt> may change every time that <tt class="ph tt code">pResource</tt> is mapped.
+                              </p>
+                              <p class="p">If <tt class="ph tt code">pResource</tt> has not been registered for use with CUDA then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If <tt class="ph tt code">pResource</tt> was not registered with usage flags <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1ggcdebbc14eb83032da31bd75503cddfea10cd58f205c593368626b4ec54a54744" shape="rect">cudaD3D9RegisterFlagsNone</a>, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If <tt class="ph tt code">pResource</tt> is not mapped for access by CUDA then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a> is returned.
+                              </p>
+                              <p class="p">For usage requirements of <tt class="ph tt code">face</tt> and <tt class="ph tt code">level</tt> parameters, see <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g7d367e7ea6e0e3c8884ea2a473f75749" title="Get a pointer through which to access a subresource of a Direct3D resource which has been mapped for access by CUDA." shape="rect">cudaD3D9ResourceGetMappedPointer()</a>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches.</p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__INTEROP.html#group__CUDART__INTEROP_1ga36881081c8deb4df25c256158e1ac99" title="Get an device pointer through which to access a mapped graphics resource." shape="rect">cudaGraphicsResourceGetMappedPointer</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__D3D9__DEPRECATED_1g2963f7235b75594ca2947ff84d7000c1" id="group__CUDART__D3D9__DEPRECATED_1g2963f7235b75594ca2947ff84d7000c1" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaD3D9ResourceGetSurfaceDimensions (  size_t*<span> </span><span class="keyword keyword apiItemName">pWidth</span>, size_t*<span> </span><span class="keyword keyword apiItemName">pHeight</span>, size_t*<span> </span><span class="keyword keyword apiItemName">pDepth</span>, IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">face</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">level</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Get the dimensions of a registered Direct3D surface. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pWidth</span></tt></dt>
+                                 <dd>- Returned width of surface </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pHeight</span></tt></dt>
+                                 <dd>- Returned height of surface </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pDepth</span></tt></dt>
+                                 <dd>- Returned depth of surface </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pResource</span></tt></dt>
+                                 <dd>- Registered resource to access </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">face</span></tt></dt>
+                                 <dd>- Face of resource to access </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">level</span></tt></dt>
+                                 <dd>- Level of resource to access</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, 
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000023" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 3.0.</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>Returns in <tt class="ph tt code">*pWidth</tt>, <tt class="ph tt code">*pHeight</tt>, and <tt class="ph tt code">*pDepth</tt> the dimensions of the subresource of the mapped Direct3D resource <tt class="ph tt code">pResource</tt> which corresponds to <tt class="ph tt code">face</tt> and <tt class="ph tt code">level</tt>.
+                              </p>
+                              <p class="p">Since anti-aliased surfaces may have multiple samples per pixel, it is possible that the dimensions of a resource will be
+                                 an integer factor larger than the dimensions reported by the Direct3D runtime.
+                              </p>
+                              <p class="p">The parameters <tt class="ph tt code">pWidth</tt>, <tt class="ph tt code">pHeight</tt>, and <tt class="ph tt code">pDepth</tt> are optional. For 2D surfaces, the value returned in <tt class="ph tt code">*pDepth</tt> will be 0.
+                              </p>
+                              <p class="p">If <tt class="ph tt code">pResource</tt> is not of type IDirect3DBaseTexture9 or IDirect3DSurface9 or if <tt class="ph tt code">pResource</tt> has not been registered for use with CUDA, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned.
+                              </p>
+                              <p class="p">For usage requirements of <tt class="ph tt code">face</tt> and <tt class="ph tt code">level</tt> parameters, see <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g7d367e7ea6e0e3c8884ea2a473f75749" title="Get a pointer through which to access a subresource of a Direct3D resource which has been mapped for access by CUDA." shape="rect">cudaD3D9ResourceGetMappedPointer</a>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches.</p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__INTEROP.html#group__CUDART__INTEROP_1g0dd6b5f024dfdcff5c28a08ef9958031" title="Get an array through which to access a subresource of a mapped graphics resource." shape="rect">cudaGraphicsSubResourceGetMappedArray</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__D3D9__DEPRECATED_1ge9a5aef299347c403cd8f96855d61fb4" id="group__CUDART__D3D9__DEPRECATED_1ge9a5aef299347c403cd8f96855d61fb4" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaD3D9ResourceSetMapFlags (  IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">flags</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Set usage flags for mapping a Direct3D resource. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pResource</span></tt></dt>
+                                 <dd>- Registered resource to set flags for </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">flags</span></tt></dt>
+                                 <dd>- Parameters for resource mapping</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000022" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 3.0.</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>Set flags for mapping the Direct3D resource <tt class="ph tt code">pResource</tt>.
+                              </p>
+                              <p class="p">Changes to flags will take effect the next time <tt class="ph tt code">pResource</tt> is mapped. The <tt class="ph tt code">flags</tt> argument may be any of the following:
+                              </p>
+                              <p class="p">
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1gg77fb48ace0d2da465b6f4bcc00ef750b231d4d21c0022f27e2bab622cdfce74f" shape="rect">cudaD3D9MapFlagsNone</a>: Specifies no hints about how this resource will be used. It is therefore assumed that this resource will be read from and
+                                          written to by CUDA kernels. This is the default value.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1gg77fb48ace0d2da465b6f4bcc00ef750b60d7fc4cd3b30157833587d6703ed6eb" shape="rect">cudaD3D9MapFlagsReadOnly</a>: Specifies that CUDA kernels which access this resource will not write to this resource.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1gg77fb48ace0d2da465b6f4bcc00ef750b85d551879a58618fa74b0783b0ff1f73" shape="rect">cudaD3D9MapFlagsWriteDiscard</a>: Specifies that CUDA kernels which access this resource will not read from this resource and will write over the entire contents
+                                          of the resource, so none of the data previously stored in the resource will be preserved.
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p">If <tt class="ph tt code">pResource</tt> has not been registered for use with CUDA, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If <tt class="ph tt code">pResource</tt> is presently mapped for access by CUDA, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a> is returned.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches.</p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection">cudaInteropResourceSetMapFlags </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__D3D9__DEPRECATED_1g4597fa217d5e7e3f735f233882292fe7" id="group__CUDART__D3D9__DEPRECATED_1g4597fa217d5e7e3f735f233882292fe7" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaD3D9UnmapResources (  int <span> </span><span class="keyword keyword apiItemName">count</span>, IDirect3DResource9**<span> </span><span class="keyword keyword apiItemName">ppResources</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Unmap Direct3D resources for access by CUDA. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">count</span></tt></dt>
+                                 <dd>- Number of resources to unmap for CUDA </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">ppResources</span></tt></dt>
+                                 <dd>- Resources to unmap for CUDA</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000021" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 3.0.</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>Unmaps the <tt class="ph tt code">count</tt> Direct3D resources in <tt class="ph tt code">ppResources</tt>.
+                              </p>
+                              <p class="p">This function provides the synchronization guarantee that any CUDA kernels issued before <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g4597fa217d5e7e3f735f233882292fe7" title="Unmap Direct3D resources for access by CUDA." shape="rect">cudaD3D9UnmapResources()</a> will complete before any Direct3D calls issued after <a class="xref" href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED_1g4597fa217d5e7e3f735f233882292fe7" title="Unmap Direct3D resources for access by CUDA." shape="rect">cudaD3D9UnmapResources()</a> begin.
+                              </p>
+                              <p class="p">If any of <tt class="ph tt code">ppResources</tt> have not been registered for use with CUDA or if <tt class="ph tt code">ppResources</tt> contains any duplicate entries, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If any of <tt class="ph tt code">ppResources</tt> are not presently mapped for access by CUDA then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a> is returned.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches.</p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__INTEROP.html#group__CUDART__INTEROP_1g11988ab4431b11ddb7cbde7aedb60491" title="Unmap graphics resources." shape="rect">cudaGraphicsUnmapResources</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__D3D9__DEPRECATED_1g81dd5ad8f5ec63e31a3d32f67dc1ca4c" id="group__CUDART__D3D9__DEPRECATED_1g81dd5ad8f5ec63e31a3d32f67dc1ca4c" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaD3D9UnregisterResource (  IDirect3DResource9*<span> </span><span class="keyword keyword apiItemName">pResource</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Unregisters a Direct3D resource for access by CUDA. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">pResource</span></tt></dt>
+                                 <dd>- Resource to unregister</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000019" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 3.0.</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>Unregisters the Direct3D resource <tt class="ph tt code">pResource</tt> so it is not accessible by CUDA unless registered again.
+                              </p>
+                              <p class="p">If <tt class="ph tt code">pResource</tt> is not registered, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches.</p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__INTEROP.html#group__CUDART__INTEROP_1gc65d1f2900086747de1e57301d709940" title="Unregisters a graphics resource for access by CUDA." shape="rect">cudaGraphicsUnregisterResource</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                     </dl>
+                  </div>
+               </div>
+               
+               <hr id="contents-end">
+               
+            </article>
+         </div>
+      </div>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/formatting/common.min.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-write.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-tracker.js"></script>
+      <script type="text/javascript">var switchTo5x=true;</script><script type="text/javascript">stLight.options({publisher: "998dc202-a267-4d8e-bce9-14debadb8d92", doNotHash: false, doNotCopy: false, hashAddressBar: false});</script><script type="text/javascript">_satellite.pageBottom();</script>
+</body>
+</html>

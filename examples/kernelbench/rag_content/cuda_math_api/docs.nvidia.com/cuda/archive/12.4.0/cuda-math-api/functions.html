@@ -1,0 +1,440 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-us" xml:lang="en-us">
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <meta name="copyright" content="(C) Copyright 2005">
+      <meta name="DC.rights.owner" content="(C) Copyright 2005">
+      <meta name="DC.Type" content="reference">
+      <meta name="DC.Title" content="Data Fields">
+      <meta name="DC.Format" content="XHTML">
+      <meta name="DC.Identifier" content="functions">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/commonltr.css">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/site.css">
+      <title>CUDA Math API :: CUDA Toolkit Documentation</title>
+      <!--[if lt IE 9]>
+      <script src="../common/formatting/html5shiv-printshiv.min.js"></script>
+      <![endif]-->
+      <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-svg.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.ba-hashchange.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.scrollintoview.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/scripts/geoip/geoip.js"></script>
+      <script type="text/javascript" src="../search/htmlFileList.js"></script>
+      <script type="text/javascript" src="../search/htmlFileInfoList.js"></script>
+      <script type="text/javascript" src="../search/nwSearchFnt.min.js"></script>
+      <script type="text/javascript" src="../search/stemmers/en_stemmer.min.js"></script>
+      <script type="text/javascript" src="../search/index-1.js"></script>
+      <script type="text/javascript" src="../search/index-2.js"></script>
+      <script type="text/javascript" src="../search/index-3.js"></script>
+      <link rel="canonical" href="https://docs.nvidia.com/cuda/cuda-math-api/index.html">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/qwcode.highlight.css">
+   </head>
+   <body>
+      
+      <header id="header"><span id="company">NVIDIA</span><span id="site-title">CUDA Toolkit Documentation</span><form id="search" method="get" action="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-math-api/search">
+            <input type="text" name="search-text"><fieldset id="search-location">
+               <legend>Search In:</legend>
+               <label><input type="radio" name="search-type" value="site">Entire Site</label>
+               <label><input type="radio" name="search-type" value="document">Just This Document</label>
+</fieldset>
+            <button type="reset">clear search</button>
+            <button id="submit" type="submit">search</button>
+</form>
+      </header>
+      <div id="site-content">
+         <nav id="site-nav">
+            <div class="category closed"><a href="https://docs.nvidia.com/cuda/archive/12.4.0/index.html" title="The root of the site.">CUDA Toolkit 
+                  
+                  
+                  v12.4.0</a></div>
+            <div class="category"><a href="index.html" title="CUDA Math API">CUDA Math API</a></div>
+            <ul>
+               <li>
+                  <div class="section-link"><a href="modules.html#modules">1. Modules</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__FP8.html#group__CUDA__MATH__INTRINSIC__FP8">1.1. FP8 Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__MISC.html#group__CUDA__MATH__FP8__MISC">1.1.1. FP8 Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT">1.1.2. C++ struct for handling fp8 data type of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X2__E5M2__STRUCT.html#group__CUDA__MATH__FP8X2__E5M2__STRUCT">1.1.3. C++ struct for handling vector type of two fp8 values of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X4__E5M2__STRUCT.html#group__CUDA__MATH__FP8X4__E5M2__STRUCT">1.1.4. C++ struct for handling vector type of four fp8 values of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT">1.1.5. C++ struct for handling fp8 data type of e4m3 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X2__E4M3__STRUCT.html#group__CUDA__MATH__FP8X2__E4M3__STRUCT">1.1.6. C++ struct for handling vector type of two fp8 values of e4m3 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X4__E4M3__STRUCT.html#group__CUDA__MATH__FP8X4__E4M3__STRUCT">1.1.7. C++ struct for handling vector type of four fp8 values of e4m3 kind.</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__HALF.html#group__CUDA__MATH__INTRINSIC__HALF">1.2. Half Precision Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__HALF__CONSTANTS.html#group__CUDA__MATH__INTRINSIC__HALF__CONSTANTS">1.2.1. Half Arithmetic Constants</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__ARITHMETIC.html#group__CUDA__MATH____HALF__ARITHMETIC">1.2.2. Half Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__ARITHMETIC.html#group__CUDA__MATH____HALF2__ARITHMETIC">1.2.3. Half2 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__COMPARISON.html#group__CUDA__MATH____HALF__COMPARISON">1.2.4. Half Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__COMPARISON.html#group__CUDA__MATH____HALF2__COMPARISON">1.2.5. Half2 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__MISC.html#group__CUDA__MATH____HALF__MISC">1.2.6. Half Precision Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__FUNCTIONS.html#group__CUDA__MATH____HALF__FUNCTIONS">1.2.7. Half Math Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__FUNCTIONS.html#group__CUDA__MATH____HALF2__FUNCTIONS">1.2.8. Half2 Math Functions</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__BFLOAT16.html#group__CUDA__MATH__INTRINSIC__BFLOAT16">1.3. Bfloat16 Precision Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS.html#group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS">1.3.1. Bfloat16 Arithmetic Constants</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__ARITHMETIC.html#group__CUDA__MATH____BFLOAT16__ARITHMETIC">1.3.2. Bfloat16 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__ARITHMETIC.html#group__CUDA__MATH____BFLOAT162__ARITHMETIC">1.3.3. Bfloat162 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__COMPARISON.html#group__CUDA__MATH____BFLOAT16__COMPARISON">1.3.4. Bfloat16 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__COMPARISON.html#group__CUDA__MATH____BFLOAT162__COMPARISON">1.3.5. Bfloat162 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC">1.3.6. Bfloat16 Precision Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__FUNCTIONS.html#group__CUDA__MATH____BFLOAT16__FUNCTIONS">1.3.7. Bfloat16 Math Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__FUNCTIONS.html#group__CUDA__MATH____BFLOAT162__FUNCTIONS">1.3.8. Bfloat162 Math Functions</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH.html#group__CUDA__MATH">1.4. Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__SINGLE.html#group__CUDA__MATH__SINGLE">1.5. Single Precision Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE">1.6. Double Precision Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INT.html#group__CUDA__MATH__INT">1.7. Integer Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE">1.8. Single Precision Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__DOUBLE.html#group__CUDA__MATH__INTRINSIC__DOUBLE">1.9. Double Precision Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT">1.10. Integer Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST">1.11. Type Casting Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__SIMD.html#group__CUDA__MATH__INTRINSIC__SIMD">1.12. SIMD Intrinsics</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="annotated.html#annotated">2. Data Structures</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="struct____half.html#struct____half">2.1. __half</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half2.html#struct____half2">2.2. __half2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half2__raw.html#struct____half2__raw">2.3. __half2_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half__raw.html#struct____half__raw">2.4. __half_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16">2.5. __nv_bfloat16</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat162.html#struct____nv__bfloat162">2.6. __nv_bfloat162</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat162__raw.html#struct____nv__bfloat162__raw">2.7. __nv_bfloat162_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw">2.8. __nv_bfloat16_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8__e4m3.html#struct____nv__fp8__e4m3">2.9. __nv_fp8_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8__e5m2.html#struct____nv__fp8__e5m2">2.10. __nv_fp8_e5m2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x2__e4m3.html#struct____nv__fp8x2__e4m3">2.11. __nv_fp8x2_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x2__e5m2.html#struct____nv__fp8x2__e5m2">2.12. __nv_fp8x2_e5m2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x4__e4m3.html#struct____nv__fp8x4__e4m3">2.13. __nv_fp8x4_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x4__e5m2.html#struct____nv__fp8x4__e5m2">2.14. __nv_fp8x4_e5m2</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="functions.html#functions">3. Data Fields</a></div>
+               </li>
+            </ul>
+         </nav>
+         <div id="resize-nav"></div>
+         <nav id="search-results">
+            <h2>Search Results</h2>
+            <ol></ol>
+         </nav>
+         
+         <div id="contents-container">
+            <div id="breadcrumbs-container">
+               <div id="breadcrumbs">
+<a href="struct____nv__fp8x4__e5m2.html" shape="rect">&lt; Previous</a> | <a href="notices-header.html" shape="rect">Next &gt;</a>
+</div>
+               <div id="release-info">CUDA Math API
+                  (<a href="https://docs.nvidia.com/cuda/archive/12.4.0/pdf/CUDA_Math_API.pdf">PDF</a>)
+                  -
+                   
+                  
+                  
+                  v12.4.0
+                  (<a href="https://developer.nvidia.com/cuda-toolkit-archive">older</a>)
+                  -
+                  Last updated March 5, 2024
+                  -
+                  <a href="mailto:CUDAIssues@nvidia.com?subject=CUDA%20Toolkit%20Documentation%20Feedback:%20CUDA%20Math%20API">Send Feedback</a>
+</div>
+            </div>
+            <article id="contents">
+               <div class="topic nested1" id="functions">
+<a name="functions" shape="rect">
+                     <!-- --></a><h2 class="topictitle2">3. Data Fields</h2>
+                  <div class="body refbody">
+                     <div class="section">
+                        <p class="p">Here is a list of all documented struct and union fields with links to the struct/union documentation for each field: </p>
+                     </div>
+                     <div class="section" id="functions___">
+<a name="functions___" shape="rect">
+                           <!-- --></a><h2 class="title sectiontitle">_</h2>
+                        <dl class="dl table-display-members">
+                           <dt class="dt dlterm">__half()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dt class="dt dlterm">__half2()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____half2.html#struct____half2" title="__half2 data type" shape="rect">__half2</a></dd>
+                           <dt class="dt dlterm">__nv_bfloat16()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dt class="dt dlterm">__nv_bfloat162()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____nv__bfloat162.html#struct____nv__bfloat162" title="nv_bfloat162 datatype" shape="rect">__nv_bfloat162</a></dd>
+                           <dt class="dt dlterm">__nv_fp8_e4m3()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dt class="dt dlterm">__nv_fp8_e5m2()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dt class="dt dlterm">__nv_fp8x2_e4m3()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8X2__E4M3__STRUCT.html#group__CUDA__MATH__FP8X2__E4M3__STRUCT" shape="rect">__nv_fp8x2_e4m3</a></dd>
+                           <dt class="dt dlterm">__nv_fp8x2_e5m2()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8X2__E5M2__STRUCT.html#group__CUDA__MATH__FP8X2__E5M2__STRUCT" shape="rect">__nv_fp8x2_e5m2</a></dd>
+                           <dt class="dt dlterm">__nv_fp8x4_e4m3()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8X4__E4M3__STRUCT.html#group__CUDA__MATH__FP8X4__E4M3__STRUCT" shape="rect">__nv_fp8x4_e4m3</a></dd>
+                           <dt class="dt dlterm">__nv_fp8x4_e5m2()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8X4__E5M2__STRUCT.html#group__CUDA__MATH__FP8X4__E5M2__STRUCT" shape="rect">__nv_fp8x4_e5m2</a></dd>
+                           <dt class="dt dlterm">__x</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8X2__E4M3__STRUCT.html#group__CUDA__MATH__FP8X2__E4M3__STRUCT" shape="rect">__nv_fp8x2_e4m3</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8X2__E5M2__STRUCT.html#group__CUDA__MATH__FP8X2__E5M2__STRUCT" shape="rect">__nv_fp8x2_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8X4__E4M3__STRUCT.html#group__CUDA__MATH__FP8X4__E4M3__STRUCT" shape="rect">__nv_fp8x4_e4m3</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8X4__E5M2__STRUCT.html#group__CUDA__MATH__FP8X4__E5M2__STRUCT" shape="rect">__nv_fp8x4_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                        </dl>
+                     </div>
+                     <div class="section" id="functions__o">
+<a name="functions__o" shape="rect">
+                           <!-- --></a><h2 class="title sectiontitle">O</h2>
+                        <dl class="dl table-display-members">
+                           <dt class="dt dlterm">operator __half()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dt class="dt dlterm">operator __half2()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8X2__E4M3__STRUCT.html#group__CUDA__MATH__FP8X2__E4M3__STRUCT" shape="rect">__nv_fp8x2_e4m3</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8X2__E5M2__STRUCT.html#group__CUDA__MATH__FP8X2__E5M2__STRUCT" shape="rect">__nv_fp8x2_e5m2</a></dd>
+                           <dt class="dt dlterm">operator __half2_raw()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____half2.html#struct____half2" title="__half2 data type" shape="rect">__half2</a></dd>
+                           <dt class="dt dlterm">operator __half_raw()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dt class="dt dlterm">operator __nv_bfloat16()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dt class="dt dlterm">operator __nv_bfloat162_raw()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____nv__bfloat162.html#struct____nv__bfloat162" title="nv_bfloat162 datatype" shape="rect">__nv_bfloat162</a></dd>
+                           <dt class="dt dlterm">operator __nv_bfloat16_raw()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dt class="dt dlterm">operator bool()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dt class="dt dlterm">operator char()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dt class="dt dlterm">operator double()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dt class="dt dlterm">operator float()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dt class="dt dlterm">operator float2()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8X2__E5M2__STRUCT.html#group__CUDA__MATH__FP8X2__E5M2__STRUCT" shape="rect">__nv_fp8x2_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8X2__E4M3__STRUCT.html#group__CUDA__MATH__FP8X2__E4M3__STRUCT" shape="rect">__nv_fp8x2_e4m3</a></dd>
+                           <dt class="dt dlterm">operator float4()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8X4__E5M2__STRUCT.html#group__CUDA__MATH__FP8X4__E5M2__STRUCT" shape="rect">__nv_fp8x4_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8X4__E4M3__STRUCT.html#group__CUDA__MATH__FP8X4__E4M3__STRUCT" shape="rect">__nv_fp8x4_e4m3</a></dd>
+                           <dt class="dt dlterm">operator int()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dt class="dt dlterm">operator long()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dt class="dt dlterm">operator long int()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dt class="dt dlterm">operator long long()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dt class="dt dlterm">operator long long int()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dt class="dt dlterm">operator short()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dt class="dt dlterm">operator short int()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dt class="dt dlterm">operator signed char()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dt class="dt dlterm">operator unsigned char()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dt class="dt dlterm">operator unsigned int()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dt class="dt dlterm">operator unsigned long()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dt class="dt dlterm">operator unsigned long int()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dt class="dt dlterm">operator unsigned long long()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dt class="dt dlterm">operator unsigned long long int()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dt class="dt dlterm">operator unsigned short()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dt class="dt dlterm">operator unsigned short int()</dt>
+                           <dd class="dd first"><a class="xref" href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT" shape="rect">__nv_fp8_e4m3</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT" shape="rect">__nv_fp8_e5m2</a></dd>
+                           <dt class="dt dlterm">operator=()</dt>
+                           <dd class="dd first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half2.html#struct____half2" title="__half2 data type" shape="rect">__half2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat162.html#struct____nv__bfloat162" title="nv_bfloat162 datatype" shape="rect">__nv_bfloat162</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat162.html#struct____nv__bfloat162" title="nv_bfloat162 datatype" shape="rect">__nv_bfloat162</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half.html#struct____half" title="__half data type" shape="rect">__half</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____half2.html#struct____half2" title="__half2 data type" shape="rect">__half2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></dd>
+                        </dl>
+                     </div>
+                     <div class="section" id="functions__x">
+<a name="functions__x" shape="rect">
+                           <!-- --></a><h2 class="title sectiontitle">X</h2>
+                        <dl class="dl table-display-members">
+                           <dt class="dt dlterm">x</dt>
+                           <dd class="dd first"><a class="xref" href="struct____half2.html#struct____half2" title="__half2 data type" shape="rect">__half2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat162.html#struct____nv__bfloat162" title="nv_bfloat162 datatype" shape="rect">__nv_bfloat162</a></dd>
+                        </dl>
+                     </div>
+                     <div class="section" id="functions__y">
+<a name="functions__y" shape="rect">
+                           <!-- --></a><h2 class="title sectiontitle">Y</h2>
+                        <dl class="dl table-display-members">
+                           <dt class="dt dlterm">y</dt>
+                           <dd class="dd first"><a class="xref" href="struct____half2.html#struct____half2" title="__half2 data type" shape="rect">__half2</a></dd>
+                           <dd class="dd not_first"><a class="xref" href="struct____nv__bfloat162.html#struct____nv__bfloat162" title="nv_bfloat162 datatype" shape="rect">__nv_bfloat162</a></dd>
+                        </dl>
+                     </div>
+                  </div>
+               </div>
+               
+               <hr id="contents-end">
+               
+            </article>
+         </div>
+      </div>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/formatting/common.min.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-write.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-tracker.js"></script>
+      <script type="text/javascript">var switchTo5x=true;</script><script type="text/javascript">stLight.options({publisher: "998dc202-a267-4d8e-bce9-14debadb8d92", doNotHash: false, doNotCopy: false, hashAddressBar: false});</script><script type="text/javascript">_satellite.pageBottom();</script>
+</body>
+</html>

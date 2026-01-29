@@ -53,6 +53,7 @@ def main():
         reflection=ReflectionConfig(
             reflection_minibatch_size=1,
             reflection_lm=args.llm_model,
+            skip_perfect_score=False,
         ),
     )
 
@@ -70,13 +71,15 @@ def main():
     print(f"Running GEPA Blackbox Optimization for Polynomial Problem {args.problem_index}")
     print("=" * 70 + "\n")
 
-    optimize_anything(
+    results = optimize_anything(
         seed_candidate=seed_candidate,
         fitness_fn=evaluator.evaluate,
         config=gepa_config,
         objective=OBJECTIVE,
         background=BACKGROUND,
     )
+
+    print("#Metric calls = ", results.total_metric_calls)
 
 
 if __name__ == "__main__":

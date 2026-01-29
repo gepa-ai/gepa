@@ -62,9 +62,9 @@ def fitness_fn(candidate: dict[str, str], example) -> tuple[float, Any, SideInfo
     return (score, output, side_info)
 
 
-def evaluate_on_dataset(predictor, dataset, name="Evaluation"):
+def evaluate_on_dataset(prompt, dataset):
     """Evaluate a predictor on a dataset using dspy.Evaluate."""
-    print(f"\n--- {name} ---")
+    predictor.predict.signature.instructions = prompt
 
     evaluator = dspy.Evaluate(
         devset=dataset,
@@ -149,16 +149,14 @@ def main():
 
     # Baseline Evaluation
     print("\nEvaluating Baseline (Initial Prompt)...")
-    predictor.predict.signature.instructions = INITIAL_PROMPT
-    baseline_score = evaluate_on_dataset(predictor, testset, name="Baseline Test")
+    baseline_score = evaluate_on_dataset(INITIAL_PROMPT, testset)
 
     # Optimized Evaluation
     print("\nEvaluating Best Optimized Program...")
     best_prompt = result.best_candidate["prompt"]
     print(f"Best Prompt Found:\n{best_prompt}")
 
-    predictor.predict.signature.instructions = best_prompt
-    optimized_score = evaluate_on_dataset(predictor, testset, name="Optimized Test")
+    optimized_score = evaluate_on_dataset(best_prompt, testset)
 
     print(f"Baseline Score: {baseline_score:.2%}")
     print(f"Optimized Score: {optimized_score:.2%}")

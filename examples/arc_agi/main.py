@@ -1,7 +1,18 @@
+import json
 import os
 import random
-import numpy as np
+
 import dspy
+import numpy as np
+from examples.arc_agi.config import (
+    parse_arguments,
+    get_experiment_config,
+    get_log_directory,
+)
+from examples.arc_agi.data import load_data
+from examples.arc_agi.prompt import BACKGROUND
+
+from gepa.adapters.dspy_full_program_adapter.full_program_adapter import DspyAdapter
 from gepa.optimize_anything import (
     EngineConfig,
     GEPAConfig,
@@ -9,16 +20,14 @@ from gepa.optimize_anything import (
     TrackingConfig,
     optimize_anything,
 )
-from examples.arc_agi.config import (
-    parse_arguments,
-    get_experiment_config,
-    get_log_directory,
-)
-from examples.arc_agi.data import load_data
-from gepa.adapters.dspy_full_program_adapter.full_program_adapter import DspyAdapter
-from examples.arc_agi.prompt import BACKGROUND
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+
+def save_experiment_config(config_dict, log_dir):
+    """Save experiment configuration to JSON file."""
+    config_path = os.path.join(log_dir, "config.json")
+    with open(config_path, "w") as f:
+        json.dump(config_dict, f, indent=2)
+    print(f"💾 Saved config to: {config_path}")
 
 program_src = """import dspy
 from typing import List
@@ -122,7 +131,7 @@ def metric_fn(example, pred, trace=None):
     if len(task_inputs) != len(pred_task_outputs):
         feedback = f"The number of output matrices ({len(pred_task_outputs)}) must match the number of input matrices ({len(task_inputs)}). The correct response is {gold_task_outputs}."
         return dspy.Prediction(score=0, feedback=feedback)
-    for i, (input, gold_output, pred_output) in enumerate(
+    for i, (_input, gold_output, pred_output) in enumerate(
         zip(task_inputs, gold_task_outputs, pred_task_outputs, strict=False)
     ):
         is_valid, feedback = is_valid_matrix(pred_output, gold_output)
@@ -157,7 +166,7 @@ def create_fitness_fn(adapter):
             print(evaluation_results.trajectories)
             side_info = {
                 "input": example,
-                "error": f"All examples failed. Program error: {str(evaluation_results.trajectories)}",
+                "error": f"All examples failed. Program error: {evaluation_results.trajectories!s}",
                 "program": program,
             }
             return (0.0, side_info, side_info)
@@ -193,14 +202,26 @@ def main():
     log_dir = get_log_directory(resume=args.resume)
     print(f"\n📁 Log directory: {log_dir}")
 
-    # Create LMs
+    save_experiment_config(config, log_dir)
+    print(f"💾 Config saved to: {log_dir / 'config.json'}")
+
+    # Create LMs based on configured model
+    llm_model = config["llm_model"]
+    if llm_model.startswith("openrouter/"):
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY environment variable is not set")
+    else:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is not set")
+
     task_lm = dspy.LM(
-        model=config["llm_model"],
+        model=llm_model,
         temperature=1.0,
         max_tokens=32000,
-        api_key=OPENAI_API_KEY,
-        seed=config["seed"],
         cache=False,
+        api_key=api_key,
     )
 
     # Create adapter
@@ -208,7 +229,7 @@ def main():
         task_lm=task_lm,
         metric_fn=metric_fn,
         num_threads=64,
-        reflection_lm="openai/gpt-5",
+        reflection_lm=llm_model,
         add_format_failure_as_feedback=True,
         rng=random.Random(config["seed"]),
     )
@@ -228,7 +249,8 @@ def main():
         ),
         reflection=ReflectionConfig(
             reflection_minibatch_size=config["reflection_minibatch_size"],
-            reflection_lm="openai/gpt-5",
+            reflection_lm=llm_model,
+            skip_perfect_score=False,
         ),
         tracking=TrackingConfig(
             use_wandb=False,
@@ -260,7 +282,7 @@ def main():
     print("\n✅ GEPA optimization complete!")
 
     print("Base evaluation:")
-    base_results = adapter.evaluate(test_set, seed_candidate, capture_traces=True)
+    base_results = adapter.evaluate(test_set, seed_candidate, capture_traces=False)
     base_score = np.mean(base_results.scores)
     print(f"   Base results: {base_score}")
 
@@ -269,7 +291,7 @@ def main():
     print(f"✅ Best program: {best_program}")
     print(f"   Code length: {len(best_program)} characters")
     test_results = adapter.evaluate(
-        test_set, result.best_candidate, capture_traces=True
+        test_set, result.best_candidate, capture_traces=False
     )
     test_score = np.mean(test_results.scores)
     print(f"   Test results: {test_score}")

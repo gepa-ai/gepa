@@ -1,0 +1,580 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-us" xml:lang="en-us">
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <meta name="copyright" content="(C) Copyright 2005">
+      <meta name="DC.rights.owner" content="(C) Copyright 2005">
+      <meta name="DC.Type" content="cppModule">
+      <meta name="DC.Title" content="Unified Addressing">
+      <meta name="abstract" content="">
+      <meta name="description" content="">
+      <meta name="DC.Format" content="XHTML">
+      <meta name="DC.Identifier" content="group__CUDART__UNIFIED">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/commonltr.css">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/site.css">
+      <title>CUDA Runtime API :: CUDA Toolkit Documentation</title>
+      <!--[if lt IE 9]>
+      <script src="../common/formatting/html5shiv-printshiv.min.js"></script>
+      <![endif]-->
+      <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-svg.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.ba-hashchange.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.scrollintoview.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/scripts/geoip/geoip.js"></script>
+      <script type="text/javascript" src="../search/htmlFileList.js"></script>
+      <script type="text/javascript" src="../search/htmlFileInfoList.js"></script>
+      <script type="text/javascript" src="../search/nwSearchFnt.min.js"></script>
+      <script type="text/javascript" src="../search/stemmers/en_stemmer.min.js"></script>
+      <script type="text/javascript" src="../search/index-1.js"></script>
+      <script type="text/javascript" src="../search/index-2.js"></script>
+      <script type="text/javascript" src="../search/index-3.js"></script>
+      <link rel="canonical" href="https://docs.nvidia.com/cuda/cuda-runtime-api/index.html">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/qwcode.highlight.css">
+   </head>
+   <body>
+      
+      <header id="header"><span id="company">NVIDIA</span><span id="site-title">CUDA Toolkit Documentation</span><form id="search" method="get" action="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-runtime-api/search">
+            <input type="text" name="search-text"><fieldset id="search-location">
+               <legend>Search In:</legend>
+               <label><input type="radio" name="search-type" value="site">Entire Site</label>
+               <label><input type="radio" name="search-type" value="document">Just This Document</label>
+</fieldset>
+            <button type="reset">clear search</button>
+            <button id="submit" type="submit">search</button>
+</form>
+      </header>
+      <div id="site-content">
+         <nav id="site-nav">
+            <div class="category closed"><a href="https://docs.nvidia.com/cuda/archive/12.4.0/index.html" title="The root of the site.">CUDA Toolkit 
+                  
+                  
+                  v12.4.0</a></div>
+            <div class="category"><a href="index.html" title="CUDA Runtime API">CUDA Runtime API</a></div>
+            <ul>
+               <li>
+                  <div class="section-link"><a href="driver-vs-runtime-api.html#driver-vs-runtime-api">1. Difference between the driver and runtime APIs </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="api-sync-behavior.html#api-sync-behavior">2. API synchronization behavior </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="stream-sync-behavior.html#stream-sync-behavior">3. Stream synchronization behavior</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="graphs-thread-safety.html#graphs-thread-safety">4. Graph object thread safety</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="version-mixing-rules.html#version-mixing-rules">5. Rules for version mixing </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="modules.html#modules">6. Modules</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DEVICE.html#group__CUDART__DEVICE">6.1. Device Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DEVICE__DEPRECATED.html#group__CUDART__DEVICE__DEPRECATED">6.2. Device Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__THREAD__DEPRECATED.html#group__CUDART__THREAD__DEPRECATED">6.3. Thread Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__ERROR.html#group__CUDART__ERROR">6.4. Error Handling</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__STREAM.html#group__CUDART__STREAM">6.5. Stream Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT">6.6. Event Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXTRES__INTEROP.html#group__CUDART__EXTRES__INTEROP">6.7. External Resource Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION">6.8. Execution Control</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXECUTION__DEPRECATED.html#group__CUDART__EXECUTION__DEPRECATED">6.9. Execution Control [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OCCUPANCY.html#group__CUDART__OCCUPANCY">6.10. Occupancy</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY.html#group__CUDART__MEMORY">6.11. Memory Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY__DEPRECATED.html#group__CUDART__MEMORY__DEPRECATED">6.12. Memory Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY__POOLS.html#group__CUDART__MEMORY__POOLS">6.13. Stream Ordered Memory Allocator</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__UNIFIED.html#group__CUDART__UNIFIED">6.14. Unified Addressing</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__PEER.html#group__CUDART__PEER">6.15. Peer Device Memory Access</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OPENGL.html#group__CUDART__OPENGL">6.16. OpenGL Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OPENGL__DEPRECATED.html#group__CUDART__OPENGL__DEPRECATED">6.17. OpenGL Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D9.html#group__CUDART__D3D9">6.18. Direct3D 9 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED">6.19. Direct3D 9 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D10.html#group__CUDART__D3D10">6.20. Direct3D 10 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D10__DEPRECATED.html#group__CUDART__D3D10__DEPRECATED">6.21. Direct3D 10 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D11.html#group__CUDART__D3D11">6.22. Direct3D 11 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D11__DEPRECATED.html#group__CUDART__D3D11__DEPRECATED">6.23. Direct3D 11 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__VDPAU.html#group__CUDART__VDPAU">6.24. VDPAU Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EGL.html#group__CUDART__EGL">6.25. EGL Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__INTEROP.html#group__CUDART__INTEROP">6.26. Graphics Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__TEXTURE__OBJECT.html#group__CUDART__TEXTURE__OBJECT">6.27. Texture Object Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__SURFACE__OBJECT.html#group__CUDART__SURFACE__OBJECT">6.28. Surface Object Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART____VERSION.html#group__CUDART____VERSION">6.29. Version Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__GRAPH.html#group__CUDART__GRAPH">6.30. Graph Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DRIVER__ENTRY__POINT.html#group__CUDART__DRIVER__ENTRY__POINT">6.31. Driver Entry Point Access</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL">6.32. C++ API Routines</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DRIVER.html#group__CUDART__DRIVER">6.33. Interactions with the CUDA Driver API</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__PROFILER.html#group__CUDART__PROFILER">6.34. Profiler Control</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__TYPES.html#group__CUDART__TYPES">6.35. Data types used by CUDA Runtime</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="annotated.html#annotated">7. Data Structures</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="class____cudaOccupancyB2DHelper.html#class____cudaOccupancyB2DHelper">7.1. __cudaOccupancyB2DHelper</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaAccessPolicyWindow.html#structcudaAccessPolicyWindow">7.2. cudaAccessPolicyWindow</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaArrayMemoryRequirements.html#structcudaArrayMemoryRequirements">7.3. cudaArrayMemoryRequirements</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaArraySparseProperties.html#structcudaArraySparseProperties">7.4. cudaArraySparseProperties</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaAsyncNotificationInfo__t.html#structcudaAsyncNotificationInfo__t">7.5. cudaAsyncNotificationInfo_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaChannelFormatDesc.html#structcudaChannelFormatDesc">7.6. cudaChannelFormatDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaChildGraphNodeParams.html#structcudaChildGraphNodeParams">7.7. cudaChildGraphNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaConditionalNodeParams.html#structcudaConditionalNodeParams">7.8. cudaConditionalNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaDeviceProp.html#structcudaDeviceProp">7.9. cudaDeviceProp</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEglFrame.html#structcudaEglFrame">7.10. cudaEglFrame</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEglPlaneDesc.html#structcudaEglPlaneDesc">7.11. cudaEglPlaneDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEventRecordNodeParams.html#structcudaEventRecordNodeParams">7.12. cudaEventRecordNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEventWaitNodeParams.html#structcudaEventWaitNodeParams">7.13. cudaEventWaitNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExtent.html#structcudaExtent">7.14. cudaExtent</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryBufferDesc.html#structcudaExternalMemoryBufferDesc">7.15. cudaExternalMemoryBufferDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryHandleDesc.html#structcudaExternalMemoryHandleDesc">7.16. cudaExternalMemoryHandleDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryMipmappedArrayDesc.html#structcudaExternalMemoryMipmappedArrayDesc">7.17. cudaExternalMemoryMipmappedArrayDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreHandleDesc.html#structcudaExternalSemaphoreHandleDesc">7.18. cudaExternalSemaphoreHandleDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalNodeParams.html#structcudaExternalSemaphoreSignalNodeParams">7.19. cudaExternalSemaphoreSignalNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalNodeParamsV2.html#structcudaExternalSemaphoreSignalNodeParamsV2">7.20. cudaExternalSemaphoreSignalNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalParams.html#structcudaExternalSemaphoreSignalParams">7.21. cudaExternalSemaphoreSignalParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalParams__v1.html#structcudaExternalSemaphoreSignalParams__v1">7.22. cudaExternalSemaphoreSignalParams_v1</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitNodeParams.html#structcudaExternalSemaphoreWaitNodeParams">7.23. cudaExternalSemaphoreWaitNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitNodeParamsV2.html#structcudaExternalSemaphoreWaitNodeParamsV2">7.24. cudaExternalSemaphoreWaitNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitParams.html#structcudaExternalSemaphoreWaitParams">7.25. cudaExternalSemaphoreWaitParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitParams__v1.html#structcudaExternalSemaphoreWaitParams__v1">7.26. cudaExternalSemaphoreWaitParams_v1</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaFuncAttributes.html#structcudaFuncAttributes">7.27. cudaFuncAttributes</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphEdgeData.html#structcudaGraphEdgeData">7.28. cudaGraphEdgeData</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphExecUpdateResultInfo.html#structcudaGraphExecUpdateResultInfo">7.29. cudaGraphExecUpdateResultInfo</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphInstantiateParams.html#structcudaGraphInstantiateParams">7.30. cudaGraphInstantiateParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphKernelNodeUpdate.html#structcudaGraphKernelNodeUpdate">7.31. cudaGraphKernelNodeUpdate</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphNodeParams.html#structcudaGraphNodeParams">7.32. cudaGraphNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaHostNodeParams.html#structcudaHostNodeParams">7.33. cudaHostNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaHostNodeParamsV2.html#structcudaHostNodeParamsV2">7.34. cudaHostNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaIpcEventHandle__t.html#structcudaIpcEventHandle__t">7.35. cudaIpcEventHandle_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaIpcMemHandle__t.html#structcudaIpcMemHandle__t">7.36. cudaIpcMemHandle_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaKernelNodeParams.html#structcudaKernelNodeParams">7.37. cudaKernelNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaKernelNodeParamsV2.html#structcudaKernelNodeParamsV2">7.38. cudaKernelNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchAttribute.html#structcudaLaunchAttribute">7.39. cudaLaunchAttribute</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="unioncudaLaunchAttributeValue.html#unioncudaLaunchAttributeValue">7.40. cudaLaunchAttributeValue</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchConfig__t.html#structcudaLaunchConfig__t">7.41. cudaLaunchConfig_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchMemSyncDomainMap.html#structcudaLaunchMemSyncDomainMap">7.42. cudaLaunchMemSyncDomainMap</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchParams.html#structcudaLaunchParams">7.43. cudaLaunchParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAccessDesc.html#structcudaMemAccessDesc">7.44. cudaMemAccessDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAllocNodeParams.html#structcudaMemAllocNodeParams">7.45. cudaMemAllocNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAllocNodeParamsV2.html#structcudaMemAllocNodeParamsV2">7.46. cudaMemAllocNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpy3DParms.html#structcudaMemcpy3DParms">7.47. cudaMemcpy3DParms</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpy3DPeerParms.html#structcudaMemcpy3DPeerParms">7.48. cudaMemcpy3DPeerParms</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpyNodeParams.html#structcudaMemcpyNodeParams">7.49. cudaMemcpyNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemFreeNodeParams.html#structcudaMemFreeNodeParams">7.50. cudaMemFreeNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemLocation.html#structcudaMemLocation">7.51. cudaMemLocation</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemPoolProps.html#structcudaMemPoolProps">7.52. cudaMemPoolProps</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemPoolPtrExportData.html#structcudaMemPoolPtrExportData">7.53. cudaMemPoolPtrExportData</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemsetParams.html#structcudaMemsetParams">7.54. cudaMemsetParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemsetParamsV2.html#structcudaMemsetParamsV2">7.55. cudaMemsetParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPitchedPtr.html#structcudaPitchedPtr">7.56. cudaPitchedPtr</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPointerAttributes.html#structcudaPointerAttributes">7.57. cudaPointerAttributes</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPos.html#structcudaPos">7.58. cudaPos</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaResourceDesc.html#structcudaResourceDesc">7.59. cudaResourceDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaResourceViewDesc.html#structcudaResourceViewDesc">7.60. cudaResourceViewDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaTextureDesc.html#structcudaTextureDesc">7.61. cudaTextureDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structCUuuid__st.html#structCUuuid__st">7.62. CUuuid_st</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="functions.html#functions">8. Data Fields</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="deprecated.html#deprecated">9. Deprecated List</a></div>
+               </li>
+            </ul>
+         </nav>
+         <div id="resize-nav"></div>
+         <nav id="search-results">
+            <h2>Search Results</h2>
+            <ol></ol>
+         </nav>
+         
+         <div id="contents-container">
+            <div id="breadcrumbs-container">
+               <div id="breadcrumbs">
+<a href="group__CUDART__MEMORY__POOLS.html" shape="rect">&lt; Previous</a> | <a href="group__CUDART__PEER.html" shape="rect">Next &gt;</a>
+</div>
+               <div id="release-info">CUDA Runtime API
+                  (<a href="https://docs.nvidia.com/cuda/archive/12.4.0/pdf/CUDA_Runtime_API.pdf">PDF</a>)
+                  -
+                   
+                  
+                  
+                  v12.4.0
+                  (<a href="https://developer.nvidia.com/cuda-toolkit-archive">older</a>)
+                  -
+                  Last updated March 5, 2024
+                  -
+                  <a href="mailto:CUDAIssues@nvidia.com?subject=CUDA%20Toolkit%20Documentation%20Feedback:%20CUDA%20Runtime%20API">Send Feedback</a>
+</div>
+            </div>
+            <article id="contents">
+               <div class="topic reference apiRef apiPackage cppModule" id="group__CUDART__UNIFIED">
+<a name="group__CUDART__UNIFIED" shape="rect">
+                     <!-- --></a><h2 class="topictitle2 cppModule">6.14. Unified Addressing</h2>
+                  <div class="section">
+                     <p>This section describes the unified addressing functions of the CUDA runtime application programming interface.</p>
+                     <p class="p apiDesc_subtitle"><strong class="ph b">Overview</strong></p>
+                     <p class="p">CUDA devices can share a unified address space with the host. For these devices there is no distinction between a device pointer
+                        and a host pointer -- the same pointer value may be used to access memory from the host program and from a kernel running
+                        on the device (with exceptions enumerated below).
+                     </p>
+                     <p class="p apiDesc_subtitle"><strong class="ph b">Supported Platforms</strong></p>
+                     <p class="p">Whether or not a device supports unified addressing may be queried by calling <a class="xref" href="group__CUDART__DEVICE.html#group__CUDART__DEVICE_1g1bf9d625a931d657e08db2b4391170f0" title="Returns information about the compute-device." shape="rect">cudaGetDeviceProperties()</a> with the device property <a class="xref" href="structcudaDeviceProp.html#structcudaDeviceProp_107b0114cefb43da05e05c65ec859542c" shape="rect">cudaDeviceProp::unifiedAddressing</a>.
+                     </p>
+                     <p class="p">Unified addressing is automatically enabled in 64-bit processes .</p>
+                     <p class="p apiDesc_subtitle"><strong class="ph b">Looking Up Information from Pointer Values</strong></p>
+                     <p class="p">It is possible to look up information about the memory which backs a pointer value. For instance, one may want to know if
+                        a pointer points to host or device memory. As another example, in the case of device memory, one may want to know on which
+                        CUDA device the memory resides. These properties may be queried using the function <a class="xref" href="group__CUDART__UNIFIED.html#group__CUDART__UNIFIED_1gd89830e17d399c064a2f3c3fa8bb4390" title="Returns attributes about a specified pointer." shape="rect">cudaPointerGetAttributes()</a></p>
+                     <p class="p">Since pointers are unique, it is not necessary to specify information about the pointers specified to <a class="xref" href="group__CUDART__MEMORY.html#group__CUDART__MEMORY_1gc263dbe6574220cc776b45438fc351e8" title="Copies data between host and device." shape="rect">cudaMemcpy()</a> and other copy functions. The copy direction <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg18fa99055ee694244a270e4d5101e95b715aff8fb2b8f4f1bb553fee802db57a" shape="rect">cudaMemcpyDefault</a> may be used to specify that the CUDA runtime should infer the location of the pointer from its value.
+                     </p>
+                     <p class="p apiDesc_subtitle"><strong class="ph b">Automatic Mapping of Host Allocated Host Memory</strong></p>
+                     <p class="p">All host memory allocated through all devices using <a class="xref" href="group__CUDART__MEMORY.html#group__CUDART__MEMORY_1gab84100ae1fa1b12eaca660207ef585b" title="Allocates page-locked memory on the host." shape="rect">cudaMallocHost()</a> and <a class="xref" href="group__CUDART__MEMORY.html#group__CUDART__MEMORY_1gb65da58f444e7230d3322b6126bb4902" title="Allocates page-locked memory on the host." shape="rect">cudaHostAlloc()</a> is always directly accessible from all devices that support unified addressing. This is the case regardless of whether or
+                        not the flags <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gc46ce76be41cf79774331cc8cfceb52b" shape="rect">cudaHostAllocPortable</a> and <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g01e600c738b962c8f973dda7708f7a70" shape="rect">cudaHostAllocMapped</a> are specified.
+                     </p>
+                     <p class="p">The pointer value through which allocated host memory may be accessed in kernels on all devices that support unified addressing
+                        is the same as the pointer value through which that memory is accessed on the host. It is not necessary to call <a class="xref" href="group__CUDART__MEMORY.html#group__CUDART__MEMORY_1gc00502b44e5f1bdc0b424487ebb08db0" title="Passes back device pointer of mapped host memory allocated by cudaHostAlloc or registered by cudaHostRegister." shape="rect">cudaHostGetDevicePointer()</a> to get the device pointer for these allocations.
+                     </p>
+                     <p class="p">Note that this is not the case for memory allocated using the flag <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g3a7db37d02ce0b2350067ab639ef321c" shape="rect">cudaHostAllocWriteCombined</a>, as discussed below.
+                     </p>
+                     <p class="p apiDesc_subtitle"><strong class="ph b">Direct Access of Peer Memory</strong></p>
+                     <p class="p">Upon enabling direct access from a device that supports unified addressing to another peer device that supports unified addressing
+                        using <a class="xref" href="group__CUDART__PEER.html#group__CUDART__PEER_1g2b0adabf90db37e5cfddc92cbb2589f3" title="Enables direct access to memory allocations on a peer device." shape="rect">cudaDeviceEnablePeerAccess()</a> all memory allocated in the peer device using <a class="xref" href="group__CUDART__MEMORY.html#group__CUDART__MEMORY_1g37d37965bfb4803b6d4e59ff26856356" title="Allocate memory on the device." shape="rect">cudaMalloc()</a> and <a class="xref" href="group__CUDART__MEMORY.html#group__CUDART__MEMORY_1g32bd7a39135594788a542ae72217775c" title="Allocates pitched memory on the device." shape="rect">cudaMallocPitch()</a> will immediately be accessible by the current device. The device pointer value through which any peer's memory may be accessed
+                        in the current device is the same pointer value through which that memory may be accessed from the peer device.
+                     </p>
+                     <p class="p apiDesc_subtitle"><strong class="ph b">Exceptions, Disjoint Addressing</strong></p>
+                     <p class="p">Not all memory may be accessed on devices through the same pointer value through which they are accessed on the host. These
+                        exceptions are host memory registered using <a class="xref" href="group__CUDART__MEMORY.html#group__CUDART__MEMORY_1ge8d5c17670f16ac4fc8fcb4181cb490c" title="Registers an existing host memory range for use by CUDA." shape="rect">cudaHostRegister()</a> and host memory allocated using the flag <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g3a7db37d02ce0b2350067ab639ef321c" shape="rect">cudaHostAllocWriteCombined</a>. For these exceptions, there exists a distinct host and device address for the memory. The device address is guaranteed to
+                        not overlap any valid host pointer range and is guaranteed to have the same value across all devices that support unified
+                        addressing.
+                     </p>
+                     <p class="p">This device address may be queried using <a class="xref" href="group__CUDART__MEMORY.html#group__CUDART__MEMORY_1gc00502b44e5f1bdc0b424487ebb08db0" title="Passes back device pointer of mapped host memory allocated by cudaHostAlloc or registered by cudaHostRegister." shape="rect">cudaHostGetDevicePointer()</a> when a device using unified addressing is current. Either the host or the unified device pointer value may be used to refer
+                        to this memory in <a class="xref" href="group__CUDART__MEMORY.html#group__CUDART__MEMORY_1gc263dbe6574220cc776b45438fc351e8" title="Copies data between host and device." shape="rect">cudaMemcpy()</a> and similar functions using the <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg18fa99055ee694244a270e4d5101e95b715aff8fb2b8f4f1bb553fee802db57a" shape="rect">cudaMemcpyDefault</a> memory direction. 
+                     </p>
+                  </div>
+                  <h3 class="fake_sectiontitle member_header">Functions</h3>
+                  <dl class="members">
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__UNIFIED.html#group__CUDART__UNIFIED_1gd89830e17d399c064a2f3c3fa8bb4390" shape="rect">cudaPointerGetAttributes</a> (  <a href="structcudaPointerAttributes.html#structcudaPointerAttributes" title="" shape="rect">cudaPointerAttributes</a>*<span> </span><span class="keyword keyword apiItemName">attributes</span>, const void*<span> </span><span class="keyword keyword apiItemName">ptr</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Returns attributes about a specified pointer. </span>
+</dd>
+                  </dl>
+                  <div class="description">
+                     <h3 class="sectiontitle">Functions</h3>
+                     <dl class="description">
+                        <dt class="description">
+<a name="group__CUDART__UNIFIED_1gd89830e17d399c064a2f3c3fa8bb4390" id="group__CUDART__UNIFIED_1gd89830e17d399c064a2f3c3fa8bb4390" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaPointerGetAttributes (  <a href="structcudaPointerAttributes.html#structcudaPointerAttributes" title="" shape="rect">cudaPointerAttributes</a>*<span> </span><span class="keyword keyword apiItemName">attributes</span>, const void*<span> </span><span class="keyword keyword apiItemName">ptr</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Returns attributes about a specified pointer. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">attributes</span></tt></dt>
+                                 <dd>- Attributes for the specified pointer </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">ptr</span></tt></dt>
+                                 <dd>- Pointer to get attributes for</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038938c6e8b96ecde62e3ab5137156f739a" shape="rect">cudaErrorInvalidDevice</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Returns in <tt class="ph tt code">*attributes</tt> the attributes of the pointer <tt class="ph tt code">ptr</tt>. If pointer was not allocated in, mapped by or registered with context supporting unified addressing <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a> is returned.
+                              </p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">In CUDA 11.0 forward passing host pointer will return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg13de56a8fe75569530ecc3a3106e9b6d842e996720bbf9b4d3c416abd86e15f4" shape="rect">cudaMemoryTypeUnregistered</a> in <a class="xref" href="structcudaPointerAttributes.html#structcudaPointerAttributes_191ef95dac597cc710558dabbc8b9ae38" shape="rect">cudaPointerAttributes::type</a> and call will return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>.
+                                    </p>
+                                 </div>
+                              
+                              <p class="p">
+                                 The <a class="xref" href="structcudaPointerAttributes.html#structcudaPointerAttributes" shape="rect">cudaPointerAttributes</a> structure is defined as: </p>
+<pre xml:space="preserve">‎    struct <a class="xref" href="structcudaPointerAttributes.html#structcudaPointerAttributes" shape="rect">cudaPointerAttributes</a> {
+              enum <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g13de56a8fe75569530ecc3a3106e9b6d" shape="rect">cudaMemoryType</a> 
+                  <a class="xref" href="structcudaPointerAttributes.html#structcudaPointerAttributes_191ef95dac597cc710558dabbc8b9ae38" shape="rect">type</a>;
+              int <a class="xref" href="structcudaPointerAttributes.html#structcudaPointerAttributes_120015540684b0c85e0debf64923bedec" shape="rect">device</a>;
+              void *<a class="xref" href="structcudaPointerAttributes.html#structcudaPointerAttributes_19edc9782e1ee337072994780fd3b675f" shape="rect">devicePointer</a>;
+              void *<a class="xref" href="structcudaPointerAttributes.html#structcudaPointerAttributes_119cbae18cd685096287e41cce1c9a087" shape="rect">hostPointer</a>;
+          }</pre> In this structure, the individual fields mean
+                              <p class="p">
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="structcudaPointerAttributes.html#structcudaPointerAttributes_191ef95dac597cc710558dabbc8b9ae38" shape="rect">cudaPointerAttributes::type</a> identifies type of memory. It can be <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg13de56a8fe75569530ecc3a3106e9b6d842e996720bbf9b4d3c416abd86e15f4" shape="rect">cudaMemoryTypeUnregistered</a> for unregistered host memory, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg13de56a8fe75569530ecc3a3106e9b6d9aa7478ab438d2dfb710c9100194a5be" shape="rect">cudaMemoryTypeHost</a> for registered host memory, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg13de56a8fe75569530ecc3a3106e9b6d30c8466dd99563e4b1a43dd27bf7c743" shape="rect">cudaMemoryTypeDevice</a> for device memory or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg13de56a8fe75569530ecc3a3106e9b6dbb20a4b61c559a4e7629fe60ac04b84e" shape="rect">cudaMemoryTypeManaged</a> for managed memory.
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p">
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="structcudaPointerAttributes.html#structcudaPointerAttributes_120015540684b0c85e0debf64923bedec" shape="rect">device</a> is the device against which <tt class="ph tt code">ptr</tt> was allocated. If <tt class="ph tt code">ptr</tt> has memory type <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg13de56a8fe75569530ecc3a3106e9b6d30c8466dd99563e4b1a43dd27bf7c743" shape="rect">cudaMemoryTypeDevice</a> then this identifies the device on which the memory referred to by <tt class="ph tt code">ptr</tt> physically resides. If <tt class="ph tt code">ptr</tt> has memory type <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg13de56a8fe75569530ecc3a3106e9b6d9aa7478ab438d2dfb710c9100194a5be" shape="rect">cudaMemoryTypeHost</a> then this identifies the device which was current when the allocation was made (and if that device is deinitialized then
+                                          this allocation will vanish with that device's state).
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p">
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="structcudaPointerAttributes.html#structcudaPointerAttributes_19edc9782e1ee337072994780fd3b675f" shape="rect">devicePointer</a> is the device pointer alias through which the memory referred to by <tt class="ph tt code">ptr</tt> may be accessed on the current device. If the memory referred to by <tt class="ph tt code">ptr</tt> cannot be accessed directly by the current device then this is NULL.
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p">
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="structcudaPointerAttributes.html#structcudaPointerAttributes_119cbae18cd685096287e41cce1c9a087" shape="rect">hostPointer</a> is the host pointer alias through which the memory referred to by <tt class="ph tt code">ptr</tt> may be accessed on the host. If the memory referred to by <tt class="ph tt code">ptr</tt> cannot be accessed directly by the host then this is NULL.
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__DEVICE.html#group__CUDART__DEVICE_1g18808e54893cfcaafefeab31a73cc55f" title="Returns the number of compute-capable devices." shape="rect">cudaGetDeviceCount</a>, <a class="xref" href="group__CUDART__DEVICE.html#group__CUDART__DEVICE_1g80861db2ce7c29b6e8055af8ae01bc78" title="Returns which device is currently being used." shape="rect">cudaGetDevice</a>, <a class="xref" href="group__CUDART__DEVICE.html#group__CUDART__DEVICE_1g159587909ffa0791bbe4b40187a4c6bb" title="Set device to be used for GPU executions." shape="rect">cudaSetDevice</a>, <a class="xref" href="group__CUDART__DEVICE.html#group__CUDART__DEVICE_1gf61f9ae0fe2d93b5b968756684a49460" title="Select compute-device which best matches criteria." shape="rect">cudaChooseDevice</a>, <a class="xref" href="group__CUDART__DEVICE.html#group__CUDART__DEVICE_1gac04a5d82168676b20121ca870919419" title="Initialize device to be used for GPU executions." shape="rect">cudaInitDevice</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__UNIFIED.html#group__CUDA__UNIFIED_1gf65e9ea532e311dd049166e4894955ad" target="_blank" shape="rect">cuPointerGetAttributes</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                     </dl>
+                  </div>
+               </div>
+               
+               <hr id="contents-end">
+               
+            </article>
+         </div>
+      </div>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/formatting/common.min.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-write.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-tracker.js"></script>
+      <script type="text/javascript">var switchTo5x=true;</script><script type="text/javascript">stLight.options({publisher: "998dc202-a267-4d8e-bce9-14debadb8d92", doNotHash: false, doNotCopy: false, hashAddressBar: false});</script><script type="text/javascript">_satellite.pageBottom();</script>
+</body>
+</html>

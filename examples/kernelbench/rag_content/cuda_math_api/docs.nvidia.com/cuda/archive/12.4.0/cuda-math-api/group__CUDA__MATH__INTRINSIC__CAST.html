@@ -1,0 +1,2053 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-us" xml:lang="en-us">
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <meta name="copyright" content="(C) Copyright 2005">
+      <meta name="DC.rights.owner" content="(C) Copyright 2005">
+      <meta name="DC.Type" content="cppModule">
+      <meta name="DC.Title" content="Type Casting Intrinsics">
+      <meta name="abstract" content="">
+      <meta name="description" content="">
+      <meta name="DC.Format" content="XHTML">
+      <meta name="DC.Identifier" content="group__CUDA__MATH__INTRINSIC__CAST">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/commonltr.css">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/site.css">
+      <title>CUDA Math API :: CUDA Toolkit Documentation</title>
+      <!--[if lt IE 9]>
+      <script src="../common/formatting/html5shiv-printshiv.min.js"></script>
+      <![endif]-->
+      <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-svg.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.ba-hashchange.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.scrollintoview.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/scripts/geoip/geoip.js"></script>
+      <script type="text/javascript" src="../search/htmlFileList.js"></script>
+      <script type="text/javascript" src="../search/htmlFileInfoList.js"></script>
+      <script type="text/javascript" src="../search/nwSearchFnt.min.js"></script>
+      <script type="text/javascript" src="../search/stemmers/en_stemmer.min.js"></script>
+      <script type="text/javascript" src="../search/index-1.js"></script>
+      <script type="text/javascript" src="../search/index-2.js"></script>
+      <script type="text/javascript" src="../search/index-3.js"></script>
+      <link rel="canonical" href="https://docs.nvidia.com/cuda/cuda-math-api/index.html">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/qwcode.highlight.css">
+   </head>
+   <body>
+      
+      <header id="header"><span id="company">NVIDIA</span><span id="site-title">CUDA Toolkit Documentation</span><form id="search" method="get" action="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-math-api/search">
+            <input type="text" name="search-text"><fieldset id="search-location">
+               <legend>Search In:</legend>
+               <label><input type="radio" name="search-type" value="site">Entire Site</label>
+               <label><input type="radio" name="search-type" value="document">Just This Document</label>
+</fieldset>
+            <button type="reset">clear search</button>
+            <button id="submit" type="submit">search</button>
+</form>
+      </header>
+      <div id="site-content">
+         <nav id="site-nav">
+            <div class="category closed"><a href="https://docs.nvidia.com/cuda/archive/12.4.0/index.html" title="The root of the site.">CUDA Toolkit 
+                  
+                  
+                  v12.4.0</a></div>
+            <div class="category"><a href="index.html" title="CUDA Math API">CUDA Math API</a></div>
+            <ul>
+               <li>
+                  <div class="section-link"><a href="modules.html#modules">1. Modules</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__FP8.html#group__CUDA__MATH__INTRINSIC__FP8">1.1. FP8 Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__MISC.html#group__CUDA__MATH__FP8__MISC">1.1.1. FP8 Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT">1.1.2. C++ struct for handling fp8 data type of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X2__E5M2__STRUCT.html#group__CUDA__MATH__FP8X2__E5M2__STRUCT">1.1.3. C++ struct for handling vector type of two fp8 values of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X4__E5M2__STRUCT.html#group__CUDA__MATH__FP8X4__E5M2__STRUCT">1.1.4. C++ struct for handling vector type of four fp8 values of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT">1.1.5. C++ struct for handling fp8 data type of e4m3 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X2__E4M3__STRUCT.html#group__CUDA__MATH__FP8X2__E4M3__STRUCT">1.1.6. C++ struct for handling vector type of two fp8 values of e4m3 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X4__E4M3__STRUCT.html#group__CUDA__MATH__FP8X4__E4M3__STRUCT">1.1.7. C++ struct for handling vector type of four fp8 values of e4m3 kind.</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__HALF.html#group__CUDA__MATH__INTRINSIC__HALF">1.2. Half Precision Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__HALF__CONSTANTS.html#group__CUDA__MATH__INTRINSIC__HALF__CONSTANTS">1.2.1. Half Arithmetic Constants</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__ARITHMETIC.html#group__CUDA__MATH____HALF__ARITHMETIC">1.2.2. Half Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__ARITHMETIC.html#group__CUDA__MATH____HALF2__ARITHMETIC">1.2.3. Half2 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__COMPARISON.html#group__CUDA__MATH____HALF__COMPARISON">1.2.4. Half Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__COMPARISON.html#group__CUDA__MATH____HALF2__COMPARISON">1.2.5. Half2 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__MISC.html#group__CUDA__MATH____HALF__MISC">1.2.6. Half Precision Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__FUNCTIONS.html#group__CUDA__MATH____HALF__FUNCTIONS">1.2.7. Half Math Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__FUNCTIONS.html#group__CUDA__MATH____HALF2__FUNCTIONS">1.2.8. Half2 Math Functions</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__BFLOAT16.html#group__CUDA__MATH__INTRINSIC__BFLOAT16">1.3. Bfloat16 Precision Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS.html#group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS">1.3.1. Bfloat16 Arithmetic Constants</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__ARITHMETIC.html#group__CUDA__MATH____BFLOAT16__ARITHMETIC">1.3.2. Bfloat16 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__ARITHMETIC.html#group__CUDA__MATH____BFLOAT162__ARITHMETIC">1.3.3. Bfloat162 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__COMPARISON.html#group__CUDA__MATH____BFLOAT16__COMPARISON">1.3.4. Bfloat16 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__COMPARISON.html#group__CUDA__MATH____BFLOAT162__COMPARISON">1.3.5. Bfloat162 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC">1.3.6. Bfloat16 Precision Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__FUNCTIONS.html#group__CUDA__MATH____BFLOAT16__FUNCTIONS">1.3.7. Bfloat16 Math Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__FUNCTIONS.html#group__CUDA__MATH____BFLOAT162__FUNCTIONS">1.3.8. Bfloat162 Math Functions</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH.html#group__CUDA__MATH">1.4. Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__SINGLE.html#group__CUDA__MATH__SINGLE">1.5. Single Precision Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE">1.6. Double Precision Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INT.html#group__CUDA__MATH__INT">1.7. Integer Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE">1.8. Single Precision Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__DOUBLE.html#group__CUDA__MATH__INTRINSIC__DOUBLE">1.9. Double Precision Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT">1.10. Integer Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST">1.11. Type Casting Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__SIMD.html#group__CUDA__MATH__INTRINSIC__SIMD">1.12. SIMD Intrinsics</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="annotated.html#annotated">2. Data Structures</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="struct____half.html#struct____half">2.1. __half</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half2.html#struct____half2">2.2. __half2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half2__raw.html#struct____half2__raw">2.3. __half2_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half__raw.html#struct____half__raw">2.4. __half_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16">2.5. __nv_bfloat16</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat162.html#struct____nv__bfloat162">2.6. __nv_bfloat162</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat162__raw.html#struct____nv__bfloat162__raw">2.7. __nv_bfloat162_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw">2.8. __nv_bfloat16_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8__e4m3.html#struct____nv__fp8__e4m3">2.9. __nv_fp8_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8__e5m2.html#struct____nv__fp8__e5m2">2.10. __nv_fp8_e5m2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x2__e4m3.html#struct____nv__fp8x2__e4m3">2.11. __nv_fp8x2_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x2__e5m2.html#struct____nv__fp8x2__e5m2">2.12. __nv_fp8x2_e5m2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x4__e4m3.html#struct____nv__fp8x4__e4m3">2.13. __nv_fp8x4_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x4__e5m2.html#struct____nv__fp8x4__e5m2">2.14. __nv_fp8x4_e5m2</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="functions.html#functions">3. Data Fields</a></div>
+               </li>
+            </ul>
+         </nav>
+         <div id="resize-nav"></div>
+         <nav id="search-results">
+            <h2>Search Results</h2>
+            <ol></ol>
+         </nav>
+         
+         <div id="contents-container">
+            <div id="breadcrumbs-container">
+               <div id="breadcrumbs">
+<a href="group__CUDA__MATH__INTRINSIC__INT.html" shape="rect">&lt; Previous</a> | <a href="group__CUDA__MATH__INTRINSIC__SIMD.html" shape="rect">Next &gt;</a>
+</div>
+               <div id="release-info">CUDA Math API
+                  (<a href="https://docs.nvidia.com/cuda/archive/12.4.0/pdf/CUDA_Math_API.pdf">PDF</a>)
+                  -
+                   
+                  
+                  
+                  v12.4.0
+                  (<a href="https://developer.nvidia.com/cuda-toolkit-archive">older</a>)
+                  -
+                  Last updated March 5, 2024
+                  -
+                  <a href="mailto:CUDAIssues@nvidia.com?subject=CUDA%20Toolkit%20Documentation%20Feedback:%20CUDA%20Math%20API">Send Feedback</a>
+</div>
+            </div>
+            <article id="contents">
+               <div class="topic reference apiRef apiPackage cppModule" id="group__CUDA__MATH__INTRINSIC__CAST">
+<a name="group__CUDA__MATH__INTRINSIC__CAST" shape="rect">
+                     <!-- --></a><h2 class="topictitle2 cppModule">1.11. Type Casting Intrinsics</h2>
+                  <div class="section">
+                     <p>This section describes type casting intrinsic functions that are only supported in device code. To use these functions you
+                        do not need to include any additional header files in your program. 
+                     </p>
+                  </div>
+                  <h3 class="fake_sectiontitle member_header">Functions</h3>
+                  <dl class="members">
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g64f62a06692dc6f683a2da3a25bd39de" shape="rect">__double2float_rd</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to a float in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g44785801ae1807a2bc0fde3f4f9d6aae" shape="rect">__double2float_rn</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to a float in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g4a5f6ab65413bdfb6080003392a2954b" shape="rect">__double2float_ru</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to a float in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1ga2bfeb44d4150a05d590a3c330511990" shape="rect">__double2float_rz</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to a float in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1ge8bbbe2efda5aa6f087c94e1e56463e8" shape="rect">__double2hiint</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Reinterpret high 32 bits in a double as a signed integer. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1gf91bc76a892f92d470595c3d95703531" shape="rect">__double2int_rd</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to a signed int in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g57eccdd6189ac5527b52eeff42daaae5" shape="rect">__double2int_rn</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to a signed int in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1ge3ad8b7aba740b05097cb47c70f2387a" shape="rect">__double2int_ru</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to a signed int in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1gf5ba8d1316a96fab5f34f0cfffd4fb07" shape="rect">__double2int_rz</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to a signed int in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g1b9a396549605e99ad6f0639d8efd0cc" shape="rect">__double2ll_rd</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to a signed 64-bit int in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1gff7010f874f73a459f0055dfa31d3531" shape="rect">__double2ll_rn</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to a signed 64-bit int in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g410bc39567ec1105a1ef4658bdfa4c4f" shape="rect">__double2ll_ru</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to a signed 64-bit int in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g1e10c3df99035e81bf902589410a8798" shape="rect">__double2ll_rz</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to a signed 64-bit int in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g8f685cb937cc96c273d197da7b1633f1" shape="rect">__double2loint</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Reinterpret low 32 bits in a double as a signed integer. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g38ca3e31db652a84d318fe966231e60d" shape="rect">__double2uint_rd</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to an unsigned int in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g551e5828292865856f306fb5b3eeb9e7" shape="rect">__double2uint_rn</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to an unsigned int in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g872081e638057748cc55697cfbde0de7" shape="rect">__double2uint_ru</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to an unsigned int in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g9b6b4afa2ad047c3d10b1a6ec4b540f2" shape="rect">__double2uint_rz</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to an unsigned int in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g4041c7521153868536f5081b43aa6e94" shape="rect">__double2ull_rd</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to an unsigned 64-bit int in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g33d309bee17d6e98fad0a3db0077e1d8" shape="rect">__double2ull_rn</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to an unsigned 64-bit int in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g0b673695ff1ea93070b8795747d0bb0a" shape="rect">__double2ull_ru</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to an unsigned 64-bit int in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1ga228e8924a18963346001d7818665b3b" shape="rect">__double2ull_rz</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a double to an unsigned 64-bit int in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1geb72123ab9c35d88842baf34140a8ca6" shape="rect">__double_as_longlong</a> (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Reinterpret bits in a double as a 64-bit signed integer. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g46c024bc92e746ef5c6a48ef0ce74b54" shape="rect">__float2int_rd</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to a signed integer in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1ga0223a729c7bda6096fc7fc212df32cd" shape="rect">__float2int_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to a signed integer in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1gefb35242e2f0c38d448b7123782aa15f" shape="rect">__float2int_ru</a> (  float  ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to a signed integer in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g0f1b36aae52d3051068da702e4e6e3df" shape="rect">__float2int_rz</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to a signed integer in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g46a5c844ad314deca27609a775732386" shape="rect">__float2ll_rd</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to a signed 64-bit integer in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g8491bb2ed031de169206e591e5779f69" shape="rect">__float2ll_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to a signed 64-bit integer in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g9f3eb6391aaeed6d18da2615d51205eb" shape="rect">__float2ll_ru</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to a signed 64-bit integer in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1gb3d41edef9134fc0aa91ecd6d9dcf0c6" shape="rect">__float2ll_rz</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to a signed 64-bit integer in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1gdaebb858df76995537091414f4b54970" shape="rect">__float2uint_rd</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to an unsigned integer in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1ga32cbc1af788e704c26b48c1a4a87494" shape="rect">__float2uint_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to an unsigned integer in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g233419ac96d01a429517c0fdfd4be157" shape="rect">__float2uint_ru</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to an unsigned integer in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1gd833e48202936c6c70402fdf7549ef23" shape="rect">__float2uint_rz</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to an unsigned integer in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g321ba664bb669aec511eb3be642a2be1" shape="rect">__float2ull_rd</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to an unsigned 64-bit integer in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g6a8ce4db49da2a1eb288722ac108636e" shape="rect">__float2ull_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to an unsigned 64-bit integer in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1gbf910da5dce52e6e4a1df307a8aff874" shape="rect">__float2ull_ru</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to an unsigned 64-bit integer in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g116a44de48af36f1a4d19ca97c9e58cd" shape="rect">__float2ull_rz</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a float to an unsigned 64-bit integer in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1gdcf392b5fe3086d1ae06a1a3dcb752b1" shape="rect">__float_as_int</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Reinterpret bits in a float as a signed integer. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1gaf4c4e5365416bb96b5937df9ffd9497" shape="rect">__float_as_uint</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Reinterpret bits in a float as a unsigned integer. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ double </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g5853355db4780e81fb09ac911a8f2def" shape="rect">__hiloint2double</a> (  int <span> </span><span class="keyword keyword apiItemName">hi</span>, int <span> </span><span class="keyword keyword apiItemName">lo</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Reinterpret high and low 32-bit integer values as a double. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ double </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g802fcfefe56a2b03839f3135ac5ffda3" shape="rect">__int2double_rn</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed int to a double. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g5247baba1fb70321b7569ba35000f5f9" shape="rect">__int2float_rd</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed integer to a float in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g08cd4822773d557bd092ab986dffa8f1" shape="rect">__int2float_rn</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed integer to a float in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g0f3748c434f936ee459feff8e6f0de7d" shape="rect">__int2float_ru</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed integer to a float in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1ga3080c83713f5be18ac3488af0c1d8a9" shape="rect">__int2float_rz</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed integer to a float in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g99207ac41a048168ff039e8e6f1084c9" shape="rect">__int_as_float</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Reinterpret bits in an integer as a float. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ double </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g7fcf675dbfa5fcb854a07c4b005cca44" shape="rect">__ll2double_rd</a> (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed 64-bit int to a double in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ double </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g70e811280daf5925d1b377f143d76201" shape="rect">__ll2double_rn</a> (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed 64-bit int to a double in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ double </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g8a8f6881e01a8d0de4231157606a17d2" shape="rect">__ll2double_ru</a> (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed 64-bit int to a double in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ double </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1gfe3afeae8f48bb3d598e2c7c9417feb0" shape="rect">__ll2double_rz</a> (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed 64-bit int to a double in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g125d06ca0d57a1d856714af3dbfa68a2" shape="rect">__ll2float_rd</a> (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed integer to a float in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g5012f7d034ffd3affadc0c1ff4fb4c0b" shape="rect">__ll2float_rn</a> (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed 64-bit integer to a float in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g30000a07d935a414c23eb79a4f4fd353" shape="rect">__ll2float_ru</a> (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed integer to a float in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g2dc649ecea6a9f04e8a85f7cfd8444c1" shape="rect">__ll2float_rz</a> (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert a signed integer to a float in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ double </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g354a51915a0c6465ac5e5c844724d987" shape="rect">__longlong_as_double</a> (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Reinterpret bits in a 64-bit signed integer as a double. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ double </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1gf214f35ac7732dc82db1a2fe8cf1760b" shape="rect">__uint2double_rn</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned int to a double. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1ga46b5ec834fc7a973b0f90a605a82cad" shape="rect">__uint2float_rd</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned integer to a float in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1geef617486f7a4937b87933b54d41b03a" shape="rect">__uint2float_rn</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned integer to a float in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g4c31d267e495c32d9718d21bb9b3470b" shape="rect">__uint2float_ru</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned integer to a float in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1ge1aa4eb377adbff2d94875131f10bfc1" shape="rect">__uint2float_rz</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned integer to a float in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g156767b22e3d00f8fa6625804a1cff63" shape="rect">__uint_as_float</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Reinterpret bits in an unsigned integer as a float. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ double </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g7e2b60cf5ff4113e569a64b9a2db0a74" shape="rect">__ull2double_rd</a> (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned 64-bit int to a double in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ double </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g9de34b6ace45642b96873f1415d42d24" shape="rect">__ull2double_rn</a> (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned 64-bit int to a double in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ double </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g5d582e599bf8d35e17ff9b90695b0ebf" shape="rect">__ull2double_ru</a> (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned 64-bit int to a double in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ double </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g3b9d77551c668db0930cc75e1121528a" shape="rect">__ull2double_rz</a> (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned 64-bit int to a double in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g79735bf3dfb053279868c89b3e1111dc" shape="rect">__ull2float_rd</a> (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned integer to a float in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1ga655fbb8e0ce7082496658b9708c655a" shape="rect">__ull2float_rn</a> (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned integer to a float in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g8ab7e72ff20c099263ad64bc7d02f9ed" shape="rect">__ull2float_ru</a> (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned integer to a float in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST_1g3e719eed3287f966e05121745cff0a41" shape="rect">__ull2float_rz</a> (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Convert an unsigned integer to a float in round-towards-zero mode. </span>
+</dd>
+                  </dl>
+                  <div class="description">
+                     <h3 class="sectiontitle">Functions</h3>
+                     <dl class="description">
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g64f62a06692dc6f683a2da3a25bd39de" id="group__CUDA__MATH__INTRINSIC__CAST_1g64f62a06692dc6f683a2da3a25bd39de" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __double2float_rd (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to a float in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g44785801ae1807a2bc0fde3f4f9d6aae" id="group__CUDA__MATH__INTRINSIC__CAST_1g44785801ae1807a2bc0fde3f4f9d6aae" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __double2float_rn (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to a float in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g4a5f6ab65413bdfb6080003392a2954b" id="group__CUDA__MATH__INTRINSIC__CAST_1g4a5f6ab65413bdfb6080003392a2954b" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __double2float_ru (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to a float in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1ga2bfeb44d4150a05d590a3c330511990" id="group__CUDA__MATH__INTRINSIC__CAST_1ga2bfeb44d4150a05d590a3c330511990" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __double2float_rz (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to a float in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1ge8bbbe2efda5aa6f087c94e1e56463e8" id="group__CUDA__MATH__INTRINSIC__CAST_1ge8bbbe2efda5aa6f087c94e1e56463e8" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __double2hiint (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Reinterpret high 32 bits in a double as a signed integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns reinterpreted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Reinterpret the high 32 bits in the double-precision floating-point value <tt class="ph tt code">x</tt> as a signed integer. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1gf91bc76a892f92d470595c3d95703531" id="group__CUDA__MATH__INTRINSIC__CAST_1gf91bc76a892f92d470595c3d95703531" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __double2int_rd (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to a signed int in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to a signed integer value in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g57eccdd6189ac5527b52eeff42daaae5" id="group__CUDA__MATH__INTRINSIC__CAST_1g57eccdd6189ac5527b52eeff42daaae5" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __double2int_rn (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to a signed int in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to a signed integer value in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1ge3ad8b7aba740b05097cb47c70f2387a" id="group__CUDA__MATH__INTRINSIC__CAST_1ge3ad8b7aba740b05097cb47c70f2387a" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __double2int_ru (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to a signed int in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to a signed integer value in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1gf5ba8d1316a96fab5f34f0cfffd4fb07" id="group__CUDA__MATH__INTRINSIC__CAST_1gf5ba8d1316a96fab5f34f0cfffd4fb07" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __double2int_rz (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to a signed int in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to a signed integer value in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g1b9a396549605e99ad6f0639d8efd0cc" id="group__CUDA__MATH__INTRINSIC__CAST_1g1b9a396549605e99ad6f0639d8efd0cc" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ long long int __double2ll_rd (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to a signed 64-bit int in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to a signed 64-bit integer value in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1gff7010f874f73a459f0055dfa31d3531" id="group__CUDA__MATH__INTRINSIC__CAST_1gff7010f874f73a459f0055dfa31d3531" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ long long int __double2ll_rn (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to a signed 64-bit int in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to a signed 64-bit integer value in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g410bc39567ec1105a1ef4658bdfa4c4f" id="group__CUDA__MATH__INTRINSIC__CAST_1g410bc39567ec1105a1ef4658bdfa4c4f" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ long long int __double2ll_ru (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to a signed 64-bit int in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to a signed 64-bit integer value in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g1e10c3df99035e81bf902589410a8798" id="group__CUDA__MATH__INTRINSIC__CAST_1g1e10c3df99035e81bf902589410a8798" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ long long int __double2ll_rz (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to a signed 64-bit int in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to a signed 64-bit integer value in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g8f685cb937cc96c273d197da7b1633f1" id="group__CUDA__MATH__INTRINSIC__CAST_1g8f685cb937cc96c273d197da7b1633f1" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __double2loint (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Reinterpret low 32 bits in a double as a signed integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns reinterpreted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Reinterpret the low 32 bits in the double-precision floating-point value <tt class="ph tt code">x</tt> as a signed integer. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g38ca3e31db652a84d318fe966231e60d" id="group__CUDA__MATH__INTRINSIC__CAST_1g38ca3e31db652a84d318fe966231e60d" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __double2uint_rd (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to an unsigned int in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned integer value in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g551e5828292865856f306fb5b3eeb9e7" id="group__CUDA__MATH__INTRINSIC__CAST_1g551e5828292865856f306fb5b3eeb9e7" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __double2uint_rn (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to an unsigned int in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned integer value in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g872081e638057748cc55697cfbde0de7" id="group__CUDA__MATH__INTRINSIC__CAST_1g872081e638057748cc55697cfbde0de7" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __double2uint_ru (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to an unsigned int in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned integer value in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g9b6b4afa2ad047c3d10b1a6ec4b540f2" id="group__CUDA__MATH__INTRINSIC__CAST_1g9b6b4afa2ad047c3d10b1a6ec4b540f2" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __double2uint_rz (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to an unsigned int in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned integer value in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g4041c7521153868536f5081b43aa6e94" id="group__CUDA__MATH__INTRINSIC__CAST_1g4041c7521153868536f5081b43aa6e94" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned long long int __double2ull_rd (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to an unsigned 64-bit int in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned 64-bit integer value in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g33d309bee17d6e98fad0a3db0077e1d8" id="group__CUDA__MATH__INTRINSIC__CAST_1g33d309bee17d6e98fad0a3db0077e1d8" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned long long int __double2ull_rn (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to an unsigned 64-bit int in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned 64-bit integer value in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g0b673695ff1ea93070b8795747d0bb0a" id="group__CUDA__MATH__INTRINSIC__CAST_1g0b673695ff1ea93070b8795747d0bb0a" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned long long int __double2ull_ru (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to an unsigned 64-bit int in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned 64-bit integer value in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1ga228e8924a18963346001d7818665b3b" id="group__CUDA__MATH__INTRINSIC__CAST_1ga228e8924a18963346001d7818665b3b" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned long long int __double2ull_rz (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a double to an unsigned 64-bit int in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the double-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned 64-bit integer value in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1geb72123ab9c35d88842baf34140a8ca6" id="group__CUDA__MATH__INTRINSIC__CAST_1geb72123ab9c35d88842baf34140a8ca6" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ long long int __double_as_longlong (  double <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Reinterpret bits in a double as a 64-bit signed integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns reinterpreted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Reinterpret the bits in the double-precision floating-point value <tt class="ph tt code">x</tt> as a signed 64-bit integer. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g46c024bc92e746ef5c6a48ef0ce74b54" id="group__CUDA__MATH__INTRINSIC__CAST_1g46c024bc92e746ef5c6a48ef0ce74b54" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __float2int_rd (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to a signed integer in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to a signed integer in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1ga0223a729c7bda6096fc7fc212df32cd" id="group__CUDA__MATH__INTRINSIC__CAST_1ga0223a729c7bda6096fc7fc212df32cd" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __float2int_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to a signed integer in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to a signed integer in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1gefb35242e2f0c38d448b7123782aa15f" id="group__CUDA__MATH__INTRINSIC__CAST_1gefb35242e2f0c38d448b7123782aa15f" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __float2int_ru (  float  ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to a signed integer in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to a signed integer in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g0f1b36aae52d3051068da702e4e6e3df" id="group__CUDA__MATH__INTRINSIC__CAST_1g0f1b36aae52d3051068da702e4e6e3df" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __float2int_rz (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to a signed integer in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to a signed integer in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g46a5c844ad314deca27609a775732386" id="group__CUDA__MATH__INTRINSIC__CAST_1g46a5c844ad314deca27609a775732386" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ long long int __float2ll_rd (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to a signed 64-bit integer in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to a signed 64-bit integer in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g8491bb2ed031de169206e591e5779f69" id="group__CUDA__MATH__INTRINSIC__CAST_1g8491bb2ed031de169206e591e5779f69" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ long long int __float2ll_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to a signed 64-bit integer in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to a signed 64-bit integer in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g9f3eb6391aaeed6d18da2615d51205eb" id="group__CUDA__MATH__INTRINSIC__CAST_1g9f3eb6391aaeed6d18da2615d51205eb" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ long long int __float2ll_ru (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to a signed 64-bit integer in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to a signed 64-bit integer in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1gb3d41edef9134fc0aa91ecd6d9dcf0c6" id="group__CUDA__MATH__INTRINSIC__CAST_1gb3d41edef9134fc0aa91ecd6d9dcf0c6" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ long long int __float2ll_rz (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to a signed 64-bit integer in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to a signed 64-bit integer in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1gdaebb858df76995537091414f4b54970" id="group__CUDA__MATH__INTRINSIC__CAST_1gdaebb858df76995537091414f4b54970" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __float2uint_rd (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to an unsigned integer in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned integer in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1ga32cbc1af788e704c26b48c1a4a87494" id="group__CUDA__MATH__INTRINSIC__CAST_1ga32cbc1af788e704c26b48c1a4a87494" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __float2uint_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to an unsigned integer in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned integer in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g233419ac96d01a429517c0fdfd4be157" id="group__CUDA__MATH__INTRINSIC__CAST_1g233419ac96d01a429517c0fdfd4be157" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __float2uint_ru (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to an unsigned integer in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned integer in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1gd833e48202936c6c70402fdf7549ef23" id="group__CUDA__MATH__INTRINSIC__CAST_1gd833e48202936c6c70402fdf7549ef23" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __float2uint_rz (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to an unsigned integer in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned integer in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g321ba664bb669aec511eb3be642a2be1" id="group__CUDA__MATH__INTRINSIC__CAST_1g321ba664bb669aec511eb3be642a2be1" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned long long int __float2ull_rd (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to an unsigned 64-bit integer in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned 64-bit integer in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g6a8ce4db49da2a1eb288722ac108636e" id="group__CUDA__MATH__INTRINSIC__CAST_1g6a8ce4db49da2a1eb288722ac108636e" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned long long int __float2ull_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to an unsigned 64-bit integer in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned 64-bit integer in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1gbf910da5dce52e6e4a1df307a8aff874" id="group__CUDA__MATH__INTRINSIC__CAST_1gbf910da5dce52e6e4a1df307a8aff874" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned long long int __float2ull_ru (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to an unsigned 64-bit integer in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned 64-bit integer in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g116a44de48af36f1a4d19ca97c9e58cd" id="group__CUDA__MATH__INTRINSIC__CAST_1g116a44de48af36f1a4d19ca97c9e58cd" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned long long int __float2ull_rz (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a float to an unsigned 64-bit integer in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the single-precision floating-point value <tt class="ph tt code">x</tt> to an unsigned 64-bit integer in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1gdcf392b5fe3086d1ae06a1a3dcb752b1" id="group__CUDA__MATH__INTRINSIC__CAST_1gdcf392b5fe3086d1ae06a1a3dcb752b1" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __float_as_int (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Reinterpret bits in a float as a signed integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns reinterpreted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Reinterpret the bits in the single-precision floating-point value <tt class="ph tt code">x</tt> as a signed integer. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1gaf4c4e5365416bb96b5937df9ffd9497" id="group__CUDA__MATH__INTRINSIC__CAST_1gaf4c4e5365416bb96b5937df9ffd9497" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __float_as_uint (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Reinterpret bits in a float as a unsigned integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns reinterpreted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Reinterpret the bits in the single-precision floating-point value <tt class="ph tt code">x</tt> as a unsigned integer. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g5853355db4780e81fb09ac911a8f2def" id="group__CUDA__MATH__INTRINSIC__CAST_1g5853355db4780e81fb09ac911a8f2def" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ double __hiloint2double (  int <span> </span><span class="keyword keyword apiItemName">hi</span>, int <span> </span><span class="keyword keyword apiItemName">lo</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Reinterpret high and low 32-bit integer values as a double. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns reinterpreted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Reinterpret the integer value of <tt class="ph tt code">hi</tt> as the high 32 bits of a double-precision floating-point value and the integer value of <tt class="ph tt code">lo</tt> as the low 32 bits of the same double-precision floating-point value. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g802fcfefe56a2b03839f3135ac5ffda3" id="group__CUDA__MATH__INTRINSIC__CAST_1g802fcfefe56a2b03839f3135ac5ffda3" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ double __int2double_rn (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed int to a double. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed integer value <tt class="ph tt code">x</tt> to a double-precision floating-point value. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g5247baba1fb70321b7569ba35000f5f9" id="group__CUDA__MATH__INTRINSIC__CAST_1g5247baba1fb70321b7569ba35000f5f9" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __int2float_rd (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed integer to a float in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g08cd4822773d557bd092ab986dffa8f1" id="group__CUDA__MATH__INTRINSIC__CAST_1g08cd4822773d557bd092ab986dffa8f1" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __int2float_rn (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed integer to a float in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g0f3748c434f936ee459feff8e6f0de7d" id="group__CUDA__MATH__INTRINSIC__CAST_1g0f3748c434f936ee459feff8e6f0de7d" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __int2float_ru (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed integer to a float in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1ga3080c83713f5be18ac3488af0c1d8a9" id="group__CUDA__MATH__INTRINSIC__CAST_1ga3080c83713f5be18ac3488af0c1d8a9" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __int2float_rz (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed integer to a float in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g99207ac41a048168ff039e8e6f1084c9" id="group__CUDA__MATH__INTRINSIC__CAST_1g99207ac41a048168ff039e8e6f1084c9" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __int_as_float (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Reinterpret bits in an integer as a float. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns reinterpreted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Reinterpret the bits in the signed integer value <tt class="ph tt code">x</tt> as a single-precision floating-point value. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g7fcf675dbfa5fcb854a07c4b005cca44" id="group__CUDA__MATH__INTRINSIC__CAST_1g7fcf675dbfa5fcb854a07c4b005cca44" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ double __ll2double_rd (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed 64-bit int to a double in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed 64-bit integer value <tt class="ph tt code">x</tt> to a double-precision floating-point value in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g70e811280daf5925d1b377f143d76201" id="group__CUDA__MATH__INTRINSIC__CAST_1g70e811280daf5925d1b377f143d76201" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ double __ll2double_rn (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed 64-bit int to a double in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed 64-bit integer value <tt class="ph tt code">x</tt> to a double-precision floating-point value in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g8a8f6881e01a8d0de4231157606a17d2" id="group__CUDA__MATH__INTRINSIC__CAST_1g8a8f6881e01a8d0de4231157606a17d2" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ double __ll2double_ru (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed 64-bit int to a double in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed 64-bit integer value <tt class="ph tt code">x</tt> to a double-precision floating-point value in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1gfe3afeae8f48bb3d598e2c7c9417feb0" id="group__CUDA__MATH__INTRINSIC__CAST_1gfe3afeae8f48bb3d598e2c7c9417feb0" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ double __ll2double_rz (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed 64-bit int to a double in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed 64-bit integer value <tt class="ph tt code">x</tt> to a double-precision floating-point value in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g125d06ca0d57a1d856714af3dbfa68a2" id="group__CUDA__MATH__INTRINSIC__CAST_1g125d06ca0d57a1d856714af3dbfa68a2" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __ll2float_rd (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed integer to a float in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g5012f7d034ffd3affadc0c1ff4fb4c0b" id="group__CUDA__MATH__INTRINSIC__CAST_1g5012f7d034ffd3affadc0c1ff4fb4c0b" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __ll2float_rn (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed 64-bit integer to a float in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed 64-bit integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g30000a07d935a414c23eb79a4f4fd353" id="group__CUDA__MATH__INTRINSIC__CAST_1g30000a07d935a414c23eb79a4f4fd353" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __ll2float_ru (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed integer to a float in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g2dc649ecea6a9f04e8a85f7cfd8444c1" id="group__CUDA__MATH__INTRINSIC__CAST_1g2dc649ecea6a9f04e8a85f7cfd8444c1" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __ll2float_rz (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert a signed integer to a float in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the signed integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g354a51915a0c6465ac5e5c844724d987" id="group__CUDA__MATH__INTRINSIC__CAST_1g354a51915a0c6465ac5e5c844724d987" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ double __longlong_as_double (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Reinterpret bits in a 64-bit signed integer as a double. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns reinterpreted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Reinterpret the bits in the 64-bit signed integer value <tt class="ph tt code">x</tt> as a double-precision floating-point value. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1gf214f35ac7732dc82db1a2fe8cf1760b" id="group__CUDA__MATH__INTRINSIC__CAST_1gf214f35ac7732dc82db1a2fe8cf1760b" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ double __uint2double_rn (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned int to a double. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned integer value <tt class="ph tt code">x</tt> to a double-precision floating-point value. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1ga46b5ec834fc7a973b0f90a605a82cad" id="group__CUDA__MATH__INTRINSIC__CAST_1ga46b5ec834fc7a973b0f90a605a82cad" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __uint2float_rd (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned integer to a float in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1geef617486f7a4937b87933b54d41b03a" id="group__CUDA__MATH__INTRINSIC__CAST_1geef617486f7a4937b87933b54d41b03a" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __uint2float_rn (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned integer to a float in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g4c31d267e495c32d9718d21bb9b3470b" id="group__CUDA__MATH__INTRINSIC__CAST_1g4c31d267e495c32d9718d21bb9b3470b" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __uint2float_ru (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned integer to a float in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1ge1aa4eb377adbff2d94875131f10bfc1" id="group__CUDA__MATH__INTRINSIC__CAST_1ge1aa4eb377adbff2d94875131f10bfc1" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __uint2float_rz (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned integer to a float in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g156767b22e3d00f8fa6625804a1cff63" id="group__CUDA__MATH__INTRINSIC__CAST_1g156767b22e3d00f8fa6625804a1cff63" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __uint_as_float (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Reinterpret bits in an unsigned integer as a float. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns reinterpreted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Reinterpret the bits in the unsigned integer value <tt class="ph tt code">x</tt> as a single-precision floating-point value. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g7e2b60cf5ff4113e569a64b9a2db0a74" id="group__CUDA__MATH__INTRINSIC__CAST_1g7e2b60cf5ff4113e569a64b9a2db0a74" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ double __ull2double_rd (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned 64-bit int to a double in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned 64-bit integer value <tt class="ph tt code">x</tt> to a double-precision floating-point value in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g9de34b6ace45642b96873f1415d42d24" id="group__CUDA__MATH__INTRINSIC__CAST_1g9de34b6ace45642b96873f1415d42d24" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ double __ull2double_rn (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned 64-bit int to a double in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned 64-bit integer value <tt class="ph tt code">x</tt> to a double-precision floating-point value in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g5d582e599bf8d35e17ff9b90695b0ebf" id="group__CUDA__MATH__INTRINSIC__CAST_1g5d582e599bf8d35e17ff9b90695b0ebf" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ double __ull2double_ru (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned 64-bit int to a double in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned 64-bit integer value <tt class="ph tt code">x</tt> to a double-precision floating-point value in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g3b9d77551c668db0930cc75e1121528a" id="group__CUDA__MATH__INTRINSIC__CAST_1g3b9d77551c668db0930cc75e1121528a" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ double __ull2double_rz (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned 64-bit int to a double in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned 64-bit integer value <tt class="ph tt code">x</tt> to a double-precision floating-point value in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g79735bf3dfb053279868c89b3e1111dc" id="group__CUDA__MATH__INTRINSIC__CAST_1g79735bf3dfb053279868c89b3e1111dc" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __ull2float_rd (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned integer to a float in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-down (to negative infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1ga655fbb8e0ce7082496658b9708c655a" id="group__CUDA__MATH__INTRINSIC__CAST_1ga655fbb8e0ce7082496658b9708c655a" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __ull2float_rn (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned integer to a float in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-to-nearest-even mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g8ab7e72ff20c099263ad64bc7d02f9ed" id="group__CUDA__MATH__INTRINSIC__CAST_1g8ab7e72ff20c099263ad64bc7d02f9ed" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __ull2float_ru (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned integer to a float in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-up (to positive infinity) mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__CAST_1g3e719eed3287f966e05121745cff0a41" id="group__CUDA__MATH__INTRINSIC__CAST_1g3e719eed3287f966e05121745cff0a41" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __ull2float_rz (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Convert an unsigned integer to a float in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns converted value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Convert the unsigned integer value <tt class="ph tt code">x</tt> to a single-precision floating-point value in round-towards-zero mode. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                     </dl>
+                  </div>
+               </div>
+               
+               <hr id="contents-end">
+               
+            </article>
+         </div>
+      </div>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/formatting/common.min.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-write.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-tracker.js"></script>
+      <script type="text/javascript">var switchTo5x=true;</script><script type="text/javascript">stLight.options({publisher: "998dc202-a267-4d8e-bce9-14debadb8d92", doNotHash: false, doNotCopy: false, hashAddressBar: false});</script><script type="text/javascript">_satellite.pageBottom();</script>
+</body>
+</html>

@@ -47,6 +47,13 @@ def parse_arguments():
         help="Resume from the latest checkpoint in outputs/artifacts/arc_agi/",
     )
 
+    parser.add_argument(
+        "--max_test_examples",
+        type=int,
+        default=None,
+        help="Limit test set size for faster testing (default: None = use all)",
+    )
+
     return parser.parse_args()
 
 
@@ -57,6 +64,7 @@ def get_experiment_config(args) -> Dict[str, Any]:
         "reflection_minibatch_size": args.reflection_minibatch_size,
         "llm_model": args.llm_model,
         "seed": args.seed,
+        "max_test_examples": args.max_test_examples,
     }
 
 

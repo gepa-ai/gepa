@@ -1,0 +1,1405 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-us" xml:lang="en-us">
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <meta name="copyright" content="(C) Copyright 2005">
+      <meta name="DC.rights.owner" content="(C) Copyright 2005">
+      <meta name="DC.Type" content="cppModule">
+      <meta name="DC.Title" content="Integer Intrinsics">
+      <meta name="abstract" content="">
+      <meta name="description" content="">
+      <meta name="DC.Format" content="XHTML">
+      <meta name="DC.Identifier" content="group__CUDA__MATH__INTRINSIC__INT">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/commonltr.css">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/site.css">
+      <title>CUDA Math API :: CUDA Toolkit Documentation</title>
+      <!--[if lt IE 9]>
+      <script src="../common/formatting/html5shiv-printshiv.min.js"></script>
+      <![endif]-->
+      <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-svg.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.ba-hashchange.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.scrollintoview.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/scripts/geoip/geoip.js"></script>
+      <script type="text/javascript" src="../search/htmlFileList.js"></script>
+      <script type="text/javascript" src="../search/htmlFileInfoList.js"></script>
+      <script type="text/javascript" src="../search/nwSearchFnt.min.js"></script>
+      <script type="text/javascript" src="../search/stemmers/en_stemmer.min.js"></script>
+      <script type="text/javascript" src="../search/index-1.js"></script>
+      <script type="text/javascript" src="../search/index-2.js"></script>
+      <script type="text/javascript" src="../search/index-3.js"></script>
+      <link rel="canonical" href="https://docs.nvidia.com/cuda/cuda-math-api/index.html">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/qwcode.highlight.css">
+   </head>
+   <body>
+      
+      <header id="header"><span id="company">NVIDIA</span><span id="site-title">CUDA Toolkit Documentation</span><form id="search" method="get" action="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-math-api/search">
+            <input type="text" name="search-text"><fieldset id="search-location">
+               <legend>Search In:</legend>
+               <label><input type="radio" name="search-type" value="site">Entire Site</label>
+               <label><input type="radio" name="search-type" value="document">Just This Document</label>
+</fieldset>
+            <button type="reset">clear search</button>
+            <button id="submit" type="submit">search</button>
+</form>
+      </header>
+      <div id="site-content">
+         <nav id="site-nav">
+            <div class="category closed"><a href="https://docs.nvidia.com/cuda/archive/12.4.0/index.html" title="The root of the site.">CUDA Toolkit 
+                  
+                  
+                  v12.4.0</a></div>
+            <div class="category"><a href="index.html" title="CUDA Math API">CUDA Math API</a></div>
+            <ul>
+               <li>
+                  <div class="section-link"><a href="modules.html#modules">1. Modules</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__FP8.html#group__CUDA__MATH__INTRINSIC__FP8">1.1. FP8 Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__MISC.html#group__CUDA__MATH__FP8__MISC">1.1.1. FP8 Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT">1.1.2. C++ struct for handling fp8 data type of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X2__E5M2__STRUCT.html#group__CUDA__MATH__FP8X2__E5M2__STRUCT">1.1.3. C++ struct for handling vector type of two fp8 values of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X4__E5M2__STRUCT.html#group__CUDA__MATH__FP8X4__E5M2__STRUCT">1.1.4. C++ struct for handling vector type of four fp8 values of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT">1.1.5. C++ struct for handling fp8 data type of e4m3 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X2__E4M3__STRUCT.html#group__CUDA__MATH__FP8X2__E4M3__STRUCT">1.1.6. C++ struct for handling vector type of two fp8 values of e4m3 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X4__E4M3__STRUCT.html#group__CUDA__MATH__FP8X4__E4M3__STRUCT">1.1.7. C++ struct for handling vector type of four fp8 values of e4m3 kind.</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__HALF.html#group__CUDA__MATH__INTRINSIC__HALF">1.2. Half Precision Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__HALF__CONSTANTS.html#group__CUDA__MATH__INTRINSIC__HALF__CONSTANTS">1.2.1. Half Arithmetic Constants</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__ARITHMETIC.html#group__CUDA__MATH____HALF__ARITHMETIC">1.2.2. Half Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__ARITHMETIC.html#group__CUDA__MATH____HALF2__ARITHMETIC">1.2.3. Half2 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__COMPARISON.html#group__CUDA__MATH____HALF__COMPARISON">1.2.4. Half Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__COMPARISON.html#group__CUDA__MATH____HALF2__COMPARISON">1.2.5. Half2 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__MISC.html#group__CUDA__MATH____HALF__MISC">1.2.6. Half Precision Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__FUNCTIONS.html#group__CUDA__MATH____HALF__FUNCTIONS">1.2.7. Half Math Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__FUNCTIONS.html#group__CUDA__MATH____HALF2__FUNCTIONS">1.2.8. Half2 Math Functions</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__BFLOAT16.html#group__CUDA__MATH__INTRINSIC__BFLOAT16">1.3. Bfloat16 Precision Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS.html#group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS">1.3.1. Bfloat16 Arithmetic Constants</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__ARITHMETIC.html#group__CUDA__MATH____BFLOAT16__ARITHMETIC">1.3.2. Bfloat16 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__ARITHMETIC.html#group__CUDA__MATH____BFLOAT162__ARITHMETIC">1.3.3. Bfloat162 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__COMPARISON.html#group__CUDA__MATH____BFLOAT16__COMPARISON">1.3.4. Bfloat16 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__COMPARISON.html#group__CUDA__MATH____BFLOAT162__COMPARISON">1.3.5. Bfloat162 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC">1.3.6. Bfloat16 Precision Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__FUNCTIONS.html#group__CUDA__MATH____BFLOAT16__FUNCTIONS">1.3.7. Bfloat16 Math Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__FUNCTIONS.html#group__CUDA__MATH____BFLOAT162__FUNCTIONS">1.3.8. Bfloat162 Math Functions</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH.html#group__CUDA__MATH">1.4. Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__SINGLE.html#group__CUDA__MATH__SINGLE">1.5. Single Precision Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE">1.6. Double Precision Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INT.html#group__CUDA__MATH__INT">1.7. Integer Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE">1.8. Single Precision Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__DOUBLE.html#group__CUDA__MATH__INTRINSIC__DOUBLE">1.9. Double Precision Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT">1.10. Integer Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST">1.11. Type Casting Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__SIMD.html#group__CUDA__MATH__INTRINSIC__SIMD">1.12. SIMD Intrinsics</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="annotated.html#annotated">2. Data Structures</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="struct____half.html#struct____half">2.1. __half</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half2.html#struct____half2">2.2. __half2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half2__raw.html#struct____half2__raw">2.3. __half2_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half__raw.html#struct____half__raw">2.4. __half_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16">2.5. __nv_bfloat16</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat162.html#struct____nv__bfloat162">2.6. __nv_bfloat162</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat162__raw.html#struct____nv__bfloat162__raw">2.7. __nv_bfloat162_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw">2.8. __nv_bfloat16_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8__e4m3.html#struct____nv__fp8__e4m3">2.9. __nv_fp8_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8__e5m2.html#struct____nv__fp8__e5m2">2.10. __nv_fp8_e5m2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x2__e4m3.html#struct____nv__fp8x2__e4m3">2.11. __nv_fp8x2_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x2__e5m2.html#struct____nv__fp8x2__e5m2">2.12. __nv_fp8x2_e5m2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x4__e4m3.html#struct____nv__fp8x4__e4m3">2.13. __nv_fp8x4_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x4__e5m2.html#struct____nv__fp8x4__e5m2">2.14. __nv_fp8x4_e5m2</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="functions.html#functions">3. Data Fields</a></div>
+               </li>
+            </ul>
+         </nav>
+         <div id="resize-nav"></div>
+         <nav id="search-results">
+            <h2>Search Results</h2>
+            <ol></ol>
+         </nav>
+         
+         <div id="contents-container">
+            <div id="breadcrumbs-container">
+               <div id="breadcrumbs">
+<a href="group__CUDA__MATH__INTRINSIC__DOUBLE.html" shape="rect">&lt; Previous</a> | <a href="group__CUDA__MATH__INTRINSIC__CAST.html" shape="rect">Next &gt;</a>
+</div>
+               <div id="release-info">CUDA Math API
+                  (<a href="https://docs.nvidia.com/cuda/archive/12.4.0/pdf/CUDA_Math_API.pdf">PDF</a>)
+                  -
+                   
+                  
+                  
+                  v12.4.0
+                  (<a href="https://developer.nvidia.com/cuda-toolkit-archive">older</a>)
+                  -
+                  Last updated March 5, 2024
+                  -
+                  <a href="mailto:CUDAIssues@nvidia.com?subject=CUDA%20Toolkit%20Documentation%20Feedback:%20CUDA%20Math%20API">Send Feedback</a>
+</div>
+            </div>
+            <article id="contents">
+               <div class="topic reference apiRef apiPackage cppModule" id="group__CUDA__MATH__INTRINSIC__INT">
+<a name="group__CUDA__MATH__INTRINSIC__INT" shape="rect">
+                     <!-- --></a><h2 class="topictitle2 cppModule">1.10. Integer Intrinsics</h2>
+                  <div class="section">
+                     <p>This section describes integer intrinsic functions that are only supported in device code. To use these functions you do not
+                        need to include any additional header files in your program. 
+                     </p>
+                  </div>
+                  <h3 class="fake_sectiontitle member_header">Functions</h3>
+                  <dl class="members">
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1gc84ef1115946870edbcebddc0d539c5a" shape="rect">__brev</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Reverse the bit order of a 32-bit unsigned integer. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g554354459699a11acfb072cf536974cd" shape="rect">__brevll</a> (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Reverse the bit order of a 64-bit unsigned integer. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g0b8b8156fe619205bf8d65acd8f29131" shape="rect">__byte_perm</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">y</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">s</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Return selected bytes from two 32-bit unsigned integers. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1gd45548f57952ed410fa5d824984f16d0" shape="rect">__clz</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Return the number of consecutive high-order zero bits in a 32-bit integer. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g88ff76484edc65cafbef80e71a1daa53" shape="rect">__clzll</a> (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Count the number of consecutive high-order zero bits in a 64-bit integer. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g906765cd4ccd9a17d31d5dbcc9c65bff" shape="rect">__dp2a_hi</a> (  ushort2<span> </span><span class="keyword keyword apiItemName">srcA</span>, uchar4<span> </span><span class="keyword keyword apiItemName">srcB</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Two-way <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int32</tt> accumulate, taking the upper half of the second input. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1gebad383283dfdaea5748fcc39f85757e" shape="rect">__dp2a_hi</a> (  short2<span> </span><span class="keyword keyword apiItemName">srcA</span>, char4<span> </span><span class="keyword keyword apiItemName">srcB</span>, int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Two-way <tt class="ph tt code">signed</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">int32</tt> accumulate, taking the upper half of the second input. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g0cd92b14a229973cb1447322e3027dce" shape="rect">__dp2a_hi</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">srcA</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">srcB</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Two-way <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int32</tt> accumulate, taking the upper half of the second input. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g00191d5b570bdfe73fb2e303d7d512ec" shape="rect">__dp2a_hi</a> (  int <span> </span><span class="keyword keyword apiItemName">srcA</span>, int <span> </span><span class="keyword keyword apiItemName">srcB</span>, int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Two-way <tt class="ph tt code">signed</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">int32</tt> accumulate, taking the upper half of the second input. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g321b0e1408f8d24571a673c324fed41a" shape="rect">__dp2a_lo</a> (  ushort2<span> </span><span class="keyword keyword apiItemName">srcA</span>, uchar4<span> </span><span class="keyword keyword apiItemName">srcB</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Two-way <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int32</tt> accumulate, taking the lower half of the second input. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g32df0ce9fb758b7103671563694644a7" shape="rect">__dp2a_lo</a> (  short2<span> </span><span class="keyword keyword apiItemName">srcA</span>, char4<span> </span><span class="keyword keyword apiItemName">srcB</span>, int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Two-way <tt class="ph tt code">signed</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">int32</tt> accumulate, taking the lower half of the second input. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g74105ec4bb95f6124231adeaf44bee27" shape="rect">__dp2a_lo</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">srcA</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">srcB</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Two-way <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int32</tt> accumulate, taking the lower half of the second input. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1ga239a450d1919fe98fd29d8619dc9273" shape="rect">__dp2a_lo</a> (  int <span> </span><span class="keyword keyword apiItemName">srcA</span>, int <span> </span><span class="keyword keyword apiItemName">srcB</span>, int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Two-way <tt class="ph tt code">signed</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">int32</tt> accumulate, taking the lower half of the second input. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g5a028e13382462fec36e03a8cbd0ce2b" shape="rect">__dp4a</a> (  uchar4<span> </span><span class="keyword keyword apiItemName">srcA</span>, uchar4<span> </span><span class="keyword keyword apiItemName">srcB</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Four-way <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int32</tt> accumulate. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g9fe10d2bf9fb3886ed8de73ebd00ef3a" shape="rect">__dp4a</a> (  char4<span> </span><span class="keyword keyword apiItemName">srcA</span>, char4<span> </span><span class="keyword keyword apiItemName">srcB</span>, int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Four-way <tt class="ph tt code">signed</tt><tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">int32</tt> accumulate. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g5a68396e517a994093daf7f7a1090191" shape="rect">__dp4a</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">srcA</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">srcB</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Four-way <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int32</tt> accumulate. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g933213059df6da2de206771f145ac2f8" shape="rect">__dp4a</a> (  int <span> </span><span class="keyword keyword apiItemName">srcA</span>, int <span> </span><span class="keyword keyword apiItemName">srcB</span>, int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Four-way <tt class="ph tt code">signed</tt><tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">int32</tt> accumulate. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1gaf1eb22243e29e0b7222adee8ae7d4e4" shape="rect">__ffs</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Find the position of the least significant bit set to 1 in a 32-bit integer. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1gc42b0f1b68e9db038015d40a18d305df" shape="rect">__ffsll</a> (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Find the position of the least significant bit set to 1 in a 64-bit integer. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g2fc8e909eb9a959dcc3262e54365bfc5" shape="rect">__fns</a> (  unsigned<span> </span><span class="keyword keyword apiItemName">mask</span>, unsigned<span> </span><span class="keyword keyword apiItemName">base</span>, int <span> </span><span class="keyword keyword apiItemName">offset</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Find the position of the n-th set to 1 bit in a 32-bit integer. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1gf939c350eafa2f13d64e278549d3a8aa" shape="rect">__funnelshift_l</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">lo</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">hi</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">shift</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Concatenate <tt class="ph tt code">hi</tt> : <tt class="ph tt code">lo</tt>, shift left by <tt class="ph tt code">shift</tt> &amp; 31 bits, return the most significant 32 bits. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g6afcc1126ca2bf68f74c34812cbde57d" shape="rect">__funnelshift_lc</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">lo</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">hi</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">shift</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Concatenate <tt class="ph tt code">hi</tt> : <tt class="ph tt code">lo</tt>, shift left by min(<tt class="ph tt code">shift</tt>, 32) bits, return the most significant 32 bits. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g125eeef4993d16dc8d679b239460fc34" shape="rect">__funnelshift_r</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">lo</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">hi</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">shift</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Concatenate <tt class="ph tt code">hi</tt> : <tt class="ph tt code">lo</tt>, shift right by <tt class="ph tt code">shift</tt> &amp; 31 bits, return the least significant 32 bits. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g66b72e69ee8799b49365b218051b1e4d" shape="rect">__funnelshift_rc</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">lo</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">hi</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">shift</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Concatenate <tt class="ph tt code">hi</tt> : <tt class="ph tt code">lo</tt>, shift right by min(<tt class="ph tt code">shift</tt>, 32) bits, return the least significant 32 bits. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1gc030c6e3e8d0117a0d081e7397ba40dd" shape="rect">__hadd</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span>, int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute average of signed input arguments, avoiding overflow in the intermediate sum. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1gffff4cfc8958ec96329c11a797146573" shape="rect">__mul24</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span>, int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the least significant 32 bits of the product of the least significant 24 bits of two integers. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g29b1d773d9393278aae147362827403b" shape="rect">__mul64hi</a> (  long long int<span> </span><span class="keyword keyword apiItemName">x</span>, long long int<span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the most significant 64 bits of the product of the two 64-bit integers. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1gc3afa952add7894d6dda0931476d4882" shape="rect">__mulhi</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span>, int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the most significant 32 bits of the product of the two 32-bit integers. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g43c9c7d2b9ebf202ff1ef5769989be46" shape="rect">__popc</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Count the number of bits that are set to 1 in a 32-bit integer. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g6bb2f1cc3495f3f2ebe1df6ec52b3aec" shape="rect">__popcll</a> (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Count the number of bits that are set to 1 in a 64-bit integer. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ int </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g92bcad377730dc44cb65ab2c36ca6e43" shape="rect">__rhadd</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span>, int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute rounded average of signed input arguments, avoiding overflow in the intermediate sum. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1ge955ffc59084b5600dd5d223fb26beb0" shape="rect">__sad</a> (  int <span> </span><span class="keyword keyword apiItemName">x</span>, int <span> </span><span class="keyword keyword apiItemName">y</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mrow class="MJX-TeXAtom-ORD">
+                                 <mo stretchy="false">|</mo>
+                              </mrow>
+                              <mi>x</mi>
+                              <mo>−</mo>
+                              <mi>y</mi>
+                              <mrow class="MJX-TeXAtom-ORD">
+                                 <mo stretchy="false">|</mo>
+                              </mrow>
+                              <mo>+</mo>
+                              <mi>z</mi>
+                           </math>
+                           
+                           , the sum of absolute difference. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1ge84cd786a304ddbecfc2bcdb10b06099" shape="rect">__uhadd</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute average of unsigned input arguments, avoiding overflow in the intermediate sum. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g2b1446551e854d164e3d4aae25f94a3f" shape="rect">__umul24</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the least significant 32 bits of the product of the least significant 24 bits of two unsigned integers. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned long long int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1gefaf2a1bb2ad8986b2c248b74461e12e" shape="rect">__umul64hi</a> (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span>, unsigned long long int<span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the most significant 64 bits of the product of the two 64 unsigned bit integers. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g2ea43def3122a1bfb3eb8271a59f4470" shape="rect">__umulhi</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the most significant 32 bits of the product of the two 32-bit unsigned integers. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g6f364981d9731158e400bae169490b20" shape="rect">__urhadd</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute rounded average of unsigned input arguments, avoiding overflow in the intermediate sum. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ unsigned int </span><span class="member_name_long_type"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT_1g58e819af40fc4a3e9e9c3a4c13cbd0e2" shape="rect">__usad</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">y</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mrow class="MJX-TeXAtom-ORD">
+                                 <mo stretchy="false">|</mo>
+                              </mrow>
+                              <mi>x</mi>
+                              <mo>−</mo>
+                              <mi>y</mi>
+                              <mrow class="MJX-TeXAtom-ORD">
+                                 <mo stretchy="false">|</mo>
+                              </mrow>
+                              <mo>+</mo>
+                              <mi>z</mi>
+                           </math>
+                           
+                           , the sum of absolute difference. </span>
+</dd>
+                  </dl>
+                  <div class="description">
+                     <h3 class="sectiontitle">Functions</h3>
+                     <dl class="description">
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1gc84ef1115946870edbcebddc0d539c5a" id="group__CUDA__MATH__INTRINSIC__INT_1gc84ef1115946870edbcebddc0d539c5a" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __brev (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Reverse the bit order of a 32-bit unsigned integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the bit-reversed value of <tt class="ph tt code">x</tt>. i.e. bit N of the return value corresponds to bit 31-N of <tt class="ph tt code">x</tt>. 
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Reverses the bit order of the 32-bit unsigned integer <tt class="ph tt code">x</tt>.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g554354459699a11acfb072cf536974cd" id="group__CUDA__MATH__INTRINSIC__INT_1g554354459699a11acfb072cf536974cd" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned long long int __brevll (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Reverse the bit order of a 64-bit unsigned integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the bit-reversed value of <tt class="ph tt code">x</tt>. i.e. bit N of the return value corresponds to bit 63-N of <tt class="ph tt code">x</tt>. 
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Reverses the bit order of the 64-bit unsigned integer <tt class="ph tt code">x</tt>.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g0b8b8156fe619205bf8d65acd8f29131" id="group__CUDA__MATH__INTRINSIC__INT_1g0b8b8156fe619205bf8d65acd8f29131" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __byte_perm (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">y</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">s</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Return selected bytes from two 32-bit unsigned integers. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns a 32-bit integer consisting of four bytes from eight input bytes provided in the two input integers <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt>, as specified by a selector, <tt class="ph tt code">s</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>
+                                 Create 8-byte source
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p">uint64_t <tt class="ph tt code">tmp64</tt> = ((uint64_t)<tt class="ph tt code">y</tt> &lt;&lt; 32) | <tt class="ph tt code">x</tt>;
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p">Extract selector bits
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><tt class="ph tt code">selector0</tt> = (<tt class="ph tt code">s</tt> &gt;&gt; 0) &amp; 0x7;
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><tt class="ph tt code">selector1</tt> = (<tt class="ph tt code">s</tt> &gt;&gt; 4) &amp; 0x7;
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><tt class="ph tt code">selector2</tt> = (<tt class="ph tt code">s</tt> &gt;&gt; 8) &amp; 0x7;
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><tt class="ph tt code">selector3</tt> = (<tt class="ph tt code">s</tt> &gt;&gt; 12) &amp; 0x7;
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p">Return 4 selected bytes from 8-byte source:
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><tt class="ph tt code">res</tt>[07:00] = <tt class="ph tt code">tmp64</tt>[<tt class="ph tt code">selector0</tt>];
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><tt class="ph tt code">res</tt>[15:08] = <tt class="ph tt code">tmp64</tt>[<tt class="ph tt code">selector1</tt>];
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><tt class="ph tt code">res</tt>[23:16] = <tt class="ph tt code">tmp64</tt>[<tt class="ph tt code">selector2</tt>];
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><tt class="ph tt code">res</tt>[31:24] = <tt class="ph tt code">tmp64</tt>[<tt class="ph tt code">selector3</tt>]; 
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1gd45548f57952ed410fa5d824984f16d0" id="group__CUDA__MATH__INTRINSIC__INT_1gd45548f57952ed410fa5d824984f16d0" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __clz (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Return the number of consecutive high-order zero bits in a 32-bit integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns a value between 0 and 32 inclusive representing the number of zero bits. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Count the number of consecutive leading zero bits, starting at the most significant bit (bit 31) of <tt class="ph tt code">x</tt>.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g88ff76484edc65cafbef80e71a1daa53" id="group__CUDA__MATH__INTRINSIC__INT_1g88ff76484edc65cafbef80e71a1daa53" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __clzll (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Count the number of consecutive high-order zero bits in a 64-bit integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns a value between 0 and 64 inclusive representing the number of zero bits. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Count the number of consecutive leading zero bits, starting at the most significant bit (bit 63) of <tt class="ph tt code">x</tt>.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g906765cd4ccd9a17d31d5dbcc9c65bff" id="group__CUDA__MATH__INTRINSIC__INT_1g906765cd4ccd9a17d31d5dbcc9c65bff" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __dp2a_hi (  ushort2<span> </span><span class="keyword keyword apiItemName">srcA</span>, uchar4<span> </span><span class="keyword keyword apiItemName">srcB</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Two-way <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int32</tt> accumulate, taking the upper half of the second input. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Takes two packed 16-bit integers from <tt class="ph tt code">scrA</tt> vector and two packed 8-bit integers from the upper 16 bits of <tt class="ph tt code">srcB</tt> vector, then creates two pairwise 8x16 products and adds them together to an unsigned 32-bit integer <tt class="ph tt code">c</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1gebad383283dfdaea5748fcc39f85757e" id="group__CUDA__MATH__INTRINSIC__INT_1gebad383283dfdaea5748fcc39f85757e" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __dp2a_hi (  short2<span> </span><span class="keyword keyword apiItemName">srcA</span>, char4<span> </span><span class="keyword keyword apiItemName">srcB</span>, int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Two-way <tt class="ph tt code">signed</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">int32</tt> accumulate, taking the upper half of the second input. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Takes two packed 16-bit integers from <tt class="ph tt code">scrA</tt> vector and two packed 8-bit integers from the upper 16 bits of <tt class="ph tt code">srcB</tt> vector, then creates two pairwise 8x16 products and adds them together to a signed 32-bit integer <tt class="ph tt code">c</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g0cd92b14a229973cb1447322e3027dce" id="group__CUDA__MATH__INTRINSIC__INT_1g0cd92b14a229973cb1447322e3027dce" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __dp2a_hi (  unsigned int <span> </span><span class="keyword keyword apiItemName">srcA</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">srcB</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Two-way <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int32</tt> accumulate, taking the upper half of the second input. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Extracts two packed 16-bit integers from <tt class="ph tt code">scrA</tt> and two packed 8-bit integers from the upper 16 bits of <tt class="ph tt code">srcB</tt>, then creates two pairwise 8x16 products and adds them together to an unsigned 32-bit integer <tt class="ph tt code">c</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g00191d5b570bdfe73fb2e303d7d512ec" id="group__CUDA__MATH__INTRINSIC__INT_1g00191d5b570bdfe73fb2e303d7d512ec" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __dp2a_hi (  int <span> </span><span class="keyword keyword apiItemName">srcA</span>, int <span> </span><span class="keyword keyword apiItemName">srcB</span>, int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Two-way <tt class="ph tt code">signed</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">int32</tt> accumulate, taking the upper half of the second input. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Extracts two packed 16-bit integers from <tt class="ph tt code">scrA</tt> and two packed 8-bit integers from the upper 16 bits of <tt class="ph tt code">srcB</tt>, then creates two pairwise 8x16 products and adds them together to a signed 32-bit integer <tt class="ph tt code">c</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g321b0e1408f8d24571a673c324fed41a" id="group__CUDA__MATH__INTRINSIC__INT_1g321b0e1408f8d24571a673c324fed41a" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __dp2a_lo (  ushort2<span> </span><span class="keyword keyword apiItemName">srcA</span>, uchar4<span> </span><span class="keyword keyword apiItemName">srcB</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Two-way <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int32</tt> accumulate, taking the lower half of the second input. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Takes two packed 16-bit integers from <tt class="ph tt code">scrA</tt> vector and two packed 8-bit integers from the lower 16 bits of <tt class="ph tt code">srcB</tt> vector, then creates two pairwise 8x16 products and adds them together to an unsigned 32-bit integer <tt class="ph tt code">c</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g32df0ce9fb758b7103671563694644a7" id="group__CUDA__MATH__INTRINSIC__INT_1g32df0ce9fb758b7103671563694644a7" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __dp2a_lo (  short2<span> </span><span class="keyword keyword apiItemName">srcA</span>, char4<span> </span><span class="keyword keyword apiItemName">srcB</span>, int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Two-way <tt class="ph tt code">signed</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">int32</tt> accumulate, taking the lower half of the second input. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Takes two packed 16-bit integers from <tt class="ph tt code">scrA</tt> vector and two packed 8-bit integers from the lower 16 bits of <tt class="ph tt code">srcB</tt> vector, then creates two pairwise 8x16 products and adds them together to a signed 32-bit integer <tt class="ph tt code">c</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g74105ec4bb95f6124231adeaf44bee27" id="group__CUDA__MATH__INTRINSIC__INT_1g74105ec4bb95f6124231adeaf44bee27" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __dp2a_lo (  unsigned int <span> </span><span class="keyword keyword apiItemName">srcA</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">srcB</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Two-way <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int32</tt> accumulate, taking the lower half of the second input. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Extracts two packed 16-bit integers from <tt class="ph tt code">scrA</tt> and two packed 8-bit integers from the lower 16 bits of <tt class="ph tt code">srcB</tt>, then creates two pairwise 8x16 products and adds them together to an unsigned 32-bit integer <tt class="ph tt code">c</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1ga239a450d1919fe98fd29d8619dc9273" id="group__CUDA__MATH__INTRINSIC__INT_1ga239a450d1919fe98fd29d8619dc9273" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __dp2a_lo (  int <span> </span><span class="keyword keyword apiItemName">srcA</span>, int <span> </span><span class="keyword keyword apiItemName">srcB</span>, int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Two-way <tt class="ph tt code">signed</tt><tt class="ph tt code">int16</tt> by <tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">int32</tt> accumulate, taking the lower half of the second input. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Extracts two packed 16-bit integers from <tt class="ph tt code">scrA</tt> and two packed 8-bit integers from the lower 16 bits of <tt class="ph tt code">srcB</tt>, then creates two pairwise 8x16 products and adds them together to a signed 32-bit integer <tt class="ph tt code">c</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g5a028e13382462fec36e03a8cbd0ce2b" id="group__CUDA__MATH__INTRINSIC__INT_1g5a028e13382462fec36e03a8cbd0ce2b" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __dp4a (  uchar4<span> </span><span class="keyword keyword apiItemName">srcA</span>, uchar4<span> </span><span class="keyword keyword apiItemName">srcB</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Four-way <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int32</tt> accumulate. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Takes four pairs of packed byte-sized integers from <tt class="ph tt code">scrA</tt> and <tt class="ph tt code">srcB</tt> vectors, then creates four pairwise products and adds them together to an unsigned 32-bit integer <tt class="ph tt code">c</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g9fe10d2bf9fb3886ed8de73ebd00ef3a" id="group__CUDA__MATH__INTRINSIC__INT_1g9fe10d2bf9fb3886ed8de73ebd00ef3a" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __dp4a (  char4<span> </span><span class="keyword keyword apiItemName">srcA</span>, char4<span> </span><span class="keyword keyword apiItemName">srcB</span>, int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Four-way <tt class="ph tt code">signed</tt><tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">int32</tt> accumulate. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Takes four pairs of packed byte-sized integers from <tt class="ph tt code">scrA</tt> and <tt class="ph tt code">srcB</tt> vectors, then creates four pairwise products and adds them together to a signed 32-bit integer <tt class="ph tt code">c</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g5a68396e517a994093daf7f7a1090191" id="group__CUDA__MATH__INTRINSIC__INT_1g5a68396e517a994093daf7f7a1090191" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __dp4a (  unsigned int <span> </span><span class="keyword keyword apiItemName">srcA</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">srcB</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Four-way <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int32</tt> accumulate. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Extracts four pairs of packed byte-sized integers from <tt class="ph tt code">scrA</tt> and <tt class="ph tt code">srcB</tt>, then creates four pairwise products and adds them together to an unsigned 32-bit integer <tt class="ph tt code">c</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g933213059df6da2de206771f145ac2f8" id="group__CUDA__MATH__INTRINSIC__INT_1g933213059df6da2de206771f145ac2f8" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __dp4a (  int <span> </span><span class="keyword keyword apiItemName">srcA</span>, int <span> </span><span class="keyword keyword apiItemName">srcB</span>, int <span> </span><span class="keyword keyword apiItemName">c</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Four-way <tt class="ph tt code">signed</tt><tt class="ph tt code">int8</tt> dot product with <tt class="ph tt code">int32</tt> accumulate. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Extracts four pairs of packed byte-sized integers from <tt class="ph tt code">scrA</tt> and <tt class="ph tt code">srcB</tt>, then creates four pairwise products and adds them together to a signed 32-bit integer <tt class="ph tt code">c</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1gaf1eb22243e29e0b7222adee8ae7d4e4" id="group__CUDA__MATH__INTRINSIC__INT_1gaf1eb22243e29e0b7222adee8ae7d4e4" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __ffs (  int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Find the position of the least significant bit set to 1 in a 32-bit integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns a value between 0 and 32 inclusive representing the position of the first bit set.
+                                 
+                                 </p>
+<ul>
+                                    <li>__ffs(0) returns 0. </li>
+                                 </ul>
+                              
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Find the position of the first (least significant) bit set to 1 in <tt class="ph tt code">x</tt>, where the least significant bit position is 1.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1gc42b0f1b68e9db038015d40a18d305df" id="group__CUDA__MATH__INTRINSIC__INT_1gc42b0f1b68e9db038015d40a18d305df" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __ffsll (  long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Find the position of the least significant bit set to 1 in a 64-bit integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns a value between 0 and 64 inclusive representing the position of the first bit set.
+                                 
+                                 </p>
+<ul>
+                                    <li>__ffsll(0) returns 0. </li>
+                                 </ul>
+                              
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Find the position of the first (least significant) bit set to 1 in <tt class="ph tt code">x</tt>, where the least significant bit position is 1.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g2fc8e909eb9a959dcc3262e54365bfc5" id="group__CUDA__MATH__INTRINSIC__INT_1g2fc8e909eb9a959dcc3262e54365bfc5" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned __fns (  unsigned<span> </span><span class="keyword keyword apiItemName">mask</span>, unsigned<span> </span><span class="keyword keyword apiItemName">base</span>, int <span> </span><span class="keyword keyword apiItemName">offset</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Find the position of the n-th set to 1 bit in a 32-bit integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns a value between 0 and 32 inclusive representing the position of the n-th set bit.
+                                 
+                                 </p>
+<ul>
+                                    <li>parameter <tt class="ph tt code">base</tt> must be &lt;=31, otherwise behavior is undefined. 
+                                    </li>
+                                 </ul>
+                              
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Given a 32-bit value <tt class="ph tt code">mask</tt> and an integer value <tt class="ph tt code">base</tt> (between 0 and 31), find the n-th (given by <tt class="ph tt code">offset</tt>) set bit in <tt class="ph tt code">mask</tt> from the <tt class="ph tt code">base</tt> bit. If not found, return 0xFFFFFFFF.
+                              </p>
+                              <p class="p">See also <a class="xref" href="https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#integer-arithmetic-instructions-fns" target="_blank" shape="rect">https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#integer-arithmetic-instructions-fns</a> for more information.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1gf939c350eafa2f13d64e278549d3a8aa" id="group__CUDA__MATH__INTRINSIC__INT_1gf939c350eafa2f13d64e278549d3a8aa" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __funnelshift_l (  unsigned int <span> </span><span class="keyword keyword apiItemName">lo</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">hi</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">shift</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Concatenate <tt class="ph tt code">hi</tt> : <tt class="ph tt code">lo</tt>, shift left by <tt class="ph tt code">shift</tt> &amp; 31 bits, return the most significant 32 bits. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the most significant 32 bits of the shifted 64-bit value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Shift the 64-bit value formed by concatenating argument <tt class="ph tt code">lo</tt> and <tt class="ph tt code">hi</tt> left by the amount specified by the argument <tt class="ph tt code">shift</tt>. Argument <tt class="ph tt code">lo</tt> holds bits 31:0 and argument <tt class="ph tt code">hi</tt> holds bits 63:32 of the 64-bit source value. The source is shifted left by the wrapped value of <tt class="ph tt code">shift</tt> (<tt class="ph tt code">shift</tt> &amp; 31). The most significant 32-bits of the result are returned.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g6afcc1126ca2bf68f74c34812cbde57d" id="group__CUDA__MATH__INTRINSIC__INT_1g6afcc1126ca2bf68f74c34812cbde57d" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __funnelshift_lc (  unsigned int <span> </span><span class="keyword keyword apiItemName">lo</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">hi</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">shift</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Concatenate <tt class="ph tt code">hi</tt> : <tt class="ph tt code">lo</tt>, shift left by min(<tt class="ph tt code">shift</tt>, 32) bits, return the most significant 32 bits. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the most significant 32 bits of the shifted 64-bit value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Shift the 64-bit value formed by concatenating argument <tt class="ph tt code">lo</tt> and <tt class="ph tt code">hi</tt> left by the amount specified by the argument <tt class="ph tt code">shift</tt>. Argument <tt class="ph tt code">lo</tt> holds bits 31:0 and argument <tt class="ph tt code">hi</tt> holds bits 63:32 of the 64-bit source value. The source is shifted left by the clamped value of <tt class="ph tt code">shift</tt> (min(<tt class="ph tt code">shift</tt>, 32)). The most significant 32-bits of the result are returned.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g125eeef4993d16dc8d679b239460fc34" id="group__CUDA__MATH__INTRINSIC__INT_1g125eeef4993d16dc8d679b239460fc34" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __funnelshift_r (  unsigned int <span> </span><span class="keyword keyword apiItemName">lo</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">hi</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">shift</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Concatenate <tt class="ph tt code">hi</tt> : <tt class="ph tt code">lo</tt>, shift right by <tt class="ph tt code">shift</tt> &amp; 31 bits, return the least significant 32 bits. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the least significant 32 bits of the shifted 64-bit value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Shift the 64-bit value formed by concatenating argument <tt class="ph tt code">lo</tt> and <tt class="ph tt code">hi</tt> right by the amount specified by the argument <tt class="ph tt code">shift</tt>. Argument <tt class="ph tt code">lo</tt> holds bits 31:0 and argument <tt class="ph tt code">hi</tt> holds bits 63:32 of the 64-bit source value. The source is shifted right by the wrapped value of <tt class="ph tt code">shift</tt> (<tt class="ph tt code">shift</tt> &amp; 31). The least significant 32-bits of the result are returned.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g66b72e69ee8799b49365b218051b1e4d" id="group__CUDA__MATH__INTRINSIC__INT_1g66b72e69ee8799b49365b218051b1e4d" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __funnelshift_rc (  unsigned int <span> </span><span class="keyword keyword apiItemName">lo</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">hi</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">shift</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Concatenate <tt class="ph tt code">hi</tt> : <tt class="ph tt code">lo</tt>, shift right by min(<tt class="ph tt code">shift</tt>, 32) bits, return the least significant 32 bits. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the least significant 32 bits of the shifted 64-bit value. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Shift the 64-bit value formed by concatenating argument <tt class="ph tt code">lo</tt> and <tt class="ph tt code">hi</tt> right by the amount specified by the argument <tt class="ph tt code">shift</tt>. Argument <tt class="ph tt code">lo</tt> holds bits 31:0 and argument <tt class="ph tt code">hi</tt> holds bits 63:32 of the 64-bit source value. The source is shifted right by the clamped value of <tt class="ph tt code">shift</tt> (min(<tt class="ph tt code">shift</tt>, 32)). The least significant 32-bits of the result are returned.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1gc030c6e3e8d0117a0d081e7397ba40dd" id="group__CUDA__MATH__INTRINSIC__INT_1gc030c6e3e8d0117a0d081e7397ba40dd" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __hadd (  int <span> </span><span class="keyword keyword apiItemName">x</span>, int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute average of signed input arguments, avoiding overflow in the intermediate sum. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns a signed integer value representing the signed average value of the two inputs. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute average of signed input arguments <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> as ( <tt class="ph tt code">x</tt> + <tt class="ph tt code">y</tt> ) &gt;&gt; 1, avoiding overflow in the intermediate sum.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1gffff4cfc8958ec96329c11a797146573" id="group__CUDA__MATH__INTRINSIC__INT_1gffff4cfc8958ec96329c11a797146573" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __mul24 (  int <span> </span><span class="keyword keyword apiItemName">x</span>, int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the least significant 32 bits of the product of the least significant 24 bits of two integers. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the least significant 32 bits of the product <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>. 
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the least significant 32 bits of the product of the least significant 24 bits of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt>. The high order 8 bits of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> are ignored.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g29b1d773d9393278aae147362827403b" id="group__CUDA__MATH__INTRINSIC__INT_1g29b1d773d9393278aae147362827403b" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ long long int __mul64hi (  long long int<span> </span><span class="keyword keyword apiItemName">x</span>, long long int<span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the most significant 64 bits of the product of the two 64-bit integers. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the most significant 64 bits of the product <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>. 
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the most significant 64 bits of the 128-bit product <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>, where <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> are 64-bit integers.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1gc3afa952add7894d6dda0931476d4882" id="group__CUDA__MATH__INTRINSIC__INT_1gc3afa952add7894d6dda0931476d4882" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __mulhi (  int <span> </span><span class="keyword keyword apiItemName">x</span>, int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the most significant 32 bits of the product of the two 32-bit integers. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the most significant 32 bits of the product <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>. 
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the most significant 32 bits of the 64-bit product <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>, where <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> are 32-bit integers.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g43c9c7d2b9ebf202ff1ef5769989be46" id="group__CUDA__MATH__INTRINSIC__INT_1g43c9c7d2b9ebf202ff1ef5769989be46" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __popc (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Count the number of bits that are set to 1 in a 32-bit integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns a value between 0 and 32 inclusive representing the number of set bits. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Count the number of bits that are set to 1 in <tt class="ph tt code">x</tt>.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g6bb2f1cc3495f3f2ebe1df6ec52b3aec" id="group__CUDA__MATH__INTRINSIC__INT_1g6bb2f1cc3495f3f2ebe1df6ec52b3aec" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __popcll (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Count the number of bits that are set to 1 in a 64-bit integer. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns a value between 0 and 64 inclusive representing the number of set bits. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Count the number of bits that are set to 1 in <tt class="ph tt code">x</tt>.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g92bcad377730dc44cb65ab2c36ca6e43" id="group__CUDA__MATH__INTRINSIC__INT_1g92bcad377730dc44cb65ab2c36ca6e43" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ int __rhadd (  int <span> </span><span class="keyword keyword apiItemName">x</span>, int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute rounded average of signed input arguments, avoiding overflow in the intermediate sum. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns a signed integer value representing the signed rounded average value of the two inputs. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute average of signed input arguments <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> as ( <tt class="ph tt code">x</tt> + <tt class="ph tt code">y</tt> + 1 ) &gt;&gt; 1, avoiding overflow in the intermediate sum.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1ge955ffc59084b5600dd5d223fb26beb0" id="group__CUDA__MATH__INTRINSIC__INT_1ge955ffc59084b5600dd5d223fb26beb0" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __sad (  int <span> </span><span class="keyword keyword apiItemName">x</span>, int <span> </span><span class="keyword keyword apiItemName">y</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mrow class="MJX-TeXAtom-ORD">
+                                    <mo stretchy="false">|</mo>
+                                 </mrow>
+                                 <mi>x</mi>
+                                 <mo>−</mo>
+                                 <mi>y</mi>
+                                 <mrow class="MJX-TeXAtom-ORD">
+                                    <mo stretchy="false">|</mo>
+                                 </mrow>
+                                 <mo>+</mo>
+                                 <mi>z</mi>
+                              </math>
+                              
+                              , the sum of absolute difference. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mrow class="MJX-TeXAtom-ORD">
+                                       <mo stretchy="false">|</mo>
+                                    </mrow>
+                                    <mi>x</mi>
+                                    <mo>−</mo>
+                                    <mi>y</mi>
+                                    <mrow class="MJX-TeXAtom-ORD">
+                                       <mo stretchy="false">|</mo>
+                                    </mrow>
+                                    <mo>+</mo>
+                                    <mi>z</mi>
+                                 </math>
+                                 . 
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mrow class="MJX-TeXAtom-ORD">
+                                       <mo stretchy="false">|</mo>
+                                    </mrow>
+                                    <mi>x</mi>
+                                    <mo>−</mo>
+                                    <mi>y</mi>
+                                    <mrow class="MJX-TeXAtom-ORD">
+                                       <mo stretchy="false">|</mo>
+                                    </mrow>
+                                    <mo>+</mo>
+                                    <mi>z</mi>
+                                 </math>
+                                 
+                                 , the 32-bit sum of the third argument <tt class="ph tt code">z</tt> plus and the absolute value of the difference between the first argument, <tt class="ph tt code">x</tt>, and second argument, <tt class="ph tt code">y</tt>.
+                              </p>
+                              <p class="p">Inputs <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> are signed 32-bit integers, input <tt class="ph tt code">z</tt> is a 32-bit unsigned integer.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1ge84cd786a304ddbecfc2bcdb10b06099" id="group__CUDA__MATH__INTRINSIC__INT_1ge84cd786a304ddbecfc2bcdb10b06099" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __uhadd (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute average of unsigned input arguments, avoiding overflow in the intermediate sum. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns an unsigned integer value representing the unsigned average value of the two inputs. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute average of unsigned input arguments <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> as ( <tt class="ph tt code">x</tt> + <tt class="ph tt code">y</tt> ) &gt;&gt; 1, avoiding overflow in the intermediate sum.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g2b1446551e854d164e3d4aae25f94a3f" id="group__CUDA__MATH__INTRINSIC__INT_1g2b1446551e854d164e3d4aae25f94a3f" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __umul24 (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the least significant 32 bits of the product of the least significant 24 bits of two unsigned integers. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the least significant 32 bits of the product <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>. 
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the least significant 32 bits of the product of the least significant 24 bits of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt>. The high order 8 bits of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> are ignored.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1gefaf2a1bb2ad8986b2c248b74461e12e" id="group__CUDA__MATH__INTRINSIC__INT_1gefaf2a1bb2ad8986b2c248b74461e12e" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned long long int __umul64hi (  unsigned long long int<span> </span><span class="keyword keyword apiItemName">x</span>, unsigned long long int<span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the most significant 64 bits of the product of the two 64 unsigned bit integers. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the most significant 64 bits of the product <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>. 
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the most significant 64 bits of the 128-bit product <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>, where <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> are 64-bit unsigned integers.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g2ea43def3122a1bfb3eb8271a59f4470" id="group__CUDA__MATH__INTRINSIC__INT_1g2ea43def3122a1bfb3eb8271a59f4470" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __umulhi (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the most significant 32 bits of the product of the two 32-bit unsigned integers. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the most significant 32 bits of the product <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>. 
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the most significant 32 bits of the 64-bit product <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>, where <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> are 32-bit unsigned integers.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g6f364981d9731158e400bae169490b20" id="group__CUDA__MATH__INTRINSIC__INT_1g6f364981d9731158e400bae169490b20" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __urhadd (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute rounded average of unsigned input arguments, avoiding overflow in the intermediate sum. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns an unsigned integer value representing the unsigned rounded average value of the two inputs. </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute average of unsigned input arguments <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> as ( <tt class="ph tt code">x</tt> + <tt class="ph tt code">y</tt> + 1 ) &gt;&gt; 1, avoiding overflow in the intermediate sum.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__INT_1g58e819af40fc4a3e9e9c3a4c13cbd0e2" id="group__CUDA__MATH__INTRINSIC__INT_1g58e819af40fc4a3e9e9c3a4c13cbd0e2" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ unsigned int __usad (  unsigned int <span> </span><span class="keyword keyword apiItemName">x</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">y</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mrow class="MJX-TeXAtom-ORD">
+                                    <mo stretchy="false">|</mo>
+                                 </mrow>
+                                 <mi>x</mi>
+                                 <mo>−</mo>
+                                 <mi>y</mi>
+                                 <mrow class="MJX-TeXAtom-ORD">
+                                    <mo stretchy="false">|</mo>
+                                 </mrow>
+                                 <mo>+</mo>
+                                 <mi>z</mi>
+                              </math>
+                              
+                              , the sum of absolute difference. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mrow class="MJX-TeXAtom-ORD">
+                                       <mo stretchy="false">|</mo>
+                                    </mrow>
+                                    <mi>x</mi>
+                                    <mo>−</mo>
+                                    <mi>y</mi>
+                                    <mrow class="MJX-TeXAtom-ORD">
+                                       <mo stretchy="false">|</mo>
+                                    </mrow>
+                                    <mo>+</mo>
+                                    <mi>z</mi>
+                                 </math>
+                                 . 
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mrow class="MJX-TeXAtom-ORD">
+                                       <mo stretchy="false">|</mo>
+                                    </mrow>
+                                    <mi>x</mi>
+                                    <mo>−</mo>
+                                    <mi>y</mi>
+                                    <mrow class="MJX-TeXAtom-ORD">
+                                       <mo stretchy="false">|</mo>
+                                    </mrow>
+                                    <mo>+</mo>
+                                    <mi>z</mi>
+                                 </math>
+                                 
+                                 , the 32-bit sum of the third argument <tt class="ph tt code">z</tt> plus and the absolute value of the difference between the first argument, <tt class="ph tt code">x</tt>, and second argument, <tt class="ph tt code">y</tt>.
+                              </p>
+                              <p class="p">Inputs <tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>, and <tt class="ph tt code">z</tt> are unsigned 32-bit integers.
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                     </dl>
+                  </div>
+               </div>
+               
+               <hr id="contents-end">
+               
+            </article>
+         </div>
+      </div>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/formatting/common.min.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-write.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-tracker.js"></script>
+      <script type="text/javascript">var switchTo5x=true;</script><script type="text/javascript">stLight.options({publisher: "998dc202-a267-4d8e-bce9-14debadb8d92", doNotHash: false, doNotCopy: false, hashAddressBar: false});</script><script type="text/javascript">_satellite.pageBottom();</script>
+</body>
+</html>

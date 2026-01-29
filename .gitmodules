@@ -1,0 +1,3 @@
+[submodule "examples/kernelbench/KernelBench"]
+	path = examples/kernelbench/KernelBench
+	url = https://github.com/ScalingIntelligence/KernelBench.git
