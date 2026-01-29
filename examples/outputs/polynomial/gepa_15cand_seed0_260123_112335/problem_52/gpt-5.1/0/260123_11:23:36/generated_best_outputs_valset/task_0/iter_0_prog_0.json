@@ -1,0 +1,9 @@
+{
+    "score": 11.490710726680893,
+    "Input": "Sphere",
+    "Prints": "",
+    "Logs": "",
+    "Error": "",
+    "code": "\nimport numpy as np\n\ndef solve(objective_function, config, prev_best_x=None):\n    bounds = np.array(config['bounds'])\n    x = np.random.uniform(bounds[:, 0], bounds[:, 1])\n    y = objective_function(x)\n    return x\n",
+    "X": "-1.1465902315661687 0.05797101253631709 -0.7559931572412983 -1.1750457551024667 -2.05273925278633 -0.4437266213974098 -1.9518685904581061"
+}
