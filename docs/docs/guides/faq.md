@@ -8,18 +8,20 @@ Common questions about GEPA, answered by the community and the GEPA team.
 
 ### What exactly does GEPA output?
 
-GEPA works as a **prompt optimizer**, so the end result is a prompt (or multiple prompts for a multi-agent system, one for each component). However, GEPA is fundamentally a **text evolution engine**: given a target metric, GEPA can evolve any text component—not just prompts, but also code snippets, agent architectures, or any textual configuration.
+GEPA is fundamentally a **text evolution engine**: given a target metric, GEPA can evolve any text component. Since prompts are just text, GEPA works great as a prompt optimizer (including multi-agent systems with multiple text components).
 
-This broader capability has been successfully applied to:
+This broader capability has been applied to real systems, for example:
 
-- Code generation optimization (CUDA kernels, OpenACC pragmas)
-- Agent architecture evolution (control flow, module structure)
-- Configuration tuning for infrastructure
-- API specification refinement
+- **Enterprise agents**: Databricks reports 90x cheaper inference while maintaining or improving performance
+- **OCR & document understanding**: Intrinsic Labs reduced OCR error rates across Gemini model classes
+- **Agent frameworks**: Google ADK agents optimized with GEPA
+- **Code synthesis & kernels**: OpenACC/CUDA-style code optimization for GPU parallelization
 
 ### Does GEPA only work with DSPy?
 
-No! While DSPy is the recommended way to use GEPA for prompt optimization, GEPA can work with **any framework** through its `GEPAAdapter` interface. Many users have successfully deployed GEPA with custom pipelines, LangChain, and other frameworks.
+No. GEPA just requires visibility into the system it is executing—the same kind of information a human expert would need to improve the system. While DSPy is a recommended integration for prompt optimization, GEPA can work with **any framework** through its `GEPAAdapter` interface.
+
+GEPA has already been integrated into frameworks including **verifiers**, **Comet-ML/Opik**, **Pydantic**, **LangStruct**, **Google ADK**, and DSPy, and it also ships adapters for MCP, RAG systems, and terminal agents.
 
 ```python
 # Example: Using GEPA outside DSPy
@@ -51,15 +53,7 @@ That said, GEPA's prompts are still **up to 9x shorter** than those from leading
 
 Yes! If you use GEPA for a multi-module DSPy program, you can improve token efficiency—achieving the same performance at fewer tokens, or better performance with cheaper models.
 
-GEPA can take multiple metrics as input, so you can provide a multi-objective metric that balances quality and cost:
-
-```python
-def cost_quality_metric(example, pred, trace=None):
-    quality_score = evaluate_quality(pred)
-    token_cost = count_tokens(trace)
-    # Penalize high token usage
-    return quality_score - (token_cost / 10000)
-```
+GEPA can take multiple metrics as input, so you can provide a multi-objective metric that balances quality and cost.
 
 Research shows GEPA can help achieve **90x cheaper inference** while maintaining or improving performance (see Databricks case study).
 
@@ -69,28 +63,21 @@ Research shows GEPA can help achieve **90x cheaper inference** while maintaining
 
 ### How do I control GEPA's runtime and budget?
 
-GEPA provides three ways to control budget:
+Use the `StopperProtocol` and its implementations to define runtime and budget limits. You can pass one or more stoppers to `gepa.optimize()` via `stop_callbacks`, and GEPA will stop when any stopper triggers (or use a `CompositeStopper` for combined logic).
 
-1. **Recommended: `auto` parameter**
-   ```python
-   dspy.GEPA(metric=metric, auto="light")   # Quick optimization
-   dspy.GEPA(metric=metric, auto="medium")  # Balanced
-   dspy.GEPA(metric=metric, auto="heavy")   # Thorough optimization
-   ```
+Available stoppers include:
 
-2. **`max_full_evals`**: Control the number of full evaluations on train+val dataset
-   ```python
-   dspy.GEPA(metric=metric, max_full_evals=20)
-   ```
-
-3. **`max_metric_calls`**: Fine-grained control over total metric invocations
-   ```python
-   dspy.GEPA(metric=metric, max_metric_calls=100)
-   ```
+- `MaxMetricCallsStopper`
+- `TimeoutStopCondition`
+- `NoImprovementStopper`
+- `ScoreThresholdStopper`
+- `SignalStopper`
+- `FileStopper`
+- `CompositeStopper`
 
 ### What's the recommended train/validation split?
 
-Follow the standard ML guideline of **80% train, 20% validation**. Key considerations:
+Use **80% train / 20% validation** when you have more than **200 total datapoints**. If you have fewer than 200 total datapoints, a **50/50 split** is usually better.
 
 - **Validation set** should be small but truly representative of your task distribution
 - **Training set** should contain as many examples as possible for GEPA to reflect on
@@ -106,7 +93,7 @@ valset = examples[80:]    # 20% for validation
 
 Yes! GEPA can show improvements with as few as **3 examples**. We've demonstrated +9% improvement on held-out data with just 3 examples in one GEPA iteration.
 
-That said, more data generally leads to better optimization. Aim for **30-300 examples** for best results, with the standard 80/20 train/val split.
+That said, more data generally leads to better optimization. Aim for **30-300 examples** for best results, using **80/20** when total examples exceed 200 and **50/50** when you have fewer than 200.
 
 ---
 
@@ -114,17 +101,11 @@ That said, more data generally leads to better optimization. Aim for **30-300 ex
 
 ### What model should I use for `reflection_lm`?
 
-We recommend using a **large, capable model** for `reflection_lm`:
+We recommend using a **leading frontier model** for `reflection_lm`:
 
-```python
-dspy.GEPA(
-    metric=metric,
-    reflection_lm=dspy.LM("openai/gpt-4o", temperature=1.0, max_tokens=32000)
-)
-```
-
-- **Best results**: GPT-4o, GPT-5, Claude 3.5 Sonnet or better
-- **Also works**: Models as small as Qwen3-8B can work, especially when used as both task and reflection LM
+- **Preferred**: GPT-5.2, Gemini-3, Claude Opus 4.5
+- **Minimum recommended tier**: post‑GPT‑5 or Gemini‑2.5‑Pro class models
+- **Also works**: Models as small as Qwen3‑4B have been shown to work, but use the most capable model available for the reflection LM
 
 !!! tip "Recommendation"
     Use a large `reflection_lm` for proposing improved prompts, but use the same LM for `task_lm` that you'll deploy in production.
@@ -135,7 +116,6 @@ There's a common belief that prompt optimizers only help smaller models. **Count
 
 1. **OCR with Gemini 2.5 Pro**: 38% error rate reduction (already a large model)
 2. **Databricks**: Open-source models optimized with GEPA outperform Claude Opus 4.1, Sonnet 4, and GPT-5
-3. **ATLAS framework**: GEPA augments already RL-tuned models for +142% student performance improvement
 
 Prompt optimization helps models of **all sizes** achieve better cost-quality tradeoffs.
 
@@ -147,7 +127,7 @@ Yes! GEPA has been successfully used with multimodal LLMs for:
 - Image analysis pipelines
 - Document understanding
 
-For multimodal tasks, see the [Advanced GEPA documentation](https://dspy.ai/api/optimizers/GEPA/GEPA_Advanced/).
+For multimodal tasks, see the [Intrinsic Labs OCR report](https://www.intrinsic-labs.ai/research/ocr-gepa-v1.pdf).
 
 ---
 
@@ -182,6 +162,8 @@ For tasks where evaluation is subjective (creative writing, persona generation, 
 2. Let the evaluator provide detailed feedback
 3. Use GEPA to optimize against the evaluator's scores and feedback
 
+You can also **tune the LLM-based evaluator itself with GEPA** using a small human‑annotated dataset to calibrate its judgments.
+
 ```python
 def subjective_metric(example, pred, trace=None):
     # Use LLM-as-judge for evaluation
@@ -213,6 +195,7 @@ Several options:
    optimized_program.detailed_results  # All proposed prompts with scores
    ```
 4. **Enable detailed stats**: Pass `track_stats=True` to see all proposal details
+5. **Callbacks**: Use the GEPA callback system to log, inspect, or persist proposals (see the [Callbacks Guide](callbacks.md))
 
 ### Can I continue optimization from a previous run?
 
@@ -226,7 +209,6 @@ result = gepa.optimize(
 )
 ```
 
-We're also working on support for continuing runs with additional/new data points.
 
 ### Does GEPA support async optimization?
 
@@ -326,43 +308,6 @@ Research shows **GEPA+Finetuning** together works great. For example:
 - GEPA-optimized prompts can guide finetuning data generation
 
 See: [BetterTogether paper](https://arxiv.org/abs/2508.04660) and [GEPA for AI Code Safety](https://www.lesswrong.com/posts/bALBxf3yGGx4bvvem/prompt-optimization-can-enable-ai-control-research)
-
----
-
-## Text2SQL & Structured Tasks
-
-### How do I optimize Text2SQL pipelines?
-
-GEPA has been successfully used for Text2SQL tasks with a system prompt/user prompt breakdown:
-
-**Pattern:**
-
-- System prompt specifies the task (evolved by GEPA)
-- User prompt contains dynamic content (table schemas, query)
-- Alternatively: use DSPy signature for text2sql
-
-```python
-# Example setup for Text2SQL
-class Text2SQL(dspy.Module):
-    def __init__(self):
-        self.generate_sql = dspy.ChainOfThought("question, schema -> sql_query")
-    
-    def forward(self, question, schema):
-        return self.generate_sql(question=question, schema=schema)
-```
-
----
-
-## GEPA vs Other Approaches
-
-### How does GEPA compare to iterative refinement?
-
-GEPA ties LLM-based reflection with evolutionary search to find improved prompts faster than simple iterative refinement. The key difference:
-
-- **Iterative Refinement**: Often gets stuck in local optima in prompt space
-- **GEPA**: Uses Pareto-based search that's much more balanced, finding better prompts in the same budget
-
-In experiments (Section 5.4 of the paper), GEPA consistently outperforms iterative refinement with Claude by avoiding local optima.
 
 ---
 
@@ -501,20 +446,34 @@ Yes! If your component is well-defined and the reward is well-defined, GEPA can 
 
 ### How do I use multi-objective Pareto tracking?
 
-GEPA supports multi-objective optimization with Pareto tracking. With help from the community, GEPA now supports tracking multiple score components separately:
+GEPA supports multi-objective optimization with Pareto tracking by reading `EvaluationBatch.objective_scores` from your `GEPAAdapter.evaluate()` implementation:
 
 ```python
-def multi_objective_metric(example, pred, trace=None):
-    accuracy = calculate_accuracy(pred, example)
-    efficiency = calculate_efficiency(trace)
-    safety_score = calculate_safety(pred)
-    
-    return dspy.Prediction(
-        score=accuracy,  # Primary score
-        feedback=f"Accuracy: {accuracy}, Efficiency: {efficiency}, Safety: {safety_score}",
-        # Multi-objective scores tracked separately
-        scores={'accuracy': accuracy, 'efficiency': efficiency, 'safety': safety_score}
-    )
+class MyAdapter(GEPAAdapter):
+    def evaluate(self, batch, candidate, capture_traces=False):
+        outputs, scores, objective_scores, trajectories = [], [], [], []
+        for example in batch:
+            pred, trace = run_system(candidate, example)
+            accuracy = calculate_accuracy(pred, example)
+            efficiency = calculate_efficiency(trace)
+            safety_score = calculate_safety(pred)
+            outputs.append(pred)
+            scores.append(accuracy)  # Primary score
+            if capture_traces:
+                trajectories.append(trace)
+            objective_scores.append(
+                {
+                    "accuracy": accuracy,
+                    "efficiency": efficiency,
+                    "safety": safety_score,
+                }
+            )
+        return EvaluationBatch(
+            outputs=outputs,
+            scores=scores,
+            trajectories=trajectories if capture_traces else None,
+            objective_scores=objective_scores,
+        )
 ```
 
 This allows GEPA to maintain a Pareto frontier across multiple objectives, finding prompts that represent different trade-offs between competing goals.
