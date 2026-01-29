@@ -1,0 +1,454 @@
+import dspy
+from typing import List, Tuple, Optional, Any, Dict
+import pydantic
+import re
+import copy
+import textwrap
+from collections import Counter
+
+MATRIX = List[List[int]]
+
+class TrainingExample(pydantic.BaseModel):
+    input: MATRIX
+    output: MATRIX
+
+def _strip_code_fences(s: str) -> str:
+    if s is None:
+        return ""
+    s = s.strip()
+    # Remove fenced blocks and language markers
+    if s.startswith("```"):
+        s = "\n".join(s.split("\n")[1:])
+    if s.endswith("```"):
+        s = "\n".join(s.split("\n")[:-1])
+    s = re.sub(r"^```[a-zA-Z0-9_+-]*\s*", "", s.strip())
+    s = re.sub(r"\s*```$", "", s.strip())
+    return s.strip()
+
+def _ensure_transform_code(code: str) -> str:
+    """
+    Ensure code contains a def transform(grid): function.
+    If code appears to be just the body, wrap it. Otherwise, return full code as-is.
+    """
+    code = _strip_code_fences(code)
+    if "def transform" in code:
+        # Keep helpers that may be defined before/after transform.
+        return code
+    # If it's likely just a body (has return or grid indexing), wrap it
+    lines = code.strip().splitlines()
+    body = code.strip()
+    if len(body) == 0:
+        return ""
+    if "return" in body or "grid" in body:
+        wrapped = "def transform(grid):\n" + textwrap.indent(body, "    ")
+        return wrapped
+    return ""
+
+def _height(grid: MATRIX) -> int:
+    return len(grid)
+
+def _width(grid: MATRIX) -> int:
+    return len(grid[0]) if grid and isinstance(grid[0], list) else 0
+
+def _in_bounds(grid: MATRIX, r: int, c: int) -> bool:
+    h, w = _height(grid), _width(grid)
+    return 0 <= r < h and 0 <= c < w
+
+def _colors(grid: MATRIX) -> List[int]:
+    s = set()
+    for row in grid:
+        for v in row:
+            try:
+                s.add(int(v))
+            except Exception:
+                pass
+    return sorted(list(s))
+
+def _color_counts(grid: MATRIX) -> Dict[int, int]:
+    cnt = Counter()
+    for row in grid:
+        for v in row:
+            try:
+                cnt[int(v)] += 1
+            except Exception:
+                pass
+    return dict(cnt)
+
+def _positions_of(grid: MATRIX, color: int) -> List[Tuple[int, int]]:
+    pos = []
+    for r, row in enumerate(grid):
+        for c, v in enumerate(row):
+            if v == color:
+                pos.append((r, c))
+    return pos
+
+def _bbox_of(grid: MATRIX, colors: Optional[List[int]] = None, nonzero: bool = True) -> Optional[Tuple[int, int, int, int]]:
+    h, w = _height(grid), _width(grid)
+    rs = []
+    if colors is not None:
+        color_set = set(colors)
+        for r in range(h):
+            for c in range(w):
+                if grid[r][c] in color_set:
+                    rs.append((r, c))
+    elif nonzero:
+        for r in range(h):
+            for c in range(w):
+                if grid[r][c] != 0:
+                    rs.append((r, c))
+    else:
+        # if not using nonzero and no colors, bbox of entire grid
+        for r in range(h):
+            for c in range(w):
+                rs.append((r, c))
+    if not rs:
+        return None
+    rmin = min(r for r, _ in rs)
+    rmax = max(r for r, _ in rs)
+    cmin = min(c for _, c in rs)
+    cmax = max(c for _, c in rs)
+    return (rmin, cmin, rmax, cmax)
+
+def _crop(grid: MATRIX, bbox: Tuple[int, int, int, int]) -> MATRIX:
+    rmin, cmin, rmax, cmax = bbox
+    out = []
+    for r in range(rmin, rmax + 1):
+        row = []
+        for c in range(cmin, cmax + 1):
+            row.append(int(grid[r][c]))
+        out.append(row)
+    return out
+
+def _transpose(grid: MATRIX) -> MATRIX:
+    h, w = _height(grid), _width(grid)
+    if h == 0 or w == 0:
+        return []
+    return [[int(grid[r][c]) for r in range(h)] for c in range(w)]
+
+def _new_grid(h: int, w: int, fill: int = 0) -> MATRIX:
+    return [[int(fill) for _ in range(w)] for _ in range(h)]
+
+def _normalize_matrix(mat: MATRIX) -> MATRIX:
+    out: MATRIX = []
+    for row in mat:
+        new_row = []
+        for v in row:
+            try:
+                iv = int(v)
+            except Exception:
+                iv = 0
+            if iv < 0:
+                iv = 0
+            if iv > 9:
+                iv = 9
+            new_row.append(iv)
+        out.append(new_row)
+    return out
+
+def _same_shape(a: MATRIX, b: MATRIX) -> bool:
+    if len(a) != len(b):
+        return False
+    return all(len(ra) == len(rb) for ra, rb in zip(a, b))
+
+def _compare_matrices(a: MATRIX, b: MATRIX) -> Tuple[bool, List[Tuple[int, int, int, int]]]:
+    diffs: List[Tuple[int, int, int, int]] = []
+    if not _same_shape(a, b):
+        return False, diffs
+    for i, (ra, rb) in enumerate(zip(a, b)):
+        for j, (va, vb) in enumerate(zip(ra, rb)):
+            if va != vb:
+                diffs.append((i, j, va, vb))
+    return (len(diffs) == 0), diffs
+
+def _verify_on_training(transform_fn, training_examples: List[TrainingExample]) -> Tuple[bool, str]:
+    reports = []
+    all_ok = True
+    for idx, ex in enumerate(training_examples):
+        try:
+            out = transform_fn(copy.deepcopy(ex.input))
+        except Exception as e:
+            all_ok = False
+            reports.append(f"Example {idx}: Exception during transform: {repr(e)}")
+            continue
+        if not isinstance(out, list) or (len(out) > 0 and not isinstance(out[0], list)):
+            all_ok = False
+            reports.append(f"Example {idx}: Output is not a 2D list.")
+            continue
+        out = _normalize_matrix(out)
+        # For ARC, output shape must match the example's output shape, not necessarily the input shape.
+        if not _same_shape(out, ex.output):
+            all_ok = False
+            reports.append(f"Example {idx}: Shape mismatch. Got {len(out)}x{len(out[0]) if out else 0}, expected {len(ex.output)}x{len(ex.output[0]) if ex.output else 0}.")
+            continue
+        ok, diffs = _compare_matrices(out, ex.output)
+        if not ok:
+            all_ok = False
+            sample_diffs = diffs[:20]
+            reports.append(f"Example {idx}: {len(diffs)} cells differ. Sample diffs (r,c got->exp): " +
+                           ", ".join([f"({r},{c} {gv}->{ev})" for r, c, gv, ev in sample_diffs]))
+    return all_ok, "\n".join(reports)
+
+def _apply_code_to_tests(code: str, test_inputs: List[MATRIX]) -> List[MATRIX]:
+    fn = _safe_exec_transform(code)
+    if not fn:
+        return []
+    outputs = []
+    for idx, ti in enumerate(test_inputs):
+        try:
+            out = fn(copy.deepcopy(ti))
+        except Exception:
+            return []
+        if not isinstance(out, list) or (len(out) > 0 and not isinstance(out[0], list)):
+            return []
+        out = _normalize_matrix(out)
+        outputs.append(out)
+    return outputs
+
+def _safe_exec_transform(code: str) -> Optional[Any]:
+    """
+    Exec the transform function in a restricted namespace with helper utilities.
+    Returns callable transform or None if failure.
+    """
+    code = _ensure_transform_code(code)
+    if not code:
+        return None
+
+    # Safe helper library exposed to the model's code.
+    sandbox_globals: Dict[str, Any] = {
+        "__builtins__": {
+            "range": range,
+            "len": len,
+            "enumerate": enumerate,
+            "min": min,
+            "max": max,
+            "sum": sum,
+            "abs": abs,
+            "all": all,
+            "any": any,
+            "sorted": sorted,
+            "zip": zip,
+            "list": list,
+            "set": set,
+            "tuple": tuple,
+            "int": int
+        },
+        "deepcopy": copy.deepcopy,
+        # helpers
+        "height": _height,
+        "width": _width,
+        "in_bounds": _in_bounds,
+        "colors": _colors,
+        "color_counts": _color_counts,
+        "positions_of": _positions_of,
+        "bbox_of": _bbox_of,
+        "crop": _crop,
+        "transpose": _transpose,
+        "new_grid": _new_grid,
+    }
+    sandbox_locals: Dict[str, Any] = {}
+    try:
+        exec(code, sandbox_globals, sandbox_locals)
+        fn = sandbox_locals.get("transform") or sandbox_globals.get("transform")
+        if callable(fn):
+            return fn
+    except Exception:
+        return None
+    return None
+
+def _matrix_shape(mat: MATRIX) -> Tuple[int, int]:
+    if not isinstance(mat, list) or (mat and not isinstance(mat[0], list)):
+        return (0, 0)
+    return (len(mat), len(mat[0]) if mat else 0)
+
+def _stats_for_grid(grid: MATRIX) -> Dict[str, Any]:
+    h, w = _matrix_shape(grid)
+    pal = _colors(grid)
+    cnt = _color_counts(grid)
+    nonzero_bbox = _bbox_of(grid, colors=None, nonzero=True)
+    counts_str = ",".join(f"{k}:{cnt[k]}" for k in sorted(cnt.keys()))
+    return {
+        "shape": [h, w],
+        "palette": pal,
+        "counts": counts_str,
+        "nonzero_bbox": nonzero_bbox
+    }
+
+def _build_training_summary(training_examples: List[TrainingExample]) -> str:
+    # Construct a concise, structured summary string for the LM.
+    lines = []
+    for i, ex in enumerate(training_examples):
+        in_stats = _stats_for_grid(ex.input)
+        out_stats = _stats_for_grid(ex.output)
+        lines.append(
+            f"Example {i}: input_shape={in_stats['shape']}, output_shape={out_stats['shape']}, "
+            f"input_palette={in_stats['palette']}, output_palette={out_stats['palette']}, "
+            f"input_counts={in_stats['counts']}, output_counts={out_stats['counts']}, "
+            f"input_nonzero_bbox={in_stats['nonzero_bbox']}, output_nonzero_bbox={out_stats['nonzero_bbox']}"
+        )
+    # Heuristics across examples:
+    shape_deltas = []
+    for ex in training_examples:
+        ih, iw = _matrix_shape(ex.input)
+        oh, ow = _matrix_shape(ex.output)
+        shape_deltas.append((oh - ih, ow - iw))
+    unique_deltas = sorted(set(shape_deltas))
+    lines.append(f"Unique shape deltas (oh-ih, ow-iw) across training: {unique_deltas}")
+    return "\n".join(lines)
+
+class InduceRuleSignature(dspy.Signature):
+    """
+    You are given several training input/output pairs from an ARC task. Infer a single deterministic transformation rule
+    that maps any input grid to its output grid. Produce:
+    1) A succinct, generalized rule_summary describing the pattern.
+    2) A Python function `def transform(grid): ...` implementing the rule.
+
+    Execution constraints and helpers:
+      - grid is a 2D list of ints (0..9). Deterministic logic only (loops, conditionals, list ops).
+      - Do not import modules or use randomness.
+      - You MAY change the output shape when the task demands it. Match the training outputs' shapes for their inputs.
+      - Indices must be in-bounds; handle arbitrary rectangular shapes.
+      - Mutations: copy if needed; avoid mutating the input in-place unless safe.
+      - Values must remain ints 0..9.
+
+    Common pitfalls to avoid:
+      - Off-by-one when cropping or expanding; mixing up row/col order.
+      - Assuming output has same shape as input when training shows otherwise.
+      - Forgetting to preserve anchor colors or key markers when summarizing patterns.
+      - Using unavailable libraries (numpy/pandas).
+
+    Successful strategies:
+      - Use bounding boxes of non-zero or target colors to crop or extract regions (bbox_of, crop).
+      - Build frequency maps to pick dominant or anchor colors (color_counts, colors).
+      - Compress by selecting rows/cols that contain target colors; preserve ordering.
+      - When outputs are smaller, they often summarize a motif or mask of specific colors (e.g., 1 and 2).
+
+    Helper functions available in the environment:
+      - height(grid), width(grid), in_bounds(grid,r,c)
+      - colors(grid) -> sorted list of unique colors
+      - color_counts(grid) -> dict color->count
+      - positions_of(grid, color) -> list of (r,c)
+      - bbox_of(grid, colors=None, nonzero=True) -> (rmin,cmin,rmax,cmax) inclusive or None
+      - crop(grid, bbox) -> returns subgrid bounded by bbox
+      - transpose(grid), new_grid(h,w,fill)
+
+    Return fields:
+      - rule_summary: Concise paragraph of the inferred rule.
+      - python_code: Only the code defining def transform(grid): ...; no extra commentary or fences.
+
+    Important: Return only rule_summary and python_code; do not include explanations beyond those fields.
+    """
+    training_examples: List[TrainingExample] = dspy.InputField(desc="Examples showing input->output mappings for the task.")
+    training_summary: str = dspy.InputField(desc="Structured stats about shapes, palettes, counts, and bboxes across examples.")
+    rule_summary: str = dspy.OutputField(desc="One concise paragraph describing the inferred rule.")
+    python_code: str = dspy.OutputField(desc="Only the code defining def transform(grid): ...; no explanations.")
+
+class RefineRuleSignature(dspy.Signature):
+    """
+    The previous Python transform did not perfectly match all training examples.
+    Given the training_examples, training_summary (stats), the prior_code for transform(grid), and a failure_report
+    describing mismatches, produce a corrected version of transform(grid).
+
+    Instructions:
+    - Keep the same overall approach but fix the logic to satisfy all training pairs.
+    - You MAY alter the output shape; match each training output's shape for its input.
+    - Maintain determinism; no external imports; values are ints 0..9.
+    - Be careful with off-by-one, bounds, and row/col order.
+    - Return only a complete, standalone function definition: def transform(grid): ...
+    """
+    training_examples: List[TrainingExample] = dspy.InputField(desc="Authoritative input/output examples.")
+    training_summary: str = dspy.InputField(desc="Structured stats about shapes, palettes, counts, and bboxes across examples.")
+    prior_code: str = dspy.InputField(desc="Previous attempt's function code.")
+    failure_report: str = dspy.InputField(desc="Concrete mismatches and diagnostics from verification.")
+    python_code: str = dspy.OutputField(desc="Revised code: only def transform(grid): ...")
+
+class DirectSolveSignature(dspy.Signature):
+    """
+    If code induction fails, directly produce outputs for test_inputs using a consistent rule induced from training.
+    Requirements:
+    - Return only a Python literal list of output grids aligned with test_inputs (e.g., [[[...],[...]], [[...], ...]]).
+    - Do not include any commentary, bullets, or extra text.
+    - Output ints in 0..9 only. Shapes may differ from inputs; match the pattern demonstrated in training pairs.
+    - Apply the same inferred rule consistently across all test inputs.
+    """
+    training_examples: List[TrainingExample] = dspy.InputField(desc="Training pairs for the task.")
+    test_inputs: List[MATRIX] = dspy.InputField(desc="Unseen inputs to solve.")
+    test_outputs: List[MATRIX] = dspy.OutputField(desc="Predicted outputs for each test input.")
+
+class ARCRuleProgram(dspy.Module):
+    def __init__(self, max_refinements: int = 4):
+        super().__init__()
+        self.induce = dspy.ChainOfThought(InduceRuleSignature)
+        self.refine = dspy.ChainOfThought(RefineRuleSignature)
+        self.direct = dspy.ChainOfThought(DirectSolveSignature)
+        self.max_refinements = max_refinements
+
+    def forward(self, training_examples: List[TrainingExample], test_inputs: List[MATRIX]) -> dspy.Prediction:
+        training_summary = _build_training_summary(training_examples)
+
+        # Step 1: Induce rule and code
+        draft = self.induce(training_examples=training_examples, training_summary=training_summary)
+        code = draft.python_code or ""
+        code = _strip_code_fences(code)
+
+        # Step 2: Verify and refine iteratively
+        for _ in range(self.max_refinements + 1):
+            fn = _safe_exec_transform(code)
+            if fn is None:
+                failure_report = "Could not exec transform function. Ensure a valid def transform(grid): ... exists and no imports."
+            else:
+                ok, report = _verify_on_training(fn, training_examples)
+                if ok:
+                    # Step 3: Apply to tests
+                    outputs = _apply_code_to_tests(code, test_inputs)
+                    if outputs:
+                        return dspy.Prediction(test_outputs=outputs)
+                    failure_report = "Execution on test inputs failed or returned invalid outputs."
+                else:
+                    failure_report = report
+            # Attempt refinement
+            refined = self.refine(
+                training_examples=training_examples,
+                training_summary=training_summary,
+                prior_code=code,
+                failure_report=failure_report
+            )
+            new_code = _strip_code_fences(refined.python_code or "")
+            if not new_code or new_code.strip() == code.strip():
+                code = new_code or code
+                break
+            code = new_code
+
+        # Fallback: direct solve via LM
+        direct = self.direct(training_examples=training_examples, test_inputs=test_inputs)
+        safe_outs: List[MATRIX] = []
+        if isinstance(direct.test_outputs, list):
+            for mat in direct.test_outputs:
+                try:
+                    safe_outs.append(_normalize_matrix(mat))
+                except Exception:
+                    # Skip invalid entries
+                    pass
+        return dspy.Prediction(test_outputs=safe_outs)
+
+class SolveTaskSignature(dspy.Signature):
+    """
+    Solve ARC tasks using rule induction with verifiable code and robust fallback.
+    Inputs:
+      - training_examples: list of TrainingExample(input, output)
+      - test_inputs: list of matrices to solve
+    Output:
+      - test_outputs: list of predicted output matrices
+    """
+    training_examples: List[TrainingExample] = dspy.InputField(desc="Input/output examples demonstrating the task to be performed.")
+    test_inputs: List[MATRIX] = dspy.InputField(desc="Input matrices to be solved following the task described in the training examples.")
+    test_outputs: List[MATRIX] = dspy.OutputField(desc="Output matrices corresponding to the test inputs.")
+
+class SolveARC(dspy.Module):
+    def __init__(self):
+        super().__init__()
+        self.core = ARCRuleProgram()
+
+    def forward(self, training_examples: List[TrainingExample], test_inputs: List[MATRIX]) -> dspy.Prediction:
+        return self.core(training_examples=training_examples, test_inputs=test_inputs)
+
+program = SolveARC()

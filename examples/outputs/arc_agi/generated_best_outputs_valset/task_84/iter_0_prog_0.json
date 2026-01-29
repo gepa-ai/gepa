@@ -1,0 +1,95 @@
+{
+    "input": {
+        "training_examples": [
+            "TrainingExample(input=[[1, 2], [3, 8]], output=[[0, 1, 2, 0], [1, 1, 2, 2], [3, 3, 8, 8], [0, 3, 8, 0]])",
+            "TrainingExample(input=[[1, 8, 4], [8, 3, 8]], output=[[0, 1, 8, 4, 0], [1, 1, 8, 4, 4], [8, 8, 3, 8, 8], [0, 8, 3, 8, 0]])",
+            "TrainingExample(input=[[2, 1, 4], [8, 0, 2], [3, 2, 8]], output=[[0, 2, 1, 4, 0], [2, 2, 1, 4, 4], [8, 8, 0, 2, 2], [3, 3, 2, 8, 8], [0, 3, 2, 8, 0]])"
+        ],
+        "test_inputs": [
+            [
+                [
+                    2,
+                    8
+                ],
+                [
+                    1,
+                    4
+                ],
+                [
+                    3,
+                    4
+                ]
+            ]
+        ],
+        "test_outputs": [
+            [
+                [
+                    0,
+                    2,
+                    8,
+                    0
+                ],
+                [
+                    2,
+                    2,
+                    8,
+                    8
+                ],
+                [
+                    1,
+                    1,
+                    4,
+                    4
+                ],
+                [
+                    3,
+                    3,
+                    4,
+                    4
+                ],
+                [
+                    0,
+                    3,
+                    4,
+                    0
+                ]
+            ]
+        ]
+    },
+    "reasoning": "Pad the input matrix with one-cell border on all sides to form an (r+2) x (c+2) output:\n- Place the original matrix in the center.\n- Top edge (excluding corners) copies the first row of the input.\n- Bottom edge (excluding corners) copies the last row of the input.\n- Left edge (excluding corners) copies the first column of the input.\n- Right edge (excluding corners) copies the last column of the input.\n- The four corners are zeros.\n\nApplied to the 3x2 input:\n- Top row: [0, 2, 8, 0]\n- Middle rows:\n  - [2, 2, 8, 8]\n  - [1, 1, 4, 4]\n  - [3, 3, 4, 4]\n- Bottom row: [0, 3, 4, 0]",
+    "feedback": "Feedback on test input 0: Your response is correct. The correct matrix is [[0, 2, 8, 0], [2, 2, 8, 8], [1, 1, 4, 4], [3, 3, 4, 4], [0, 3, 4, 0]].",
+    "output": [
+        [
+            [
+                0,
+                2,
+                8,
+                0
+            ],
+            [
+                2,
+                2,
+                8,
+                8
+            ],
+            [
+                1,
+                1,
+                4,
+                4
+            ],
+            [
+                3,
+                3,
+                4,
+                4
+            ],
+            [
+                0,
+                3,
+                4,
+                0
+            ]
+        ]
+    ]
+}

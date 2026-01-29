@@ -1,0 +1,6 @@
+{
+  "score": 0.565,
+  "candidate": {
+    "program": "import dspy\nfrom typing import List\nimport pydantic\n\nMATRIX = List[List[int]]\n\nclass TrainingExample(pydantic.BaseModel):\n    input: MATRIX\n    output: MATRIX\n\nclass SolveTaskSignature(dspy.Signature):\n    training_examples: List[TrainingExample] = dspy.InputField(description=\"Input and output examples demonstrating the task to be performed.\")\n    test_inputs: List[MATRIX] = dspy.InputField(description=\"Input matrices to be solved following the task described in the training examples.\")\n    test_outputs: List[MATRIX] = dspy.OutputField(description=\"Output matrices corresponding to the test inputs.\")\n\nprogram = dspy.ChainOfThought(SolveTaskSignature)"
+  }
+}

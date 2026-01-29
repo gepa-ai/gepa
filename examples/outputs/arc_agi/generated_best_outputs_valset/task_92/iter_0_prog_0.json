@@ -1,0 +1,87 @@
+{
+    "input": {
+        "training_examples": [
+            "TrainingExample(input=[[1, 1, 1, 1, 1, 1, 1], [1, 2, 2, 1, 1, 1, 1], [1, 2, 2, 3, 1, 1, 1], [1, 1, 1, 2, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1]], output=[[2, 2, 0], [2, 2, 3], [0, 0, 2]])",
+            "TrainingExample(input=[[1, 1, 1, 1, 1, 1, 1], [1, 1, 3, 1, 2, 1, 1], [1, 1, 3, 1, 2, 1, 1], [1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1]], output=[[3, 0, 2], [3, 0, 2]])",
+            "TrainingExample(input=[[1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1], [1, 5, 5, 1, 1, 1], [1, 5, 5, 1, 1, 1], [1, 6, 6, 1, 1, 1], [1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1]], output=[[5, 5], [5, 5], [6, 6]])"
+        ],
+        "test_inputs": [
+            [
+                [
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1
+                ],
+                [
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1
+                ],
+                [
+                    1,
+                    1,
+                    1,
+                    2,
+                    1,
+                    1
+                ],
+                [
+                    1,
+                    1,
+                    2,
+                    3,
+                    1,
+                    1
+                ],
+                [
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1
+                ],
+                [
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1
+                ]
+            ]
+        ],
+        "test_outputs": [
+            [
+                [
+                    0,
+                    2
+                ],
+                [
+                    2,
+                    3
+                ]
+            ]
+        ]
+    },
+    "reasoning": "Identify the minimal bounding box that contains all cells not equal to 1. Extract that submatrix and replace any 1s within it with 0s, preserving other colors. For the test input, the bounding box spans rows 2..3 and cols 2..3, yielding:\n[[1, 2],\n [2, 3]]\nAfter converting 1 to 0:\n[[0, 2],\n [2, 3]]",
+    "feedback": "Feedback on test input 0: Your response is correct. The correct matrix is [[0, 2], [2, 3]].",
+    "output": [
+        [
+            [
+                0,
+                2
+            ],
+            [
+                2,
+                3
+            ]
+        ]
+    ]
+}

@@ -1,0 +1,85 @@
+{
+    "input": {
+        "training_examples": [
+            "TrainingExample(input=[[0, 9, 9], [0, 9, 9], [9, 9, 9], [0, 1, 0], [0, 0, 1], [1, 1, 1]], output=[[2, 0, 0], [2, 0, 0], [0, 0, 0]])",
+            "TrainingExample(input=[[9, 0, 9], [0, 9, 9], [0, 0, 9], [1, 0, 1], [1, 0, 0], [1, 0, 0]], output=[[0, 2, 0], [0, 0, 0], [0, 2, 0]])",
+            "TrainingExample(input=[[0, 9, 0], [9, 0, 9], [9, 0, 0], [0, 0, 0], [0, 0, 1], [1, 0, 0]], output=[[2, 0, 2], [0, 2, 0], [0, 2, 2]])",
+            "TrainingExample(input=[[0, 0, 9], [9, 9, 9], [0, 9, 0], [1, 0, 0], [0, 1, 1], [0, 0, 1]], output=[[0, 2, 0], [0, 0, 0], [2, 0, 0]])",
+            "TrainingExample(input=[[0, 9, 0], [0, 9, 9], [0, 9, 9], [0, 0, 0], [1, 1, 1], [1, 0, 1]], output=[[2, 0, 2], [0, 0, 0], [0, 0, 0]])"
+        ],
+        "test_inputs": [
+            [
+                [
+                    9,
+                    0,
+                    9
+                ],
+                [
+                    0,
+                    0,
+                    9
+                ],
+                [
+                    9,
+                    0,
+                    9
+                ],
+                [
+                    0,
+                    1,
+                    1
+                ],
+                [
+                    0,
+                    1,
+                    0
+                ],
+                [
+                    1,
+                    0,
+                    0
+                ]
+            ]
+        ],
+        "test_outputs": [
+            [
+                [
+                    0,
+                    0,
+                    0
+                ],
+                [
+                    2,
+                    0,
+                    0
+                ],
+                [
+                    0,
+                    2,
+                    0
+                ]
+            ]
+        ]
+    },
+    "reasoning": "- Split each 6x3 input into T (top 3x3) and B (bottom 3x3).\n- Output O is 3x3 where O[i][j] = 2 if T[i][j] == 0 and B[i][j] == 0; otherwise 0. (B is aligned to rows 4-6 of the input.)\nFor the test:\nT = [[9,0,9],[0,0,9],[9,0,9]]\nB = [[0,1,1],[0,1,0],[1,0,0]]\nApply the rule per cell:\n- Row1: only T[0][1]=0 but B[0][1]=1 => 0 -> [0,0,0]\n- Row2: zeros at c1,c2; B[1][0]=0 -> 2 at c1, B[1][1]=1 -> 0 at c2 -> [2,0,0]\n- Row3: zero at c2; B[2][1]=0 -> 2 at c2 -> [0,2,0]",
+    "feedback": "Feedback on test input 0: Your response is correct. The correct matrix is [[0, 0, 0], [2, 0, 0], [0, 2, 0]].",
+    "output": [
+        [
+            [
+                0,
+                0,
+                0
+            ],
+            [
+                2,
+                0,
+                0
+            ],
+            [
+                0,
+                2,
+                0
+            ]
+        ]
+    ]
+}

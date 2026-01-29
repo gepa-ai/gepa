@@ -1,0 +1,114 @@
+{
+    "input": {
+        "training_examples": [
+            "TrainingExample(input=[[9, 9, 5, 9], [5, 5, 9, 9], [9, 5, 9, 9]], output=[[9, 5, 9, 9], [5, 5, 9, 9], [9, 9, 5, 9], [9, 9, 5, 9], [5, 5, 9, 9], [9, 5, 9, 9]])",
+            "TrainingExample(input=[[4, 1, 1, 4], [1, 1, 1, 1], [4, 4, 4, 1]], output=[[4, 4, 4, 1], [1, 1, 1, 1], [4, 1, 1, 4], [4, 1, 1, 4], [1, 1, 1, 1], [4, 4, 4, 1]])",
+            "TrainingExample(input=[[9, 4, 9, 4], [9, 9, 4, 4], [4, 4, 4, 4]], output=[[4, 4, 4, 4], [9, 9, 4, 4], [9, 4, 9, 4], [9, 4, 9, 4], [9, 9, 4, 4], [4, 4, 4, 4]])",
+            "TrainingExample(input=[[3, 3, 5, 5], [3, 5, 5, 3], [5, 5, 3, 3]], output=[[5, 5, 3, 3], [3, 5, 5, 3], [3, 3, 5, 5], [3, 3, 5, 5], [3, 5, 5, 3], [5, 5, 3, 3]])"
+        ],
+        "test_inputs": [
+            [
+                [
+                    4,
+                    4,
+                    9,
+                    9
+                ],
+                [
+                    4,
+                    4,
+                    4,
+                    4
+                ],
+                [
+                    4,
+                    4,
+                    9,
+                    9
+                ]
+            ]
+        ],
+        "test_outputs": [
+            [
+                [
+                    4,
+                    4,
+                    9,
+                    9
+                ],
+                [
+                    4,
+                    4,
+                    4,
+                    4
+                ],
+                [
+                    4,
+                    4,
+                    9,
+                    9
+                ],
+                [
+                    4,
+                    4,
+                    9,
+                    9
+                ],
+                [
+                    4,
+                    4,
+                    4,
+                    4
+                ],
+                [
+                    4,
+                    4,
+                    9,
+                    9
+                ]
+            ]
+        ]
+    },
+    "reasoning": "The rule: For a 3x4 input matrix, output a 6x4 matrix where the first three rows are the input rows in reverse order and the last three rows are the input rows in original order.\n\nApplying to the test input:\nInput rows R1=[4,4,9,9], R2=[4,4,4,4], R3=[4,4,9,9]\nOutput = [R3, R2, R1, R1, R2, R3]",
+    "feedback": "Feedback on test input 0: Your response is correct. The correct matrix is [[4, 4, 9, 9], [4, 4, 4, 4], [4, 4, 9, 9], [4, 4, 9, 9], [4, 4, 4, 4], [4, 4, 9, 9]].",
+    "output": [
+        [
+            [
+                4,
+                4,
+                9,
+                9
+            ],
+            [
+                4,
+                4,
+                4,
+                4
+            ],
+            [
+                4,
+                4,
+                9,
+                9
+            ],
+            [
+                4,
+                4,
+                9,
+                9
+            ],
+            [
+                4,
+                4,
+                4,
+                4
+            ],
+            [
+                4,
+                4,
+                9,
+                9
+            ]
+        ]
+    ]
+}
