@@ -14,6 +14,7 @@ nav:
     - Guides:
         - Guides Overview: guides/index.md
         - Quick Start: guides/quickstart.md
+        - FAQ: guides/faq.md
         - Creating Adapters: guides/adapters.md
         - Using Callbacks: guides/callbacks.md
         - Contributing: guides/contributing.md
@@ -174,6 +175,8 @@ extra:
           link: https://discord.gg/A7dABbtmFw
         - icon: fontawesome/brands/slack
           link: https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w
+        - icon: fontawesome/brands/x-twitter
+          link: https://x.com/LakshyAAAgrawal
 
 markdown_extensions:
     - toc:

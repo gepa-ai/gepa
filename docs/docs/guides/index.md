@@ -6,6 +6,7 @@ Welcome to the GEPA guides! These guides will help you understand and use GEPA e
 
 - [Quick Start](quickstart.md) - Get up and running with GEPA in minutes
 - [Use Cases](use-cases.md) - Real-world applications of GEPA across industries
+- [FAQ](faq.md) - Frequently asked questions about GEPA
 - [Creating Adapters](adapters.md) - Learn how to integrate GEPA with your system
 - [Using Callbacks](callbacks.md) - Monitor and instrument optimization runs
 - [Contributing](contributing.md) - How to contribute to GEPA development
@@ -80,3 +81,15 @@ result = gepa.optimize(
     max_metric_calls=100,
 )
 ```
+
+## Learn More
+
+- **[FAQ](faq.md)** - Common questions answered
+- **[Use Cases](use-cases.md)** - See real-world GEPA applications
+- **[Tutorials](../tutorials/index.md)** - Step-by-step learning resources
+
+## Community
+
+- **Discord**: [Join the GEPA community](https://discord.gg/A7dABbtmFw)
+- **Slack**: [GEPA Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
+- **Twitter/X**: Follow [@LakshyAAAgrawal](https://x.com/LakshyAAAgrawal) for updates
