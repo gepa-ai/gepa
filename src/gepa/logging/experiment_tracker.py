@@ -116,7 +116,7 @@ class ExperimentTracker:
         Log text data to the active backends.
         
         For MLflow, uses log_text to store text artifacts.
-        For wandb, logs as regular metrics (wandb supports arbitrary types).
+        For wandb, uses wandb.log() which supports arbitrary types.
         
         Args:
             text_data: Dictionary mapping keys to text values
