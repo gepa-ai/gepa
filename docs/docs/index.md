@@ -13,7 +13,7 @@ hide:
   font-size: 3.5rem;
   font-weight: 800;
   margin-bottom: 1rem;
-  background: linear-gradient(120deg, #2196F3, #00BCD4);
+  background: linear-gradient(120deg, #c5d9f7, #d9e8fb);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -39,7 +39,7 @@ hide:
 .stat-number {
   font-size: 2.5rem;
   font-weight: 700;
-  color: #2196F3;
+  color: #8B7AB8;
   display: block;
   margin-bottom: 0.5rem;
 }
@@ -56,26 +56,33 @@ hide:
 }
 .cta-primary, .cta-secondary {
   padding: 0.75rem 2rem;
-  border-radius: 6px;
+  border-radius: 8px;
   font-weight: 600;
   text-decoration: none;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   transition: all 0.2s;
 }
+.cta-primary .twemoji svg, .cta-secondary .twemoji svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  fill: currentColor;
+}
 .cta-primary {
-  background: #2196F3;
-  color: white;
+  background: #d9e8fb;
+  color: #1e3a5f;
 }
 .cta-primary:hover {
-  background: #1976D2;
+  background: #c5d9f7;
   transform: translateY(-2px);
 }
 .cta-secondary {
-  border: 2px solid #2196F3;
-  color: #2196F3;
+  border: 2px solid #d9e8fb;
+  color: #8B7AB8;
 }
 .cta-secondary:hover {
-  background: rgba(33, 150, 243, 0.1);
+  background: rgba(217, 232, 251, 0.1);
 }
 .feature-grid {
   display: grid;
@@ -86,7 +93,7 @@ hide:
 .feature-card {
   padding: 1.5rem;
   border-radius: 8px;
-  border-left: 4px solid #2196F3;
+  border-left: 4px solid #d9e8fb;
   background: var(--md-code-bg-color);
 }
 .feature-icon {
@@ -113,6 +120,14 @@ hide:
   align-items: center;
   margin-top: 1.5rem;
 }
+a[style*="background: #d9e8fb"]:hover {
+  background: #c5d9f7 !important;
+  transform: translateY(-2px);
+  transition: all 0.2s;
+}
+a[style*="border: 2px solid #d9e8fb"]:hover {
+  background: rgba(217, 232, 251, 0.15) !important;
+}
 </style>
 
 <div class="hero-section">
@@ -129,13 +144,16 @@ hide:
 
   <div class="cta-buttons">
     <a href="#quick-start" class="cta-primary">
-      🚀 Get Started
+      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2.81 14.12 5.64 3.64l8.47 8.47-5.62 1.42zM17.27 2.97c1.06-1.06 2.78-1.06 3.84 0 1.06 1.06 1.06 2.78 0 3.84l-2.5 2.5L14.77 5.5z"/></svg></span>
+      Get Started
     </a>
     <a href="guides/quickstart/" class="cta-secondary">
-      📖 Read the Docs
+      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1m0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5z"/></svg></span>
+      Read the Docs
     </a>
     <a href="https://github.com/gepa-ai/gepa" class="cta-secondary">
-      ⭐ View on GitHub
+      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2"/></svg></span>
+      View on GitHub
     </a>
   </div>
 
@@ -211,7 +229,7 @@ hide:
     [:material-twitter: View tweet](https://x.com/ivanhzyy/status/1971066193747689521)
 
 <div style="text-align: center; margin: 2rem 0;">
-  <a href="guides/use-cases/" style="text-decoration: none; color: #2196F3; font-weight: 600;">
+  <a href="guides/use-cases/" style="text-decoration: none; color: #8B7AB8; font-weight: 600;">
     → View all 50+ use cases and success stories
   </a>
 </div>
@@ -376,8 +394,9 @@ hide:
     ```
 
 <div style="text-align: center; margin: 2rem 0;">
-  <a href="guides/quickstart/" style="padding: 0.75rem 2rem; background: #2196F3; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
-    📖 Full Documentation
+  <a href="guides/quickstart/" style="padding: 0.75rem 2rem; background: #d9e8fb; color: #1e3a5f; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem;">
+    <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1.2rem; height: 1.2rem; fill: currentColor;"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1m0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5z"/></svg></span>
+    Full Documentation
   </a>
 </div>
 
@@ -518,7 +537,7 @@ hide:
     5. **:material-numeric-5-circle: Repeat** until convergence or budget exhausted
 
     <div style="text-align: center; margin: 2rem 0;">
-      <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/gepa_logo_with_text.svg" alt="GEPA Algorithm" style="max-width: 500px; width: 100%;">
+      <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/gepa_logo_with_text.svg" alt="GEPA Algorithm" style="max-width: 400px; width: 100%;">
     </div>
 
     **Key Innovation**: Instead of gradient-based updates, GEPA uses natural language reasoning to understand what's wrong and how to fix it.
@@ -575,13 +594,13 @@ hide:
     Using GEPA in production? We'd love to showcase your work!
 
     <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem;">
-      <a href="mailto:lakshyaaagrawal@berkeley.edu?subject=Feature%20GEPA%20usecase" style="padding: 0.5rem 1.5rem; background: #2196F3; color: white; text-decoration: none; border-radius: 4px; font-weight: 600;">
+      <a href="mailto:lakshyaaagrawal@berkeley.edu?subject=Feature%20GEPA%20usecase" style="padding: 0.5rem 1.5rem; background: #d9e8fb; color: #1e3a5f; text-decoration: none; border-radius: 8px; font-weight: 600;">
         Submit via Email
       </a>
-      <a href="https://github.com/gepa-ai/gepa/issues/new?title=Use%20Case%20Submission&body=Organization:%0A%0AUse%20Case:%0A%0AResults:%0A%0ALogo%20URL:%0A%0ALink%20to%20blog/tweet:" style="padding: 0.5rem 1.5rem; border: 2px solid #2196F3; color: #2196F3; text-decoration: none; border-radius: 4px; font-weight: 600;">
+      <a href="https://github.com/gepa-ai/gepa/issues/new?title=Use%20Case%20Submission&body=Organization:%0A%0AUse%20Case:%0A%0AResults:%0A%0ALogo%20URL:%0A%0ALink%20to%20blog/tweet:" style="padding: 0.5rem 1.5rem; border: 2px solid #d9e8fb; color: #8B7AB8; text-decoration: none; border-radius: 8px; font-weight: 600;">
         Submit via GitHub
       </a>
-      <a href="https://discord.gg/A7dABbtmFw" style="padding: 0.5rem 1.5rem; border: 2px solid #2196F3; color: #2196F3; text-decoration: none; border-radius: 4px; font-weight: 600;">
+      <a href="https://discord.gg/A7dABbtmFw" style="padding: 0.5rem 1.5rem; border: 2px solid #d9e8fb; color: #8B7AB8; text-decoration: none; border-radius: 8px; font-weight: 600;">
         Share on Discord
       </a>
     </div>
@@ -671,11 +690,13 @@ If you use GEPA in your research, please cite our paper:
     Install GEPA and start optimizing in minutes
   </p>
   <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-    <a href="guides/quickstart/" style="padding: 0.75rem 2rem; background: #2196F3; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
-      🚀 Get Started
+    <a href="guides/quickstart/" style="padding: 0.75rem 2rem; background: #d9e8fb; color: #1e3a5f; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem;">
+      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1.2rem; height: 1.2rem; fill: currentColor;"><path d="M2.81 14.12 5.64 3.64l8.47 8.47-5.62 1.42zM17.27 2.97c1.06-1.06 2.78-1.06 3.84 0 1.06 1.06 1.06 2.78 0 3.84l-2.5 2.5L14.77 5.5z"/></svg></span>
+      Get Started
     </a>
-    <a href="https://github.com/gepa-ai/gepa" style="padding: 0.75rem 2rem; border: 2px solid #2196F3; color: #2196F3; text-decoration: none; border-radius: 6px; font-weight: 600;">
-      ⭐ Star on GitHub
+    <a href="https://github.com/gepa-ai/gepa" style="padding: 0.75rem 2rem; border: 2px solid #d9e8fb; color: #8B7AB8; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem;">
+      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1.2rem; height: 1.2rem; fill: currentColor;"><path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg></span>
+      Star on GitHub
     </a>
   </div>
 </div>
