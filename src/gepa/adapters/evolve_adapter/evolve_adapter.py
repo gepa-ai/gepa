@@ -111,44 +111,27 @@ class DefaultEvaluationStrategy(EvaluationStrategy):
         self.module = module.evaluate
 
     def evaluate(self, program_path: str, batch: list[Any]) -> list[EvaluationResult]:
-        try:
-            results = self.module(program_path, batch)
+        """
+        Evaluate the program on a batch of data instances.
 
-            # Ensure results is a list
-            if not isinstance(results, list):
-                raise TypeError(f"evaluate function must return a list of results, got {type(results)}")
+        The user's evaluate function should take (program_path: str, data_instance: Any)
+        and return a single EvaluationResult. This method calls
+        the user's evaluate function for each instance in the batch.
+        """
+        eval_results = []
 
-            # Ensure we have one result per batch item
-            if len(results) != len(batch):
-                raise ValueError(f"evaluate function returned {len(results)} results, but batch has {len(batch)} items")
+        for i, data_instance in enumerate(batch):
+            try:
+                # Call user's evaluate function with single data instance
+                result = self.module(program_path, data_instance)
 
-            # Process each result
-            eval_results = []
-            for i, result in enumerate(results):
-                try:
-                    eval_result = _process_evaluation_result(result)
-                    eval_results.append(eval_result)
-                except Exception as e:
-                    logging.error(f"Error processing result for batch item {i}: {e}")
-                    # Return error result for this item
-                    eval_results.append(
-                        EvaluationResult(
-                            metrics={"passed": 0.0, "error": 0.0},
-                            artifacts={
-                                "stderr": str(e),
-                                "traceback": traceback.format_exc(),
-                                "batch_item_index": i,
-                            },
-                        )
-                    )
-
-            return eval_results
-        except Exception as e:
-            logging.error(f"Error evaluating {program_path}: {e}")
-            # Return error results for all batch items
-            error_results = []
-            for i in range(len(batch)):
-                error_results.append(
+                # Process the result (handles both dict and EvaluationResult)
+                eval_result = _process_evaluation_result(result)
+                eval_results.append(eval_result)
+            except Exception as e:
+                logging.error(f"Error evaluating batch item {i}: {e}")
+                # Return error result for this item
+                eval_results.append(
                     EvaluationResult(
                         metrics={"passed": 0.0, "error": 0.0},
                         artifacts={
@@ -158,7 +141,8 @@ class DefaultEvaluationStrategy(EvaluationStrategy):
                         },
                     )
                 )
-            return error_results
+
+        return eval_results
 
 
 class CascadeEvaluationStrategy(EvaluationStrategy):
@@ -192,28 +176,24 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
         """
         Evaluate in cascading stages using the thresholds.
 
-        Applies cascade logic per-instance: each instance is evaluated through stages
-        based on its stage1 score meeting the thresholds.
+        The user's evaluate function should take (program_path: str, data_instance: Any)
+        and return a single EvaluationResult. This method calls
+        the user's evaluate stage functions for each instance.
         """
         # Run stage 1 for all instances
-        try:
-            stage1 = self.stages["evaluate_stage1"]
-            stage1_results = stage1(program_path, batch)
+        stage1 = self.stages["evaluate_stage1"]
+        stage1_eval_results = []
 
-            if not isinstance(stage1_results, list):
-                raise TypeError(f"evaluate_stage1 must return a list of results, got {type(stage1_results)}")
-            if len(stage1_results) != len(batch):
-                raise ValueError(
-                    f"evaluate_stage1 returned {len(stage1_results)} results, but batch has {len(batch)} items"
-                )
-
-            stage1_eval_results = [_process_evaluation_result(r) for r in stage1_results]
-        except Exception as e:
-            logging.error(f"Error in stage 1 evaluation: {e!s}")
-            # Return error results for all batch items
-            error_results = []
-            for i in range(len(batch)):
-                error_results.append(
+        for i, data_instance in enumerate(batch):
+            try:
+                # Call user's stage1 function with single data instance
+                stage1_result = stage1(program_path, data_instance)
+                eval_result = _process_evaluation_result(stage1_result)
+                stage1_eval_results.append(eval_result)
+            except Exception as e:
+                logging.error(f"Error in stage 1 evaluation for batch item {i}: {e!s}")
+                # Return error result for this item
+                stage1_eval_results.append(
                     EvaluationResult(
                         metrics={"stage1_passed": 0.0, "error": 0.0},
                         artifacts={
@@ -223,7 +203,6 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
                         },
                     )
                 )
-            return error_results
 
         # Initialize final results with stage1
         final_results = []
@@ -245,42 +224,33 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
 
         # Run stage2 for qualifying instances
         if stage2_indices and "evaluate_stage2" in self.stages:
-            stage2_batch = [batch[i] for i in stage2_indices]
-            try:
-                stage2 = self.stages["evaluate_stage2"]
-                stage2_results = stage2(program_path, stage2_batch)
+            stage2 = self.stages["evaluate_stage2"]
 
-                if not isinstance(stage2_results, list):
-                    raise TypeError(f"evaluate_stage2 must return a list of results, got {type(stage2_results)}")
-                if len(stage2_results) != len(stage2_batch):
-                    raise ValueError(
-                        f"evaluate_stage2 returned {len(stage2_results)} results, "
-                        f"but stage2_batch has {len(stage2_batch)} items"
-                    )
+            for idx in stage2_indices:
+                try:
+                    # Call user's stage2 function with single data instance
+                    stage2_result = stage2(program_path, batch[idx])
+                    stage2_eval_result = _process_evaluation_result(stage2_result)
 
-                stage2_eval_results = [_process_evaluation_result(r) for r in stage2_results]
-
-                # Merge stage2 results back into final_results
-                for idx, stage2_result in zip(stage2_indices, stage2_eval_results, strict=False):
+                    # Merge stage2 results back into final_results
                     merged_metrics = {}
                     # Convert all values to float to avoid type errors
                     for name, value in final_results[idx].metrics.items():
                         if isinstance(value, (int, float)) and name != "error":
                             merged_metrics[name] = float(value)
-                    for name, value in stage2_result.metrics.items():
+                    for name, value in stage2_eval_result.metrics.items():
                         if isinstance(value, (int, float)) and name != "error":
                             merged_metrics[name] = float(value)
 
                     # Merge artifacts
                     merged_artifacts = {}
                     merged_artifacts.update(final_results[idx].artifacts)
-                    merged_artifacts.update(stage2_result.artifacts)
+                    merged_artifacts.update(stage2_eval_result.artifacts)
 
                     final_results[idx] = EvaluationResult(metrics=merged_metrics, artifacts=merged_artifacts)
-            except Exception as e:
-                logging.error(f"Error in stage 2 evaluation: {e!s}")
-                # Mark stage2 as failed for qualifying instances
-                for idx in stage2_indices:
+                except Exception as e:
+                    logging.error(f"Error in stage 2 evaluation for batch item {idx}: {e!s}")
+                    # Mark stage2 as failed for this instance
                     final_results[idx].metrics["stage2_passed"] = 0.0
                     final_results[idx].artifacts.update(
                         {
@@ -291,34 +261,24 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
 
         # Run stage3 for qualifying instances
         if stage3_indices and "evaluate_stage3" in self.stages:
-            stage3_batch = [batch[i] for i in stage3_indices]
-            try:
-                stage3 = self.stages["evaluate_stage3"]
-                stage3_results = stage3(program_path, stage3_batch)
+            stage3 = self.stages["evaluate_stage3"]
 
-                if not isinstance(stage3_results, list):
-                    raise TypeError(f"evaluate_stage3 must return a list of results, got {type(stage3_results)}")
-                if len(stage3_results) != len(stage3_batch):
-                    raise ValueError(
-                        f"evaluate_stage3 returned {len(stage3_results)} results, "
-                        f"but stage3_batch has {len(stage3_batch)} items"
-                    )
+            for idx in stage3_indices:
+                try:
+                    # Call user's stage3 function with single data instance
+                    stage3_result = stage3(program_path, batch[idx])
+                    stage3_eval_result = _process_evaluation_result(stage3_result)
 
-                stage3_eval_results = [_process_evaluation_result(r) for r in stage3_results]
-
-                # Merge stage3 results back into final_results
-                for idx, stage3_result in zip(stage3_indices, stage3_eval_results, strict=False):
-                    # Merge metrics
-                    for name, value in stage3_result.metrics.items():
+                    # Merge stage3 results back into final_results
+                    for name, value in stage3_eval_result.metrics.items():
                         if isinstance(value, (int, float)) and name != "error":
                             final_results[idx].metrics[name] = float(value)
 
                     # Merge artifacts
-                    final_results[idx].artifacts.update(stage3_result.artifacts)
-            except Exception as e:
-                logging.error(f"Error in stage 3: {e}")
-                # Capture stage 3 failure, but keep previous results
-                for idx in stage3_indices:
+                    final_results[idx].artifacts.update(stage3_eval_result.artifacts)
+                except Exception as e:
+                    logging.error(f"Error in stage 3 for batch item {idx}: {e}")
+                    # Capture stage 3 failure, but keep previous results
                     final_results[idx].artifacts.update(
                         {
                             "stage3_stderr": str(e),
@@ -439,10 +399,10 @@ class EvolveAdapter(GEPAAdapter):
                 completion_kwargs["base_url"] = api_base
 
             completion = self.litellm.completion(**completion_kwargs)
-
-            if hasattr(completion, "choices") and len(completion.choices) > 0:  # type: ignore
-                return completion.choices[0].message.content or ""  # type: ignore
-            return ""
+            try:
+                return completion.choices[0].message.content or ""
+            except Exception:
+                return str(completion)
 
         self.reflection_lm = _call_lm
 
