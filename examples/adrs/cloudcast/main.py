@@ -236,7 +236,6 @@ def get_reflection_lm(model: str) -> LanguageModel:
         gemini_client = genai.Client(http_options=HttpOptions(api_version="v1"))
 
     def _call_lm(prompt: str | list[dict[str, str]]) -> str:
-        print(f"Calling LM with prompt: {prompt}")
 
         # Convert chat messages to a single string for Gemini
         if isinstance(prompt, list):

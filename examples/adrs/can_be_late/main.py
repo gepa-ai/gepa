@@ -208,8 +208,6 @@ def get_reflection_lm(model: str) -> LanguageModel:
 
     def _call_lm(prompt: str | list[dict[str, str]]) -> str:
 
-        print(f"Calling LM with prompt: {prompt}")
-
         # Convert chat messages to a single string for Gemini
         if isinstance(prompt, list):
             prompt_str = "\n".join(
