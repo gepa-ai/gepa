@@ -1,260 +1,445 @@
-# GEPA: System Optimization through Reflective Text Evolution
+---
+hide:
+  - navigation
+  - toc
+---
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/gepa_logo_with_text.svg" alt="GEPA Logo" width="400">
-</p>
-
-**GEPA** (Genetic-Pareto) is a framework for **optimizing arbitrary systems composed of text components**—like AI prompts, code snippets, or textual specs—against any evaluation metric.
-
-[![PyPI - Version](https://img.shields.io/pypi/v/gepa)](https://pypi.org/project/gepa/)
-[![PyPI Downloads](https://static.pepy.tech/badge/gepa)](https://pepy.tech/projects/gepa)
-
-## Overview
-
-GEPA employs LLMs to reflect on system behavior, using feedback from execution and evaluation traces to drive targeted improvements. Through iterative mutation, reflection, and Pareto-aware candidate selection, GEPA evolves robust, high-performing variants with minimal evaluations, co-evolving multiple components in modular systems for domain-specific gains.
-
-This repository provides the official implementation of the GEPA algorithm as proposed in the paper titled "GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning" ([arXiv:2507.19457](https://arxiv.org/abs/2507.19457)).
-
-## Installation
-
-```bash
-pip install gepa
-```
-
-To install the very latest from `main`:
-
-```bash
-pip install git+https://github.com/gepa-ai/gepa.git
-```
-
-## Quick Start
-
-### The Easiest Path: DSPy Integration
-
-!!! tip "Recommended"
-    The easiest and most powerful way to use GEPA for prompt optimization is within [DSPy](https://dspy.ai/), where the GEPA algorithm is directly available through the `dspy.GEPA` API. See [dspy.GEPA Tutorials](https://dspy.ai/tutorials/gepa_ai_program/).
-
-### Simple Prompt Optimization Example
-
-GEPA can be run in just a few lines of code. Here's an example optimizing a system prompt for math problems:
-
-```python
-import gepa
-
-# Load AIME dataset
-trainset, valset, _ = gepa.examples.aime.init_dataset()
-
-seed_prompt = {
-    "system_prompt": "You are a helpful assistant. You are given a question and you need to answer it. The answer should be given at the end of your response in exactly the format '### <final answer>'"
+<style>
+.hero-section {
+  text-align: center;
+  padding: 1.5rem 0 1rem 0;
 }
+.hero-title {
+  font-size: 3.5rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+  background: linear-gradient(120deg, #2196F3, #00BCD4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero-subtitle {
+  font-size: 1.3rem;
+  margin-bottom: 1rem;
+  color: var(--md-default-fg-color--light);
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 2rem;
+  margin: 3rem 0;
+  text-align: center;
+}
+.stat-card {
+  padding: 1.5rem;
+  border-radius: 8px;
+  background: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+.stat-number {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #2196F3;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.stat-label {
+  font-size: 0.9rem;
+  color: var(--md-default-fg-color--light);
+}
+.cta-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin: 1rem 0;
+  flex-wrap: wrap;
+}
+.cta-primary, .cta-secondary {
+  padding: 0.75rem 2rem;
+  border-radius: 6px;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-block;
+  transition: all 0.2s;
+}
+.cta-primary {
+  background: #2196F3;
+  color: white;
+}
+.cta-primary:hover {
+  background: #1976D2;
+  transform: translateY(-2px);
+}
+.cta-secondary {
+  border: 2px solid #2196F3;
+  color: #2196F3;
+}
+.cta-secondary:hover {
+  background: rgba(33, 150, 243, 0.1);
+}
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin: 2rem 0;
+}
+.feature-card {
+  padding: 1.5rem;
+  border-radius: 8px;
+  border-left: 4px solid #2196F3;
+  background: var(--md-code-bg-color);
+}
+.feature-icon {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+}
+.feature-title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.companies {
+  text-align: center;
+  margin: 1rem 0;
+  padding: 1.5rem;
+  background: var(--md-code-bg-color);
+  border-radius: 8px;
+}
+.company-logos {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2rem;
+  align-items: center;
+  margin-top: 1.5rem;
+}
+</style>
 
-# Run GEPA optimization
-gepa_result = gepa.optimize(
-    seed_candidate=seed_prompt,
-    trainset=trainset,
-    valset=valset,
-    task_lm="openai/gpt-4.1-mini",  # Model being optimized
-    max_metric_calls=150,            # Budget
-    reflection_lm="openai/gpt-5",    # Strong model for reflection
-)
+<div class="hero-section">
+  <div style="text-align: center; margin-bottom: 1rem;">
+    <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/gepa_logo_with_text.svg" alt="GEPA Logo" style="max-width: 400px; width: 100%;">
+  </div>
+  <!-- <h1 class="hero-title">GEPA</h1> -->
+  <p class="hero-subtitle" style="margin-bottom: 1rem;">
+    Optimize AI Systems Through Reflective Evolution
+  </p>
+  <p style="font-size: 1rem; max-width: 800px; margin: 0 auto 1rem; line-height: 1.5;">
+    Transform your AI agents and prompts using LLM-powered reflection. Achieve production-grade performance improvements without expensive reinforcement learning or fine-tuning.
+  </p>
 
-print("Optimized Prompt:", gepa_result.best_candidate['system_prompt'])
-```
+  <div class="cta-buttons">
+    <a href="#quick-start" class="cta-primary">
+      🚀 Get Started
+    </a>
+    <a href="guides/quickstart/" class="cta-secondary">
+      📖 Read the Docs
+    </a>
+    <a href="https://github.com/gepa-ai/gepa" class="cta-secondary">
+      ⭐ View on GitHub
+    </a>
+  </div>
 
-This achieves **+10% improvement** (46.6% → 56.6%) on AIME 2025 with GPT-4.1 Mini!
+  <p>
+    <a href="https://pypi.org/project/gepa/" target="_blank"><img src="https://img.shields.io/pypi/v/gepa?style=for-the-badge&logo=python&logoColor=white" alt="PyPI"></a>
+    <a href="https://pypistats.org/packages/gepa" target="_blank"><img src="https://img.shields.io/pypi/dm/gepa?style=for-the-badge&logo=python&logoColor=white" alt="Downloads"></a>
+    <a href="https://github.com/gepa-ai/gepa" target="_blank"><img src="https://img.shields.io/github/stars/gepa-ai/gepa?style=for-the-badge&logo=github" alt="GitHub stars"></a>
+    <a href="https://arxiv.org/abs/2507.19457" target="_blank"><img src="https://img.shields.io/badge/arXiv-2507.19457-b31b1b.svg?style=for-the-badge" alt="Paper"></a>
+  </p>
+</div>
 
-## Key Concepts
+---
 
-### Adapter Architecture
+## :material-office-building: Trusted by Industry Leaders
 
-GEPA is built around a flexible [`GEPAAdapter`](api/core/GEPAAdapter.md) abstraction that lets it plug into any system:
+<div class="companies">
+  <div class="company-logos">
+    <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Databricks</a>
+    <a href="https://x.com/tobi/status/1963434604741701909" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Shopify</a>
+    <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">OpenAI</a>
+    <a href="https://huggingface.co/learn/cookbook/en/dspy_gepa" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">HuggingFace</a>
+    <a href="https://www.comet.com/site/blog/opik-product-releases-october2025/" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Comet ML</a>
+    <a href="https://github.com/weaviate/recipes/blob/main/integrations/llm-agent-frameworks/dspy/GEPA-Hands-On-Reranker.ipynb" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Weaviate</a>
+    <a href="https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Dropbox</a>
+    <a href="https://mlflow.org/blog/mlflow-prompt-optimization" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">MLFlow</a>
+    <a href="https://x.com/risk_seeking/status/2015853790512222602?s=20" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Standard Metrics</a>
+    <a href="https://x.com/swyx/status/1991598247782281371?s=20" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">The Browser Company</a>
+    <a href="https://www.linkedin.com/posts/dria-ai_today-were-releasing-something-weve-used-activity-7396920472237477888-WyXN" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Dria</a>
+    <a href="https://www.linkedin.com/posts/robin-salimans_agentic-ai-systems-are-only-as-good-as-activity-7399199482644692992-5n-L" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Zapier</a>
+    <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Prime Intellect</a>
+    <a href="https://www.pharmabiz.com/NewsDetails.aspx?aid=181272&sid=2" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">ClirNet</a>
+    <a href="https://docs.usesynth.ai/sdk/jobs/prompt-optimization/gepa"  target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">SynthAI</a>
+    <span style="font-weight: 600; font-size: 1.1rem;">Uber</span>
+    <span style="font-weight: 600; font-size: 1.1rem;">NuBank</span>
+    <span style="font-weight: 600; font-size: 1.1rem;">Veris.AI</span>
+    <span style="font-weight: 600; font-size: 1.1rem;">AWS</span>
+    <span style="font-weight: 600; font-size: 1.1rem;">Infosys</span>
+    <span style="font-weight: 600; font-size: 1.1rem;">Invitae</span>
+    <span style="font-weight: 600; font-size: 1.1rem;">Meta</span>
+    <span style="font-weight: 600; font-size: 1.1rem;">Cerebras</span>
+    <span style="font-weight: 600; font-size: 1.1rem;">Bespoke AI Labs</span>
+  </div>
+</div>
 
-- **System**: A harness that uses text components to perform a task
-- **Candidate**: A mapping from component names to component text
-- **Trajectory**: Execution traces captured during evaluation
+!!! quote ":material-shopping: **Tobi Lutke**, CEO Shopify"
+    Both DSPy and (especially) **GEPA are currently severely under hyped** in the AI context engineering world
 
-### Built-in Adapters
+    [:material-twitter: View tweet](https://x.com/tobi/status/1963434604741701909)
 
-| Adapter | Description |
-|---------|-------------|
-| [`DefaultAdapter`](api/adapters/DefaultAdapter.md) | Single-turn LLM with system prompt optimization |
-| [`DSPyAdapter`](api/adapters/DSPyAdapter.md) | DSPy program instruction and prompt optimization |
-| [`DSPyFullProgramAdapter`](api/adapters/DSPyFullProgramAdapter.md) | Full DSPy program evolution including structure |
-| [`RAGAdapter`](api/adapters/RAGAdapter.md) | RAG systems with any vector store |
-| [`MCPAdapter`](api/adapters/MCPAdapter.md) | Model Context Protocol tool optimization |
-| [`TerminalBenchAdapter`](api/adapters/TerminalBenchAdapter.md) | Terminal/shell agent optimization |
+!!! quote ":material-dropbox: **Drew Houston**, CEO Dropbox"
+    Have heard great things about DSPy plus GEPA, which is an **even stronger prompt optimizer than miprov2** — repo and (fascinating) examples of generated prompts at https://github.com/gepa-ai/gepa and paper at https://arxiv.org/abs/2507.19457
 
-## How GEPA Works
+    [:material-twitter: View tweet](https://x.com/drewhouston/status/1974750621690728623)
 
-GEPA optimizes text components using an evolutionary search algorithm with LLM-based reflection for mutations. Key features:
+!!! quote ":material-brain: **OpenAI**"
+    Self-evolving agents that autonomously retrain themselves using GEPA to improve performance over time.
 
-1. **Reflective Mutation**: Uses task-specific textual feedback (compiler errors, profiler reports, etc.) to guide improvements
-2. **Pareto Frontier Tracking**: Maintains candidates that excel on different subsets of the validation data
-3. **Multi-Component Optimization**: Co-evolves multiple text components simultaneously
+    [:material-link: Read cookbook](https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining)
 
-For details, see the paper: [GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning](https://arxiv.org/abs/2507.19457)
+!!! quote ":material-code-braces: **Chad Boyda**, CTO AppSumo"
+    DSPy's GEPA is prompt engineering! **The only kind we should all collectively be doing.** What a work of art
 
-## Example GEPA Prompts
+    [:material-twitter: View tweet](https://x.com/chadboyda/status/1955298177197764963)
 
-<table>
-  <tr>
-  <td colspan="2" align="center"><strong>Example GEPA Prompts</strong></td>
-  </tr>
-  <tr>
-    <td align="center">HotpotQA (multi-hop QA) Prompt</td>
-    <td align="center">AIME Prompt</td>
-  </tr>
-  <tr>
-    <td width="52%" valign="top">
-      <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/gepa_prompt_hotpotqa.png" alt="HotpotQA Prompt" width="1400">
-      <details>
-<summary><mark>Click to view full HotpotQA prompt</mark></summary>
-<mark>[HotpotQA Prompt Begin]</mark>
+!!! quote ":material-shopping: **Tobi Lutke**, CEO Shopify"
+    QMD update shipped: New fine-tuned query expansion model, **GEPA-optimized synthetic training data**, Semantic chunking that actually understands document structure
 
-You will be given two input fields: `question` and `summary_1`.
+    [:material-twitter: View QMD announcement](https://x.com/tobi/status/2017750533361070425?s=20)
 
-Your task is to generate a new search query (`query`) optimized for the **second hop** of a multi-hop retrieval system. The original user question is typically complex and requires information from multiple documents to answer. The first hop query is the original question used to retrieve an initial set of documents. Your goal is to generate a **second hop query** that retrieves *additional relevant documents* that were *not* found in the first hop but are necessary to answer the original question completely.
+!!! quote ":material-database: **Ivan Zhou**, Databricks"
+    Automated prompt optimization (GEPA) can **push open-source models beyond frontier performance on enterprise tasks — at a fraction of the cost!** gpt-oss-120b + GEPA beats Claude Opus 4.1 on Information Extraction (+2.2 points) — while being **90× cheaper to serve**. GEPA + SFT together gives the **highest gains**.
 
-Detailed task instructions and hints:
+    [:material-twitter: View tweet](https://x.com/ivanhzyy/status/1971066193747689521)
 
-1. **Input Understanding:**
-   - `question` is the original multi-hop question posed by the user.
-   - `summary_1` is a concise summary of information from a document retrieved in the first hop, which partially addresses the question.
+<div style="text-align: center; margin: 2rem 0;">
+  <a href="guides/use-cases/" style="text-decoration: none; color: #2196F3; font-weight: 600;">
+    → View all 50+ use cases and success stories
+  </a>
+</div>
 
-2. **Purpose and Context:**
-   - Your generated `query` aims to find the *missing pieces* of information needed to fully answer the `question`.
-   - The multi-hop retrieval system works in stages:
-     - First hop: The original question returns some documents.
-     - Second hop: Your query must help retrieve any *other relevant documents* NOT found in the first hop that hold complementary or broader context necessary for final answer extraction.
+---
 
-3. **Key Observations from Examples and Feedback:**
-   - First-hop documents often cover one entity or aspect in the question.
-   - Remaining relevant documents often involve connected or higher-level concepts mentioned in `summary_1` but not explicitly asked in the original question.
-   - The `query` should be formulated to explicitly target these *missing*, but logically linked, documents.
-   - Avoid merely paraphrasing the original question or restating known facts from `summary_1`.
-   - Instead, infer what broader or related entities/concepts might provide the crucial missing information.
-   - For example, if `summary_1` describes a population for a small civil parish, but the question wants total population of the wider region, your `query` should target that wider region (e.g., "Madeira archipelago population in 2011").
-   - Similarly, if `summary_1` covers a song and the question wants the album it came from, but first hop got song-level documents, your query should retrieve documents about the album itself.
+## :material-chart-line: Performance at a Glance
 
-4. **How to Build the Query:**
-   - Identify the entities or topics mentioned in `summary_1` that appear related but different from first-hop documents.
-   - Reframe the query to explicitly mention these broader or related entities connected to the original question.
-   - Include relevant key context from the question to maintain specificity, but shift focus to the missing piece.
-   - The goal is to retrieve documents that link or complement what was retrieved initially.
+<div class="stats-grid">
+  <div class="stat-card">
+    <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank" style="text-decoration: none; color: inherit;">
+      <span class="stat-number">90×</span>
+      <span class="stat-label">Cost Reduction</span>
+      <p style="margin-top: 0.5rem; font-size: 0.85rem;">Open-source models beat Claude Opus 4.1</p>
+    </a>
+  </div>
+  <div class="stat-card">
+    <a href="https://arxiv.org/abs/2507.19457" target="_blank" style="text-decoration: none; color: inherit;">
+      <span class="stat-number">35×</span>
+      <span class="stat-label">Efficiency Gain</span>
+      <p style="margin-top: 0.5rem; font-size: 0.85rem;">vs. Reinforcement Learning methods</p>
+    </a>
+  </div>
+  <div class="stat-card">
+    <span class="stat-number">150</span>
+    <span class="stat-label">Sample Calls</span>
+    <p style="margin-top: 0.5rem; font-size: 0.85rem;">To achieve state-of-the-art results</p>
+  </div>
+  <div class="stat-card">
+    <a href="guides/use-cases.md" style="text-decoration: none; color: inherit;">
+      <span class="stat-number">50+</span>
+      <span class="stat-label">Production Use Cases</span>
+      <p style="margin-top: 0.5rem; font-size: 0.85rem;">Across diverse industries</p>
+    </a>
+  </div>
+</div>
 
-5. **Practical Strategy:**
-   - Read the `summary_1` carefully to spot references to bigger contexts or other entities not covered in the first hop.
-   - Ask yourself, "What entity or aspect does this summary hint at that could answer the original question but was not found yet?"
-   - Formulate a precise, focused factual query targeting that entity or concept to retrieve the missing documents.
+---
 
-6. **Output:**
-   - Produce only the field `query` as a clear, concise question or keyword phrase designed for efficient retrieval of **second-hop documents**.
-   - Ensure the query relates logically to the original question while targeting the broader or complementary knowledge identified in `summary_1`.
-   - Do **not** include the original question or simply rephrase it.
-   - Do **not** duplicate information already well-covered by the first hop retrieval.
+## :material-rocket-launch-outline: Quick Start {#quick-start}
 
-By following these principles, you will help the multi-hop retrieval system find all necessary documents to answer the multi-faceted original question completely.
+!!! example "Install in seconds"
 
-<mark>[HotpotQA Prompt End]</mark>
-</details>
-    </td>
-    <td width="48%" valign="top">
-      <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/aime_prompt.png" alt="AIME Prompt" width="2500">
-      <details>
-<summary><mark>Click to view full AIME prompt</mark></summary>
+    ```bash
+    pip install gepa
+    ```
 
-<mark>[AIME Prompt Begin]</mark>
+=== "Basic Example"
 
-You will be given one math problem as plain text under a key like "problem." Your job is to solve it correctly and return:
+    ```python title="optimize.py" linenums="1"
+    import gepa
 
-- reasoning: a concise, logically ordered solution that uses identities/structure to avoid brute force, ends with a quick verification.
-- answer: the final requested number/expression only (no extra words).
+    # Load your dataset
+    trainset, valset, _ = gepa.examples.aime.init_dataset()
 
-Formatting:
-- Use exactly two top-level fields named "reasoning" and "answer."
-- Keep reasoning succinct but complete. Bullet points are fine.
-- The answer field must contain only the final value requested (e.g., 227, 585, 601).
+    # Define your initial prompt
+    seed_prompt = {
+        "system_prompt": "You are a helpful assistant..."
+    }
 
-General problem-solving guidance:
-- Parse the problem type (e.g., base representation, intersecting families of subsets, avoiding arithmetic progressions, symmetric sums with constraints, ordered tuples counting).
-- Always enforce domain constraints (e.g., base-b digits in 0..b−1; no leading zero for base-10 "three-digit"; ordered vs unordered families; strict increase conditions in sequences).
-- Use algebraic identities and modular arithmetic to reduce the search space; prefer structural arguments over naive enumeration.
-- For "greatest/least" questions, derive tight bounds and give a construction that attains them.
+    # Run optimization
+    result = gepa.optimize(
+        seed_candidate=seed_prompt,
+        trainset=trainset,
+        valset=valset,
+        task_lm="openai/gpt-4.1-mini",      # Model to optimize
+        max_metric_calls=150,                # Optimization budget
+        reflection_lm="openai/gpt-5",       # Model for reflection
+    )
 
-Domain-specific strategies and pitfalls (learned from typical contest problems and prior feedback):
+    # Use your optimized prompt
+    print(result.best_candidate['system_prompt'])
+    ```
 
-1) Base-conversion/digit rearrangement:
-- Translate positional notation correctly: in base b, (a b c)_b = a·b^2 + b·b + c; in base 10: abc = 100a + 10b + c.
-- Enforce digit ranges strictly (e.g., in base 9, digits ∈ {0,…,8}; if also a is a base-10 leading digit, then a ∈ {1,…,8}).
-- Set up equality and simplify. Use modular constraints to prune:
-  • Mod 9 often collapses coefficients; e.g., 99a = 71b + 8c ⇒ mod 9 gives b + c ≡ 0 (mod 9).
-  • Mod 8: 99 ≡ 3, 71 ≡ 7 ⇒ 3a ≡ 7b (mod 8) ⇒ b ≡ −3a (mod 8).
-- Solve within digit bounds and verify numerically.
+    !!! success "Result"
+        **+10% improvement** (46.6% → 56.6%) on AIME 2025 with GPT-4.1 Mini!
 
-2) Palindromes across bases:
-- Bound the base length by magnitude (e.g., n < 1000 ⇒ octal has 3–4 digits).
-- Characterize palindromes:
-  • 3-digit octal: (A B A)_8 = 65A + 8B.
-  • 4-digit octal: (A B B A)_8 = 513A + 72B (with A ≥ 1).
-- Enumerate small parameter ranges and test the other-base palindrome constraint. For "greatest", check candidates in descending order with justification.
+=== "With DSPy"
 
-3) Symmetric sums with a + b + c fixed (ordered triples of nonnegative integers):
-- Use identities to compress expressions:
-  S = ab(a + b) + bc(b + c) + ca(c + a) = (a + b + c)(ab + bc + ca) − 3abc.
-- With a + b + c known (e.g., 300), convert the given sum into a relation among ab + bc + ca and abc.
-- Use the shift a = A + x etc. to isolate a product like (a−A)(b−A)(c−A) and deduce factorization constraints, enabling clean counting.
-- Count ordered solutions carefully; include/exclude symmetric/degenerate cases precisely.
+    ```python title="dspy_example.py" linenums="1"
+    import dspy
+    from dspy.teleprompt import GEPA
 
-4) Intersecting families of subsets (collections from the power set):
-- Intersecting means every pair has nonempty intersection. The empty set cannot be included.
-- Complement pairs: S and S^c cannot both be present. Use this to structure counts.
-- Use size-based pigeonhole facts: In [n], any two subsets of size > n/2 must intersect. For n = 5, any two subsets of size ≥ 3 intersect; thus "all subsets of size ≥ 3" is an intersecting family (size 16).
-- Do not assume that "stars" (all subsets containing a fixed element) are the only intersecting families of maximum size. For odd n, both the star and "all subsets of size > n/2" have size 2^{n−1}.
-- When counting collections of a fixed size:
-  • Consider the minimum set size N in the family and do casework on how many 2-element sets are included (for n=5), as these control which 3-sets must be excluded (complements).
-  • Ensure completeness of cases and avoid double counting by parameterizing canonical patterns (e.g., how many 2-sets, how they overlap, whether they share a common element).
-  • Remember order of subsets in a collection does not matter; count distinct families.
+    # Define your DSPy program
+    class RAG(dspy.Module):
+        def __init__(self):
+            self.retrieve = dspy.Retrieve(k=3)
+            self.generate = dspy.ChainOfThought("context, question -> answer")
 
-5) Avoiding 4-term arithmetic progressions in a strictly increasing sequence with fixed anchors:
-- First bound the variable terms by strict increase (e.g., if fixed terms are 3,4,5,...,30,40,50 then 6 ≤ a < b ≤ 29).
-- Pre-eliminate values that cause a 4-term AP with three fixed terms:
-  • 3,4,5,a forbids a = 6.
-  • b,30,40,50 forbids b = 20.
-  • Similarly, a,30,40,50 forbids a = 20.
-- Start with the count of pairs from allowed values and then subtract specific pairs that complete APs with two fixed endpoints:
-  • 3,5,a,b ⇒ (a,b) = (7,9).
-  • 3,a,b,30 ⇒ (a,b) = (12,21).
-  • 4,a,b,40 ⇒ (a,b) = (16,28).
-  • 5,a,b,50 ⇒ (a,b) = (20,35) but may be outside bounds or pre-excluded (e.g., 20 banned).
-- Systematically check all endpoint combinations; use the fact that if endpoints differ by Δ, then Δ must be divisible by 3 for a 4-term AP, and solve for integer a,b within bounds.
-- Avoid double subtraction; ensure monotonicity and domain constraints are respected.
+        def forward(self, question):
+            context = self.retrieve(question).passages
+            return self.generate(context=context, question=question)
 
-6) Order statistics with sum and absolute-sum constraints (e.g., x_1 ≤ ... ≤ x_n, sum |x_i| = 1, sum x_i = 0):
-- Total positive mass equals total negative mass: both = 1/2.
-- For maximizing x_k (k near the top): if there are T largest terms from k to n (T = n − k + 1), then sum of these T terms ≥ T·x_k. Since the total positive mass ≤ 1/2, we get x_k ≤ (1/2)/T.
-- For minimizing x_l (l near the bottom): if there are l smallest terms, sum of these l terms ≤ l·x_l. Since the total negative mass is −1/2, we get x_l ≥ (−1/2)/l.
-- To attain these bounds, concentrate masses evenly on exactly those positions: set the smallest l terms equal to −1/(2l), the largest T terms equal to 1/(2T), and the middle to 0 (respecting monotonicity). Verify sums and absolute sums.
-- Example: For n=100, maximize x_76 − x_16: T = 25 ⇒ x_76 ≤ 1/50; l = 16 ⇒ x_16 ≥ −1/32; construction with 16 negatives at −1/32, 59 zeros, 25 positives at 1/50 attains 1/50 − (−1/32) = 41/800.
+    # Optimize with GEPA
+    gepa = GEPA(metric=your_metric, max_metric_calls=150)
+    optimized_rag = gepa.compile(RAG(), trainset=trainset)
+    ```
 
-Quality checks:
-- Verify digit/base constraints and final equalities numerically if applicable.
-- For extremal problems, provide both a tight bound and an explicit construction achieving it.
-- For counting, explicitly handle ordered vs unordered, exclude impossible/duplicate cases, and check complements/forbidden pairs.
-- For AP-avoidance, confirm integrality and bounds; ensure no missed endpoint combinations.
-- For "greatest/least" questions, justify optimality structurally (e.g., convexity/majorization/pigeonhole).
+    !!! tip "DSPy Integration"
+        GEPA is built into DSPy! See [DSPy tutorials](https://dspy.ai/tutorials/gepa_ai_program/) for more.
 
-Finally:
-- Put the clean final numeric result in the "answer" field only.
+=== "Custom System"
 
-<mark>[AIME Prompt End]</mark>
-</details>
-    </td>
-  </tr>
-</table>
+    ```python title="custom_system.py" linenums="1"
+    from gepa import optimize
+    from gepa.core.adapter import EvaluationBatch
 
-## GEPA in Action
+    # Create a custom adapter for your system
+    class MySystemAdapter:
+        def evaluate(self, batch, candidate, capture_traces=False):
+            outputs, scores, trajectories = [], [], []
 
-Discover how organizations and researchers are using GEPA to optimize AI systems across diverse domains.
+            for example in batch:
+                # Run your system with the candidate
+                prompt = candidate['my_prompt']
+                result = my_system.run(prompt, example)
+
+                # Compute score (higher is better)
+                score = compute_score(result, example)
+                outputs.append(result)
+                scores.append(score)
+
+                if capture_traces:
+                    # Capture execution trace for reflection
+                    trajectories.append({
+                        'input': example,
+                        'output': result.output,
+                        'steps': result.intermediate_steps,
+                        'errors': result.errors
+                    })
+
+            return EvaluationBatch(
+                outputs=outputs,
+                scores=scores,
+                trajectories=trajectories if capture_traces else None
+            )
+
+        def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+            # Build feedback dataset for each component
+            reflective_data = {}
+
+            for component in components_to_update:
+                reflective_data[component] = []
+
+                for traj, score in zip(eval_batch.trajectories, eval_batch.scores):
+                    reflective_data[component].append({
+                        'Inputs': traj['input'],
+                        'Generated Outputs': traj['output'],
+                        'Feedback': f"Score: {score}. Errors: {traj['errors']}"
+                    })
+
+            return reflective_data
+
+    # Optimize your custom system
+    result = optimize(
+        seed_candidate={'my_prompt': 'Initial prompt...'},
+        trainset=my_trainset,
+        valset=my_valset,
+        adapter=MySystemAdapter(),
+        task_lm="openai/gpt-4.1-mini",
+    )
+    ```
+
+<div style="text-align: center; margin: 2rem 0;">
+  <a href="guides/quickstart/" style="padding: 0.75rem 2rem; background: #2196F3; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
+    📖 Full Documentation
+  </a>
+</div>
+
+---
+
+## :material-newspaper: Featured In
+
+<div class="grid cards" markdown>
+
+-   :material-database: **[Databricks Blog](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization)**
+
+    ---
+
+    Building State-of-the-Art Enterprise Agents 90x Cheaper with Automated Prompt Optimization
+
+-   :material-brain: **[OpenAI Cookbook](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining)**
+
+    ---
+
+    Self-Evolving Agents: Autonomous Agent Retraining
+
+-   :material-heart: **[HuggingFace Cookbook](https://huggingface.co/learn/cookbook/en/dspy_gepa)**
+
+    ---
+
+    Prompt Optimization with DSPy and GEPA
+
+-   :material-newspaper-variant: **[VentureBeat: GEPA Breakthrough](https://venturebeat.com/infrastructure/the-usd100m-openai-partnership-is-nice-but-databricks-real-breakthrough)**
+
+    ---
+
+    The $100M OpenAI partnership is nice, but Databricks' real breakthrough is GEPA
+
+-   :material-newspaper-variant: **[VentureBeat](https://venturebeat.com/ai/gepa-optimizes-llms-without-costly-reinforcement-learning/)**
+
+    ---
+
+    GEPA Optimizes LLMs Without Costly Reinforcement Learning
+
+-   :material-chart-box: **[Trader's Union](https://tradersunion.com/news/billionaires/show/484192-lutke-dspy-gepa-ai/)**
+
+    ---
+
+    Shopify CEO Tobi Lutke on DSPy and GEPA transforming AI
+
+-   :material-presentation: **[AI Engineer Code Summit 2025](https://x.com/swyx/status/1991598247782281371?s=20)**
+
+    ---
+
+    The Browser Company's Dia Browser uses GEPA (covered by @swyx)
+
+-   :material-school: **[Berkeley AI Summit](https://youtu.be/c39fJ2WAj6A?t=6386)**
+
+    ---
+
+    Matei Zaharia presents on "Reflective Optimization with GEPA and DSPy"
+
+</div>
+
+---
+
+## :material-application: Production Use Cases
 
 <div class="grid cards" markdown>
 
@@ -262,67 +447,235 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     ---
 
-    - [**DataBricks**](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization): 90x cost reduction with open-source models outperforming Claude Opus 4.1, Sonnet 4, and GPT-5
-    - [**OpenAI Cookbook**](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining): Self-evolving agents and autonomous retraining loops
-    - [**HuggingFace Cookbook**](https://huggingface.co/learn/cookbook/en/dspy_gepa): Prompt optimization with DSPy and GEPA
-    - [**Comet-ml Opik**](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer): GEPA as core optimization algorithm
+    - **90x cost reduction** at Databricks
+    - Self-evolving agents in OpenAI Cookbook
+    - Core algorithm in Comet ML Opik
+    - Multi-cloud cost optimization (-31%)
 
-    [:material-arrow-right: View all enterprise use cases](guides/use-cases.md#enterprise-production)
+    [:material-arrow-right: Explore](guides/use-cases.md#enterprise-production)
 
 -   :material-code-braces: **AI Coding Agents**
 
     ---
 
-    - [**Arc.computer ATLAS**](https://www.arc.computer/blog/atlas-sre-diagnosis): Production incident diagnosis and root cause analysis
-    - [**FireBird Auto-Analyst**](https://medium.com/firebird-technologies/context-engineering-improving-ai-coding-agents-using-dspy-gepa-df669c632766): Data analysis coding agents with 4 specialized agents
-    - [**AI Code Safety**](https://www.lesswrong.com/posts/bALBxf3yGGx4bvvem/prompt-optimization-can-enable-ai-control-research): Backdoor detection and safety monitoring
-    - [**DeepResearch Agent**](https://www.rajapatnaik.com/blog/2025/10/23/langgraph-dspy-gepa-researcher): LangGraph + DSPy + GEPA research system
+    - Production incident diagnosis (Arc.computer)
+    - Data analysis agents (FireBird)
+    - Code safety monitoring
+    - Automated research systems
 
-    [:material-arrow-right: View all coding agent use cases](guides/use-cases.md#ai-coding-agents-research-tools)
+    [:material-arrow-right: Explore](guides/use-cases.md#ai-coding-agents-research-tools)
 
--   :material-hospital-building: **Domain-Specific Applications**
-
-    ---
-
-    - [**Healthcare**](https://kargarisaac.medium.com/building-and-optimizing-multi-agent-rag-systems-with-dspy-and-gepa-2b88b5838ce2): Multi-agent RAG for diabetes and COPD
-    - [**OCR**](https://www.intrinsic-labs.ai/research/ocr-gepa-v1.pdf): Up to 38% error reduction across Gemini models
-    - [**Market Research**](https://x.com/hammer_mt/status/1984269888979116061): AI personas for realistic focus groups
-    - [**Creative Writing**](https://meandnotes.substack.com/p/i-taught-a-small-llm-to-write-fiction): Fiction generation with small models
-
-    [:material-arrow-right: View all domain applications](guides/use-cases.md#domain-specific-applications)
-
--   :material-lightbulb: **Advanced Capabilities**
+-   :material-hospital-building: **Domain-Specific**
 
     ---
 
-    - [**Multimodal/VLM**](https://tinyurl.com/gepa-ocr-example): OCR performance optimization
-    - **Agent Architecture Discovery**: Automated design search
-    - **Adversarial Prompt Search**: Edge case discovery
-    - [**Unverifiable Tasks**](https://x.com/AsfiShaheen/status/1967866903331999807): Evaluator-optimizer patterns
+    - Healthcare multi-agent RAG systems
+    - **38% OCR error reduction** (Intrinsic Labs)
+    - Market research AI personas
+    - Creative writing with small models
 
-    [:material-arrow-right: View all advanced capabilities](guides/use-cases.md#advanced-capabilities)
+    [:material-arrow-right: Explore](guides/use-cases.md#domain-specific-applications)
+
+-   :material-brain: **Research & Advanced**
+
+    ---
+
+    - Multi-objective optimization
+    - Agent architecture discovery
+    - Adversarial prompt search
+    - Unverifiable task optimization
+
+    [:material-arrow-right: Explore](guides/use-cases.md#advanced-capabilities)
 
 </div>
 
-[:material-arrow-right: **Explore all use cases and community integrations**](guides/use-cases.md)
+---
 
-## Further Resources
+## :material-compare: Why Choose GEPA?
 
-- **Paper**: [arXiv:2507.19457](https://arxiv.org/abs/2507.19457)
-- **Tutorials**: [dspy.GEPA Tutorials](https://dspy.ai/tutorials/gepa_ai_program/)
-- **Discord**: [Join our community](https://discord.gg/A7dABbtmFw)
-- **Slack**: [GEPA Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
+| Feature | GEPA | Reinforcement Learning | Manual Prompting |
+|---------|------|----------------------|------------------|
+| **Cost** | :material-check-circle:{ style="color: #4CAF50" } Low | :material-close-circle:{ style="color: #f44336" } Very High | :material-check-circle:{ style="color: #4CAF50" } Low |
+| **Sample Efficiency** | :material-check-circle:{ style="color: #4CAF50" } High (150 calls) | :material-close-circle:{ style="color: #f44336" } Low (10K+ calls) | :material-minus-circle:{ style="color: #FF9800" } N/A |
+| **Performance** | :material-check-circle:{ style="color: #4CAF50" } SOTA | :material-check-circle:{ style="color: #4CAF50" } SOTA | :material-close-circle:{ style="color: #f44336" } Suboptimal |
+| **Interpretability** | :material-check-circle:{ style="color: #4CAF50" } Natural Language | :material-close-circle:{ style="color: #f44336" } Black Box | :material-check-circle:{ style="color: #4CAF50" } Clear |
+| **Setup Time** | :material-check-circle:{ style="color: #4CAF50" } Minutes | :material-close-circle:{ style="color: #f44336" } Days/Weeks | :material-check-circle:{ style="color: #4CAF50" } Minutes |
+| **Framework Support** | :material-check-circle:{ style="color: #4CAF50" } Any System | :material-minus-circle:{ style="color: #FF9800" } Framework Specific | :material-check-circle:{ style="color: #4CAF50" } Any System |
+| **Multi-Objective** | :material-check-circle:{ style="color: #4CAF50" } Native | :material-minus-circle:{ style="color: #FF9800" } Complex | :material-close-circle:{ style="color: #f44336" } Manual |
 
-## Citation
+---
+
+## :material-cog: How It Works
+
+!!! abstract "The GEPA Algorithm"
+
+    GEPA uses **reflective prompt evolution** to optimize AI systems:
+
+    1. **:material-numeric-1-circle: Evaluate** your current system on a dataset
+    2. **:material-numeric-2-circle: Reflect** on failures using an LLM to generate natural language feedback
+    3. **:material-numeric-3-circle: Mutate** your prompts/instructions based on the feedback
+    4. **:material-numeric-4-circle: Select** the best candidates using Pareto frontier tracking
+    5. **:material-numeric-5-circle: Repeat** until convergence or budget exhausted
+
+    <div style="text-align: center; margin: 2rem 0;">
+      <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/gepa_logo_with_text.svg" alt="GEPA Algorithm" style="max-width: 500px; width: 100%;">
+    </div>
+
+    **Key Innovation**: Instead of gradient-based updates, GEPA uses natural language reasoning to understand what's wrong and how to fix it.
+
+[:material-file-document: Read the Paper](https://arxiv.org/abs/2507.19457){ .md-button }
+[:material-book-open-variant: Technical Details](guides/quickstart.md){ .md-button }
+
+---
+
+## :material-account-group: Join the Community
+
+<div class="grid cards" markdown>
+
+-   :fontawesome-brands-discord: **Discord**
+
+    ---
+
+    Join 1,000+ developers building with GEPA
+
+    [:material-open-in-new: Join Server](https://discord.gg/A7dABbtmFw)
+
+-   :material-slack: **Slack**
+
+    ---
+
+    Connect with the core team and contributors
+
+    [:material-open-in-new: Join Workspace](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
+
+-   :material-github: **GitHub**
+
+    ---
+
+    Contribute, report issues, or star the repo
+
+    [:material-open-in-new: View Repository](https://github.com/gepa-ai/gepa)
+
+-   :material-twitter: **Twitter/X**
+
+    ---
+
+    Follow for updates and community highlights
+
+    [:material-open-in-new: Follow @LakshyAAAgrawal](https://x.com/LakshyAAAgrawal)
+
+</div>
+
+---
+
+## :material-upload: Share Your Success Story
+
+!!! tip "Get Featured"
+
+    Using GEPA in production? We'd love to showcase your work!
+
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem;">
+      <a href="mailto:lakshyaaagrawal@berkeley.edu?subject=Feature%20GEPA%20usecase" style="padding: 0.5rem 1.5rem; background: #2196F3; color: white; text-decoration: none; border-radius: 4px; font-weight: 600;">
+        Submit via Email
+      </a>
+      <a href="https://github.com/gepa-ai/gepa/issues/new?title=Use%20Case%20Submission&body=Organization:%0A%0AUse%20Case:%0A%0AResults:%0A%0ALogo%20URL:%0A%0ALink%20to%20blog/tweet:" style="padding: 0.5rem 1.5rem; border: 2px solid #2196F3; color: #2196F3; text-decoration: none; border-radius: 4px; font-weight: 600;">
+        Submit via GitHub
+      </a>
+      <a href="https://discord.gg/A7dABbtmFw" style="padding: 0.5rem 1.5rem; border: 2px solid #2196F3; color: #2196F3; text-decoration: none; border-radius: 4px; font-weight: 600;">
+        Share on Discord
+      </a>
+    </div>
+
+---
+
+## :material-book-open-page-variant: Learn More
+
+<div class="grid cards" markdown>
+
+-   :material-lightning-bolt: **Quickstart**
+
+    ---
+
+    Get up and running in 5 minutes
+
+    [:material-arrow-right: Start Here](guides/quickstart.md)
+
+-   :material-school: **Tutorials**
+
+    ---
+
+    Step-by-step guides and examples
+
+    [:material-arrow-right: View Tutorials](tutorials/)
+
+-   :material-api: **API Reference**
+
+    ---
+
+    Complete documentation of all components
+
+    [:material-arrow-right: API Docs](api/)
+
+-   :material-help-circle: **FAQ**
+
+    ---
+
+    Common questions and troubleshooting
+
+    [:material-arrow-right: Read FAQ](guides/faq.md)
+
+-   :material-file-document: **Research Paper**
+
+    ---
+
+    Academic publication on arXiv
+
+    [:material-arrow-right: Read Paper](https://arxiv.org/abs/2507.19457)
+
+-   :material-presentation: **Use Cases**
+
+    ---
+
+    50+ production examples and integrations
+
+    [:material-arrow-right: Explore](guides/use-cases.md)
+
+</div>
+
+---
+
+## :material-format-quote-close: Citation
+
+If you use GEPA in your research, please cite our paper:
 
 ```bibtex
 @misc{agrawal2025gepareflectivepromptevolution,
-      title={GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning}, 
-      author={Lakshya A Agrawal and Shangyin Tan and Dilara Soylu and Noah Ziems and Rishi Khare and Krista Opsahl-Ong and Arnav Singhvi and Herumb Shandilya and Michael J Ryan and Meng Jiang and Christopher Potts and Koushik Sen and Alexandros G. Dimakis and Ion Stoica and Dan Klein and Matei Zaharia and Omar Khattab},
+      title={GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning},
+      author={Lakshya A Agrawal and Shangyin Tan and Dilara Soylu and Noah Ziems and
+              Rishi Khare and Krista Opsahl-Ong and Arnav Singhvi and Herumb Shandilya and
+              Michael J Ryan and Meng Jiang and Christopher Potts and Koushik Sen and
+              Alexandros G. Dimakis and Ion Stoica and Dan Klein and Matei Zaharia and Omar Khattab},
       year={2025},
       eprint={2507.19457},
       archivePrefix={arXiv},
       primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2507.19457}, 
+      url={https://arxiv.org/abs/2507.19457}
 }
 ```
+
+---
+
+<div style="text-align: center; padding: 3rem 0; background: var(--md-code-bg-color); border-radius: 8px; margin: 2rem 0;">
+  <h2 style="margin-bottom: 1rem;">Ready to Get Started?</h2>
+  <p style="font-size: 1.1rem; margin-bottom: 2rem; color: var(--md-default-fg-color--light);">
+    Install GEPA and start optimizing in minutes
+  </p>
+  <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+    <a href="guides/quickstart/" style="padding: 0.75rem 2rem; background: #2196F3; color: white; text-decoration: none; border-radius: 6px; font-weight: 600;">
+      🚀 Get Started
+    </a>
+    <a href="https://github.com/gepa-ai/gepa" style="padding: 0.75rem 2rem; border: 2px solid #2196F3; color: #2196F3; text-decoration: none; border-radius: 6px; font-weight: 600;">
+      ⭐ Star on GitHub
+    </a>
+  </div>
+</div>
