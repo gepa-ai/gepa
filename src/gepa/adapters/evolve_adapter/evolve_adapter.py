@@ -400,7 +400,10 @@ class EvolveAdapter(GEPAAdapter):
 
             completion = self.litellm.completion(**completion_kwargs)
             try:
-                return completion.choices[0].message.content or ""
+                # litellm has dynamic return types, so we need type ignore
+                if hasattr(completion, "choices") and len(completion.choices) > 0:  # type: ignore
+                    return completion.choices[0].message.content or ""  # type: ignore
+                return str(completion)
             except Exception:
                 return str(completion)
 
