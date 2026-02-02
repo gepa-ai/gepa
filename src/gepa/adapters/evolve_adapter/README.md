@@ -27,7 +27,7 @@ The adapter will automatically call your function for each instance in the batch
 
 For detailed migration instructions and an example, see:
 
-- **[Tutorial Notebook](../../examples/evolve_adapter/function_minimization/tutorial.ipynb)**: Step-by-step guide with the function minimization example
+- **[Tutorial Notebook](../../examples/evolve_adapter/function_minimization/tutorial.ipynb)**: Step-by-step guide with the OpenEvolve function minimization example
 - **[Tutorial Script](../../examples/evolve_adapter/function_minimization/tutorial.py)**: Standalone Python script version
 
 The tutorial covers:
@@ -46,7 +46,7 @@ Your OpenEvolve project directory should contain:
 
 ## Batch Evaluation
 
-GEPA evaluates programs on batches of data instances. Each batch item represents a distinct problem instance (e.g., different function minimization problems, different test cases). The adapter:
+GEPA evaluates programs on batches of data instances. Each batch item represents a distinct problem instance (e.g., different test cases, etc.). The adapter:
 
 - Loops over the batch and calls your `evaluate` function for each data instance
 - Aggregates the per-instance `EvaluationResult` objects into GEPA's `EvaluationBatch` format
