@@ -172,7 +172,7 @@ def main():
     logger.info("Evaluating BEST candidate on test set...")
     logger.info("=" * 70)
     
-    best_results = fitness_fn(best_candidate, test_set)
+    best_results = [fitness_fn(best_candidate, example) for example in test_set]
     best_scores = [r[0] for r in best_results]
     best_valid_scores = [s for s in best_scores if s > FAILED_SCORE]
     best_failed = len(best_scores) - len(best_valid_scores)
@@ -191,7 +191,7 @@ def main():
     logger.info("Evaluating SEED (base) candidate on test set...")
     logger.info("=" * 70)
     
-    seed_results = fitness_fn(seed_candidate, test_set)
+    seed_results = [fitness_fn(seed_candidate, example) for example in test_set]
     seed_scores = [r[0] for r in seed_results]
     seed_valid_scores = [s for s in seed_scores if s > FAILED_SCORE]
     seed_failed = len(seed_scores) - len(seed_valid_scores)

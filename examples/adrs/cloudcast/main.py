@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Can't Be Late optimization with GEPA optimize_anything API.
+Cloudcast broadcast optimization with GEPA optimize_anything API.
 
-This example optimizes a cloud scheduling strategy that decides when to use
-SPOT instances (cheap but preemptible) vs ON_DEMAND instances (expensive but reliable)
-to complete tasks before deadlines while minimizing cost.
+This example optimizes a broadcast routing algorithm that finds efficient paths
+for transferring data from a single source to multiple destinations across
+multi-cloud environments (AWS, GCP, Azure).
 """
 
 import json
@@ -26,15 +26,15 @@ from gepa.optimize_anything import (
 
 try:
     # When running as part of the repo package (repo root on PYTHONPATH)
-    from examples.adrs.can_be_late.evaluator import create_fitness_function
-    from examples.adrs.can_be_late.trace_dataset import load_trace_dataset
+    from examples.adrs.cloudcast.evaluator import (
+        create_fitness_function,
+        load_config_dataset,
+    )
 except ModuleNotFoundError:
-    # When running as a script: `python examples/adrs/can_be_late/main.py`
-    # Add repo root to sys.path and fall back to local imports.
+    # When running as a script: `python examples/adrs/cloudcast/main.py`
     repo_root = Path(__file__).resolve().parents[3]
     sys.path.insert(0, str(repo_root))
-    from evaluator import create_fitness_function  # type: ignore
-    from trace_dataset import load_trace_dataset  # type: ignore
+    from evaluator import create_fitness_function, load_config_dataset  # type: ignore
 
 # Configure logging
 logging.basicConfig(
@@ -57,7 +57,6 @@ def _has_wandb_netrc_credentials() -> bool:
     except (NetrcParseError, OSError):
         return False
 
-    # `wandb login` commonly stores credentials for `api.wandb.ai`.
     for host in ("api.wandb.ai", "wandb.ai"):
         auth = nrc.authenticators(host)
         if auth is not None:
@@ -66,80 +65,109 @@ def _has_wandb_netrc_credentials() -> bool:
                 return True
     return False
 
-# Initial baseline strategy
-INITIAL_PROGRAM = """import math
-from sky_spot.strategies.strategy import Strategy
-from sky_spot.utils import ClusterType
 
-class EvolveSingleRegionStrategy(Strategy):
-    NAME = 'evolve_single_region'
-    
-    def __init__(self, args):
-        super().__init__(args)
-    
-    def reset(self, env, task):
-        super().reset(env, task)
-    
-    def _step(self, last_cluster_type: ClusterType, has_spot: bool) -> ClusterType:
-        env = self.env
-        
-        # Task completion check
-        remaining_task_time = self.task_duration - sum(self.task_done_time)
-        if remaining_task_time <= 1e-3:
-            return ClusterType.NONE
-        
-        # Calculate remaining time until deadline
-        remaining_time = self.deadline - env.elapsed_seconds
-        
-        # Simple deadline check: if we're running out of time, use ON_DEMAND
-        # Add restart overhead to account for potential restart
-        if remaining_task_time + self.restart_overhead >= remaining_time:
-            # We need ON_DEMAND to guarantee completion
-            return ClusterType.ON_DEMAND
-        
-        # Simple greedy logic: use SPOT if available, wait otherwise
-        if has_spot:
-            return ClusterType.SPOT
+# Initial baseline search algorithm
+INITIAL_PROGRAM = """import networkx as nx
+import pandas as pd
+import os
+from typing import Dict, List
+
+
+class SingleDstPath(Dict):
+    partition: int
+    edges: List[List]  # [[src, dst, edge data]]
+
+
+class BroadCastTopology:
+    def __init__(self, src: str, dsts: List[str], num_partitions: int = 4, paths: Dict[str, 'SingleDstPath'] = None):
+        self.src = src
+        self.dsts = dsts
+        self.num_partitions = num_partitions
+        if paths is not None:
+            self.paths = paths
         else:
-            # Just wait for SPOT to become available
-            return ClusterType.NONE
+            self.paths = {dst: {str(i): None for i in range(num_partitions)} for dst in dsts}
+
+    def get_paths(self):
+        return self.paths
+
+    def set_num_partitions(self, num_partitions: int):
+        self.num_partitions = num_partitions
+
+    def set_dst_partition_paths(self, dst: str, partition: int, paths: List[List]):
+        partition = str(partition)
+        self.paths[dst][partition] = paths
+
+    def append_dst_partition_path(self, dst: str, partition: int, path: List):
+        partition = str(partition)
+        if self.paths[dst][partition] is None:
+            self.paths[dst][partition] = []
+        self.paths[dst][partition].append(path)
+
+
+def search_algorithm(src, dsts, G, num_partitions):
+    \"\"\"
+    Find broadcast paths from source to all destinations.
     
-    @classmethod
-    def _from_args(cls, parser):
-        args, _ = parser.parse_known_args()
-        return cls(args)
+    Uses Dijkstra's shortest path algorithm based on cost as the edge weight.
+    
+    Args:
+        src: Source node identifier (e.g., "aws:ap-northeast-1")
+        dsts: List of destination node identifiers
+        G: NetworkX DiGraph with cost and throughput edge attributes
+        num_partitions: Number of data partitions
+        
+    Returns:
+        BroadCastTopology object with paths for all destinations and partitions
+    \"\"\"
+    h = G.copy()
+    h.remove_edges_from(list(h.in_edges(src)) + list(nx.selfloop_edges(h)))
+    bc_topology = BroadCastTopology(src, dsts, num_partitions)
+
+    for dst in dsts:
+        path = nx.dijkstra_path(h, src, dst, weight="cost")
+        for i in range(0, len(path) - 1):
+            s, t = path[i], path[i + 1]
+            for j in range(bc_topology.num_partitions):
+                bc_topology.append_dst_partition_path(dst, j, [s, t, G[s][t]])
+
+    return bc_topology
 """
 
-# Optimization objective for the Can't Be Late problem
-OPTIMIZATION_OBJECTIVE = """Optimize a cloud scheduling strategy for the "Can't Be Late" problem.
+# Optimization objective for the Cloudcast problem
+OPTIMIZATION_OBJECTIVE = """Optimize a broadcast routing algorithm for multi-cloud data transfer.
 
-The strategy decides when to use SPOT instances (cheap but can be preempted) vs ON_DEMAND 
-instances (expensive but reliable) to complete a task before its deadline. The goal is to 
-minimize cost while ensuring the task completes on time."""
+The algorithm decides how to route data from a single source to multiple destinations
+across cloud providers (AWS, GCP, Azure). The goal is to minimize total cost 
+(egress fees + instance costs) while maintaining good transfer times."""
 
 # Domain background and constraints for the optimization
 OPTIMIZATION_BACKGROUND = """Key information about the problem domain:
 
-- ClusterType.SPOT: Use spot instances (cheap, ~$0.3/hour, but can be preempted at any time)
-- ClusterType.ON_DEMAND: Use on-demand instances (expensive, ~$1/hour, but guaranteed availability)
-- ClusterType.NONE: Wait without using any instances (no cost, but no progress)
-- restart_overhead: Time penalty incurred when switching from one instance type to another
-- The strategy MUST ensure task completion before the deadline (hard constraint)
-- Lower cost is better (scores are negative, representing cost in dollars)
+- The network is represented as a directed graph where:
+  - Nodes are cloud regions (e.g., "aws:us-east-1", "gcp:europe-west1-a", "azure:eastus")
+  - Edges have 'cost' ($/GB for egress) and 'throughput' (Gbps bandwidth) attributes
+  
+- Data is partitioned into num_partitions chunks that can be routed independently
+- Each partition can take a different path to reach each destination
+- Total cost = egress costs (data_vol × edge_cost) + instance costs (runtime × cost_per_hour)
+
+- The algorithm must return a BroadCastTopology object containing:
+  - paths[dst][partition] = list of edges [[src, dst, edge_data], ...]
+  - Each destination must have at least one valid path for each partition
 
 Evaluation feedback format:
-- Timeline format: start-end:TYPE@REGION[progress%] (e.g., "0.0-5.0:S@R0[50%]" means SPOT from hour 0-5 reaching 50% progress)
-- Spot availability: S=available, X=unavailable (e.g., "0.0-10.0:S | 10.0-15.0:X" means spot available first 10h, then unavailable)
+- Cost: Total transfer cost in dollars
+- Transfer time: Maximum time for all destinations to receive data (seconds)
 
 Optimization targets:
-1. Reduce overall cost while maintaining deadline guarantees
-2. Make better decisions about when to use SPOT vs ON_DEMAND
-3. Handle spot unavailability more intelligently
-4. Consider the trade-offs between waiting for spot and using on-demand"""
+1. Reduce total cost (egress + instance costs)
+2. Find paths that balance cost and throughput
+3. Consider multipath routing for better bandwidth utilization
+4. Exploit cloud provider pricing differences (e.g., intra-provider is cheaper)"""
 
-# Dataset root for trace files
-# NOTE: Update this path to point to your trace dataset
-DATASET_ROOT = Path(__file__).resolve().parent / "simulator" / "real"
+# Dataset root for config files
+DATASET_ROOT = Path(__file__).resolve().parent / "cloudcast" / "config"
 
 
 def _resolve_run_dir(run_dir_cli: Path | None = None) -> Path:
@@ -152,7 +180,7 @@ def _resolve_run_dir(run_dir_cli: Path | None = None) -> Path:
             run_dir = Path(run_dir_env)
         else:
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            run_dir = Path("runs") / "cant_be_late" / timestamp
+            run_dir = Path("runs") / "cloudcast" / timestamp
 
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
@@ -188,6 +216,7 @@ def _save_results(
     for idx, candidate in enumerate(gepa_result.candidates):
         candidate_path = candidates_dir / f"candidate_{idx:03d}.py"
         candidate_path.write_text(candidate["program"], encoding="utf-8")
+
 
 def get_reflection_lm(model: str) -> LanguageModel:
     """Create a reflection LM callable for the given model.
@@ -233,16 +262,11 @@ def get_reflection_lm(model: str) -> LanguageModel:
 
     return _call_lm
 
+
 def main():
-    """Run the Can't Be Late optimization."""
+    """Run the Cloudcast broadcast optimization."""
     parser = argparse.ArgumentParser(
-        description="Run the Can't Be Late optimization example (GEPA optimize_anything)."
-    )
-    parser.add_argument(
-        "--max-traces",
-        type=int,
-        default=None,
-        help="Max traces per split to load. Defaults to no limit.",
+        description="Run the Cloudcast broadcast optimization example (GEPA optimize_anything)."
     )
     parser.add_argument(
         "--max-metric-calls",
@@ -263,43 +287,46 @@ def main():
         help="Reflection LLM model name.",
     )
     parser.add_argument(
-        "--dataset-root",
+        "--config-dir",
         type=Path,
         default=DATASET_ROOT,
-        help="Path to trace dataset root. Defaults to the example's data dir.",
+        help="Path to config directory. Defaults to the example's config dir.",
     )
     parser.add_argument(
         "--run-dir",
         type=Path,
         default=None,
-        help="Directory to save artifacts/results. If unset, uses env GEPA_RUN_DIR; otherwise runs/cant_be_late/<timestamp>.",
+        help="Directory to save artifacts/results. If unset, uses env GEPA_RUN_DIR; otherwise runs/cloudcast/<timestamp>.",
     )
 
     args = parser.parse_args()
 
-    max_traces = args.max_traces
     max_metric_calls = args.max_metric_calls
     reflection_minibatch_size = args.minibatch_size
     llm_model = get_reflection_lm(args.model)
-    dataset_root = args.dataset_root
+    config_dir = args.config_dir
 
     # Resolve run directory
     run_dir = _resolve_run_dir(args.run_dir)
     logger.info(f"Run directory: {run_dir}")
 
-    # Load dataset using the trace_dataset module
+    # Load dataset
     try:
-        splits = load_trace_dataset(
-            dataset_root=str(dataset_root),
-            max_traces_per_split=max_traces,
-        )
-        train_set = splits["train"]
-        val_set = splits["val"]
-        test_set = splits["test"]
+        samples = load_config_dataset(config_dir=str(config_dir))
+        if not samples:
+            logger.error(f"No configuration files found in: {config_dir}")
+            return
+            
+        # Split samples into train/val/test
+        # For cloudcast, we use all configs for training and validation
+        n = len(samples)
+        train_set = samples  # Use all for training
+        val_set = samples    # Use all for validation too (small dataset)
+        test_set = samples   # Use all for test
+        
     except FileNotFoundError as e:
-        logger.error(f"Dataset not found: {e}")
-        logger.error(f"Please ensure traces are available at: {dataset_root}")
-        logger.error("You can set CANT_BE_LATE_DATASET_ROOT to specify a different location.")
+        logger.error(f"Config files not found: {e}")
+        logger.error(f"Please ensure config files are available at: {config_dir}")
         return
 
     logger.info(
@@ -334,15 +361,15 @@ def main():
             use_wandb=use_wandb,
             wandb_api_key=wandb_api_key,
             wandb_init_kwargs={
-                "name": f"cant_be_late_{len(train_set)}samples",
-                "project": "gepa_cant_be_late",
+                "name": f"cloudcast_{len(train_set)}configs",
+                "project": "gepa_cloudcast",
             },
         ),
     )
 
     # Run GEPA optimization
     logger.info("=" * 70)
-    logger.info("Starting GEPA Optimization for Can't Be Late")
+    logger.info("Starting GEPA Optimization for Cloudcast Broadcast")
     logger.info("=" * 70)
 
     gepa_result = optimize_anything(
