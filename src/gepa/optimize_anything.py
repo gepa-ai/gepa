@@ -5,8 +5,11 @@ This module provides a clean, configuration-based API for optimizing any
 parameterized system using evolutionary algorithms with LLM-based reflection.
 """
 
+import io
 import os
 import random
+import sys
+from contextlib import redirect_stdout
 from dataclasses import asdict, dataclass, field
 from typing import (
     Any,
@@ -42,6 +45,17 @@ from gepa.utils import FileStopper, StopperProtocol
 
 OptimizableParam = str
 Candidate = dict[str, OptimizableParam]
+
+
+# Sentinel object for single-instance mode
+class _SingleInstanceSentinel:
+    """Sentinel object used to represent single-instance optimization mode."""
+
+    def __repr__(self) -> str:
+        return "<SingleInstanceSentinel>"
+
+
+_SINGLE_INSTANCE_SENTINEL = _SingleInstanceSentinel()
 
 SideInfo: TypeAlias = dict[str, Any]
 """
@@ -156,7 +170,7 @@ FitnessFn protocol documentation for the complete evaluation interface.
 class FitnessFn(Protocol):
     def __call__(
         self, candidate: Candidate, example: DataInst | None = None, **kwargs: Any
-    ) -> tuple[float, RolloutOutput, SideInfo]: # candidate.evaluate(example), Use run_state.
+    ) -> tuple[float, SideInfo] | float:
         """
         Core evaluation interface for GEPA optimization.
 
@@ -174,43 +188,65 @@ class FitnessFn(Protocol):
           - Multi-component system: `{"component_1_config": "...", "component_2_config": "..."}`
 
         - **example**: A single example from the dataset to evaluate on (test case,
-          input-output pair, task instance). In single-instance mode (when `dataset=None`
-          is passed to `optimize_anything`), this parameter will be `None`.
+          input-output pair, task instance). In single-instance mode (when both `dataset=None`
+          and `valset=None` are passed to `optimize_anything`), this parameter will NOT be
+          passed to the fitness function at all.
 
         - **kwargs**: Additional keyword arguments passed during evaluation.
 
         **Returns:**
 
-        A 3-tuple containing the evaluation result:
+        The fitness function can return values in two formats:
 
-        1. **score** (float): Fitness score for this instance. Higher is better. Must be finite.
-           Primary optimization signal.
+        1. **Tuple format**: `(score, side_info)`
+           - **score** (float): Fitness score for this instance. Higher is better. Must be finite.
+             Primary optimization signal.
+           - **side_info** (SideInfo): Auxiliary evaluation information powering LLM-based
+             reflection. See SideInfo documentation for detailed guidance on structure and
+             best practices.
 
-        2. **rollout_output** (RolloutOutput): Actual output produced by the candidate.
-           Opaque to GEPA—only tracked for returning best outputs per data instance in
-           GEPAResult. Can be any type (str, dict, custom object).
-
-        3. **side_info** (SideInfo): Auxiliary evaluation information powering LLM-based
-           reflection. See SideInfo documentation for detailed guidance on structure and
-           best practices.
+        2. **Score-only format**: `score` (float)
+           - Returns only the score as a float.
+           - When this format is used, GEPA will automatically capture all stdout output
+             during fitness function execution and use it as the side_info.
 
         **Requirements:**
 
         - Include rich diagnostic information in side_info for effective reflection
         - All scores follow "higher is better" convention
+        - When using score-only format, print diagnostic information to help the LLM
 
         **Single-Instance Mode (Holistic Optimization):**
 
-        When `dataset=None` is passed to `optimize_anything`, the fitness function is called
-        with `example=None`. For single-instance problems like code evolution or mathematical
-        optimization, simply ignore the `example` parameter:
+        When both `dataset=None` and `valset=None` are passed to `optimize_anything`, the
+        fitness function is called WITHOUT the `example` parameter. For single-instance
+        problems like code evolution or mathematical optimization:
 
         ```python
-        def fitness_fn(candidate, example=None):
-            # example is None in single-instance mode - ignore it
+        # With explicit side_info (recommended)
+        def fitness_fn(candidate):
             result = execute_my_code(candidate["code"])
             score = compute_score(result)
-            return score, result, {"Output": str(result)}
+            return score, {"Output": str(result), "ExecutionTime": result.time}
+
+        # With stdout capture
+        def fitness_fn(candidate):
+            result = execute_my_code(candidate["code"])
+            score = compute_score(result)
+            print(f"Output: {result}")
+            print(f"Execution time: {result.time}")
+            return score
+        ```
+
+        **Per-Instance Mode:**
+
+        When a dataset is provided, the fitness function is called with each example:
+
+        ```python
+        def fitness_fn(candidate, example):
+            prediction = candidate_predict(candidate, example["input"])
+            score = compute_score(prediction, example["expected"])
+            return score, {"Input": example["input"], "Prediction": prediction}
         ```
         """
         ...
@@ -390,6 +426,32 @@ class MergeConfig:
     merge_val_overlap_floor: int = 5
 
 
+# --- Refiner Configuration ---
+@dataclass
+class RefinerConfig:
+    """Configuration for automatic candidate refinement.
+
+    The refiner automatically improves candidates by calling an LLM with refinement
+    instructions, evaluating the refined candidate, and returning the best result.
+
+    Two modes of operation:
+    1. Static mode: refiner_prompt is provided in config (fixed prompt)
+    2. Optimize mode: refiner_prompt is in seed_candidate (parameter to optimize)
+    """
+
+    # Language model for refinement (required)
+    refiner_lm: LanguageModel | str
+
+    # Static prompt (if provided) or None (will use from candidate)
+    refiner_prompt: str | None = None
+
+    # Maximum refinement iterations per evaluation
+    max_refinements: int = 1
+
+    # Parameter name to refine (default: first param if not "refiner_prompt")
+    refinement_target_param: str | None = None
+
+
 # --- Component 3: Experiment Tracking Configuration ---
 # Groups all logging and tracking settings
 @dataclass
@@ -423,6 +485,7 @@ class GEPAConfig:
 
     # Use 'None' as the default to disable this component
     merge: MergeConfig | None = None
+    refiner: RefinerConfig | None = None
 
     # Complex callbacks that aren't serializable
     stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None
@@ -437,6 +500,8 @@ class GEPAConfig:
             self.tracking = TrackingConfig(**self.tracking)
         if isinstance(self.merge, dict):
             self.merge = MergeConfig(**self.merge)
+        if isinstance(self.refiner, dict):
+            self.refiner = RefinerConfig(**self.refiner)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary representation."""
@@ -446,6 +511,57 @@ class GEPAConfig:
     def from_dict(d: dict[str, Any]) -> "GEPAConfig":
         """Create config from dictionary representation."""
         return GEPAConfig(**d)
+
+
+def _create_fitness_fn_wrapper(
+    fitness_fn: FitnessFn, single_instance_mode: bool
+) -> Any:
+    """
+    Create a wrapper around the user's fitness_fn that:
+    1. Handles single-instance mode (calls fitness_fn without example parameter)
+    2. Detects whether fitness_fn returns (score, side_info) tuple or just score
+    3. Captures stdout when fitness_fn returns only score
+    4. Normalizes return value to always be (score, output, side_info) tuple
+
+    Args:
+        fitness_fn: The user's fitness function
+        single_instance_mode: Whether we're in single-instance mode
+
+    Returns:
+        A wrapped fitness function that always returns (score, output, side_info)
+    """
+
+    def wrapped_fitness_fn(candidate: Candidate, example: DataInst | None = None, **kwargs: Any) -> tuple[float, Any, SideInfo]:
+        # In single-instance mode, call fitness_fn without the example parameter
+        if single_instance_mode and example is _SINGLE_INSTANCE_SENTINEL:
+            # Capture stdout
+            stdout_capture = io.StringIO()
+            with redirect_stdout(stdout_capture):
+                result = fitness_fn(candidate, **kwargs)
+            captured_output = stdout_capture.getvalue()
+        else:
+            # Per-instance mode: call with example parameter
+            stdout_capture = io.StringIO()
+            with redirect_stdout(stdout_capture):
+                result = fitness_fn(candidate, example, **kwargs)
+            captured_output = stdout_capture.getvalue()
+
+        # Detect return type and normalize
+        if isinstance(result, tuple):
+            # fitness_fn returned (score, side_info)
+            score, side_info = result
+            # If there's captured output and side_info doesn't have a "stdout" field, add it
+            if captured_output and "stdout" not in side_info:
+                side_info = {**side_info, "stdout": captured_output}
+            return score, None, side_info
+        else:
+            # fitness_fn returned just score
+            score = result
+            # Use captured stdout as side_info
+            side_info: SideInfo = {"stdout": captured_output} if captured_output else {}
+            return score, None, side_info
+
+    return wrapped_fitness_fn
 
 
 def optimize_anything(
@@ -534,14 +650,25 @@ def optimize_anything(
     if config is None:
         config = GEPAConfig()
 
-    # Handle single-instance mode: when dataset=None, create a placeholder dataset
-    # with a single None element. The fitness function will receive example=None.
-    effective_dataset: list[DataInst] = dataset if dataset is not None else [None]  # type: ignore[list-item]
+    # Detect single-instance mode: when both dataset=None and valset=None
+    single_instance_mode = dataset is None and valset is None
+
+    # Handle single-instance mode: when both dataset=None and valset=None, create a
+    # dataset with a single sentinel element. The fitness function will be called
+    # without the example parameter.
+    if single_instance_mode:
+        effective_dataset: list[DataInst] = [_SINGLE_INSTANCE_SENTINEL]  # type: ignore[list-item]
+    else:
+        effective_dataset = dataset if dataset is not None else [None]  # type: ignore[list-item]
+
+    # Wrap the fitness function to handle the new API
+    wrapped_fitness_fn = _create_fitness_fn_wrapper(fitness_fn, single_instance_mode)
 
     active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
-        fitness_fn=fitness_fn,
+        fitness_fn=wrapped_fitness_fn,
         parallel=config.engine.parallel,
         max_workers=config.engine.max_workers,
+        refiner_config=config.refiner,
     )
 
     # Normalize datasets to DataLoader instances
@@ -609,6 +736,24 @@ def optimize_anything(
             return completion.choices[0].message.content  # type: ignore
 
         config.reflection.reflection_lm = _reflection_lm
+
+    # Convert refiner_lm string to callable (if refiner is enabled)
+    if config.refiner is not None:
+        if isinstance(config.refiner.refiner_lm, str):
+            import litellm
+
+            refiner_lm_name = config.refiner.refiner_lm
+
+            def _refiner_lm(prompt: str | list[dict[str, str]]) -> str:
+                if isinstance(prompt, str):
+                    completion = litellm.completion(
+                        model=refiner_lm_name, messages=[{"role": "user", "content": prompt}]
+                    )
+                else:
+                    completion = litellm.completion(model=refiner_lm_name, messages=prompt)
+                return completion.choices[0].message.content  # type: ignore
+
+            config.refiner.refiner_lm = _refiner_lm
 
     # Setup default logger if not provided
     if config.tracking.logger is None:
