@@ -12,10 +12,10 @@ hide:
   </div>
   <!-- <h1 class="hero-title">GEPA</h1> -->
   <p class="hero-subtitle" style="margin-bottom: 1rem;">
-    Optimize AI Systems Through Reflective Evolution
+    Improve your agents, prompts and code by LLM reflection
   </p>
   <p style="font-size: 1rem; max-width: 800px; margin: 0 auto 2rem; line-height: 1.5;">
-    Transform your AI agents and prompts using LLM-powered reflection. Achieve production-grade performance improvements without expensive reinforcement learning or fine-tuning.
+    Faster and cheaper than RL or fine-tuning. <strong><a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank" style="color: inherit; text-decoration: underline; text-decoration-color: rgba(147, 197, 253, 0.4); text-decoration-thickness: 2px; text-underline-offset: 3px; transition: text-decoration-color 0.2s;">90× cost reduction</a></strong> at same performance. <strong><a href="https://arxiv.org/abs/2507.19457" target="_blank" style="color: inherit; text-decoration: underline; text-decoration-color: rgba(147, 197, 253, 0.4); text-decoration-thickness: 2px; text-underline-offset: 3px; transition: text-decoration-color 0.2s;">35× faster than RL</a></strong>. Used by <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank" style="color: inherit; text-decoration: underline; text-decoration-color: rgba(147, 197, 253, 0.4); text-decoration-thickness: 1.5px; text-underline-offset: 2px; transition: text-decoration-color 0.2s;">Databricks</a>, <a href="https://x.com/tobi/status/1963434604741701909" target="_blank" style="color: inherit; text-decoration: underline; text-decoration-color: rgba(147, 197, 253, 0.4); text-decoration-thickness: 1.5px; text-underline-offset: 2px; transition: text-decoration-color 0.2s;">Shopify</a> and <a href="https://x.com/drewhouston/status/1974750621690728623" target="_blank" style="color: inherit; text-decoration: underline; text-decoration-color: rgba(147, 197, 253, 0.4); text-decoration-thickness: 1.5px; text-underline-offset: 2px; transition: text-decoration-color 0.2s;">Dropbox</a>.
   </p>
 
   <p style="margin-top: 0;">
