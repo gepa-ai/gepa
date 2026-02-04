@@ -280,6 +280,10 @@ class EngineConfig:
     # Evaluation caching
     cache_evaluation: bool = False
 
+    # Track top-K best evaluations per example, passed to fitness_fn as "example_best_evals"
+    # Useful for warm-starting optimization from previous best solutions
+    example_best_evals_k: int = 10
+
 
 def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
     """
@@ -427,6 +431,26 @@ class MergeConfig:
 
 
 # --- Refiner Configuration ---
+
+DEFAULT_REFINER_PROMPT = """You are a refinement agent improving candidates in an optimization loop.
+
+## What We're Optimizing For
+The overall optimization objective is:
+{objective}
+
+This tells you what "better" means - use it to guide your improvements.
+
+## Domain Knowledge
+{background}
+
+## Your Task
+Given a candidate and its evaluation feedback:
+1. Understand why it scored the way it did
+2. Fix any errors (errors = zero score)
+3. Make improvements that move toward the objective
+4. Return the complete improved candidate"""
+
+
 @dataclass
 class RefinerConfig:
     """Configuration for automatic candidate refinement.
@@ -434,9 +458,10 @@ class RefinerConfig:
     The refiner automatically improves candidates by calling an LLM with refinement
     instructions, evaluating the refined candidate, and returning the best result.
 
-    Two modes of operation:
+    Three modes of operation:
     1. Static mode: refiner_prompt is provided in config (fixed prompt)
-    2. Optimize mode: refiner_prompt is in seed_candidate (parameter to optimize)
+    2. Optimize mode: refiner_prompt is in seed_candidate (evolved by GEPA)
+    3. Default mode: if neither provided, uses DEFAULT_REFINER_PROMPT with objective/background
     """
 
     # Language model for refinement (required)
@@ -448,8 +473,15 @@ class RefinerConfig:
     # Maximum refinement iterations per evaluation
     max_refinements: int = 1
 
+    # Minimum refinement iterations (guarantees at least N refinements even if no improvement)
+    min_refinements: int = 0
+
     # Parameter name to refine (default: first param if not "refiner_prompt")
     refinement_target_param: str | None = None
+
+    # Stop refinement when this key in side_info is truthy (e.g., "success", "is_valid")
+    # Checked after each refinement; only stops if past min_refinements
+    stop_when: str | None = None
 
 
 # --- Component 3: Experiment Tracking Configuration ---
@@ -669,6 +701,9 @@ def optimize_anything(
         parallel=config.engine.parallel,
         max_workers=config.engine.max_workers,
         refiner_config=config.refiner,
+        example_best_evals_k=config.engine.example_best_evals_k,
+        objective=objective,
+        background=background,
     )
 
     # Normalize datasets to DataLoader instances

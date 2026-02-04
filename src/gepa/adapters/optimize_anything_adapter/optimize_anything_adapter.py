@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 import json
 
@@ -18,11 +19,21 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         parallel: bool = True,
         max_workers: int | None = None,
         refiner_config: "RefinerConfig | None" = None,
+        example_best_evals_k: int = 1,
+        objective: str | None = None,
+        background: str | None = None,
     ):
         self.fitness_fn = fitness_fn
         self.parallel = parallel
         self.max_workers = max_workers
         self.refiner_config = refiner_config
+        self.example_best_evals_k = example_best_evals_k
+        self.objective = objective
+        self.background = background
+
+        # Track top-K best evaluations per example for warm-start support
+        self._best_evals_by_example: dict[DataInst, list[dict]] = {}
+        self._best_evals_lock = threading.Lock()  # Thread safety for parallel execution
 
         # Initialize refiner predictor if refiner is configured
         self.refiner_predictor = None
@@ -54,6 +65,29 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     "Install dspy-ai: pip install dspy-ai"
                 )
 
+    def _get_example_best_evals(self, example: DataInst) -> list[dict]:
+        """Get sorted top-K best evaluations for this example (thread-safe)."""
+        with self._best_evals_lock:
+            # Return a copy to avoid mutation issues
+            return list(self._best_evals_by_example.get(example, []))
+
+    def _update_example_best_evals(
+        self, example: DataInst, score: float, side_info: "SideInfo"
+    ) -> None:
+        """Add evaluation to example's best evals, maintain sorted top-K (thread-safe)."""
+        with self._best_evals_lock:
+            if example not in self._best_evals_by_example:
+                self._best_evals_by_example[example] = []
+
+            self._best_evals_by_example[example].append({"score": score, "side_info": side_info})
+
+            # Sort descending by score, keep top K
+            self._best_evals_by_example[example] = sorted(
+                self._best_evals_by_example[example],
+                key=lambda x: x["score"],
+                reverse=True,
+            )[:self.example_best_evals_k]
+
     def evaluate(
         self,
         batch: list[DataInst],
@@ -66,10 +100,21 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             if self.parallel and len(batch) > 1:
                 eval_output = self._evaluate_parallel(batch, candidate)
             else:
-                eval_output = [self.fitness_fn(candidate, example=example) for example in batch]
+                eval_output = [
+                    self.fitness_fn(
+                        candidate,
+                        example=example,
+                        example_best_evals=self._get_example_best_evals(example),
+                    )
+                    for example in batch
+                ]
         else:
             # New path: evaluate with refinement
             eval_output = self._evaluate_with_refinement(batch, candidate)
+
+        # Update best evals history for each example
+        for example, (score, _, side_info) in zip(batch, eval_output):
+            self._update_example_best_evals(example, score, side_info)
 
         scores = [score for score, _, _ in eval_output]
         side_infos: list[SideInfo] = [info for _, _, info in eval_output]
@@ -116,7 +161,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         """Evaluate a single example with refinement."""
         assert self.refiner_config is not None
 
-        # Determine refiner_prompt source (static mode or optimize mode)
+        # Determine refiner_prompt source (static, optimize, or default mode)
         if self.refiner_config.refiner_prompt is not None:
             # Static mode: use prompt from config
             refiner_prompt = self.refiner_config.refiner_prompt
@@ -124,21 +169,35 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             # Optimize mode: use prompt from candidate
             refiner_prompt = candidate["refiner_prompt"]
         else:
-            raise ValueError(
-                "refiner_prompt must be provided either in RefinerConfig or in seed_candidate"
+            # Default mode: use DEFAULT_REFINER_PROMPT with objective/background
+            from gepa.optimize_anything import DEFAULT_REFINER_PROMPT
+            refiner_prompt = DEFAULT_REFINER_PROMPT.format(
+                objective=self.objective or "Maximize the score",
+                background=self.background or "No additional background provided.",
             )
 
         # Determine target parameter
         target_param = self.refiner_config.refinement_target_param
         if target_param is None:
-            # Default: first param that's not "refiner_prompt"
-            target_param = next(
-                (k for k in candidate.keys() if k != "refiner_prompt"),
-                list(candidate.keys())[0]
-            )
+            if len(candidate) == 1:
+                # Single-key candidate: use that key
+                target_param = list(candidate.keys())[0]
+            else:
+                # Multi-key: first param that's not "refiner_prompt"
+                target_param = next(
+                    (k for k in candidate.keys() if k != "refiner_prompt"),
+                    list(candidate.keys())[0]
+                )
 
         # 1. Evaluate original candidate
-        original_score, original_output, original_side_info = self.fitness_fn(candidate, example=example)
+        original_score, original_output, original_side_info = self.fitness_fn(
+            candidate,
+            example=example,
+            example_best_evals=self._get_example_best_evals(example),
+        )
+
+        # Update best evals with original evaluation
+        self._update_example_best_evals(example, original_score, original_side_info)
 
         # 2. Refine and evaluate
         refined_score, refined_output, refinement_side_info = self._refine_and_evaluate(
@@ -199,7 +258,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         with ThreadPoolExecutor(max_workers=self.max_workers or len(batch)) as executor:
             # Submit all tasks with their index to maintain order
             future_to_idx = {
-                executor.submit(self.fitness_fn, candidate, example=example): idx
+                executor.submit(
+                    self.fitness_fn,
+                    candidate,
+                    example=example,
+                    example_best_evals=self._get_example_best_evals(example),
+                ): idx
                 for idx, example in enumerate(batch)
             }
 
@@ -230,22 +294,34 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Determine target parameter to refine
         target_param = self.refiner_config.refinement_target_param
         if target_param is None:
-            # Default: first param that's not "refiner_prompt"
-            target_param = next(
-                (k for k in candidate.keys() if k != "refiner_prompt"),
-                list(candidate.keys())[0]
-            )
+            if len(candidate) == 1:
+                # Single-key candidate: use that key
+                target_param = list(candidate.keys())[0]
+            else:
+                # Multi-key: first param that's not "refiner_prompt"
+                target_param = next(
+                    (k for k in candidate.keys() if k != "refiner_prompt"),
+                    list(candidate.keys())[0]
+                )
 
         candidate_text = candidate[target_param]
         best_score = original_score
         best_output = None
-        all_refinement_attempts = []
+
+        # Initialize attempts with original evaluation (iteration 0)
+        all_attempts = [{
+            "iteration": 0,
+            "candidate": candidate_text,
+            "score": original_score,
+            "side_info": original_side_info,
+        }]
 
         # Iterative refinement
         current_text = candidate_text
-        current_feedback = self._format_evaluation_feedback(original_side_info)
 
         for refinement_iter in range(self.refiner_config.max_refinements):
+            # Format ALL attempts so far for the refiner (provides full history)
+            current_feedback = self._format_all_attempts_feedback(all_attempts)
             try:
                 # Call refiner LLM
                 with dspy.context(lm=self.refiner_config.refiner_lm):
@@ -262,31 +338,40 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 # Evaluate refined candidate
                 refined_candidate_dict = {**candidate, target_param: refined_text}
                 refined_score, refined_output, refined_eval_side_info = self.fitness_fn(
-                    refined_candidate_dict, example=example
+                    refined_candidate_dict,
+                    example=example,
+                    example_best_evals=self._get_example_best_evals(example),
                 )
 
-                # Track attempt
-                all_refinement_attempts.append({
-                    "iteration": refinement_iter,
-                    "refined_candidate": refined_text,
+                # Update best evals with this refinement evaluation
+                self._update_example_best_evals(example, refined_score, refined_eval_side_info)
+
+                # Track attempt (iteration is +1 since 0 is original)
+                all_attempts.append({
+                    "iteration": refinement_iter + 1,
+                    "candidate": refined_text,
                     "score": refined_score,
                     "side_info": refined_eval_side_info,
                 })
 
                 # Update best if improved
-                if refined_score > best_score:
+                improved = refined_score > best_score
+                if improved:
                     best_score = refined_score
                     best_output = refined_output
                     current_text = refined_text
-                    current_feedback = self._format_evaluation_feedback(refined_eval_side_info)
-                else:
-                    # No improvement, stop iterating
-                    break
+
+                # Check stopping conditions (only after min_refinements)
+                if refinement_iter + 1 >= self.refiner_config.min_refinements:
+                    # Stop if stop_when key is truthy in side_info
+                    if (self.refiner_config.stop_when is not None
+                        and refined_eval_side_info.get(self.refiner_config.stop_when)):
+                        break
 
             except Exception as e:
                 # Refinement failed, record error and stop
-                all_refinement_attempts.append({
-                    "iteration": refinement_iter,
+                all_attempts.append({
+                    "iteration": refinement_iter + 1,
                     "error": str(e),
                     "score": original_score,
                 })
@@ -298,10 +383,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 "best_refined_score": best_score,
                 "refinement_improvement": best_score - original_score,
             },
-            "Original candidate": candidate_text,
-            "Refinement attempts": all_refinement_attempts,
+            "Attempts": all_attempts,  # Includes original (iteration 0) + all refinements
             "Refiner prompt used": refiner_prompt,
-            "Original score": original_score,
         }
 
         return best_score, best_output, refinement_side_info
@@ -309,6 +392,14 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def _format_evaluation_feedback(self, side_info: "SideInfo") -> str:
         """Format side_info into readable feedback for the refiner LLM."""
         return json.dumps(side_info, indent=2, default=str)
+
+    def _format_all_attempts_feedback(self, all_attempts: list[dict]) -> str:
+        """Format all attempts (including original) into readable feedback for the refiner LLM.
+
+        This provides the refiner with full history of optimization attempts,
+        allowing it to understand the progression and avoid repeating failed approaches.
+        """
+        return json.dumps(all_attempts, indent=2, default=str)
 
     def make_reflective_dataset(
         self,
