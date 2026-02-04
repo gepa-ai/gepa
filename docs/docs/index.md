@@ -4,164 +4,22 @@ hide:
   - toc
 ---
 
-<style>
-.hero-section {
-  text-align: center;
-  padding: 1.5rem 0 1rem 0;
-}
-.hero-title {
-  font-size: 3.5rem;
-  font-weight: 800;
-  margin-bottom: 1rem;
-  background: linear-gradient(120deg, #c5d9f7, #d9e8fb);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-.hero-subtitle {
-  font-size: 1.3rem;
-  margin-bottom: 1rem;
-  color: var(--md-default-fg-color--light);
-}
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 2rem;
-  margin: 3rem 0;
-  text-align: center;
-}
-.stat-card {
-  padding: 1.5rem;
-  border-radius: 8px;
-  background: var(--md-code-bg-color);
-  border: 1px solid var(--md-default-fg-color--lightest);
-}
-.stat-number {
-  font-size: 2.5rem;
-  font-weight: 700;
-  color: #8B7AB8;
-  display: block;
-  margin-bottom: 0.5rem;
-}
-.stat-label {
-  font-size: 0.9rem;
-  color: var(--md-default-fg-color--light);
-}
-.cta-buttons {
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-  margin: 1rem 0;
-  flex-wrap: wrap;
-}
-.cta-primary, .cta-secondary {
-  padding: 0.75rem 2rem;
-  border-radius: 8px;
-  font-weight: 600;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: all 0.2s;
-}
-.cta-primary .twemoji svg, .cta-secondary .twemoji svg {
-  width: 1.2rem;
-  height: 1.2rem;
-  fill: currentColor;
-}
-.cta-primary {
-  background: #d9e8fb;
-  color: #1e3a5f;
-}
-.cta-primary:hover {
-  background: #c5d9f7;
-  transform: translateY(-2px);
-}
-.cta-secondary {
-  border: 2px solid #d9e8fb;
-  color: #8B7AB8;
-}
-.cta-secondary:hover {
-  background: rgba(217, 232, 251, 0.1);
-}
-.feature-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem;
-  margin: 2rem 0;
-}
-.feature-card {
-  padding: 1.5rem;
-  border-radius: 8px;
-  border-left: 4px solid #d9e8fb;
-  background: var(--md-code-bg-color);
-}
-.feature-icon {
-  font-size: 2rem;
-  margin-bottom: 1rem;
-}
-.feature-title {
-  font-size: 1.2rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-}
-.companies {
-  text-align: center;
-  margin: 1rem 0;
-  padding: 1.5rem;
-  background: var(--md-code-bg-color);
-  border-radius: 8px;
-}
-.company-logos {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 2rem;
-  align-items: center;
-  margin-top: 1.5rem;
-}
-a[style*="background: #d9e8fb"]:hover {
-  background: #c5d9f7 !important;
-  transform: translateY(-2px);
-  transition: all 0.2s;
-}
-a[style*="border: 2px solid #d9e8fb"]:hover {
-  background: rgba(217, 232, 251, 0.15) !important;
-}
-</style>
+<link rel="stylesheet" href="assets/index-styles.css">
 
 <div class="hero-section">
   <div style="text-align: center; margin-bottom: 1rem;">
-    <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/gepa_logo_with_text.svg" alt="GEPA Logo" style="max-width: 400px; width: 100%;">
+    <img src="assets/gepa_logo_with_text_gradient.svg" alt="GEPA Logo" style="max-width: 400px; width: 100%;">
   </div>
   <!-- <h1 class="hero-title">GEPA</h1> -->
   <p class="hero-subtitle" style="margin-bottom: 1rem;">
     Optimize AI Systems Through Reflective Evolution
   </p>
-  <p style="font-size: 1rem; max-width: 800px; margin: 0 auto 1rem; line-height: 1.5;">
+  <p style="font-size: 1rem; max-width: 800px; margin: 0 auto 2rem; line-height: 1.5;">
     Transform your AI agents and prompts using LLM-powered reflection. Achieve production-grade performance improvements without expensive reinforcement learning or fine-tuning.
   </p>
 
-  <div class="cta-buttons">
-    <a href="#quick-start" class="cta-primary">
-      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2.81 14.12 5.64 3.64l8.47 8.47-5.62 1.42zM17.27 2.97c1.06-1.06 2.78-1.06 3.84 0 1.06 1.06 1.06 2.78 0 3.84l-2.5 2.5L14.77 5.5z"/></svg></span>
-      Get Started
-    </a>
-    <a href="guides/quickstart/" class="cta-secondary">
-      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1m0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5z"/></svg></span>
-      Read the Docs
-    </a>
-    <a href="https://github.com/gepa-ai/gepa" class="cta-secondary">
-      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2"/></svg></span>
-      View on GitHub
-    </a>
-  </div>
-
-  <p>
-    <a href="https://pypi.org/project/gepa/" target="_blank"><img src="https://img.shields.io/pypi/v/gepa?style=for-the-badge&logo=python&logoColor=white" alt="PyPI"></a>
-    <a href="https://pypistats.org/packages/gepa" target="_blank"><img src="https://img.shields.io/pypi/dm/gepa?style=for-the-badge&logo=python&logoColor=white" alt="Downloads"></a>
-    <a href="https://github.com/gepa-ai/gepa" target="_blank"><img src="https://img.shields.io/github/stars/gepa-ai/gepa?style=for-the-badge&logo=github" alt="GitHub stars"></a>
-    <a href="https://arxiv.org/abs/2507.19457" target="_blank"><img src="https://img.shields.io/badge/arXiv-2507.19457-b31b1b.svg?style=for-the-badge" alt="Paper"></a>
+  <p style="margin-top: 0;">
+    <a href="https://pypistats.org/packages/gepa" target="_blank"><img src="https://img.shields.io/pypi/dm/gepa?style=for-the-badge&logo=python&logoColor=white&label=Downloads/month" alt="Downloads" style="height: 32px; transform: scale(1.15);" loading="lazy"></a>
   </p>
 </div>
 
@@ -171,66 +29,177 @@ a[style*="border: 2px solid #d9e8fb"]:hover {
 
 <div class="companies">
   <div class="company-logos">
-    <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Databricks</a>
-    <a href="https://x.com/tobi/status/1963434604741701909" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Shopify</a>
-    <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">OpenAI</a>
-    <a href="https://huggingface.co/learn/cookbook/en/dspy_gepa" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">HuggingFace</a>
-    <a href="https://www.comet.com/site/blog/opik-product-releases-october2025/" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Comet ML</a>
-    <a href="https://github.com/weaviate/recipes/blob/main/integrations/llm-agent-frameworks/dspy/GEPA-Hands-On-Reranker.ipynb" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Weaviate</a>
-    <a href="https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Dropbox</a>
-    <a href="https://mlflow.org/blog/mlflow-prompt-optimization" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">MLFlow</a>
-    <a href="https://x.com/risk_seeking/status/2015853790512222602?s=20" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Standard Metrics</a>
-    <a href="https://x.com/swyx/status/1991598247782281371?s=20" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">The Browser Company</a>
-    <a href="https://www.linkedin.com/posts/dria-ai_today-were-releasing-something-weve-used-activity-7396920472237477888-WyXN" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Dria</a>
-    <a href="https://www.linkedin.com/posts/robin-salimans_agentic-ai-systems-are-only-as-good-as-activity-7399199482644692992-5n-L" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Zapier</a>
-    <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">Prime Intellect</a>
-    <a href="https://www.pharmabiz.com/NewsDetails.aspx?aid=181272&sid=2" target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">ClirNet</a>
-    <a href="https://docs.usesynth.ai/sdk/jobs/prompt-optimization/gepa"  target="_blank" style="font-weight: 600; font-size: 1.1rem; text-decoration: none; color: inherit;">SynthAI</a>
-    <span style="font-weight: 600; font-size: 1.1rem;">Uber</span>
-    <span style="font-weight: 600; font-size: 1.1rem;">NuBank</span>
-    <span style="font-weight: 600; font-size: 1.1rem;">Veris.AI</span>
-    <span style="font-weight: 600; font-size: 1.1rem;">AWS</span>
-    <span style="font-weight: 600; font-size: 1.1rem;">Infosys</span>
-    <span style="font-weight: 600; font-size: 1.1rem;">Invitae</span>
-    <span style="font-weight: 600; font-size: 1.1rem;">Meta</span>
-    <span style="font-weight: 600; font-size: 1.1rem;">Cerebras</span>
-    <span style="font-weight: 600; font-size: 1.1rem;">Bespoke AI Labs</span>
+    <a href="https://x.com/tobi/status/1963434604741701909" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">Shopify</a>
+    <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">OpenAI</a>
+    <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">Databricks</a>
+    <a href="https://pydantic.dev/articles/prompt-optimization-with-gepa" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">Pydantic</a>
+    <a href="https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">Dropbox</a>
+    <a href="https://www.comet.com/site/blog/opik-product-releases-october2025/" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">Comet ML</a>
+    <a href="https://github.com/weaviate/recipes/blob/main/integrations/llm-agent-frameworks/dspy/GEPA-Hands-On-Reranker.ipynb" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">Weaviate</a>
+    <a href="https://mlflow.org/blog/mlflow-prompt-optimization" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">MLFlow</a>
+    <a href="https://x.com/risk_seeking/status/2015853790512222602?s=20" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">Standard Metrics</a>
+    <a href="https://x.com/swyx/status/1991598247782281371?s=20" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">The Browser Company</a>
+    <a href="https://www.linkedin.com/posts/dria-ai_today-were-releasing-something-weve-used-activity-7396920472237477888-WyXN" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">Dria</a>
+    <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">Prime Intellect</a>
+    <a href="https://www.pharmabiz.com/NewsDetails.aspx?aid=181272&sid=2" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">ClirNet</a>
+    <a href="https://docs.usesynth.ai/sdk/jobs/prompt-optimization/gepa"  target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">SynthAI</a>
+    <span style="font-weight: 600; font-size: 0.95rem;">Uber</span>
+    <span style="font-weight: 600; font-size: 0.95rem;">NuBank</span>
+    <a href="https://x.com/solidwillity/status/1997747867629633971?s=20" target="_blank" style="font-weight: 600; font-size: 0.95rem; text-decoration: none; color: inherit;">Veris.AI</a>
+    <span style="font-weight: 600; font-size: 0.95rem;">AWS</span>
+    <span style="font-weight: 600; font-size: 0.95rem;">Infosys</span>
+    <span style="font-weight: 600; font-size: 0.95rem;">Invitae</span>
+    <span style="font-weight: 600; font-size: 0.95rem;">Meta</span>
+    <span style="font-weight: 600; font-size: 0.95rem;">Cerebras</span>
+    <span style="font-weight: 600; font-size: 0.95rem;">Bespoke AI Labs</span>
+  </div>
+
+  <p style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; align-items: center;">
+    <a href="https://pypi.org/project/gepa/" target="_blank"><img src="https://img.shields.io/pypi/v/gepa?style=flat-square&logo=python&logoColor=white" alt="PyPI" style="height: 20px;" loading="lazy"></a>
+    <a href="https://github.com/gepa-ai/gepa" target="_blank"><img src="https://img.shields.io/github/stars/gepa-ai/gepa?style=flat-square&logo=github" alt="GitHub stars" style="height: 20px;" loading="lazy"></a>
+    <a href="https://arxiv.org/abs/2507.19457" target="_blank"><img src="https://img.shields.io/badge/arXiv-2507.19457-b31b1b.svg?style=flat-square" alt="Paper" style="height: 20px;" loading="lazy"></a>
+  </p>
+</div>
+
+<div class="testimonials-section">
+  <div class="testimonial-card">
+    <div class="testimonial-header">
+      <div class="testimonial-icon">
+        <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/shopify.svg" alt="Shopify" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
+      </div>
+      <div>
+        <div class="testimonial-author">Tobi Lutke</div>
+        <div class="testimonial-role">CEO, Shopify</div>
+      </div>
+    </div>
+    <div class="testimonial-content">
+      Both DSPy and (especially) <strong>GEPA are currently severely under hyped</strong> in the AI context engineering world
+    </div>
+    <a href="https://x.com/tobi/status/1963434604741701909" class="testimonial-link" target="_blank">
+      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32 4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
+      View on Twitter
+    </a>
+  </div>
+
+  <div class="testimonial-card">
+    <div class="testimonial-header">
+      <div class="testimonial-icon">
+        <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg" alt="Dropbox" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
+      </div>
+      <div>
+        <div class="testimonial-author">Drew Houston</div>
+        <div class="testimonial-role">CEO, Dropbox</div>
+      </div>
+    </div>
+    <div class="testimonial-content">
+      Have heard great things about DSPy plus GEPA, which is an <strong>even stronger prompt optimizer than miprov2</strong> — repo and (fascinating) examples of generated prompts at github.com/gepa-ai/gepa
+    </div>
+    <a href="https://x.com/drewhouston/status/1974750621690728623" class="testimonial-link" target="_blank">
+      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32 4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
+      View on Twitter
+    </a>
+  </div>
+
+  <div class="testimonial-card">
+    <div class="testimonial-header">
+      <div class="testimonial-icon">
+        <span style="font-size: 2rem;">🧠</span>
+      </div>
+      <div>
+        <div class="testimonial-author">OpenAI</div>
+        <div class="testimonial-role">Official Cookbook</div>
+      </div>
+    </div>
+    <div class="testimonial-content">
+      Self-evolving agents that autonomously retrain themselves using GEPA to improve performance over time.
+    </div>
+    <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" class="testimonial-link" target="_blank">
+      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg></span>
+      Read Cookbook
+    </a>
+  </div>
+
+  <div class="testimonial-card">
+    <div class="testimonial-header">
+      <div class="testimonial-icon">
+        <span style="font-size: 2rem;">🛍️</span>
+      </div>
+      <div>
+        <div class="testimonial-author">Chad Boyda</div>
+        <div class="testimonial-role">CTO, AppSumo</div>
+      </div>
+    </div>
+    <div class="testimonial-content">
+      DSPy's GEPA is prompt engineering! <strong>The only kind we should all collectively be doing.</strong> What a work of art
+    </div>
+    <a href="https://x.com/chadboyda/status/1955298177197764963" class="testimonial-link" target="_blank">
+      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32 4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
+      View on Twitter
+    </a>
+  </div>
+
+  <div class="testimonial-card">
+    <div class="testimonial-header">
+      <div class="testimonial-icon">
+        <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/shopify.svg" alt="Shopify" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
+      </div>
+      <div>
+        <div class="testimonial-author">Tobi Lutke</div>
+        <div class="testimonial-role">CEO, Shopify</div>
+      </div>
+    </div>
+    <div class="testimonial-content">
+      QMD update shipped: New fine-tuned query expansion model, <strong>GEPA-optimized synthetic training data</strong>, Semantic chunking that actually understands document structure
+    </div>
+    <a href="https://x.com/tobi/status/2017750533361070425?s=20" class="testimonial-link" target="_blank">
+      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32a4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
+      View Announcement
+    </a>
+  </div>
+
+  <div class="testimonial-card">
+    <div class="testimonial-header">
+      <div class="testimonial-icon">
+        <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/databricks.svg" alt="Databricks" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
+      </div>
+      <div>
+        <div class="testimonial-author">Ivan Zhou</div>
+        <div class="testimonial-role">Research Engineer, Databricks Mosaic</div>
+      </div>
+    </div>
+    <div class="testimonial-content">
+      Automated prompt optimization (GEPA) can <strong>push open-source models beyond frontier performance on enterprise tasks — at a fraction of the cost!</strong> gpt-oss-120b + GEPA beats Claude Opus 4.1 on Information Extraction (+2.2 points) — while being <strong>90× cheaper to serve</strong>
+    </div>
+    <a href="https://x.com/ivanhzyy/status/1971066193747689521" class="testimonial-link" target="_blank">
+      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32a4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
+      View on Twitter
+    </a>
+  </div>
+
+  <div class="testimonial-card">
+    <div class="testimonial-header">
+      <div class="testimonial-icon">
+        <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg" alt="Dropbox" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
+      </div>
+      <div>
+        <div class="testimonial-author">Josh Clemm</div>
+        <div class="testimonial-role">VP of Engineering, Dropbox Dash</div>
+      </div>
+    </div>
+    <div class="testimonial-content">
+      And anytime you bring in a new model, you have to spend a bunch of time optimizing the prompt again. But with DSPy [GEPA], <strong>you just plug the model in, define your goals, and out spits the prompt that works</strong>. So you can do this model switching far more rapidly—and this is really beneficial for modern agentic systems, because you just don't have one giant LLM.
+    </div>
+    <a href="https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash" class="testimonial-link" target="_blank">
+      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg></span>
+      Read More
+    </a>
   </div>
 </div>
 
-!!! quote ":material-shopping: **Tobi Lutke**, CEO Shopify"
-    Both DSPy and (especially) **GEPA are currently severely under hyped** in the AI context engineering world
-
-    [:material-twitter: View tweet](https://x.com/tobi/status/1963434604741701909)
-
-!!! quote ":material-dropbox: **Drew Houston**, CEO Dropbox"
-    Have heard great things about DSPy plus GEPA, which is an **even stronger prompt optimizer than miprov2** — repo and (fascinating) examples of generated prompts at https://github.com/gepa-ai/gepa and paper at https://arxiv.org/abs/2507.19457
-
-    [:material-twitter: View tweet](https://x.com/drewhouston/status/1974750621690728623)
-
-!!! quote ":material-brain: **OpenAI**"
-    Self-evolving agents that autonomously retrain themselves using GEPA to improve performance over time.
-
-    [:material-link: Read cookbook](https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining)
-
-!!! quote ":material-code-braces: **Chad Boyda**, CTO AppSumo"
-    DSPy's GEPA is prompt engineering! **The only kind we should all collectively be doing.** What a work of art
-
-    [:material-twitter: View tweet](https://x.com/chadboyda/status/1955298177197764963)
-
-!!! quote ":material-shopping: **Tobi Lutke**, CEO Shopify"
-    QMD update shipped: New fine-tuned query expansion model, **GEPA-optimized synthetic training data**, Semantic chunking that actually understands document structure
-
-    [:material-twitter: View QMD announcement](https://x.com/tobi/status/2017750533361070425?s=20)
-
-!!! quote ":material-database: **Ivan Zhou**, Databricks"
-    Automated prompt optimization (GEPA) can **push open-source models beyond frontier performance on enterprise tasks — at a fraction of the cost!** gpt-oss-120b + GEPA beats Claude Opus 4.1 on Information Extraction (+2.2 points) — while being **90× cheaper to serve**. GEPA + SFT together gives the **highest gains**.
-
-    [:material-twitter: View tweet](https://x.com/ivanhzyy/status/1971066193747689521)
-
-<div style="text-align: center; margin: 2rem 0;">
-  <a href="guides/use-cases/" style="text-decoration: none; color: #8B7AB8; font-weight: 600;">
-    → View all 50+ use cases and success stories
+<div style="text-align: center; margin: 2.5rem 0;">
+  <a href="guides/use-cases/" style="padding: 0.75rem 1.75rem; background: rgba(147, 197, 253, 0.1); backdrop-filter: blur(10px); border: 1px solid rgba(147, 197, 253, 0.3); border-radius: 12px; text-decoration: none; color: #60a5fa; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);">
+    <span style="font-size: 1.2rem;">→</span>
+    View all 50+ use cases and success stories
   </a>
 </div>
 
@@ -254,9 +223,9 @@ a[style*="border: 2px solid #d9e8fb"]:hover {
     </a>
   </div>
   <div class="stat-card">
-    <span class="stat-number">150</span>
-    <span class="stat-label">Sample Calls</span>
-    <p style="margin-top: 0.5rem; font-size: 0.85rem;">To achieve state-of-the-art results</p>
+    <span class="stat-number">+10%</span>
+    <span class="stat-label">Performance Gain</span>
+    <p style="margin-top: 0.5rem; font-size: 0.85rem;">On AIME 2025 with GPT-4.1 Mini</p>
   </div>
   <div class="stat-card">
     <a href="guides/use-cases.md" style="text-decoration: none; color: inherit;">
@@ -393,8 +362,8 @@ a[style*="border: 2px solid #d9e8fb"]:hover {
     )
     ```
 
-<div style="text-align: center; margin: 2rem 0;">
-  <a href="guides/quickstart/" style="padding: 0.75rem 2rem; background: #d9e8fb; color: #1e3a5f; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem;">
+<div style="text-align: center; margin: 2.5rem 0;">
+  <a href="guides/quickstart/" style="padding: 0.875rem 2.25rem; background: linear-gradient(135deg, #93c5fd 0%, #a78bfa 100%); color: #1e293b; text-decoration: none; border-radius: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 14px rgba(147, 197, 253, 0.4), 0 2px 6px rgba(147, 197, 253, 0.2); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);">
     <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1.2rem; height: 1.2rem; fill: currentColor;"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1m0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5z"/></svg></span>
     Full Documentation
   </a>
@@ -537,7 +506,7 @@ a[style*="border: 2px solid #d9e8fb"]:hover {
     5. **:material-numeric-5-circle: Repeat** until convergence or budget exhausted
 
     <div style="text-align: center; margin: 2rem 0;">
-      <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/gepa_logo_with_text.svg" alt="GEPA Algorithm" style="max-width: 400px; width: 100%;">
+      <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/gepa_logo_with_text.svg" alt="GEPA Algorithm" style="max-width: 400px; width: 100%;" loading="lazy">
     </div>
 
     **Key Innovation**: Instead of gradient-based updates, GEPA uses natural language reasoning to understand what's wrong and how to fix it.
@@ -684,19 +653,22 @@ If you use GEPA in your research, please cite our paper:
 
 ---
 
-<div style="text-align: center; padding: 3rem 0; background: var(--md-code-bg-color); border-radius: 8px; margin: 2rem 0;">
-  <h2 style="margin-bottom: 1rem;">Ready to Get Started?</h2>
-  <p style="font-size: 1.1rem; margin-bottom: 2rem; color: var(--md-default-fg-color--light);">
-    Install GEPA and start optimizing in minutes
-  </p>
-  <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-    <a href="guides/quickstart/" style="padding: 0.75rem 2rem; background: #d9e8fb; color: #1e3a5f; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem;">
-      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1.2rem; height: 1.2rem; fill: currentColor;"><path d="M2.81 14.12 5.64 3.64l8.47 8.47-5.62 1.42zM17.27 2.97c1.06-1.06 2.78-1.06 3.84 0 1.06 1.06 1.06 2.78 0 3.84l-2.5 2.5L14.77 5.5z"/></svg></span>
-      Get Started
-    </a>
-    <a href="https://github.com/gepa-ai/gepa" style="padding: 0.75rem 2rem; border: 2px solid #d9e8fb; color: #8B7AB8; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem;">
-      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1.2rem; height: 1.2rem; fill: currentColor;"><path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg></span>
-      Star on GitHub
-    </a>
+<div style="text-align: center; padding: 4rem 2rem; background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(10px); border-radius: 20px; margin: 3rem 0; border: 1px solid rgba(147, 197, 253, 0.15); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 16px 64px rgba(147, 197, 253, 0.08); position: relative; overflow: hidden;">
+  <div style="position: absolute; top: 0; left: 0; right: 0; height: 100%; background: radial-gradient(ellipse at top, rgba(147, 197, 253, 0.08) 0%, transparent 60%); pointer-events: none;"></div>
+  <div style="position: relative; z-index: 1;">
+    <h2 style="margin-bottom: 1rem; font-size: 2.5rem; background: linear-gradient(135deg, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Ready to Get Started?</h2>
+    <p style="font-size: 1.15rem; margin-bottom: 2.5rem; color: var(--md-default-fg-color--light); max-width: 600px; margin-left: auto; margin-right: auto;">
+      Install GEPA and start optimizing in minutes
+    </p>
+    <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+      <a href="guides/quickstart/" style="padding: 0.875rem 2.25rem; background: linear-gradient(135deg, #93c5fd 0%, #a78bfa 100%); color: #1e293b; text-decoration: none; border-radius: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 14px rgba(147, 197, 253, 0.4), 0 2px 6px rgba(147, 197, 253, 0.2); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);">
+        <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1.2rem; height: 1.2rem; fill: currentColor;"><path d="M2.81 14.12 5.64 3.64l8.47 8.47-5.62 1.42zM17.27 2.97c1.06-1.06 2.78-1.06 3.84 0 1.06 1.06 1.06 2.78 0 3.84l-2.5 2.5L14.77 5.5z"/></svg></span>
+        Get Started
+      </a>
+      <a href="https://github.com/gepa-ai/gepa" style="padding: 0.875rem 2.25rem; background: rgba(255, 255, 255, 0.05); border: 2px solid rgba(147, 197, 253, 0.3); color: var(--md-default-fg-color); text-decoration: none; border-radius: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem; backdrop-filter: blur(10px); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);">
+        <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1.2rem; height: 1.2rem; fill: currentColor;"><path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg></span>
+        Star on GitHub
+      </a>
+    </div>
   </div>
 </div>
