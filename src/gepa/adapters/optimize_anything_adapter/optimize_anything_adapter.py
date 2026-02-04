@@ -1,7 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
-from typing import TYPE_CHECKING, Any, Mapping, Sequence
+import hashlib
 import json
+import pickle
+import threading
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
@@ -19,21 +22,36 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         parallel: bool = True,
         max_workers: int | None = None,
         refiner_config: "RefinerConfig | None" = None,
-        example_best_evals_k: int = 1,
+        best_example_evals_k: int = 1,
         objective: str | None = None,
         background: str | None = None,
+        cache_mode: str = "memory",  # "off", "memory", "disk"
+        cache_dir: str | Path | None = None,
     ):
         self.fitness_fn = fitness_fn
         self.parallel = parallel
         self.max_workers = max_workers
         self.refiner_config = refiner_config
-        self.example_best_evals_k = example_best_evals_k
+        self.best_example_evals_k = best_example_evals_k
         self.objective = objective
         self.background = background
+        self.cache_mode = cache_mode
+        self.cache_dir = Path(cache_dir) if cache_dir else None
 
         # Track top-K best evaluations per example for warm-start support
         self._best_evals_by_example: dict[DataInst, list[dict]] = {}
         self._best_evals_lock = threading.Lock()  # Thread safety for parallel execution
+
+        # Initialize fitness evaluation cache
+        self._fitness_cache: dict[tuple[str, str], tuple[float, Any, dict]] = {}
+        self._fitness_cache_lock = threading.Lock()
+
+        # Setup disk cache directory and load existing entries
+        self._cache_dir_path: Path | None = None
+        if self.cache_mode == "disk" and self.cache_dir:
+            self._cache_dir_path = self.cache_dir / "fitness_cache"
+            self._cache_dir_path.mkdir(parents=True, exist_ok=True)
+            self._load_cache()
 
         # Initialize refiner predictor if refiner is configured
         self.refiner_predictor = None
@@ -65,13 +83,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     "Install dspy-ai: pip install dspy-ai"
                 )
 
-    def _get_example_best_evals(self, example: DataInst) -> list[dict]:
+    def _get_best_example_evals(self, example: DataInst) -> list[dict]:
         """Get sorted top-K best evaluations for this example (thread-safe)."""
         with self._best_evals_lock:
             # Return a copy to avoid mutation issues
             return list(self._best_evals_by_example.get(example, []))
 
-    def _update_example_best_evals(
+    def _update_best_example_evals(
         self, example: DataInst, score: float, side_info: "SideInfo"
     ) -> None:
         """Add evaluation to example's best evals, maintain sorted top-K (thread-safe)."""
@@ -86,7 +104,95 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 self._best_evals_by_example[example],
                 key=lambda x: x["score"],
                 reverse=True,
-            )[:self.example_best_evals_k]
+            )[:self.best_example_evals_k]
+
+    # --- Fitness evaluation caching methods ---
+
+    def _candidate_hash(self, candidate: dict[str, str]) -> str:
+        """SHA256 hash of candidate for cache key (first 16 chars)."""
+        return hashlib.sha256(
+            json.dumps(sorted(candidate.items())).encode()
+        ).hexdigest()[:16]
+
+    def _example_hash(self, example: Any) -> str:
+        """Hash example for cache key (first 16 chars)."""
+        if example is None:
+            return "none"
+        try:
+            # Try JSON serialization for dicts, lists, primitives
+            return hashlib.sha256(
+                json.dumps(example, sort_keys=True, default=str).encode()
+            ).hexdigest()[:16]
+        except (TypeError, ValueError):
+            # Fallback to id for unhashable objects
+            return f"id_{id(example)}"
+
+    def _cache_key(self, candidate: dict[str, str], example: Any) -> tuple[str, str]:
+        """Build cache key tuple."""
+        return (self._candidate_hash(candidate), self._example_hash(example))
+
+    def _cache_filename(self, cache_key: tuple[str, str]) -> str:
+        """Build filename from cache key."""
+        return f"{cache_key[0]}_{cache_key[1]}.pkl"
+
+    def _load_cache(self) -> None:
+        """Load all cache entries from disk into memory."""
+        if self._cache_dir_path is None:
+            return
+        for cache_file in self._cache_dir_path.glob("*.pkl"):
+            try:
+                with open(cache_file, "rb") as f:
+                    data = pickle.load(f)
+                    # File stores: {"key": (cand_hash, ex_hash), "result": (score, output, side_info)}
+                    self._fitness_cache[data["key"]] = data["result"]
+            except Exception:
+                pass  # Skip corrupted files
+
+    def _save_cache_entry(self, cache_key: tuple[str, str], result: tuple) -> None:
+        """Save single cache entry to disk."""
+        if self._cache_dir_path is None:
+            return
+        filename = self._cache_filename(cache_key)
+        filepath = self._cache_dir_path / filename
+        with open(filepath, "wb") as f:
+            pickle.dump({"key": cache_key, "result": result}, f)
+
+    def _call_fitness_fn(
+        self,
+        candidate: dict[str, str],
+        example: Any,
+    ) -> tuple[float, Any, dict]:
+        """Call fitness_fn with optional caching."""
+        # No caching
+        if self.cache_mode == "off":
+            return self.fitness_fn(
+                candidate,
+                example=example,
+                best_example_evals=self._get_best_example_evals(example),
+            )
+
+        # Build cache key
+        cache_key = self._cache_key(candidate, example)
+
+        # Check cache (thread-safe)
+        with self._fitness_cache_lock:
+            if cache_key in self._fitness_cache:
+                return self._fitness_cache[cache_key]
+
+        # Cache miss - call fitness_fn
+        result = self.fitness_fn(
+            candidate,
+            example=example,
+            best_example_evals=self._get_best_example_evals(example),
+        )
+
+        # Store in cache (thread-safe)
+        with self._fitness_cache_lock:
+            self._fitness_cache[cache_key] = result
+            if self.cache_mode == "disk":
+                self._save_cache_entry(cache_key, result)
+
+        return result
 
     def evaluate(
         self,
@@ -101,11 +207,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 eval_output = self._evaluate_parallel(batch, candidate)
             else:
                 eval_output = [
-                    self.fitness_fn(
-                        candidate,
-                        example=example,
-                        example_best_evals=self._get_example_best_evals(example),
-                    )
+                    self._call_fitness_fn(candidate, example)
                     for example in batch
                 ]
         else:
@@ -114,7 +216,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         # Update best evals history for each example
         for example, (score, _, side_info) in zip(batch, eval_output):
-            self._update_example_best_evals(example, score, side_info)
+            self._update_best_example_evals(example, score, side_info)
 
         scores = [score for score, _, _ in eval_output]
         side_infos: list[SideInfo] = [info for _, _, info in eval_output]
@@ -190,14 +292,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 )
 
         # 1. Evaluate original candidate
-        original_score, original_output, original_side_info = self.fitness_fn(
-            candidate,
-            example=example,
-            example_best_evals=self._get_example_best_evals(example),
+        original_score, original_output, original_side_info = self._call_fitness_fn(
+            candidate, example
         )
 
         # Update best evals with original evaluation
-        self._update_example_best_evals(example, original_score, original_side_info)
+        self._update_best_example_evals(example, original_score, original_side_info)
 
         # 2. Refine and evaluate
         refined_score, refined_output, refinement_side_info = self._refine_and_evaluate(
@@ -259,10 +359,9 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             # Submit all tasks with their index to maintain order
             future_to_idx = {
                 executor.submit(
-                    self.fitness_fn,
+                    self._call_fitness_fn,
                     candidate,
-                    example=example,
-                    example_best_evals=self._get_example_best_evals(example),
+                    example,
                 ): idx
                 for idx, example in enumerate(batch)
             }
@@ -337,14 +436,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
                 # Evaluate refined candidate
                 refined_candidate_dict = {**candidate, target_param: refined_text}
-                refined_score, refined_output, refined_eval_side_info = self.fitness_fn(
-                    refined_candidate_dict,
-                    example=example,
-                    example_best_evals=self._get_example_best_evals(example),
+                refined_score, refined_output, refined_eval_side_info = self._call_fitness_fn(
+                    refined_candidate_dict, example
                 )
 
                 # Update best evals with this refinement evaluation
-                self._update_example_best_evals(example, refined_score, refined_eval_side_info)
+                self._update_best_example_evals(example, refined_score, refined_eval_side_info)
 
                 # Track attempt (iteration is +1 since 0 is original)
                 all_attempts.append({

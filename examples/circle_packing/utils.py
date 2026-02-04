@@ -237,7 +237,7 @@ def validate_packing(
 # BASELINE CODE TEMPLATE
 # =============================================================================
 
-SEED_CODE = '''
+SEED_CODE1 = '''
 import numpy as np
 
 def main(timeout, current_best_solution):
@@ -306,7 +306,7 @@ def compute_max_radii(centers):
 '''
 
 
-SIMPLEST_SEED_CODE = '''
+SEED_CODE2 = '''
 import numpy as np
 
 def main(timeout, current_best_solution):

@@ -46,6 +46,9 @@ from gepa.utils import FileStopper, StopperProtocol
 OptimizableParam = str
 Candidate = dict[str, OptimizableParam]
 
+# Cache storage modes for fitness function evaluation caching (when cache_evaluation=True)
+CacheEvaluationStorage = Literal["memory", "disk", "auto"]
+
 
 # Sentinel object for single-instance mode
 class _SingleInstanceSentinel:
@@ -280,9 +283,9 @@ class EngineConfig:
     # Evaluation caching
     cache_evaluation: bool = False
 
-    # Track top-K best evaluations per example, passed to fitness_fn as "example_best_evals"
+    # Track top-K best evaluations per example, passed to fitness_fn as "best_example_evals"
     # Useful for warm-starting optimization from previous best solutions
-    example_best_evals_k: int = 10
+    best_example_evals_k: int = 10
 
 
 def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
@@ -604,6 +607,7 @@ def optimize_anything(
     objective: str | None = None, # FitnessFn description. Objective can be a tuple (objective, objective_fn)
     background: str | None = None, # Maybe we need different types
     config: GEPAConfig | None = None,
+    cache_evaluation_storage: CacheEvaluationStorage = "auto",
 ) -> GEPAResult:
     """
     Optimize any parameterized system using evolutionary algorithms with LLM-based reflection.
@@ -696,14 +700,28 @@ def optimize_anything(
     # Wrap the fitness function to handle the new API
     wrapped_fitness_fn = _create_fitness_fn_wrapper(fitness_fn, single_instance_mode)
 
+    # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
+    if not config.engine.cache_evaluation:
+        resolved_cache_mode = "off"
+    elif cache_evaluation_storage == "auto":
+        resolved_cache_mode = "disk" if config.engine.run_dir else "memory"
+    else:
+        resolved_cache_mode = cache_evaluation_storage
+
+    # Validate disk mode requires run_dir
+    if resolved_cache_mode == "disk" and not config.engine.run_dir:
+        raise ValueError("cache_evaluation_storage='disk' requires run_dir in EngineConfig")
+
     active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
         fitness_fn=wrapped_fitness_fn,
         parallel=config.engine.parallel,
         max_workers=config.engine.max_workers,
         refiner_config=config.refiner,
-        example_best_evals_k=config.engine.example_best_evals_k,
+        best_example_evals_k=config.engine.best_example_evals_k,
         objective=objective,
         background=background,
+        cache_mode=resolved_cache_mode,
+        cache_dir=config.engine.run_dir,
     )
 
     # Normalize datasets to DataLoader instances

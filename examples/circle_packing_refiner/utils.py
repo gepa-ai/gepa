@@ -1,29 +1,13 @@
 #!/usr/bin/env python3
-"""
-Utilities for circle packing experiments.
-
-Contains:
-- execute_code: Clean subprocess-based code execution with timeout
-- validate_packing: Validate circle packing constraints
-- BASELINE_CODE_TEMPLATE: Seed code for optimization
-- create_circle_packing_dataset: Create DSPy dataset
-"""
+"""Utilities for circle packing: code execution, validation, and seed templates."""
 
 import time
-from typing import Any, Tuple
+import traceback as tb
+from typing import Any
 
 import numpy as np
-import dspy
 
-from gepa.utils.code_execution import (
-    execute_code as _execute_code,
-    ExecutionMode,
-)
-
-
-# =============================================================================
-# CODE EXECUTION
-# =============================================================================
+from gepa.utils.code_execution import execute_code as _execute_code, ExecutionMode
 
 
 def execute_code(
@@ -32,136 +16,62 @@ def execute_code(
     current_best_solution: Any = None,
     num_circles: int = 26,
 ) -> dict:
-    """
-    Execute standalone code candidate in isolated subprocess with validation.
-
-    The code must define a main(timeout, current_best_solution) function that returns
-    a dict with 'circles' and 'all_scores' keys.
-
-    Args:
-        code: Python code string defining main(timeout, current_best_solution) -> dict
-        timeout: Time limit in seconds (passed to code AND enforced on subprocess)
-        current_best_solution: Best solution found so far (numpy array or None)
-        num_circles: Expected number of circles for validation
-
-    Returns:
-        dict with:
-            - success: bool (True only if execution AND validation pass)
-            - result: dict with 'circles', 'all_scores', 'validation_details' if successful
-            - error: str if failed
-            - traceback: str if failed
-            - execution_time: float
-            - stdout: str (prints from code)
-            - stderr: str (warnings/logs)
-    """
+    """Execute code in subprocess and validate the circle packing result."""
     start_time = time.time()
 
-    # Execute code using GEPA's shared utility with entry point
     result = _execute_code(
         code=code,
         timeout=timeout,
         mode=ExecutionMode.SUBPROCESS,
         entry_point="main",
         entry_point_args=(),
-        entry_point_kwargs={
-            "timeout": timeout,
-            "current_best_solution": current_best_solution,
-        },
+        entry_point_kwargs={"timeout": timeout, "current_best_solution": current_best_solution},
     )
 
-    execution_time = time.time() - start_time
+    base = {
+        "execution_time": time.time() - start_time,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+    }
 
-    # Handle execution failure
+    def fail(error: str, **extra) -> dict:
+        return {"success": False, "error": error, "traceback": "", **base, **extra}
+
     if not result.success:
-        return {
-            "success": False,
-            "error": result.error or "Execution failed",
-            "traceback": result.traceback,
-            "execution_time": execution_time,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
+        return fail(result.error or "Execution failed", traceback=result.traceback)
 
-    # Get main() return value
     main_result = result.variables.get("__return__")
-
-    # Validate result has required keys
-    def _error(msg: str) -> dict:
-        return {"success": False, "error": msg, "traceback": "",
-                "execution_time": execution_time, "stdout": result.stdout, "stderr": result.stderr}
-
     if not isinstance(main_result, dict):
-        return _error(f"main() must return a dict, got {type(main_result).__name__}")
+        return fail(f"main() must return a dict, got {type(main_result).__name__}")
     if "circles" not in main_result:
-        return _error("main() return dict must contain 'circles' key")
+        return fail("main() return dict must contain 'circles' key")
     if "all_scores" not in main_result:
-        return _error("main() return dict must contain 'all_scores' key")
+        return fail("main() return dict must contain 'all_scores' key")
 
-    # Validate the packing
     try:
         circles = np.array(main_result["circles"])
-        is_valid, validation_details = validate_packing(num_circles, circles)
-        main_result["validation_details"] = validation_details
+        is_valid, details = validate_packing(num_circles, circles)
+        main_result["validation_details"] = details
     except Exception as e:
-        import traceback as tb
-        return {
-            "success": False,
-            "error": str(e),
-            "traceback": tb.format_exc(),
-            "execution_time": execution_time,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
+        return fail(str(e), traceback=tb.format_exc())
 
     if is_valid:
-        return {
-            "success": True,
-            "result": main_result,
-            "execution_time": execution_time,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
-    else:
-        # Build error message from validation details
-        d = validation_details
-        errors = [msg for (cond, msg) in [
-            (d["shape_errors"], f"Shape: {d['shape_errors']}"),
-            (d["boundary_violations"], f"{len(d['boundary_violations'])} boundary violations"),
-            (d["overlaps"], f"{len(d['overlaps'])} overlaps"),
-            (d["negative_radii"], f"{len(d['negative_radii'])} negative radii"),
-        ] if cond]
+        return {"success": True, "result": main_result, **base}
 
-        return {
-            "success": False,
-            "error": "Validation failed: " + "; ".join(errors),
-            "result": main_result,  # Still include result for debugging
-            "validation_details": validation_details,
-            "execution_time": execution_time,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
+    # Build error message from validation details
+    errors = [msg for cond, msg in [
+        (details["shape_errors"], f"Shape: {details['shape_errors']}"),
+        (details["boundary_violations"], f"{len(details['boundary_violations'])} boundary violations"),
+        (details["overlaps"], f"{len(details['overlaps'])} overlaps"),
+        (details["negative_radii"], f"{len(details['negative_radii'])} negative radii"),
+    ] if cond]
+
+    return fail("Validation failed: " + "; ".join(errors), result=main_result, validation_details=details)
 
 
-# =============================================================================
-# VALIDATION
-# =============================================================================
-
-
-def validate_packing(
-    n: int, circles: np.ndarray, atol: float = 1e-6
-) -> Tuple[bool, dict[str, Any]]:
-    """
-    Validate that circles don't overlap and are inside the unit square.
-
-    Args:
-        n: Expected number of circles
-        circles: np.array of shape (n, 3) with (x, y, r) for each circle
-        atol: Absolute tolerance for numerical comparisons
-
-    Returns:
-        Tuple of (is_valid: bool, validation_details: dict)
-    """
-    validation_details = {
+def validate_packing(n: int, circles: np.ndarray, atol: float = 1e-6) -> tuple[bool, dict[str, Any]]:
+    """Validate circles don't overlap and stay inside the unit square."""
+    details = {
         "expected_circles": n,
         "actual_circles": circles.shape[0],
         "boundary_violations": [],
@@ -171,132 +81,97 @@ def validate_packing(
         "shape_errors": [],
     }
 
-    # Check shape
     if circles.shape != (n, 3):
-        validation_details["shape_errors"].append(
-            f"Circles shape incorrect. Expected ({n}, 3), got {circles.shape}"
-        )
-        return False, validation_details
+        details["shape_errors"].append(f"Expected ({n}, 3), got {circles.shape}")
+        return False, details
 
-    # Check for NaN values
     if np.isnan(circles).any():
-        validation_details["nan_detected"] = True
-        validation_details["shape_errors"].append("NaN values detected in circles")
-        return False, validation_details
+        details["nan_detected"] = True
+        details["shape_errors"].append("NaN values detected")
+        return False, details
 
-    centers = circles[:, :2]
-    radii = circles[:, 2]
+    centers, radii = circles[:, :2], circles[:, 2]
 
-    # Check for negative radii
-    for i in range(n):
-        if radii[i] < 0:
-            validation_details["negative_radii"].append(
-                f"Circle {i} has negative radius {radii[i]:.6f}"
-            )
+    # Check negative radii
+    neg_mask = radii < 0
+    if neg_mask.any():
+        details["negative_radii"] = [
+            f"Circle {i} has negative radius {radii[i]:.6f}" for i in np.where(neg_mask)[0]
+        ]
+        return False, details
 
-    if validation_details["negative_radii"]:
-        return False, validation_details
+    # Check boundary violations (vectorized)
+    out_left = centers[:, 0] - radii < -atol
+    out_right = centers[:, 0] + radii > 1 + atol
+    out_bottom = centers[:, 1] - radii < -atol
+    out_top = centers[:, 1] + radii > 1 + atol
+    for i in np.where(out_left | out_right | out_bottom | out_top)[0]:
+        x, y, r = circles[i]
+        details["boundary_violations"].append(f"Circle {i} at ({x:.6f}, {y:.6f}) r={r:.6f} outside unit square")
 
-    # Check if circles are inside the unit square
-    for i in range(n):
-        x, y = centers[i]
-        r = radii[i]
-        if x - r < -atol or x + r > 1 + atol or y - r < -atol or y + r > 1 + atol:
-            validation_details["boundary_violations"].append(
-                f"Circle {i} at ({x:.6f}, {y:.6f}) with r={r:.6f} outside unit square"
-            )
-
-    # Check for overlaps
+    # Check overlaps (vectorized distance computation)
+    dists = np.linalg.norm(centers[:, None] - centers[None, :], axis=2)
+    r_sums = radii[:, None] + radii[None, :]
     for i in range(n):
         for j in range(i + 1, n):
-            dist = np.sqrt(np.sum((centers[i] - centers[j]) ** 2))
-            if dist < radii[i] + radii[j] - atol:
-                validation_details["overlaps"].append(
-                    f"Circles {i} and {j} overlap: dist={dist:.6f}, r_sum={radii[i] + radii[j]:.6f}"
+            if dists[i, j] < r_sums[i, j] - atol:
+                details["overlaps"].append(
+                    f"Circles {i} and {j} overlap: dist={dists[i,j]:.6f}, r_sum={r_sums[i,j]:.6f}"
                 )
 
-    # Compute statistics
-    validation_details["min_radius"] = float(np.min(radii))
-    validation_details["max_radius"] = float(np.max(radii))
-    validation_details["avg_radius"] = float(np.mean(radii))
-    validation_details["sum_radii"] = float(np.sum(radii))
-
-    # Valid if no violations
-    is_valid = (
-        len(validation_details["boundary_violations"]) == 0
-        and len(validation_details["overlaps"]) == 0
-        and len(validation_details["shape_errors"]) == 0
-        and len(validation_details["negative_radii"]) == 0
-        and not validation_details["nan_detected"]
+    # Statistics
+    details.update(
+        min_radius=float(radii.min()),
+        max_radius=float(radii.max()),
+        avg_radius=float(radii.mean()),
+        sum_radii=float(radii.sum()),
     )
 
-    return is_valid, validation_details
+    is_valid = not (details["boundary_violations"] or details["overlaps"] or
+                    details["shape_errors"] or details["negative_radii"] or details["nan_detected"])
+    return is_valid, details
 
 
 # =============================================================================
-# BASELINE CODE TEMPLATE
+# SEED CODE TEMPLATES
 # =============================================================================
 
-SEED_CODE = '''
+SEED_CODE1 = '''
 import numpy as np
-
-def main(timeout, current_best_solution):
-    """
-    Circle packing optimization.
-
-    Args:
-        timeout: Time budget in seconds
-        current_best_solution: Previous best circles array (n, 3) or None
-
-    Returns:
-        dict with 'circles' (n, 3) array and 'all_scores' list
-    """
+                                                                                                     
+def main(timeout, current_best_solution):                                            
+    """Circle packing: returns dict with 'circles' (n,3) and 'all_scores'."""
     n = 26
 
-    # Use current_best_solution if provided, otherwise start fresh
     if current_best_solution is not None:
         circles = current_best_solution.copy()
     else:
-        # Simple initial placement
         centers = np.zeros((n, 2))
-
-        # Center circle
         centers[0] = [0.5, 0.5]
 
         # Ring of 8 around center
-        for i in range(min(8, n - 1)):
-            angle = 2 * np.pi * i / 8
-            centers[i + 1] = [0.5 + 0.3 * np.cos(angle), 0.5 + 0.3 * np.sin(angle)]
+        angles = 2 * np.pi * np.arange(8) / 8
+        centers[1:9] = np.column_stack([0.5 + 0.3 * np.cos(angles), 0.5 + 0.3 * np.sin(angles)])
 
-        # Outer ring for remaining
-        if n > 9:
-            remaining = n - 9
-            for i in range(remaining):
-                angle = 2 * np.pi * i / remaining
-                centers[i + 9] = [0.5 + 0.7 * np.cos(angle), 0.5 + 0.7 * np.sin(angle)]
+        # Outer ring for remaining 17
+        angles = 2 * np.pi * np.arange(17) / 17
+        centers[9:] = np.column_stack([0.5 + 0.7 * np.cos(angles), 0.5 + 0.7 * np.sin(angles)])
 
         centers = np.clip(centers, 0.01, 0.99)
         radii = compute_max_radii(centers)
-        circles = np.hstack([centers, radii.reshape(-1, 1)])
+        circles = np.column_stack([centers, radii])
 
-    score = float(np.sum(circles[:, 2]))
-    return {'circles': circles, 'all_scores': [score]}
+    return {'circles': circles, 'all_scores': [float(circles[:, 2].sum())]}
 
 
 def compute_max_radii(centers):
     """Compute maximum radii that don't overlap and stay in unit square."""
-    n = centers.shape[0]
-    radii = np.ones(n)
+    n = len(centers)
+    radii = np.minimum.reduce([centers[:, 0], centers[:, 1], 1 - centers[:, 0], 1 - centers[:, 1]])
 
-    # Limit by distance to borders
-    for i in range(n):
-        x, y = centers[i]
-        radii[i] = min(x, y, 1 - x, 1 - y)
-
-    # Limit by distance to other circles
     for i in range(n):
         for j in range(i + 1, n):
-            dist = np.sqrt(np.sum((centers[i] - centers[j]) ** 2))
+            dist = np.linalg.norm(centers[i] - centers[j])
             if radii[i] + radii[j] > dist:
                 scale = dist / (radii[i] + radii[j])
                 radii[i] *= scale
@@ -306,15 +181,71 @@ def compute_max_radii(centers):
 '''
 
 
-SIMPLEST_SEED_CODE = '''
+SEED_CODE2 = '''
 import numpy as np
 
 def main(timeout, current_best_solution):
-    # Fit 26 circles into a 6x6 grid structure (radius = 1 / (2*6) = 1/12)
+    # Fit 26 circles into a 6x6 grid (radius = 1/12)
     r = 1.0 / 12.0
     i = np.arange(26)
-    # Calculate x (col) and y (row) positions based on grid index
     circles = np.column_stack((r + (i % 6) * 2 * r, r + (i // 6) * 2 * r, np.full(26, r)))
-    
     return {'circles': circles, 'all_scores': [np.sum(circles[:, 2])]}
 '''
+
+
+
+CIRCLE_PACKING_BACKGROUND = """
+Make BREAKTHROUGH improvements by trying fundamentally different approaches.
+
+Pack 26 non-overlapping circles inside a UNIT SQUARE [0,1] x [0,1].
+
+SCORING: Sum of all circle radii (higher is better!)
+
+CRITICAL CODE FORMAT:
+- Function name MUST be: `def main(timeout, current_best_solution):`
+- `current_best_solutions` is a list of numpy arrays of shape (26, 3) or None.
+- Return a dictionary with:
+    - 'circles': numpy array shape (26, 3) where each row is (x, y, radius)
+    - 'all_scores': list of floats (even if just one score)
+
+CRITICAL CONSTRAINTS:
+1. All circles fully inside [0,1]×[0,1]: 0 ≤ x-r, x+r ≤ 1 and 0 ≤ y-r, y+r ≤ 1
+2. No overlaps: distance between centers ≥ sum of radii
+
+INNOVATION STRATEGIES:
+1. **Algorithmic diversity**: Physics-based, optimization-based, geometric, hybrid, meta-heuristics
+2. **Geometric insights**: Hexagonal patterns, corner utilization, variable radii
+3. **Optimization techniques**: Multiple restarts, hierarchical approaches, gradient-free methods
+4. **Hyperparameter auto-tuning**: Use optuna/hyperopt to find best parameters automatically
+5. Imagine you have all the packages available (optuna, scipy, etc.) in the environment already and freely explore any of the packages you need.
+
+ANALYSIS STRATEGY:
+1. If scores plateau → try fundamentally different algorithm
+2. If errors persist → address root cause, don't just patch
+3. The refiner LLM will handle the refinement process using the `refiner_prompt`, so you focus on making a big leap in the global strategy.
+
+OUTPUT REQUIREMENTS:
+- Return ONLY executable Python code (no markdown, no explanations)
+- Focus on BREAKTHROUGH ideas, not incremental tweaks
+"""
+
+
+
+def compute_multiple_metrics(all_scores: list[float]) -> dict[str, float]:
+    """Compute various metrics from score history."""
+    alpha_fixed = 0.1
+    ema_fixed = all_scores[0]
+    for s in all_scores[1:]:
+        ema_fixed = alpha_fixed * s + (1 - alpha_fixed) * ema_fixed
+
+    alpha_adaptive = 2.0 / (len(all_scores) + 1)
+    ema_adaptive = all_scores[0]
+    for s in all_scores[1:]:
+        ema_adaptive = alpha_adaptive * s + (1 - alpha_adaptive) * ema_adaptive
+
+    return {
+        "max_score": max(all_scores),
+        "mean_score": sum(all_scores) / len(all_scores),
+        "ema_score_fixed": ema_fixed,
+        "ema_score_adaptive": ema_adaptive,
+    }
