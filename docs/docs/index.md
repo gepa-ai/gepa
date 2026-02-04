@@ -2,6 +2,7 @@
 hide:
   - navigation
   - toc
+  - title
 ---
 
 <link rel="stylesheet" href="assets/index-styles.css">
@@ -511,13 +512,13 @@ pip install gepa
   </a>
 </div>
 
-## :material-upload: Share Your Success Story
+## :material-upload: Add Your Project
 
 <div class="success-cta">
-  <p>Using GEPA in production? We'd love to showcase your work!</p>
+  <p>Built something with GEPA? Help document how it's being used by adding your project to our list.</p>
   <div class="cta-buttons">
-    <a href="mailto:lakshyaaagrawal@berkeley.edu?subject=Feature%20GEPA%20usecase" class="cta-primary">Submit via Email</a>
-    <a href="https://github.com/gepa-ai/gepa/issues/new?title=Use%20Case%20Submission&body=Organization:%0A%0AUse%20Case:%0A%0AResults:%0A%0ALogo%20URL:%0A%0ALink%20to%20blog/tweet:" target="_blank" class="cta-secondary">Submit via GitHub</a>
+    <a href="mailto:lakshyaaagrawal@berkeley.edu?subject=GEPA%20Project%20Submission" class="cta-primary">Submit via Email</a>
+    <a href="https://github.com/gepa-ai/gepa/issues/new?title=Project%20Submission&body=Organization:%0A%0AProject%20Description:%0A%0AResults:%0A%0ALink%20to%20paper/blog/code:" target="_blank" class="cta-secondary">Submit via GitHub</a>
     <a href="https://discord.gg/A7dABbtmFw" target="_blank" class="cta-secondary">Share on Discord</a>
   </div>
 </div>
