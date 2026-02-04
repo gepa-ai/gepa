@@ -191,7 +191,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const dots = document.querySelectorAll('.carousel-dot');
   const prevBtn = document.querySelector('.carousel-prev');
   const nextBtn = document.querySelector('.carousel-next');
-  const totalSlides = 6;
+  const totalSlides = document.querySelectorAll('.testimonials-track').length;
   let currentSlide = 0;
   let autoplayInterval;
 
@@ -203,6 +203,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function startAutoplay() {
+    clearInterval(autoplayInterval);
     autoplayInterval = setInterval(() => goToSlide(currentSlide + 1), 5000);
   }
 
