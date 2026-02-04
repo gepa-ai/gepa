@@ -62,137 +62,142 @@ hide:
 </div>
 
 <div class="testimonials-section">
-  <div class="testimonial-card">
-    <div class="testimonial-header">
-      <div class="testimonial-icon">
-        <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/shopify.svg" alt="Shopify" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
-      </div>
-      <div>
-        <div class="testimonial-author">Tobi Lutke</div>
-        <div class="testimonial-role">CEO, Shopify</div>
+  <div class="testimonials-carousel-wrapper">
+    <!-- Testimonial 1 -->
+    <div class="testimonials-track">
+      <div class="testimonial-card">
+        <div class="testimonial-header">
+          <div class="testimonial-icon">
+            <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/shopify.svg" alt="Shopify" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
+          </div>
+          <div>
+            <div class="testimonial-author">Tobi Lutke</div>
+            <div class="testimonial-role">CEO, Shopify</div>
+          </div>
+        </div>
+        <div class="testimonial-content">
+          Both DSPy and (especially) <strong>GEPA are currently severely under hyped</strong> in the AI context engineering world
+        </div>
+        <a href="https://x.com/tobi/status/1963434604741701909" class="testimonial-link" target="_blank">
+          <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32 4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
+          View on Twitter
+        </a>
       </div>
     </div>
-    <div class="testimonial-content">
-      Both DSPy and (especially) <strong>GEPA are currently severely under hyped</strong> in the AI context engineering world
+
+    <!-- Testimonial 2 -->
+    <div class="testimonials-track">
+      <div class="testimonial-card">
+        <div class="testimonial-header">
+          <div class="testimonial-icon">
+            <span style="font-size: 2rem;">🛍️</span>
+          </div>
+          <div>
+            <div class="testimonial-author">Chad Boyda</div>
+            <div class="testimonial-role">CTO, AppSumo</div>
+          </div>
+        </div>
+        <div class="testimonial-content">
+          DSPy's GEPA is prompt engineering! <strong>The only kind we should all collectively be doing.</strong> What a work of art
+        </div>
+        <a href="https://x.com/chadboyda/status/1955298177197764963" class="testimonial-link" target="_blank">
+          <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32 4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
+          View on Twitter
+        </a>
+      </div>
     </div>
-    <a href="https://x.com/tobi/status/1963434604741701909" class="testimonial-link" target="_blank">
-      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32 4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
-      View on Twitter
-    </a>
+
+    <!-- Testimonial 3 -->
+    <div class="testimonials-track">
+      <div class="testimonial-card">
+        <div class="testimonial-header">
+          <div class="testimonial-icon">
+            <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/databricks.svg" alt="Databricks" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
+          </div>
+          <div>
+            <div class="testimonial-author">Ivan Zhou</div>
+            <div class="testimonial-role">Research Engineer, Databricks Mosaic</div>
+          </div>
+        </div>
+        <div class="testimonial-content">
+          Automated prompt optimization (GEPA) can <strong>push open-source models beyond frontier performance on enterprise tasks — at a fraction of the cost!</strong> gpt-oss-120b + GEPA beats Claude Opus 4.1 on Information Extraction (+2.2 points) — while being <strong>90× cheaper to serve</strong>
+        </div>
+        <a href="https://x.com/ivanhzyy/status/1971066193747689521" class="testimonial-link" target="_blank">
+          <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32 4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
+          View on Twitter
+        </a>
+      </div>
+    </div>
+
+    <!-- Testimonial 4 -->
+    <div class="testimonials-track">
+      <div class="testimonial-card">
+        <div class="testimonial-header">
+          <div class="testimonial-icon">
+            <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg" alt="Dropbox" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
+          </div>
+          <div>
+            <div class="testimonial-author">Drew Houston</div>
+            <div class="testimonial-role">CEO, Dropbox</div>
+          </div>
+        </div>
+        <div class="testimonial-content">
+          Have heard great things about DSPy plus GEPA, which is an <strong>even stronger prompt optimizer than miprov2</strong> — repo and (fascinating) examples of generated prompts at github.com/gepa-ai/gepa
+        </div>
+        <a href="https://x.com/drewhouston/status/1974750621690728623" class="testimonial-link" target="_blank">
+          <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32 4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
+          View on Twitter
+        </a>
+      </div>
+    </div>
+
+    <!-- Testimonial 5 -->
+    <div class="testimonials-track">
+      <div class="testimonial-card">
+        <div class="testimonial-header">
+          <div class="testimonial-icon">
+            <span style="font-size: 2rem;">🧠</span>
+          </div>
+          <div>
+            <div class="testimonial-author">OpenAI</div>
+            <div class="testimonial-role">Official Cookbook</div>
+          </div>
+        </div>
+        <div class="testimonial-content">
+          Self-evolving agents that autonomously retrain themselves using GEPA to improve performance over time.
+        </div>
+        <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" class="testimonial-link" target="_blank">
+          <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg></span>
+          Read Cookbook
+        </a>
+      </div>
+    </div>
+
+    <!-- Testimonial 6 -->
+    <div class="testimonials-track">
+      <div class="testimonial-card">
+        <div class="testimonial-header">
+          <div class="testimonial-icon">
+            <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg" alt="Dropbox" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
+          </div>
+          <div>
+            <div class="testimonial-author">Josh Clemm</div>
+            <div class="testimonial-role">VP of Engineering, Dropbox Dash</div>
+          </div>
+        </div>
+        <div class="testimonial-content">
+          And anytime you bring in a new model, you have to spend a bunch of time optimizing the prompt again. But with DSPy [GEPA], <strong>you just plug the model in, define your goals, and out spits the prompt that works</strong>. So you can do this model switching far more rapidly—and this is really beneficial for modern agentic systems, because you just don't have one giant LLM.
+        </div>
+        <a href="https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash" class="testimonial-link" target="_blank">
+          <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg></span>
+          Read More
+        </a>
+      </div>
+    </div>
   </div>
 
-  <div class="testimonial-card">
-    <div class="testimonial-header">
-      <div class="testimonial-icon">
-        <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg" alt="Dropbox" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
-      </div>
-      <div>
-        <div class="testimonial-author">Drew Houston</div>
-        <div class="testimonial-role">CEO, Dropbox</div>
-      </div>
-    </div>
-    <div class="testimonial-content">
-      Have heard great things about DSPy plus GEPA, which is an <strong>even stronger prompt optimizer than miprov2</strong> — repo and (fascinating) examples of generated prompts at github.com/gepa-ai/gepa
-    </div>
-    <a href="https://x.com/drewhouston/status/1974750621690728623" class="testimonial-link" target="_blank">
-      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32 4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
-      View on Twitter
-    </a>
-  </div>
-
-  <div class="testimonial-card">
-    <div class="testimonial-header">
-      <div class="testimonial-icon">
-        <span style="font-size: 2rem;">🧠</span>
-      </div>
-      <div>
-        <div class="testimonial-author">OpenAI</div>
-        <div class="testimonial-role">Official Cookbook</div>
-      </div>
-    </div>
-    <div class="testimonial-content">
-      Self-evolving agents that autonomously retrain themselves using GEPA to improve performance over time.
-    </div>
-    <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" class="testimonial-link" target="_blank">
-      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg></span>
-      Read Cookbook
-    </a>
-  </div>
-
-  <div class="testimonial-card">
-    <div class="testimonial-header">
-      <div class="testimonial-icon">
-        <span style="font-size: 2rem;">🛍️</span>
-      </div>
-      <div>
-        <div class="testimonial-author">Chad Boyda</div>
-        <div class="testimonial-role">CTO, AppSumo</div>
-      </div>
-    </div>
-    <div class="testimonial-content">
-      DSPy's GEPA is prompt engineering! <strong>The only kind we should all collectively be doing.</strong> What a work of art
-    </div>
-    <a href="https://x.com/chadboyda/status/1955298177197764963" class="testimonial-link" target="_blank">
-      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32 4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
-      View on Twitter
-    </a>
-  </div>
-
-  <div class="testimonial-card">
-    <div class="testimonial-header">
-      <div class="testimonial-icon">
-        <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/shopify.svg" alt="Shopify" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
-      </div>
-      <div>
-        <div class="testimonial-author">Tobi Lutke</div>
-        <div class="testimonial-role">CEO, Shopify</div>
-      </div>
-    </div>
-    <div class="testimonial-content">
-      QMD update shipped: New fine-tuned query expansion model, <strong>GEPA-optimized synthetic training data</strong>, Semantic chunking that actually understands document structure
-    </div>
-    <a href="https://x.com/tobi/status/2017750533361070425?s=20" class="testimonial-link" target="_blank">
-      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32a4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
-      View Announcement
-    </a>
-  </div>
-
-  <div class="testimonial-card">
-    <div class="testimonial-header">
-      <div class="testimonial-icon">
-        <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/databricks.svg" alt="Databricks" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
-      </div>
-      <div>
-        <div class="testimonial-author">Ivan Zhou</div>
-        <div class="testimonial-role">Research Engineer, Databricks Mosaic</div>
-      </div>
-    </div>
-    <div class="testimonial-content">
-      Automated prompt optimization (GEPA) can <strong>push open-source models beyond frontier performance on enterprise tasks — at a fraction of the cost!</strong> gpt-oss-120b + GEPA beats Claude Opus 4.1 on Information Extraction (+2.2 points) — while being <strong>90× cheaper to serve</strong>
-    </div>
-    <a href="https://x.com/ivanhzyy/status/1971066193747689521" class="testimonial-link" target="_blank">
-      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M22.46 6c-.85.38-1.78.64-2.75.76a4.75 4.75 0 0 0 2.1-2.63c-.93.55-1.95.95-3.05 1.17a4.73 4.73 0 0 0-8.07 4.31A13.43 13.43 0 0 1 1.64 4.16a4.73 4.73 0 0 0 1.46 6.32a4.7 4.7 0 0 1-2.14-.59v.06a4.73 4.73 0 0 0 3.8 4.64c-.7.19-1.44.23-2.15.08a4.74 4.74 0 0 0 4.42 3.28A9.5 9.5 0 0 1 0 19.54a13.4 13.4 0 0 0 7.29 2.14c8.75 0 13.54-7.25 13.54-13.54 0-.21 0-.42-.02-.62A9.64 9.64 0 0 0 24 4.56z"/></svg></span>
-      View on Twitter
-    </a>
-  </div>
-
-  <div class="testimonial-card">
-    <div class="testimonial-header">
-      <div class="testimonial-icon">
-        <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg" alt="Dropbox" style="width: 2rem; height: 2rem; filter: brightness(0) invert(0.7);" loading="lazy">
-      </div>
-      <div>
-        <div class="testimonial-author">Josh Clemm</div>
-        <div class="testimonial-role">VP of Engineering, Dropbox Dash</div>
-      </div>
-    </div>
-    <div class="testimonial-content">
-      And anytime you bring in a new model, you have to spend a bunch of time optimizing the prompt again. But with DSPy [GEPA], <strong>you just plug the model in, define your goals, and out spits the prompt that works</strong>. So you can do this model switching far more rapidly—and this is really beneficial for modern agentic systems, because you just don't have one giant LLM.
-    </div>
-    <a href="https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash" class="testimonial-link" target="_blank">
-      <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width: 1rem; height: 1rem; fill: currentColor;"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg></span>
-      Read More
-    </a>
+  <div class="carousel-progress">
+    <div class="carousel-progress-bar"></div>
   </div>
 </div>
 
