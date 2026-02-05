@@ -14,8 +14,8 @@ from pathlib import Path
 
 import dspy
 
-from examples.arc_agi_poetiq.cache import EvalCache
-from examples.arc_agi_poetiq.evaluate import run_agent
+from examples.arc_agi.cache import EvalCache
+from examples.arc_agi.evaluate import run_agent
 from gepa.optimize_anything import (
     GEPAConfig,
     EngineConfig,

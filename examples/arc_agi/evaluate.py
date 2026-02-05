@@ -1,6 +1,6 @@
 """Evaluation logic for ARC-AGI agent."""
 
-from examples.arc_agi_poetiq.tracked_llm import TrackedLLM
+from examples.arc_agi.tracked_llm import TrackedLLM
 
 
 def compare_grid(pred, gold) -> tuple[bool, str]:

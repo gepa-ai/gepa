@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
 
-from examples.circle_packing_refiner.utils import (
+from examples.circle_packing.utils import (
     execute_code,
     SEED_CODE1,
     SEED_CODE2,
