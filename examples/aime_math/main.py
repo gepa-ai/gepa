@@ -39,27 +39,23 @@ def math_metric(example, prediction):
     return dspy.Prediction(score=score, feedback=feedback_text)
 
 
-def fitness_fn(candidate: dict[str, str], example) -> tuple[float, Any, SideInfo]:
+def fitness_fn(candidate: dict[str, str], example) -> tuple[float, SideInfo]:
     """Fitness function for GEPA optimization with single example evaluation."""
     prediction = run_llm(example, candidate["prompt"])
     metric_result = math_metric(example, prediction)
     score = metric_result.score
     feedback = metric_result.feedback
 
-    output = {
-        "prompt": candidate["prompt"],
-        "answer": prediction.answer,
-        "score": score,
-    }
-
     side_info = {
+        "Score": score,
         "Input": example.input,
+        "Prompt": candidate["prompt"],
         "Output": prediction.answer,
         "Reasoning": getattr(prediction, "reasoning", ""),
         "ExecutionFeedback": feedback,
     }
 
-    return (score, output, side_info)
+    return score, side_info
 
 
 def evaluate_on_dataset(prompt, dataset):
@@ -107,8 +103,6 @@ def run_llm(example, prompt: str):
 
 def main():
     api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print("Warning: OPENAI_API_KEY not set.")
 
     solver_lm = dspy.LM("gpt-4.1-mini", api_key=api_key, temperature=1.0, max_tokens=32000)
     proposal_lm = dspy.LM("openai/gpt-5.1", api_key=api_key, temperature=1.0, max_tokens=32000)
@@ -122,7 +116,6 @@ def main():
     gepa_config = GEPAConfig(
         engine=EngineConfig(
             run_dir=artifacts_dir,
-            seed=42,
             max_metric_calls=600,
             track_best_outputs=True,
             parallel=True,
@@ -130,8 +123,6 @@ def main():
             cache_evaluation=True,
         ),
         reflection=ReflectionConfig(
-            reflection_minibatch_size=3,
-            skip_perfect_score=False,
             reflection_lm=proposal_lm,
         ),
     )

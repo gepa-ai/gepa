@@ -49,14 +49,7 @@ def fitness_fn(candidate, best_example_evals):
         circles = None
         score = 0.0
         scores = {"sum_radii": 0.0}  # NO ERROR? (for now, it's not validated because it can't beat the parent)
-        # TODO: return all the different metrics
-        # import sys
-        # print("=" * 50, file=sys.stderr, flush=True)
-        # print("FAILURE:", result.get("error"), file=sys.stderr, flush=True)
-        # print("Traceback:", result.get("traceback"), file=sys.stderr, flush=True)
-        # print("Validation:", result.get("validation_details"), file=sys.stderr, flush=True)
-        # print("=" * 50, file=sys.stderr, flush=True)
-
+        
     side_info = {
         "scores": scores,  # lowercase for multi-objective support
         "Code": code,
