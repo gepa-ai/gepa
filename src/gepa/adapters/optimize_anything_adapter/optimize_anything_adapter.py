@@ -255,6 +255,18 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             results.append(result)
         return results
 
+    def _get_target_param(self, candidate: dict[str, str]) -> str:
+        """Determine which parameter to refine."""
+        target_param = self.refiner_config.refinement_target_param
+        if target_param is not None:
+            return target_param
+        if len(candidate) == 1:
+            return list(candidate.keys())[0]
+        return next(
+            (k for k in candidate.keys() if k != "refiner_prompt"),
+            list(candidate.keys())[0]
+        )
+
     def _evaluate_single_with_refinement(
         self,
         candidate: dict[str, str],
@@ -276,17 +288,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             )
 
         # Determine target parameter
-        target_param = self.refiner_config.refinement_target_param
-        if target_param is None:
-            if len(candidate) == 1:
-                # Single-key candidate: use that key
-                target_param = list(candidate.keys())[0]
-            else:
-                # Multi-key: first param that's not "refiner_prompt"
-                target_param = next(
-                    (k for k in candidate.keys() if k != "refiner_prompt"),
-                    list(candidate.keys())[0]
-                )
+        target_param = self._get_target_param(candidate)
 
         # 1. Evaluate original candidate
         original_score, original_output, original_side_info = self._call_fitness_fn(
@@ -322,54 +324,34 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         return final_score, best_output, aggregated_side_info
 
-    def _evaluate_with_refinement_parallel(
+    def _run_parallel(
         self,
         batch: list[DataInst],
         candidate: dict[str, str],
+        eval_fn,  # callable(candidate, example) -> result
     ) -> list[tuple[float, Any, "SideInfo"]]:
+        """Run evaluation function in parallel across batch."""
+        results: list[tuple[int, tuple[float, Any, SideInfo]]] = []
+
+        with ThreadPoolExecutor(max_workers=self.max_workers or len(batch)) as executor:
+            future_to_idx = {
+                executor.submit(eval_fn, candidate, example): idx
+                for idx, example in enumerate(batch)
+            }
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                results.append((idx, future.result()))
+
+        results.sort(key=lambda x: x[0])
+        return [result for _, result in results]
+
+    def _evaluate_parallel(self, batch, candidate):
+        """Evaluate batch in parallel (no refinement)."""
+        return self._run_parallel(batch, candidate, self._call_fitness_fn)
+
+    def _evaluate_with_refinement_parallel(self, batch, candidate):
         """Evaluate batch in parallel with refinement."""
-        results: list[tuple[int, tuple[float, Any, SideInfo]]] = []
-
-        with ThreadPoolExecutor(max_workers=self.max_workers or len(batch)) as executor:
-            future_to_idx = {
-                executor.submit(self._evaluate_single_with_refinement, candidate, example): idx
-                for idx, example in enumerate(batch)
-            }
-
-            for future in as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                results.append((idx, future.result()))
-
-        # Sort by index to maintain order
-        results.sort(key=lambda x: x[0])
-        return [result for _, result in results]
-
-    def _evaluate_parallel(
-        self,
-        batch: list[DataInst],
-        candidate: dict[str, str],
-    ) -> list[tuple[float, Any, "SideInfo"]]:
-        """Evaluate batch in parallel using ThreadPoolExecutor."""
-        results: list[tuple[int, tuple[float, Any, SideInfo]]] = []
-
-        with ThreadPoolExecutor(max_workers=self.max_workers or len(batch)) as executor:
-            # Submit all tasks with their index to maintain order
-            future_to_idx = {
-                executor.submit(
-                    self._call_fitness_fn,
-                    candidate,
-                    example,
-                ): idx
-                for idx, example in enumerate(batch)
-            }
-
-            for future in as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                results.append((idx, future.result()))
-
-        # Sort by index to maintain original order
-        results.sort(key=lambda x: x[0])
-        return [result for _, result in results]
+        return self._run_parallel(batch, candidate, self._evaluate_single_with_refinement)
 
     def _refine_and_evaluate(
         self,
@@ -388,17 +370,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         import dspy
 
         # Determine target parameter to refine
-        target_param = self.refiner_config.refinement_target_param
-        if target_param is None:
-            if len(candidate) == 1:
-                # Single-key candidate: use that key
-                target_param = list(candidate.keys())[0]
-            else:
-                # Multi-key: first param that's not "refiner_prompt"
-                target_param = next(
-                    (k for k in candidate.keys() if k != "refiner_prompt"),
-                    list(candidate.keys())[0]
-                )
+        target_param = self._get_target_param(candidate)
 
         candidate_text = candidate[target_param]
         best_score = original_score
@@ -492,10 +464,6 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         }
 
         return best_score, best_output, refinement_side_info
-
-    def _format_evaluation_feedback(self, side_info: "SideInfo") -> str:
-        """Format side_info into readable feedback for the refiner LLM."""
-        return json.dumps(side_info, indent=2, default=str)
 
     def _format_all_attempts_feedback(self, all_attempts: list[dict]) -> str:
         """Format all attempts (including original) into readable feedback for the refiner LLM.
