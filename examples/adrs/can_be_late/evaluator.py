@@ -552,7 +552,7 @@ def create_fitness_function(timeout: int = 300):
 
     def fitness_fn(
         candidate: dict[str, str], example: dict[str, Any], **kwargs
-    ) -> tuple[float, Any, SideInfo]:
+    ) -> tuple[float, SideInfo]:
         """
         Evaluate a candidate strategy on a single trace sample.
 
@@ -561,7 +561,7 @@ def create_fitness_function(timeout: int = 300):
             example: Sample dict with 'trace_file' and 'config'
 
         Returns:
-            Tuple of (score, output, side_info)
+            Tuple of (score, side_info)
         """
         program_code = candidate["program"]
 
@@ -581,8 +581,8 @@ def create_fitness_function(timeout: int = 300):
                 "Error": error_msg,
                 "stage": "stage1",
             }
-            output = {"error": error_msg, "stage": "stage1"}
-            return (FAILED_SCORE, output, side_info)
+            # output = {"error": error_msg, "stage": "stage1"}
+            return (FAILED_SCORE, side_info)
 
         # Stage 2: Run simulation
         trace_file = example.get("trace_file")
@@ -595,7 +595,8 @@ def create_fitness_function(timeout: int = 300):
                 "Input": {"trace_file": trace_file, "config": config},
                 "Error": "Invalid sample: missing trace_file or config",
             }
-            return (FAILED_SCORE, {"error": "Invalid sample"}, side_info)
+            # output = {"error": "Invalid sample"}
+            return (FAILED_SCORE, side_info)
 
         # Run simulation
         success, cost, error_msg, detailed_info = run_single_simulation(
@@ -634,14 +635,14 @@ def create_fitness_function(timeout: int = 300):
                     "segments": f"SPOT={cli_segments.get('spot_segments', 0)}, ON_DEMAND={cli_segments.get('ondemand_segments', 0)}, restarts={cli_segments.get('restart_count', 0)}",
                 },
             }
-            output = {
-                "trace_file": trace_file,
-                "config": config,
-                "cost": cost,
-                "score": score,
-                "cli_segments": cli_segments,
-            }
-            return (score, output, side_info)
+            # output = {
+            #     "trace_file": trace_file,
+            #     "config": config,
+            #     "cost": cost,
+            #     "score": score,
+            #     "cli_segments": cli_segments,
+            # }
+            return (score, side_info)
         else:
             score = FAILED_SCORE
             side_info = {
@@ -654,12 +655,12 @@ def create_fitness_function(timeout: int = 300):
                 },
                 "Error": error_msg,
             }
-            output = {
-                "trace_file": trace_file,
-                "config": config,
-                "error": error_msg,
-            }
-            return (score, output, side_info)
+            # output = {
+            #     "trace_file": trace_file,
+            #     "config": config,
+            #     "error": error_msg,
+            # }
+            return (score, side_info)
 
     return fitness_fn
 

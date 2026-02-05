@@ -261,7 +261,7 @@ def create_fitness_function(timeout: int = 300):
 
     def fitness_fn(
         candidate: dict[str, str], example: dict[str, Any], **kwargs
-    ) -> tuple[float, Any, SideInfo]:
+    ) -> tuple[float, SideInfo]:
         """
         Evaluate a candidate search algorithm on a single configuration.
 
@@ -270,7 +270,7 @@ def create_fitness_function(timeout: int = 300):
             example: Sample dict with 'config_file' and optional 'num_vms'
 
         Returns:
-            Tuple of (score, output, side_info)
+            Tuple of (score, side_info)
         """
         program_code = candidate["program"]
 
@@ -288,8 +288,8 @@ def create_fitness_function(timeout: int = 300):
                 "Error": error_msg,
                 "stage": "stage1",
             }
-            output = {"error": error_msg, "stage": "stage1"}
-            return (FAILED_SCORE, output, side_info)
+            # output = {"error": error_msg, "stage": "stage1"}
+            return (FAILED_SCORE, side_info)
 
         # Stage 2: Run simulation
         config_file = example.get("config_file")
@@ -301,7 +301,8 @@ def create_fitness_function(timeout: int = 300):
                 "Input": {"config_file": config_file},
                 "Error": "Invalid sample: missing config_file",
             }
-            return (FAILED_SCORE, {"error": "Invalid sample"}, side_info)
+            # output = {"error": "Invalid sample"}
+            return (FAILED_SCORE, side_info)
 
         # Run simulation
         success, cost, transfer_time, error_msg, detailed_info = run_single_config(
@@ -328,14 +329,14 @@ def create_fitness_function(timeout: int = 300):
                     "transfer_time": f"{transfer_time:.2f}s",
                 },
             }
-            output = {
-                "config_file": config_file,
-                "cost": cost,
-                "transfer_time": transfer_time,
-                "score": score,
-                "detailed_info": detailed_info,
-            }
-            return (score, output, side_info)
+            # output = {
+            #     "config_file": config_file,
+            #     "cost": cost,
+            #     "transfer_time": transfer_time,
+            #     "score": score,
+            #     "detailed_info": detailed_info,
+            # }
+            return (score, side_info)
         else:
             score = FAILED_SCORE
             side_info = {
@@ -345,11 +346,11 @@ def create_fitness_function(timeout: int = 300):
                 },
                 "Error": error_msg,
             }
-            output = {
-                "config_file": config_file,
-                "error": error_msg,
-            }
-            return (score, output, side_info)
+            # output = {
+            #     "config_file": config_file,
+            #     "error": error_msg,
+            # }
+            return (score, side_info)
 
     return fitness_fn
 
