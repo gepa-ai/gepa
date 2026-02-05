@@ -211,6 +211,7 @@ CRITICAL CODE FORMAT:
 CRITICAL CONSTRAINTS:
 1. All circles fully inside [0,1]×[0,1]: 0 ≤ x-r, x+r ≤ 1 and 0 ≤ y-r, y+r ≤ 1
 2. No overlaps: distance between centers ≥ sum of radii
+3. Your code should run in <550 seconds. Otherwise, the score will be 0.
 
 INNOVATION STRATEGIES:
 1. **Algorithmic diversity**: Physics-based, optimization-based, geometric, hybrid, meta-heuristics

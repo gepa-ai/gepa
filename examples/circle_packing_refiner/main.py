@@ -48,13 +48,17 @@ def fitness_fn(candidate, best_example_evals):
     else:
         circles = None
         score = 0.0
-        scores = {"sum_radii": 0.0}
-        print("Error: ", result.get("error"))
-        print("Traceback: ", result.get("traceback"))
-        print("Validation Details: ", result.get("validation_details"))
+        scores = {"sum_radii": 0.0}  # NO ERROR? (for now, it's not validated because it can't beat the parent)
+        # TODO: return all the different metrics
+        # import sys
+        # print("=" * 50, file=sys.stderr, flush=True)
+        # print("FAILURE:", result.get("error"), file=sys.stderr, flush=True)
+        # print("Traceback:", result.get("traceback"), file=sys.stderr, flush=True)
+        # print("Validation:", result.get("validation_details"), file=sys.stderr, flush=True)
+        # print("=" * 50, file=sys.stderr, flush=True)
 
     side_info = {
-        "Scores": scores,
+        "scores": scores,  # lowercase for multi-objective support
         "Code": code,
         "Circles": circles,
         "Stdout": result.get("stdout", ""),
@@ -68,6 +72,15 @@ def fitness_fn(candidate, best_example_evals):
 
 def main():
     log_dir = f"outputs/circle_packing"
+
+    # 1. clear the log directory
+    import os
+    import shutil
+    if os.path.exists(log_dir):
+        os.remove(f"{log_dir}/gepa_state.bin")
+        shutil.rmtree(f"{log_dir}/fitness_cache")
+        shutil.rmtree(f"{log_dir}/generated_best_outputs_valset")
+    os.makedirs(log_dir, exist_ok=True)
 
     print("Circle Packing Evolution with RefinerConfig")
     print(f"LLM Model: {LLM_MODEL} | Problem size: N={NUM_CIRCLES} | Max metric calls: {MAX_METRIC_CALLS} | Log directory: {log_dir}")
@@ -92,7 +105,6 @@ def main():
         ),
         refiner=RefinerConfig(
             refiner_lm=LLM_MODEL,
-            max_refinements=2,
         ),
     )
 
