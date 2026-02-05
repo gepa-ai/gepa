@@ -12,7 +12,7 @@ from pathlib import Path
 
 import dspy
 
-from run_with_GPUs import GPUManager
+from examples.kernelbench.run_with_GPUs import GPUManager
 
 # Module-level GPU manager for coordinated GPU access
 _gpu_manager: GPUManager | None = None
