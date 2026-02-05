@@ -285,7 +285,7 @@ class EngineConfig:
 
     # Track top-K best evaluations per example, passed to fitness_fn as "best_example_evals"
     # Useful for warm-starting optimization from previous best solutions
-    best_example_evals_k: int = 10
+    best_example_evals_k: int = 30
 
 
 def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
@@ -416,7 +416,7 @@ class ReflectionConfig:
     skip_perfect_score: bool = False
     perfect_score: float | None = None
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled"
-    reflection_minibatch_size: int = 3
+    reflection_minibatch_size: int | None = None  # Default: 1 for single-instance mode, 3 otherwise
     module_selector: ReflectionComponentSelector | Literal["round_robin", "all"] = "round_robin"
     reflection_lm: LanguageModel | str | None = None
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
@@ -461,30 +461,21 @@ class RefinerConfig:
     The refiner automatically improves candidates by calling an LLM with refinement
     instructions, evaluating the refined candidate, and returning the best result.
 
-    Three modes of operation:
-    1. Static mode: refiner_prompt is provided in config (fixed prompt)
-    2. Optimize mode: refiner_prompt is in seed_candidate (evolved by GEPA)
-    3. Default mode: if neither provided, uses DEFAULT_REFINER_PROMPT with objective/background
+    Two modes of operation:
+    1. Optimize mode: refiner_prompt is in seed_candidate (evolved by GEPA)
+    2. Default mode: uses DEFAULT_REFINER_PROMPT with objective/background
+
+    Refinement runs at least once, then continues until no improvement or max_refinements.
     """
 
     # Language model for refinement (required)
     refiner_lm: LanguageModel | str
 
-    # Static prompt (if provided) or None (will use from candidate)
-    refiner_prompt: str | None = None
-
     # Maximum refinement iterations per evaluation
-    max_refinements: int = 1
-
-    # Minimum refinement iterations (guarantees at least N refinements even if no improvement)
-    min_refinements: int = 0
+    max_refinements: int = 2
 
     # Parameter name to refine (default: first param if not "refiner_prompt")
     refinement_target_param: str | None = None
-
-    # Stop refinement when this key in side_info is truthy (e.g., "success", "is_valid")
-    # Checked after each refinement; only stops if past min_refinements
-    stop_when: str | None = None
 
 
 # --- Component 3: Experiment Tracking Configuration ---
@@ -689,6 +680,10 @@ def optimize_anything(
     # Detect single-instance mode: when both dataset=None and valset=None
     single_instance_mode = dataset is None and valset is None
 
+    # Set reflection_minibatch_size default based on mode (if not explicitly set)
+    if config.reflection.reflection_minibatch_size is None:
+        config.reflection.reflection_minibatch_size = 1 if single_instance_mode else 3
+
     # Handle single-instance mode: when both dataset=None and valset=None, create a
     # dataset with a single sentinel element. The fitness function will be called
     # without the example parameter.
@@ -865,11 +860,7 @@ def optimize_anything(
     # --- 7. Build batch sampler from ReflectionConfig ---
     if config.reflection.batch_sampler == "epoch_shuffled":
         config.reflection.batch_sampler = EpochShuffledBatchSampler(
-            minibatch_size=config.reflection.reflection_minibatch_size or 3, rng=rng
-        )
-    else:
-        assert config.reflection.reflection_minibatch_size is None, (
-            "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"
+            minibatch_size=config.reflection.reflection_minibatch_size, rng=rng
         )
 
     # --- 8. Build experiment tracker from TrackingConfig ---

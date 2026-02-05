@@ -263,11 +263,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         """Evaluate a single example with refinement."""
         assert self.refiner_config is not None
 
-        # Determine refiner_prompt source (static, optimize, or default mode)
-        if self.refiner_config.refiner_prompt is not None:
-            # Static mode: use prompt from config
-            refiner_prompt = self.refiner_config.refiner_prompt
-        elif "refiner_prompt" in candidate:
+        # Determine refiner_prompt source (optimize or default mode)
+        if "refiner_prompt" in candidate:
             # Optimize mode: use prompt from candidate
             refiner_prompt = candidate["refiner_prompt"]
         else:
@@ -417,6 +414,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         # Iterative refinement
         current_text = candidate_text
+        print(f"\n[Refiner] Starting refinement loop (max_refinements={self.refiner_config.max_refinements}, original_score={original_score:.4f})", flush=True)
 
         for refinement_iter in range(self.refiner_config.max_refinements):
             # Format ALL attempts so far for the refiner (provides full history)
@@ -433,6 +431,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 # Extract refined candidate (handle code blocks)
                 refined_text = refiner_result.refined_candidate.strip()
                 refined_text = refined_text.replace("```python", "").replace("```", "").strip()
+
+                # Print refined proposal
+                print(f"\n{'='*60}", flush=True)
+                print(f"Refiner iteration {refinement_iter + 1}/{self.refiner_config.max_refinements}", flush=True)
+                print(f"{'='*60}", flush=True)
+                print(refined_text[:2000] + ("..." if len(refined_text) > 2000 else ""), flush=True)
+                print(f"{'='*60}\n", flush=True)
 
                 # Evaluate refined candidate
                 refined_candidate_dict = {**candidate, target_param: refined_text}
@@ -453,17 +458,14 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
                 # Update best if improved
                 improved = refined_score > best_score
+                print(f"Refinement {refinement_iter + 1}: score={refined_score:.4f} (prev best={best_score:.4f}) {'✓ improved' if improved else ''}", flush=True)
                 if improved:
                     best_score = refined_score
                     best_output = refined_output
                     current_text = refined_text
-
-                # Check stopping conditions (only after min_refinements)
-                if refinement_iter + 1 >= self.refiner_config.min_refinements:
-                    # Stop if stop_when key is truthy in side_info
-                    if (self.refiner_config.stop_when is not None
-                        and refined_eval_side_info.get(self.refiner_config.stop_when)):
-                        break
+                else:
+                    # Stop when no improvement
+                    break
 
             except Exception as e:
                 # Refinement failed, record error and stop
@@ -475,10 +477,15 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 break
 
         # Build refinement side_info
+        # Get scores from the best refinement attempt (or original if no improvement)
+        best_attempt = max(all_attempts, key=lambda x: x.get("score", float("-inf")))
+        best_attempt_scores = best_attempt.get("side_info", {}).get("scores", {})
+
         refinement_side_info = {
             "scores": {
                 "best_refined_score": best_score,
                 "refinement_improvement": best_score - original_score,
+                **best_attempt_scores,  # Include all metrics from the best attempt
             },
             "Attempts": all_attempts,  # Includes original (iteration 0) + all refinements
             "Refiner prompt used": refiner_prompt,
