@@ -12,28 +12,6 @@ from pathlib import Path
 
 import dspy
 
-from examples.kernelbench.run_with_GPUs import GPUManager
-
-# Module-level GPU manager for coordinated GPU access
-_gpu_manager: GPUManager | None = None
-
-
-def init_gpu_manager(device_list: list[int] | None = None, lock_dir: str = ".gpu_locks") -> GPUManager:
-    """Initialize global GPU manager for coordinated GPU access.
-
-    Args:
-        device_list: List of GPU indices to use. If None, auto-detects free GPUs.
-        lock_dir: Directory to store lock files.
-
-    Returns:
-        Initialized GPUManager instance.
-    """
-    global _gpu_manager
-    if device_list is None:
-        device_list = get_free_gpus() or list(range(8))
-    _gpu_manager = GPUManager(device_list, lock_dir)
-    return _gpu_manager
-
 # Paths - KernelBench is now in the same directory
 KERNELBENCH_ROOT = Path(__file__).parent / "KernelBench"
 
@@ -187,27 +165,13 @@ def execute_kernel(code: str, ref_arch: str, timeout: int = 360, device: int | N
         code: CUDA kernel code to execute.
         ref_arch: Reference PyTorch architecture.
         timeout: Execution timeout in seconds.
-        device: Explicit GPU device index. If None, uses GPUManager or legacy polling.
+        device: Explicit GPU device index. If None, auto-acquires a free GPU.
 
     Returns:
         Dict with compilation, correctness, and performance results.
     """
-    if device is not None:
-        # Explicit device specified (tests, manual runs) - no locking needed
-        return _execute_kernel_impl(code, ref_arch, timeout, device)
-
-    if _gpu_manager is None:
-        # No manager initialized - use legacy polling (backward compat)
+    if device is None:
         device = acquire_gpu()
-        return _execute_kernel_impl(code, ref_arch, timeout, device)
-
-    # Use GPUManager with proper locking
-    with _gpu_manager.acquire(timeout=float(timeout) if timeout else None) as device:
-        return _execute_kernel_impl(code, ref_arch, timeout, device)
-
-
-def _execute_kernel_impl(code: str, ref_arch: str, timeout: int, device: int) -> dict:
-    """Internal: execute kernel on specific device (assumes GPU is acquired)."""
     ctx = mp.get_context("spawn")
     queue = ctx.Queue()
     proc = ctx.Process(target=_run_eval, args=(queue, code, ref_arch, device, _find_cuda_home()))
@@ -406,7 +370,7 @@ LEVEL_PROBLEMS = {
 }
 
 
-def load_dataset(levels: list[str] = ["level1"]) -> list[dspy.Example]:
+def load_dataset() -> list[dspy.Example]:
     """Load KernelBench problems as dspy.Examples.
 
     Note: baseline_time is loaded from JSON as fallback only.
@@ -417,9 +381,10 @@ def load_dataset(levels: list[str] = ["level1"]) -> list[dspy.Example]:
     if BASELINE_PATH.exists():
         with open(BASELINE_PATH) as f:
             fallback_baselines = json.load(f)
+    LEVELS = ["level1", "level2", "level3"]
 
     examples = []
-    for level in levels:
+    for level in LEVELS:
         for problem_id in LEVEL_PROBLEMS.get(level, []):
             path = KERNELBENCH_ROOT / "KernelBench" / level / problem_id
             if not path.exists():

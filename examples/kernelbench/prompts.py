@@ -1,6 +1,17 @@
-"""LLM prompts and signatures for KernelBench (simplified for RefinerConfig)."""
+"""LLM prompts, signatures, and constants for KernelBench."""
 
 import dspy
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+LLM = "openai/gpt-5"
+TIMEOUT = 360
+
+# =============================================================================
+# PROMPTS
+# =============================================================================
 
 BACKGROUND = """
 # KernelBench
@@ -25,6 +36,12 @@ When fixing errors:
 KERNEL_GEN_PROMPT = """Write a CUDA kernel to replace the given PyTorch model for better performance.
 Output a complete Python file with ModelNew using load_inline. Include all imports."""
 
+OBJECTIVE = "Generate an LLM prompt that produces fast, correct CUDA kernels outperforming PyTorch baselines."
+
+
+# =============================================================================
+# SIGNATURES
+# =============================================================================
 
 class KernelGenSig(dspy.Signature):
     """Generate a CUDA kernel for a PyTorch model."""

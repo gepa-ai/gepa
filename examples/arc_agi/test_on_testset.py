@@ -13,7 +13,8 @@ from pathlib import Path
 print = partial(print, flush=True)
 
 from examples.arc_agi.evaluate import run_agent
-from examples.arc_agi.main import SEED_AGENT_CODE, load_arc_dataset
+from examples.arc_agi.main import SEED_AGENT_CODE
+from examples.arc_agi.utils import load_arc_dataset
 
 
 def evaluate_on_testset(
