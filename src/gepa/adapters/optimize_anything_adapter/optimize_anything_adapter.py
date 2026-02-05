@@ -220,7 +220,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         scores = [score for score, _, _ in eval_output]
         side_infos: list[SideInfo] = [info for _, _, info in eval_output]
-        outputs = [output for _, output, _ in eval_output]
+        outputs = side_infos
 
         objective_scores = []
         for side_info in side_infos:
