@@ -6,20 +6,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirna
 
 
 def test_imports():
-    from experiments.arc_agi_poetiq.tracked_llm import TrackedLLM
-    from experiments.arc_agi_poetiq.main import SEED_AGENT_CODE, load_arc_dataset
-    from experiments.arc_agi_poetiq.evaluate import compare_grid, evaluate_predictions, evaluate_test
+    from examples.arc_agi.tracked_llm import TrackedLLM
+    from examples.arc_agi.main import SEED_AGENT_CODE, load_arc_dataset
+    from examples.arc_agi.evaluate import compare_grid, evaluate_predictions, evaluate_test
     print("Imports OK")
 
 
 def test_seed_code_syntax():
-    from experiments.arc_agi_poetiq.main import SEED_AGENT_CODE
+    from examples.arc_agi.main import SEED_AGENT_CODE
     compile(SEED_AGENT_CODE, "<seed>", "exec")
     print("Seed code syntax OK")
 
 
 def test_compare_grid():
-    from experiments.arc_agi_poetiq.evaluate import compare_grid
+    from examples.arc_agi.evaluate import compare_grid
 
     # Correct
     correct, fb = compare_grid([[1, 2], [3, 4]], [[1, 2], [3, 4]])
@@ -38,7 +38,7 @@ def test_compare_grid():
 
 
 def test_evaluate_predictions():
-    from experiments.arc_agi_poetiq.evaluate import evaluate_predictions
+    from examples.arc_agi.evaluate import evaluate_predictions
 
     preds = [[[1, 2]], [[3, 4]]]
     golds = [[[1, 2]], [[3, 4]]]
@@ -49,7 +49,7 @@ def test_evaluate_predictions():
 
 
 def test_evaluate_test():
-    from experiments.arc_agi_poetiq.evaluate import evaluate_test
+    from examples.arc_agi.evaluate import evaluate_test
 
     # First attempt wrong, second correct
     test_preds = [
@@ -64,7 +64,7 @@ def test_evaluate_test():
 
 
 def test_dataset():
-    from experiments.arc_agi_poetiq.main import load_arc_dataset
+    from examples.arc_agi.main import load_arc_dataset
 
     train_set, val_set, test_set = load_arc_dataset(seed=0)
 

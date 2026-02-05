@@ -4,8 +4,8 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 
-from experiments.arc_agi_poetiq.main import SEED_AGENT_CODE, load_arc_dataset
-from experiments.arc_agi_poetiq.evaluate import run_agent
+from examples.arc_agi.main import SEED_AGENT_CODE, load_arc_dataset
+from examples.arc_agi.evaluate import run_agent
 
 
 # More complex candidate that makes multiple LLM calls

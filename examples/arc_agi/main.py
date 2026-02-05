@@ -204,13 +204,13 @@ def main():
 
     if args.resume:
         run_name = args.resume
-        log_dir = f"outputs/artifacts/arc_agi_poetiq/{run_name}"
+        log_dir = f"outputs/artifacts/arc_agi/{run_name}"
         if not os.path.exists(f"{log_dir}/gepa_state.bin"):
             raise ValueError(f"Cannot resume: {log_dir}/gepa_state.bin not found")
         print(f"Resuming from: {log_dir}")
     else:
         run_name = args.run_name or f"agent_{time.strftime('%y%m%d_%H%M%S')}"
-        log_dir = f"outputs/artifacts/arc_agi_poetiq/{run_name}"
+        log_dir = f"outputs/artifacts/arc_agi/{run_name}"
     cache_dir = f"{"/".join(log_dir.split("/")[:-1])}/cache"
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(cache_dir, exist_ok=True)

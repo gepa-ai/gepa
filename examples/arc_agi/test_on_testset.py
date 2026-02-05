@@ -75,7 +75,7 @@ def evaluate_on_testset(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run-dir", default="outputs/artifacts/arc_agi_poetiq/gemini-3-flash_260201_230849")
+    parser.add_argument("--run-dir", default="outputs/artifacts/arc_agi/gemini-3-flash_260201_230849")
     parser.add_argument("--model", default="openrouter/google/gemini-3-flash-preview")
     parser.add_argument("--max-llm-calls", type=int, default=10)
     parser.add_argument("--max-workers", type=int, default=32)
