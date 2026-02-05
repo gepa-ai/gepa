@@ -11,7 +11,7 @@ hide:
   <div style="text-align: center; margin-bottom: 1rem;">
     <img src="assets/gepa_logo_with_text_gradient.svg" alt="GEPA Logo" style="max-width: 400px; width: 100%;">
   </div>
-  <p class="hero-subtitle">Improve your agents, prompts and code by LLM reflection</p>
+  <p class="hero-subtitle">State-of-the-art, Framework-agnostic Prompt Optimization</p>
   <p style="font-size: 1rem; max-width: 800px; margin: 0 auto 1.5rem; line-height: 1.6;">
     Faster and cheaper than RL or fine-tuning. <strong><a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank" class="hero-link">90× cost reduction</a></strong> at same performance. <strong><a href="https://arxiv.org/abs/2507.19457" target="_blank" class="hero-link">35× faster than RL</a></strong>. Used by <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank" class="hero-link">Databricks</a>, <a href="https://x.com/tobi/status/1963434604741701909" target="_blank" class="hero-link">Shopify</a> and <a href="https://x.com/drewhouston/status/1974750621690728623" target="_blank" class="hero-link">Dropbox</a>.
   </p>
