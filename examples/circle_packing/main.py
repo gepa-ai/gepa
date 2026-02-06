@@ -96,9 +96,7 @@ def main():
             reflection_minibatch_size=1,
             reflection_lm=LLM_MODEL,
         ),
-        refiner=RefinerConfig(
-            refiner_lm=LLM_MODEL,
-        ),
+        refiner=RefinerConfig(),
     )
 
     # Run optimization

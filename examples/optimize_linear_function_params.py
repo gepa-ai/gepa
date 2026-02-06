@@ -8,7 +8,6 @@ to iteratively improve the parameters based on evaluation feedback.
 
 import json
 import random
-from typing import Any, Sequence
 
 from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, SideInfo, optimize_anything
 
@@ -17,51 +16,44 @@ from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, S
 dataset = [{"x": x, "target_y": 10.5 * x + 2.3} for x in range(100)]
 
 
-def fitness_fn(candidate: dict[str, str], batch: Sequence[Any], **kwargs) -> list[tuple[float, Any, SideInfo]]:
+def fitness_fn(candidate: dict[str, str], example, **kwargs) -> tuple[float, SideInfo]:
     """
-    Evaluates how well the candidate parameters fit the data.
+    Evaluates how well the candidate parameters fit a single data point.
 
-    Candidate contains: {"a": "3.5", "b": "1.8"}
-    We evaluate: y = b*x + a against target values
+    Candidate contains: {"function_params": '{"a": 3.5, "b": 1.8}'}
+    We evaluate: y = b*x + a against the target value.
 
-    Returns: list of (score, output, side_info) tuples
+    Returns: (score, side_info)
     """
     try:
         import json
 
-        candidate = json.loads(candidate["function_params"])
-        a = float(candidate["a"])
-        b = float(candidate["b"])
+        params = json.loads(candidate["function_params"])
+        a = float(params["a"])
+        b = float(params["b"])
     except Exception as e:
-        return [
-            (0.0, None, {"Feedback": f"The candidate is not a valid JSON object or missing 'a'/'b' keys. Error: {e}"})
-            for _ in batch
-        ]
+        return 0.0, {"Feedback": f"The candidate is not a valid JSON object or missing 'a'/'b' keys. Error: {e}"}
 
-    results = []
-    for instance in batch:
-        x = instance["x"]
-        target_y = instance["target_y"]
+    x = example["x"]
+    target_y = example["target_y"]
 
-        # Compute prediction using candidate parameters
-        predicted_y = b * x + a
+    # Compute prediction using candidate parameters
+    predicted_y = b * x + a
 
-        # Calculate error and score (higher is better)
-        error = abs(predicted_y - target_y)
-        score = 1.0 / (1.0 + error)  # Score between 0 and 1
+    # Calculate error and score (higher is better)
+    error = abs(predicted_y - target_y)
+    score = 1.0 / (1.0 + error)  # Score between 0 and 1
 
-        # Build diagnostic information for the LLM
-        side_info = {
-            "absolute_error (lower is better)": error,
-            "Input": f"x={x}",
-            "Output": f"predicted y={predicted_y:.2f}",
-            "Expected": f"target y={target_y}",
-            "Feedback": "Adjust the parameters a and b appropriately to fit the data points.",
-        }
+    # Build diagnostic information for the LLM
+    side_info = {
+        "absolute_error (lower is better)": error,
+        "Input": f"x={x}",
+        "Output": f"predicted y={predicted_y:.2f}",
+        "Expected": f"target y={target_y}",
+        "Feedback": "Adjust the parameters a and b appropriately to fit the data points.",
+    }
 
-        results.append((score, predicted_y, side_info))
-
-    return results
+    return score, side_info
 
 
 def main():

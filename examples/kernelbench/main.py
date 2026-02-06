@@ -109,9 +109,7 @@ def main():
         reflection=ReflectionConfig(
             reflection_lm=LLM,
         ),
-        refiner=RefinerConfig(
-            refiner_lm=LLM,
-        ),
+        refiner=RefinerConfig(),
     )
 
     optimize_anything(
