@@ -4,7 +4,7 @@ GEPA (Genetic-Pareto) is a Python framework for optimizing text components (AI p
 
 ## Setup
 
-We use **uv** for dependency management. The project uses setuptools as the build backend.
+We use **uv** for dependency management. The project uses setuptools as the build backend. All python executions must be done through uv.
 
 ```bash
 uv sync --extra dev
