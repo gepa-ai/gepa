@@ -279,7 +279,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self._update_best_example_evals(example, original_score, original_side_info)
 
         # 2. Refine and evaluate
-        best_refined_score, best_refined_output, best_refined_side_info = self._refine_and_evaluate(
+        best_refined_score, best_refined_output, best_refined_side_info, all_attempts = self._refine_and_evaluate(
             candidate, example, refiner_prompt, original_score, original_side_info
         )
 
@@ -287,49 +287,24 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         if best_refined_score > original_score:
             final_score = best_refined_score
             best_output = best_refined_output
-            best_side_info = best_refined_side_info
         else:
             final_score = original_score
             best_output = original_output
-            best_side_info = original_side_info
 
-        # 4. Side_info = best attempt's side_info (consistent with the boosted score)
-        aggregated_side_info = dict(best_side_info)
+        # 4. Side_info = original evaluation (so reflection sees raw candidate quality)
+        aggregated_side_info = dict(original_side_info)
 
-        # 5. Compute refinement rate scores for refiner_prompt reflection
-        #    Rate = (best - orig) / (1 + |orig|) — normalized, no div-by-zero, higher = better
-        improvement_scores: dict[str, float] = {
-            "refinement_rate": self._refinement_rate(original_score, best_refined_score),
-        }
-
-        # Per-metric rates from global scores
-        original_scores = original_side_info.get("scores") if isinstance(original_side_info, dict) else None
-        best_scores = best_side_info.get("scores") if isinstance(best_side_info, dict) else None
-        if isinstance(original_scores, dict) and isinstance(best_scores, dict):
-            for metric_name, orig_val in original_scores.items():
-                if isinstance(orig_val, (int, float)) and metric_name in best_scores:
-                    best_val = best_scores[metric_name]
-                    if isinstance(best_val, (int, float)):
-                        improvement_scores[f"{metric_name}_refinement_rate"] = self._refinement_rate(orig_val, best_val)
-
-        # Per-metric rates from param-specific scores
-        non_refiner_params = [k for k in candidate if k != "refiner_prompt"]
-        for param_name in non_refiner_params:
-            orig_param_info = original_side_info.get(f"{param_name}_specific_info", {}) if isinstance(original_side_info, dict) else {}
-            best_param_info = best_side_info.get(f"{param_name}_specific_info", {}) if isinstance(best_side_info, dict) else {}
-            orig_param_scores = orig_param_info.get("scores", {}) if isinstance(orig_param_info, dict) else {}
-            best_param_scores = best_param_info.get("scores", {}) if isinstance(best_param_info, dict) else {}
-            if isinstance(orig_param_scores, dict) and isinstance(best_param_scores, dict):
-                for metric_name, orig_val in orig_param_scores.items():
-                    if isinstance(orig_val, (int, float)) and metric_name in best_param_scores:
-                        best_val = best_param_scores[metric_name]
-                        if isinstance(best_val, (int, float)):
-                            improvement_scores[f"{param_name}::{metric_name}_refinement_rate"] = self._refinement_rate(orig_val, best_val)
+        # 5. Add refiner_prompt_specific_info with best refined scores + attempt history
+        #    "scores" = actual best metric values across all attempts (for objective frontier)
+        best_attempt = max(all_attempts, key=lambda x: x.get("score", float("-inf")))
+        best_attempt_side_info = best_attempt.get("side_info")
+        best_refined_scores = {}
+        if isinstance(best_attempt_side_info, dict) and "scores" in best_attempt_side_info:
+            best_refined_scores = best_attempt_side_info["scores"]
 
         aggregated_side_info["refiner_prompt_specific_info"] = {
-            "scores": improvement_scores,
-            "original_score": original_score,
-            "best_refined_score": best_refined_score,
+            "scores": best_refined_scores,
+            "Attempts": all_attempts,
         }
 
         return final_score, best_output, aggregated_side_info
@@ -481,15 +456,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 })
                 break
 
-        return best_score, best_output, best_side_info
-
-    @staticmethod
-    def _refinement_rate(orig: float, best: float) -> float:
-        """Normalized improvement rate: (best - orig) / (1 + |orig|).
-
-        Higher = better. Zero when no improvement. No division-by-zero.
-        """
-        return (best - orig) / (1.0 + abs(orig))
+        return best_score, best_output, best_side_info, all_attempts
 
     def _format_all_attempts_feedback(self, all_attempts: list[dict]) -> str:
         """Format all attempts (including original) into readable feedback for the refiner LLM.

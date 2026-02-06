@@ -401,14 +401,16 @@ class TestRefiner:
         assert "refiner_prompt_specific_info" in side_info, f"refiner_prompt_specific_info missing: {side_info.keys()}"
         refiner_info = side_info["refiner_prompt_specific_info"]
         assert "scores" in refiner_info, f"'scores' missing from refiner_info: {refiner_info.keys()}"
-        assert "refinement_rate" in refiner_info["scores"], f"'refinement_rate' missing: {refiner_info['scores']}"
-        # Per-metric refinement rate should also be computed (fitness_fn returns "scores": {"accuracy": ...})
-        assert "accuracy_refinement_rate" in refiner_info["scores"], f"'accuracy_refinement_rate' missing: {refiner_info['scores']}"
-        assert "original_score" in refiner_info
-        assert "best_refined_score" in refiner_info
+        assert "Attempts" in refiner_info, f"'Attempts' missing from refiner_info: {refiner_info.keys()}"
+        # scores should contain actual best metric values (not rates)
+        assert "accuracy" in refiner_info["scores"], f"'accuracy' missing from refiner scores: {refiner_info['scores']}"
+        # Attempts should include original (iteration 0) + refinement iterations
+        assert len(refiner_info["Attempts"]) >= 1, "Attempts should have at least the original evaluation"
+        assert refiner_info["Attempts"][0]["iteration"] == 0, "First attempt should be iteration 0 (original)"
         print(f"Side info keys: {list(side_info.keys())}")
         print(f"Refiner info keys: {list(refiner_info.keys())}")
-        print(f"Improvement scores: {refiner_info['scores']}")
+        print(f"Refiner scores: {refiner_info['scores']}")
+        print(f"Num attempts: {len(refiner_info['Attempts'])}")
 
     def test_refiner_improves_score(self):
         """Test that the refiner actually produces a better (or equal) score.
@@ -465,13 +467,14 @@ class TestRefiner:
         )
 
         refiner_info = side_info["refiner_prompt_specific_info"]
-        original_score = refiner_info["original_score"]
-        best_refined_score = refiner_info["best_refined_score"]
+        attempts = refiner_info["Attempts"]
+        original_score = attempts[0]["score"]
+        best_attempt_score = max(a.get("score", float("-inf")) for a in attempts)
 
         print(f"\nOriginal score: {original_score}")
-        print(f"Best refined score: {best_refined_score}")
+        print(f"Best attempt score: {best_attempt_score}")
         print(f"Final score (max): {score}")
-        print(f"Improvement scores: {refiner_info.get('scores', {})}")
+        print(f"Num attempts: {len(attempts)}")
 
         # The max(original, refined) guarantee must always hold
         assert score >= original_score, (
@@ -479,11 +482,11 @@ class TestRefiner:
         )
         # Soft check: with the hint, a capable model should improve.
         # Nano models often return unparseable output, so we don't hard-assert.
-        if best_refined_score > original_score:
-            print(f"Refiner improved: {original_score} -> {best_refined_score}")
+        if best_attempt_score > original_score:
+            print(f"Refiner improved: {original_score} -> {best_attempt_score}")
         else:
             print(f"WARNING: Refiner did not improve (original={original_score}, "
-                  f"refined={best_refined_score}). This is expected with small models "
+                  f"best_attempt={best_attempt_score}). This is expected with small models "
                   f"that struggle to return valid JSON.")
 
     def test_refiner_score_never_worse(self):
@@ -525,7 +528,8 @@ class TestRefiner:
             candidate, _SINGLE_INSTANCE_SENTINEL
         )
 
-        original_score = side_info["refiner_prompt_specific_info"]["original_score"]
+        attempts = side_info["refiner_prompt_specific_info"]["Attempts"]
+        original_score = attempts[0]["score"]
 
         print(f"\nOriginal score: {original_score}, Final score: {score}")
 
@@ -691,27 +695,26 @@ class TestRefinerFrontierTypes:
             print(f"  Score: {score}")
             print(f"  Side info keys: {list(side_info.keys())}")
 
-            # Top-level should have user fields from BEST attempt
+            # Top-level should have user fields from ORIGINAL evaluation
             assert "guess" in side_info
             assert "golden" in side_info
             assert "off_by" in side_info
             assert "scores" in side_info
             assert "accuracy" in side_info["scores"]
 
-            # Refiner info with rate-based scores
+            # Refiner info with best scores + attempt history
             assert "refiner_prompt_specific_info" in side_info
             rinfo = side_info["refiner_prompt_specific_info"]
             assert "scores" in rinfo
-            assert "refinement_rate" in rinfo["scores"]
-            assert "accuracy_refinement_rate" in rinfo["scores"]
-            assert "original_score" in rinfo
-            assert "best_refined_score" in rinfo
-            print(f"  Refinement rates: {rinfo['scores']}")
-            print(f"  Original: {rinfo['original_score']}, Best refined: {rinfo['best_refined_score']}")
+            assert "Attempts" in rinfo
+            assert len(rinfo["Attempts"]) >= 1
+            print(f"  Refiner scores: {rinfo['scores']}")
+            print(f"  Num attempts: {len(rinfo['Attempts'])}")
 
             # objective_scores should include both global and refiner metrics
             assert "accuracy" in obj_scores, f"Global 'accuracy' missing from objective_scores: {obj_scores}"
-            assert "refiner_prompt::refinement_rate" in obj_scores, f"Refiner rate missing from objective_scores: {obj_scores}"
+            # Refiner scores should have actual metric values (e.g., accuracy)
+            assert "refiner_prompt::accuracy" in obj_scores, f"Refiner accuracy missing from objective_scores: {obj_scores}"
             print(f"  Objective scores: {obj_scores}")
 
 
