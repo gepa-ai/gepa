@@ -11,7 +11,7 @@ hide:
   <div style="text-align: center; margin-bottom: 1rem;">
     <img src="assets/gepa_logo_with_text_gradient.svg" alt="GEPA Logo" style="max-width: 400px; width: 100%;">
   </div>
-  <p class="hero-subtitle">State-of-the-art, Framework-agnostic Prompt Optimization</p>
+  <p class="hero-subtitle">State-of-the-art Framework-agnostic Prompt Optimization</p>
   <p style="font-size: 1rem; max-width: 800px; margin: 0 auto 1.5rem; line-height: 1.6;">
     Faster and cheaper than RL or fine-tuning. <strong><a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank" class="hero-link">90× cost reduction</a></strong> at same performance. <strong><a href="https://arxiv.org/abs/2507.19457" target="_blank" class="hero-link">35× faster than RL</a></strong>. Used by <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank" class="hero-link">Databricks</a>, <a href="https://x.com/tobi/status/1963434604741701909" target="_blank" class="hero-link">Shopify</a> and <a href="https://x.com/drewhouston/status/1974750621690728623" target="_blank" class="hero-link">Dropbox</a>.
   </p>
@@ -223,31 +223,6 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-## :material-chart-line: Performance at a Glance
-
-<div class="stats-grid">
-  <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank" class="stat-card">
-    <span class="stat-number">90×</span>
-    <span class="stat-label">Cost Reduction</span>
-    <span class="stat-desc">Open-source models beat Claude Opus 4.1</span>
-  </a>
-  <a href="https://arxiv.org/abs/2507.19457" target="_blank" class="stat-card">
-    <span class="stat-number">35×</span>
-    <span class="stat-label">Efficiency Gain</span>
-    <span class="stat-desc">vs. Reinforcement Learning methods</span>
-  </a>
-  <div class="stat-card">
-    <span class="stat-number">+10%</span>
-    <span class="stat-label">Performance Gain</span>
-    <span class="stat-desc">On AIME 2025 with GPT-4.1 Mini</span>
-  </div>
-  <a href="guides/use-cases/" class="stat-card">
-    <span class="stat-number">50+</span>
-    <span class="stat-label">Production Use Cases</span>
-    <span class="stat-desc">Across diverse industries</span>
-  </a>
-</div>
-
 ## :material-rocket-launch-outline: Get Started
 
 <div class="badges-row">
@@ -360,6 +335,31 @@ pip install gepa
         task_lm="openai/gpt-4.1-mini",
     )
     ```
+
+## :material-chart-line: Performance at a Glance
+
+<div class="stats-grid">
+  <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank" class="stat-card">
+    <span class="stat-number">90×</span>
+    <span class="stat-label">Cost Reduction</span>
+    <span class="stat-desc">Open-source models beat Claude Opus 4.1</span>
+  </a>
+  <a href="https://arxiv.org/abs/2507.19457" target="_blank" class="stat-card">
+    <span class="stat-number">35×</span>
+    <span class="stat-label">Efficiency Gain</span>
+    <span class="stat-desc">vs. Reinforcement Learning methods</span>
+  </a>
+  <div class="stat-card">
+    <span class="stat-number">+10%</span>
+    <span class="stat-label">Performance Gain</span>
+    <span class="stat-desc">On AIME 2025 with GPT-4.1 Mini</span>
+  </div>
+  <a href="guides/use-cases/" class="stat-card">
+    <span class="stat-number">50+</span>
+    <span class="stat-label">Production Use Cases</span>
+    <span class="stat-desc">Across diverse industries</span>
+  </a>
+</div>
 
 ## :material-cog: How It Works
 
