@@ -5,6 +5,7 @@ This module provides a clean, configuration-based API for optimizing any
 parameterized system using evolutionary algorithms with LLM-based reflection.
 """
 
+import inspect
 import os
 import random
 import sys
@@ -542,6 +543,7 @@ def _create_fitness_fn_wrapper(
     1. Handles single-instance mode (calls fitness_fn without example parameter)
     2. Detects whether fitness_fn returns (score, side_info) tuple or just score
     3. Normalizes return value to always be (score, output, side_info) tuple
+    4. Filters kwargs to only pass what the fitness_fn accepts
 
     Args:
         fitness_fn: The user's fitness function
@@ -550,14 +552,33 @@ def _create_fitness_fn_wrapper(
     Returns:
         A wrapped fitness function that always returns (score, output, side_info)
     """
+    # Inspect the fitness function's signature once to determine which kwargs it accepts.
+    # If it has **kwargs, forward everything. Otherwise, only forward named params.
+    sig = inspect.signature(fitness_fn)
+    has_var_keyword = any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+    )
+    if has_var_keyword:
+        accepted_params = None  # accept all
+    else:
+        accepted_params = set(sig.parameters.keys())
+
+    def _filter_kwargs(kwargs: dict) -> dict:
+        if accepted_params is None:
+            return kwargs
+        return {k: v for k, v in kwargs.items() if k in accepted_params}
 
     def wrapped_fitness_fn(candidate: Candidate, example: DataInst | None = None, **kwargs: Any) -> tuple[float, Any, SideInfo]:
-        # In single-instance mode, call fitness_fn without the example parameter
+        # Build full kwargs dict. In per-instance mode, include example so it
+        # can be filtered like any other kwarg (supports both positional and
+        # **kwargs-based fitness functions).
         if single_instance_mode and example is _SINGLE_INSTANCE_SENTINEL:
-            result = fitness_fn(candidate, **kwargs)
+            all_kwargs = kwargs
         else:
-            # Per-instance mode: call with example parameter
-            result = fitness_fn(candidate, example, **kwargs)
+            all_kwargs = {"example": example, **kwargs}
+
+        filtered = _filter_kwargs(all_kwargs)
+        result = fitness_fn(candidate, **filtered)
 
         # Detect return type and normalize to (score, output, side_info)
         if isinstance(result, tuple):
