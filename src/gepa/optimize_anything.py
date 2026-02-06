@@ -265,7 +265,7 @@ class EngineConfig:
     seed: int = 0
     display_progress_bar: bool = False
     raise_on_exception: bool = True
-    use_cloudpickle: bool = False
+    use_cloudpickle: bool = True
     track_best_outputs: bool = False
 
     # Simple stopping conditions
@@ -419,7 +419,7 @@ class ReflectionConfig:
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled"
     reflection_minibatch_size: int | None = None  # Default: 1 for single-instance mode, 3 otherwise
     module_selector: ReflectionComponentSelector | Literal["round_robin", "all"] = "round_robin"
-    reflection_lm: LanguageModel | str | None = None
+    reflection_lm: LanguageModel | str | None = "openai/gpt-5.1"
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
 
@@ -457,26 +457,21 @@ Given a candidate and its evaluation feedback:
 
 @dataclass
 class RefinerConfig:
-    """Configuration for automatic candidate refinement.
+    """Configuration for automatic candidate refinement (enabled by default).
 
-    The refiner automatically improves candidates by calling an LLM with refinement
-    instructions, evaluating the refined candidate, and returning the best result.
-
-    Two modes of operation:
-    1. Optimize mode: refiner_prompt is in seed_candidate (evolved by GEPA)
-    2. Default mode: uses DEFAULT_REFINER_PROMPT with objective/background
+    The refiner automatically improves candidates by calling an LLM after each
+    evaluation. A `refiner_prompt` is auto-injected into seed candidates and
+    co-evolved by GEPA. All non-refiner params are refined together as a JSON dict.
 
     Refinement runs at least once, then continues until no improvement or max_refinements.
+    Set `config.refiner = None` to disable.
     """
 
-    # Language model for refinement (required)
-    refiner_lm: LanguageModel | str
+    # Language model for refinement (defaults to reflection_lm if not specified)
+    refiner_lm: LanguageModel | str | None = None
 
     # Maximum refinement iterations per evaluation
     max_refinements: int = 2
-
-    # Parameter name to refine (default: first param if not "refiner_prompt")
-    refinement_target_param: str | None = None
 
 
 # --- Component 3: Experiment Tracking Configuration ---
@@ -510,9 +505,9 @@ class GEPAConfig:
     reflection: ReflectionConfig = field(default_factory=ReflectionConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
 
-    # Use 'None' as the default to disable this component
+    # Use 'None' to disable these optional components
     merge: MergeConfig | None = None
-    refiner: RefinerConfig | None = None
+    refiner: RefinerConfig | None = field(default_factory=RefinerConfig)
 
     # Complex callbacks that aren't serializable
     stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None
@@ -803,6 +798,10 @@ def optimize_anything(
 
         config.reflection.reflection_lm = _reflection_lm
 
+    # Default refiner_lm to reflection_lm if not specified
+    if config.refiner is not None and config.refiner.refiner_lm is None:
+        config.refiner.refiner_lm = config.reflection.reflection_lm
+
     # Convert refiner_lm string to callable (if refiner is enabled)
     if config.refiner is not None:
         if isinstance(config.refiner.refiner_lm, str):
@@ -820,6 +819,18 @@ def optimize_anything(
                 return completion.choices[0].message.content  # type: ignore
 
             config.refiner.refiner_lm = _refiner_lm
+
+    # Auto-inject refiner_prompt into seed_candidate(s) if refiner is enabled
+    if config.refiner is not None:
+        formatted_refiner_prompt = DEFAULT_REFINER_PROMPT.format(
+            objective=objective or "Maximize the score",
+            background=background or "No additional background provided.",
+        )
+        candidates_to_check = seed_candidate if isinstance(seed_candidate, list) else [seed_candidate]
+        for sc in candidates_to_check:
+            if "refiner_prompt" not in sc:
+                sc["refiner_prompt"] = formatted_refiner_prompt
+            # If user provides their own refiner_prompt, use it (allows custom refiner prompts)
 
     # Setup default logger if not provided
     if config.tracking.logger is None:

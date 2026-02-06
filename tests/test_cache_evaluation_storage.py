@@ -59,6 +59,7 @@ class TestCacheEvaluationStorage:
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-4.1-nano",
             ),
+            refiner=None,
         )
 
         result = optimize_anything(
@@ -89,6 +90,7 @@ class TestCacheEvaluationStorage:
                 reflection=ReflectionConfig(
                     reflection_lm="openrouter/openai/gpt-4.1-nano",
                 ),
+                refiner=None,
             )
 
             # First run
@@ -123,6 +125,7 @@ class TestCacheEvaluationStorage:
                 reflection=ReflectionConfig(
                     reflection_lm="openrouter/openai/gpt-4.1-nano",
                 ),
+                refiner=None,
             )
 
             result2 = optimize_anything(
@@ -153,6 +156,7 @@ class TestCacheEvaluationStorage:
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-4.1-nano",
             ),
+            refiner=None,
         )
 
         result = optimize_anything(
@@ -182,6 +186,7 @@ class TestCacheEvaluationStorage:
                 reflection=ReflectionConfig(
                     reflection_lm="openrouter/openai/gpt-4.1-nano",
                 ),
+                refiner=None,
             )
 
             result = optimize_anything(
@@ -210,6 +215,7 @@ class TestCacheEvaluationStorage:
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-4.1-nano",
             ),
+            refiner=None,
         )
 
         # Should not raise - uses memory mode
@@ -237,6 +243,7 @@ class TestCacheEvaluationStorage:
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-4.1-nano",
             ),
+            refiner=None,
         )
 
         with pytest.raises(ValueError, match="cache_evaluation_storage='disk' requires run_dir"):
@@ -264,6 +271,7 @@ if __name__ == "__main__":
         reflection=ReflectionConfig(
             reflection_lm="openrouter/openai/gpt-4.1-nano",
         ),
+        refiner=None,
     )
 
     result = optimize_anything(

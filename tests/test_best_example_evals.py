@@ -64,6 +64,7 @@ class TestExampleBestEvals:
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-4.1-nano",
             ),
+            refiner=None,
         )
 
         result = optimize_anything(
@@ -97,6 +98,7 @@ class TestExampleBestEvals:
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-4.1-nano",
             ),
+            refiner=None,
         )
 
         result = optimize_anything(
@@ -131,6 +133,7 @@ class TestExampleBestEvals:
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-4.1-nano",
             ),
+            refiner=None,
         )
 
         result = optimize_anything(
@@ -171,6 +174,7 @@ if __name__ == "__main__":
         reflection=ReflectionConfig(
             reflection_lm="openrouter/openai/gpt-4.1-nano",
         ),
+        refiner=None,
     )
 
     result = optimize_anything(
