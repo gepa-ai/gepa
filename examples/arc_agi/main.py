@@ -123,6 +123,7 @@ def main():
         reflection=ReflectionConfig(
             reflection_lm=LLM_MODEL,
         ),
+        refiner=None,
     )
 
     seed_candidate = {"agent_code": SEED_AGENT_CODE}

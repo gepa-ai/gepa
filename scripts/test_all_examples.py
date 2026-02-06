@@ -59,6 +59,7 @@ def test_linear(llm: str, tmp_dir: str) -> None:
             reflection_lm=llm,
             reflection_minibatch_size=15,
         ),
+        refiner=None,
     )
 
     result = optimize_anything(
@@ -236,6 +237,7 @@ def test_aime_math(llm: str, tmp_dir: str) -> None:
         reflection=ReflectionConfig(
             reflection_lm=llm,
         ),
+        refiner=None,
     )
 
     result = optimize_anything(
@@ -283,6 +285,7 @@ def test_cloudcast(llm: str, tmp_dir: str) -> None:
             reflection_minibatch_size=3,
             reflection_lm=llm,
         ),
+        refiner=None,
     )
 
     result = optimize_anything(
@@ -331,6 +334,7 @@ def test_can_be_late(llm: str, tmp_dir: str) -> None:
             reflection_minibatch_size=3,
             reflection_lm=llm,
         ),
+        refiner=None,
     )
 
     result = optimize_anything(
@@ -397,6 +401,7 @@ def test_arc_agi(llm: str, tmp_dir: str) -> None:
         reflection=ReflectionConfig(
             reflection_lm=llm,
         ),
+        refiner=None,
     )
 
     result = optimize_anything(

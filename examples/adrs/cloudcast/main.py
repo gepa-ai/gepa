@@ -363,6 +363,7 @@ def main():
                 "project": "gepa_cloudcast",
             },
         ),
+        refiner=None,
     )
 
     # Run GEPA optimization

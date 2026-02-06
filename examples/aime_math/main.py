@@ -125,6 +125,7 @@ def main():
         reflection=ReflectionConfig(
             reflection_lm=proposal_lm,
         ),
+        refiner=None,
     )
 
     # Run GEPA optimization

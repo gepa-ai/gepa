@@ -336,6 +336,7 @@ def main():
                 "project": "gepa_cant_be_late",
             },
         ),
+        refiner=None,
     )
 
     # Run GEPA optimization

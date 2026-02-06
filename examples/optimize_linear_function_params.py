@@ -70,6 +70,7 @@ def main():
             reflection_lm="gpt-5-nano",  # LLM for proposing improved parameters
             reflection_minibatch_size=15,  # Use 3 data points per reflection
         ),
+        refiner=None,
     )
 
     # Run optimization
