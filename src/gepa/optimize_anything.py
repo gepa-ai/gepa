@@ -5,11 +5,9 @@ This module provides a clean, configuration-based API for optimizing any
 parameterized system using evolutionary algorithms with LLM-based reflection.
 """
 
-import io
 import os
 import random
 import sys
-from contextlib import redirect_stdout
 from dataclasses import asdict, dataclass, field
 from typing import (
     Any,
@@ -452,7 +450,8 @@ Given a candidate and its evaluation feedback:
 1. Understand why it scored the way it did
 2. Fix any errors (errors = zero score)
 3. Make improvements that move toward the objective
-4. Return the complete improved candidate"""
+4. Return the complete improved candidate
+"""
 
 
 @dataclass
@@ -542,8 +541,7 @@ def _create_fitness_fn_wrapper(
     Create a wrapper around the user's fitness_fn that:
     1. Handles single-instance mode (calls fitness_fn without example parameter)
     2. Detects whether fitness_fn returns (score, side_info) tuple or just score
-    3. Captures stdout when fitness_fn returns only score
-    4. Normalizes return value to always be (score, output, side_info) tuple
+    3. Normalizes return value to always be (score, output, side_info) tuple
 
     Args:
         fitness_fn: The user's fitness function
@@ -556,32 +554,18 @@ def _create_fitness_fn_wrapper(
     def wrapped_fitness_fn(candidate: Candidate, example: DataInst | None = None, **kwargs: Any) -> tuple[float, Any, SideInfo]:
         # In single-instance mode, call fitness_fn without the example parameter
         if single_instance_mode and example is _SINGLE_INSTANCE_SENTINEL:
-            # Capture stdout
-            stdout_capture = io.StringIO()
-            with redirect_stdout(stdout_capture):
-                result = fitness_fn(candidate, **kwargs)
-            captured_output = stdout_capture.getvalue()
+            result = fitness_fn(candidate, **kwargs)
         else:
             # Per-instance mode: call with example parameter
-            stdout_capture = io.StringIO()
-            with redirect_stdout(stdout_capture):
-                result = fitness_fn(candidate, example, **kwargs)
-            captured_output = stdout_capture.getvalue()
+            result = fitness_fn(candidate, example, **kwargs)
 
-        # Detect return type and normalize
+        # Detect return type and normalize to (score, output, side_info)
         if isinstance(result, tuple):
-            # fitness_fn returned (score, side_info)
             score, side_info = result
-            # If there's captured output and side_info doesn't have a "stdout" field, add it
-            if captured_output and "stdout" not in side_info:
-                side_info = {**side_info, "stdout": captured_output}
             return score, None, side_info
         else:
-            # fitness_fn returned just score
             score = result
-            # Use captured stdout as side_info
-            side_info: SideInfo = {"stdout": captured_output} if captured_output else {}
-            return score, None, side_info
+            return score, None, {}
 
     return wrapped_fitness_fn
 
