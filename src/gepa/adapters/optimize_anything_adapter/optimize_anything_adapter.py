@@ -373,8 +373,6 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         # Iterative refinement
         current_params = params_dict
-        print(f"\n[Refiner] Starting refinement loop (max_refinements={self.refiner_config.max_refinements}, original_score={original_score:.4f})", flush=True)
-
         for refinement_iter in range(self.refiner_config.max_refinements):
             # Format ALL attempts so far for the refiner (provides full history)
             current_feedback = self._format_all_attempts_feedback(all_attempts)
