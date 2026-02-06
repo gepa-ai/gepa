@@ -786,7 +786,11 @@ def optimize_anything(
             + "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
         )
 
-    # Convert string LM to callable
+    # Default refiner_lm to reflection_lm name BEFORE converting reflection_lm to callable
+    if config.refiner is not None and config.refiner.refiner_lm is None:
+        config.refiner.refiner_lm = config.reflection.reflection_lm
+
+    # Convert reflection_lm string to callable
     if isinstance(config.reflection.reflection_lm, str):
         import litellm
 
@@ -803,27 +807,12 @@ def optimize_anything(
 
         config.reflection.reflection_lm = _reflection_lm
 
-    # Default refiner_lm to reflection_lm if not specified
-    if config.refiner is not None and config.refiner.refiner_lm is None:
-        config.refiner.refiner_lm = config.reflection.reflection_lm
-
-    # Convert refiner_lm string to callable (if refiner is enabled)
+    # Convert refiner_lm string to dspy.LM (if refiner is enabled)
     if config.refiner is not None:
         if isinstance(config.refiner.refiner_lm, str):
-            import litellm
+            import dspy
 
-            refiner_lm_name = config.refiner.refiner_lm
-
-            def _refiner_lm(prompt: str | list[dict[str, str]]) -> str:
-                if isinstance(prompt, str):
-                    completion = litellm.completion(
-                        model=refiner_lm_name, messages=[{"role": "user", "content": prompt}]
-                    )
-                else:
-                    completion = litellm.completion(model=refiner_lm_name, messages=prompt)
-                return completion.choices[0].message.content  # type: ignore
-
-            config.refiner.refiner_lm = _refiner_lm
+            config.refiner.refiner_lm = dspy.LM(config.refiner.refiner_lm)
 
     # Auto-inject refiner_prompt into seed_candidate(s) if refiner is enabled
     if config.refiner is not None:

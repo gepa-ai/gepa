@@ -403,7 +403,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                         "iteration": refinement_iter + 1,
                         "error": f"JSON parse error: {parse_err}",
                         "raw_output": raw_output[:2000],
-                        "score": original_score,
+                        "score": 0.0,
                     })
                     print(f"Refinement {refinement_iter + 1}: JSON parse error: {parse_err}", flush=True)
                     continue
@@ -450,7 +450,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 all_attempts.append({
                     "iteration": refinement_iter + 1,
                     "error": str(e),
-                    "score": original_score,
+                    "score": 0.0,
                 })
                 break
 
