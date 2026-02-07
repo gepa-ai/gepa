@@ -39,6 +39,18 @@ CONFIG_FILES = [
     "inter_gaz2.json",
 ]
 
+# Cache for the NetworkX graph to avoid re-reading CSVs on every evaluation
+_graph_cache: dict[int, Any] = {}
+
+
+def _get_cached_graph(num_vms: int):
+    """Return a cached copy of the network graph for the given num_vms."""
+    if num_vms not in _graph_cache:
+        from examples.adrs.cloudcast.cloudcast.utils import make_nx_graph
+        _graph_cache[num_vms] = make_nx_graph(num_vms=num_vms)
+    # Return a copy so the simulator can mutate it freely
+    return _graph_cache[num_vms].copy()
+
 
 def evaluate_stage1(program_path: str) -> dict:
     """
@@ -139,8 +151,8 @@ def run_single_config(
 
         config_name = os.path.basename(config_file).split(".")[0]
 
-        # Create graph
-        G = make_nx_graph(num_vms=int(num_vms))
+        # Create graph (cached per num_vms to avoid re-reading CSVs every eval)
+        G = _get_cached_graph(int(num_vms))
 
         # Source and destination nodes
         source_node = config["source_node"]
@@ -194,6 +206,70 @@ def run_single_config(
         # Clean up
         shutil.rmtree(output_dir, ignore_errors=True)
 
+        # --- Extract detailed breakdown from the simulator ---
+        sim_g = simulator.g  # the constructed graph after evaluation
+
+        # 1) Cost breakdown: egress vs instance
+        egress_cost = 0.0
+        for edge in sim_g.edges.data():
+            edge_data = edge[-1]
+            egress_cost += (
+                len(edge_data["partitions"]) * simulator.partition_data_vol * edge_data["cost"]
+            )
+        instance_cost = cost - egress_cost
+
+        # 2) Per-destination transfer time
+        per_dest_time: dict[str, float] = {}
+        for dst in terminal_nodes:
+            partition_time = float("-inf")
+            for i in range(num_partitions):
+                for edge in simulator.paths[dst][str(i)]:
+                    ed = sim_g[edge[0]][edge[1]]
+                    partition_time = max(
+                        partition_time,
+                        len(ed["partitions"]) * simulator.partition_data_vol * 8 / ed["flow"],
+                    )
+            per_dest_time[dst] = round(partition_time, 2)
+
+        bottleneck_dst = max(per_dest_time, key=per_dest_time.get)  # type: ignore[arg-type]
+
+        # 3) Per-destination paths (route hops) and per-destination egress cost
+        per_dest_paths: dict[str, list[str]] = {}
+        per_dest_cost: dict[str, float] = {}
+        for dst in terminal_nodes:
+            # Collect unique hops across all partitions for this destination
+            seen_edges: set[tuple[str, str]] = set()
+            hops: list[str] = []
+            dst_egress = 0.0
+            for i in range(num_partitions):
+                for edge in simulator.paths[dst][str(i)]:
+                    src_node, dst_node = edge[0], edge[1]
+                    if (src_node, dst_node) not in seen_edges:
+                        seen_edges.add((src_node, dst_node))
+                        if not hops:
+                            hops.append(src_node)
+                        hops.append(dst_node)
+                    ed = sim_g[src_node][dst_node]
+                    dst_egress += simulator.partition_data_vol * ed["cost"]
+            per_dest_paths[dst] = hops
+            per_dest_cost[dst] = round(dst_egress, 4)
+
+        # 4) Edge utilization summary (edges carrying the most partitions = congestion)
+        edge_details = []
+        for u, v, data in sim_g.edges(data=True):
+            edge_details.append({
+                "edge": f"{u} -> {v}",
+                "cost_per_gb": data["cost"],
+                "throughput_gbps": round(data["throughput"], 3),
+                "effective_flow_gbps": round(data["flow"], 3),
+                "num_partitions_sharing": len(data["partitions"]),
+                "egress_cost": round(
+                    len(data["partitions"]) * simulator.partition_data_vol * data["cost"], 4
+                ),
+            })
+        # Sort by egress cost descending to highlight most expensive edges
+        edge_details.sort(key=lambda e: e["egress_cost"], reverse=True)
+
         detailed_info = {
             "config_name": config_name,
             "cost": cost,
@@ -201,6 +277,14 @@ def run_single_config(
             "source": source_node,
             "destinations": terminal_nodes,
             "num_partitions": num_partitions,
+            "egress_cost": round(egress_cost, 4),
+            "instance_cost": round(instance_cost, 4),
+            "per_dest_time": per_dest_time,
+            "bottleneck_destination": bottleneck_dst,
+            "per_dest_paths": per_dest_paths,
+            "per_dest_cost": per_dest_cost,
+            "edge_details": edge_details,
+            "data_vol_gb": config.get("data_vol", 4.0),
         }
 
         return (True, cost, transfer_time, "", detailed_info)
@@ -272,6 +356,11 @@ def create_fitness_function(timeout: int = 300):
         Returns:
             Tuple of (score, side_info)
         """
+        import resource as _res
+        rss_mb = _res.getrusage(_res.RUSAGE_SELF).ru_maxrss / 1024
+        config_name = os.path.basename(example.get("config_file", "?"))
+        logger.info(f"[MEM] fitness_fn start ({config_name}): RSS={rss_mb:.0f} MB")
+
         program_code = candidate["program"]
 
         # Get cached program file or create new one
@@ -315,20 +404,54 @@ def create_fitness_function(timeout: int = 300):
             score = 1.0 / (1.0 + cost)
 
             config_name = detailed_info.get("config_name", os.path.basename(config_file))
-            
+            destinations = detailed_info.get("destinations", [])
+            egress_cost = detailed_info.get("egress_cost", 0.0)
+            instance_cost = detailed_info.get("instance_cost", 0.0)
+            per_dest_time = detailed_info.get("per_dest_time", {})
+            per_dest_paths = detailed_info.get("per_dest_paths", {})
+            per_dest_cost = detailed_info.get("per_dest_cost", {})
+            bottleneck = detailed_info.get("bottleneck_destination", "N/A")
+            edge_details = detailed_info.get("edge_details", [])
+
+            # Build per-destination summary for reflection
+            dest_summaries = []
+            for dst in destinations:
+                route = " → ".join(per_dest_paths.get(dst, []))
+                dest_summaries.append(
+                    f"  {dst}: route=[{route}], "
+                    f"egress=${per_dest_cost.get(dst, 0):.2f}, "
+                    f"time={per_dest_time.get(dst, 0):.1f}s"
+                )
+
+            # Build top expensive edges summary (top 5)
+            top_edges = []
+            for e in edge_details[:5]:
+                top_edges.append(
+                    f"  {e['edge']}: cost=${e['cost_per_gb']}/GB, "
+                    f"throughput={e['throughput_gbps']:.2f}Gbps, "
+                    f"partitions={e['num_partitions_sharing']}, "
+                    f"egress=${e['egress_cost']:.2f}"
+                )
+
             side_info = {
                 "scores": {"cost_score": score, "raw_cost": cost},
                 "Input": {
                     "config": config_name,
                     "source": detailed_info.get("source", "N/A"),
-                    "num_destinations": len(detailed_info.get("destinations", [])),
+                    "destinations": destinations,
                     "num_partitions": detailed_info.get("num_partitions", "N/A"),
+                    "data_volume_gb": detailed_info.get("data_vol_gb", "N/A"),
                 },
                 "Output": {
-                    "cost": f"${cost:.4f}",
+                    "total_cost": f"${cost:.4f}",
+                    "cost_breakdown": f"egress=${egress_cost:.2f} + instance=${instance_cost:.2f}",
                     "transfer_time": f"{transfer_time:.2f}s",
+                    "bottleneck_destination": bottleneck,
                 },
+                "Per-Destination Breakdown": "\n".join(dest_summaries),
+                "Most Expensive Edges (top 5)": "\n".join(top_edges),
             }
+<<<<<<< HEAD
             # output = {
             #     "config_file": config_file,
             #     "cost": cost,
@@ -337,6 +460,22 @@ def create_fitness_function(timeout: int = 300):
             #     "detailed_info": detailed_info,
             # }
             return (score, side_info)
+=======
+            # Only keep lightweight fields in output (stored/cached by GEPA);
+            # bulky lists were already consumed to build side_info above.
+            output = {
+                "config_file": config_file,
+                "cost": cost,
+                "transfer_time": transfer_time,
+                "score": score,
+                "config_name": config_name,
+                "source": detailed_info.get("source"),
+                "egress_cost": detailed_info.get("egress_cost"),
+                "instance_cost": detailed_info.get("instance_cost"),
+                "bottleneck_destination": bottleneck,
+            }
+            return (score, output, side_info)
+>>>>>>> 38011af (Add more info to cloudcast)
         else:
             score = FAILED_SCORE
             side_info = {

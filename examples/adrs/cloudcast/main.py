@@ -11,10 +11,18 @@ import json
 import logging
 import os
 import argparse
+import resource
 import sys
 from netrc import NetrcParseError, netrc
 from datetime import datetime
 from pathlib import Path
+
+
+def _log_mem(label: str = ""):
+    """Log current RSS memory usage."""
+    rss_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    logging.getLogger(__name__).info(f"[MEM] {label}: RSS={rss_mb:.0f} MB")
+    return rss_mb
 from gepa.proposer.reflective_mutation.base import LanguageModel
 from gepa.optimize_anything import (
     EngineConfig,
@@ -236,7 +244,6 @@ def get_reflection_lm(model: str) -> LanguageModel:
         gemini_client = genai.Client(http_options=HttpOptions(api_version="v1"))
 
     def _call_lm(prompt: str | list[dict[str, str]]) -> str:
-
         # Convert chat messages to a single string for Gemini
         if isinstance(prompt, list):
             prompt_str = "\n".join(
@@ -246,11 +253,15 @@ def get_reflection_lm(model: str) -> LanguageModel:
         else:
             prompt_str = prompt
 
+        prompt_kb = len(prompt_str.encode("utf-8")) / 1024
+        _log_mem(f"before LLM call (prompt={prompt_kb:.0f} KB)")
+
         if "gemini" in model and gemini_client is not None:
             response = gemini_client.models.generate_content(
                 model=model,
                 contents=prompt_str,
             )
+            _log_mem("after LLM call")
             return response.text or ""
         else:
             if isinstance(prompt, list):
@@ -265,6 +276,7 @@ def get_reflection_lm(model: str) -> LanguageModel:
 
 def main():
     """Run the Cloudcast broadcast optimization."""
+    _log_mem("main() start")
     parser = argparse.ArgumentParser(
         description="Run the Cloudcast broadcast optimization example (GEPA optimize_anything)."
     )

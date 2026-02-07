@@ -323,6 +323,8 @@ def main():
             track_best_outputs=True,
             use_cloudpickle=True,
             display_progress_bar=True,
+            parallel=True,
+            max_workers=128,  # Large number for high parallelism
         ),
         reflection=ReflectionConfig(
             reflection_minibatch_size=reflection_minibatch_size,
