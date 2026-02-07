@@ -451,16 +451,6 @@ def create_fitness_function(timeout: int = 300):
                 "Per-Destination Breakdown": "\n".join(dest_summaries),
                 "Most Expensive Edges (top 5)": "\n".join(top_edges),
             }
-<<<<<<< HEAD
-            # output = {
-            #     "config_file": config_file,
-            #     "cost": cost,
-            #     "transfer_time": transfer_time,
-            #     "score": score,
-            #     "detailed_info": detailed_info,
-            # }
-            return (score, side_info)
-=======
             # Only keep lightweight fields in output (stored/cached by GEPA);
             # bulky lists were already consumed to build side_info above.
             output = {
@@ -475,7 +465,6 @@ def create_fitness_function(timeout: int = 300):
                 "bottleneck_destination": bottleneck,
             }
             return (score, output, side_info)
->>>>>>> 38011af (Add more info to cloudcast)
         else:
             score = FAILED_SCORE
             side_info = {
