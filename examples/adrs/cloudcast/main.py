@@ -358,6 +358,7 @@ def main():
     gepa_config = GEPAConfig(
         engine=EngineConfig(
             run_dir=str(run_dir),
+            seed=0,
             max_metric_calls=max_metric_calls,
             track_best_outputs=True,
             use_cloudpickle=True,
@@ -366,6 +367,7 @@ def main():
         reflection=ReflectionConfig(
             reflection_minibatch_size=reflection_minibatch_size,
             reflection_lm=llm_model,
+            skip_perfect_score=False,
         ),
         tracking=TrackingConfig(
             use_wandb=use_wandb,
@@ -375,7 +377,6 @@ def main():
                 "project": "gepa_cloudcast",
             },
         ),
-        refiner=None,
     )
 
     # Run GEPA optimization
