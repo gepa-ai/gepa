@@ -207,11 +207,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             )
             return None
 
-        if (
-            self.skip_perfect_score
-            and self.perfect_score is not None
-            and all(s >= self.perfect_score for s in eval_curr.scores)
-        ):
+        if self.skip_perfect_score and all(s >= self.perfect_score for s in eval_curr.scores):
             self.logger.log(f"Iteration {i}: All subsample scores perfect. Skipping.")
             notify_callbacks(
                 self.callbacks,
