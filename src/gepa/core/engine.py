@@ -53,7 +53,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         valset: list[DataInst] | DataLoader[DataId, DataInst] | None,
         seed_candidate: dict[str, str],
         # Controls
-        perfect_score: float | None,
+        perfect_score: float,
         seed: int,
         # Strategies and helpers
         reflective_proposer: ReflectiveMutationProposer,
