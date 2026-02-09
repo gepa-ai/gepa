@@ -69,6 +69,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.callbacks = callbacks
 
         self.reflection_prompt_template = reflection_prompt_template
+        # Track parameters for which we've already logged missing template warnings
+        self._missing_template_warnings: set[str] = set()
 
         if isinstance(reflection_prompt_template, dict):
             for param_name, template in reflection_prompt_template.items():
@@ -102,10 +104,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             if isinstance(self.reflection_prompt_template, dict):
                 # Use parameter-specific template if available
                 prompt_template = self.reflection_prompt_template.get(name)
-                if prompt_template is None:
+                if prompt_template is None and name not in self._missing_template_warnings:
                     self.logger.log(
                         f"No reflection_prompt_template found for parameter '{name}'. Using default template."
                     )
+                    self._missing_template_warnings.add(name)
             else:
                 # Use the single template for all parameters
                 prompt_template = self.reflection_prompt_template
