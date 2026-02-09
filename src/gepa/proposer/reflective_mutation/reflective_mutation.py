@@ -4,7 +4,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn, RolloutOutput, Trajectory
 from gepa.core.callbacks import (
     CandidateSelectedEvent,
     EvaluationEndEvent,
@@ -54,6 +54,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         experiment_tracker: Any,
         reflection_lm: LanguageModel | None = None,
         reflection_prompt_template: str | dict[str, str] | None = None,
+        custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
     ):
         self.logger = logger
@@ -66,6 +67,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.skip_perfect_score = skip_perfect_score
         self.experiment_tracker = experiment_tracker
         self.reflection_lm = reflection_lm
+        self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
 
         self.reflection_prompt_template = reflection_prompt_template
@@ -92,6 +94,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
     ) -> dict[str, str]:
         if self.adapter.propose_new_texts is not None:
             return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update)
+
+        if self.custom_candidate_proposer is not None:
+            return self.custom_candidate_proposer(candidate, reflective_dataset, components_to_update)
 
         if self.reflection_lm is None:
             raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
