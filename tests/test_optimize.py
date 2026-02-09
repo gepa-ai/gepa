@@ -87,6 +87,63 @@ def test_reflection_prompt_template_missing_placeholders():
         )
 
 
+def test_reflection_prompt_template_dict():
+    """Test that reflection_prompt_template works with a dict mapping parameter names to templates."""
+    mock_data = [
+        {
+            "input": "my_input",
+            "answer": "my_answer",
+            "additional_context": {"context": "my_context"},
+        }
+    ]
+
+    # Track which parameter each reflection call was for
+    reflection_calls = {}
+
+    task_lm = Mock()
+    task_lm.return_value = "test response"
+
+    def mock_reflection_lm(prompt):
+        # Store the prompt to check later
+        if "Instructions template:" in prompt:
+            reflection_calls["instructions"] = prompt
+        elif "Context template:" in prompt:
+            reflection_calls["context"] = prompt
+        return "```\nimproved text\n```"
+
+    # Create parameter-specific templates
+    custom_templates = {
+        "instructions": """Instructions template:
+<curr_instructions>
+Data:
+<inputs_outputs_feedback>
+Make it better.""",
+        "context": """Context template:
+<curr_instructions>
+Feedback:
+<inputs_outputs_feedback>
+Improve context.""",
+    }
+
+    result = optimize(
+        seed_candidate={"instructions": "initial instructions", "context": "initial context"},
+        trainset=mock_data,
+        task_lm=task_lm,
+        reflection_lm=mock_reflection_lm,
+        reflection_prompt_template=custom_templates,
+        max_metric_calls=4,
+        reflection_minibatch_size=1,
+        module_selector="round_robin",  # Round robin to update each component in turn
+    )
+
+    # Check that at least one reflection call was made
+    assert len(reflection_calls) > 0
+
+    # Verify that custom templates were used for at least one parameter
+    # (round_robin will cycle through components, so we should see at least one)
+    assert any("template:" in call for call in reflection_calls.values())
+
+
 def test_empty_seed_candidate():
     """Test that optimize() fails gracefully with empty seed_candidate."""
     mock_data = [
