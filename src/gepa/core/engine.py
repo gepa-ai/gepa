@@ -317,7 +317,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.callbacks,
             "on_optimization_start",
             OptimizationStartEvent(
-                seed_candidate=self.seed_candidate,
+                seed_candidates=self.seed_candidate,
                 trainset_size=len(self.reflective_proposer.trainset),
                 valset_size=len(valset),
                 config={
@@ -337,7 +337,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ValsetEvaluatedEvent(
                 iteration=0,
                 candidate_idx=0,
-                candidate=self.seed_candidate,
+                candidate=self.seed_candidate[0],
                 scores_by_val_id=dict(seed_scores),
                 average_score=base_val_avg,
                 num_examples_evaluated=len(seed_scores),

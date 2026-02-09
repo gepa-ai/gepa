@@ -14,7 +14,7 @@ Example usage:
 
     class MyCallback:
         def on_optimization_start(self, event: OptimizationStartEvent) -> None:
-            print(f"Starting optimization with {event['trainset_size']} training examples")
+            print(f"Starting optimization with {len(event['seed_candidates'])} seed(s) and {event['trainset_size']} training examples")
 
         def on_iteration_end(self, event: IterationEndEvent) -> None:
             status = 'accepted' if event['proposal_accepted'] else 'rejected'
@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 class OptimizationStartEvent(TypedDict):
     """Event for on_optimization_start callback."""
 
-    seed_candidate: dict[str, str]
+    seed_candidates: list[dict[str, str]]
     trainset_size: int
     valset_size: int
     config: dict[str, Any]

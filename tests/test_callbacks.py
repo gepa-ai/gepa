@@ -180,7 +180,7 @@ class TestCallbackProtocol:
         notify_callbacks(
             [callback],
             "on_optimization_start",
-            OptimizationStartEvent(seed_candidate={}, trainset_size=0, valset_size=0, config={}),
+            OptimizationStartEvent(seed_candidates=[{}], trainset_size=0, valset_size=0, config={}),
         )
 
     def test_partial_callback_implementation(self):
@@ -198,7 +198,7 @@ class TestCallbackProtocol:
             [callback],
             "on_optimization_start",
             OptimizationStartEvent(
-                seed_candidate={},
+                seed_candidates=[{}],
                 trainset_size=10,
                 valset_size=5,
                 config={},
@@ -226,7 +226,7 @@ class TestOptimizationLifecycle:
             [callback],
             "on_optimization_start",
             OptimizationStartEvent(
-                seed_candidate={"instructions": "test"},
+                seed_candidates=[{"instructions": "test"}],
                 trainset_size=100,
                 valset_size=20,
                 config={"max_metric_calls": 500},
@@ -235,7 +235,7 @@ class TestOptimizationLifecycle:
 
         calls = callback.get_calls("on_optimization_start")
         assert len(calls) == 1
-        assert calls[0]["seed_candidate"] == {"instructions": "test"}
+        assert calls[0]["seed_candidates"] == [{"instructions": "test"}]
         assert calls[0]["trainset_size"] == 100
         assert calls[0]["valset_size"] == 20
         assert calls[0]["config"] == {"max_metric_calls": 500}
@@ -1089,7 +1089,7 @@ class TestErrorHandling:
             [failing, recording],
             "on_optimization_start",
             OptimizationStartEvent(
-                seed_candidate={},
+                seed_candidates=[{}],
                 trainset_size=10,
                 valset_size=5,
                 config={},
@@ -1179,7 +1179,7 @@ class TestComposition:
             callbacks,
             "on_optimization_start",
             OptimizationStartEvent(
-                seed_candidate={},
+                seed_candidates=[{}],
                 trainset_size=10,
                 valset_size=5,
                 config={},

@@ -4,19 +4,21 @@ import json
 import pickle
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
 from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
 
 if TYPE_CHECKING:
-    from gepa.optimize_anything import FitnessFn, RefinerConfig, SideInfo
+    import dspy  # type: ignore[import-not-found]
+
+    from gepa.optimize_anything import RefinerConfig, SideInfo
 
 
 class OptimizeAnythingAdapter(GEPAAdapter):
     def __init__(
         self,
-        fitness_fn: "FitnessFn",
+        fitness_fn: Callable[..., tuple[float, Any, dict[str, Any]]],
         reflection_lm: LanguageModel | None = None,
         reflection_prompt_template: str | None = None,
         parallel: bool = True,
@@ -53,35 +55,42 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             self._cache_dir_path.mkdir(parents=True, exist_ok=True)
             self._load_cache()
 
-        # Initialize refiner predictor if refiner is configured
-        self.refiner_predictor = None
-        if self.refiner_config is not None:
-            try:
-                import dspy
+        # Refiner predictor will be lazy-initialized when first needed
+        self.refiner_predictor: "dspy.Predict | None" = None
+        self._refiner_initialized = False
 
-                # Define refiner signature — input/output are JSON dicts of all non-refiner params
-                class RefinerSignature(dspy.Signature):
-                    """Refine a candidate based on evaluation feedback."""
+    def _initialize_refiner(self) -> None:
+        """Lazy-initialize the refiner predictor when first needed."""
+        if self._refiner_initialized:
+            return
 
-                    refiner_prompt = dspy.InputField(
-                        desc="Instructions for how to refine the candidate"
-                    )
-                    candidate_to_improve = dspy.InputField(
-                        desc="JSON dict of all parameters to improve"
-                    )
-                    evaluation_feedback = dspy.InputField(
-                        desc="Evaluation results showing performance and errors"
-                    )
-                    refined_candidate = dspy.OutputField(
-                        desc="JSON dict of all improved parameters"
-                    )
+        try:
+            import dspy  # type: ignore[import-not-found]
 
-                self.refiner_predictor = dspy.Predict(RefinerSignature)
-            except ImportError:
-                raise ImportError(
-                    "DSPy is required for refiner functionality. "
-                    "Install dspy-ai: pip install dspy-ai"
+            # Define refiner signature — input/output are JSON dicts of all non-refiner params
+            class RefinerSignature(dspy.Signature):
+                """Refine a candidate based on evaluation feedback."""
+
+                refiner_prompt = dspy.InputField(
+                    desc="Instructions for how to refine the candidate"
                 )
+                candidate_to_improve = dspy.InputField(
+                    desc="JSON dict of all parameters to improve"
+                )
+                evaluation_feedback = dspy.InputField(
+                    desc="Evaluation results showing performance and errors"
+                )
+                refined_candidate = dspy.OutputField(
+                    desc="JSON dict of all improved parameters"
+                )
+
+            self.refiner_predictor = dspy.Predict(RefinerSignature)
+            self._refiner_initialized = True
+        except ImportError as e:
+            raise ImportError(
+                "DSPy is required for refiner functionality. "
+                "Install dspy-ai: pip install dspy-ai"
+            ) from e
 
     def _get_best_example_evals(self, example: DataInst) -> list[dict]:
         """Get sorted top-K best evaluations for this example (thread-safe)."""
@@ -345,16 +354,24 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         refiner_prompt: str,
         original_score: float,
         original_side_info: "SideInfo",
-    ) -> tuple[float, Any, "SideInfo | None"]:
+    ) -> tuple[float, Any, "SideInfo | None", list[dict[str, Any]]]:
         """
         Refine a candidate using the refiner LLM and evaluate the refined version.
         Refines ALL non-refiner params at once via JSON dict.
 
         Returns:
-            (best_refined_score, best_refined_output, best_refined_side_info)
+            (best_refined_score, best_refined_output, best_refined_side_info, all_attempts)
             best_refined_side_info is None if no refinement improved over original.
         """
-        import dspy
+        # This method should only be called when refiner_config is not None
+        assert self.refiner_config is not None, "refiner_config must be set to use refinement"
+
+        # Lazy-initialize refiner on first use (imports dspy here)
+        self._initialize_refiner()
+        assert self.refiner_predictor is not None, "refiner_predictor must be initialized"
+
+        # Import dspy for context manager
+        import dspy  # type: ignore[import-not-found]
 
         # Build params dict: all non-refiner params
         params_dict = {k: v for k, v in candidate.items() if k != "refiner_prompt"}

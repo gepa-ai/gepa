@@ -810,7 +810,7 @@ def optimize_anything(
     # Convert refiner_lm string to dspy.LM (if refiner is enabled)
     if config.refiner is not None:
         if isinstance(config.refiner.refiner_lm, str):
-            import dspy
+            import dspy  # type: ignore[import-not-found]
 
             config.refiner.refiner_lm = dspy.LM(config.refiner.refiner_lm)
 
@@ -957,9 +957,9 @@ def optimize_anything(
     )
 
     # Define evaluator for merge proposer
-    def evaluator(inputs: list[DataInst], prog: Candidate) -> tuple[list[RolloutOutput], list[float]]:
+    def evaluator(inputs: list[DataInst], prog: Candidate) -> tuple[list[RolloutOutput], list[float], list[dict[str, float]] | None]:
         eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
-        return eval_out.outputs, eval_out.scores
+        return eval_out.outputs, eval_out.scores, eval_out.objective_scores
 
     # --- 12. Build merge proposer from MergeConfig (if provided) ---
     merge_proposer: MergeProposer | None = None
@@ -975,9 +975,9 @@ def optimize_anything(
         )
 
     # --- 13. Create evaluation cache if enabled ---
-    evaluation_cache: EvaluationCache[RolloutOutput, Any] | None = None
+    evaluation_cache: EvaluationCache[Any, Any] | None = None
     if config.engine.cache_evaluation:
-        evaluation_cache = EvaluationCache[RolloutOutput, Any]()
+        evaluation_cache = EvaluationCache[Any, Any]()
 
     # --- 14. Build the main engine from EngineConfig ---
     engine = GEPAEngine(

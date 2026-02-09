@@ -156,7 +156,7 @@ def test_callbacks_during_optimization(mocked_lms, recorder_dir):
     assert len(opt_start_calls) == 1, "on_optimization_start should be called exactly once"
     assert opt_start_calls[0]["trainset_size"] == 10
     assert opt_start_calls[0]["valset_size"] == 10
-    assert opt_start_calls[0]["seed_candidate"] == seed_prompt
+    assert opt_start_calls[0]["seed_candidates"] == [seed_prompt]
 
     opt_end_calls = callback.get_calls("on_optimization_end")
     assert len(opt_end_calls) == 1, "on_optimization_end should be called exactly once"

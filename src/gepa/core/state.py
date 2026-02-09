@@ -665,14 +665,14 @@ def initialize_gepa_state(
         gepa_state.total_num_evals = num_evals_run
 
         for seed_candidate_2 in seed_candidate[1:]:
-            seed_val_outputs, seed_val_scores, seed_objective_scores = valset_evaluator(seed_candidate_2)
+            eval_result_2 = valset_evaluator(seed_candidate_2)
             if run_dir is not None:
-                write_eval_scores_to_directory(seed_val_scores, os.path.join(run_dir, "generated_best_outputs_valset"))
-            num_evals_run += len(seed_val_scores)
+                write_eval_scores_to_directory(eval_result_2.scores_by_val_id, os.path.join(run_dir, "generated_best_outputs_valset"))
+            num_evals_run += len(eval_result_2.scores_by_val_id)
             gepa_state.update_state_with_new_program(
                 [None],
                 seed_candidate_2,
-                ValsetEvaluation(seed_val_outputs, seed_val_scores, seed_objective_scores),
+                eval_result_2,
                 run_dir,
                 0,
             )

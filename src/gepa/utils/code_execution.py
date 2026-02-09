@@ -227,7 +227,7 @@ def _set_random_seeds(seed: int) -> None:
         pass
 
     try:
-        import torch
+        import torch  # type: ignore[import-not-found]
 
         torch.manual_seed(seed)
         if torch.cuda.is_available():
