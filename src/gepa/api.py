@@ -53,7 +53,7 @@ def optimize(
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
     reflection_minibatch_size: int | None = None,
     perfect_score: float = 1.0,
-    reflection_prompt_template: str | None = None,
+    reflection_prompt_template: str | dict[str, str] | None = None,
     # Component selection configuration
     module_selector: ReflectionComponentSelector | str = "round_robin",
     # Merge-based configuration
@@ -134,7 +134,7 @@ def optimize(
     - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](src/gepa/strategies/batch_sampler.py) instance or a string for a predefined strategy from ['epoch_shuffled']. Defaults to 'epoch_shuffled', which creates an [EpochShuffledBatchSampler](src/gepa/strategies/batch_sampler.py).
     - reflection_minibatch_size: The number of examples to use for reflection in each proposal step. Defaults to 3. Only valid when batch_sampler='epoch_shuffled' (default), and is ignored otherwise.
     - perfect_score: The perfect score to achieve.
-    - reflection_prompt_template: The prompt template to use for reflection. If not provided, GEPA will use the default prompt template (see [InstructionProposalSignature](src/gepa/strategies/instruction_proposal.py)). The prompt template must contain the following placeholders, which will be replaced with actual values: `<curr_param>` (will be replaced by the instructions to evolve) and `<side_info>` (replaced with the inputs, outputs, and feedback generated with current instruction). This will be ignored if the adapter provides its own `propose_new_texts` method.
+    - reflection_prompt_template: The prompt template to use for reflection. Can be either a string (applied to all components) or a dict mapping component names to their specific templates. If not provided, GEPA will use the default prompt template (see [InstructionProposalSignature](src/gepa/strategies/instruction_proposal.py)). Each prompt template must contain the following placeholders, which will be replaced with actual values: `<curr_param>` (will be replaced by the instructions/component to evolve) and `<side_info>` (replaced with the inputs, outputs, and feedback generated with current instruction). When using a dict, components without a specified template will use the default template. This will be ignored if the adapter provides its own `propose_new_texts` method.
 
     # Component selection configuration
     - module_selector: Component selection strategy. Can be a ReflectionComponentSelector instance or a string ('round_robin', 'all'). Defaults to 'round_robin'. The 'round_robin' strategy cycles through components in order. The 'all' strategy selects all components for modification in every GEPA iteration.
