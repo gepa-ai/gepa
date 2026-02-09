@@ -239,16 +239,24 @@ def optimize(
             + "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
         )
 
+    reflection_lm_callable: LanguageModel | None = None
     if isinstance(reflection_lm, str):
         import litellm
 
         reflection_lm_name = reflection_lm
 
-        def _reflection_lm(prompt: str) -> str:
-            completion = litellm.completion(model=reflection_lm_name, messages=[{"role": "user", "content": prompt}])
+        def _reflection_lm(prompt: str | list[dict[str, str]]) -> str:
+            if isinstance(prompt, str):
+                completion = litellm.completion(
+                    model=reflection_lm_name, messages=[{"role": "user", "content": prompt}]
+                )
+            else:
+                completion = litellm.completion(model=reflection_lm_name, messages=prompt)
             return completion.choices[0].message.content  # type: ignore
 
-        reflection_lm = _reflection_lm
+        reflection_lm_callable = _reflection_lm
+    else:
+        reflection_lm_callable = reflection_lm
 
     if logger is None:
         logger = StdOutLogger()
@@ -335,7 +343,7 @@ def optimize(
         perfect_score=perfect_score,
         skip_perfect_score=skip_perfect_score,
         experiment_tracker=experiment_tracker,
-        reflection_lm=reflection_lm,
+        reflection_lm=reflection_lm_callable,
         reflection_prompt_template=reflection_prompt_template,
         callbacks=callbacks,
     )
