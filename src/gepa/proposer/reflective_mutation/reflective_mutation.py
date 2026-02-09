@@ -49,11 +49,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         candidate_selector: CandidateSelector,
         module_selector: ReflectionComponentSelector,
         batch_sampler: BatchSampler[DataId, DataInst],
-        perfect_score: float,
+        perfect_score: float | None,
         skip_perfect_score: bool,
         experiment_tracker: Any,
         reflection_lm: LanguageModel | None = None,
-        reflection_prompt_template: str | None = None,
+        reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
     ):
@@ -70,8 +70,21 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
 
-        InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
         self.reflection_prompt_template = reflection_prompt_template
+        # Track parameters for which we've already logged missing template warnings
+        self._missing_template_warnings: set[str] = set()
+
+        if isinstance(reflection_prompt_template, dict):
+            for param_name, template in reflection_prompt_template.items():
+                InstructionProposalSignature.validate_prompt_template(template)
+        else:
+            InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
+
+        if self.skip_perfect_score and self.perfect_score is None:
+            raise ValueError(
+                "perfect_score must be provided when skip_perfect_score is True. "
+                "If you do not have a perfect target score, set skip_perfect_score=False."
+            )
 
     def propose_new_texts(
         self,
@@ -96,12 +109,27 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
             base_instruction = candidate[name]
             dataset_with_feedback = reflective_dataset[name]
+
+            # Determine which prompt template to use for this parameter
+            prompt_template = None
+            if isinstance(self.reflection_prompt_template, dict):
+                # Use parameter-specific template if available
+                prompt_template = self.reflection_prompt_template.get(name)
+                if prompt_template is None and name not in self._missing_template_warnings:
+                    self.logger.log(
+                        f"No reflection_prompt_template found for parameter '{name}'. Using default template."
+                    )
+                    self._missing_template_warnings.add(name)
+            else:
+                # Use the single template for all parameters
+                prompt_template = self.reflection_prompt_template
+
             new_texts[name] = InstructionProposalSignature.run(
                 lm=self.reflection_lm,
                 input_dict={
                     "current_instruction_doc": base_instruction,
                     "dataset_with_feedback": dataset_with_feedback,
-                    "prompt_template": self.reflection_prompt_template,
+                    "prompt_template": prompt_template,
                 },
             )["new_instruction"]
         return new_texts
@@ -206,7 +234,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             )
             return None
 
-        if self.skip_perfect_score and all(s >= self.perfect_score for s in eval_curr.scores):
+        if (
+            self.skip_perfect_score
+            and self.perfect_score is not None
+            and all(s is not None and s >= self.perfect_score for s in eval_curr.scores)
+        ):
             self.logger.log(f"Iteration {i}: All subsample scores perfect. Skipping.")
             notify_callbacks(
                 self.callbacks,
