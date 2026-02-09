@@ -139,9 +139,16 @@ Improve context.""",
     # Check that at least one reflection call was made
     assert len(reflection_calls) > 0
 
-    # Verify that custom templates were used for at least one parameter
-    # (round_robin will cycle through components, so we should see at least one)
-    assert any("template:" in call for call in reflection_calls.values())
+    # Verify that custom templates were used correctly for the parameters that were reflected on
+    if "instructions" in reflection_calls:
+        instructions_call = reflection_calls["instructions"]
+        assert "Instructions template:" in instructions_call
+        assert "Make it better." in instructions_call
+
+    if "context" in reflection_calls:
+        context_call = reflection_calls["context"]
+        assert "Context template:" in context_call
+        assert "Improve context." in context_call
 
 
 def test_empty_seed_candidate():
