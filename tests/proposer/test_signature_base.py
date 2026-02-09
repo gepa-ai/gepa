@@ -49,7 +49,7 @@ class TestSignatureRun:
         """Test that Signature.run() handles tuple responses with one element."""
 
         class MockLM:
-            def __call__(self, prompt: str) -> tuple[str]:
+            def __call__(self, prompt: str) -> tuple[str, ...]:
                 return ("  response from tuple  ",)
 
         lm = MockLM()
@@ -85,7 +85,7 @@ class TestSignatureRun:
         """Test that Signature.run() handles empty tuple edge case."""
 
         class MockLM:
-            def __call__(self, prompt: str) -> tuple:
+            def __call__(self, prompt: str) -> tuple[str, ...]:
                 return ()
 
         lm = MockLM()
