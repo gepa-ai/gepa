@@ -114,14 +114,14 @@ def test_reflection_prompt_template_dict():
     # Create parameter-specific templates
     custom_templates = {
         "instructions": """Instructions template:
-<curr_instructions>
+<curr_param>
 Data:
-<inputs_outputs_feedback>
+<side_info>
 Make it better.""",
         "context": """Context template:
-<curr_instructions>
+<curr_param>
 Feedback:
-<inputs_outputs_feedback>
+<side_info>
 Improve context.""",
     }
 
