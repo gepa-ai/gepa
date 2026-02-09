@@ -4,7 +4,10 @@
 import os
 import random
 from collections.abc import Sequence
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+if TYPE_CHECKING:
+    from gepa.core.callbacks import GEPACallback
 
 from gepa.adapters.default_adapter.default_adapter import (
     ChatCompletionCallable,
@@ -60,9 +63,10 @@ def optimize(
     # Budget and Stop Condition
     max_metric_calls: int | None = None,
     stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None,
-    # Logging
+    # Logging and Callbacks
     logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
+    callbacks: "list[GEPACallback] | None" = None,
     use_wandb: bool = False,
     wandb_api_key: str | None = None,
     wandb_init_kwargs: dict[str, Any] | None = None,
@@ -144,8 +148,9 @@ def optimize(
     - max_metric_calls: Optional maximum number of metric calls to perform. If not provided, stop_callbacks must be provided.
     - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single StopperProtocol or a list or tuple of StopperProtocol instances. Examples: FileStopper, TimeoutStopCondition, SignalStopper, NoImprovementStopper, or custom stopping logic. If not provided, max_metric_calls must be provided.
 
-    # Logging
+    # Logging and Callbacks
     - logger: A `LoggerProtocol` instance that is used to log the progress of the optimization.
+    - callbacks: Optional list of callback objects for observing optimization progress. Callbacks receive events like on_optimization_start, on_iteration_start, on_candidate_accepted, etc. See `gepa.core.callbacks.GEPACallback` for the full protocol.
     - run_dir: The directory to save the results to. Optimization state and results will be saved to this directory. If the directory already exists, GEPA will read the state from this directory and resume the optimization from the last saved state. If provided, a FileStopper is automatically created which checks for the presence of "gepa.stop" in this directory, allowing graceful stopping of the optimization process upon its presence.
     - use_wandb: Whether to use Weights and Biases to log the progress of the optimization.
     - wandb_api_key: The API key to use for Weights and Biases.
@@ -166,6 +171,10 @@ def optimize(
     - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
     - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
     """
+    # Validate seed_candidate is not None or empty
+    if seed_candidate is None or not seed_candidate:
+        raise ValueError("seed_candidate must contain at least one component text.")
+
     active_adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None
     if adapter is None:
         assert task_lm is not None, (
@@ -336,6 +345,7 @@ def optimize(
         experiment_tracker=experiment_tracker,
         reflection_lm=reflection_lm_callable,
         reflection_prompt_template=reflection_prompt_template,
+        callbacks=callbacks,
     )
 
     def evaluator_fn(
@@ -354,6 +364,7 @@ def optimize(
             max_merge_invocations=max_merge_invocations,
             rng=rng,
             val_overlap_floor=merge_val_overlap_floor,
+            callbacks=callbacks,
         )
 
     engine = GEPAEngine(
@@ -368,6 +379,7 @@ def optimize(
         frontier_type=frontier_type,
         logger=logger,
         experiment_tracker=experiment_tracker,
+        callbacks=callbacks,
         track_best_outputs=track_best_outputs,
         display_progress_bar=display_progress_bar,
         raise_on_exception=raise_on_exception,

@@ -1,0 +1,196 @@
+/* Custom styles for GEPA documentation */
+
+/* Make the header logo larger (2.5x default size) */
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+    height: 60px;  /* Default is 24px, this is 2.5x */
+    width: auto;
+}
+
+/* Adjust the header to accommodate the larger logo */
+.md-header__button.md-logo {
+    padding: 4px;
+}
+
+/* Make the site title (GEPA) text larger */
+.md-header__title {
+    font-size: 1.4rem;  /* Default is ~0.9rem */
+    font-weight: 600;
+}
+
+.md-header__topic {
+    font-size: 1.4rem;
+}
+
+/* ============================================
+   Use Cases Page - Grid Cards Styling
+   ============================================ */
+
+/* Grid container for cards */
+.grid.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+/* Individual card styling */
+.grid.cards > ul {
+    display: contents;
+}
+
+.grid.cards > ul > li {
+    list-style: none;
+    background: var(--md-default-bg-color);
+    border: 1px solid var(--md-default-fg-color--lightest);
+    border-radius: 0.5rem;
+    padding: 1.25rem;
+    transition: all 0.2s ease-in-out;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.grid.cards > ul > li:hover {
+    border-color: var(--md-primary-fg-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+/* Card title with icon */
+.grid.cards > ul > li > p:first-child {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--md-primary-fg-color);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Large icons in card headers */
+.grid.cards .lg {
+    font-size: 1.5rem;
+}
+
+.grid.cards .middle {
+    vertical-align: middle;
+}
+
+/* Horizontal rule in cards */
+.grid.cards > ul > li hr {
+    margin: 0.75rem 0;
+    border: none;
+    border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Card content */
+.grid.cards > ul > li p {
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+/* Card links */
+.grid.cards > ul > li a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-weight: 500;
+    color: var(--md-accent-fg-color);
+    text-decoration: none;
+    margin-top: 0.5rem;
+    transition: color 0.2s;
+}
+
+.grid.cards > ul > li a:hover {
+    color: var(--md-primary-fg-color);
+    text-decoration: underline;
+}
+
+/* Key Results / Capabilities lists in cards */
+.grid.cards > ul > li ul {
+    margin: 0.5rem 0;
+    padding-left: 1.25rem;
+}
+
+.grid.cards > ul > li ul li {
+    font-size: 0.875rem;
+    margin: 0.25rem 0;
+    line-height: 1.5;
+}
+
+/* Strong text in cards */
+.grid.cards > ul > li strong {
+    color: var(--md-default-fg-color);
+}
+
+/* Card images */
+.grid.cards > ul > li img.card-image {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    margin: 0.75rem 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease-in-out;
+}
+
+.grid.cards > ul > li img.card-image:hover {
+    transform: scale(1.02);
+}
+
+/* Ensure images don't overflow */
+.grid.cards > ul > li .card-image {
+    max-width: 100%;
+    object-fit: cover;
+}
+
+/* Dark mode adjustments */
+[data-md-color-scheme="slate"] .grid.cards > ul > li {
+    background: var(--md-code-bg-color);
+    border-color: var(--md-default-fg-color--lighter);
+}
+
+[data-md-color-scheme="slate"] .grid.cards > ul > li:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================
+   Performance Benchmarks Table
+   ============================================ */
+
+/* Better table styling for benchmarks */
+.md-typeset table:not([class]) {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+}
+
+.md-typeset table:not([class]) th {
+    background: var(--md-primary-fg-color);
+    color: white;
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+}
+
+.md-typeset table:not([class]) td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 768px) {
+    .grid.cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ============================================
+   Section Headers
+   ============================================ */
+
+/* Style section headers with icons */
+.md-typeset h2:has(.twemoji),
+.md-typeset h2:has(.material-icons) {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}

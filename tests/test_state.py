@@ -96,6 +96,7 @@ def test_gepa_state_save_and_initialize(run_dir):
     state.total_num_evals = 10
     assert state.is_consistent()
 
+    # Ensure both regular pickle and cloudpickle save and restore equivalent state
     state.save(run_dir)
     result = state_mod.initialize_gepa_state(
         run_dir=str(run_dir),
@@ -117,6 +118,48 @@ def test_gepa_state_save_and_initialize(run_dir):
     )
 
     assert state.__dict__ == result.__dict__
+
+
+def test_budget_hooks_excluded_from_serialization(run_dir):
+    """Budget hooks are runtime-only and should not be serialized."""
+    seed = {"model": "m"}
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: {"x": 1}, 1: {"y": 2}},
+        scores_by_val_id={0: 0.3, 1: 0.7},
+        objective_scores_by_val_id=None,
+    )
+
+    state = state_mod.GEPAState(seed, valset_out)
+    state.num_full_ds_evals = 3
+    state.total_num_evals = 10
+
+    # Register a budget hook
+    hook_calls = []
+    state.add_budget_hook(lambda total, delta: hook_calls.append((total, delta)))
+
+    # Verify hook works
+    state.increment_evals(5)
+    assert hook_calls == [(15, 5)]
+    assert state.total_num_evals == 15
+
+    # Save state (should not include _budget_hooks)
+    state.save(run_dir)
+
+    # Load state
+    loaded_state = state_mod.GEPAState.load(run_dir)
+
+    # Loaded state should not have _budget_hooks attribute
+    assert not hasattr(loaded_state, "_budget_hooks")
+
+    # But increment_evals should still work (no hooks to call)
+    loaded_state.increment_evals(3)
+    assert loaded_state.total_num_evals == 18
+
+    # And we can add hooks to the loaded state
+    loaded_hook_calls = []
+    loaded_state.add_budget_hook(lambda total, delta: loaded_hook_calls.append((total, delta)))
+    loaded_state.increment_evals(2)
+    assert loaded_hook_calls == [(20, 2)]
 
 
 def test_dynamic_validation(run_dir, rng):

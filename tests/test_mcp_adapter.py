@@ -13,7 +13,7 @@ Tests cover:
 - Reflective dataset generation
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -28,7 +28,6 @@ from gepa.adapters.mcp_adapter.mcp_client import (
     create_mcp_client,
 )
 from gepa.core.adapter import EvaluationBatch
-
 
 # ============================================================================
 # Fixtures
@@ -561,7 +560,6 @@ class TestMCPAdapterReflectiveDataset:
 
 def test_mcp_types_import():
     """Test that MCP types can be imported."""
-    from gepa.adapters.mcp_adapter import MCPDataInst, MCPOutput, MCPTrajectory
 
     assert MCPDataInst is not None
     assert MCPOutput is not None

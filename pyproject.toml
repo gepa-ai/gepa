@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 #replace_package_name_marker
 name="gepa"
 #replace_package_version_marker
-version="0.0.25"
+version="0.0.27"
 description = "A framework for optimizing textual system components (AI prompts, code snippets, etc.) using LLM-based reflection and Pareto-efficient evolutionary search."
 readme = "README.md"
 authors = [
@@ -119,6 +119,7 @@ line-ending = "auto"
 
 [tool.ruff.lint.isort]
 known-first-party = ["gepa"]
+known-third-party = ["dspy"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"

@@ -80,6 +80,7 @@ def log_detailed_metrics_after_discovering_new_program(
         "val_evaluated_count_new_program": coverage,
         "val_total_count": valset_size,
         "val_program_average": valset_score,
+        "total_metric_calls": gepa_state.total_num_evals,
     }
     if log_individual_valset_scores_and_programs:
         metrics.update(

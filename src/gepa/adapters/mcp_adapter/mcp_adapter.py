@@ -666,10 +666,7 @@ Always respond with valid JSON. No other text.
         """Generate feedback focused on tool usage and selection."""
         if score > 0.5:
             if traj["tool_called"]:
-                return (
-                    f"Good! The tool '{traj['selected_tool']}' was used appropriately. "
-                    f"Score: {score:.2f}"
-                )
+                return f"Good! The tool '{traj['selected_tool']}' was used appropriately. Score: {score:.2f}"
             else:
                 return f"Good! No tool needed, direct answer was correct. Score: {score:.2f}"
         else:
@@ -681,13 +678,10 @@ Always respond with valid JSON. No other text.
                 selected_tool = traj["selected_tool"]
                 available_tools = traj["tool_names"]
                 feedback_parts.append(
-                    f"Tool '{selected_tool}' was called with {traj['tool_arguments']}, "
-                    f"but answer was incorrect."
+                    f"Tool '{selected_tool}' was called with {traj['tool_arguments']}, but answer was incorrect."
                 )
                 if len(available_tools) > 1:
-                    feedback_parts.append(
-                        f"Consider a different tool from {available_tools} or clearer description."
-                    )
+                    feedback_parts.append(f"Consider a different tool from {available_tools} or clearer description.")
                 else:
                     feedback_parts.append("Tool description may need improvement.")
 

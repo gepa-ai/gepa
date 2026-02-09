@@ -44,6 +44,7 @@ from gepa.adapters.mcp_adapter import MCPAdapter
 # Suppress verbose output from dependencies
 try:
     import litellm
+
     litellm.set_verbose = False
     litellm.drop_params = True
     # Set LiteLLM logger to WARNING to suppress INFO messages
@@ -150,6 +151,7 @@ def create_test_files():
 # Dataset & Metric Definition
 # ============================================================================
 
+
 def create_dataset():
     """Create evaluation dataset for file operations."""
     return [
@@ -188,6 +190,7 @@ def metric_fn(data_inst, output: str) -> float:
 # Local Server Example
 # ============================================================================
 
+
 def run_local_example(task_model: str = "ollama/llama3.1:8b", reflection_model: str = "ollama/qwen3:8b"):
     """Run optimization with local stdio MCP server."""
     logger.info("=" * 60)
@@ -215,9 +218,7 @@ def run_local_example(task_model: str = "ollama/llama3.1:8b", reflection_model: 
     )
 
     dataset = create_dataset()
-    seed_candidate = {
-        "tool_description": "Read file contents from disk."
-    }
+    seed_candidate = {"tool_description": "Read file contents from disk."}
 
     logger.info("")
     logger.info("Seed Prompt (Initial Tool Description):")
@@ -255,6 +256,7 @@ def run_local_example(task_model: str = "ollama/llama3.1:8b", reflection_model: 
 # Remote Server Example
 # ============================================================================
 
+
 def run_remote_example(url: str, task_model: str = "ollama/llama3.1:8b", reflection_model: str = "ollama/qwen3:8b"):
     """Run optimization with remote SSE MCP server."""
     logger.info("=" * 60)
@@ -284,9 +286,7 @@ def run_remote_example(url: str, task_model: str = "ollama/llama3.1:8b", reflect
         },
     ]
 
-    seed_candidate = {
-        "tool_description": "Search for information."
-    }
+    seed_candidate = {"tool_description": "Search for information."}
 
     logger.info("")
     logger.info("Seed Prompt (Initial Tool Description):")
@@ -323,6 +323,7 @@ def run_remote_example(url: str, task_model: str = "ollama/llama3.1:8b", reflect
 # ============================================================================
 # Multi-Tool Example
 # ============================================================================
+
 
 def run_multitool_example(task_model: str = "ollama/llama3.1:8b", reflection_model: str = "ollama/qwen3:8b"):
     """Run optimization with multiple tools."""

@@ -1,0 +1,205 @@
+site_name: GEPA
+site_description: A framework for optimizing textual system components using LLM-based reflection and Pareto-efficient evolutionary search.
+site_url: https://gepa.ai/
+
+repo_url: https://github.com/gepa-ai/gepa
+repo_name: gepa-ai/gepa
+
+edit_uri: blob/main/docs/docs/
+docs_dir: "docs/"
+
+nav:
+    - Get Started: index.md
+    - GEPA in Action: guides/use-cases.md
+    - Guides:
+        - Guides Overview: guides/index.md
+        - Quick Start: guides/quickstart.md
+        - FAQ: guides/faq.md
+        - Creating Adapters: guides/adapters.md
+        - Using Callbacks: guides/callbacks.md
+        - Contributing: guides/contributing.md
+    - Tutorials:
+        - Tutorials Overview: tutorials/index.md
+        - DSPy Full Program Evolution: tutorials/dspy_full_program_evolution.ipynb
+        - ARC AGI Example: tutorials/arc_agi.ipynb
+    - API Reference:
+        - API Overview: api/index.md
+        - Core:
+            - optimize: api/core/optimize.md
+            - GEPAAdapter: api/core/GEPAAdapter.md
+            - EvaluationBatch: api/core/EvaluationBatch.md
+            - GEPAResult: api/core/GEPAResult.md
+            - GEPACallback: api/core/GEPACallback.md
+            - DataLoader: api/core/DataLoader.md
+            - GEPAState: api/core/GEPAState.md
+            - EvaluationCache: api/core/EvaluationCache.md
+        - Callbacks:
+            - GEPACallback: api/callbacks/GEPACallback.md
+            - CompositeCallback: api/callbacks/CompositeCallback.md
+            - OptimizationStartEvent: api/callbacks/OptimizationStartEvent.md
+            - OptimizationEndEvent: api/callbacks/OptimizationEndEvent.md
+            - IterationStartEvent: api/callbacks/IterationStartEvent.md
+            - IterationEndEvent: api/callbacks/IterationEndEvent.md
+            - CandidateSelectedEvent: api/callbacks/CandidateSelectedEvent.md
+            - CandidateAcceptedEvent: api/callbacks/CandidateAcceptedEvent.md
+            - CandidateRejectedEvent: api/callbacks/CandidateRejectedEvent.md
+            - EvaluationStartEvent: api/callbacks/EvaluationStartEvent.md
+            - EvaluationEndEvent: api/callbacks/EvaluationEndEvent.md
+            - ValsetEvaluatedEvent: api/callbacks/ValsetEvaluatedEvent.md
+            - ParetoFrontUpdatedEvent: api/callbacks/ParetoFrontUpdatedEvent.md
+            - MergeAttemptedEvent: api/callbacks/MergeAttemptedEvent.md
+            - MergeAcceptedEvent: api/callbacks/MergeAcceptedEvent.md
+            - MergeRejectedEvent: api/callbacks/MergeRejectedEvent.md
+            - BudgetUpdatedEvent: api/callbacks/BudgetUpdatedEvent.md
+            - ErrorEvent: api/callbacks/ErrorEvent.md
+            - StateSavedEvent: api/callbacks/StateSavedEvent.md
+        - Stop Conditions:
+            - StopperProtocol: api/stop_conditions/StopperProtocol.md
+            - MaxMetricCallsStopper: api/stop_conditions/MaxMetricCallsStopper.md
+            - TimeoutStopCondition: api/stop_conditions/TimeoutStopCondition.md
+            - NoImprovementStopper: api/stop_conditions/NoImprovementStopper.md
+            - ScoreThresholdStopper: api/stop_conditions/ScoreThresholdStopper.md
+            - FileStopper: api/stop_conditions/FileStopper.md
+            - SignalStopper: api/stop_conditions/SignalStopper.md
+            - CompositeStopper: api/stop_conditions/CompositeStopper.md
+        - Adapters:
+            - DefaultAdapter: api/adapters/DefaultAdapter.md
+            - DSPy Adapter: api/adapters/DSPyAdapter.md
+            - DSPy Full Program Adapter: api/adapters/DSPyFullProgramAdapter.md
+            - RAG Adapter: api/adapters/RAGAdapter.md
+            - MCP Adapter: api/adapters/MCPAdapter.md
+            - TerminalBench Adapter: api/adapters/TerminalBenchAdapter.md
+        - Proposers:
+            - Proposers Overview: api/proposers/index.md
+            - CandidateProposal: api/proposers/CandidateProposal.md
+            - ProposeNewCandidate: api/proposers/ProposeNewCandidate.md
+            - ReflectiveMutationProposer: api/proposers/ReflectiveMutationProposer.md
+            - MergeProposer: api/proposers/MergeProposer.md
+            - Signature: api/proposers/Signature.md
+            - LanguageModel: api/proposers/LanguageModel.md
+        - Logging:
+            - LoggerProtocol: api/logging/LoggerProtocol.md
+            - StdOutLogger: api/logging/StdOutLogger.md
+            - Logger: api/logging/Logger.md
+            - ExperimentTracker: api/logging/ExperimentTracker.md
+            - create_experiment_tracker: api/logging/create_experiment_tracker.md
+        - Strategies:
+            - BatchSampler: api/strategies/BatchSampler.md
+            - EpochShuffledBatchSampler: api/strategies/EpochShuffledBatchSampler.md
+            - CandidateSelector: api/strategies/CandidateSelector.md
+            - ParetoCandidateSelector: api/strategies/ParetoCandidateSelector.md
+            - CurrentBestCandidateSelector: api/strategies/CurrentBestCandidateSelector.md
+            - EpsilonGreedyCandidateSelector: api/strategies/EpsilonGreedyCandidateSelector.md
+            - ComponentSelector: api/strategies/ComponentSelector.md
+            - RoundRobinComponentSelector: api/strategies/RoundRobinComponentSelector.md
+            - AllComponentSelector: api/strategies/AllComponentSelector.md
+            - EvaluationPolicy: api/strategies/EvaluationPolicy.md
+            - FullEvaluationPolicy: api/strategies/FullEvaluationPolicy.md
+            - InstructionProposalSignature: api/strategies/InstructionProposalSignature.md
+
+theme:
+    name: material
+    custom_dir: overrides
+    features:
+        - navigation.tabs
+        - navigation.path
+        - navigation.indexes
+        - navigation.expand
+        - toc.follow
+        - navigation.top
+        - search.suggest
+        - search.highlight
+        - content.tabs.link
+        - content.code.annotation
+        - content.code.copy
+        - navigation.footer
+        - content.action.edit
+    language: en
+    palette:
+        - scheme: default
+          toggle:
+            icon: material/weather-night
+            name: Switch to dark mode
+          primary: deep purple
+          accent: amber
+        - scheme: slate
+          toggle:
+            icon: material/weather-sunny
+            name: Switch to light mode
+          primary: deep purple
+          accent: amber
+    icon:
+        repo: fontawesome/brands/git-alt
+        edit: material/pencil
+        view: material/eye
+    logo: static/img/gepa_logo.svg
+    favicon: static/img/gepa_logo.svg
+
+plugins:
+    - search:
+        lang: en
+        separator: '[\s\-\.]+'
+    - mkdocstrings:
+        handlers:
+            python:
+                paths: ["../src"]
+                options:
+                    docstring_style: google
+                    show_source: true
+                    show_root_heading: true
+                    heading_level: 2
+                    members_order: source
+                    separate_signature: false
+                    show_category_heading: true
+                    show_symbol_type_heading: true
+                    show_docstring_parameters: true
+                    show_if_no_docstring: true
+                    show_signature_annotations: true
+                    unwrap_annotated: true
+                    annotations_path: brief
+                    docstring_section_style: table
+                    merge_init_into_class: true
+                    inherited_members: true
+    - mkdocs-jupyter:
+        ignore_h1_titles: true
+        include_source: true
+
+extra_css:
+    - static/css/custom.css
+
+extra:
+    social:
+        - icon: fontawesome/brands/github
+          link: https://github.com/gepa-ai/gepa
+        - icon: fontawesome/brands/discord
+          link: https://discord.gg/A7dABbtmFw
+        - icon: fontawesome/brands/slack
+          link: https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w
+        - icon: fontawesome/brands/x-twitter
+          link: https://x.com/LakshyAAAgrawal
+
+markdown_extensions:
+    - toc:
+        permalink: true
+        toc_depth: 3
+    - pymdownx.tabbed:
+        alternate_style: true
+    - pymdownx.highlight:
+        anchor_linenums: true
+    - pymdownx.inlinehilite
+    - pymdownx.snippets
+    - admonition
+    - pymdownx.arithmatex:
+        generic: true
+    - footnotes
+    - pymdownx.details
+    - pymdownx.superfences
+    - pymdownx.mark
+    - attr_list
+    - md_in_html
+    - pymdownx.emoji:
+        emoji_index: !!python/name:material.extensions.emoji.twemoji
+        emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+copyright: |
+    &copy; 2026 <a href="https://github.com/gepa-ai" target="_blank" rel="noopener">GEPA</a>

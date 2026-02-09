@@ -143,6 +143,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     """Persistent optimizer state tracking candidates, sparse validation coverage, and objective frontiers."""
 
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 4
+    # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
+    _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
 
     program_candidates: list[dict[str, str]]
     parent_program_for_candidate: list[list[ProgramIdx | None]]
@@ -257,6 +259,30 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         return True
 
+    # Budget Hook Mechanism
+    def add_budget_hook(self, hook: Callable[[int, int], None]) -> None:
+        """Register a callback to be called whenever total_num_evals changes.
+
+        Args:
+            hook: A callable that receives (new_total, delta) when evals are incremented.
+        """
+        if not hasattr(self, "_budget_hooks"):
+            self._budget_hooks: list[Callable[[int, int], None]] = []
+        self._budget_hooks.append(hook)
+
+    def increment_evals(self, count: int) -> None:
+        """Increment total_num_evals and notify all registered hooks.
+
+        Args:
+            count: Number of evaluations to add.
+        """
+        self.total_num_evals += count
+        # Lazy init handles states loaded from disk (which won't have _budget_hooks)
+        hooks = getattr(self, "_budget_hooks", None)
+        if hooks:
+            for hook in hooks:
+                hook(self.total_num_evals, count)
+
     def save(self, run_dir: str | None, *, use_cloudpickle: bool = False) -> None:
         if run_dir is None:
             return
@@ -265,7 +291,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 import cloudpickle as pickle  # type: ignore[import-not-found]
             else:
                 import pickle
-            serialized = dict(self.__dict__.items())
+            # Exclude runtime-only attributes that can't be serialized (e.g., callback hooks)
+            serialized = {k: v for k, v in self.__dict__.items() if k not in self._EXCLUDED_FROM_SERIALIZATION}
             serialized["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
             pickle.dump(serialized, f)
 
