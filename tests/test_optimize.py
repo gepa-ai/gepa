@@ -27,9 +27,9 @@ def test_reflection_prompt_template():
         return "```\nimproved instructions\n```"
 
     custom_template = """Current instructions:
-<curr_instructions>
+<curr_param>
 Inputs, outputs, and feedback:
-<inputs_outputs_feedback>
+<side_info>
 Please improve the instructions."""
 
     result = optimize(
@@ -74,7 +74,7 @@ def test_reflection_prompt_template_missing_placeholders():
 
     with pytest.raises(
         ValueError,
-        match=re.escape("Missing placeholder(s) in prompt template: <curr_instructions>, <inputs_outputs_feedback>"),
+        match=re.escape("Missing placeholder(s) in prompt template: <curr_param>, <side_info>"),
     ):
         result = optimize(
             seed_candidate={"instructions": "initial instructions"},
