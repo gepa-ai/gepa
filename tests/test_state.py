@@ -34,7 +34,7 @@ def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
     result = state_mod.initialize_gepa_state(
         run_dir=str(run_dir),
         logger=fake_logger,
-        seed_candidate=seed,
+        seed_candidate=[seed],
         valset_evaluator=valset_evaluator,
         track_best_outputs=False,
     )
@@ -68,7 +68,7 @@ def test_initialize_gepa_state_no_run_dir():
     result = state_mod.initialize_gepa_state(
         run_dir=None,
         logger=fake_logger,
-        seed_candidate=seed,
+        seed_candidate=[seed],
         valset_evaluator=valset_evaluator,
         track_best_outputs=False,
     )
@@ -101,7 +101,7 @@ def test_gepa_state_save_and_initialize(run_dir):
     result = state_mod.initialize_gepa_state(
         run_dir=str(run_dir),
         logger=fake_logger,
-        seed_candidate=seed,
+        seed_candidate=[seed],
         valset_evaluator=valset_evaluator,
         track_best_outputs=False,
     )
@@ -112,7 +112,7 @@ def test_gepa_state_save_and_initialize(run_dir):
     result = state_mod.initialize_gepa_state(
         run_dir=str(run_dir),
         logger=fake_logger,
-        seed_candidate=seed,
+        seed_candidate=[seed],
         valset_evaluator=valset_evaluator,
         track_best_outputs=False,
     )

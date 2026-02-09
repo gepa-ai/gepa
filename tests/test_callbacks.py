@@ -180,7 +180,7 @@ class TestCallbackProtocol:
         notify_callbacks(
             [callback],
             "on_optimization_start",
-            OptimizationStartEvent(seed_candidate={}, trainset_size=0, valset_size=0, config={}),
+            OptimizationStartEvent(seed_candidates=[{}], trainset_size=0, valset_size=0, config={}),
         )
 
     def test_partial_callback_implementation(self):
@@ -235,7 +235,7 @@ class TestOptimizationLifecycle:
 
         calls = callback.get_calls("on_optimization_start")
         assert len(calls) == 1
-        assert calls[0]["seed_candidate"] == {"instructions": "test"}
+        assert calls[0]["seed_candidates"] == {"instructions": "test"}
         assert calls[0]["trainset_size"] == 100
         assert calls[0]["valset_size"] == 20
         assert calls[0]["config"] == {"max_metric_calls": 500}
@@ -1211,7 +1211,7 @@ class TestComposition:
         notify_callbacks(
             None,
             "on_optimization_start",
-            OptimizationStartEvent(seed_candidate={}, trainset_size=0, valset_size=0, config={}),
+            OptimizationStartEvent(seed_candidates=[{}], trainset_size=0, valset_size=0, config={}),
         )
 
     def test_notify_callbacks_with_empty_list(self):
@@ -1220,7 +1220,7 @@ class TestComposition:
         notify_callbacks(
             [],
             "on_optimization_start",
-            OptimizationStartEvent(seed_candidate={}, trainset_size=0, valset_size=0, config={}),
+            OptimizationStartEvent(seed_candidates=[{}], trainset_size=0, valset_size=0, config={}),
         )
 
 
