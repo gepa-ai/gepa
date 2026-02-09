@@ -49,7 +49,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         candidate_selector: CandidateSelector,
         module_selector: ReflectionComponentSelector,
         batch_sampler: BatchSampler[DataId, DataInst],
-        perfect_score: float,
+        perfect_score: float | None,
         skip_perfect_score: bool,
         experiment_tracker: Any,
         reflection_lm: LanguageModel | None = None,
@@ -70,6 +70,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
         InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
         self.reflection_prompt_template = reflection_prompt_template
+
+        if self.skip_perfect_score and self.perfect_score is None:
+            raise ValueError(
+                "perfect_score must be provided when skip_perfect_score is True. "
+                "If you do not have a perfect target score, set skip_perfect_score=False."
+            )
 
     def propose_new_texts(
         self,
@@ -201,7 +207,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             )
             return None
 
-        if self.skip_perfect_score and all(s >= self.perfect_score for s in eval_curr.scores):
+        if (
+            self.skip_perfect_score
+            and self.perfect_score is not None
+            and all(s is not None and s >= self.perfect_score for s in eval_curr.scores)
+        ):
             self.logger.log(f"Iteration {i}: All subsample scores perfect. Skipping.")
             notify_callbacks(
                 self.callbacks,
