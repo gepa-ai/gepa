@@ -32,7 +32,7 @@ Inputs, outputs, and feedback:
 <inputs_outputs_feedback>
 Please improve the instructions."""
 
-    result = optimize(
+    optimize(
         seed_candidate={"instructions": "initial instructions"},
         trainset=mock_data,
         task_lm=task_lm,
@@ -76,7 +76,7 @@ def test_reflection_prompt_template_missing_placeholders():
         ValueError,
         match=re.escape("Missing placeholder(s) in prompt template: <curr_instructions>, <inputs_outputs_feedback>"),
     ):
-        result = optimize(
+        optimize(
             seed_candidate={"instructions": "initial instructions"},
             trainset=mock_data,
             task_lm=task_lm,
@@ -125,7 +125,7 @@ Feedback:
 Improve context.""",
     }
 
-    result = optimize(
+    optimize(
         seed_candidate={"instructions": "initial instructions", "context": "initial context"},
         trainset=mock_data,
         task_lm=task_lm,
