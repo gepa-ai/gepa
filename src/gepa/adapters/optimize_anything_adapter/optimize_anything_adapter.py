@@ -409,16 +409,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                         "raw_output": raw_output[:2000],
                         "score": 0.0,
                     })
-                    print(f"Refinement {refinement_iter + 1}: JSON parse error: {parse_err}", flush=True)
                     continue
-
-                # Print refined proposal
-                print(f"\n{'='*60}", flush=True)
-                print(f"Refiner iteration {refinement_iter + 1}/{self.refiner_config.max_refinements}", flush=True)
-                print(f"{'='*60}", flush=True)
-                refined_summary = json.dumps(parsed_refined, indent=2)
-                print(refined_summary[:2000] + ("..." if len(refined_summary) > 2000 else ""), flush=True)
-                print(f"{'='*60}\n", flush=True)
 
                 # Reconstruct full candidate: refined params + original refiner_prompt
                 refined_candidate_dict = {**parsed_refined, "refiner_prompt": candidate.get("refiner_prompt", "")}
@@ -438,9 +429,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 })
 
                 # Update best if improved
-                improved = refined_score > best_score
-                print(f"Refinement {refinement_iter + 1}: score={refined_score:.4f} (prev best={best_score:.4f}) {'✓ improved' if improved else ''}", flush=True)
-                if improved:
+                if refined_score > best_score:
                     best_score = refined_score
                     best_candidate = refined_candidate_dict  # Track the actual candidate dict
                     best_side_info = refined_eval_side_info
