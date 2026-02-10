@@ -25,7 +25,7 @@ class ReflectionComponentSelector(Protocol):
 
 
 class LanguageModel(Protocol):
-    def __call__(self, prompt: str) -> str: ...
+    def __call__(self, prompt: str | list[dict[str, str]]) -> str: ...
 
 
 @dataclass
@@ -45,5 +45,6 @@ class Signature:
     @classmethod
     def run(cls, lm: LanguageModel, input_dict: Mapping[str, Any]) -> dict[str, str]:
         full_prompt = cls.prompt_renderer(input_dict)
-        lm_out = lm(full_prompt).strip()
+        lm_res = lm(full_prompt)
+        lm_out = lm_res.strip()
         return cls.output_extractor(lm_out)
