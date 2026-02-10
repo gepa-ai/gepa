@@ -146,7 +146,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     def _migrate_from_dict_v0(d: dict[str, Any]) -> "GEPAResult[RolloutOutput, DataId]":
         kwargs = GEPAResult._common_kwargs_from_dict(d)
         kwargs["val_subscores"] = [
-            {idx: score for idx, score in enumerate(scores)} for scores in d.get("val_subscores", [])
+            dict(enumerate(scores)) for scores in d.get("val_subscores", [])
         ]
         kwargs["per_val_instance_best_candidates"] = {
             idx: set(front) for idx, front in enumerate(d.get("per_val_instance_best_candidates", []))

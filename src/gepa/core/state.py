@@ -20,7 +20,7 @@ ProgramIdx = int
 # Type aliases
 ObjectiveScores: TypeAlias = dict[str, float]
 FrontierType: TypeAlias = Literal["instance", "objective", "hybrid", "cartesian"]
-"""Strategy for tracking Pareto frontiers: 'instance' (per validation example), 'objective' (per objective metric), 'hybrid' (both), or 'cartesian' (per example × objective)."""
+"""Strategy for tracking Pareto frontiers: 'instance' (per validation example), 'objective' (per objective metric), 'hybrid' (both), or 'cartesian' (per example x objective)."""
 FrontierKey: TypeAlias = DataId | str | tuple[str, DataId] | tuple[str, DataId, str]
 """Key type for frontier mappings depending on frontier_type."""
 
@@ -193,7 +193,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.parent_program_for_candidate = [[None]]
 
         self.frontier_type: FrontierType = frontier_type
-        self.pareto_front_valset = {val_id: score for val_id, score in base_evaluation.scores_by_val_id.items()}
+        self.pareto_front_valset = dict(base_evaluation.scores_by_val_id)
         self.program_at_pareto_front_valset = {val_id: {0} for val_id in base_evaluation.scores_by_val_id.keys()}
         self.objective_pareto_front = dict(base_objective_aggregates)
         self.program_at_pareto_front_objectives = {objective: {0} for objective in base_objective_aggregates.keys()}
@@ -333,12 +333,12 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         assert all(isinstance(scores, list) for scores in d["prog_candidate_val_subscores"])
         legacy_scores: list[list[float]] = d.pop("prog_candidate_val_subscores", [])
         d["prog_candidate_val_subscores"] = [
-            {idx: score for idx, score in enumerate(scores)} for scores in legacy_scores
+            dict(enumerate(scores)) for scores in legacy_scores
         ]
 
         pareto_front = d.get("pareto_front_valset")
         if isinstance(pareto_front, list):
-            d["pareto_front_valset"] = {idx: score for idx, score in enumerate(pareto_front)}
+            d["pareto_front_valset"] = dict(enumerate(pareto_front))
 
         program_at_front = d.get("program_at_pareto_front_valset")
         if isinstance(program_at_front, list):
@@ -587,14 +587,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         return outputs_by_id, scores_by_id, objective_by_id, len(example_ids)
 
 
-def write_eval_scores_to_directory(scores: dict[DataId, float], output_dir: str) -> None:
-    for val_id, score in scores.items():
-        task_dir = os.path.join(output_dir, f"task_{val_id}")
-        os.makedirs(task_dir, exist_ok=True)
-        with open(os.path.join(task_dir, f"iter_{0}_prog_0.json"), "w") as f:
-            json.dump(score, f, indent=4, default=json_default)
-
-
 def write_eval_outputs_to_directory(outputs, output_dir: str) -> None:
     """
     Write generated rollout outputs (not scalar scores) to disk.
@@ -623,6 +615,9 @@ def initialize_gepa_state(
     frontier_type: FrontierType = "instance",
     evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None" = None,
 ) -> GEPAState[RolloutOutput, DataId]:
+    if not seed_candidate:
+        raise ValueError("seed_candidate must be a non-empty list of candidate dictionaries")
+
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)
@@ -643,15 +638,11 @@ def initialize_gepa_state(
             gepa_state.evaluation_cache = evaluation_cache
         # else: keep the loaded cache (gepa_state.evaluation_cache is already set)
     else:
-        num_evals_run = 0
-
         eval_result = valset_evaluator(seed_candidate[0])
         if run_dir is not None:
             write_eval_outputs_to_directory(
                 eval_result.outputs_by_val_id, os.path.join(run_dir, "generated_best_outputs_valset")
             )
-
-        num_evals_run += len(eval_result.scores_by_val_id)
 
         gepa_state = GEPAState(
             seed_candidate[0],
@@ -662,19 +653,23 @@ def initialize_gepa_state(
         )
 
         gepa_state.num_full_ds_evals = 1
-        gepa_state.total_num_evals = num_evals_run
+        gepa_state.total_num_evals = len(eval_result.scores_by_val_id)
 
-        for seed_candidate_2 in seed_candidate[1:]:
+        for seed_idx, seed_candidate_2 in enumerate(seed_candidate[1:], start=1):
             eval_result_2 = valset_evaluator(seed_candidate_2)
             if run_dir is not None:
-                write_eval_scores_to_directory(eval_result_2.scores_by_val_id, os.path.join(run_dir, "generated_best_outputs_valset"))
-            num_evals_run += len(eval_result_2.scores_by_val_id)
+                write_eval_outputs_to_directory(
+                    eval_result_2.outputs_by_val_id,
+                    os.path.join(run_dir, "generated_seed_outputs", f"seed_{seed_idx}"),
+                )
+            gepa_state.total_num_evals += len(eval_result_2.scores_by_val_id)
+            gepa_state.num_full_ds_evals += 1
             gepa_state.update_state_with_new_program(
                 [None],
                 seed_candidate_2,
                 eval_result_2,
                 run_dir,
-                0,
+                gepa_state.total_num_evals,
             )
 
     return gepa_state
