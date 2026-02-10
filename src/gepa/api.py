@@ -14,7 +14,7 @@ from gepa.adapters.default_adapter.default_adapter import (
     DefaultAdapter,
     Evaluator,
 )
-from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn, RolloutOutput, Trajectory
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
@@ -53,7 +53,8 @@ def optimize(
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
     reflection_minibatch_size: int | None = None,
     perfect_score: float = 1.0,
-    reflection_prompt_template: str | None = None,
+    reflection_prompt_template: str | dict[str, str] | None = None,
+    custom_candidate_proposer: ProposalFn | None = None,
     # Component selection configuration
     module_selector: ReflectionComponentSelector | str = "round_robin",
     # Merge-based configuration
@@ -134,8 +135,9 @@ def optimize(
     - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](src/gepa/strategies/batch_sampler.py) instance or a string for a predefined strategy from ['epoch_shuffled']. Defaults to 'epoch_shuffled', which creates an [EpochShuffledBatchSampler](src/gepa/strategies/batch_sampler.py).
     - reflection_minibatch_size: The number of examples to use for reflection in each proposal step. Defaults to 3. Only valid when batch_sampler='epoch_shuffled' (default), and is ignored otherwise.
     - perfect_score: The perfect score to achieve.
-    - reflection_prompt_template: The prompt template to use for reflection. If not provided, GEPA will use the default prompt template (see [InstructionProposalSignature](src/gepa/strategies/instruction_proposal.py)). The prompt template must contain the following placeholders, which will be replaced with actual values: `<curr_instructions>` (will be replaced by the instructions to evolve) and `<inputs_outputs_feedback>` (replaced with the inputs, outputs, and feedback generated with current instruction). This will be ignored if the adapter provides its own `propose_new_texts` method.
-
+    - reflection_prompt_template: The prompt template to use for reflection. Can be either a string (applied to all components) or a dict mapping component names to their specific templates. If not provided, GEPA will use the default prompt template (see [InstructionProposalSignature](src/gepa/strategies/instruction_proposal.py)). Each prompt template must contain the following placeholders, which will be replaced with actual values: `<curr_param>` (will be replaced by the instructions/component to evolve) and `<side_info>` (replaced with the inputs, outputs, and feedback generated with current instruction). When using a dict, components without a specified template will use the default template. This will be ignored if the adapter provides its own `propose_new_texts` method.
+    - custom_candidate_proposer: Optional custom function for proposing new candidates. If provided, this will be used instead of the default LLM-based reflection approach. Cannot be used if adapter provides `propose_new_texts`. Signature: `(candidate, reflective_dataset, components_to_update) -> dict[str, str]`.
+    
     # Component selection configuration
     - module_selector: Component selection strategy. Can be a ReflectionComponentSelector instance or a string ('round_robin', 'all'). Defaults to 'round_robin'. The 'round_robin' strategy cycles through components in order. The 'all' strategy selects all components for modification in every GEPA iteration.
 
@@ -233,22 +235,39 @@ def optimize(
 
         stop_callback = CompositeStopper(*stop_callbacks_list)
 
-    if not hasattr(active_adapter, "propose_new_texts"):
-        assert reflection_lm is not None, (
-            f"reflection_lm was not provided. The adapter used '{active_adapter!s}' does not provide a propose_new_texts method, "
-            + "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
+    # Validate that only one custom proposal method is provided
+    adapter_has_propose = hasattr(active_adapter, "propose_new_texts") and active_adapter.propose_new_texts is not None
+    if adapter_has_propose and custom_candidate_proposer is not None:
+        raise ValueError(
+            "Cannot provide both adapter.propose_new_texts and custom_candidate_proposer. "
+            "Please use only one custom proposal method."
         )
 
+    if not adapter_has_propose and custom_candidate_proposer is None:
+        assert reflection_lm is not None, (
+            f"reflection_lm was not provided. The adapter used '{active_adapter!s}' does not provide a propose_new_texts method, "
+            + "and custom_candidate_proposer was not provided. "
+            + "GEPA will use the default proposer, which requires a reflection_lm to be specified."
+        )
+
+    reflection_lm_callable: LanguageModel | None = None
     if isinstance(reflection_lm, str):
         import litellm
 
         reflection_lm_name = reflection_lm
 
-        def _reflection_lm(prompt: str) -> str:
-            completion = litellm.completion(model=reflection_lm_name, messages=[{"role": "user", "content": prompt}])
+        def _reflection_lm(prompt: str | list[dict[str, str]]) -> str:
+            if isinstance(prompt, str):
+                completion = litellm.completion(
+                    model=reflection_lm_name, messages=[{"role": "user", "content": prompt}]
+                )
+            else:
+                completion = litellm.completion(model=reflection_lm_name, messages=prompt)
             return completion.choices[0].message.content  # type: ignore
 
-        reflection_lm = _reflection_lm
+        reflection_lm_callable = _reflection_lm
+    else:
+        reflection_lm_callable = reflection_lm
 
     if logger is None:
         logger = StdOutLogger()
@@ -335,8 +354,9 @@ def optimize(
         perfect_score=perfect_score,
         skip_perfect_score=skip_perfect_score,
         experiment_tracker=experiment_tracker,
-        reflection_lm=reflection_lm,
+        reflection_lm=reflection_lm_callable,
         reflection_prompt_template=reflection_prompt_template,
+        custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
     )
 

@@ -332,9 +332,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         assert isinstance(d["prog_candidate_val_subscores"], list)
         assert all(isinstance(scores, list) for scores in d["prog_candidate_val_subscores"])
         legacy_scores: list[list[float]] = d.pop("prog_candidate_val_subscores", [])
-        d["prog_candidate_val_subscores"] = [
-            dict(enumerate(scores)) for scores in legacy_scores
-        ]
+        d["prog_candidate_val_subscores"] = [dict(enumerate(scores)) for scores in legacy_scores]
 
         pareto_front = d.get("pareto_front_valset")
         if isinstance(pareto_front, list):
