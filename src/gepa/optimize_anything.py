@@ -471,7 +471,7 @@ class RefinerConfig:
     refiner_lm: LanguageModel | str | None = None
 
     # Maximum refinement iterations per evaluation
-    max_refinements: int = 2
+    max_refinements: int = 1
 
 
 # --- Component 3: Experiment Tracking Configuration ---
@@ -507,7 +507,7 @@ class GEPAConfig:
 
     # Use 'None' to disable these optional components
     merge: MergeConfig | None = None
-    refiner: RefinerConfig | None = field(default_factory=RefinerConfig)
+    refiner: RefinerConfig | None = None
 
     # Complex callbacks that aren't serializable
     stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None
