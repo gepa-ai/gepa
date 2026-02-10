@@ -623,6 +623,15 @@ def initialize_gepa_state(
     if not seed_candidate:
         raise ValueError("seed_candidate must be a non-empty list of candidate dictionaries")
 
+    expected_keys = set(seed_candidate[0].keys())
+    for idx, sc in enumerate(seed_candidate[1:], start=1):
+        if set(sc.keys()) != expected_keys:
+            raise ValueError(
+                f"All seed candidates must have the same component keys. "
+                f"seed_candidate[0] has keys {sorted(expected_keys)}, "
+                f"but seed_candidate[{idx}] has keys {sorted(sc.keys())}"
+            )
+
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)

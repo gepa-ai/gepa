@@ -198,7 +198,7 @@ class TestCallbackProtocol:
             [callback],
             "on_optimization_start",
             OptimizationStartEvent(
-                seed_candidate={},
+                seed_candidates=[{}],
                 trainset_size=10,
                 valset_size=5,
                 config={},
@@ -1089,7 +1089,7 @@ class TestErrorHandling:
             [failing, recording],
             "on_optimization_start",
             OptimizationStartEvent(
-                seed_candidate={},
+                seed_candidates=[{}],
                 trainset_size=10,
                 valset_size=5,
                 config={},
@@ -1111,7 +1111,7 @@ class TestErrorHandling:
                 [failing],
                 "on_optimization_start",
                 OptimizationStartEvent(
-                    seed_candidate={},
+                    seed_candidates=[{}],
                     trainset_size=10,
                     valset_size=5,
                     config={},
@@ -1137,7 +1137,7 @@ class TestComposition:
         composite = CompositeCallback([callback1, callback2])
         composite.on_optimization_start(
             OptimizationStartEvent(
-                seed_candidate={},
+                seed_candidates=[{}],
                 trainset_size=10,
                 valset_size=5,
                 config={},
@@ -1179,7 +1179,7 @@ class TestComposition:
             callbacks,
             "on_optimization_start",
             OptimizationStartEvent(
-                seed_candidate={},
+                seed_candidates=[{}],
                 trainset_size=10,
                 valset_size=5,
                 config={},
@@ -1196,7 +1196,7 @@ class TestComposition:
         composite.add(callback)
         composite.on_optimization_start(
             OptimizationStartEvent(
-                seed_candidate={},
+                seed_candidates=[{}],
                 trainset_size=10,
                 valset_size=5,
                 config={},

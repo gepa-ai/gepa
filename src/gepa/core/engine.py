@@ -317,7 +317,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.callbacks,
             "on_optimization_start",
             OptimizationStartEvent(
-                seed_candidates=self.seed_candidate,
+                seed_candidates=state.program_candidates[: state.num_seed_candidates],
                 trainset_size=len(self.reflective_proposer.trainset),
                 valset_size=len(valset),
                 config={
