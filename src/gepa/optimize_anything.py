@@ -708,6 +708,10 @@ def optimize_anything(
     if resolved_cache_mode == "disk" and not config.engine.run_dir:
         raise ValueError("cache_evaluation_storage='disk' requires run_dir in EngineConfig")
 
+    # Configure cloudpickle for code execution subprocess serialization
+    from gepa.utils.code_execution import set_use_cloudpickle
+    set_use_cloudpickle(config.engine.use_cloudpickle)
+
     active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
         fitness_fn=wrapped_fitness_fn,
         parallel=config.engine.parallel,
