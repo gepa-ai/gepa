@@ -330,8 +330,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Notify callbacks of seed candidates' initial valset evaluations (iteration 0)
         # This provides the baseline performance before any optimization
+        # Use state.num_seed_candidates (not self.seed_candidate) so that on resume
+        # we correctly reference the seeds that were actually used to initialize the state.
         best_seed_idx = self.val_evaluation_policy.get_best_program(state)
-        for seed_idx in range(len(self.seed_candidate)):
+        for seed_idx in range(state.num_seed_candidates):
             if seed_idx >= len(state.program_candidates):
                 break
             seed_scores_i = state.prog_candidate_val_subscores[seed_idx]
@@ -342,7 +344,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 ValsetEvaluatedEvent(
                     iteration=0,
                     candidate_idx=seed_idx,
-                    candidate=self.seed_candidate[seed_idx],
+                    candidate=state.program_candidates[seed_idx],
                     scores_by_val_id=dict(seed_scores_i),
                     average_score=seed_avg_i,
                     num_examples_evaluated=len(seed_scores_i),

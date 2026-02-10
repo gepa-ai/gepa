@@ -142,7 +142,7 @@ class ValsetEvaluation(Generic[RolloutOutput, DataId]):
 class GEPAState(Generic[RolloutOutput, DataId]):
     """Persistent optimizer state tracking candidates, sparse validation coverage, and objective frontiers."""
 
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 4
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 5
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
     _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
 
@@ -157,6 +157,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     program_at_pareto_front_objectives: dict[str, set[ProgramIdx]]
     pareto_front_cartesian: dict[tuple[DataId, str], float]
     program_at_pareto_front_cartesian: dict[tuple[DataId, str], set[ProgramIdx]]
+
+    num_seed_candidates: int
 
     list_of_named_predictors: list[str]
     named_predictor_id_to_update_next_for_program_candidate: list[int]
@@ -223,6 +225,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             self.pareto_front_cartesian = {}
             self.program_at_pareto_front_cartesian = {}
 
+        self.num_seed_candidates = 1
+
         self.list_of_named_predictors = list(seed_candidate.keys())
         self.named_predictor_id_to_update_next_for_program_candidate = [0]
         self.i = -1
@@ -246,6 +250,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         assert len(self.program_candidates) == len(self.prog_candidate_val_subscores)
         assert len(self.program_candidates) == len(self.prog_candidate_objective_scores)
         assert len(self.program_candidates) == len(self.num_metric_calls_by_discovery)
+        assert 1 <= self.num_seed_candidates <= len(self.program_candidates)
 
         assert len(self.pareto_front_valset) == len(self.program_at_pareto_front_valset)
         assert set(self.pareto_front_valset.keys()) == set(self.program_at_pareto_front_valset.keys())
@@ -365,6 +370,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         # evaluation_cache is not persisted across runs by default; initialize to None if missing
         if "evaluation_cache" not in d:
             d["evaluation_cache"] = None
+        if "num_seed_candidates" not in d:
+            d["num_seed_candidates"] = 1
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
@@ -652,6 +659,7 @@ def initialize_gepa_state(
 
         gepa_state.num_full_ds_evals = 1
         gepa_state.total_num_evals = len(eval_result.scores_by_val_id)
+        gepa_state.num_seed_candidates = len(seed_candidate)
 
         for seed_idx, seed_candidate_2 in enumerate(seed_candidate[1:], start=1):
             num_metric_calls_before = gepa_state.total_num_evals
@@ -661,7 +669,7 @@ def initialize_gepa_state(
                     eval_result_2.outputs_by_val_id,
                     os.path.join(run_dir, "generated_seed_outputs", f"seed_{seed_idx}"),
                 )
-            gepa_state.total_num_evals += len(eval_result_2.scores_by_val_id)
+            gepa_state.increment_evals(len(eval_result_2.scores_by_val_id))
             gepa_state.num_full_ds_evals += 1
             gepa_state.update_state_with_new_program(
                 [None],
