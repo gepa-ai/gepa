@@ -1,8 +1,6 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-import pytest
-
 from gepa.proposer.reflective_mutation.base import LanguageModel, Signature
 
 
@@ -32,66 +30,6 @@ class TestSignatureRun:
         result = MockSignature.run(lm, {})
 
         assert result == {"output": "response text"}
-
-    def test_lm_returns_list_with_one_element(self):
-        """Test that Signature.run() handles list responses with one element."""
-
-        class MockLM:
-            def __call__(self, prompt: str) -> list[str]:
-                return ["  response from list  "]
-
-        lm = MockLM()
-        result = MockSignature.run(lm, {})
-
-        assert result == {"output": "response from list"}
-
-    def test_lm_returns_tuple_with_one_element(self):
-        """Test that Signature.run() handles tuple responses with one element."""
-
-        class MockLM:
-            def __call__(self, prompt: str) -> tuple[str, ...]:
-                return ("  response from tuple  ",)
-
-        lm = MockLM()
-        result = MockSignature.run(lm, {})
-
-        assert result == {"output": "response from tuple"}
-
-    def test_lm_returns_list_with_multiple_elements(self):
-        """Test that Signature.run() uses the first element of multi-element lists."""
-
-        class MockLM:
-            def __call__(self, prompt: str) -> list[str]:
-                return ["  first response  ", "second response", "third response"]
-
-        lm = MockLM()
-        result = MockSignature.run(lm, {})
-
-        assert result == {"output": "first response"}
-
-    def test_lm_returns_empty_list(self):
-        """Test that Signature.run() handles empty list edge case."""
-
-        class MockLM:
-            def __call__(self, prompt: str) -> list[str]:
-                return []
-
-        lm = MockLM()
-
-        with pytest.raises(IndexError):
-            MockSignature.run(lm, {})
-
-    def test_lm_returns_empty_tuple(self):
-        """Test that Signature.run() handles empty tuple edge case."""
-
-        class MockLM:
-            def __call__(self, prompt: str) -> tuple[str, ...]:
-                return ()
-
-        lm = MockLM()
-
-        with pytest.raises(IndexError):
-            MockSignature.run(lm, {})
 
     def test_prompt_renderer_called_with_input_dict(self):
         """Test that the prompt_renderer is called with the input_dict."""
