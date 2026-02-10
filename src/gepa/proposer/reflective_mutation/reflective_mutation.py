@@ -86,6 +86,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 "If you do not have a perfect target score, set skip_perfect_score=False."
             )
 
+        if self.skip_perfect_score and self.perfect_score is None:
+            raise ValueError(
+                "perfect_score must be provided when skip_perfect_score is True. "
+                "If you do not have a perfect target score, set skip_perfect_score=False."
+            )
+
     def propose_new_texts(
         self,
         candidate: dict[str, str],
