@@ -654,6 +654,7 @@ def initialize_gepa_state(
         gepa_state.total_num_evals = len(eval_result.scores_by_val_id)
 
         for seed_idx, seed_candidate_2 in enumerate(seed_candidate[1:], start=1):
+            num_metric_calls_before = gepa_state.total_num_evals
             eval_result_2 = valset_evaluator(seed_candidate_2)
             if run_dir is not None:
                 write_eval_outputs_to_directory(
@@ -667,7 +668,7 @@ def initialize_gepa_state(
                 seed_candidate_2,
                 eval_result_2,
                 run_dir,
-                gepa_state.total_num_evals,
+                num_metric_calls_before,
             )
 
     return gepa_state

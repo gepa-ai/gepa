@@ -328,25 +328,30 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ),
         )
 
-        # Notify callbacks of seed candidate's initial valset evaluation (iteration 0)
+        # Notify callbacks of seed candidates' initial valset evaluations (iteration 0)
         # This provides the baseline performance before any optimization
-        seed_scores = state.prog_candidate_val_subscores[0]
-        notify_callbacks(
-            self.callbacks,
-            "on_valset_evaluated",
-            ValsetEvaluatedEvent(
-                iteration=0,
-                candidate_idx=0,
-                candidate=self.seed_candidate[0],
-                scores_by_val_id=dict(seed_scores),
-                average_score=base_val_avg,
-                num_examples_evaluated=len(seed_scores),
-                total_valset_size=len(valset),
-                parent_ids=[],
-                is_best_program=True,  # Seed is always best at iteration 0
-                outputs_by_val_id=None,  # Outputs not tracked at initialization unless track_best_outputs=True
-            ),
-        )
+        best_seed_idx = self.val_evaluation_policy.get_best_program(state)
+        for seed_idx in range(len(self.seed_candidate)):
+            if seed_idx >= len(state.program_candidates):
+                break
+            seed_scores_i = state.prog_candidate_val_subscores[seed_idx]
+            seed_avg_i = state.get_program_average_val_subset(seed_idx)[0]
+            notify_callbacks(
+                self.callbacks,
+                "on_valset_evaluated",
+                ValsetEvaluatedEvent(
+                    iteration=0,
+                    candidate_idx=seed_idx,
+                    candidate=self.seed_candidate[seed_idx],
+                    scores_by_val_id=dict(seed_scores_i),
+                    average_score=seed_avg_i,
+                    num_examples_evaluated=len(seed_scores_i),
+                    total_valset_size=len(valset),
+                    parent_ids=[],
+                    is_best_program=(seed_idx == best_seed_idx),
+                    outputs_by_val_id=None,  # Outputs not tracked at initialization unless track_best_outputs=True
+                ),
+            )
 
         # Register budget hook to fire on_budget_updated callback in real-time
         def budget_hook(new_total: int, delta: int) -> None:
