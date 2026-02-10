@@ -48,6 +48,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+# Module-level setting for cloudpickle usage (set by optimize_anything.py)
+_USE_CLOUDPICKLE: bool = False
+
+
+def set_use_cloudpickle(value: bool) -> None:
+    """Configure whether subprocess execution uses cloudpickle or pickle."""
+    global _USE_CLOUDPICKLE
+    _USE_CLOUDPICKLE = value
+
 
 class ExecutionMode(Enum):
     """Execution mode for code execution."""
@@ -385,31 +394,49 @@ def _execute_subprocess(
     # Create temp files for communication
     with tempfile.NamedTemporaryFile(mode="wb", suffix=".pkl", delete=False) as args_file:
         args_path = args_file.name
-        pickle.dump(
-            {
-                "code": code,  # Pass code through pickle to avoid escaping issues
-                "global_vars": global_vars or {},
-                "entry_point": entry_point,
-                "entry_point_args": entry_point_args,
-                "entry_point_kwargs": entry_point_kwargs or {},
-                "capture_variables": capture_variables,
-                "seed": seed,
-            },
-            args_file,
-        )
+        if _USE_CLOUDPICKLE:
+            import cloudpickle
+            cloudpickle.dump(
+                {
+                    "code": code,  # Pass code through pickle to avoid escaping issues
+                    "global_vars": global_vars or {},
+                    "entry_point": entry_point,
+                    "entry_point_args": entry_point_args,
+                    "entry_point_kwargs": entry_point_kwargs or {},
+                    "capture_variables": capture_variables,
+                    "seed": seed,
+                },
+                args_file,
+            )
+        else:
+            pickle.dump(
+                {
+                    "code": code,
+                    "global_vars": global_vars or {},
+                    "entry_point": entry_point,
+                    "entry_point_args": entry_point_args,
+                    "entry_point_kwargs": entry_point_kwargs or {},
+                    "capture_variables": capture_variables,
+                    "seed": seed,
+                },
+                args_file,
+            )
 
     results_path = args_path + ".results"
+
+    # Choose pickle module for subprocess
+    pickle_import = "import cloudpickle as _pickle" if _USE_CLOUDPICKLE else "import pickle as _pickle"
 
     # Build wrapper script
     wrapper_script = f"""
 import sys
-import pickle
+{pickle_import}
 import traceback
 import random
 
 # Load arguments
 with open({args_path!r}, 'rb') as f:
-    _args = pickle.load(f)
+    _args = _pickle.load(f)
 
 _code = _args['code']
 _global_vars = _args['global_vars']
@@ -473,7 +500,7 @@ except Exception as _e:
     }}
 
 with open({results_path!r}, 'wb') as f:
-    pickle.dump(_output, f)
+    _pickle.dump(_output, f)
 """
 
     # Write wrapper script
@@ -505,9 +532,14 @@ with open({results_path!r}, 'wb') as f:
             # Load results
             if os.path.exists(results_path):
                 try:
-                    with open(results_path, "rb") as f:
-                        output = pickle.load(f)
-                except (EOFError, pickle.UnpicklingError) as e:
+                    if _USE_CLOUDPICKLE:
+                        import cloudpickle
+                        with open(results_path, "rb") as f:
+                            output = cloudpickle.load(f)
+                    else:
+                        with open(results_path, "rb") as f:
+                            output = pickle.load(f)
+                except (EOFError, Exception) as e:
                     return CodeExecutionResult(
                         success=False,
                         stdout=stdout_str,

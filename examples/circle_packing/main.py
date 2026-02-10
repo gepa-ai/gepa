@@ -11,15 +11,14 @@ from examples.circle_packing.utils import (
 from gepa.optimize_anything import (
     EngineConfig,
     GEPAConfig,
-    ReflectionConfig,
     RefinerConfig,
+    ReflectionConfig,
     optimize_anything,
 )
 
 # Constants
 MAX_METRIC_CALLS = 150
 NUM_CIRCLES = 26
-LLM_MODEL = "openai/gpt-5.1"
 TIMEOUT = 600  # 10 minutes, same as OpenEvolve
 
 
@@ -44,78 +43,50 @@ def fitness_fn(candidate, best_example_evals):
     if result["success"]:
         circles = result["result"]["circles"]
         score = result["result"]["validation_details"]["sum_radii"]
-        scores = compute_multiple_metrics(result["result"]["all_scores"])
+        metrics = compute_multiple_metrics(result["result"]["all_scores"])
     else:
         circles = None
         score = 0.0
-        scores = {"sum_radii": 0.0}  # NO ERROR? (for now, it's not validated because it can't beat the parent)
+        metrics = {"sum_radii": 0.0}
         
     side_info = {
-        "scores": scores,  # lowercase for multi-objective support
-        "Code": code,
-        "Circles": circles,
-        "Stdout": result.get("stdout", ""),
-        "Error": result.get("error"),
-        "Traceback": result.get("traceback"),
-        "Validation Details": result.get("validation_details"),
+        "score": {"sum_radii": score}, 
+        "metrics": metrics,
+        "code": code,
+        "circles": circles,
+        "stdout": result.get("stdout", ""),
+        "error": result.get("error"),
+        "traceback": result.get("traceback"),
+        "validation_details": result.get("validation_details"),
     }
 
     return score, side_info
 
 
 def main():
-    log_dir = f"outputs/circle_packing"
-
-    # 1. clear the log directory
-    import os
-    import shutil
-    if os.path.exists(log_dir):
-        os.remove(f"{log_dir}/gepa_state.bin")
-        shutil.rmtree(f"{log_dir}/fitness_cache")
-        shutil.rmtree(f"{log_dir}/generated_best_outputs_valset")
-    os.makedirs(log_dir, exist_ok=True)
-
-    print("Circle Packing Evolution with RefinerConfig")
-    print(f"LLM Model: {LLM_MODEL} | Problem size: N={NUM_CIRCLES} | Max metric calls: {MAX_METRIC_CALLS} | Log directory: {log_dir}")
-
     seed_candidate = {
-        "code": SEED_CODE2, 
+        "code": SEED_CODE1, 
     }
 
-    # GEPA config with RefinerConfig
     gepa_config = GEPAConfig(
         engine=EngineConfig(
-            run_dir=log_dir,
+            run_dir="outputs/circle_packing",
             max_metric_calls=MAX_METRIC_CALLS,
             track_best_outputs=True,
             frontier_type="objective",
             cache_evaluation=True,
-            best_example_evals_k=10, 
         ),
-        reflection=ReflectionConfig(
-            reflection_minibatch_size=1,
-            reflection_lm=LLM_MODEL,
-        ),
+        reflection=ReflectionConfig(),
         refiner=RefinerConfig(),
     )
 
-    # Run optimization
-    print("\n" + "=" * 70)
-    print("Running GEPA Optimization with RefinerConfig")
-    print("=" * 70 + "\n")
-
-    result = optimize_anything(
+    optimize_anything(
         seed_candidate=seed_candidate,
         fitness_fn=fitness_fn,
         config=gepa_config,
         objective="Optimize circle packing code to maximize sum of circle radii within a unit square for N=26 circles.",
         background=CIRCLE_PACKING_BACKGROUND,
     )
-
-    print("\n" + "=" * 70)
-    print("Optimization Complete!")
-    print("=" * 70)
-    print("Results:", result)
 
 
 if __name__ == "__main__":

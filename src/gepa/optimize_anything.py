@@ -471,7 +471,7 @@ class RefinerConfig:
     refiner_lm: LanguageModel | str | None = None
 
     # Maximum refinement iterations per evaluation
-    max_refinements: int = 2
+    max_refinements: int = 1
 
 
 # --- Component 3: Experiment Tracking Configuration ---
@@ -507,7 +507,7 @@ class GEPAConfig:
 
     # Use 'None' to disable these optional components
     merge: MergeConfig | None = None
-    refiner: RefinerConfig | None = field(default_factory=RefinerConfig)
+    refiner: RefinerConfig | None = None
 
     # Complex callbacks that aren't serializable
     stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None
@@ -708,6 +708,10 @@ def optimize_anything(
     if resolved_cache_mode == "disk" and not config.engine.run_dir:
         raise ValueError("cache_evaluation_storage='disk' requires run_dir in EngineConfig")
 
+    # Configure cloudpickle for code execution subprocess serialization
+    from gepa.utils.code_execution import set_use_cloudpickle
+    set_use_cloudpickle(config.engine.use_cloudpickle)
+
     active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
         fitness_fn=wrapped_fitness_fn,
         parallel=config.engine.parallel,
@@ -807,12 +811,25 @@ def optimize_anything(
 
         config.reflection.reflection_lm = _reflection_lm
 
-    # Convert refiner_lm string to dspy.LM (if refiner is enabled)
+    # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
     if config.refiner is not None:
         if isinstance(config.refiner.refiner_lm, str):
+<<<<<<< HEAD
             import dspy  # type: ignore[import-not-found]
+=======
+            import litellm
+>>>>>>> 4c974eb696709b8491894db75135069a4ed3898b
 
-            config.refiner.refiner_lm = dspy.LM(config.refiner.refiner_lm)
+            refiner_lm_name = config.refiner.refiner_lm
+
+            def _refiner_lm(prompt: str) -> str:
+                completion = litellm.completion(
+                    model=refiner_lm_name,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                return completion.choices[0].message.content  # type: ignore
+
+            config.refiner.refiner_lm = _refiner_lm
 
     # Auto-inject refiner_prompt into seed_candidate(s) if refiner is enabled
     if config.refiner is not None:
