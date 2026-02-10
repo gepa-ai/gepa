@@ -206,14 +206,21 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         if self.refiner_config is None:
             # Old path: direct evaluation without refinement
             if self.parallel and len(batch) > 1:
-                eval_output = self._evaluate_parallel(batch, candidate)
+                raw_results = self._evaluate_parallel(batch, candidate)
             else:
-                eval_output = [
+                raw_results = [
                     self._call_fitness_fn(candidate, example)
                     for example in batch
                 ]
+            # Package outputs as (score, candidate, side_info) tuples
+            eval_output = []
+            for score, _, side_info in raw_results:
+                output = (score, candidate, side_info)  # Package as tuple
+                eval_output.append((score, output, side_info))
         else:
             # New path: evaluate with refinement
+            # eval_output is list of (score, output, side_info)
+            # where output = (score, best_candidate, side_info)
             eval_output = self._evaluate_with_refinement(batch, candidate)
 
         # Update best evals history for each example
@@ -224,7 +231,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         scores = [score for score, _, _ in eval_output]
         side_infos: list[SideInfo] = [info for _, _, info in eval_output]
-        outputs = side_infos
+        # outputs = list of (score, best_candidate, side_info) tuples
+        outputs = [out for _, out, _ in eval_output]
 
         objective_scores = []
         for side_info in side_infos:
@@ -279,17 +287,18 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self._update_best_example_evals(example, original_score, original_side_info)
 
         # 2. Refine and evaluate
-        best_refined_score, best_refined_output, best_refined_side_info, all_attempts = self._refine_and_evaluate(
+        best_refined_score, best_refined_candidate, best_refined_side_info, all_attempts = self._refine_and_evaluate(
             candidate, example, refiner_prompt, original_score, original_side_info
         )
 
         # 3. Score = best of original and refined (refiner is a score booster)
+        # Track best_candidate (the actual candidate dict that won)
         if best_refined_score > original_score:
             final_score = best_refined_score
-            best_output = best_refined_output
+            best_candidate = best_refined_candidate  # Refined candidate won
         else:
             final_score = original_score
-            best_output = original_output
+            best_candidate = candidate  # Original candidate won
 
         # 4. Side_info = original evaluation (so reflection sees raw candidate quality)
         aggregated_side_info = dict(original_side_info)
@@ -307,7 +316,9 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             "Attempts": all_attempts,
         }
 
-        return final_score, best_output, aggregated_side_info
+        # Package output as (score, best_candidate, side_info) tuple
+        output = (final_score, best_candidate, aggregated_side_info)
+        return final_score, output, aggregated_side_info
 
     def _run_parallel(
         self,
@@ -345,14 +356,15 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         refiner_prompt: str,
         original_score: float,
         original_side_info: "SideInfo",
-    ) -> tuple[float, Any, "SideInfo | None"]:
+    ) -> tuple[float, dict[str, str] | None, "SideInfo | None", list[dict]]:
         """
         Refine a candidate using the refiner LLM and evaluate the refined version.
         Refines ALL non-refiner params at once via JSON dict.
 
         Returns:
-            (best_refined_score, best_refined_output, best_refined_side_info)
-            best_refined_side_info is None if no refinement improved over original.
+            (best_refined_score, best_refined_candidate, best_refined_side_info, all_attempts)
+            best_refined_candidate is the candidate dict that achieved best refined score,
+            or None if no refinement improved over original.
         """
         import dspy
 
@@ -360,7 +372,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         params_dict = {k: v for k, v in candidate.items() if k != "refiner_prompt"}
 
         best_score = original_score
-        best_output = None
+        best_candidate: dict[str, str] | None = None
         best_side_info: SideInfo | None = None
 
         # Initialize attempts with original evaluation (iteration 0)
@@ -438,7 +450,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 print(f"Refinement {refinement_iter + 1}: score={refined_score:.4f} (prev best={best_score:.4f}) {'✓ improved' if improved else ''}", flush=True)
                 if improved:
                     best_score = refined_score
-                    best_output = refined_output
+                    best_candidate = refined_candidate_dict  # Track the actual candidate dict
                     best_side_info = refined_eval_side_info
                     current_params = parsed_refined
                 else:
@@ -454,7 +466,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 })
                 break
 
-        return best_score, best_output, best_side_info, all_attempts
+        return best_score, best_candidate, best_side_info, all_attempts
 
     def _format_all_attempts_feedback(self, all_attempts: list[dict]) -> str:
         """Format all attempts (including original) into readable feedback for the refiner LLM.
