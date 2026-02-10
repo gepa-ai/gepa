@@ -807,12 +807,21 @@ def optimize_anything(
 
         config.reflection.reflection_lm = _reflection_lm
 
-    # Convert refiner_lm string to dspy.LM (if refiner is enabled)
+    # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
     if config.refiner is not None:
         if isinstance(config.refiner.refiner_lm, str):
-            import dspy
+            import litellm
 
-            config.refiner.refiner_lm = dspy.LM(config.refiner.refiner_lm)
+            refiner_lm_name = config.refiner.refiner_lm
+
+            def _refiner_lm(prompt: str) -> str:
+                completion = litellm.completion(
+                    model=refiner_lm_name,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                return completion.choices[0].message.content  # type: ignore
+
+            config.refiner.refiner_lm = _refiner_lm
 
     # Auto-inject refiner_prompt into seed_candidate(s) if refiner is enabled
     if config.refiner is not None:

@@ -13,6 +13,28 @@ if TYPE_CHECKING:
     from gepa.optimize_anything import FitnessFn, RefinerConfig, SideInfo
 
 
+REFINER_PROMPT_TEMPLATE = """You are refining a candidate to improve its performance.
+
+## Instructions
+{refiner_prompt}
+
+## Current Candidate (JSON)
+```json
+{candidate_to_improve}
+```
+
+## Evaluation History
+The following shows all evaluation attempts so far, including scores and feedback:
+```json
+{evaluation_feedback}
+```
+
+## Task
+Analyze the evaluation history and propose an improved version of the candidate.
+Return ONLY a valid JSON object with the improved parameters (no explanation, no markdown fences).
+"""
+
+
 class OptimizeAnythingAdapter(GEPAAdapter):
     def __init__(
         self,
@@ -53,35 +75,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             self._cache_dir_path.mkdir(parents=True, exist_ok=True)
             self._load_cache()
 
-        # Initialize refiner predictor if refiner is configured
-        self.refiner_predictor = None
-        if self.refiner_config is not None:
-            try:
-                import dspy
-
-                # Define refiner signature — input/output are JSON dicts of all non-refiner params
-                class RefinerSignature(dspy.Signature):
-                    """Refine a candidate based on evaluation feedback."""
-
-                    refiner_prompt = dspy.InputField(
-                        desc="Instructions for how to refine the candidate"
-                    )
-                    candidate_to_improve = dspy.InputField(
-                        desc="JSON dict of all parameters to improve"
-                    )
-                    evaluation_feedback = dspy.InputField(
-                        desc="Evaluation results showing performance and errors"
-                    )
-                    refined_candidate = dspy.OutputField(
-                        desc="JSON dict of all improved parameters"
-                    )
-
-                self.refiner_predictor = dspy.Predict(RefinerSignature)
-            except ImportError:
-                raise ImportError(
-                    "DSPy is required for refiner functionality. "
-                    "Install dspy-ai: pip install dspy-ai"
-                )
+        # Refiner uses LiteLLM directly via refiner_config.refiner_lm callable
+        # No separate predictor needed - the LM callable is set up in optimize_anything.py
 
     def _get_best_example_evals(self, example: DataInst) -> list[dict]:
         """Get sorted top-K best evaluations for this example (thread-safe)."""
@@ -389,16 +384,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             # Format ALL attempts so far for the refiner (provides full history)
             current_feedback = self._format_all_attempts_feedback(all_attempts)
             try:
-                # Call refiner LLM with JSON dict of all params
-                with dspy.context(lm=self.refiner_config.refiner_lm):
-                    refiner_result = self.refiner_predictor(
-                        refiner_prompt=refiner_prompt,
-                        candidate_to_improve=json.dumps(current_params, indent=2),
-                        evaluation_feedback=current_feedback,
-                    )
-
-                # Parse refined candidate as JSON dict
-                raw_output = refiner_result.refined_candidate.strip()
+                # Call refiner LLM with formatted prompt
+                prompt = REFINER_PROMPT_TEMPLATE.format(
+                    refiner_prompt=refiner_prompt,
+                    candidate_to_improve=json.dumps(current_params, indent=2),
+                    evaluation_feedback=current_feedback,
+                )
+                raw_output = self.refiner_config.refiner_lm(prompt).strip()
                 # Strip markdown code fences if present
                 if raw_output.startswith("```"):
                     # Remove first line (```json or ```) and last line (```)
