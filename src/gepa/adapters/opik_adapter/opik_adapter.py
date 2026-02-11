@@ -11,20 +11,46 @@ import logging
 import random
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from opik import Dataset
-from opik_optimizer import helpers
-from opik_optimizer.api_objects import chat_prompt
-from opik_optimizer.task_evaluator import evaluate_with_result
-from opik_optimizer.utils.candidate_selection import select_candidate
 
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter
 
+if TYPE_CHECKING:
+    from opik_optimizer.api_objects import chat_prompt
+    from opik_optimizer.task_evaluator import evaluate_with_result
+    from opik_optimizer.utils.candidate_selection import select_candidate
+
+    try:
+        from opik_optimizer.optimizable_agent import OptimizableAgent
+    except Exception:  # pragma: no cover - compatibility path
+        from opik_optimizer.agents.optimizable_agent import OptimizableAgent
+
+_IMPORT_ERROR: Exception | None = None
+helpers: Any = None
+chat_prompt: Any = None
+evaluate_with_result: Any = None
+select_candidate: Any = None
+OptimizableAgent: Any = None
+
 try:
-    from opik_optimizer.optimizable_agent import OptimizableAgent
-except Exception:  # pragma: no cover - compatibility path
-    from opik_optimizer.agents.optimizable_agent import OptimizableAgent
+    from opik_optimizer import helpers
+    from opik_optimizer.api_objects import chat_prompt
+    from opik_optimizer.task_evaluator import evaluate_with_result
+    from opik_optimizer.utils.candidate_selection import select_candidate
+
+    try:
+        from opik_optimizer.optimizable_agent import OptimizableAgent
+    except Exception:
+        from opik_optimizer.agents.optimizable_agent import OptimizableAgent
+except Exception as exc:  # pragma: no cover - optional dependency path
+    _IMPORT_ERROR = exc
+
+if _IMPORT_ERROR is not None:  # pragma: no cover - optional dependency path
+    raise ImportError(
+        "gepa.adapters.opik_adapter requires the optional 'opik-optimizer' package."
+    ) from _IMPORT_ERROR
 
 logger = logging.getLogger(__name__)
 
