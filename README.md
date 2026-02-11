@@ -8,7 +8,9 @@
   <em>Optimize text components—AI prompts, code, or instructions—of any system using reflective text evolution.</em>
 </p>
 
-[![PyPI - Version](https://img.shields.io/pypi/v/gepa)](https://pypi.org/project/gepa/) [![PyPI Downloads](https://static.pepy.tech/badge/gepa)](https://pepy.tech/projects/gepa) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/A7dABbtmFw?style=flat)](https://discord.gg/A7dABbtmFw)
+[![PyPI - Version](https://img.shields.io/pypi/v/gepa)](https://pypi.org/project/gepa/) [![PyPI Downloads](https://static.pepy.tech/badge/gepa)](https://pepy.tech/projects/gepa)
+
+[![GEPA](https://badgen.net/badge/icon/GEPA?icon=slack&label&color=4A154B)](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/WXFSeVGdbW?style=flat)](https://discord.gg/WXFSeVGdbW) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/A7dABbtmFw?style=flat)](https://discord.gg/A7dABbtmFw)
 
 ## Overview
 
@@ -296,6 +298,7 @@ We encourage the community and users to help us develop adapters to allow GEPA t
     - [DSPy Full Program Adapter](src/gepa/adapters/dspy_full_program_adapter/) - Evolves entire DSPy programs including signatures, modules, and control flow. Achieves **93% accuracy** on MATH benchmark (vs 67% with basic DSPy ChainOfThought).
     - [Opik Optimizer Adapter](src/gepa/adapters/opik_adapter/) - Native GEPA adapter for integrating with Opik's evaluation/experiment tooling so GEPA can optimize prompts without double evaluations.
     - [Generic RAG Adapter](src/gepa/adapters/generic_rag_adapter/) - Vector store-agnostic RAG optimization supporting ChromaDB, Weaviate, Qdrant, Pinecone, and more. Optimizes query reformulation, context synthesis, answer generation, and document reranking prompts.
+    - [MCP Adapter](src/gepa/adapters/mcp_adapter/) - Optimize [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) tool usage. Supports local stdio servers, remote SSE/HTTP servers, and optimizes tool descriptions and system prompts.
     - [TerminalBench Adapter](src/gepa/adapters/terminal_bench_adapter/) - Easily integrating GEPA into a Terminus, a sophisticated external agentic pipeline, and optimizing the agents' system prompt.
     - [AnyMaths Adapter](src/gepa/adapters/anymaths_adapter/) - Adapter for optimizing mathematical problem-solving and reasoning tasks. Contributed by [@egmaminta](www.linkedin.com/in/egmaminta).
 - **GEPA uses**

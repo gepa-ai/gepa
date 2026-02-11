@@ -11,12 +11,12 @@ from gepa.proposer.reflective_mutation.base import Signature
 class InstructionProposalSignature(Signature):
     default_prompt_template = """I provided an assistant with the following instructions to perform a task for me:
 ```
-<curr_instructions>
+<curr_param>
 ```
 
 The following are examples of different task inputs provided to the assistant along with the assistant's response for each of them, and some feedback on how the assistant's response could be better:
 ```
-<inputs_outputs_feedback>
+<side_info>
 ```
 
 Your task is to write a new instruction for the assistant.
@@ -35,14 +35,10 @@ Provide the new instructions within ``` blocks."""
         if prompt_template is None:
             return
         missing_placeholders = [
-            placeholder
-            for placeholder in ("<curr_instructions>", "<inputs_outputs_feedback>")
-            if placeholder not in prompt_template
+            placeholder for placeholder in ("<curr_param>", "<side_info>") if placeholder not in prompt_template
         ]
         if missing_placeholders:
-            raise ValueError(
-                f"Missing placeholder(s) in prompt template: {', '.join(missing_placeholders)}"
-            )
+            raise ValueError(f"Missing placeholder(s) in prompt template: {', '.join(missing_placeholders)}")
 
     @classmethod
     def prompt_renderer(cls, input_dict: Mapping[str, Any]) -> str:
@@ -51,8 +47,9 @@ Provide the new instructions within ``` blocks."""
             raise TypeError("current_instruction_doc must be a string")
 
         dataset = input_dict.get("dataset_with_feedback")
-        if not isinstance(dataset, Sequence) or isinstance(dataset, (str, bytes)):
+        if not isinstance(dataset, Sequence) or isinstance(dataset, str | bytes):
             raise TypeError("dataset_with_feedback must be a sequence of records")
+
         def format_samples(samples):
             def render_value(value, level=3):
                 # level controls markdown header depth (###, ####, etc.)
@@ -90,8 +87,8 @@ Provide the new instructions within ``` blocks."""
 
         cls.validate_prompt_template(prompt_template)
 
-        prompt = prompt_template.replace("<curr_instructions>", current_instruction)
-        prompt = prompt.replace("<inputs_outputs_feedback>", format_samples(dataset))
+        prompt = prompt_template.replace("<curr_param>", current_instruction)
+        prompt = prompt.replace("<side_info>", format_samples(dataset))
 
         return prompt
 

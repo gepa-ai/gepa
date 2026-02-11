@@ -6,9 +6,15 @@ import random
 from collections.abc import Callable, Iterable, Sequence
 from copy import deepcopy
 
-from gepa.core.adapter import Candidate, DataInst, EvaluatorFn, RolloutOutput
+from gepa.core.adapter import Candidate, DataInst, RolloutOutput
+from gepa.core.callbacks import (
+    EvaluationEndEvent,
+    EvaluationStartEvent,
+    GEPACallback,
+    notify_callbacks,
+)
 from gepa.core.data_loader import DataId, DataLoader
-from gepa.core.state import GEPAState, ProgramIdx
+from gepa.core.state import GEPAState, ObjectiveScores, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -138,7 +144,8 @@ def sample_and_attempt_merge_programs_by_common_predictors(
             continue
         id1, id2, ancestor = ids_to_merge
 
-        assert (id1, id2, ancestor) not in merges_performed, "This pair has already been merged"
+        if (id1, id2, ancestor) in merges_performed[0]:
+            continue
         assert agg_scores[ancestor] <= agg_scores[id1], "Ancestor should not be better than its descendants"
         assert agg_scores[ancestor] <= agg_scores[id2], "Ancestor should not be better than its descendants"
         assert id1 != id2, "Cannot merge the same program"
@@ -147,7 +154,7 @@ def sample_and_attempt_merge_programs_by_common_predictors(
 
         new_program: Candidate = deepcopy(program_candidates[ancestor])
 
-        new_prog_desc: tuple[int, ...] = ()
+        new_prog_desc: tuple[ProgramIdx, ...] = ()
 
         pred_names = set(program_candidates[ancestor].keys())
         assert pred_names == set(program_candidates[id1].keys()) == set(program_candidates[id2].keys()), (
@@ -190,12 +197,12 @@ def sample_and_attempt_merge_programs_by_common_predictors(
             continue
 
         if has_val_support_overlap and not has_val_support_overlap(id1, id2):
-            # not enough overlapping validation support for candidates
+            # Not enough overlapping validation support for candidates
             continue
 
         merges_performed[1].append((id1, id2, new_prog_desc))
 
-        return (new_program, id1, id2, ancestor)
+        return new_program, id1, id2, ancestor
 
     return None
 
@@ -215,11 +222,15 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         self,
         logger: LoggerProtocol,
         valset: DataLoader[DataId, DataInst],
-        evaluator: EvaluatorFn,
+        evaluator: Callable[
+            [list[DataInst], dict[str, str]],
+            tuple[list[RolloutOutput], list[float], Sequence[ObjectiveScores] | None],
+        ],
         use_merge: bool,
         max_merge_invocations: int,
         val_overlap_floor: int = 5,
         rng: random.Random | None = None,
+        callbacks: list[GEPACallback] | None = None,
     ):
         self.logger = logger
         self.valset = valset
@@ -227,6 +238,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         self.use_merge = use_merge
         self.max_merge_invocations = max_merge_invocations
         self.rng = rng if rng is not None else random.Random(0)
+        self.callbacks = callbacks
 
         if val_overlap_floor <= 0:
             raise ValueError("val_overlap_floor should be a positive integer")
@@ -270,7 +282,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             unused = [idx for idx in common_ids if idx not in selected]
             if len(unused) >= remaining:
                 selected += self.rng.sample(unused, k=remaining)
-            else:
+            elif common_ids:
                 selected += self.rng.choices(common_ids, k=remaining)
 
         return selected[:num_subsample_ids]
@@ -284,16 +296,21 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             self.logger.log(f"Iteration {i}: No merge candidates scheduled")
             return None
 
+        pareto_front_programs = state.get_pareto_front_mapping()
+
+        tracked_scores: Sequence[float] = getattr(
+            state, "per_program_tracked_scores", state.program_full_scores_val_set
+        )
+        merge_candidates = find_dominator_programs(pareto_front_programs, list(tracked_scores))
+
         def has_val_support_overlap(id1: ProgramIdx, id2: ProgramIdx) -> bool:
             common_ids = set(state.prog_candidate_val_subscores[id1].keys()) & set(
                 state.prog_candidate_val_subscores[id2].keys()
             )
             return len(common_ids) >= self.val_overlap_floor
 
-        pareto_front_programs = state.program_at_pareto_front_valset
-        merge_candidates = find_dominator_programs(pareto_front_programs, state.program_full_scores_val_set)
         merge_output = sample_and_attempt_merge_programs_by_common_predictors(
-            agg_scores=state.program_full_scores_val_set,
+            agg_scores=list(tracked_scores),
             rng=self.rng,
             merge_candidates=merge_candidates,
             merges_performed=self.merges_performed,
@@ -306,7 +323,6 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             self.logger.log(f"Iteration {i}: No merge candidates found")
             return None
 
-        # success, new_program, id1, id2, ancestor
         new_program, id1, id2, ancestor = merge_output
         state.full_program_trace[-1]["merged"] = True
         state.full_program_trace[-1]["merged_entities"] = (id1, id2, ancestor)
@@ -317,22 +333,63 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             state.prog_candidate_val_subscores[id1],
             state.prog_candidate_val_subscores[id2],
         )
-        mini_devset = self.valset.fetch(subsample_ids)
-        # below is a post condition of `select_eval_subsample_for_merged_program`
+        if not subsample_ids:
+            self.logger.log(
+                f"Iteration {i}: Skipping merge of {id1} and {id2} due to insufficient overlapping val coverage"
+            )
+            return None
+
         assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id1].keys())
         assert set(subsample_ids).issubset(state.prog_candidate_val_subscores[id2].keys())
         id1_sub_scores = [state.prog_candidate_val_subscores[id1][k] for k in subsample_ids]
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]
         state.full_program_trace[-1]["subsample_ids"] = subsample_ids
 
-        _, new_sub_scores = self.evaluator(mini_devset, new_program)
+        mini_devset = self.valset.fetch(subsample_ids)
+
+        # Notify evaluation start for merged candidate
+        notify_callbacks(
+            self.callbacks,
+            "on_evaluation_start",
+            EvaluationStartEvent(
+                iteration=i,
+                candidate_idx=None,
+                batch_size=len(mini_devset),
+                capture_traces=False,
+                parent_ids=[id1, id2],
+                inputs=mini_devset,
+                is_seed_candidate=False,
+            ),
+        )
+
+        outputs_by_id, scores_by_id, objective_by_id, actual_evals_count = state.cached_evaluate_full(
+            new_program, subsample_ids, self.valset.fetch, self.evaluator
+        )
+        new_sub_scores = [scores_by_id[eid] for eid in subsample_ids]
+        outputs = [outputs_by_id[eid] for eid in subsample_ids]
+
+        notify_callbacks(
+            self.callbacks,
+            "on_evaluation_end",
+            EvaluationEndEvent(
+                iteration=i,
+                candidate_idx=None,
+                scores=new_sub_scores,
+                has_trajectories=False,
+                parent_ids=[id1, id2],
+                outputs=outputs,
+                trajectories=None,
+                objective_scores=[objective_by_id[eid] for eid in subsample_ids] if objective_by_id else None,
+                is_seed_candidate=False,
+            ),
+        )
 
         state.full_program_trace[-1]["id1_subsample_scores"] = id1_sub_scores
         state.full_program_trace[-1]["id2_subsample_scores"] = id2_sub_scores
         state.full_program_trace[-1]["new_program_subsample_scores"] = new_sub_scores
 
-        # Count evals
-        state.total_num_evals += len(subsample_ids)
+        # Count evals via hook mechanism
+        state.increment_evals(actual_evals_count)
 
         # Acceptance will be evaluated by engine (>= max(parents))
         return CandidateProposal(

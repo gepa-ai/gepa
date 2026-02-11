@@ -9,6 +9,7 @@ import pytest
 import gepa
 import gepa.core.state as state_mod
 from gepa.core.adapter import EvaluationBatch
+from gepa.core.state import ValsetEvaluation
 from gepa.strategies.eval_policy import EvaluationPolicy
 
 
@@ -21,7 +22,11 @@ def run_dir(tmp_path):
 def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
     """With a run dir but no state, the state is initialized from scratch and the eval output is written to the run dir."""
     seed = {"model": "m"}
-    valset_out = ({0: "out0", 1: {"k": "out1"}}, {0: 0.1, 1: 0.2})
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: "out0", 1: {"k": "out1"}},
+        scores_by_val_id={0: 0.1, 1: 0.2},
+        objective_scores_by_val_id=None,
+    )
 
     fake_logger = MagicMock()
     valset_evaluator = MagicMock(return_value=valset_out)
@@ -36,7 +41,7 @@ def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
 
     assert isinstance(result, state_mod.GEPAState)
     assert result.num_full_ds_evals == 1
-    assert result.total_num_evals == len(valset_out[1])
+    assert result.total_num_evals == len(valset_out.scores_by_val_id)
     fake_logger.log.assert_not_called()
     valset_evaluator.assert_called_once_with(seed)
 
@@ -45,14 +50,18 @@ def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
     p0 = base / "task_0" / "iter_0_prog_0.json"
     p1 = base / "task_1" / "iter_0_prog_0.json"
     assert p0.exists() and p1.exists()
-    assert json.loads(p0.read_text()) == 0.1
-    assert json.loads(p1.read_text()) == 0.2
+    assert json.loads(p0.read_text()) == "out0"
+    assert json.loads(p1.read_text()) == {"k": "out1"}
 
 
 def test_initialize_gepa_state_no_run_dir():
     """Without a run dir, the state is initialized from scratch and not saved."""
     seed = {"model": "m"}
-    valset_out = ({0: "out"}, {0: 0.5})
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: "out"},
+        scores_by_val_id={0: 0.5},
+        objective_scores_by_val_id=None,
+    )
     fake_logger = MagicMock()
     valset_evaluator = MagicMock(return_value=valset_out)
 
@@ -66,7 +75,7 @@ def test_initialize_gepa_state_no_run_dir():
 
     assert isinstance(result, state_mod.GEPAState)
     assert result.num_full_ds_evals == 1
-    assert result.total_num_evals == len(valset_out[1])
+    assert result.total_num_evals == len(valset_out.scores_by_val_id)
     fake_logger.log.assert_not_called()
     valset_evaluator.assert_called_once_with(seed)
 
@@ -74,7 +83,11 @@ def test_initialize_gepa_state_no_run_dir():
 def test_gepa_state_save_and_initialize(run_dir):
     """With a run dir that contains a saved state, the state is saved and initialized from it."""
     seed = {"model": "m"}
-    valset_out = ({0: {"x": 1}, 1: {"y": 2}}, {0: 0.3, 1: 0.7})
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: {"x": 1}, 1: {"y": 2}},
+        scores_by_val_id={0: 0.3, 1: 0.7},
+        objective_scores_by_val_id=None,
+    )
     fake_logger = MagicMock()
     valset_evaluator = MagicMock(return_value=valset_out)
 
@@ -83,6 +96,7 @@ def test_gepa_state_save_and_initialize(run_dir):
     state.total_num_evals = 10
     assert state.is_consistent()
 
+    # Ensure both regular pickle and cloudpickle save and restore equivalent state
     state.save(run_dir)
     result = state_mod.initialize_gepa_state(
         run_dir=str(run_dir),
@@ -104,6 +118,48 @@ def test_gepa_state_save_and_initialize(run_dir):
     )
 
     assert state.__dict__ == result.__dict__
+
+
+def test_budget_hooks_excluded_from_serialization(run_dir):
+    """Budget hooks are runtime-only and should not be serialized."""
+    seed = {"model": "m"}
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: {"x": 1}, 1: {"y": 2}},
+        scores_by_val_id={0: 0.3, 1: 0.7},
+        objective_scores_by_val_id=None,
+    )
+
+    state = state_mod.GEPAState(seed, valset_out)
+    state.num_full_ds_evals = 3
+    state.total_num_evals = 10
+
+    # Register a budget hook
+    hook_calls = []
+    state.add_budget_hook(lambda total, delta: hook_calls.append((total, delta)))
+
+    # Verify hook works
+    state.increment_evals(5)
+    assert hook_calls == [(15, 5)]
+    assert state.total_num_evals == 15
+
+    # Save state (should not include _budget_hooks)
+    state.save(run_dir)
+
+    # Load state
+    loaded_state = state_mod.GEPAState.load(run_dir)
+
+    # Loaded state should not have _budget_hooks attribute
+    assert not hasattr(loaded_state, "_budget_hooks")
+
+    # But increment_evals should still work (no hooks to call)
+    loaded_state.increment_evals(3)
+    assert loaded_state.total_num_evals == 18
+
+    # And we can add hooks to the loaded state
+    loaded_hook_calls = []
+    loaded_state.add_budget_hook(lambda total, delta: loaded_hook_calls.append((total, delta)))
+    loaded_state.increment_evals(2)
+    assert loaded_hook_calls == [(20, 2)]
 
 
 def test_dynamic_validation(run_dir, rng):
