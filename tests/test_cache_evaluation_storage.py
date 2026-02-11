@@ -64,7 +64,7 @@ class TestCacheEvaluationStorage:
 
         result = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Guess the golden integer. The side_info tells you how far off you are.",
             config=config,
             cache_evaluation_storage="memory",
@@ -96,7 +96,7 @@ class TestCacheEvaluationStorage:
             # First run
             result1 = optimize_anything(
                 seed_candidate={"number": "50"},
-                fitness_fn=fitness_fn,
+                evaluator=fitness_fn,
                 objective="Guess the golden integer. The side_info tells you how far off you are.",
                 config=config,
                 cache_evaluation_storage="disk",
@@ -130,7 +130,7 @@ class TestCacheEvaluationStorage:
 
             result2 = optimize_anything(
                 seed_candidate={"number": "50"},
-                fitness_fn=fitness_fn2,
+                evaluator=fitness_fn2,
                 objective="Guess the golden integer. The side_info tells you how far off you are.",
                 config=config2,
                 cache_evaluation_storage="disk",
@@ -161,7 +161,7 @@ class TestCacheEvaluationStorage:
 
         result = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Guess the golden integer.",
             config=config,
             cache_evaluation_storage="memory",  # This should be ignored
@@ -191,7 +191,7 @@ class TestCacheEvaluationStorage:
 
             result = optimize_anything(
                 seed_candidate={"number": "50"},
-                fitness_fn=fitness_fn,
+                evaluator=fitness_fn,
                 objective="Guess the golden integer.",
                 config=config,
                 cache_evaluation_storage="auto",  # Should resolve to "disk"
@@ -221,7 +221,7 @@ class TestCacheEvaluationStorage:
         # Should not raise - uses memory mode
         result = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Guess the golden integer.",
             config=config,
             cache_evaluation_storage="auto",  # Should resolve to "memory"
@@ -249,7 +249,7 @@ class TestCacheEvaluationStorage:
         with pytest.raises(ValueError, match="cache_evaluation_storage='disk' requires run_dir"):
             optimize_anything(
                 seed_candidate={"number": "50"},
-                fitness_fn=fitness_fn,
+                evaluator=fitness_fn,
                 objective="Guess the golden integer.",
                 config=config,
                 cache_evaluation_storage="disk",  # Explicit disk without run_dir
@@ -276,7 +276,7 @@ if __name__ == "__main__":
 
     result = optimize_anything(
         seed_candidate={"number": "50"},
-        fitness_fn=fitness_fn,
+        evaluator=fitness_fn,
         objective="Guess the golden integer. The side_info tells you how far off you are (off_by field). Try to minimize off_by to 0.",
         config=config,
         cache_evaluation_storage="memory",

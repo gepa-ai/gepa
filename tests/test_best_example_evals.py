@@ -1,13 +1,14 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-"""Tests for best_example_evals warm-start feature."""
+"""Tests for OptimizationState / best_example_evals warm-start feature."""
 
 import pytest
 
 from gepa.optimize_anything import (
-    GEPAConfig,
     EngineConfig,
+    GEPAConfig,
+    OptimizationState,
     ReflectionConfig,
     optimize_anything,
 )
@@ -17,9 +18,11 @@ GOLDEN_NUMBER = 42
 
 
 def create_fitness_fn_with_best_evals_tracking(call_log: list):
-    """Create a fitness_fn that logs best_example_evals received."""
+    """Create an evaluator that logs OptimizationState received."""
 
-    def fitness_fn(candidate: dict[str, str], best_example_evals: list = None, **kwargs) -> tuple[float, dict]:
+    def fitness_fn(
+        candidate: dict[str, str], opt_state: OptimizationState | None = None, **kwargs
+    ) -> tuple[float, dict]:
         try:
             guess = int(candidate["number"])
         except (ValueError, KeyError):
@@ -28,19 +31,21 @@ def create_fitness_fn_with_best_evals_tracking(call_log: list):
         off_by = abs(guess - GOLDEN_NUMBER)
         score = -off_by
 
+        best_example_evals = opt_state.best_example_evals if opt_state else []
+
         # Log the call with best_example_evals info
         call_log.append({
             "guess": guess,
             "score": score,
             "best_example_evals": best_example_evals,
-            "num_best_evals": len(best_example_evals) if best_example_evals else 0,
+            "num_best_evals": len(best_example_evals),
         })
 
         side_info = {
             "guess": guess,
             "golden": GOLDEN_NUMBER,
             "off_by": off_by,
-            "received_best_evals": len(best_example_evals) if best_example_evals else 0,
+            "received_best_evals": len(best_example_evals),
         }
 
         return score, side_info
@@ -49,10 +54,10 @@ def create_fitness_fn_with_best_evals_tracking(call_log: list):
 
 
 class TestExampleBestEvals:
-    """Tests for best_example_evals feature."""
+    """Tests for OptimizationState / best_example_evals feature."""
 
     def test_best_example_evals_passed_to_fitness_fn(self):
-        """Verify best_example_evals is passed to fitness_fn."""
+        """Verify OptimizationState is passed to evaluator via opt_state."""
         call_log = []
         fitness_fn = create_fitness_fn_with_best_evals_tracking(call_log)
 
@@ -69,7 +74,7 @@ class TestExampleBestEvals:
 
         result = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Guess the golden integer. off_by shows distance from target.",
             config=config,
         )
@@ -103,7 +108,7 @@ class TestExampleBestEvals:
 
         result = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Guess the golden integer. off_by shows distance from target.",
             config=config,
         )
@@ -138,7 +143,7 @@ class TestExampleBestEvals:
 
         result = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Guess the golden integer.",
             config=config,
         )
@@ -161,9 +166,9 @@ class TestExampleBestEvals:
 
 
 if __name__ == "__main__":
-    print("Running best_example_evals manual test...")
+    print("Running OptimizationState / best_example_evals manual test...")
 
-    call_log = []
+    call_log: list = []
     fitness_fn = create_fitness_fn_with_best_evals_tracking(call_log)
 
     config = GEPAConfig(
@@ -179,7 +184,7 @@ if __name__ == "__main__":
 
     result = optimize_anything(
         seed_candidate={"number": "50"},
-        fitness_fn=fitness_fn,
+        evaluator=fitness_fn,
         objective="Guess the golden integer. The side_info shows 'off_by' - minimize it to 0.",
         config=config,
     )

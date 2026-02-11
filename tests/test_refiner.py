@@ -10,10 +10,11 @@ import pytest
 
 from gepa.optimize_anything import (
     DEFAULT_REFINER_PROMPT,
-    GEPAConfig,
     EngineConfig,
-    ReflectionConfig,
+    GEPAConfig,
     RefinerConfig,
+    ReflectionConfig,
+    make_litellm_lm,
     optimize_anything,
 )
 
@@ -133,7 +134,7 @@ class TestRefiner:
 
         result = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Guess the golden integer. The side_info shows 'off_by' which is how far your guess is from the target. Minimize off_by to 0.",
             config=config,
         )
@@ -165,7 +166,7 @@ class TestRefiner:
 
         result = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Guess the golden integer. The side_info shows 'off_by' which is how far your guess is from the target. Minimize off_by to 0.",
             config=config,
             cache_evaluation_storage="memory",
@@ -199,7 +200,7 @@ class TestRefiner:
 
             result = optimize_anything(
                 seed_candidate={"number": "50"},
-                fitness_fn=fitness_fn,
+                evaluator=fitness_fn,
                 objective="Guess the golden integer. The side_info shows 'off_by' which is how far your guess is from the target. Minimize off_by to 0.",
                 config=config,
                 cache_evaluation_storage="disk",
@@ -239,7 +240,7 @@ class TestRefiner:
 
         result_no_cache = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn_no_cache,
+            evaluator=fitness_fn_no_cache,
             objective="Guess the golden integer. off_by shows distance from target.",
             config=config_no_cache,
         )
@@ -261,7 +262,7 @@ class TestRefiner:
 
         result_with_cache = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn_with_cache,
+            evaluator=fitness_fn_with_cache,
             objective="Guess the golden integer. off_by shows distance from target.",
             config=config_with_cache,
             cache_evaluation_storage="memory",
@@ -294,7 +295,7 @@ class TestRefiner:
         seed = {"number": "50", "refiner_prompt": custom_prompt}
         result = optimize_anything(
             seed_candidate=seed,
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Guess the golden integer.",
             config=config,
         )
@@ -324,7 +325,7 @@ class TestRefiner:
 
         result = optimize_anything(
             seed_candidate={"param_a": "30", "param_b": "20"},
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Find two integers that sum to 100. The side_info shows 'off_by' which is how far the sum is from 100.",
             config=config,
         )
@@ -343,7 +344,7 @@ class TestRefiner:
         by _evaluate_single_with_refinement.
         """
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.optimize_anything import _create_fitness_fn_wrapper, _SINGLE_INSTANCE_SENTINEL
+        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, _create_evaluator_wrapper
 
         call_counter = {"count": 0}
 
@@ -365,15 +366,15 @@ class TestRefiner:
             }
 
         # Wrap fitness_fn the same way optimize_anything does
-        wrapped = _create_fitness_fn_wrapper(raw_fitness_fn, single_instance_mode=True)
+        wrapped, _cleanup = _create_evaluator_wrapper(raw_fitness_fn, single_instance_mode=True)
 
         refiner_config = RefinerConfig(
-            refiner_lm="openrouter/openai/gpt-5-nano",
+            refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
             max_refinements=1,
         )
 
         adapter = OptimizeAnythingAdapter(
-            fitness_fn=wrapped,
+            evaluator=wrapped,
             parallel=False,
             refiner_config=refiner_config,
             cache_mode="off",
@@ -420,7 +421,7 @@ class TestRefiner:
         improve a deliberately bad seed (number=0, score=-42).
         """
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.optimize_anything import _create_fitness_fn_wrapper, _SINGLE_INSTANCE_SENTINEL
+        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, _create_evaluator_wrapper
 
         def raw_fitness_fn(candidate: dict[str, str], **kwargs) -> tuple[float, dict]:
             try:
@@ -438,15 +439,15 @@ class TestRefiner:
                 "hint": "The target is 42. Return {\"number\": \"42\"} to get a perfect score.",
             }
 
-        wrapped = _create_fitness_fn_wrapper(raw_fitness_fn, single_instance_mode=True)
+        wrapped, _cleanup = _create_evaluator_wrapper(raw_fitness_fn, single_instance_mode=True)
 
         refiner_config = RefinerConfig(
-            refiner_lm="openrouter/openai/gpt-5-nano",
+            refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
             max_refinements=3,
         )
 
         adapter = OptimizeAnythingAdapter(
-            fitness_fn=wrapped,
+            evaluator=wrapped,
             parallel=False,
             refiner_config=refiner_config,
             cache_mode="off",
@@ -492,7 +493,7 @@ class TestRefiner:
     def test_refiner_score_never_worse(self):
         """Test the max(original, refined) guarantee — refiner can only help, never hurt."""
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.optimize_anything import _create_fitness_fn_wrapper, _SINGLE_INSTANCE_SENTINEL
+        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, _create_evaluator_wrapper
 
         def raw_fitness_fn(candidate: dict[str, str], **kwargs) -> tuple[float, dict]:
             try:
@@ -504,15 +505,15 @@ class TestRefiner:
             score = -off_by
             return score, {"guess": guess, "off_by": off_by}
 
-        wrapped = _create_fitness_fn_wrapper(raw_fitness_fn, single_instance_mode=True)
+        wrapped, _cleanup = _create_evaluator_wrapper(raw_fitness_fn, single_instance_mode=True)
 
         refiner_config = RefinerConfig(
-            refiner_lm="openrouter/openai/gpt-5-nano",
+            refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
             max_refinements=2,
         )
 
         adapter = OptimizeAnythingAdapter(
-            fitness_fn=wrapped,
+            evaluator=wrapped,
             parallel=False,
             refiner_config=refiner_config,
             cache_mode="off",
@@ -561,7 +562,7 @@ class TestRefinerWithDataset:
 
         result = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Guess the golden integer. off_by shows distance. Minimize off_by to 0.",
             config=config,
         )
@@ -590,7 +591,7 @@ class TestRefinerWithDataset:
 
         result = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Guess a number close to each example's golden number. off_by shows distance.",
             dataset=DATASET,
             config=config,
@@ -626,7 +627,7 @@ class TestRefinerFrontierTypes:
 
         result = optimize_anything(
             seed_candidate={"number": "50"},
-            fitness_fn=fitness_fn,
+            evaluator=fitness_fn,
             objective="Guess a number close to each example's golden number. off_by shows distance. The scores dict has 'accuracy'.",
             dataset=DATASET,
             config=config,
@@ -662,12 +663,12 @@ class TestRefinerFrontierTypes:
             }
 
         refiner_config = RefinerConfig(
-            refiner_lm="openrouter/openai/gpt-5-nano",
+            refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
             max_refinements=2,
         )
 
         adapter = OptimizeAnythingAdapter(
-            fitness_fn=raw_fitness_fn,
+            evaluator=raw_fitness_fn,
             parallel=False,
             refiner_config=refiner_config,
             cache_mode="off",
@@ -739,7 +740,7 @@ if __name__ == "__main__":
 
     result = optimize_anything(
         seed_candidate={"number": "50"},
-        fitness_fn=fitness_fn,
+        evaluator=fitness_fn,
         objective="Guess the golden integer. The side_info shows 'off_by' which is how far your guess is from the target. Minimize off_by to 0. Return ONLY an integer.",
         config=config,
         cache_evaluation_storage="memory",

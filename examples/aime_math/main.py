@@ -133,7 +133,7 @@ def main():
 
     result = optimize_anything(
         seed_candidate={"prompt": INITIAL_PROMPT},
-        fitness_fn=fitness_fn,
+        evaluator=fitness_fn,
         dataset=trainset,
         valset=valset,
         config=gepa_config,

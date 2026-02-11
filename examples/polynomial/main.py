@@ -69,7 +69,7 @@ def main():
 
     optimize_anything(
         seed_candidate={"code": SEED_CODE},
-        fitness_fn=fitness_fn,
+        evaluator=fitness_fn,
         config=config,
         objective=OBJECTIVE,
         background=BACKGROUND,

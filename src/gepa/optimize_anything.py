@@ -6,9 +6,13 @@ parameterized system using evolutionary algorithms with LLM-based reflection.
 """
 
 import inspect
+import io
 import os
 import random
 import sys
+import threading
+import warnings
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import (
     Any,
@@ -45,7 +49,7 @@ from gepa.utils import FileStopper, StopperProtocol
 OptimizableParam = str
 Candidate = dict[str, OptimizableParam]
 
-# Cache storage modes for fitness function evaluation caching (when cache_evaluation=True)
+# Cache storage modes for evaluator caching (when cache_evaluation=True)
 CacheEvaluationStorage = Literal["memory", "disk", "auto"]
 
 
@@ -59,18 +63,21 @@ class _SingleInstanceSentinel:
 
 _SINGLE_INSTANCE_SENTINEL = _SingleInstanceSentinel()
 
+# Internal key used to wrap a plain-str seed_candidate into a dict.
+_STR_CANDIDATE_KEY = "current_candidate"
+
 SideInfo: TypeAlias = dict[str, Any]
 """
 Auxiliary evaluation information that powers LLM-based reflection in GEPA optimization.
 
-SideInfo is a dictionary returned alongside each evaluation score from your fitness function.
+SideInfo is a dictionary returned alongside each evaluation score from your evaluator.
 It contains rich diagnostic information that GEPA's reflective mutation proposer uses to
 understand what went wrong and generate targeted improvements to candidates. The more
 informative your SideInfo, the more effective the LLM-guided optimization becomes.
 
 **Role in the Optimization Loop:**
 
-1. Your fitness_fn evaluates a candidate and returns (score, rollout_output, side_info)
+1. Your evaluator evaluates a candidate and returns (score, side_info) or just score
 2. GEPA collects side_info across multiple evaluation instances
 3. The reflective proposer presents this information to an LLM with the candidate parameters
 4. The LLM analyzes failures/successes and proposes parameter improvements
@@ -164,92 +171,278 @@ useful when different parameters have different failure modes.
 
 **Integration with Fitness Function:**
 
-Your fitness_fn should construct SideInfo for each evaluation instance. See the
-FitnessFn protocol documentation for the complete evaluation interface.
+Your evaluator should construct SideInfo for each evaluation instance. See the
+Evaluator protocol documentation for the complete evaluation interface.
 """
 
 
-class FitnessFn(Protocol):
+@dataclass
+class OptimizationState:
+    """Optimization context passed to the evaluator function.
+
+    Contains accumulated optimization state that the evaluator can use
+    for warm-starting or informed evaluation decisions.
+    """
+
+    best_example_evals: list[dict]
+    """Top-K best evaluations for the current example, sorted descending by score.
+    Each entry is {"score": float, "side_info": dict}."""
+
+
+# ---------------------------------------------------------------------------
+# Thread-local log() — captures diagnostic output without polluting stdout
+# ---------------------------------------------------------------------------
+
+_log_storage = threading.local()
+
+
+def _get_log_buffer() -> io.StringIO:
+    """Get the current thread's log buffer, creating one if needed."""
+    if not hasattr(_log_storage, "buffer"):
+        _log_storage.buffer = io.StringIO()
+    return _log_storage.buffer
+
+
+def _reset_log_buffer() -> str:
+    """Read and reset the current thread's log buffer. Returns accumulated text."""
+    buf = _get_log_buffer()
+    text = buf.getvalue()
+    _log_storage.buffer = io.StringIO()
+    return text
+
+
+def log(*args: Any, sep: str = " ", end: str = "\n") -> None:
+    """Log diagnostic information during evaluation without printing to stdout.
+
+    Has the same calling convention as ``print()``.  Output is captured per-thread
+    and automatically included in side_info under the ``"log"`` key.
+
+    Must only be called inside an evaluator function passed to ``optimize_anything``.
+    Calling it outside that context will emit a warning and the output will be
+    silently discarded on the next evaluation.
+
+    Usage::
+
+        import gepa.optimize_anything as oa
+        oa.log("Landing distance:", distance, "meters")
+    """
+    if not getattr(_log_storage, "inside_evaluator", False):
+        warnings.warn(
+            "oa.log() called outside of an evaluator function. "
+            "Output will be discarded. Only call oa.log() inside your evaluator.",
+            stacklevel=2,
+        )
+    buf = _get_log_buffer()
+    buf.write(sep.join(str(a) for a in args) + end)
+
+
+# ---------------------------------------------------------------------------
+# Thread-safe stdout / stderr capture
+# ---------------------------------------------------------------------------
+
+
+class _ThreadLocalStreamCapture:
+    """A ``sys.stdout`` / ``sys.stderr`` replacement that captures output per-thread.
+
+    Threads that have called :meth:`start_capture` get their writes routed to a
+    private ``StringIO``; all other threads pass through to the original stream.
+    """
+
+    def __init__(self, original: Any) -> None:
+        self._original = original
+        self._local = threading.local()
+
+    # -- file-like interface --------------------------------------------------
+
+    def write(self, text: str) -> int:
+        if getattr(self._local, "capturing", False):
+            return self._local.buffer.write(text)
+        return self._original.write(text)
+
+    def flush(self) -> None:
+        if getattr(self._local, "capturing", False):
+            self._local.buffer.flush()
+        self._original.flush()
+
+    def fileno(self) -> int:
+        # Always delegate to the original stream so that libraries (tqdm, rich,
+        # subprocess, logging handlers, etc.) that call sys.stdout.fileno()
+        # continue to work even while this thread is being captured.
+        return self._original.fileno()
+
+    @property
+    def encoding(self) -> str:
+        return self._original.encoding
+
+    @property
+    def errors(self) -> str | None:
+        return self._original.errors
+
+    def isatty(self) -> bool:
+        if getattr(self._local, "capturing", False):
+            return False
+        return self._original.isatty()
+
+    def writable(self) -> bool:
+        return True
+
+    def readable(self) -> bool:
+        return False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._original, name)
+
+    # -- capture control ------------------------------------------------------
+
+    def start_capture(self) -> None:
+        """Start capturing for the current thread."""
+        self._local.capturing = True
+        self._local.buffer = io.StringIO()
+
+    def stop_capture(self) -> str:
+        """Stop capturing and return the captured text for the current thread."""
+        self._local.capturing = False
+        text = self._local.buffer.getvalue()
+        self._local.buffer = io.StringIO()
+        return text
+
+
+class _StreamCaptureManager:
+    """Reference-counted manager for per-thread stdout/stderr capture.
+
+    Allows multiple concurrent optimize_anything calls with capture_stdio=True
+    to share the same stream wrappers. sys.stdout/stderr are only restored when
+    the last user releases.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._refcount = 0
+        self._stdout_capturer: _ThreadLocalStreamCapture | None = None
+        self._stderr_capturer: _ThreadLocalStreamCapture | None = None
+        self._original_stdout: Any = None
+        self._original_stderr: Any = None
+
+    def acquire(self) -> tuple[_ThreadLocalStreamCapture, _ThreadLocalStreamCapture]:
+        """Install capture wrappers (or reuse existing). Returns (stdout_cap, stderr_cap)."""
+        with self._lock:
+            if self._refcount == 0:
+                self._original_stdout = sys.stdout
+                self._original_stderr = sys.stderr
+                self._stdout_capturer = _ThreadLocalStreamCapture(sys.stdout)
+                self._stderr_capturer = _ThreadLocalStreamCapture(sys.stderr)
+                sys.stdout = self._stdout_capturer  # type: ignore[assignment]
+                sys.stderr = self._stderr_capturer  # type: ignore[assignment]
+            self._refcount += 1
+            assert self._stdout_capturer is not None and self._stderr_capturer is not None
+            return self._stdout_capturer, self._stderr_capturer
+
+    def release(self) -> None:
+        """Decrement ref count. Restores original streams when last user releases."""
+        with self._lock:
+            self._refcount -= 1
+            if self._refcount <= 0:
+                if self._original_stdout is not None:
+                    sys.stdout = self._original_stdout
+                if self._original_stderr is not None:
+                    sys.stderr = self._original_stderr
+                self._stdout_capturer = None
+                self._stderr_capturer = None
+                self._refcount = 0
+
+
+_stream_manager = _StreamCaptureManager()
+
+
+class Evaluator(Protocol):
     def __call__(
-        self, candidate: Candidate, example: DataInst | None = None, **kwargs: Any
+        self, candidate: str | Candidate, example: DataInst | None = None, **kwargs: Any
     ) -> tuple[float, SideInfo] | float:
         """
         Core evaluation interface for GEPA optimization.
 
-        Evaluates a candidate (parameterized system) on a single example,
-        returning a score and diagnostic information that guide the optimization process.
+        Evaluates a candidate on a single example, returning a score and optional
+        diagnostic information that guide the optimization process.
 
         **Parameters:**
 
-        - **candidate**: Dictionary mapping parameter names to values representing one
-          system configuration.
-
-          Examples:
-          - Prompt optimization: `{"system_prompt": "You are...", "user_prefix": "Answer:"}`
-          - Hyperparameter tuning: `{"learning_rate": "0.001", "batch_size": "32"}`
-          - Multi-component system: `{"component_1_config": "...", "component_2_config": "..."}`
+        - **candidate**: The system configuration to evaluate.  Receives the same
+          type passed as ``seed_candidate`` to ``optimize_anything``:
+          ``str`` when ``seed_candidate`` is a plain string, or
+          ``dict[str, str]`` when ``seed_candidate`` is a dict.
 
         - **example**: A single example from the dataset to evaluate on (test case,
-          input-output pair, task instance). In single-instance mode (when both `dataset=None`
-          and `valset=None` are passed to `optimize_anything`), this parameter will NOT be
-          passed to the fitness function at all.
+          input-output pair, task instance). In single-instance mode (when both ``dataset=None``
+          and ``valset=None`` are passed to ``optimize_anything``), this parameter will NOT be
+          passed to the evaluator at all.
 
-        - **kwargs**: Additional keyword arguments passed during evaluation.
+        - **opt_state** *(optional)*: An :class:`OptimizationState` instance containing
+          accumulated optimization context (e.g. ``best_example_evals``).  To receive it,
+          simply declare ``opt_state`` as a parameter in your evaluator signature; it will
+          be filtered out automatically if not declared.
+
+          .. note::
+
+             ``opt_state`` is a **reserved parameter name**.  GEPA injects this
+             keyword argument automatically during evaluation.  Do not use the
+             name ``opt_state`` for an unrelated parameter in your evaluator
+             signature — doing so will cause it to receive the
+             :class:`OptimizationState` object instead of whatever value you
+             intended.
 
         **Returns:**
 
-        The fitness function can return values in two formats:
+        The evaluator can return values in two formats:
 
-        1. **Tuple format**: `(score, side_info)`
-           - **score** (float): Fitness score for this instance. Higher is better. Must be finite.
-             Primary optimization signal.
+        1. **Tuple format**: ``(score, side_info)``
+           - **score** (float): Fitness score for this instance. Higher is better.
            - **side_info** (SideInfo): Auxiliary evaluation information powering LLM-based
-             reflection. See SideInfo documentation for detailed guidance on structure and
-             best practices.
+             reflection. See SideInfo documentation for details.
 
-        2. **Score-only format**: `score` (float)
+        2. **Score-only format**: ``score`` (float)
            - Returns only the score as a float.
-           - When this format is used, GEPA will automatically capture all stdout output
-             during fitness function execution and use it as the side_info.
+           - Diagnostic output can be provided via ``oa.log()`` (captured per-thread,
+             included in side_info under ``"log"``).
+           - If ``capture_stdio=True`` in ``EngineConfig``, stdout/stderr are also
+             captured automatically and included in side_info.
 
-        **Requirements:**
+        **Reserved side_info keys:**
 
-        - Include rich diagnostic information in side_info for effective reflection
-        - All scores follow "higher is better" convention
-        - When using score-only format, print diagnostic information to help the LLM
+        The keys ``"log"``, ``"stdout"``, and ``"stderr"`` are reserved for
+        GEPA's automatic capture output.  If your evaluator returns a
+        ``side_info`` dict containing any of these keys *and* the corresponding
+        capture mechanism is active (``oa.log()`` for ``"log"``,
+        ``capture_stdio=True`` for ``"stdout"``/``"stderr"``), a
+        ``ValueError`` will be raised.  Rename your keys to avoid collisions.
 
         **Single-Instance Mode (Holistic Optimization):**
 
-        When both `dataset=None` and `valset=None` are passed to `optimize_anything`, the
-        fitness function is called WITHOUT the `example` parameter. For single-instance
-        problems like code evolution or mathematical optimization:
+        When both ``dataset=None`` and ``valset=None`` are passed to ``optimize_anything``, the
+        evaluator is called WITHOUT the ``example`` parameter::
 
-        ```python
-        # With explicit side_info (recommended)
-        def fitness_fn(candidate):
-            result = execute_my_code(candidate["code"])
-            score = compute_score(result)
-            return score, {"Output": str(result), "ExecutionTime": result.time}
+            # With explicit side_info (recommended)
+            def evaluate(candidate):
+                result = execute_my_code(candidate["code"])
+                score = compute_score(result)
+                return score, {"Output": str(result), "ExecutionTime": result.time}
 
-        # With stdout capture
-        def fitness_fn(candidate):
-            result = execute_my_code(candidate["code"])
-            score = compute_score(result)
-            print(f"Output: {result}")
-            print(f"Execution time: {result.time}")
-            return score
-        ```
+            # With oa.log()
+            import gepa.optimize_anything as oa
+            def evaluate(candidate):
+                result = execute_my_code(candidate["code"])
+                score = compute_score(result)
+                oa.log(f"Output: {result}")
+                oa.log(f"Execution time: {result.time}")
+                return score
 
         **Per-Instance Mode:**
 
-        When a dataset is provided, the fitness function is called with each example:
+        When a dataset is provided, the evaluator is called with each example::
 
-        ```python
-        def fitness_fn(candidate, example):
-            prediction = candidate_predict(candidate, example["input"])
-            score = compute_score(prediction, example["expected"])
-            return score, {"Input": example["input"], "Prediction": prediction}
-        ```
+            def evaluate(candidate, example):
+                prediction = candidate_predict(candidate, example["input"])
+                score = compute_score(prediction, example["expected"])
+                return score, {"Input": example["input"], "Prediction": prediction}
         """
         ...
 
@@ -283,9 +476,22 @@ class EngineConfig:
     # Evaluation caching
     cache_evaluation: bool = False
 
-    # Track top-K best evaluations per example, passed to fitness_fn as "best_example_evals"
+    # Track top-K best evaluations per example, passed to evaluator via OptimizationState
     # Useful for warm-starting optimization from previous best solutions
     best_example_evals_k: int = 30
+
+    # When True, automatically capture stdout/stderr during evaluation and
+    # include it in side_info as {"stdout": "...", "stderr": "..."}.
+    # Thread-safe via per-thread sys.stdout/stderr replacement.
+    #
+    # Captures all Python-level output: print(), sys.stdout.write(), and
+    # third-party library output — anything that goes through sys.stdout.
+    #
+    # Does NOT capture output that bypasses Python's sys.stdout:
+    # C extensions writing directly to fd 1/2, or subprocesses spawned
+    # internally by libraries. For those, use oa.log() or capture subprocess
+    # output manually and pass it to oa.log().
+    capture_stdio: bool = False
 
 
 def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
@@ -348,11 +554,13 @@ Performance data from evaluating the current component across test cases:
         analysis_points.append(
             "- **Goal alignment**: How well does the current component achieve the stated optimization goal?"
         )
-    analysis_points.extend([
-        "- **Failure patterns**: What specific errors, edge cases, or failure modes appear in the evaluation data?",
-        "- **Success patterns**: What behaviors or approaches worked well and should be preserved?",
-        "- **Root causes**: What underlying issues explain the observed failures?",
-    ])
+    analysis_points.extend(
+        [
+            "- **Failure patterns**: What specific errors, edge cases, or failure modes appear in the evaluation data?",
+            "- **Success patterns**: What behaviors or approaches worked well and should be preserved?",
+            "- **Root causes**: What underlying issues explain the observed failures?",
+        ]
+    )
     if background:
         analysis_points.append(
             "- **Constraint compliance**: Does the component satisfy all requirements from the domain context?"
@@ -382,6 +590,7 @@ code, or any other parameter type).
 Do not include explanations, commentary, or markdown outside the ``` blocks.""")
 
     return "\n".join(sections)
+
 
 optimize_anything_reflection_prompt_template: str = """I am optimizing a parameter in my system. The current parameter value is:
 ```
@@ -535,69 +744,162 @@ class GEPAConfig:
         return GEPAConfig(**d)
 
 
-def _create_fitness_fn_wrapper(
-    fitness_fn: FitnessFn, single_instance_mode: bool
-) -> Any:
+def make_litellm_lm(model_name: str) -> LanguageModel:
+    """Convert a LiteLLM model name string to a :class:`LanguageModel` callable.
+
+    The returned callable conforms to the ``LanguageModel`` protocol and
+    accepts both a plain ``str`` prompt and a ``list[dict[str, str]]``
+    chat-messages list.
     """
-    Create a wrapper around the user's fitness_fn that:
-    1. Handles single-instance mode (calls fitness_fn without example parameter)
-    2. Detects whether fitness_fn returns (score, side_info) tuple or just score
-    3. Normalizes return value to always be (score, output, side_info) tuple
-    4. Filters kwargs to only pass what the fitness_fn accepts
+    import litellm
+
+    def _lm(prompt: str | list[dict[str, str]]) -> str:
+        if isinstance(prompt, str):
+            messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+        else:
+            messages = prompt
+        completion = litellm.completion(model=model_name, messages=messages)
+        return completion.choices[0].message.content  # type: ignore[union-attr]
+
+    return _lm
+
+
+def _create_evaluator_wrapper(
+    evaluator_fn: Callable[..., Any],
+    single_instance_mode: bool,
+    capture_stdio: bool = False,
+    str_candidate_mode: bool = False,
+) -> tuple[Any, Callable[[], None]]:
+    """
+    Create a wrapper around the user's evaluator that:
+    1. Handles single-instance mode (calls evaluator without example parameter)
+    2. Unwraps candidate dict to str when str_candidate_mode is True
+    3. Filters kwargs to only pass what the evaluator accepts (incl. opt_state)
+    4. Captures oa.log() output and optionally stdout/stderr
+    5. Detects whether evaluator returns (score, side_info) tuple or just score
+    6. Normalizes return value to always be (score, output, side_info) tuple
 
     Args:
-        fitness_fn: The user's fitness function
+        evaluator_fn: The user's evaluator function
         single_instance_mode: Whether we're in single-instance mode
+        capture_stdio: Whether to capture stdout/stderr during evaluation
+        str_candidate_mode: Whether the user provided seed_candidate as str
+            (evaluator receives str instead of dict)
 
     Returns:
-        A wrapped fitness function that always returns (score, output, side_info)
+        A tuple of (wrapped_evaluator, cleanup_fn). The cleanup_fn must be
+        called when optimization is finished to release stream capture
+        resources if capture_stdio was enabled.
     """
-    # Inspect the fitness function's signature once to determine which kwargs it accepts.
-    # If it has **kwargs, forward everything. Otherwise, only forward named params.
-    sig = inspect.signature(fitness_fn)
-    has_var_keyword = any(
-        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
-    )
+    # Inspect the evaluator's signature once to determine which kwargs it accepts.
+    sig = inspect.signature(evaluator_fn)
+    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
     if has_var_keyword:
         accepted_params = None  # accept all
     else:
         accepted_params = set(sig.parameters.keys())
+
+    # Acquire per-thread stream capture from the shared manager if requested.
+    stdout_capturer: _ThreadLocalStreamCapture | None = None
+    stderr_capturer: _ThreadLocalStreamCapture | None = None
+    if capture_stdio:
+        stdout_capturer, stderr_capturer = _stream_manager.acquire()
 
     def _filter_kwargs(kwargs: dict) -> dict:
         if accepted_params is None:
             return kwargs
         return {k: v for k, v in kwargs.items() if k in accepted_params}
 
-    def wrapped_fitness_fn(candidate: Candidate, example: DataInst | None = None, **kwargs: Any) -> tuple[float, Any, SideInfo]:
+    def wrapped_evaluator(
+        candidate: Candidate, example: DataInst | None = None, **kwargs: Any
+    ) -> tuple[float, Any, SideInfo]:
+        # Discard any stale oa.log() output from outside evaluator context.
+        # The log() function itself already warns when called outside an evaluator,
+        # so we silently discard here rather than emitting a second warning with
+        # an unhelpful stack trace pointing into wrapper internals.
+        _reset_log_buffer()
+
+        _log_storage.inside_evaluator = True
+
         # Build full kwargs dict. In per-instance mode, include example so it
-        # can be filtered like any other kwarg (supports both positional and
-        # **kwargs-based fitness functions).
+        # can be filtered like any other kwarg.
         if single_instance_mode and example is _SINGLE_INSTANCE_SENTINEL:
             all_kwargs = kwargs
         else:
             all_kwargs = {"example": example, **kwargs}
 
         filtered = _filter_kwargs(all_kwargs)
-        result = fitness_fn(candidate, **filtered)
+
+        # Unwrap candidate for str_candidate_mode
+        eval_candidate: Candidate | str = candidate
+        if str_candidate_mode:
+            eval_candidate = candidate[_STR_CANDIDATE_KEY]
+
+        # Start stdout/stderr capture if enabled
+        if stdout_capturer:
+            stdout_capturer.start_capture()
+        if stderr_capturer:
+            stderr_capturer.start_capture()
+
+        try:
+            result = evaluator_fn(eval_candidate, **filtered)
+        finally:
+            captured_stdout = stdout_capturer.stop_capture() if stdout_capturer else ""
+            captured_stderr = stderr_capturer.stop_capture() if stderr_capturer else ""
+            log_output = _reset_log_buffer()
+            _log_storage.inside_evaluator = False
 
         # Detect return type and normalize to (score, output, side_info)
         if isinstance(result, tuple):
             score, side_info = result
+            side_info = dict(side_info) if side_info is not None else {}
+
+            # Check for key collisions before injecting captured output
+            injected: dict[str, str] = {}
+            if log_output:
+                injected["log"] = log_output
+            if captured_stdout:
+                injected["stdout"] = captured_stdout
+            if captured_stderr:
+                injected["stderr"] = captured_stderr
+
+            collisions = set(injected) & set(side_info)
+            if collisions:
+                raise ValueError(
+                    f"Your evaluator returned side_info with key(s) {collisions} that conflict "
+                    f"with keys reserved by GEPA for captured output. Reserved keys: "
+                    f'{{"log", "stdout", "stderr"}}. Please rename your side_info keys to avoid '
+                    f"collisions, or disable capture_stdio / stop calling oa.log() if you want "
+                    f"to manage these keys yourself."
+                )
+            side_info.update(injected)
             return score, None, side_info
         else:
             score = result
-            return score, None, {}
+            auto_side_info: SideInfo = {}
+            if captured_stdout:
+                auto_side_info["stdout"] = captured_stdout
+            if captured_stderr:
+                auto_side_info["stderr"] = captured_stderr
+            if log_output:
+                auto_side_info["log"] = log_output
+            return score, None, auto_side_info
 
-    return wrapped_fitness_fn
+    def cleanup() -> None:
+        """Release stream capture resources."""
+        if capture_stdio:
+            _stream_manager.release()
+
+    return wrapped_evaluator, cleanup
 
 
 def optimize_anything(
-    seed_candidate: Candidate | list[Candidate],
-    fitness_fn: FitnessFn,
+    seed_candidate: str | Candidate | list[Candidate],
+    evaluator: Evaluator,
     dataset: list[DataInst] | None = None,
     valset: list[DataInst] | None = None,
-    objective: str | None = None, # FitnessFn description. Objective can be a tuple (objective, objective_fn)
-    background: str | None = None, # Maybe we need different types
+    objective: str | None = None,
+    background: str | None = None,
     config: GEPAConfig | None = None,
     cache_evaluation_storage: CacheEvaluationStorage = "auto",
 ) -> GEPAResult:
@@ -605,78 +907,68 @@ def optimize_anything(
     Optimize any parameterized system using evolutionary algorithms with LLM-based reflection.
 
     This is the main entry point for GEPA optimization. It accepts a seed candidate (initial
-    parameter configuration), a fitness function for evaluation, and optionally a dataset
-    of test cases.
+    parameter configuration), an evaluator function, and optionally a dataset of test cases.
 
     **Two modes of operation:**
 
-    1. **Per-instance mode** (when `dataset` is provided): The fitness function is called
-       once per example in the dataset, and scores are aggregated. This is ideal for
-       prompt optimization, supervised learning tasks, etc.
+    1. **Per-instance mode** (when ``dataset`` is provided): The evaluator is called
+       once per example in the dataset, and scores are aggregated.
 
-    2. **Single-instance mode** (default, when `dataset=None`): For optimization problems like
-       code evolution or circle packing where there's no dataset—just a single optimization
-       target defined implicitly by the fitness function. The fitness function receives
-       `example=None`, which can be ignored.
+    2. **Single-instance mode** (default, when ``dataset=None``): The evaluator is called
+       without the ``example`` parameter.
 
     Args:
-        seed_candidate: Initial candidate(s) to start optimization from. Can be a single
-            candidate dict or a list of candidates for population-based initialization.
-        fitness_fn: Function that evaluates a candidate on a single example, returning
-            (score, output, side_info). See FitnessFn protocol for details.
-            In single-instance mode, the `example` argument will be `None`.
-        dataset: List of examples/test cases to evaluate candidates on during optimization.
-            If None, operates in single-instance mode where the optimization target is
-            defined entirely within the fitness function (e.g., code evolution, mathematical
-            optimization). Default: None.
-        valset: Optional separate validation set. If not provided, uses dataset for validation.
-        objective: High-level description of what the optimized component should achieve.
-            Used to generate a reflection prompt that guides the LLM proposer. Example:
-            "Generate Python code that solves competitive programming problems efficiently."
-            Cannot be used together with a custom reflection_prompt_template in config.
-        background: Domain knowledge, constraints, algorithms, or implementation requirements
-            that should guide optimization. Used alongside objective to generate reflection
-            prompts. Example: "Solutions must use only standard library. Time limit is 2 seconds.
-            Consider dynamic programming and greedy approaches." Cannot be used together with
-            a custom reflection_prompt_template in config.
-        config: Optional GEPAConfig for fine-grained control over optimization behavior.
-            If not provided, uses sensible defaults.
+        seed_candidate: Initial candidate(s) to start optimization from.  Can be:
+            - A plain ``str`` (wrapped internally; the evaluator receives the
+              raw ``str``).
+            - A ``dict[str, str]`` mapping parameter names to values.
+            - A ``list`` of candidate dicts for population-based initialization.
+        evaluator: Function that evaluates a candidate, returning ``score`` or
+            ``(score, side_info)``.  See :class:`Evaluator` protocol for details.
+        dataset: Examples to evaluate on. ``None`` → single-instance mode.
+        valset: Optional separate validation set. Defaults to ``dataset``.
+        objective: High-level goal guiding LLM reflection.
+        background: Domain knowledge / constraints for reflection.
+        config: Optional :class:`GEPAConfig`.
+        cache_evaluation_storage: Cache storage backend when caching is enabled.
 
     Returns:
-        GEPAResult containing the best candidate(s), optimization history, and metrics.
+        :class:`GEPAResult` with the best candidate(s), history, and metrics.
 
-    Raises:
-        ValueError: If both objective/background and a custom reflection_prompt_template
-            are provided (mutually exclusive options).
+    Example (per-instance mode)::
 
-    Example (per-instance mode):
-        >>> result = optimize_anything(
-        ...     seed_candidate={"prompt": "Solve this math problem:"},
-        ...     fitness_fn=my_evaluator,
-        ...     dataset=test_cases,
-        ...     objective="Generate prompts that help solve math word problems accurately.",
-        ...     config=GEPAConfig(engine=EngineConfig(max_metric_calls=100)),
-        ... )
-        >>> print(result.best_candidate)
+        result = optimize_anything(
+            seed_candidate={"prompt": "Solve this math problem:"},
+            evaluator=my_evaluator,
+            dataset=test_cases,
+            objective="Generate prompts that help solve math word problems.",
+            config=GEPAConfig(engine=EngineConfig(max_metric_calls=100)),
+        )
 
-    Example (single-instance mode - code evolution):
-        >>> def fitness_fn(candidate, example=None):
-        ...     # example is None in single-instance mode - ignore it
-        ...     result = executor.execute(candidate["code"], entry_point="solve")
-        ...     score = compute_score(result)
-        ...     return score, result, {"Output": result, "Error": result.error}
-        ...
-        >>> result = optimize_anything(
-        ...     seed_candidate={"code": "def solve(): return 0"},
-        ...     fitness_fn=fitness_fn,
-        ...     dataset=None,  # Single-instance mode
-        ...     objective="Evolve code to maximize the objective function.",
-        ...     config=GEPAConfig(engine=EngineConfig(max_metric_calls=500)),
-        ... )
+    Example (single-instance mode with str seed)::
+
+        import gepa.optimize_anything as oa
+
+        def evaluate(candidate: str) -> float:
+            result = run_code(candidate)
+            oa.log(f"Output: {result}")
+            return compute_score(result)
+
+        result = optimize_anything(
+            seed_candidate="def solve(): return 0",
+            evaluator=evaluate,
+            objective="Evolve code to maximize the objective function.",
+            config=GEPAConfig(engine=EngineConfig(max_metric_calls=500)),
+        )
     """
     # Use default config if not provided
     if config is None:
         config = GEPAConfig()
+
+    # Normalize seed_candidate: str -> {_STR_CANDIDATE_KEY: str}
+    str_candidate_mode = isinstance(seed_candidate, str)
+    if str_candidate_mode:
+        seed_candidate = {_STR_CANDIDATE_KEY: seed_candidate}
 
     # Detect single-instance mode: when both dataset=None and valset=None
     single_instance_mode = dataset is None and valset is None
@@ -686,340 +978,325 @@ def optimize_anything(
         config.reflection.reflection_minibatch_size = 1 if single_instance_mode else 3
 
     # Handle single-instance mode: when both dataset=None and valset=None, create a
-    # dataset with a single sentinel element. The fitness function will be called
+    # dataset with a single sentinel element. The evaluator will be called
     # without the example parameter.
     if single_instance_mode:
         effective_dataset: list[DataInst] = [_SINGLE_INSTANCE_SENTINEL]  # type: ignore[list-item]
     else:
         effective_dataset = dataset if dataset is not None else [None]  # type: ignore[list-item]
 
-    # Wrap the fitness function to handle the new API
-    wrapped_fitness_fn = _create_fitness_fn_wrapper(fitness_fn, single_instance_mode)
-
-    # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
-    if not config.engine.cache_evaluation:
-        resolved_cache_mode = "off"
-    elif cache_evaluation_storage == "auto":
-        resolved_cache_mode = "disk" if config.engine.run_dir else "memory"
-    else:
-        resolved_cache_mode = cache_evaluation_storage
-
-    # Validate disk mode requires run_dir
-    if resolved_cache_mode == "disk" and not config.engine.run_dir:
-        raise ValueError("cache_evaluation_storage='disk' requires run_dir in EngineConfig")
-
-    # Configure cloudpickle for code execution subprocess serialization
-    from gepa.utils.code_execution import set_use_cloudpickle
-    set_use_cloudpickle(config.engine.use_cloudpickle)
-
-    active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
-        fitness_fn=wrapped_fitness_fn,
-        parallel=config.engine.parallel,
-        max_workers=config.engine.max_workers,
-        refiner_config=config.refiner,
-        best_example_evals_k=config.engine.best_example_evals_k,
-        objective=objective,
-        background=background,
-        cache_mode=resolved_cache_mode,
-        cache_dir=config.engine.run_dir,
+    # Wrap the evaluator to handle signature normalization, log/stdout capture, etc.
+    wrapped_evaluator, evaluator_cleanup = _create_evaluator_wrapper(
+        evaluator,
+        single_instance_mode,
+        capture_stdio=config.engine.capture_stdio,
+        str_candidate_mode=str_candidate_mode,
     )
 
-    # Normalize datasets to DataLoader instances
-    train_loader = ensure_loader(effective_dataset)
-    val_loader = ensure_loader(valset) if valset is not None else train_loader
-
-    # --- 1. Build stoppers from the EngineConfig and root config ---
-    stop_callbacks_list: list[StopperProtocol] = []
-
-    # Add custom stop callbacks if provided
-    if config.stop_callbacks is not None:
-        if isinstance(config.stop_callbacks, Sequence):
-            stop_callbacks_list.extend(config.stop_callbacks)
+    try:
+        # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
+        if not config.engine.cache_evaluation:
+            resolved_cache_mode = "off"
+        elif cache_evaluation_storage == "auto":
+            resolved_cache_mode = "disk" if config.engine.run_dir else "memory"
         else:
-            stop_callbacks_list.append(config.stop_callbacks)
+            resolved_cache_mode = cache_evaluation_storage
 
-    # Add file stopper if run_dir is provided
-    if config.engine.run_dir is not None:
-        stop_file_path = os.path.join(config.engine.run_dir, "gepa.stop")
-        file_stopper = FileStopper(stop_file_path)
-        stop_callbacks_list.append(file_stopper)
+        # Validate disk mode requires run_dir
+        if resolved_cache_mode == "disk" and not config.engine.run_dir:
+            raise ValueError("cache_evaluation_storage='disk' requires run_dir in EngineConfig")
 
-    # Add max_metric_calls stopper if provided
-    if config.engine.max_metric_calls is not None:
-        from gepa.utils import MaxMetricCallsStopper
+        # Configure cloudpickle for code execution subprocess serialization
+        from gepa.utils.code_execution import set_use_cloudpickle
 
-        max_calls_stopper = MaxMetricCallsStopper(config.engine.max_metric_calls)
-        stop_callbacks_list.append(max_calls_stopper)
+        set_use_cloudpickle(config.engine.use_cloudpickle)
 
-    # Add max_candidate_proposals stopper if provided
-    if config.engine.max_candidate_proposals is not None:
-        # Define stopper inline to avoid modifying stop_condition.py
-        # Note: state.i starts at -1, and is incremented at the START of each loop iteration.
-        # The stopper is checked BEFORE the increment, so when state.i = N-1, we're about to
-        # run proposal N. To allow exactly max_proposals proposals, we stop when
-        # state.i >= max_proposals - 1 (i.e., we've completed max_proposals proposals).
-        class MaxCandidateProposalsStopper:
-            def __init__(self, max_proposals: int):
-                self.max_proposals = max_proposals
-
-            def __call__(self, gepa_state) -> bool:
-                return gepa_state.i >= self.max_proposals - 1
-
-        proposals_stopper = MaxCandidateProposalsStopper(config.engine.max_candidate_proposals)
-        stop_callbacks_list.append(proposals_stopper)
-
-    # Assert that at least one stopping condition is provided
-    if not stop_callbacks_list:
-        raise ValueError(
-            "At least one stopping condition must be provided via config.engine.max_metric_calls or config.stop_callbacks."
+        active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
+            evaluator=wrapped_evaluator,
+            parallel=config.engine.parallel,
+            max_workers=config.engine.max_workers,
+            refiner_config=config.refiner,
+            best_example_evals_k=config.engine.best_example_evals_k,
+            objective=objective,
+            background=background,
+            cache_mode=resolved_cache_mode,
+            cache_dir=config.engine.run_dir,
         )
 
-    # Create composite stopper if multiple stoppers, or use single stopper
-    stop_callback: StopperProtocol
-    if len(stop_callbacks_list) == 1:
-        stop_callback = stop_callbacks_list[0]
-    else:
-        from gepa.utils import CompositeStopper
+        # Normalize datasets to DataLoader instances
+        train_loader = ensure_loader(effective_dataset)
+        val_loader = ensure_loader(valset) if valset is not None else train_loader
 
-        stop_callback = CompositeStopper(*stop_callbacks_list)
+        # --- 1. Build stoppers from the EngineConfig and root config ---
+        stop_callbacks_list: list[StopperProtocol] = []
 
-    # --- 2. Validate and setup reflection LM ---
-    if not hasattr(active_adapter, "propose_new_texts"):
-        assert config.reflection.reflection_lm is not None, (
-            f"reflection_lm was not provided. The adapter '{active_adapter!s}' does not provide a propose_new_texts method, "
-            + "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
-        )
-
-    # Default refiner_lm to reflection_lm name BEFORE converting reflection_lm to callable
-    if config.refiner is not None and config.refiner.refiner_lm is None:
-        config.refiner.refiner_lm = config.reflection.reflection_lm
-
-    # Convert reflection_lm string to callable
-    if isinstance(config.reflection.reflection_lm, str):
-        import litellm
-
-        reflection_lm_name = config.reflection.reflection_lm
-
-        def _reflection_lm(prompt: str | list[dict[str, str]]) -> str:
-            if isinstance(prompt, str):
-                completion = litellm.completion(
-                    model=reflection_lm_name, messages=[{"role": "user", "content": prompt}]
-                )
+        # Add custom stop callbacks if provided
+        if config.stop_callbacks is not None:
+            if isinstance(config.stop_callbacks, Sequence):
+                stop_callbacks_list.extend(config.stop_callbacks)
             else:
-                completion = litellm.completion(model=reflection_lm_name, messages=prompt)
-            return completion.choices[0].message.content  # type: ignore
+                stop_callbacks_list.append(config.stop_callbacks)
 
-        config.reflection.reflection_lm = _reflection_lm
+        # Add file stopper if run_dir is provided
+        if config.engine.run_dir is not None:
+            stop_file_path = os.path.join(config.engine.run_dir, "gepa.stop")
+            file_stopper = FileStopper(stop_file_path)
+            stop_callbacks_list.append(file_stopper)
 
-    # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
-    if config.refiner is not None:
-        if isinstance(config.refiner.refiner_lm, str):
-<<<<<<< HEAD
-            import dspy  # type: ignore[import-not-found]
-=======
-            import litellm
->>>>>>> 4c974eb696709b8491894db75135069a4ed3898b
+        # Add max_metric_calls stopper if provided
+        if config.engine.max_metric_calls is not None:
+            from gepa.utils import MaxMetricCallsStopper
 
-            refiner_lm_name = config.refiner.refiner_lm
+            max_calls_stopper = MaxMetricCallsStopper(config.engine.max_metric_calls)
+            stop_callbacks_list.append(max_calls_stopper)
 
-            def _refiner_lm(prompt: str) -> str:
-                completion = litellm.completion(
-                    model=refiner_lm_name,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                return completion.choices[0].message.content  # type: ignore
+        # Add max_candidate_proposals stopper if provided
+        if config.engine.max_candidate_proposals is not None:
+            # Define stopper inline to avoid modifying stop_condition.py
+            # Note: state.i starts at -1, and is incremented at the START of each loop iteration.
+            # The stopper is checked BEFORE the increment, so when state.i = N-1, we're about to
+            # run proposal N. To allow exactly max_proposals proposals, we stop when
+            # state.i >= max_proposals - 1 (i.e., we've completed max_proposals proposals).
+            class MaxCandidateProposalsStopper:
+                def __init__(self, max_proposals: int):
+                    self.max_proposals = max_proposals
 
-            config.refiner.refiner_lm = _refiner_lm
+                def __call__(self, gepa_state) -> bool:
+                    return gepa_state.i >= self.max_proposals - 1
 
-    # Auto-inject refiner_prompt into seed_candidate(s) if refiner is enabled
-    if config.refiner is not None:
-        formatted_refiner_prompt = DEFAULT_REFINER_PROMPT.format(
-            objective=objective or "Maximize the score",
-            background=background or "No additional background provided.",
-        )
-        candidates_to_check = seed_candidate if isinstance(seed_candidate, list) else [seed_candidate]
-        for sc in candidates_to_check:
-            if "refiner_prompt" not in sc:
-                sc["refiner_prompt"] = formatted_refiner_prompt
-            # If user provides their own refiner_prompt, use it (allows custom refiner prompts)
+            proposals_stopper = MaxCandidateProposalsStopper(config.engine.max_candidate_proposals)
+            stop_callbacks_list.append(proposals_stopper)
 
-    # Setup default logger if not provided
-    if config.tracking.logger is None:
-        config.tracking.logger = StdOutLogger()
-
-    # --- 3. Setup random number generator ---
-    rng = random.Random(config.engine.seed)
-
-    # --- 4. Build candidate selector from EngineConfig ---
-    candidate_selector: CandidateSelector
-    if isinstance(config.engine.candidate_selection_strategy, str):
-        factories = {
-            "pareto": lambda: ParetoCandidateSelector(rng=rng),
-            "current_best": lambda: CurrentBestCandidateSelector(),
-            "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
-        }
-
-        try:
-            candidate_selector = factories[config.engine.candidate_selection_strategy]()
-        except KeyError as exc:
+        # Assert that at least one stopping condition is provided
+        if not stop_callbacks_list:
             raise ValueError(
-                f"Unknown candidate_selector strategy: {config.engine.candidate_selection_strategy}. "
-                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
-            ) from exc
-    elif isinstance(config.engine.candidate_selection_strategy, CandidateSelector):
-        candidate_selector = config.engine.candidate_selection_strategy
-    else:
-        raise TypeError(
-            "candidate_selection_strategy must be a supported string strategy or an instance of CandidateSelector."
-        )
+                "At least one stopping condition must be provided via config.engine.max_metric_calls or config.stop_callbacks."
+            )
 
-    # --- 5. Build evaluation policy from EngineConfig ---
-    if config.engine.val_evaluation_policy is None or config.engine.val_evaluation_policy == "full_eval":
-        config.engine.val_evaluation_policy = FullEvaluationPolicy()
-    elif not isinstance(config.engine.val_evaluation_policy, EvaluationPolicy):
-        raise ValueError(
-            f"val_evaluation_policy should be 'full_eval' or an EvaluationPolicy instance, but got {type(config.engine.val_evaluation_policy)}"
-        )
-
-    # --- 6. Build module selector from ReflectionConfig ---
-    if isinstance(config.reflection.module_selector, str):
-        module_selector_cls = {
-            "round_robin": RoundRobinReflectionComponentSelector,
-            "all": AllReflectionComponentSelector,
-        }.get(config.reflection.module_selector)
-
-        assert module_selector_cls is not None, (
-            f"Unknown module_selector strategy: {config.reflection.module_selector}. "
-            "Supported strategies: 'round_robin', 'all'"
-        )
-
-        module_selector_instance: ReflectionComponentSelector = module_selector_cls()
-    else:
-        module_selector_instance = config.reflection.module_selector
-
-    # --- 7. Build batch sampler from ReflectionConfig ---
-    if config.reflection.batch_sampler == "epoch_shuffled":
-        config.reflection.batch_sampler = EpochShuffledBatchSampler(
-            minibatch_size=config.reflection.reflection_minibatch_size, rng=rng
-        )
-
-    # --- 8. Build experiment tracker from TrackingConfig ---
-    experiment_tracker = create_experiment_tracker(
-        use_wandb=config.tracking.use_wandb,
-        wandb_api_key=config.tracking.wandb_api_key,
-        wandb_init_kwargs=config.tracking.wandb_init_kwargs,
-        use_mlflow=config.tracking.use_mlflow,
-        mlflow_tracking_uri=config.tracking.mlflow_tracking_uri,
-        mlflow_experiment_name=config.tracking.mlflow_experiment_name,
-    )
-
-    # --- 9. Build reflection prompt template from objective/background if provided ---
-    # Check for conflicting configuration: user cannot provide both objective/background
-    # AND a custom reflection_prompt_template (these are mutually exclusive approaches)
-    user_provided_custom_template = (
-        config.reflection.reflection_prompt_template is not None
-        and config.reflection.reflection_prompt_template != optimize_anything_reflection_prompt_template
-    )
-    # Treat empty strings as "not provided" - only non-empty strings count
-    user_provided_objective_or_background = bool(objective) or bool(background)
-
-    if user_provided_custom_template and user_provided_objective_or_background:
-        raise ValueError(
-            "Cannot specify both 'objective'/'background' parameters and a custom "
-            "'config.reflection.reflection_prompt_template'. These are mutually exclusive options. "
-            "Either use objective/background to auto-generate a reflection prompt, or provide "
-            "your own custom template via config.reflection.reflection_prompt_template."
-        )
-
-    # If objective or background are provided, build a custom reflection prompt template
-    # with those values filled in, creating a template with <curr_param> and <side_info> placeholders
-    if user_provided_objective_or_background:
-        config.reflection.reflection_prompt_template = _build_reflection_prompt_template(
-            objective=objective, background=background
-        )
-
-    # --- 10. Validate reflection prompt template ---
-    if config.reflection.reflection_prompt_template is not None:
-        assert not (active_adapter is not None and getattr(active_adapter, "propose_new_texts", None) is not None), (
-            f"Adapter {active_adapter!s} provides its own propose_new_texts method; "
-            "reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
-        )
-
-        # Validate template(s) - can be a single string or dict of templates
-        from gepa.strategies.instruction_proposal import InstructionProposalSignature
-
-        if isinstance(config.reflection.reflection_prompt_template, dict):
-            for param_name, template in config.reflection.reflection_prompt_template.items():
-                try:
-                    InstructionProposalSignature.validate_prompt_template(template)
-                except ValueError as e:
-                    raise ValueError(f"Invalid reflection_prompt_template for parameter '{param_name}': {e}") from e
+        # Create composite stopper if multiple stoppers, or use single stopper
+        stop_callback: StopperProtocol
+        if len(stop_callbacks_list) == 1:
+            stop_callback = stop_callbacks_list[0]
         else:
-            InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
+            from gepa.utils import CompositeStopper
 
-    # --- 11. Build reflective proposer from ReflectionConfig ---
-    reflective_proposer = ReflectiveMutationProposer(
-        logger=config.tracking.logger,
-        trainset=train_loader,
-        adapter=active_adapter,
-        candidate_selector=candidate_selector,
-        module_selector=module_selector_instance,
-        batch_sampler=config.reflection.batch_sampler,
-        perfect_score=config.reflection.perfect_score,
-        skip_perfect_score=config.reflection.skip_perfect_score,
-        experiment_tracker=experiment_tracker,
-        reflection_lm=config.reflection.reflection_lm,
-        reflection_prompt_template=config.reflection.reflection_prompt_template,
-        custom_candidate_proposer=config.reflection.custom_candidate_proposer,
-    )
+            stop_callback = CompositeStopper(*stop_callbacks_list)
 
-    # Define evaluator for merge proposer
-    def evaluator(inputs: list[DataInst], prog: Candidate) -> tuple[list[RolloutOutput], list[float], list[dict[str, float]] | None]:
-        eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
-        return eval_out.outputs, eval_out.scores, eval_out.objective_scores
+        # --- 2. Validate and setup reflection LM ---
+        if not hasattr(active_adapter, "propose_new_texts"):
+            assert config.reflection.reflection_lm is not None, (
+                f"reflection_lm was not provided. The adapter '{active_adapter!s}' does not provide a propose_new_texts method, "
+                + "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
+            )
 
-    # --- 12. Build merge proposer from MergeConfig (if provided) ---
-    merge_proposer: MergeProposer | None = None
-    if config.merge is not None:
-        merge_proposer = MergeProposer(
-            logger=config.tracking.logger,
-            valset=val_loader,
-            evaluator=evaluator,
-            use_merge=True,
-            max_merge_invocations=config.merge.max_merge_invocations,
-            rng=rng,
-            val_overlap_floor=config.merge.merge_val_overlap_floor,
+        # Default refiner_lm to reflection_lm name BEFORE converting reflection_lm to callable
+        if config.refiner is not None and config.refiner.refiner_lm is None:
+            config.refiner.refiner_lm = config.reflection.reflection_lm
+
+        # Convert reflection_lm string to callable
+        if isinstance(config.reflection.reflection_lm, str):
+            config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
+
+        # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
+        if config.refiner is not None:
+            if isinstance(config.refiner.refiner_lm, str):
+                config.refiner.refiner_lm = make_litellm_lm(config.refiner.refiner_lm)
+
+        # Auto-inject refiner_prompt into seed_candidate(s) if refiner is enabled
+        if config.refiner is not None:
+            formatted_refiner_prompt = DEFAULT_REFINER_PROMPT.format(
+                objective=objective or "Maximize the score",
+                background=background or "No additional background provided.",
+            )
+            candidates_to_check = seed_candidate if isinstance(seed_candidate, list) else [seed_candidate]
+            for sc in candidates_to_check:
+                if "refiner_prompt" not in sc:
+                    sc["refiner_prompt"] = formatted_refiner_prompt
+                # If user provides their own refiner_prompt, use it (allows custom refiner prompts)
+
+        # Setup default logger if not provided
+        if config.tracking.logger is None:
+            config.tracking.logger = StdOutLogger()
+
+        # --- 3. Setup random number generator ---
+        rng = random.Random(config.engine.seed)
+
+        # --- 4. Build candidate selector from EngineConfig ---
+        candidate_selector: CandidateSelector
+        if isinstance(config.engine.candidate_selection_strategy, str):
+            factories = {
+                "pareto": lambda: ParetoCandidateSelector(rng=rng),
+                "current_best": lambda: CurrentBestCandidateSelector(),
+                "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
+            }
+
+            try:
+                candidate_selector = factories[config.engine.candidate_selection_strategy]()
+            except KeyError as exc:
+                raise ValueError(
+                    f"Unknown candidate_selector strategy: {config.engine.candidate_selection_strategy}. "
+                    "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
+                ) from exc
+        elif isinstance(config.engine.candidate_selection_strategy, CandidateSelector):
+            candidate_selector = config.engine.candidate_selection_strategy
+        else:
+            raise TypeError(
+                "candidate_selection_strategy must be a supported string strategy or an instance of CandidateSelector."
+            )
+
+        # --- 5. Build evaluation policy from EngineConfig ---
+        if config.engine.val_evaluation_policy is None or config.engine.val_evaluation_policy == "full_eval":
+            config.engine.val_evaluation_policy = FullEvaluationPolicy()
+        elif not isinstance(config.engine.val_evaluation_policy, EvaluationPolicy):
+            raise ValueError(
+                f"val_evaluation_policy should be 'full_eval' or an EvaluationPolicy instance, but got {type(config.engine.val_evaluation_policy)}"
+            )
+
+        # --- 6. Build module selector from ReflectionConfig ---
+        if isinstance(config.reflection.module_selector, str):
+            module_selector_cls = {
+                "round_robin": RoundRobinReflectionComponentSelector,
+                "all": AllReflectionComponentSelector,
+            }.get(config.reflection.module_selector)
+
+            assert module_selector_cls is not None, (
+                f"Unknown module_selector strategy: {config.reflection.module_selector}. "
+                "Supported strategies: 'round_robin', 'all'"
+            )
+
+            module_selector_instance: ReflectionComponentSelector = module_selector_cls()
+        else:
+            module_selector_instance = config.reflection.module_selector
+
+        # --- 7. Build batch sampler from ReflectionConfig ---
+        if config.reflection.batch_sampler == "epoch_shuffled":
+            config.reflection.batch_sampler = EpochShuffledBatchSampler(
+                minibatch_size=config.reflection.reflection_minibatch_size, rng=rng
+            )
+
+        # --- 8. Build experiment tracker from TrackingConfig ---
+        experiment_tracker = create_experiment_tracker(
+            use_wandb=config.tracking.use_wandb,
+            wandb_api_key=config.tracking.wandb_api_key,
+            wandb_init_kwargs=config.tracking.wandb_init_kwargs,
+            use_mlflow=config.tracking.use_mlflow,
+            mlflow_tracking_uri=config.tracking.mlflow_tracking_uri,
+            mlflow_experiment_name=config.tracking.mlflow_experiment_name,
         )
 
-    # --- 13. Create evaluation cache if enabled ---
-    evaluation_cache: EvaluationCache[Any, Any] | None = None
-    if config.engine.cache_evaluation:
-        evaluation_cache = EvaluationCache[Any, Any]()
+        # --- 9. Build reflection prompt template from objective/background if provided ---
+        # Check for conflicting configuration: user cannot provide both objective/background
+        # AND a custom reflection_prompt_template (these are mutually exclusive approaches)
+        user_provided_custom_template = (
+            config.reflection.reflection_prompt_template is not None
+            and config.reflection.reflection_prompt_template != optimize_anything_reflection_prompt_template
+        )
+        # Treat empty strings as "not provided" - only non-empty strings count
+        user_provided_objective_or_background = bool(objective) or bool(background)
 
-    # --- 14. Build the main engine from EngineConfig ---
-    engine = GEPAEngine(
-        adapter=active_adapter,
-        run_dir=config.engine.run_dir,
-        valset=val_loader,
-        seed_candidate=[seed_candidate] if not isinstance(seed_candidate, list) else seed_candidate,
-        perfect_score=config.reflection.perfect_score,
-        seed=config.engine.seed,
-        reflective_proposer=reflective_proposer,
-        merge_proposer=merge_proposer,
-        frontier_type=config.engine.frontier_type,
-        logger=config.tracking.logger,
-        experiment_tracker=experiment_tracker,
-        track_best_outputs=config.engine.track_best_outputs,
-        display_progress_bar=config.engine.display_progress_bar,
-        raise_on_exception=config.engine.raise_on_exception,
-        stop_callback=stop_callback,
-        val_evaluation_policy=config.engine.val_evaluation_policy,
-        use_cloudpickle=config.engine.use_cloudpickle,
-        evaluation_cache=evaluation_cache,
-    )
+        if user_provided_custom_template and user_provided_objective_or_background:
+            raise ValueError(
+                "Cannot specify both 'objective'/'background' parameters and a custom "
+                "'config.reflection.reflection_prompt_template'. These are mutually exclusive options. "
+                "Either use objective/background to auto-generate a reflection prompt, or provide "
+                "your own custom template via config.reflection.reflection_prompt_template."
+            )
 
-    # --- 15. Run optimization ---
-    with experiment_tracker:
-        state = engine.run()
+        # If objective or background are provided, build a custom reflection prompt template
+        # with those values filled in, creating a template with <curr_param> and <side_info> placeholders
+        if user_provided_objective_or_background:
+            config.reflection.reflection_prompt_template = _build_reflection_prompt_template(
+                objective=objective, background=background
+            )
 
-    return GEPAResult.from_state(state, run_dir=config.engine.run_dir, seed=config.engine.seed)
+        # --- 10. Validate reflection prompt template ---
+        if config.reflection.reflection_prompt_template is not None:
+            assert not (
+                active_adapter is not None and getattr(active_adapter, "propose_new_texts", None) is not None
+            ), (
+                f"Adapter {active_adapter!s} provides its own propose_new_texts method; "
+                "reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
+            )
+
+            # Validate template(s) - can be a single string or dict of templates
+            from gepa.strategies.instruction_proposal import InstructionProposalSignature
+
+            if isinstance(config.reflection.reflection_prompt_template, dict):
+                for param_name, template in config.reflection.reflection_prompt_template.items():
+                    try:
+                        InstructionProposalSignature.validate_prompt_template(template)
+                    except ValueError as e:
+                        raise ValueError(f"Invalid reflection_prompt_template for parameter '{param_name}': {e}") from e
+            else:
+                InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
+
+        # --- 11. Build reflective proposer from ReflectionConfig ---
+        reflective_proposer = ReflectiveMutationProposer(
+            logger=config.tracking.logger,
+            trainset=train_loader,
+            adapter=active_adapter,
+            candidate_selector=candidate_selector,
+            module_selector=module_selector_instance,
+            batch_sampler=config.reflection.batch_sampler,
+            perfect_score=config.reflection.perfect_score,
+            skip_perfect_score=config.reflection.skip_perfect_score,
+            experiment_tracker=experiment_tracker,
+            reflection_lm=config.reflection.reflection_lm,
+            reflection_prompt_template=config.reflection.reflection_prompt_template,
+            custom_candidate_proposer=config.reflection.custom_candidate_proposer,
+        )
+
+        # Define evaluator function for merge proposer
+        def merge_evaluator(
+            inputs: list[DataInst], prog: Candidate
+        ) -> tuple[list[RolloutOutput], list[float], list[dict[str, float]] | None]:
+            eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
+            return eval_out.outputs, eval_out.scores, eval_out.objective_scores
+
+        # --- 12. Build merge proposer from MergeConfig (if provided) ---
+        merge_proposer: MergeProposer | None = None
+        if config.merge is not None:
+            merge_proposer = MergeProposer(
+                logger=config.tracking.logger,
+                valset=val_loader,
+                evaluator=merge_evaluator,
+                use_merge=True,
+                max_merge_invocations=config.merge.max_merge_invocations,
+                rng=rng,
+                val_overlap_floor=config.merge.merge_val_overlap_floor,
+            )
+
+        # --- 13. Create evaluation cache if enabled ---
+        evaluation_cache: EvaluationCache[Any, Any] | None = None
+        if config.engine.cache_evaluation:
+            evaluation_cache = EvaluationCache[Any, Any]()
+
+        # --- 14. Build the main engine from EngineConfig ---
+        engine = GEPAEngine(
+            adapter=active_adapter,
+            run_dir=config.engine.run_dir,
+            valset=val_loader,
+            seed_candidate=[seed_candidate] if not isinstance(seed_candidate, list) else seed_candidate,
+            perfect_score=config.reflection.perfect_score,
+            seed=config.engine.seed,
+            reflective_proposer=reflective_proposer,
+            merge_proposer=merge_proposer,
+            frontier_type=config.engine.frontier_type,
+            logger=config.tracking.logger,
+            experiment_tracker=experiment_tracker,
+            track_best_outputs=config.engine.track_best_outputs,
+            display_progress_bar=config.engine.display_progress_bar,
+            raise_on_exception=config.engine.raise_on_exception,
+            stop_callback=stop_callback,
+            val_evaluation_policy=config.engine.val_evaluation_policy,
+            use_cloudpickle=config.engine.use_cloudpickle,
+            evaluation_cache=evaluation_cache,
+        )
+
+        # --- 15. Run optimization ---
+        with experiment_tracker:
+            state = engine.run()
+
+        return GEPAResult.from_state(state, run_dir=config.engine.run_dir, seed=config.engine.seed)
+    finally:
+        evaluator_cleanup()

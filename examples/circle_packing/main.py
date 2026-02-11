@@ -82,7 +82,7 @@ def main():
 
     optimize_anything(
         seed_candidate=seed_candidate,
-        fitness_fn=fitness_fn,
+        evaluator=fitness_fn,
         config=gepa_config,
         objective="Optimize circle packing code to maximize sum of circle radii within a unit square for N=26 circles.",
         background=CIRCLE_PACKING_BACKGROUND,
