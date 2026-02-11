@@ -814,11 +814,7 @@ def optimize_anything(
     # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
     if config.refiner is not None:
         if isinstance(config.refiner.refiner_lm, str):
-<<<<<<< HEAD
-            import dspy  # type: ignore[import-not-found]
-=======
             import litellm
->>>>>>> 4c974eb696709b8491894db75135069a4ed3898b
 
             refiner_lm_name = config.refiner.refiner_lm
 
