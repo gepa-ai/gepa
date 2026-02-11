@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 from opik_optimizer import ChatPrompt
 
 try:
@@ -30,6 +29,34 @@ class DummyAgent:
 
     def invoke(self, messages: list[dict[str, Any]]) -> str:
         self.invoke_calls.append(messages)
+        return "A"
+
+
+class DummyCandidateAgent(DummyAgent):
+    def __init__(self) -> None:
+        super().__init__()
+        self.invoke_agent_candidates_calls: list[dict[str, Any]] = []
+        self._last_candidate_logprobs: list[float] | None = None
+
+    def invoke_agent_candidates(
+        self,
+        prompts: dict[str, ChatPrompt],
+        dataset_item: dict[str, Any],
+        allow_tool_use: bool = False,
+    ) -> list[str]:
+        self.invoke_agent_candidates_calls.append(
+            {"prompts": prompts, "dataset_item": dataset_item, "allow_tool_use": allow_tool_use}
+        )
+        self._last_candidate_logprobs = [0.05, 0.9]
+        return ["bad", "A"]
+
+    def invoke_agent(
+        self,
+        prompts: dict[str, ChatPrompt],
+        dataset_item: dict[str, Any],
+        allow_tool_use: bool = False,
+    ) -> str:
+        self.invoke_calls.append(prompts["prompt"].get_messages(dataset_item))
         return "A"
 
 
@@ -205,3 +232,86 @@ def test_opik_adapter_reflective_dataset(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "Generated Outputs" in entry
     assert "Feedback" in entry
     assert tracker_count["count"] == 1
+
+
+def test_opik_adapter_sampling_selects_best_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompt = ChatPrompt(system="Answer", user="{input}", model_parameters={"n": 2})
+    metric = _make_metric(1.0)
+
+    batch = [
+        OpikDataInst(
+            input_text="Which?",
+            answer="A",
+            additional_context={},
+            opik_item={"input": "Which?", "answer": "A"},
+        )
+    ]
+
+    # Force local path so adapter chooses candidate itself.
+    monkeypatch.setattr(
+        "gepa.adapters.opik_adapter.opik_adapter.evaluate_with_result",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("force local path")),
+    )
+
+    agent = DummyCandidateAgent()
+    adapter = OpikAdapter(
+        base_prompt=prompt,
+        dataset=DummyDataset(),
+        metric=metric,
+        instantiate_agent=lambda _prompt, _project=None: agent,
+        prepare_experiment_config=lambda **_: {"project_name": "TestProject"},
+        system_fallback="Answer",
+        candidate_selection_policy="best_by_metric",
+    )
+
+    result = adapter.evaluate(batch, {"system_prompt": "Answer"}, capture_traces=False)
+    assert result.outputs == [{"output": "A"}]
+    assert result.scores == [1.0]
+    assert agent.invoke_agent_candidates_calls
+
+
+def test_opik_adapter_enables_tool_use_for_sampling() -> None:
+    prompt = ChatPrompt(
+        system="Answer",
+        user="{input}",
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "search",
+                    "description": "search",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"q": {"type": "string"}},
+                        "required": ["q"],
+                    },
+                },
+            }
+        ],
+    )
+    metric = _make_metric(1.0)
+    agent = DummyCandidateAgent()
+
+    adapter = OpikAdapter(
+        base_prompt=prompt,
+        dataset=DummyDataset(),
+        metric=metric,
+        instantiate_agent=lambda _prompt, _project=None: agent,
+        prepare_experiment_config=lambda **_: {"project_name": "TestProject"},
+        system_fallback="Answer",
+        allow_tool_use=True,
+    )
+
+    batch = [
+        OpikDataInst(
+            input_text="Which?",
+            answer="A",
+            additional_context={},
+            opik_item={"input": "Which?", "answer": "A"},
+        )
+    ]
+    adapter.evaluate(batch, {"system_prompt": "Answer"}, capture_traces=False)
+    assert agent.invoke_agent_candidates_calls
+    assert agent.invoke_agent_candidates_calls[0]["allow_tool_use"] is True

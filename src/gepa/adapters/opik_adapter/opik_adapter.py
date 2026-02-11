@@ -2,26 +2,29 @@
 GEPA adapter that evaluates candidates via Opik's dataset/agent hooks.
 
 This module exists so GEPA can directly operate on Opik prompts/datasets without
-duplicating the optimizer-side bridge. It is intentionally lightweight and simply
-captures what Opik already provides (metrics, experiment metadata, agent creation)
-through injected callables.
+duplicating the optimizer-side bridge.
 """
 
 from __future__ import annotations
 
+import logging
+import random
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
-import logging
-
-from gepa.core.adapter import EvaluationBatch, GEPAAdapter
 from opik import Dataset
-
 from opik_optimizer import helpers
 from opik_optimizer.api_objects import chat_prompt
-from opik_optimizer.optimizable_agent import OptimizableAgent
 from opik_optimizer.task_evaluator import evaluate_with_result
+from opik_optimizer.utils.candidate_selection import select_candidate
+
+from gepa.core.adapter import EvaluationBatch, GEPAAdapter
+
+try:
+    from opik_optimizer.optimizable_agent import OptimizableAgent
+except Exception:  # pragma: no cover - compatibility path
+    from opik_optimizer.agents.optimizable_agent import OptimizableAgent
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +90,8 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         project_name: str | None = None,
         num_threads: int = 1,
         optimizer_metric_tracker: Callable[[], None] | None = None,
+        allow_tool_use: bool = True,
+        candidate_selection_policy: str | None = None,
     ) -> None:
         self._base_prompt = base_prompt
         self._dataset = dataset
@@ -99,6 +104,107 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         self._num_threads = num_threads
         self._metric_tracker = optimizer_metric_tracker or (lambda: None)
         self._metric_name = getattr(metric, "__name__", str(metric))
+        self._allow_tool_use = allow_tool_use
+        self._candidate_selection_policy = candidate_selection_policy
+
+    def _resolve_policy(self, prompt_variant: chat_prompt.ChatPrompt) -> str:
+        if self._candidate_selection_policy:
+            return self._candidate_selection_policy
+        model_kwargs = prompt_variant.model_kwargs or {}
+        policy = model_kwargs.get("candidate_selection_policy") or model_kwargs.get("selection_policy")
+        if isinstance(policy, str) and policy.strip():
+            return policy
+        return "best_by_metric"
+
+    def _extract_candidate_logprobs(self, agent: OptimizableAgent, candidates: list[str]) -> list[float] | None:
+        logprobs = getattr(agent, "_last_candidate_logprobs", None)
+        if not isinstance(logprobs, list) or len(logprobs) != len(candidates):
+            return None
+        try:
+            return [float(v) for v in logprobs]
+        except Exception:
+            return None
+
+    def _to_score(self, dataset_item: dict[str, Any], output: str) -> float:
+        metric_result = self._metric(dataset_item, output)
+        if hasattr(metric_result, "value"):
+            return float(metric_result.value)
+        if hasattr(metric_result, "score"):
+            return float(metric_result.score)
+        return float(metric_result)
+
+    def _collect_candidates(
+        self,
+        *,
+        agent: OptimizableAgent,
+        prompt_variant: chat_prompt.ChatPrompt,
+        dataset_item: dict[str, Any],
+    ) -> list[str]:
+        has_tools = bool(prompt_variant.tools)
+        allow_tool_use = self._allow_tool_use and has_tools
+
+        candidates: list[str] = []
+        if hasattr(agent, "invoke_agent_candidates"):
+            try:
+                raw_candidates = agent.invoke_agent_candidates(
+                    prompts={"prompt": prompt_variant},
+                    dataset_item=dataset_item,
+                    allow_tool_use=allow_tool_use,
+                )
+            except TypeError:
+                raw_candidates = agent.invoke_agent_candidates(
+                    prompts={"prompt": prompt_variant},
+                    dataset_item=dataset_item,
+                )
+            candidates = [str(c).strip() for c in raw_candidates if c is not None and str(c).strip()]
+
+        if not candidates:
+            try:
+                single_output = agent.invoke_agent(
+                    prompts={"prompt": prompt_variant},
+                    dataset_item=dataset_item,
+                    allow_tool_use=allow_tool_use,
+                )
+            except TypeError:
+                messages = prompt_variant.get_messages(dataset_item)
+                single_output = agent.invoke(messages)
+
+            if single_output is not None:
+                normalized = str(single_output).strip()
+                if normalized:
+                    candidates = [normalized]
+
+        return candidates
+
+    def _select_output_and_score(
+        self,
+        *,
+        agent: OptimizableAgent,
+        prompt_variant: chat_prompt.ChatPrompt,
+        dataset_item: dict[str, Any],
+        candidates: list[str],
+    ) -> tuple[str, float]:
+        if not candidates:
+            return "", 0.0
+
+        policy = self._resolve_policy(prompt_variant)
+        selection = select_candidate(
+            candidates=candidates,
+            policy=policy,
+            metric=lambda item, output: self._metric(item, output),
+            dataset_item=dataset_item,
+            candidate_logprobs=self._extract_candidate_logprobs(agent, candidates),
+            rng=random.Random(0),
+        )
+
+        if (
+            selection.candidate_scores is not None
+            and selection.chosen_index is not None
+            and 0 <= selection.chosen_index < len(selection.candidate_scores)
+        ):
+            return selection.output, float(selection.candidate_scores[selection.chosen_index])
+
+        return selection.output, self._to_score(dataset_item, selection.output)
 
     def evaluate(
         self,
@@ -152,15 +258,18 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
             agent = _create_agent()
             for inst in batch:
                 dataset_item = inst.opik_item
-                messages = prompt_variant.get_messages(dataset_item)
-                raw_output = agent.invoke(messages).strip()
-                metric_result = self._metric(dataset_item, raw_output)
-                if hasattr(metric_result, "value"):
-                    score = float(metric_result.value)
-                elif hasattr(metric_result, "score"):
-                    score = float(metric_result.score)
-                else:
-                    score = float(metric_result)
+                candidates = self._collect_candidates(
+                    agent=agent,
+                    prompt_variant=prompt_variant,
+                    dataset_item=dataset_item,
+                )
+                raw_output, score = self._select_output_and_score(
+                    agent=agent,
+                    prompt_variant=prompt_variant,
+                    dataset_item=dataset_item,
+                    candidates=candidates,
+                )
+
                 outputs.append({"output": raw_output})
                 scores.append(score)
                 self._metric_tracker()
@@ -181,9 +290,18 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         agent = _create_agent()
 
         def llm_task(dataset_item: dict[str, Any]) -> dict[str, str]:
-            messages = prompt_variant.get_messages(dataset_item)
-            raw_output = agent.invoke(messages).strip()
-            return {"llm_output": raw_output}
+            candidates = self._collect_candidates(
+                agent=agent,
+                prompt_variant=prompt_variant,
+                dataset_item=dataset_item,
+            )
+            output, _ = self._select_output_and_score(
+                agent=agent,
+                prompt_variant=prompt_variant,
+                dataset_item=dataset_item,
+                candidates=candidates,
+            )
+            return {"llm_output": output}
 
         try:
             _, eval_result = evaluate_with_result(
@@ -269,6 +387,5 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         reflective_records = list(_records())
         if not reflective_records:
             logger.debug("No trajectories captured for candidate; returning empty reflective dataset")
-            reflective_records = []
 
-        return {component: reflective_records for component in components}
+        return dict.fromkeys(components, reflective_records)
