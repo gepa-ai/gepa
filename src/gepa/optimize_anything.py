@@ -431,7 +431,7 @@ class EngineConfig:
     candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto"
     frontier_type: FrontierType = "instance"
 
-    # Parallelization settings for fitness evaluation
+    # Parallelization settings for evaluation
     parallel: bool = False
     max_workers: int | None = None
 
@@ -730,9 +730,17 @@ def make_litellm_lm(model_name: str) -> LanguageModel:
 class EvaluatorWrapper:
     """Context manager wrapping a user's evaluator with GEPA's normalization layer.
 
+    Wraps the user's evaluator to:
+    1. Handle single-instance mode (calls evaluator without example parameter)
+    2. Unwrap candidate dict to str when str_candidate_mode is True
+    3. Filter kwargs to only pass what the evaluator accepts (incl. opt_state)
+    4. Capture oa.log() output and optionally stdout/stderr
+    5. Detect whether evaluator returns (score, side_info) tuple or just score
+    6. Normalize return value to always be (score, output, side_info) tuple
+
     Use as a context manager to ensure stream capture resources are released::
 
-        with _create_evaluator_wrapper(eval_fn, ...) as wrapper:
+        with EvaluatorWrapper(eval_fn, single_instance_mode=True) as wrapper:
             score, output, side_info = wrapper(candidate, example=example)
 
     The wrapper is callable — calling the instance invokes the wrapped evaluator.
@@ -824,7 +832,7 @@ class EvaluatorWrapper:
                             f"Your evaluator returned side_info with key '{key}' that conflicts "
                             f"with GEPA's captured output key. The captured output will be stored "
                             f"under '{prefixed}' instead.",
-                            stacklevel=2,
+                            stacklevel=3,
                         )
                         injected[prefixed] = injected.pop(key)
 
@@ -858,45 +866,6 @@ class EvaluatorWrapper:
 
     def __exit__(self, *exc: Any) -> None:
         self.close()
-
-
-def _create_evaluator_wrapper(
-    evaluator_fn: Callable[..., Any],
-    single_instance_mode: bool,
-    capture_stdio: bool = False,
-    str_candidate_mode: bool = False,
-) -> EvaluatorWrapper:
-    """
-    Create a wrapper around the user's evaluator that:
-    1. Handles single-instance mode (calls evaluator without example parameter)
-    2. Unwraps candidate dict to str when str_candidate_mode is True
-    3. Filters kwargs to only pass what the evaluator accepts (incl. opt_state)
-    4. Captures oa.log() output and optionally stdout/stderr
-    5. Detects whether evaluator returns (score, side_info) tuple or just score
-    6. Normalizes return value to always be (score, output, side_info) tuple
-
-    The returned :class:`EvaluatorWrapper` is both callable and a context manager.
-    Use it as a context manager to ensure stream capture resources are released::
-
-        with _create_evaluator_wrapper(eval_fn, ...) as wrapper:
-            score, output, side_info = wrapper(candidate, example=example)
-
-    Args:
-        evaluator_fn: The user's evaluator function
-        single_instance_mode: Whether we're in single-instance mode
-        capture_stdio: Whether to capture stdout/stderr during evaluation
-        str_candidate_mode: Whether the user provided seed_candidate as str
-            (evaluator receives str instead of dict)
-
-    Returns:
-        An :class:`EvaluatorWrapper` instance (callable, context manager).
-    """
-    return EvaluatorWrapper(
-        evaluator_fn,
-        single_instance_mode,
-        capture_stdio=capture_stdio,
-        str_candidate_mode=str_candidate_mode,
-    )
 
 
 def optimize_anything(
@@ -991,313 +960,334 @@ def optimize_anything(
 
     # Wrap the evaluator to handle signature normalization, log/stdout capture, etc.
     # Use as a context manager to ensure stream capture resources are released.
-    with _create_evaluator_wrapper(
+    with EvaluatorWrapper(
         evaluator,
         single_instance_mode,
         capture_stdio=config.engine.capture_stdio,
         str_candidate_mode=str_candidate_mode,
     ) as wrapped_evaluator:
-        # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
-        if not config.engine.cache_evaluation:
-            resolved_cache_mode = "off"
-        elif config.engine.cache_evaluation_storage == "auto":
-            resolved_cache_mode = "disk" if config.engine.run_dir else "memory"
-        else:
-            resolved_cache_mode = config.engine.cache_evaluation_storage
-
-        # Validate disk mode requires run_dir
-        if resolved_cache_mode == "disk" and not config.engine.run_dir:
-            raise ValueError("cache_evaluation_storage='disk' requires run_dir in EngineConfig")
-
-        # Configure cloudpickle for code execution subprocess serialization
-        from gepa.utils.code_execution import set_use_cloudpickle
-
-        set_use_cloudpickle(config.engine.use_cloudpickle)
-
-        active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
-            evaluator=wrapped_evaluator,
-            parallel=config.engine.parallel,
-            max_workers=config.engine.max_workers,
-            refiner_config=config.refiner,
-            best_example_evals_k=config.engine.best_example_evals_k,
+        return _run_optimization(
+            wrapped_evaluator=wrapped_evaluator,
+            seed_candidate=seed_candidate,
+            effective_dataset=effective_dataset,
+            valset=valset,
             objective=objective,
             background=background,
-            cache_mode=resolved_cache_mode,
-            cache_dir=config.engine.run_dir,
+            config=config,
         )
 
-        # Normalize datasets to DataLoader instances
-        train_loader = ensure_loader(effective_dataset)
-        val_loader = ensure_loader(valset) if valset is not None else train_loader
 
-        # --- 1. Build stoppers from the EngineConfig and root config ---
-        stop_callbacks_list: list[StopperProtocol] = []
+def _run_optimization(
+    wrapped_evaluator: "EvaluatorWrapper",
+    seed_candidate: Candidate | list[Candidate],
+    effective_dataset: list[DataInst],
+    valset: list[DataInst] | None,
+    objective: str | None,
+    background: str | None,
+    config: GEPAConfig,
+) -> GEPAResult:
+    """Core optimization logic, called from within the EvaluatorWrapper context manager."""
+    # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
+    if not config.engine.cache_evaluation:
+        resolved_cache_mode = "off"
+    elif config.engine.cache_evaluation_storage == "auto":
+        resolved_cache_mode = "disk" if config.engine.run_dir else "memory"
+    else:
+        resolved_cache_mode = config.engine.cache_evaluation_storage
 
-        # Add custom stop callbacks if provided
-        if config.stop_callbacks is not None:
-            if isinstance(config.stop_callbacks, Sequence):
-                stop_callbacks_list.extend(config.stop_callbacks)
-            else:
-                stop_callbacks_list.append(config.stop_callbacks)
+    # Validate disk mode requires run_dir
+    if resolved_cache_mode == "disk" and not config.engine.run_dir:
+        raise ValueError("cache_evaluation_storage='disk' requires run_dir in EngineConfig")
 
-        # Add file stopper if run_dir is provided
-        if config.engine.run_dir is not None:
-            stop_file_path = os.path.join(config.engine.run_dir, "gepa.stop")
-            file_stopper = FileStopper(stop_file_path)
-            stop_callbacks_list.append(file_stopper)
+    # Configure cloudpickle for code execution subprocess serialization
+    from gepa.utils.code_execution import set_use_cloudpickle
 
-        # Add max_metric_calls stopper if provided
-        if config.engine.max_metric_calls is not None:
-            from gepa.utils import MaxMetricCallsStopper
+    set_use_cloudpickle(config.engine.use_cloudpickle)
 
-            max_calls_stopper = MaxMetricCallsStopper(config.engine.max_metric_calls)
-            stop_callbacks_list.append(max_calls_stopper)
+    active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
+        evaluator=wrapped_evaluator,
+        parallel=config.engine.parallel,
+        max_workers=config.engine.max_workers,
+        refiner_config=config.refiner,
+        best_example_evals_k=config.engine.best_example_evals_k,
+        objective=objective,
+        background=background,
+        cache_mode=resolved_cache_mode,
+        cache_dir=config.engine.run_dir,
+    )
 
-        # Add max_candidate_proposals stopper if provided
-        if config.engine.max_candidate_proposals is not None:
-            # Define stopper inline to avoid modifying stop_condition.py
-            # Note: state.i starts at -1, and is incremented at the START of each loop iteration.
-            # The stopper is checked BEFORE the increment, so when state.i = N-1, we're about to
-            # run proposal N. To allow exactly max_proposals proposals, we stop when
-            # state.i >= max_proposals - 1 (i.e., we've completed max_proposals proposals).
-            class MaxCandidateProposalsStopper:
-                def __init__(self, max_proposals: int):
-                    self.max_proposals = max_proposals
+    # Normalize datasets to DataLoader instances
+    train_loader = ensure_loader(effective_dataset)
+    val_loader = ensure_loader(valset) if valset is not None else train_loader
 
-                def __call__(self, gepa_state) -> bool:
-                    return gepa_state.i >= self.max_proposals - 1
+    # --- 1. Build stoppers from the EngineConfig and root config ---
+    stop_callbacks_list: list[StopperProtocol] = []
 
-            proposals_stopper = MaxCandidateProposalsStopper(config.engine.max_candidate_proposals)
-            stop_callbacks_list.append(proposals_stopper)
-
-        # Assert that at least one stopping condition is provided
-        if not stop_callbacks_list:
-            raise ValueError(
-                "At least one stopping condition must be provided via config.engine.max_metric_calls or config.stop_callbacks."
-            )
-
-        # Create composite stopper if multiple stoppers, or use single stopper
-        stop_callback: StopperProtocol
-        if len(stop_callbacks_list) == 1:
-            stop_callback = stop_callbacks_list[0]
+    # Add custom stop callbacks if provided
+    if config.stop_callbacks is not None:
+        if isinstance(config.stop_callbacks, Sequence):
+            stop_callbacks_list.extend(config.stop_callbacks)
         else:
-            from gepa.utils import CompositeStopper
+            stop_callbacks_list.append(config.stop_callbacks)
 
-            stop_callback = CompositeStopper(*stop_callbacks_list)
+    # Add file stopper if run_dir is provided
+    if config.engine.run_dir is not None:
+        stop_file_path = os.path.join(config.engine.run_dir, "gepa.stop")
+        file_stopper = FileStopper(stop_file_path)
+        stop_callbacks_list.append(file_stopper)
 
-        # --- 2. Validate and setup reflection LM ---
-        if not hasattr(active_adapter, "propose_new_texts"):
-            assert config.reflection.reflection_lm is not None, (
-                f"reflection_lm was not provided. The adapter '{active_adapter!s}' does not provide a propose_new_texts method, "
-                + "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
-            )
+    # Add max_metric_calls stopper if provided
+    if config.engine.max_metric_calls is not None:
+        from gepa.utils import MaxMetricCallsStopper
 
-        # Default refiner_lm to reflection_lm name BEFORE converting reflection_lm to callable
-        if config.refiner is not None and config.refiner.refiner_lm is None:
-            config.refiner.refiner_lm = config.reflection.reflection_lm
+        max_calls_stopper = MaxMetricCallsStopper(config.engine.max_metric_calls)
+        stop_callbacks_list.append(max_calls_stopper)
 
-        # Convert reflection_lm string to callable
-        if isinstance(config.reflection.reflection_lm, str):
-            config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
+    # Add max_candidate_proposals stopper if provided
+    if config.engine.max_candidate_proposals is not None:
+        # Define stopper inline to avoid modifying stop_condition.py
+        # Note: state.i starts at -1, and is incremented at the START of each loop iteration.
+        # The stopper is checked BEFORE the increment, so when state.i = N-1, we're about to
+        # run proposal N. To allow exactly max_proposals proposals, we stop when
+        # state.i >= max_proposals - 1 (i.e., we've completed max_proposals proposals).
+        class MaxCandidateProposalsStopper:
+            def __init__(self, max_proposals: int):
+                self.max_proposals = max_proposals
 
-        # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
-        if config.refiner is not None:
-            if isinstance(config.refiner.refiner_lm, str):
-                config.refiner.refiner_lm = make_litellm_lm(config.refiner.refiner_lm)
+            def __call__(self, gepa_state) -> bool:
+                return gepa_state.i >= self.max_proposals - 1
 
-        # Auto-inject refiner_prompt into seed_candidate(s) if refiner is enabled
-        if config.refiner is not None:
-            formatted_refiner_prompt = DEFAULT_REFINER_PROMPT.format(
-                objective=objective or "Maximize the score",
-                background=background or "No additional background provided.",
-            )
-            candidates_to_check = seed_candidate if isinstance(seed_candidate, list) else [seed_candidate]
-            for sc in candidates_to_check:
-                if "refiner_prompt" not in sc:
-                    sc["refiner_prompt"] = formatted_refiner_prompt
-                # If user provides their own refiner_prompt, use it (allows custom refiner prompts)
+        proposals_stopper = MaxCandidateProposalsStopper(config.engine.max_candidate_proposals)
+        stop_callbacks_list.append(proposals_stopper)
 
-        # Setup default logger if not provided
-        if config.tracking.logger is None:
-            config.tracking.logger = StdOutLogger()
-
-        # --- 3. Setup random number generator ---
-        rng = random.Random(config.engine.seed)
-
-        # --- 4. Build candidate selector from EngineConfig ---
-        candidate_selector: CandidateSelector
-        if isinstance(config.engine.candidate_selection_strategy, str):
-            factories = {
-                "pareto": lambda: ParetoCandidateSelector(rng=rng),
-                "current_best": lambda: CurrentBestCandidateSelector(),
-                "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
-            }
-
-            try:
-                candidate_selector = factories[config.engine.candidate_selection_strategy]()
-            except KeyError as exc:
-                raise ValueError(
-                    f"Unknown candidate_selector strategy: {config.engine.candidate_selection_strategy}. "
-                    "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
-                ) from exc
-        elif isinstance(config.engine.candidate_selection_strategy, CandidateSelector):
-            candidate_selector = config.engine.candidate_selection_strategy
-        else:
-            raise TypeError(
-                "candidate_selection_strategy must be a supported string strategy or an instance of CandidateSelector."
-            )
-
-        # --- 5. Build evaluation policy from EngineConfig ---
-        if config.engine.val_evaluation_policy is None or config.engine.val_evaluation_policy == "full_eval":
-            config.engine.val_evaluation_policy = FullEvaluationPolicy()
-        elif not isinstance(config.engine.val_evaluation_policy, EvaluationPolicy):
-            raise ValueError(
-                f"val_evaluation_policy should be 'full_eval' or an EvaluationPolicy instance, but got {type(config.engine.val_evaluation_policy)}"
-            )
-
-        # --- 6. Build module selector from ReflectionConfig ---
-        if isinstance(config.reflection.module_selector, str):
-            module_selector_cls = {
-                "round_robin": RoundRobinReflectionComponentSelector,
-                "all": AllReflectionComponentSelector,
-            }.get(config.reflection.module_selector)
-
-            assert module_selector_cls is not None, (
-                f"Unknown module_selector strategy: {config.reflection.module_selector}. "
-                "Supported strategies: 'round_robin', 'all'"
-            )
-
-            module_selector_instance: ReflectionComponentSelector = module_selector_cls()
-        else:
-            module_selector_instance = config.reflection.module_selector
-
-        # --- 7. Build batch sampler from ReflectionConfig ---
-        if config.reflection.batch_sampler == "epoch_shuffled":
-            config.reflection.batch_sampler = EpochShuffledBatchSampler(
-                minibatch_size=config.reflection.reflection_minibatch_size, rng=rng
-            )
-
-        # --- 8. Build experiment tracker from TrackingConfig ---
-        experiment_tracker = create_experiment_tracker(
-            use_wandb=config.tracking.use_wandb,
-            wandb_api_key=config.tracking.wandb_api_key,
-            wandb_init_kwargs=config.tracking.wandb_init_kwargs,
-            use_mlflow=config.tracking.use_mlflow,
-            mlflow_tracking_uri=config.tracking.mlflow_tracking_uri,
-            mlflow_experiment_name=config.tracking.mlflow_experiment_name,
+    # Assert that at least one stopping condition is provided
+    if not stop_callbacks_list:
+        raise ValueError(
+            "At least one stopping condition must be provided via config.engine.max_metric_calls or config.stop_callbacks."
         )
 
-        # --- 9. Build reflection prompt template from objective/background if provided ---
-        # Check for conflicting configuration: user cannot provide both objective/background
-        # AND a custom reflection_prompt_template (these are mutually exclusive approaches)
-        user_provided_custom_template = (
-            config.reflection.reflection_prompt_template is not None
-            and config.reflection.reflection_prompt_template != optimize_anything_reflection_prompt_template
+    # Create composite stopper if multiple stoppers, or use single stopper
+    stop_callback: StopperProtocol
+    if len(stop_callbacks_list) == 1:
+        stop_callback = stop_callbacks_list[0]
+    else:
+        from gepa.utils import CompositeStopper
+
+        stop_callback = CompositeStopper(*stop_callbacks_list)
+
+    # --- 2. Validate and setup reflection LM ---
+    if not hasattr(active_adapter, "propose_new_texts"):
+        assert config.reflection.reflection_lm is not None, (
+            f"reflection_lm was not provided. The adapter '{active_adapter!s}' does not provide a propose_new_texts method, "
+            + "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
         )
-        # Treat empty strings as "not provided" - only non-empty strings count
-        user_provided_objective_or_background = bool(objective) or bool(background)
 
-        if user_provided_custom_template and user_provided_objective_or_background:
+    # Default refiner_lm to reflection_lm name BEFORE converting reflection_lm to callable
+    if config.refiner is not None and config.refiner.refiner_lm is None:
+        config.refiner.refiner_lm = config.reflection.reflection_lm
+
+    # Convert reflection_lm string to callable
+    if isinstance(config.reflection.reflection_lm, str):
+        config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
+
+    # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
+    if config.refiner is not None:
+        if isinstance(config.refiner.refiner_lm, str):
+            config.refiner.refiner_lm = make_litellm_lm(config.refiner.refiner_lm)
+
+    # Auto-inject refiner_prompt into seed_candidate(s) if refiner is enabled
+    if config.refiner is not None:
+        formatted_refiner_prompt = DEFAULT_REFINER_PROMPT.format(
+            objective=objective or "Maximize the score",
+            background=background or "No additional background provided.",
+        )
+        candidates_to_check = seed_candidate if isinstance(seed_candidate, list) else [seed_candidate]
+        for sc in candidates_to_check:
+            if "refiner_prompt" not in sc:
+                sc["refiner_prompt"] = formatted_refiner_prompt
+            # If user provides their own refiner_prompt, use it (allows custom refiner prompts)
+
+    # Setup default logger if not provided
+    if config.tracking.logger is None:
+        config.tracking.logger = StdOutLogger()
+
+    # --- 3. Setup random number generator ---
+    rng = random.Random(config.engine.seed)
+
+    # --- 4. Build candidate selector from EngineConfig ---
+    candidate_selector: CandidateSelector
+    if isinstance(config.engine.candidate_selection_strategy, str):
+        factories = {
+            "pareto": lambda: ParetoCandidateSelector(rng=rng),
+            "current_best": lambda: CurrentBestCandidateSelector(),
+            "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
+        }
+
+        try:
+            candidate_selector = factories[config.engine.candidate_selection_strategy]()
+        except KeyError as exc:
             raise ValueError(
-                "Cannot specify both 'objective'/'background' parameters and a custom "
-                "'config.reflection.reflection_prompt_template'. These are mutually exclusive options. "
-                "Either use objective/background to auto-generate a reflection prompt, or provide "
-                "your own custom template via config.reflection.reflection_prompt_template."
-            )
+                f"Unknown candidate_selector strategy: {config.engine.candidate_selection_strategy}. "
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
+            ) from exc
+    elif isinstance(config.engine.candidate_selection_strategy, CandidateSelector):
+        candidate_selector = config.engine.candidate_selection_strategy
+    else:
+        raise TypeError(
+            "candidate_selection_strategy must be a supported string strategy or an instance of CandidateSelector."
+        )
 
-        # If objective or background are provided, build a custom reflection prompt template
-        # with those values filled in, creating a template with <curr_param> and <side_info> placeholders
-        if user_provided_objective_or_background:
-            config.reflection.reflection_prompt_template = _build_reflection_prompt_template(
-                objective=objective, background=background
-            )
+    # --- 5. Build evaluation policy from EngineConfig ---
+    if config.engine.val_evaluation_policy is None or config.engine.val_evaluation_policy == "full_eval":
+        config.engine.val_evaluation_policy = FullEvaluationPolicy()
+    elif not isinstance(config.engine.val_evaluation_policy, EvaluationPolicy):
+        raise ValueError(
+            f"val_evaluation_policy should be 'full_eval' or an EvaluationPolicy instance, but got {type(config.engine.val_evaluation_policy)}"
+        )
 
-        # --- 10. Validate reflection prompt template ---
-        if config.reflection.reflection_prompt_template is not None:
-            assert not (
-                active_adapter is not None and getattr(active_adapter, "propose_new_texts", None) is not None
-            ), (
-                f"Adapter {active_adapter!s} provides its own propose_new_texts method; "
-                "reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
-            )
+    # --- 6. Build module selector from ReflectionConfig ---
+    if isinstance(config.reflection.module_selector, str):
+        module_selector_cls = {
+            "round_robin": RoundRobinReflectionComponentSelector,
+            "all": AllReflectionComponentSelector,
+        }.get(config.reflection.module_selector)
 
-            # Validate template(s) - can be a single string or dict of templates
-            from gepa.strategies.instruction_proposal import InstructionProposalSignature
+        assert module_selector_cls is not None, (
+            f"Unknown module_selector strategy: {config.reflection.module_selector}. "
+            "Supported strategies: 'round_robin', 'all'"
+        )
 
-            if isinstance(config.reflection.reflection_prompt_template, dict):
-                for param_name, template in config.reflection.reflection_prompt_template.items():
-                    try:
-                        InstructionProposalSignature.validate_prompt_template(template)
-                    except ValueError as e:
-                        raise ValueError(f"Invalid reflection_prompt_template for parameter '{param_name}': {e}") from e
-            else:
-                InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
+        module_selector_instance: ReflectionComponentSelector = module_selector_cls()
+    else:
+        module_selector_instance = config.reflection.module_selector
 
-        # --- 11. Build reflective proposer from ReflectionConfig ---
-        reflective_proposer = ReflectiveMutationProposer(
+    # --- 7. Build batch sampler from ReflectionConfig ---
+    if config.reflection.batch_sampler == "epoch_shuffled":
+        config.reflection.batch_sampler = EpochShuffledBatchSampler(
+            minibatch_size=config.reflection.reflection_minibatch_size, rng=rng
+        )
+
+    # --- 8. Build experiment tracker from TrackingConfig ---
+    experiment_tracker = create_experiment_tracker(
+        use_wandb=config.tracking.use_wandb,
+        wandb_api_key=config.tracking.wandb_api_key,
+        wandb_init_kwargs=config.tracking.wandb_init_kwargs,
+        use_mlflow=config.tracking.use_mlflow,
+        mlflow_tracking_uri=config.tracking.mlflow_tracking_uri,
+        mlflow_experiment_name=config.tracking.mlflow_experiment_name,
+    )
+
+    # --- 9. Build reflection prompt template from objective/background if provided ---
+    # Check for conflicting configuration: user cannot provide both objective/background
+    # AND a custom reflection_prompt_template (these are mutually exclusive approaches)
+    user_provided_custom_template = (
+        config.reflection.reflection_prompt_template is not None
+        and config.reflection.reflection_prompt_template != optimize_anything_reflection_prompt_template
+    )
+    # Treat empty strings as "not provided" - only non-empty strings count
+    user_provided_objective_or_background = bool(objective) or bool(background)
+
+    if user_provided_custom_template and user_provided_objective_or_background:
+        raise ValueError(
+            "Cannot specify both 'objective'/'background' parameters and a custom "
+            "'config.reflection.reflection_prompt_template'. These are mutually exclusive options. "
+            "Either use objective/background to auto-generate a reflection prompt, or provide "
+            "your own custom template via config.reflection.reflection_prompt_template."
+        )
+
+    # If objective or background are provided, build a custom reflection prompt template
+    # with those values filled in, creating a template with <curr_param> and <side_info> placeholders
+    if user_provided_objective_or_background:
+        config.reflection.reflection_prompt_template = _build_reflection_prompt_template(
+            objective=objective, background=background
+        )
+
+    # --- 10. Validate reflection prompt template ---
+    if config.reflection.reflection_prompt_template is not None:
+        assert not (
+            active_adapter is not None and getattr(active_adapter, "propose_new_texts", None) is not None
+        ), (
+            f"Adapter {active_adapter!s} provides its own propose_new_texts method; "
+            "reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
+        )
+
+        # Validate template(s) - can be a single string or dict of templates
+        from gepa.strategies.instruction_proposal import InstructionProposalSignature
+
+        if isinstance(config.reflection.reflection_prompt_template, dict):
+            for param_name, template in config.reflection.reflection_prompt_template.items():
+                try:
+                    InstructionProposalSignature.validate_prompt_template(template)
+                except ValueError as e:
+                    raise ValueError(f"Invalid reflection_prompt_template for parameter '{param_name}': {e}") from e
+        else:
+            InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
+
+    # --- 11. Build reflective proposer from ReflectionConfig ---
+    reflective_proposer = ReflectiveMutationProposer(
+        logger=config.tracking.logger,
+        trainset=train_loader,
+        adapter=active_adapter,
+        candidate_selector=candidate_selector,
+        module_selector=module_selector_instance,
+        batch_sampler=config.reflection.batch_sampler,
+        perfect_score=config.reflection.perfect_score,
+        skip_perfect_score=config.reflection.skip_perfect_score,
+        experiment_tracker=experiment_tracker,
+        reflection_lm=config.reflection.reflection_lm,
+        reflection_prompt_template=config.reflection.reflection_prompt_template,
+        custom_candidate_proposer=config.reflection.custom_candidate_proposer,
+    )
+
+    # Define evaluator function for merge proposer
+    def merge_evaluator(
+        inputs: list[DataInst], prog: Candidate
+    ) -> tuple[list[RolloutOutput], list[float], list[dict[str, float]] | None]:
+        eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
+        return eval_out.outputs, eval_out.scores, eval_out.objective_scores
+
+    # --- 12. Build merge proposer from MergeConfig (if provided) ---
+    merge_proposer: MergeProposer | None = None
+    if config.merge is not None:
+        merge_proposer = MergeProposer(
             logger=config.tracking.logger,
-            trainset=train_loader,
-            adapter=active_adapter,
-            candidate_selector=candidate_selector,
-            module_selector=module_selector_instance,
-            batch_sampler=config.reflection.batch_sampler,
-            perfect_score=config.reflection.perfect_score,
-            skip_perfect_score=config.reflection.skip_perfect_score,
-            experiment_tracker=experiment_tracker,
-            reflection_lm=config.reflection.reflection_lm,
-            reflection_prompt_template=config.reflection.reflection_prompt_template,
-            custom_candidate_proposer=config.reflection.custom_candidate_proposer,
-        )
-
-        # Define evaluator function for merge proposer
-        def merge_evaluator(
-            inputs: list[DataInst], prog: Candidate
-        ) -> tuple[list[RolloutOutput], list[float], list[dict[str, float]] | None]:
-            eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
-            return eval_out.outputs, eval_out.scores, eval_out.objective_scores
-
-        # --- 12. Build merge proposer from MergeConfig (if provided) ---
-        merge_proposer: MergeProposer | None = None
-        if config.merge is not None:
-            merge_proposer = MergeProposer(
-                logger=config.tracking.logger,
-                valset=val_loader,
-                evaluator=merge_evaluator,
-                use_merge=True,
-                max_merge_invocations=config.merge.max_merge_invocations,
-                rng=rng,
-                val_overlap_floor=config.merge.merge_val_overlap_floor,
-            )
-
-        # --- 13. Create evaluation cache if enabled ---
-        evaluation_cache: EvaluationCache[Any, Any] | None = None
-        if config.engine.cache_evaluation:
-            evaluation_cache = EvaluationCache[Any, Any]()
-
-        # --- 14. Build the main engine from EngineConfig ---
-        engine = GEPAEngine(
-            adapter=active_adapter,
-            run_dir=config.engine.run_dir,
             valset=val_loader,
-            seed_candidate=[seed_candidate] if not isinstance(seed_candidate, list) else seed_candidate,
-            perfect_score=config.reflection.perfect_score,
-            seed=config.engine.seed,
-            reflective_proposer=reflective_proposer,
-            merge_proposer=merge_proposer,
-            frontier_type=config.engine.frontier_type,
-            logger=config.tracking.logger,
-            experiment_tracker=experiment_tracker,
-            track_best_outputs=config.engine.track_best_outputs,
-            display_progress_bar=config.engine.display_progress_bar,
-            raise_on_exception=config.engine.raise_on_exception,
-            stop_callback=stop_callback,
-            val_evaluation_policy=config.engine.val_evaluation_policy,
-            use_cloudpickle=config.engine.use_cloudpickle,
-            evaluation_cache=evaluation_cache,
+            evaluator=merge_evaluator,
+            use_merge=True,
+            max_merge_invocations=config.merge.max_merge_invocations,
+            rng=rng,
+            val_overlap_floor=config.merge.merge_val_overlap_floor,
         )
 
-        # --- 15. Run optimization ---
-        with experiment_tracker:
-            state = engine.run()
+    # --- 13. Create evaluation cache if enabled ---
+    evaluation_cache: EvaluationCache[Any, Any] | None = None
+    if config.engine.cache_evaluation:
+        evaluation_cache = EvaluationCache[Any, Any]()
 
-        return GEPAResult.from_state(state, run_dir=config.engine.run_dir, seed=config.engine.seed)
+    # --- 14. Build the main engine from EngineConfig ---
+    engine = GEPAEngine(
+        adapter=active_adapter,
+        run_dir=config.engine.run_dir,
+        valset=val_loader,
+        seed_candidate=[seed_candidate] if not isinstance(seed_candidate, list) else seed_candidate,
+        perfect_score=config.reflection.perfect_score,
+        seed=config.engine.seed,
+        reflective_proposer=reflective_proposer,
+        merge_proposer=merge_proposer,
+        frontier_type=config.engine.frontier_type,
+        logger=config.tracking.logger,
+        experiment_tracker=experiment_tracker,
+        track_best_outputs=config.engine.track_best_outputs,
+        display_progress_bar=config.engine.display_progress_bar,
+        raise_on_exception=config.engine.raise_on_exception,
+        stop_callback=stop_callback,
+        val_evaluation_policy=config.engine.val_evaluation_policy,
+        use_cloudpickle=config.engine.use_cloudpickle,
+        evaluation_cache=evaluation_cache,
+    )
+
+    # --- 15. Run optimization ---
+    with experiment_tracker:
+        state = engine.run()
+
+    return GEPAResult.from_state(state, run_dir=config.engine.run_dir, seed=config.engine.seed)

@@ -76,6 +76,10 @@ class ThreadLocalStreamCapture:
 
     def start_capture(self) -> None:
         """Start capturing for the current thread."""
+        assert not getattr(self._local, "capturing", False), (
+            "start_capture() called while already capturing on this thread. "
+            "Call stop_capture() first to retrieve the buffered output."
+        )
         self._local.capturing = True
         self._local.buffer = io.StringIO()
 

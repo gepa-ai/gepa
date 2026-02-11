@@ -2,9 +2,10 @@ import hashlib
 import json
 import pickle
 import threading
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
@@ -101,7 +102,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 reverse=True,
             )[: self.best_example_evals_k]
 
-    # --- Fitness evaluation caching methods ---
+    # --- Evaluation caching methods ---
 
     def _candidate_hash(self, candidate: dict[str, str]) -> str:
         """SHA256 hash of candidate for cache key (first 16 chars)."""
@@ -218,7 +219,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Update best evals history for each example
         # (skip when refiner is on — refiner path already records evals internally)
         if self.refiner_config is None:
-            for example, (score, _, side_info) in zip(batch, eval_output):
+            for example, (score, _, side_info) in zip(batch, eval_output, strict=False):
                 self._update_best_example_evals(example, score, side_info)
 
         scores = [score for score, _, _ in eval_output]
@@ -298,6 +299,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         #    Only consider attempts that produced real evaluation results (have "side_info"),
         #    so that failed attempts (JSON parse errors, exceptions) with placeholder score=0.0
         #    don't mask real evaluations when original scores are negative.
+        #    Fallback: if no refinement attempts produced evaluation results, use the
+        #    original evaluation's side_info (iteration 0 always has "side_info").
         evaluated_attempts = [a for a in all_attempts if "side_info" in a]
         best_refined_scores = {}
         if evaluated_attempts:
@@ -305,6 +308,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             best_attempt_side_info = best_attempt.get("side_info")
             if isinstance(best_attempt_side_info, dict) and "scores" in best_attempt_side_info:
                 best_refined_scores = best_attempt_side_info["scores"]
+        else:
+            # All refinement attempts failed (JSON parse errors, exceptions).
+            # Fall back to the original evaluation's scores so the objective
+            # frontier still has meaningful metric values.
+            if isinstance(original_side_info, dict) and "scores" in original_side_info:
+                best_refined_scores = original_side_info["scores"]
 
         aggregated_side_info["refiner_prompt_specific_info"] = {
             "scores": best_refined_scores,

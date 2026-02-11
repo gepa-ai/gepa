@@ -354,7 +354,7 @@ class TestRefiner:
         by _evaluate_single_with_refinement.
         """
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, _create_evaluator_wrapper
+        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
 
         call_counter = {"count": 0}
 
@@ -376,7 +376,7 @@ class TestRefiner:
             }
 
         # Wrap fitness_fn the same way optimize_anything does
-        with _create_evaluator_wrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
             refiner_config = RefinerConfig(
                 refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
                 max_refinements=1,
@@ -428,7 +428,7 @@ class TestRefiner:
         improve a deliberately bad seed (number=0, score=-42).
         """
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, _create_evaluator_wrapper
+        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
 
         def raw_fitness_fn(candidate: dict[str, str], **kwargs) -> tuple[float, dict]:
             try:
@@ -446,7 +446,7 @@ class TestRefiner:
                 "hint": 'The target is 42. Return {"number": "42"} to get a perfect score.',
             }
 
-        with _create_evaluator_wrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
             refiner_config = RefinerConfig(
                 refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
                 max_refinements=3,
@@ -497,7 +497,7 @@ class TestRefiner:
     def test_refiner_score_never_worse(self):
         """Test the max(original, refined) guarantee — refiner can only help, never hurt."""
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, _create_evaluator_wrapper
+        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
 
         def raw_fitness_fn(candidate: dict[str, str], **kwargs) -> tuple[float, dict]:
             try:
@@ -509,7 +509,7 @@ class TestRefiner:
             score = -off_by
             return score, {"guess": guess, "off_by": off_by}
 
-        with _create_evaluator_wrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
             refiner_config = RefinerConfig(
                 refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
                 max_refinements=2,
@@ -539,6 +539,72 @@ class TestRefiner:
         assert score >= original_score, (
             f"Final score ({score}) must be >= original ({original_score}) — the refiner should never make things worse"
         )
+
+
+    def test_refiner_fallback_scores_when_all_refinements_fail(self):
+        """When all refinement attempts fail (e.g. JSON parse errors), best_refined_scores
+        should fall back to the original evaluation's scores, not remain empty.
+        This prevents losing objective frontier metrics when the original score is negative
+        and failed attempts have placeholder score=0.0.
+        """
+        from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
+        from gepa.optimize_anything import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
+
+        def raw_fitness_fn(candidate: dict[str, str], **kwargs) -> tuple[float, dict]:
+            try:
+                guess = int(candidate["number"])
+            except (ValueError, KeyError):
+                guess = 0
+            off_by = abs(guess - GOLDEN_NUMBER)
+            score = -off_by
+            return score, {
+                "guess": guess,
+                "off_by": off_by,
+                "scores": {"accuracy": max(0.0, 1.0 - off_by / 100.0)},
+            }
+
+        # Use a refiner_lm that always returns invalid JSON to force all refinements to fail
+        def bad_refiner_lm(prompt: str) -> str:
+            return "this is not valid json at all"
+
+        with EvaluatorWrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
+            refiner_config = RefinerConfig(
+                refiner_lm=bad_refiner_lm,
+                max_refinements=3,
+            )
+
+            adapter = OptimizeAnythingAdapter(
+                evaluator=wrapped,
+                parallel=False,
+                refiner_config=refiner_config,
+                cache_mode="off",
+            )
+
+            candidate = {
+                "number": "50",
+                "refiner_prompt": "Improve the guess. Return a JSON dict with 'number'.",
+            }
+
+            score, output, side_info = adapter._evaluate_single_with_refinement(
+                candidate, _SINGLE_INSTANCE_SENTINEL
+            )
+
+        refiner_info = side_info["refiner_prompt_specific_info"]
+
+        # All refinement attempts should have failed (only iteration 0 has "side_info")
+        evaluated = [a for a in refiner_info["Attempts"] if "side_info" in a]
+        failed = [a for a in refiner_info["Attempts"] if "error" in a]
+        assert len(evaluated) == 1, f"Expected only original eval to succeed, got {len(evaluated)}"
+        assert len(failed) >= 1, "Expected at least one failed refinement attempt"
+
+        # The key check: best_refined_scores should fall back to original's scores,
+        # not be empty
+        assert refiner_info["scores"] == {"accuracy": max(0.0, 1.0 - abs(50 - GOLDEN_NUMBER) / 100.0)}, (
+            f"Expected fallback to original scores, got: {refiner_info['scores']}"
+        )
+
+        # Score should equal the original (no refinement improved)
+        assert score == -abs(50 - GOLDEN_NUMBER)
 
 
 class TestRefinerWithDataset:

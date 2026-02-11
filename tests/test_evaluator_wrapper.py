@@ -20,7 +20,6 @@ from gepa.optimize_anything import (
     _STR_CANDIDATE_KEY,
     EvaluatorWrapper,
     OptimizationState,
-    _create_evaluator_wrapper,
     _LogContext,
 )
 from gepa.utils.stdio_capture import StreamCaptureManager, ThreadLocalStreamCapture
@@ -76,7 +75,7 @@ class TestEvaluatorWrapperContextManager:
         def my_eval(candidate, **kwargs):
             return 1.0
 
-        wrapper = _create_evaluator_wrapper(my_eval, single_instance_mode=True)
+        wrapper = EvaluatorWrapper(my_eval, single_instance_mode=True)
         assert isinstance(wrapper, EvaluatorWrapper)
         assert hasattr(wrapper, "__enter__")
         assert hasattr(wrapper, "__exit__")
@@ -87,7 +86,7 @@ class TestEvaluatorWrapperContextManager:
         def my_eval(candidate, **kwargs):
             return 1.0
 
-        wrapper = _create_evaluator_wrapper(my_eval, single_instance_mode=True)
+        wrapper = EvaluatorWrapper(my_eval, single_instance_mode=True)
         with wrapper as w:
             assert w is wrapper
 
@@ -97,7 +96,7 @@ class TestEvaluatorWrapperContextManager:
         def my_eval(candidate, **kwargs):
             return 1.0
 
-        wrapper = _create_evaluator_wrapper(my_eval, single_instance_mode=True, capture_stdio=True)
+        wrapper = EvaluatorWrapper(my_eval, single_instance_mode=True, capture_stdio=True)
         # Capture is acquired; close should release it
         wrapper.close()
 
@@ -108,7 +107,7 @@ class TestEvaluatorWrapperContextManager:
             return 1.0
 
         with pytest.raises(ValueError, match="test error"):
-            with _create_evaluator_wrapper(my_eval, single_instance_mode=True, capture_stdio=True):
+            with EvaluatorWrapper(my_eval, single_instance_mode=True, capture_stdio=True):
                 raise ValueError("test error")
         # If we get here, __exit__ ran without error (resources released)
 
@@ -129,7 +128,7 @@ class TestOaLog:
             oa.log("score is", 42)
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
             score, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert score == 1.0
             assert "log" in side_info
@@ -143,7 +142,7 @@ class TestOaLog:
             oa.log("a", "b", "c", sep="-", end="!")
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
             _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert side_info["log"] == "a-b-c!"
 
@@ -169,7 +168,7 @@ class TestOaLog:
             oa.log("fresh output")
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
             _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert "stale" not in side_info.get("log", "")
             assert "fresh output" in side_info["log"]
@@ -180,7 +179,7 @@ class TestOaLog:
         def my_eval(candidate, **kwargs):
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
             _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert "log" not in side_info
 
@@ -200,7 +199,7 @@ class TestOaLog:
             t.join()
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
             _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert "from main" in side_info["log"]
             assert "from child" in side_info["log"]
@@ -221,7 +220,7 @@ class TestOaLog:
                     f.result()
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
             _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             for i in range(5):
                 assert f"msg-{i}" in side_info["log"]
@@ -240,7 +239,7 @@ class TestOaLog:
             oa.log(f"done-{val}")
             return float(val)
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
 
             def run_eval(idx: int):
                 score, _, side_info = wrapped({"id": str(idx)}, example=_SINGLE_INSTANCE_SENTINEL)
@@ -284,7 +283,7 @@ class TestCaptureStdio:
             print("hello from evaluator")
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True, capture_stdio=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True, capture_stdio=True) as wrapped:
             _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert "hello from evaluator" in side_info.get("stdout", "")
 
@@ -295,7 +294,7 @@ class TestCaptureStdio:
             sys.stderr.write("error output")
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True, capture_stdio=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True, capture_stdio=True) as wrapped:
             _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert "error output" in side_info.get("stderr", "")
 
@@ -306,7 +305,7 @@ class TestCaptureStdio:
             # This should go to real stdout, not captured
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True, capture_stdio=False) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True, capture_stdio=False) as wrapped:
             _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert "stdout" not in side_info
             assert "stderr" not in side_info
@@ -319,7 +318,7 @@ class TestCaptureStdio:
             print("stdout message")
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True, capture_stdio=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True, capture_stdio=True) as wrapped:
             _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert "log message" in side_info.get("log", "")
             assert "stdout message" in side_info.get("stdout", "")
@@ -330,7 +329,7 @@ class TestCaptureStdio:
         def my_eval(candidate, **kwargs):
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True, capture_stdio=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True, capture_stdio=True) as wrapped:
             # First call
             wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             # Print between calls (should go to real stdout, not captured)
@@ -356,7 +355,7 @@ class TestSideInfoKeyCollision:
             oa.log("captured log")
             return 1.0, {"log": "user log value"}
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
@@ -377,7 +376,7 @@ class TestSideInfoKeyCollision:
             print("captured stdout")
             return 1.0, {"stdout": "user stdout value"}
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True, capture_stdio=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True, capture_stdio=True) as wrapped:
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
@@ -395,7 +394,7 @@ class TestSideInfoKeyCollision:
             oa.log("some log")
             return 1.0, {"my_key": "my_value"}
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
@@ -411,7 +410,7 @@ class TestSideInfoKeyCollision:
         def my_eval(candidate, **kwargs):
             return 1.0, {"stdout": "user value", "log": "user log"}
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True, capture_stdio=False) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True, capture_stdio=False) as wrapped:
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
@@ -439,7 +438,7 @@ class TestStrCandidateMode:
             received_candidates.append(candidate)
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True, str_candidate_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True, str_candidate_mode=True) as wrapped:
             wrapped({_STR_CANDIDATE_KEY: "hello world"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert len(received_candidates) == 1
             assert received_candidates[0] == "hello world"
@@ -453,7 +452,7 @@ class TestStrCandidateMode:
             received_candidates.append(candidate)
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True, str_candidate_mode=False) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True, str_candidate_mode=False) as wrapped:
             wrapped({"key": "value"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert len(received_candidates) == 1
             assert received_candidates[0] == {"key": "value"}
@@ -476,7 +475,7 @@ class TestEvaluatorModes:
             received_kwargs.append(kwargs)
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
             wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert "example" not in received_kwargs[0]
 
@@ -488,7 +487,7 @@ class TestEvaluatorModes:
             received_kwargs.append({"example": example})
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=False) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=False) as wrapped:
             wrapped({"x": "1"}, example={"input": "test"})
             assert received_kwargs[0]["example"] == {"input": "test"}
 
@@ -498,7 +497,7 @@ class TestEvaluatorModes:
         def my_eval(candidate, **kwargs):
             return 0.5, {"key": "val"}
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
             score, output, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert score == 0.5
             assert output is None
@@ -510,7 +509,7 @@ class TestEvaluatorModes:
         def my_eval(candidate, **kwargs):
             return 0.7
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
             score, output, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert score == 0.7
             assert output is None
@@ -522,7 +521,7 @@ class TestEvaluatorModes:
         def my_eval(candidate, **kwargs):
             return 0.5, None
 
-        with _create_evaluator_wrapper(my_eval, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval, single_instance_mode=True) as wrapped:
             _, _, side_info = wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
             assert side_info == {}
 
@@ -552,7 +551,7 @@ class TestOptimizationState:
             received_opt_state.append(opt_state)
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval_with_opt_state, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval_with_opt_state, single_instance_mode=True) as wrapped:
             test_state = OptimizationState(best_example_evals=[{"score": 0.5, "side_info": {}}])
             wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL, opt_state=test_state)
             assert received_opt_state[0] is test_state
@@ -565,7 +564,7 @@ class TestOptimizationState:
             received_kwargs.append("called")
             return 1.0
 
-        with _create_evaluator_wrapper(my_eval_no_opt_state, single_instance_mode=True) as wrapped:
+        with EvaluatorWrapper(my_eval_no_opt_state, single_instance_mode=True) as wrapped:
             test_state = OptimizationState(best_example_evals=[])
             # Should not raise even though opt_state is not in signature
             wrapped({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL, opt_state=test_state)
