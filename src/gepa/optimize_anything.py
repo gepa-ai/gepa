@@ -169,7 +169,7 @@ useful when different parameters have different failure modes.
 - **Add context for metrics**: Don't just say accuracy=0.7, explain what was wrong
 - **Use parameter-specific info judiciously**: Only when you have parameter-targeted insights
 
-**Integration with Fitness Function:**
+**Integration with Evaluator:**
 
 Your evaluator should construct SideInfo for each evaluation instance. See the
 Evaluator protocol documentation for the complete evaluation interface.
@@ -190,50 +190,124 @@ class OptimizationState:
 
 
 # ---------------------------------------------------------------------------
-# Thread-local log() — captures diagnostic output without polluting stdout
+# Evaluation log context — captures diagnostic output without polluting stdout
 # ---------------------------------------------------------------------------
 
-_log_storage = threading.local()
+
+class _LogContext:
+    """Thread-safe log buffer for a single evaluator invocation.
+
+    All ``oa.log()`` calls within the same evaluator call write to the same
+    buffer, even from child threads (when properly propagated via
+    :func:`get_log_context` / :func:`set_log_context`).  Writes are
+    serialized with a lock so concurrent threads never interleave.
+    """
+
+    def __init__(self) -> None:
+        self._buffer = io.StringIO()
+        self._lock = threading.Lock()
+
+    def write(self, text: str) -> None:
+        with self._lock:
+            self._buffer.write(text)
+
+    def reset(self) -> str:
+        """Read and reset the buffer contents.  Returns accumulated text."""
+        with self._lock:
+            text = self._buffer.getvalue()
+            self._buffer = io.StringIO()
+            return text
 
 
-def _get_log_buffer() -> io.StringIO:
-    """Get the current thread's log buffer, creating one if needed."""
-    if not hasattr(_log_storage, "buffer"):
-        _log_storage.buffer = io.StringIO()
-    return _log_storage.buffer
+# Thread-local storage for the active _LogContext on each thread.
+_log_tls = threading.local()
 
 
-def _reset_log_buffer() -> str:
-    """Read and reset the current thread's log buffer. Returns accumulated text."""
-    buf = _get_log_buffer()
-    text = buf.getvalue()
-    _log_storage.buffer = io.StringIO()
-    return text
+def _get_log_context() -> "_LogContext | None":
+    """Return the active log context for the current thread, or None."""
+    return getattr(_log_tls, "context", None)
+
+
+def _set_log_context(ctx: "_LogContext | None") -> None:
+    """Set (or clear) the active log context on the current thread."""
+    _log_tls.context = ctx
+
+
+def get_log_context() -> _LogContext:
+    """Return the active log context for the current evaluator call.
+
+    Use this to propagate ``oa.log()`` capture to child threads spawned
+    inside your evaluator::
+
+        import threading
+        import gepa.optimize_anything as oa
+
+        def my_evaluator(candidate):
+            ctx = oa.get_log_context()
+
+            def worker():
+                oa.set_log_context(ctx)
+                oa.log("from child thread")
+
+            t = threading.Thread(target=worker)
+            t.start()
+            t.join()
+            oa.log("from main evaluator thread")
+            return score
+
+    Raises:
+        RuntimeError: If called outside an evaluator invocation.
+    """
+    ctx = _get_log_context()
+    if ctx is None:
+        raise RuntimeError(
+            "No active log context. get_log_context() must be called inside "
+            "an evaluator passed to optimize_anything()."
+        )
+    return ctx
+
+
+def set_log_context(ctx: _LogContext) -> None:
+    """Set the log context on the current thread.
+
+    Call this at the start of a child thread to route ``oa.log()`` output
+    into the parent evaluator's log buffer.  See :func:`get_log_context`
+    for a complete usage example.
+    """
+    _set_log_context(ctx)
 
 
 def log(*args: Any, sep: str = " ", end: str = "\n") -> None:
     """Log diagnostic information during evaluation without printing to stdout.
 
-    Has the same calling convention as ``print()``.  Output is captured per-thread
-    and automatically included in side_info under the ``"log"`` key.
+    Has the same calling convention as ``print()``.  Output is captured
+    per-evaluator-call (thread-safe) and automatically included in
+    side_info under the ``"log"`` key.
 
-    Must only be called inside an evaluator function passed to ``optimize_anything``.
-    Calling it outside that context will emit a warning and the output will be
-    silently discarded on the next evaluation.
+    Must only be called inside an evaluator function passed to
+    ``optimize_anything``.  Calling it outside that context will emit a
+    warning and the output will be silently discarded.
+
+    For child threads spawned by your evaluator, propagate the log context
+    via :func:`get_log_context` / :func:`set_log_context`.
 
     Usage::
 
         import gepa.optimize_anything as oa
         oa.log("Landing distance:", distance, "meters")
     """
-    if not getattr(_log_storage, "inside_evaluator", False):
+    ctx = _get_log_context()
+    if ctx is None:
         warnings.warn(
             "oa.log() called outside of an evaluator function. "
-            "Output will be discarded. Only call oa.log() inside your evaluator.",
+            "Output will be discarded. Only call oa.log() inside your evaluator, "
+            "or propagate the log context to child threads via "
+            "oa.get_log_context() / oa.set_log_context().",
             stacklevel=2,
         )
-    buf = _get_log_buffer()
-    buf.write(sep.join(str(a) for a in args) + end)
+        return
+    text = sep.join(str(a) for a in args) + end
+    ctx.write(text)
 
 
 # Thread-safe stdout / stderr capture utilities are in gepa.utils.stdio_capture.
@@ -295,12 +369,14 @@ class Evaluator(Protocol):
 
         **Reserved side_info keys:**
 
-        The keys ``"log"``, ``"stdout"``, and ``"stderr"`` are reserved for
+        The keys ``"log"``, ``"stdout"``, and ``"stderr"`` are used by
         GEPA's automatic capture output.  If your evaluator returns a
         ``side_info`` dict containing any of these keys *and* the corresponding
         capture mechanism is active (``oa.log()`` for ``"log"``,
-        ``capture_stdio=True`` for ``"stdout"``/``"stderr"``), a
-        ``ValueError`` will be raised.  Rename your keys to avoid collisions.
+        ``capture_stdio=True`` for ``"stdout"``/``"stderr"``), a warning
+        will be emitted and the captured output will be stored under a
+        prefixed key (e.g. ``"_gepa_log"``) to avoid data loss.  Rename
+        your keys to avoid the warning.
 
         **Single-Instance Mode (Holistic Optimization):**
 
@@ -701,13 +777,11 @@ def _create_evaluator_wrapper(
     def wrapped_evaluator(
         candidate: Candidate, example: DataInst | None = None, **kwargs: Any
     ) -> tuple[float, Any, SideInfo]:
-        # Discard any stale oa.log() output from outside evaluator context.
-        # The log() function itself already warns when called outside an evaluator,
-        # so we silently discard here rather than emitting a second warning with
-        # an unhelpful stack trace pointing into wrapper internals.
-        _reset_log_buffer()
-
-        _log_storage.inside_evaluator = True
+        # Create a fresh, shared log context for this evaluator call.
+        # The same _LogContext is accessible from child threads via
+        # oa.get_log_context() / oa.set_log_context().
+        log_ctx = _LogContext()
+        _set_log_context(log_ctx)
 
         # Build full kwargs dict. In per-instance mode, include example so it
         # can be filtered like any other kwarg.
@@ -734,15 +808,15 @@ def _create_evaluator_wrapper(
         finally:
             captured_stdout = stdout_capturer.stop_capture() if stdout_capturer else ""
             captured_stderr = stderr_capturer.stop_capture() if stderr_capturer else ""
-            log_output = _reset_log_buffer()
-            _log_storage.inside_evaluator = False
+            log_output = log_ctx.reset()
+            _set_log_context(None)
 
         # Detect return type and normalize to (score, output, side_info)
         if isinstance(result, tuple):
             score, side_info = result
             side_info = dict(side_info) if side_info is not None else {}
 
-            # Check for key collisions before injecting captured output
+            # Inject captured output, renaming on collision with a warning
             injected: dict[str, str] = {}
             if log_output:
                 injected["log"] = log_output
@@ -751,15 +825,17 @@ def _create_evaluator_wrapper(
             if captured_stderr:
                 injected["stderr"] = captured_stderr
 
-            collisions = set(injected) & set(side_info)
-            if collisions:
-                raise ValueError(
-                    f"Your evaluator returned side_info with key(s) {collisions} that conflict "
-                    f"with keys reserved by GEPA for captured output. Reserved keys: "
-                    f'{{"log", "stdout", "stderr"}}. Please rename your side_info keys to avoid '
-                    f"collisions, or disable capture_stdio / stop calling oa.log() if you want "
-                    f"to manage these keys yourself."
-                )
+            for key in list(injected):
+                if key in side_info:
+                    prefixed = f"_gepa_{key}"
+                    warnings.warn(
+                        f"Your evaluator returned side_info with key '{key}' that conflicts "
+                        f"with GEPA's captured output key. The captured output will be stored "
+                        f"under '{prefixed}' instead.",
+                        stacklevel=2,
+                    )
+                    injected[prefixed] = injected.pop(key)
+
             side_info.update(injected)
             return score, None, side_info
         else:
