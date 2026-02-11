@@ -155,6 +155,7 @@ class TestRefiner:
             engine=EngineConfig(
                 max_metric_calls=5,
                 cache_evaluation=True,
+                cache_evaluation_storage="memory",
             ),
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-5-nano",
@@ -169,7 +170,6 @@ class TestRefiner:
             evaluator=fitness_fn,
             objective="Guess the golden integer. The side_info shows 'off_by' which is how far your guess is from the target. Minimize off_by to 0.",
             config=config,
-            cache_evaluation_storage="memory",
         )
 
         assert result is not None
@@ -188,6 +188,7 @@ class TestRefiner:
                 engine=EngineConfig(
                     max_metric_calls=5,
                     cache_evaluation=True,
+                    cache_evaluation_storage="disk",
                     run_dir=tmp_dir,
                 ),
                 reflection=ReflectionConfig(
@@ -203,7 +204,6 @@ class TestRefiner:
                 evaluator=fitness_fn,
                 objective="Guess the golden integer. The side_info shows 'off_by' which is how far your guess is from the target. Minimize off_by to 0.",
                 config=config,
-                cache_evaluation_storage="disk",
             )
 
             assert result is not None
@@ -251,6 +251,7 @@ class TestRefiner:
             engine=EngineConfig(
                 max_metric_calls=3,
                 cache_evaluation=True,
+                cache_evaluation_storage="memory",
             ),
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-5-nano",
@@ -265,7 +266,6 @@ class TestRefiner:
             evaluator=fitness_fn_with_cache,
             objective="Guess the golden integer. off_by shows distance from target.",
             config=config_with_cache,
-            cache_evaluation_storage="memory",
         )
 
         print(f"\n[Comparison] No cache: {call_counter_no_cache['count']} calls, With cache: {call_counter_with_cache['count']} calls")
@@ -729,6 +729,7 @@ if __name__ == "__main__":
         engine=EngineConfig(
             max_metric_calls=5,
             cache_evaluation=True,
+            cache_evaluation_storage="memory",
         ),
         reflection=ReflectionConfig(
             reflection_lm="openrouter/openai/gpt-5-nano",
@@ -743,7 +744,6 @@ if __name__ == "__main__":
         evaluator=fitness_fn,
         objective="Guess the golden integer. The side_info shows 'off_by' which is how far your guess is from the target. Minimize off_by to 0. Return ONLY an integer.",
         config=config,
-        cache_evaluation_storage="memory",
     )
 
     print(f"\nBest candidate: {result.best_candidate}")

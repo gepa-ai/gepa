@@ -362,6 +362,7 @@ class EngineConfig:
 
     # Evaluation caching
     cache_evaluation: bool = False
+    cache_evaluation_storage: CacheEvaluationStorage = "auto"
 
     # Track top-K best evaluations per example, passed to evaluator via OptimizationState
     # Useful for warm-starting optimization from previous best solutions
@@ -788,7 +789,6 @@ def optimize_anything(
     objective: str | None = None,
     background: str | None = None,
     config: GEPAConfig | None = None,
-    cache_evaluation_storage: CacheEvaluationStorage = "auto",
 ) -> GEPAResult:
     """
     Optimize any parameterized system using evolutionary algorithms with LLM-based reflection.
@@ -817,7 +817,6 @@ def optimize_anything(
         objective: High-level goal guiding LLM reflection.
         background: Domain knowledge / constraints for reflection.
         config: Optional :class:`GEPAConfig`.
-        cache_evaluation_storage: Cache storage backend when caching is enabled.
 
     Returns:
         :class:`GEPAResult` with the best candidate(s), history, and metrics.
@@ -884,10 +883,10 @@ def optimize_anything(
         # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
         if not config.engine.cache_evaluation:
             resolved_cache_mode = "off"
-        elif cache_evaluation_storage == "auto":
+        elif config.engine.cache_evaluation_storage == "auto":
             resolved_cache_mode = "disk" if config.engine.run_dir else "memory"
         else:
-            resolved_cache_mode = cache_evaluation_storage
+            resolved_cache_mode = config.engine.cache_evaluation_storage
 
         # Validate disk mode requires run_dir
         if resolved_cache_mode == "disk" and not config.engine.run_dir:

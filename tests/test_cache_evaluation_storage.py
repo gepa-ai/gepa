@@ -55,6 +55,7 @@ class TestCacheEvaluationStorage:
             engine=EngineConfig(
                 max_metric_calls=5,
                 cache_evaluation=True,  # Enable caching
+                cache_evaluation_storage="memory",
             ),
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-4.1-nano",
@@ -67,7 +68,6 @@ class TestCacheEvaluationStorage:
             evaluator=fitness_fn,
             objective="Guess the golden integer. The side_info tells you how far off you are.",
             config=config,
-            cache_evaluation_storage="memory",
         )
 
         assert result is not None
@@ -85,6 +85,7 @@ class TestCacheEvaluationStorage:
                 engine=EngineConfig(
                     max_metric_calls=3,
                     cache_evaluation=True,
+                    cache_evaluation_storage="disk",
                     run_dir=tmp_dir,
                 ),
                 reflection=ReflectionConfig(
@@ -99,7 +100,6 @@ class TestCacheEvaluationStorage:
                 evaluator=fitness_fn,
                 objective="Guess the golden integer. The side_info tells you how far off you are.",
                 config=config,
-                cache_evaluation_storage="disk",
             )
 
             first_run_calls = call_counter["count"]
@@ -120,6 +120,7 @@ class TestCacheEvaluationStorage:
                 engine=EngineConfig(
                     max_metric_calls=3,
                     cache_evaluation=True,
+                    cache_evaluation_storage="disk",
                     run_dir=tmp_dir,
                 ),
                 reflection=ReflectionConfig(
@@ -133,7 +134,6 @@ class TestCacheEvaluationStorage:
                 evaluator=fitness_fn2,
                 objective="Guess the golden integer. The side_info tells you how far off you are.",
                 config=config2,
-                cache_evaluation_storage="disk",
             )
 
             second_run_calls = call_counter["count"]
@@ -164,7 +164,6 @@ class TestCacheEvaluationStorage:
             evaluator=fitness_fn,
             objective="Guess the golden integer.",
             config=config,
-            cache_evaluation_storage="memory",  # This should be ignored
         )
 
         assert result is not None
@@ -194,7 +193,6 @@ class TestCacheEvaluationStorage:
                 evaluator=fitness_fn,
                 objective="Guess the golden integer.",
                 config=config,
-                cache_evaluation_storage="auto",  # Should resolve to "disk"
             )
 
             # Verify cache files were created (disk mode)
@@ -224,7 +222,6 @@ class TestCacheEvaluationStorage:
             evaluator=fitness_fn,
             objective="Guess the golden integer.",
             config=config,
-            cache_evaluation_storage="auto",  # Should resolve to "memory"
         )
 
         assert result is not None
@@ -238,6 +235,7 @@ class TestCacheEvaluationStorage:
             engine=EngineConfig(
                 max_metric_calls=3,
                 cache_evaluation=True,
+                cache_evaluation_storage="disk",  # Explicit disk without run_dir
                 run_dir=None,  # No run_dir
             ),
             reflection=ReflectionConfig(
@@ -252,7 +250,6 @@ class TestCacheEvaluationStorage:
                 evaluator=fitness_fn,
                 objective="Guess the golden integer.",
                 config=config,
-                cache_evaluation_storage="disk",  # Explicit disk without run_dir
             )
 
 
@@ -267,6 +264,7 @@ if __name__ == "__main__":
         engine=EngineConfig(
             max_metric_calls=5,
             cache_evaluation=True,
+            cache_evaluation_storage="memory",
         ),
         reflection=ReflectionConfig(
             reflection_lm="openrouter/openai/gpt-4.1-nano",
@@ -279,7 +277,6 @@ if __name__ == "__main__":
         evaluator=fitness_fn,
         objective="Guess the golden integer. The side_info tells you how far off you are (off_by field). Try to minimize off_by to 0.",
         config=config,
-        cache_evaluation_storage="memory",
     )
 
     print(f"\nBest candidate: {result.best_candidate}")
