@@ -214,7 +214,9 @@ class _LogContext:
     def reset(self) -> str:
         """Read and reset the buffer contents.  Returns accumulated text."""
         with self._lock:
-            text = self._buffer.getvalue()
+            old = self._buffer
+            text = old.getvalue()
+            old.close()
             self._buffer = io.StringIO()
             return text
 
@@ -336,19 +338,16 @@ class Evaluator(Protocol):
           and ``valset=None`` are passed to ``optimize_anything``), this parameter will NOT be
           passed to the evaluator at all.
 
-        - **opt_state** *(optional)*: An :class:`OptimizationState` instance containing
+        - **opt_state** *(optional)*: An ``OptimizationState`` instance containing
           accumulated optimization context (e.g. ``best_example_evals``).  To receive it,
           simply declare ``opt_state`` as a parameter in your evaluator signature; it will
           be filtered out automatically if not declared.
 
-          .. note::
-
-             ``opt_state`` is a **reserved parameter name**.  GEPA injects this
-             keyword argument automatically during evaluation.  Do not use the
-             name ``opt_state`` for an unrelated parameter in your evaluator
-             signature — doing so will cause it to receive the
-             :class:`OptimizationState` object instead of whatever value you
-             intended.
+          **Note:** ``opt_state`` is a **reserved parameter name**.  GEPA injects this
+          keyword argument automatically during evaluation.  Do not use the
+          name ``opt_state`` for an unrelated parameter in your evaluator
+          signature — doing so will cause it to receive the
+          ``OptimizationState`` object instead of whatever value you intended.
 
         **Returns:**
 
@@ -763,12 +762,6 @@ class EvaluatorWrapper:
         else:
             accepted_params = set(sig.parameters.keys())
 
-        # Acquire per-thread stream capture from the shared manager if requested.
-        stdout_capturer: ThreadLocalStreamCapture | None = None
-        stderr_capturer: ThreadLocalStreamCapture | None = None
-        if capture_stdio:
-            stdout_capturer, stderr_capturer = stream_manager.acquire()
-
         def _filter_kwargs(kwargs: dict) -> dict:
             if accepted_params is None:
                 return kwargs
@@ -797,10 +790,14 @@ class EvaluatorWrapper:
             if str_candidate_mode:
                 eval_candidate = candidate[_STR_CANDIDATE_KEY]
 
-            # Start stdout/stderr capture if enabled
-            if stdout_capturer:
+            # Acquire per-thread stream capture from the shared manager per-call.
+            # This scopes the sys.stdout/stderr replacement to only the duration
+            # of evaluator execution, restoring the originals between calls.
+            stdout_capturer: ThreadLocalStreamCapture | None = None
+            stderr_capturer: ThreadLocalStreamCapture | None = None
+            if capture_stdio:
+                stdout_capturer, stderr_capturer = stream_manager.acquire()
                 stdout_capturer.start_capture()
-            if stderr_capturer:
                 stderr_capturer.start_capture()
 
             try:
@@ -808,6 +805,8 @@ class EvaluatorWrapper:
             finally:
                 captured_stdout = stdout_capturer.stop_capture() if stdout_capturer else ""
                 captured_stderr = stderr_capturer.stop_capture() if stderr_capturer else ""
+                if capture_stdio:
+                    stream_manager.release()
                 log_output = log_ctx.reset()
                 _set_log_context(None)
 
@@ -832,7 +831,7 @@ class EvaluatorWrapper:
                             f"Your evaluator returned side_info with key '{key}' that conflicts "
                             f"with GEPA's captured output key. The captured output will be stored "
                             f"under '{prefixed}' instead.",
-                            stacklevel=3,
+                            stacklevel=2,
                         )
                         injected[prefixed] = injected.pop(key)
 
@@ -856,16 +855,11 @@ class EvaluatorWrapper:
     ) -> tuple[float, Any, SideInfo]:
         return self._wrapped(candidate, example=example, **kwargs)
 
-    def close(self) -> None:
-        """Release stream capture resources."""
-        if self._capture_stdio:
-            stream_manager.release()
-
     def __enter__(self) -> "EvaluatorWrapper":
         return self
 
     def __exit__(self, *exc: Any) -> None:
-        self.close()
+        pass
 
 
 def optimize_anything(

@@ -90,18 +90,25 @@ class TestEvaluatorWrapperContextManager:
         with wrapper as w:
             assert w is wrapper
 
-    def test_close_releases_capture(self):
-        """close() should release stream capture resources."""
+    def test_capture_scoped_per_call_not_per_wrapper(self):
+        """sys.stdout should NOT be replaced during wrapper lifetime — only during calls."""
 
         def my_eval(candidate, **kwargs):
+            print("captured")
             return 1.0
 
+        original_stdout = sys.stdout
         wrapper = EvaluatorWrapper(my_eval, single_instance_mode=True, capture_stdio=True)
-        # Capture is acquired; close should release it
-        wrapper.close()
+        # sys.stdout should still be the original after construction
+        assert sys.stdout is original_stdout
+        # Call the wrapper — capture should happen only during this call
+        _, _, side_info = wrapper({"x": "1"}, example=_SINGLE_INSTANCE_SENTINEL)
+        assert "captured" in side_info.get("stdout", "")
+        # After the call, sys.stdout should be restored
+        assert sys.stdout is original_stdout
 
-    def test_exit_calls_close_on_exception(self):
-        """__exit__ should release resources even when an exception occurs."""
+    def test_exit_runs_without_error_on_exception(self):
+        """__exit__ should not raise even when an exception occurs inside the with block."""
 
         def my_eval(candidate, **kwargs):
             return 1.0
@@ -109,7 +116,7 @@ class TestEvaluatorWrapperContextManager:
         with pytest.raises(ValueError, match="test error"):
             with EvaluatorWrapper(my_eval, single_instance_mode=True, capture_stdio=True):
                 raise ValueError("test error")
-        # If we get here, __exit__ ran without error (resources released)
+        # If we get here, __exit__ ran without error
 
 
 # ---------------------------------------------------------------------------

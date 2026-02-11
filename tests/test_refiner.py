@@ -712,6 +712,10 @@ class TestRefinerFrontierTypes:
 
         call_counter = {"count": 0}
 
+        # This function is passed directly to OptimizeAnythingAdapter (bypassing
+        # EvaluatorWrapper), so it must return the adapter's internal 3-tuple
+        # format (score, output, side_info) rather than the public Evaluator
+        # protocol format of (score, side_info) or plain float.
         def raw_fitness_fn(candidate, example, **kwargs):
             call_counter["count"] += 1
             golden = example["golden"]
