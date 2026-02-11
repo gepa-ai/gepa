@@ -376,27 +376,28 @@ class TestRefiner:
             }
 
         # Wrap fitness_fn the same way optimize_anything does
-        with EvaluatorWrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
-            refiner_config = RefinerConfig(
-                refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
-                max_refinements=1,
-            )
+        wrapped = EvaluatorWrapper(raw_fitness_fn, single_instance_mode=True)
 
-            adapter = OptimizeAnythingAdapter(
-                evaluator=wrapped,
-                parallel=False,
-                refiner_config=refiner_config,
-                cache_mode="off",
-            )
+        refiner_config = RefinerConfig(
+            refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
+            max_refinements=1,
+        )
 
-            # Build candidate with refiner_prompt (as optimize_anything would auto-inject)
-            candidate = {
-                "number": "50",
-                "refiner_prompt": "Improve the guess. Return a JSON dict with the 'number' key.",
-            }
+        adapter = OptimizeAnythingAdapter(
+            evaluator=wrapped,
+            parallel=False,
+            refiner_config=refiner_config,
+            cache_mode="off",
+        )
 
-            # Call _evaluate_single_with_refinement directly
-            score, output, side_info = adapter._evaluate_single_with_refinement(candidate, _SINGLE_INSTANCE_SENTINEL)
+        # Build candidate with refiner_prompt (as optimize_anything would auto-inject)
+        candidate = {
+            "number": "50",
+            "refiner_prompt": "Improve the guess. Return a JSON dict with the 'number' key.",
+        }
+
+        # Call _evaluate_single_with_refinement directly
+        score, output, side_info = adapter._evaluate_single_with_refinement(candidate, _SINGLE_INSTANCE_SENTINEL)
 
         # User fields should be at top level (not nested under a target param)
         assert "guess" in side_info, f"User field 'guess' missing from side_info: {side_info.keys()}"
@@ -446,30 +447,31 @@ class TestRefiner:
                 "hint": 'The target is 42. Return {"number": "42"} to get a perfect score.',
             }
 
-        with EvaluatorWrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
-            refiner_config = RefinerConfig(
-                refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
-                max_refinements=3,
-            )
+        wrapped = EvaluatorWrapper(raw_fitness_fn, single_instance_mode=True)
 
-            adapter = OptimizeAnythingAdapter(
-                evaluator=wrapped,
-                parallel=False,
-                refiner_config=refiner_config,
-                cache_mode="off",
-            )
+        refiner_config = RefinerConfig(
+            refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
+            max_refinements=3,
+        )
 
-            # Deliberately bad seed — far from target
-            candidate = {
-                "number": "0",
-                "refiner_prompt": (
-                    "You are improving a number-guessing candidate. "
-                    "The evaluation feedback contains 'off_by' (distance from target) and a 'hint'. "
-                    "Return a JSON dict with the 'number' key set to a better guess."
-                ),
-            }
+        adapter = OptimizeAnythingAdapter(
+            evaluator=wrapped,
+            parallel=False,
+            refiner_config=refiner_config,
+            cache_mode="off",
+        )
 
-            score, output, side_info = adapter._evaluate_single_with_refinement(candidate, _SINGLE_INSTANCE_SENTINEL)
+        # Deliberately bad seed — far from target
+        candidate = {
+            "number": "0",
+            "refiner_prompt": (
+                "You are improving a number-guessing candidate. "
+                "The evaluation feedback contains 'off_by' (distance from target) and a 'hint'. "
+                "Return a JSON dict with the 'number' key set to a better guess."
+            ),
+        }
+
+        score, output, side_info = adapter._evaluate_single_with_refinement(candidate, _SINGLE_INSTANCE_SENTINEL)
 
         refiner_info = side_info["refiner_prompt_specific_info"]
         attempts = refiner_info["Attempts"]
@@ -509,26 +511,27 @@ class TestRefiner:
             score = -off_by
             return score, {"guess": guess, "off_by": off_by}
 
-        with EvaluatorWrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
-            refiner_config = RefinerConfig(
-                refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
-                max_refinements=2,
-            )
+        wrapped = EvaluatorWrapper(raw_fitness_fn, single_instance_mode=True)
 
-            adapter = OptimizeAnythingAdapter(
-                evaluator=wrapped,
-                parallel=False,
-                refiner_config=refiner_config,
-                cache_mode="off",
-            )
+        refiner_config = RefinerConfig(
+            refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
+            max_refinements=2,
+        )
 
-            # Seed already near-perfect — refiner shouldn't make it worse
-            candidate = {
-                "number": "41",
-                "refiner_prompt": "Improve the guess. Return a JSON dict with 'number'.",
-            }
+        adapter = OptimizeAnythingAdapter(
+            evaluator=wrapped,
+            parallel=False,
+            refiner_config=refiner_config,
+            cache_mode="off",
+        )
 
-            score, output, side_info = adapter._evaluate_single_with_refinement(candidate, _SINGLE_INSTANCE_SENTINEL)
+        # Seed already near-perfect — refiner shouldn't make it worse
+        candidate = {
+            "number": "41",
+            "refiner_prompt": "Improve the guess. Return a JSON dict with 'number'.",
+        }
+
+        score, output, side_info = adapter._evaluate_single_with_refinement(candidate, _SINGLE_INSTANCE_SENTINEL)
 
         attempts = side_info["refiner_prompt_specific_info"]["Attempts"]
         original_score = attempts[0]["score"]
@@ -567,27 +570,28 @@ class TestRefiner:
         def bad_refiner_lm(prompt: str) -> str:
             return "this is not valid json at all"
 
-        with EvaluatorWrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
-            refiner_config = RefinerConfig(
-                refiner_lm=bad_refiner_lm,
-                max_refinements=3,
-            )
+        wrapped = EvaluatorWrapper(raw_fitness_fn, single_instance_mode=True)
 
-            adapter = OptimizeAnythingAdapter(
-                evaluator=wrapped,
-                parallel=False,
-                refiner_config=refiner_config,
-                cache_mode="off",
-            )
+        refiner_config = RefinerConfig(
+            refiner_lm=bad_refiner_lm,
+            max_refinements=3,
+        )
 
-            candidate = {
-                "number": "50",
-                "refiner_prompt": "Improve the guess. Return a JSON dict with 'number'.",
-            }
+        adapter = OptimizeAnythingAdapter(
+            evaluator=wrapped,
+            parallel=False,
+            refiner_config=refiner_config,
+            cache_mode="off",
+        )
 
-            score, output, side_info = adapter._evaluate_single_with_refinement(
-                candidate, _SINGLE_INSTANCE_SENTINEL
-            )
+        candidate = {
+            "number": "50",
+            "refiner_prompt": "Improve the guess. Return a JSON dict with 'number'.",
+        }
+
+        score, output, side_info = adapter._evaluate_single_with_refinement(
+            candidate, _SINGLE_INSTANCE_SENTINEL
+        )
 
         refiner_info = side_info["refiner_prompt_specific_info"]
 

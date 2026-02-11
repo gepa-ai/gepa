@@ -128,37 +128,37 @@ useful when different parameters have different failure modes.
 
 **Complete Example:**
 
-```python
-{
-    # Multi-objective scores
-    "scores": {
-        "accuracy": 0.73,
-        "response_time_ms": 850,  # Already inverted (higher=better)
-        "user_satisfaction": 4.2
-    },
-    
-    # Shared evaluation context
-    "Input": "Translate 'Hello world' to French",
-    "Output": "Salut monde",
-    "Expected": "Bonjour le monde",
-    "Feedback": "Translation is too informal for the context",
-    "ExecutionTime": 0.85, # Numeric value, still useful for context, but not "higher is better".
-    
-    # Parameter-specific diagnostics
-    "system_prompt_specific_info": {
+::
+
+    {
+        # Multi-objective scores
         "scores": {
-            "tone_appropriateness": 0.3  # Low score explains the issue
+            "accuracy": 0.73,
+            "response_time_ms": 850,  # Already inverted (higher=better)
+            "user_satisfaction": 4.2
         },
-        "ParsedTone": "casual",
-        "ExpectedTone": "formal",
-        "Analysis": "System prompt led to overly casual translation"
-    },
-    
-    "temperature_specific_info": {
-        "Feedback": "Temperature 0.9 caused inconsistent outputs"
+
+        # Shared evaluation context
+        "Input": "Translate 'Hello world' to French",
+        "Output": "Salut monde",
+        "Expected": "Bonjour le monde",
+        "Feedback": "Translation is too informal for the context",
+        "ExecutionTime": 0.85, # Numeric value, still useful for context, but not "higher is better".
+
+        # Parameter-specific diagnostics
+        "system_prompt_specific_info": {
+            "scores": {
+                "tone_appropriateness": 0.3  # Low score explains the issue
+            },
+            "ParsedTone": "casual",
+            "ExpectedTone": "formal",
+            "Analysis": "System prompt led to overly casual translation"
+        },
+
+        "temperature_specific_info": {
+            "Feedback": "Temperature 0.9 caused inconsistent outputs"
+        }
     }
-}
-```
 
 **Best Practices:**
 
@@ -727,22 +727,21 @@ def make_litellm_lm(model_name: str) -> LanguageModel:
 
 
 class EvaluatorWrapper:
-    """Context manager wrapping a user's evaluator with GEPA's normalization layer.
+    """Wraps a user's evaluator with GEPA's normalization layer.
 
     Wraps the user's evaluator to:
-    1. Handle single-instance mode (calls evaluator without example parameter)
-    2. Unwrap candidate dict to str when str_candidate_mode is True
-    3. Filter kwargs to only pass what the evaluator accepts (incl. opt_state)
-    4. Capture oa.log() output and optionally stdout/stderr
-    5. Detect whether evaluator returns (score, side_info) tuple or just score
-    6. Normalize return value to always be (score, output, side_info) tuple
 
-    Use as a context manager to ensure stream capture resources are released::
+    1. Handle single-instance mode (calls evaluator without ``example`` parameter)
+    2. Unwrap candidate dict to str when ``str_candidate_mode`` is True
+    3. Filter kwargs to only pass what the evaluator accepts (incl. ``opt_state``)
+    4. Capture ``oa.log()`` output and optionally stdout/stderr
+    5. Detect whether evaluator returns ``(score, side_info)`` tuple or just ``score``
+    6. Normalize return value to always be ``(score, output, side_info)`` tuple
 
-        with EvaluatorWrapper(eval_fn, single_instance_mode=True) as wrapper:
-            score, output, side_info = wrapper(candidate, example=example)
+    The wrapper is callable — calling the instance invokes the wrapped evaluator::
 
-    The wrapper is callable — calling the instance invokes the wrapped evaluator.
+        wrapper = EvaluatorWrapper(eval_fn, single_instance_mode=True)
+        score, output, side_info = wrapper(candidate, example=example)
     """
 
     def __init__(
@@ -776,9 +775,9 @@ class EvaluatorWrapper:
             log_ctx = _LogContext()
             _set_log_context(log_ctx)
 
-            # Build full kwargs dict. In per-instance mode, include example so it
-            # can be filtered like any other kwarg.
-            if single_instance_mode and example is _SINGLE_INSTANCE_SENTINEL:
+            # Build full kwargs dict. In single-instance mode, don't forward
+            # example to the evaluator at all.
+            if single_instance_mode:
                 all_kwargs = kwargs
             else:
                 all_kwargs = {"example": example, **kwargs}
@@ -854,12 +853,6 @@ class EvaluatorWrapper:
         self, candidate: Candidate, example: DataInst | None = None, **kwargs: Any
     ) -> tuple[float, Any, SideInfo]:
         return self._wrapped(candidate, example=example, **kwargs)
-
-    def __enter__(self) -> "EvaluatorWrapper":
-        return self
-
-    def __exit__(self, *exc: Any) -> None:
-        pass
 
 
 def optimize_anything(
@@ -953,37 +946,23 @@ def optimize_anything(
         effective_dataset = dataset if dataset is not None else [None]  # type: ignore[list-item]
 
     # Wrap the evaluator to handle signature normalization, log/stdout capture, etc.
-    # Use as a context manager to ensure stream capture resources are released.
-    with EvaluatorWrapper(
+    wrapped_evaluator = EvaluatorWrapper(
         evaluator,
         single_instance_mode,
         capture_stdio=config.engine.capture_stdio,
         str_candidate_mode=str_candidate_mode,
-    ) as wrapped_evaluator:
-        return _run_optimization(
-            wrapped_evaluator=wrapped_evaluator,
-            seed_candidate=seed_candidate,
-            effective_dataset=effective_dataset,
-            valset=valset,
-            objective=objective,
-            background=background,
-            config=config,
-        )
+    )
 
-
-def _run_optimization(
-    wrapped_evaluator: "EvaluatorWrapper",
-    seed_candidate: Candidate | list[Candidate],
-    effective_dataset: list[DataInst],
-    valset: list[DataInst] | None,
-    objective: str | None,
-    background: str | None,
-    config: GEPAConfig,
-) -> GEPAResult:
-    """Core optimization logic, called from within the EvaluatorWrapper context manager."""
     # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
     if not config.engine.cache_evaluation:
         resolved_cache_mode = "off"
+        if config.engine.cache_evaluation_storage != "auto":
+            warnings.warn(
+                f"cache_evaluation_storage={config.engine.cache_evaluation_storage!r} is set but "
+                f"cache_evaluation=False, so caching is disabled. Set cache_evaluation=True to "
+                f"enable caching with the specified storage mode.",
+                stacklevel=2,
+            )
     elif config.engine.cache_evaluation_storage == "auto":
         resolved_cache_mode = "disk" if config.engine.run_dir else "memory"
     else:
