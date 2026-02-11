@@ -19,13 +19,9 @@ from gepa.core.adapter import EvaluationBatch, GEPAAdapter
 
 if TYPE_CHECKING:
     from opik_optimizer.api_objects import chat_prompt
-    from opik_optimizer.task_evaluator import evaluate_with_result
+    from opik_optimizer.core.evaluation import evaluate_with_result
     from opik_optimizer.utils.candidate_selection import select_candidate
-
-    try:
-        from opik_optimizer.optimizable_agent import OptimizableAgent
-    except Exception:  # pragma: no cover - compatibility path
-        from opik_optimizer.agents.optimizable_agent import OptimizableAgent
+    from opik_optimizer.agents.optimizable_agent import OptimizableAgent
 
 _IMPORT_ERROR: Exception | None = None
 helpers: Any = None
@@ -37,13 +33,9 @@ OptimizableAgent: Any = None
 try:
     from opik_optimizer import helpers
     from opik_optimizer.api_objects import chat_prompt
-    from opik_optimizer.task_evaluator import evaluate_with_result
+    from opik_optimizer.core.evaluation import evaluate_with_result
     from opik_optimizer.utils.candidate_selection import select_candidate
-
-    try:
-        from opik_optimizer.optimizable_agent import OptimizableAgent
-    except Exception:
-        from opik_optimizer.agents.optimizable_agent import OptimizableAgent
+    from opik_optimizer.agents.optimizable_agent import OptimizableAgent
 except Exception as exc:  # pragma: no cover - optional dependency path
     _IMPORT_ERROR = exc
 
@@ -185,13 +177,17 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
             candidates = [str(c).strip() for c in raw_candidates if c is not None and str(c).strip()]
 
         if not candidates:
-            try:
-                single_output = agent.invoke_agent(
-                    prompts={"prompt": prompt_variant},
-                    dataset_item=dataset_item,
-                    allow_tool_use=allow_tool_use,
-                )
-            except TypeError:
+            if hasattr(agent, "invoke_agent"):
+                try:
+                    single_output = agent.invoke_agent(
+                        prompts={"prompt": prompt_variant},
+                        dataset_item=dataset_item,
+                        allow_tool_use=allow_tool_use,
+                    )
+                except TypeError:
+                    messages = prompt_variant.get_messages(dataset_item)
+                    single_output = agent.invoke(messages)
+            else:
                 messages = prompt_variant.get_messages(dataset_item)
                 single_output = agent.invoke(messages)
 
