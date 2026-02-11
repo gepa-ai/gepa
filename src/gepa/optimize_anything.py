@@ -9,7 +9,6 @@ import inspect
 import io
 import os
 import random
-import sys
 import threading
 import warnings
 from collections.abc import Callable
@@ -45,6 +44,7 @@ from gepa.strategies.component_selector import (
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
+from gepa.utils.stdio_capture import ThreadLocalStreamCapture, stream_manager
 
 OptimizableParam = str
 Candidate = dict[str, OptimizableParam]
@@ -236,122 +236,9 @@ def log(*args: Any, sep: str = " ", end: str = "\n") -> None:
     buf.write(sep.join(str(a) for a in args) + end)
 
 
-# ---------------------------------------------------------------------------
-# Thread-safe stdout / stderr capture
-# ---------------------------------------------------------------------------
-
-
-class _ThreadLocalStreamCapture:
-    """A ``sys.stdout`` / ``sys.stderr`` replacement that captures output per-thread.
-
-    Threads that have called :meth:`start_capture` get their writes routed to a
-    private ``StringIO``; all other threads pass through to the original stream.
-    """
-
-    def __init__(self, original: Any) -> None:
-        self._original = original
-        self._local = threading.local()
-
-    # -- file-like interface --------------------------------------------------
-
-    def write(self, text: str) -> int:
-        if getattr(self._local, "capturing", False):
-            return self._local.buffer.write(text)
-        return self._original.write(text)
-
-    def flush(self) -> None:
-        if getattr(self._local, "capturing", False):
-            self._local.buffer.flush()
-        self._original.flush()
-
-    def fileno(self) -> int:
-        # Always delegate to the original stream so that libraries (tqdm, rich,
-        # subprocess, logging handlers, etc.) that call sys.stdout.fileno()
-        # continue to work even while this thread is being captured.
-        return self._original.fileno()
-
-    @property
-    def encoding(self) -> str:
-        return self._original.encoding
-
-    @property
-    def errors(self) -> str | None:
-        return self._original.errors
-
-    def isatty(self) -> bool:
-        if getattr(self._local, "capturing", False):
-            return False
-        return self._original.isatty()
-
-    def writable(self) -> bool:
-        return True
-
-    def readable(self) -> bool:
-        return False
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._original, name)
-
-    # -- capture control ------------------------------------------------------
-
-    def start_capture(self) -> None:
-        """Start capturing for the current thread."""
-        self._local.capturing = True
-        self._local.buffer = io.StringIO()
-
-    def stop_capture(self) -> str:
-        """Stop capturing and return the captured text for the current thread."""
-        self._local.capturing = False
-        text = self._local.buffer.getvalue()
-        self._local.buffer = io.StringIO()
-        return text
-
-
-class _StreamCaptureManager:
-    """Reference-counted manager for per-thread stdout/stderr capture.
-
-    Allows multiple concurrent optimize_anything calls with capture_stdio=True
-    to share the same stream wrappers. sys.stdout/stderr are only restored when
-    the last user releases.
-    """
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._refcount = 0
-        self._stdout_capturer: _ThreadLocalStreamCapture | None = None
-        self._stderr_capturer: _ThreadLocalStreamCapture | None = None
-        self._original_stdout: Any = None
-        self._original_stderr: Any = None
-
-    def acquire(self) -> tuple[_ThreadLocalStreamCapture, _ThreadLocalStreamCapture]:
-        """Install capture wrappers (or reuse existing). Returns (stdout_cap, stderr_cap)."""
-        with self._lock:
-            if self._refcount == 0:
-                self._original_stdout = sys.stdout
-                self._original_stderr = sys.stderr
-                self._stdout_capturer = _ThreadLocalStreamCapture(sys.stdout)
-                self._stderr_capturer = _ThreadLocalStreamCapture(sys.stderr)
-                sys.stdout = self._stdout_capturer  # type: ignore[assignment]
-                sys.stderr = self._stderr_capturer  # type: ignore[assignment]
-            self._refcount += 1
-            assert self._stdout_capturer is not None and self._stderr_capturer is not None
-            return self._stdout_capturer, self._stderr_capturer
-
-    def release(self) -> None:
-        """Decrement ref count. Restores original streams when last user releases."""
-        with self._lock:
-            self._refcount -= 1
-            if self._refcount <= 0:
-                if self._original_stdout is not None:
-                    sys.stdout = self._original_stdout
-                if self._original_stderr is not None:
-                    sys.stderr = self._original_stderr
-                self._stdout_capturer = None
-                self._stderr_capturer = None
-                self._refcount = 0
-
-
-_stream_manager = _StreamCaptureManager()
+# Thread-safe stdout / stderr capture utilities are in gepa.utils.stdio_capture.
+# The module-level ``stream_manager`` singleton and ``ThreadLocalStreamCapture``
+# class are imported at the top of this file.
 
 
 class Evaluator(Protocol):
@@ -800,10 +687,10 @@ def _create_evaluator_wrapper(
         accepted_params = set(sig.parameters.keys())
 
     # Acquire per-thread stream capture from the shared manager if requested.
-    stdout_capturer: _ThreadLocalStreamCapture | None = None
-    stderr_capturer: _ThreadLocalStreamCapture | None = None
+    stdout_capturer: ThreadLocalStreamCapture | None = None
+    stderr_capturer: ThreadLocalStreamCapture | None = None
     if capture_stdio:
-        stdout_capturer, stderr_capturer = _stream_manager.acquire()
+        stdout_capturer, stderr_capturer = stream_manager.acquire()
 
     def _filter_kwargs(kwargs: dict) -> dict:
         if accepted_params is None:
@@ -888,7 +775,7 @@ def _create_evaluator_wrapper(
     def cleanup() -> None:
         """Release stream capture resources."""
         if capture_stdio:
-            _stream_manager.release()
+            stream_manager.release()
 
     return wrapped_evaluator, cleanup
 
