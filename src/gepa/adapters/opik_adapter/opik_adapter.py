@@ -140,12 +140,16 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
                 self._val_item_ids = set()
 
     def _resolve_policy(self, prompt_variant: chat_prompt.ChatPrompt) -> str:
-        if self._candidate_selection_policy:
-            return self._candidate_selection_policy
+        if isinstance(self._candidate_selection_policy, str):
+            policy = self._candidate_selection_policy.strip()
+            if policy:
+                return policy
         model_kwargs = prompt_variant.model_kwargs or {}
-        policy = model_kwargs.get("candidate_selection_policy") or model_kwargs.get("selection_policy")
+        policy = model_kwargs.get("candidate_selection_policy") or model_kwargs.get(
+            "selection_policy"
+        )
         if isinstance(policy, str) and policy.strip():
-            return policy
+            return policy.strip()
         return "best_by_metric"
 
     def _extract_candidate_logprobs(self, agent: OptimizableAgent, candidates: list[str]) -> list[float] | None:
@@ -271,6 +275,8 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
                 break
             dataset_item_ids.append(str(dataset_item_id))
 
+        eval_dataset = self._resolve_dataset_for_item_ids(dataset_item_ids)
+
         configuration_updates = helpers.drop_none(
             {
                 "gepa": helpers.drop_none(
@@ -284,7 +290,7 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         )
         experiment_config = self._prepare_experiment_config(
             prompt=prompt_variant,
-            dataset=self._dataset,
+            dataset=eval_dataset,
             metric=self._metric,
             experiment_config=self._experiment_config,
             configuration_updates=configuration_updates,
@@ -354,7 +360,6 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
             )
             return {"llm_output": output}
 
-        eval_dataset = self._resolve_dataset_for_item_ids(dataset_item_ids)
         try:
             _, eval_result = evaluate_with_result(
                 dataset=eval_dataset,

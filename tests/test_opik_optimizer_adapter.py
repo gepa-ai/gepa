@@ -287,6 +287,62 @@ def test_opik_adapter_uses_validation_dataset(monkeypatch: pytest.MonkeyPatch) -
     assert result.scores == [1.0]
 
 
+def test_opik_adapter_prepares_experiment_config_with_eval_dataset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompt = ChatPrompt(system="Answer", user="{input}")
+    metric = _make_metric(1.0)
+    train_dataset = DummyDataset(name="train", items=[{"id": "train-1"}])
+    val_dataset = DummyDataset(name="val", items=[{"id": "val-1"}])
+
+    batch = [
+        OpikDataInst(
+            input_text="Which?",
+            answer="A",
+            additional_context={},
+            opik_item={"id": "val-1", "input": "Which?", "answer": "A"},
+        )
+    ]
+
+    captured: dict[str, Any] = {}
+
+    def fake_prepare_experiment_config(**kwargs: Any) -> dict[str, Any]:
+        captured["dataset"] = kwargs.get("dataset")
+        return {"project_name": "TestProject"}
+
+    def fake_evaluate_with_result(**kwargs: Any) -> tuple[float, Any]:
+        evaluated_task = kwargs["evaluated_task"]
+        output = evaluated_task(batch[0].opik_item)
+        score_result = SimpleNamespace(name=metric.__name__, value=1.0)
+        test_result = SimpleNamespace(
+            test_case=SimpleNamespace(
+                dataset_item_id=batch[0].opik_item["id"],
+                task_output=output,
+            ),
+            score_results=[score_result],
+        )
+        return 1.0, SimpleNamespace(test_results=[test_result])
+
+    monkeypatch.setattr(
+        "gepa.adapters.opik_adapter.opik_adapter.evaluate_with_result",
+        fake_evaluate_with_result,
+    )
+
+    adapter = OpikAdapter(
+        base_prompt=prompt,
+        dataset=train_dataset,
+        validation_dataset=val_dataset,
+        metric=metric,
+        instantiate_agent=lambda _prompt, _project=None: DummyAgent(),
+        prepare_experiment_config=fake_prepare_experiment_config,
+        system_fallback="Answer",
+    )
+
+    result = adapter.evaluate(batch, {"system_prompt": "Answer"}, capture_traces=False)
+    assert captured["dataset"] is val_dataset
+    assert result.scores == [1.0]
+
+
 def test_opik_adapter_uses_primary_combined_score_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -420,3 +476,34 @@ def test_opik_adapter_enables_tool_use_for_sampling() -> None:
     adapter.evaluate(batch, {"system_prompt": "Answer"}, capture_traces=False)
     assert agent.invoke_agent_candidates_calls
     assert agent.invoke_agent_candidates_calls[0]["allow_tool_use"] is True
+
+
+def test_opik_adapter_ignores_blank_candidate_selection_policy() -> None:
+    prompt = ChatPrompt(
+        system="Answer",
+        user="{input}",
+        model_parameters={"selection_policy": "max_logprob"},
+    )
+    metric = _make_metric(1.0)
+    agent = DummyCandidateAgent()
+
+    adapter = OpikAdapter(
+        base_prompt=prompt,
+        dataset=DummyDataset(),
+        metric=metric,
+        instantiate_agent=lambda _prompt, _project=None: agent,
+        prepare_experiment_config=lambda **_: {"project_name": "TestProject"},
+        system_fallback="Answer",
+        candidate_selection_policy="   ",
+    )
+
+    batch = [
+        OpikDataInst(
+            input_text="Which?",
+            answer="A",
+            additional_context={},
+            opik_item={"input": "Which?", "answer": "A"},
+        )
+    ]
+    result = adapter.evaluate(batch, {"system_prompt": "Answer"}, capture_traces=False)
+    assert result.outputs == [{"output": "A"}]
