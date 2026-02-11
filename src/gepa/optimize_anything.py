@@ -261,8 +261,7 @@ def get_log_context() -> _LogContext:
     ctx = _get_log_context()
     if ctx is None:
         raise RuntimeError(
-            "No active log context. get_log_context() must be called inside "
-            "an evaluator passed to optimize_anything()."
+            "No active log context. get_log_context() must be called inside an evaluator passed to optimize_anything()."
         )
     return ctx
 
@@ -728,12 +727,145 @@ def make_litellm_lm(model_name: str) -> LanguageModel:
     return _lm
 
 
+class EvaluatorWrapper:
+    """Context manager wrapping a user's evaluator with GEPA's normalization layer.
+
+    Use as a context manager to ensure stream capture resources are released::
+
+        with _create_evaluator_wrapper(eval_fn, ...) as wrapper:
+            score, output, side_info = wrapper(candidate, example=example)
+
+    The wrapper is callable — calling the instance invokes the wrapped evaluator.
+    """
+
+    def __init__(
+        self,
+        evaluator_fn: Callable[..., Any],
+        single_instance_mode: bool,
+        capture_stdio: bool = False,
+        str_candidate_mode: bool = False,
+    ) -> None:
+        self._capture_stdio = capture_stdio
+
+        # Inspect the evaluator's signature once to determine which kwargs it accepts.
+        sig = inspect.signature(evaluator_fn)
+        has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        if has_var_keyword:
+            accepted_params = None  # accept all
+        else:
+            accepted_params = set(sig.parameters.keys())
+
+        # Acquire per-thread stream capture from the shared manager if requested.
+        stdout_capturer: ThreadLocalStreamCapture | None = None
+        stderr_capturer: ThreadLocalStreamCapture | None = None
+        if capture_stdio:
+            stdout_capturer, stderr_capturer = stream_manager.acquire()
+
+        def _filter_kwargs(kwargs: dict) -> dict:
+            if accepted_params is None:
+                return kwargs
+            return {k: v for k, v in kwargs.items() if k in accepted_params}
+
+        def wrapped_evaluator(
+            candidate: Candidate, example: DataInst | None = None, **kwargs: Any
+        ) -> tuple[float, Any, SideInfo]:
+            # Create a fresh, shared log context for this evaluator call.
+            # The same _LogContext is accessible from child threads via
+            # oa.get_log_context() / oa.set_log_context().
+            log_ctx = _LogContext()
+            _set_log_context(log_ctx)
+
+            # Build full kwargs dict. In per-instance mode, include example so it
+            # can be filtered like any other kwarg.
+            if single_instance_mode and example is _SINGLE_INSTANCE_SENTINEL:
+                all_kwargs = kwargs
+            else:
+                all_kwargs = {"example": example, **kwargs}
+
+            filtered = _filter_kwargs(all_kwargs)
+
+            # Unwrap candidate for str_candidate_mode
+            eval_candidate: Candidate | str = candidate
+            if str_candidate_mode:
+                eval_candidate = candidate[_STR_CANDIDATE_KEY]
+
+            # Start stdout/stderr capture if enabled
+            if stdout_capturer:
+                stdout_capturer.start_capture()
+            if stderr_capturer:
+                stderr_capturer.start_capture()
+
+            try:
+                result = evaluator_fn(eval_candidate, **filtered)
+            finally:
+                captured_stdout = stdout_capturer.stop_capture() if stdout_capturer else ""
+                captured_stderr = stderr_capturer.stop_capture() if stderr_capturer else ""
+                log_output = log_ctx.reset()
+                _set_log_context(None)
+
+            # Detect return type and normalize to (score, output, side_info)
+            if isinstance(result, tuple):
+                score, side_info = result
+                side_info = dict(side_info) if side_info is not None else {}
+
+                # Inject captured output, renaming on collision with a warning
+                injected: dict[str, str] = {}
+                if log_output:
+                    injected["log"] = log_output
+                if captured_stdout:
+                    injected["stdout"] = captured_stdout
+                if captured_stderr:
+                    injected["stderr"] = captured_stderr
+
+                for key in list(injected):
+                    if key in side_info:
+                        prefixed = f"_gepa_{key}"
+                        warnings.warn(
+                            f"Your evaluator returned side_info with key '{key}' that conflicts "
+                            f"with GEPA's captured output key. The captured output will be stored "
+                            f"under '{prefixed}' instead.",
+                            stacklevel=2,
+                        )
+                        injected[prefixed] = injected.pop(key)
+
+                side_info.update(injected)
+                return score, None, side_info
+            else:
+                score = result
+                auto_side_info: SideInfo = {}
+                if captured_stdout:
+                    auto_side_info["stdout"] = captured_stdout
+                if captured_stderr:
+                    auto_side_info["stderr"] = captured_stderr
+                if log_output:
+                    auto_side_info["log"] = log_output
+                return score, None, auto_side_info
+
+        self._wrapped = wrapped_evaluator
+
+    def __call__(
+        self, candidate: Candidate, example: DataInst | None = None, **kwargs: Any
+    ) -> tuple[float, Any, SideInfo]:
+        return self._wrapped(candidate, example=example, **kwargs)
+
+    def close(self) -> None:
+        """Release stream capture resources."""
+        if self._capture_stdio:
+            stream_manager.release()
+
+    def __enter__(self) -> "EvaluatorWrapper":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
+
+
 def _create_evaluator_wrapper(
     evaluator_fn: Callable[..., Any],
     single_instance_mode: bool,
     capture_stdio: bool = False,
     str_candidate_mode: bool = False,
-) -> tuple[Any, Callable[[], None]]:
+) -> EvaluatorWrapper:
     """
     Create a wrapper around the user's evaluator that:
     1. Handles single-instance mode (calls evaluator without example parameter)
@@ -743,6 +875,12 @@ def _create_evaluator_wrapper(
     5. Detects whether evaluator returns (score, side_info) tuple or just score
     6. Normalizes return value to always be (score, output, side_info) tuple
 
+    The returned :class:`EvaluatorWrapper` is both callable and a context manager.
+    Use it as a context manager to ensure stream capture resources are released::
+
+        with _create_evaluator_wrapper(eval_fn, ...) as wrapper:
+            score, output, side_info = wrapper(candidate, example=example)
+
     Args:
         evaluator_fn: The user's evaluator function
         single_instance_mode: Whether we're in single-instance mode
@@ -751,110 +889,14 @@ def _create_evaluator_wrapper(
             (evaluator receives str instead of dict)
 
     Returns:
-        A tuple of (wrapped_evaluator, cleanup_fn). The cleanup_fn must be
-        called when optimization is finished to release stream capture
-        resources if capture_stdio was enabled.
+        An :class:`EvaluatorWrapper` instance (callable, context manager).
     """
-    # Inspect the evaluator's signature once to determine which kwargs it accepts.
-    sig = inspect.signature(evaluator_fn)
-    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
-    if has_var_keyword:
-        accepted_params = None  # accept all
-    else:
-        accepted_params = set(sig.parameters.keys())
-
-    # Acquire per-thread stream capture from the shared manager if requested.
-    stdout_capturer: ThreadLocalStreamCapture | None = None
-    stderr_capturer: ThreadLocalStreamCapture | None = None
-    if capture_stdio:
-        stdout_capturer, stderr_capturer = stream_manager.acquire()
-
-    def _filter_kwargs(kwargs: dict) -> dict:
-        if accepted_params is None:
-            return kwargs
-        return {k: v for k, v in kwargs.items() if k in accepted_params}
-
-    def wrapped_evaluator(
-        candidate: Candidate, example: DataInst | None = None, **kwargs: Any
-    ) -> tuple[float, Any, SideInfo]:
-        # Create a fresh, shared log context for this evaluator call.
-        # The same _LogContext is accessible from child threads via
-        # oa.get_log_context() / oa.set_log_context().
-        log_ctx = _LogContext()
-        _set_log_context(log_ctx)
-
-        # Build full kwargs dict. In per-instance mode, include example so it
-        # can be filtered like any other kwarg.
-        if single_instance_mode and example is _SINGLE_INSTANCE_SENTINEL:
-            all_kwargs = kwargs
-        else:
-            all_kwargs = {"example": example, **kwargs}
-
-        filtered = _filter_kwargs(all_kwargs)
-
-        # Unwrap candidate for str_candidate_mode
-        eval_candidate: Candidate | str = candidate
-        if str_candidate_mode:
-            eval_candidate = candidate[_STR_CANDIDATE_KEY]
-
-        # Start stdout/stderr capture if enabled
-        if stdout_capturer:
-            stdout_capturer.start_capture()
-        if stderr_capturer:
-            stderr_capturer.start_capture()
-
-        try:
-            result = evaluator_fn(eval_candidate, **filtered)
-        finally:
-            captured_stdout = stdout_capturer.stop_capture() if stdout_capturer else ""
-            captured_stderr = stderr_capturer.stop_capture() if stderr_capturer else ""
-            log_output = log_ctx.reset()
-            _set_log_context(None)
-
-        # Detect return type and normalize to (score, output, side_info)
-        if isinstance(result, tuple):
-            score, side_info = result
-            side_info = dict(side_info) if side_info is not None else {}
-
-            # Inject captured output, renaming on collision with a warning
-            injected: dict[str, str] = {}
-            if log_output:
-                injected["log"] = log_output
-            if captured_stdout:
-                injected["stdout"] = captured_stdout
-            if captured_stderr:
-                injected["stderr"] = captured_stderr
-
-            for key in list(injected):
-                if key in side_info:
-                    prefixed = f"_gepa_{key}"
-                    warnings.warn(
-                        f"Your evaluator returned side_info with key '{key}' that conflicts "
-                        f"with GEPA's captured output key. The captured output will be stored "
-                        f"under '{prefixed}' instead.",
-                        stacklevel=2,
-                    )
-                    injected[prefixed] = injected.pop(key)
-
-            side_info.update(injected)
-            return score, None, side_info
-        else:
-            score = result
-            auto_side_info: SideInfo = {}
-            if captured_stdout:
-                auto_side_info["stdout"] = captured_stdout
-            if captured_stderr:
-                auto_side_info["stderr"] = captured_stderr
-            if log_output:
-                auto_side_info["log"] = log_output
-            return score, None, auto_side_info
-
-    def cleanup() -> None:
-        """Release stream capture resources."""
-        if capture_stdio:
-            stream_manager.release()
-
-    return wrapped_evaluator, cleanup
+    return EvaluatorWrapper(
+        evaluator_fn,
+        single_instance_mode,
+        capture_stdio=capture_stdio,
+        str_candidate_mode=str_candidate_mode,
+    )
 
 
 def optimize_anything(
@@ -948,14 +990,13 @@ def optimize_anything(
         effective_dataset = dataset if dataset is not None else [None]  # type: ignore[list-item]
 
     # Wrap the evaluator to handle signature normalization, log/stdout capture, etc.
-    wrapped_evaluator, evaluator_cleanup = _create_evaluator_wrapper(
+    # Use as a context manager to ensure stream capture resources are released.
+    with _create_evaluator_wrapper(
         evaluator,
         single_instance_mode,
         capture_stdio=config.engine.capture_stdio,
         str_candidate_mode=str_candidate_mode,
-    )
-
-    try:
+    ) as wrapped_evaluator:
         # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
         if not config.engine.cache_evaluation:
             resolved_cache_mode = "off"
@@ -1260,5 +1301,3 @@ def optimize_anything(
             state = engine.run()
 
         return GEPAResult.from_state(state, run_dir=config.engine.run_dir, seed=config.engine.seed)
-    finally:
-        evaluator_cleanup()

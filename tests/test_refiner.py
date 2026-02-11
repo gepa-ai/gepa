@@ -142,7 +142,9 @@ class TestRefiner:
         assert result is not None
         # refiner_prompt should be auto-injected and present in best_candidate
         assert "refiner_prompt" in result.best_candidate
-        print(f"\n[Refiner no cache] Metric calls: {result.total_metric_calls}, Actual fitness calls: {call_counter['count']}")
+        print(
+            f"\n[Refiner no cache] Metric calls: {result.total_metric_calls}, Actual fitness calls: {call_counter['count']}"
+        )
         print(f"Best candidate: {result.best_candidate}")
         print(f"Best score: {result.val_aggregate_scores[result.best_idx]}")
 
@@ -174,7 +176,9 @@ class TestRefiner:
 
         assert result is not None
         assert "refiner_prompt" in result.best_candidate
-        print(f"\n[Refiner + memory cache] Metric calls: {result.total_metric_calls}, Actual fitness calls: {call_counter['count']}")
+        print(
+            f"\n[Refiner + memory cache] Metric calls: {result.total_metric_calls}, Actual fitness calls: {call_counter['count']}"
+        )
         print(f"Best candidate: {result.best_candidate}")
         print(f"Best score: {result.val_aggregate_scores[result.best_idx]}")
 
@@ -208,7 +212,9 @@ class TestRefiner:
 
             assert result is not None
             assert "refiner_prompt" in result.best_candidate
-            print(f"\n[Refiner + disk cache] Metric calls: {result.total_metric_calls}, Actual fitness calls: {call_counter['count']}")
+            print(
+                f"\n[Refiner + disk cache] Metric calls: {result.total_metric_calls}, Actual fitness calls: {call_counter['count']}"
+            )
             print(f"Best candidate: {result.best_candidate}")
             print(f"Best score: {result.val_aggregate_scores[result.best_idx]}")
 
@@ -268,7 +274,9 @@ class TestRefiner:
             config=config_with_cache,
         )
 
-        print(f"\n[Comparison] No cache: {call_counter_no_cache['count']} calls, With cache: {call_counter_with_cache['count']} calls")
+        print(
+            f"\n[Comparison] No cache: {call_counter_no_cache['count']} calls, With cache: {call_counter_with_cache['count']} calls"
+        )
 
         # With caching, we should have equal or fewer actual fitness calls
         assert call_counter_with_cache["count"] <= call_counter_no_cache["count"]
@@ -303,7 +311,9 @@ class TestRefiner:
         assert result is not None
         # The custom prompt should be preserved (not overwritten by default)
         # Note: GEPA may mutate refiner_prompt during evolution, but the seed should start with our custom prompt
-        print(f"Best candidate refiner_prompt starts with custom: {result.best_candidate.get('refiner_prompt', '').startswith('My custom')}")
+        print(
+            f"Best candidate refiner_prompt starts with custom: {result.best_candidate.get('refiner_prompt', '').startswith('My custom')}"
+        )
 
     def test_multi_param_refiner(self):
         """Test refiner with multiple parameters — both refined together."""
@@ -366,30 +376,27 @@ class TestRefiner:
             }
 
         # Wrap fitness_fn the same way optimize_anything does
-        wrapped, _cleanup = _create_evaluator_wrapper(raw_fitness_fn, single_instance_mode=True)
+        with _create_evaluator_wrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
+            refiner_config = RefinerConfig(
+                refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
+                max_refinements=1,
+            )
 
-        refiner_config = RefinerConfig(
-            refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
-            max_refinements=1,
-        )
+            adapter = OptimizeAnythingAdapter(
+                evaluator=wrapped,
+                parallel=False,
+                refiner_config=refiner_config,
+                cache_mode="off",
+            )
 
-        adapter = OptimizeAnythingAdapter(
-            evaluator=wrapped,
-            parallel=False,
-            refiner_config=refiner_config,
-            cache_mode="off",
-        )
+            # Build candidate with refiner_prompt (as optimize_anything would auto-inject)
+            candidate = {
+                "number": "50",
+                "refiner_prompt": "Improve the guess. Return a JSON dict with the 'number' key.",
+            }
 
-        # Build candidate with refiner_prompt (as optimize_anything would auto-inject)
-        candidate = {
-            "number": "50",
-            "refiner_prompt": "Improve the guess. Return a JSON dict with the 'number' key.",
-        }
-
-        # Call _evaluate_single_with_refinement directly
-        score, output, side_info = adapter._evaluate_single_with_refinement(
-            candidate, _SINGLE_INSTANCE_SENTINEL
-        )
+            # Call _evaluate_single_with_refinement directly
+            score, output, side_info = adapter._evaluate_single_with_refinement(candidate, _SINGLE_INSTANCE_SENTINEL)
 
         # User fields should be at top level (not nested under a target param)
         assert "guess" in side_info, f"User field 'guess' missing from side_info: {side_info.keys()}"
@@ -436,36 +443,33 @@ class TestRefiner:
                 "guess": guess,
                 "golden": GOLDEN_NUMBER,
                 "off_by": off_by,
-                "hint": "The target is 42. Return {\"number\": \"42\"} to get a perfect score.",
+                "hint": 'The target is 42. Return {"number": "42"} to get a perfect score.',
             }
 
-        wrapped, _cleanup = _create_evaluator_wrapper(raw_fitness_fn, single_instance_mode=True)
+        with _create_evaluator_wrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
+            refiner_config = RefinerConfig(
+                refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
+                max_refinements=3,
+            )
 
-        refiner_config = RefinerConfig(
-            refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
-            max_refinements=3,
-        )
+            adapter = OptimizeAnythingAdapter(
+                evaluator=wrapped,
+                parallel=False,
+                refiner_config=refiner_config,
+                cache_mode="off",
+            )
 
-        adapter = OptimizeAnythingAdapter(
-            evaluator=wrapped,
-            parallel=False,
-            refiner_config=refiner_config,
-            cache_mode="off",
-        )
+            # Deliberately bad seed — far from target
+            candidate = {
+                "number": "0",
+                "refiner_prompt": (
+                    "You are improving a number-guessing candidate. "
+                    "The evaluation feedback contains 'off_by' (distance from target) and a 'hint'. "
+                    "Return a JSON dict with the 'number' key set to a better guess."
+                ),
+            }
 
-        # Deliberately bad seed — far from target
-        candidate = {
-            "number": "0",
-            "refiner_prompt": (
-                "You are improving a number-guessing candidate. "
-                "The evaluation feedback contains 'off_by' (distance from target) and a 'hint'. "
-                "Return a JSON dict with the 'number' key set to a better guess."
-            ),
-        }
-
-        score, output, side_info = adapter._evaluate_single_with_refinement(
-            candidate, _SINGLE_INSTANCE_SENTINEL
-        )
+            score, output, side_info = adapter._evaluate_single_with_refinement(candidate, _SINGLE_INSTANCE_SENTINEL)
 
         refiner_info = side_info["refiner_prompt_specific_info"]
         attempts = refiner_info["Attempts"]
@@ -478,17 +482,17 @@ class TestRefiner:
         print(f"Num attempts: {len(attempts)}")
 
         # The max(original, refined) guarantee must always hold
-        assert score >= original_score, (
-            f"Final score ({score}) should be >= original ({original_score})"
-        )
+        assert score >= original_score, f"Final score ({score}) should be >= original ({original_score})"
         # Soft check: with the hint, a capable model should improve.
         # Nano models often return unparseable output, so we don't hard-assert.
         if best_attempt_score > original_score:
             print(f"Refiner improved: {original_score} -> {best_attempt_score}")
         else:
-            print(f"WARNING: Refiner did not improve (original={original_score}, "
-                  f"best_attempt={best_attempt_score}). This is expected with small models "
-                  f"that struggle to return valid JSON.")
+            print(
+                f"WARNING: Refiner did not improve (original={original_score}, "
+                f"best_attempt={best_attempt_score}). This is expected with small models "
+                f"that struggle to return valid JSON."
+            )
 
     def test_refiner_score_never_worse(self):
         """Test the max(original, refined) guarantee — refiner can only help, never hurt."""
@@ -505,29 +509,26 @@ class TestRefiner:
             score = -off_by
             return score, {"guess": guess, "off_by": off_by}
 
-        wrapped, _cleanup = _create_evaluator_wrapper(raw_fitness_fn, single_instance_mode=True)
+        with _create_evaluator_wrapper(raw_fitness_fn, single_instance_mode=True) as wrapped:
+            refiner_config = RefinerConfig(
+                refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
+                max_refinements=2,
+            )
 
-        refiner_config = RefinerConfig(
-            refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
-            max_refinements=2,
-        )
+            adapter = OptimizeAnythingAdapter(
+                evaluator=wrapped,
+                parallel=False,
+                refiner_config=refiner_config,
+                cache_mode="off",
+            )
 
-        adapter = OptimizeAnythingAdapter(
-            evaluator=wrapped,
-            parallel=False,
-            refiner_config=refiner_config,
-            cache_mode="off",
-        )
+            # Seed already near-perfect — refiner shouldn't make it worse
+            candidate = {
+                "number": "41",
+                "refiner_prompt": "Improve the guess. Return a JSON dict with 'number'.",
+            }
 
-        # Seed already near-perfect — refiner shouldn't make it worse
-        candidate = {
-            "number": "41",
-            "refiner_prompt": "Improve the guess. Return a JSON dict with 'number'.",
-        }
-
-        score, output, side_info = adapter._evaluate_single_with_refinement(
-            candidate, _SINGLE_INSTANCE_SENTINEL
-        )
+            score, output, side_info = adapter._evaluate_single_with_refinement(candidate, _SINGLE_INSTANCE_SENTINEL)
 
         attempts = side_info["refiner_prompt_specific_info"]["Attempts"]
         original_score = attempts[0]["score"]
@@ -536,8 +537,7 @@ class TestRefiner:
 
         # max(original, refined) guarantee
         assert score >= original_score, (
-            f"Final score ({score}) must be >= original ({original_score}) — "
-            f"the refiner should never make things worse"
+            f"Final score ({score}) must be >= original ({original_score}) — the refiner should never make things worse"
         )
 
 
@@ -655,12 +655,16 @@ class TestRefinerFrontierTypes:
                 guess = 0
             off_by = abs(guess - golden)
             score = -off_by
-            return score, None, {
-                "guess": guess,
-                "golden": golden,
-                "off_by": off_by,
-                "scores": {"accuracy": max(0.0, 1.0 - off_by / 100.0)},
-            }
+            return (
+                score,
+                None,
+                {
+                    "guess": guess,
+                    "golden": golden,
+                    "off_by": off_by,
+                    "scores": {"accuracy": max(0.0, 1.0 - off_by / 100.0)},
+                },
+            )
 
         refiner_config = RefinerConfig(
             refiner_lm=make_litellm_lm("openrouter/openai/gpt-5-nano"),
@@ -715,7 +719,9 @@ class TestRefinerFrontierTypes:
             # objective_scores should include both global and refiner metrics
             assert "accuracy" in obj_scores, f"Global 'accuracy' missing from objective_scores: {obj_scores}"
             # Refiner scores should have actual metric values (e.g., accuracy)
-            assert "refiner_prompt::accuracy" in obj_scores, f"Refiner accuracy missing from objective_scores: {obj_scores}"
+            assert "refiner_prompt::accuracy" in obj_scores, (
+                f"Refiner accuracy missing from objective_scores: {obj_scores}"
+            )
             print(f"  Objective scores: {obj_scores}")
 
 
