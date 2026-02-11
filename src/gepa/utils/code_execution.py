@@ -248,7 +248,7 @@ def _set_random_seeds(seed: int) -> None:
 def _kill_child_processes(current_pid: int) -> None:
     """Kill all child processes of the current process using psutil if available."""
     try:
-        import psutil
+        import psutil  # type: ignore[import-not-found]
 
         try:
             parent = psutil.Process(current_pid)
@@ -579,7 +579,7 @@ with open({results_path!r}, 'wb') as f:
             # Try to kill child processes if requested and psutil available
             if kill_child_processes:
                 try:
-                    import psutil
+                    import psutil  # type: ignore[import-not-found]
 
                     try:
                         parent = psutil.Process(process.pid)

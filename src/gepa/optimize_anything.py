@@ -22,7 +22,7 @@ from typing import (
 )
 
 from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn, RolloutOutput
+from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn
 from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
@@ -318,7 +318,7 @@ def log(*args: Any, sep: str = " ", end: str = "\n") -> None:
 
 class Evaluator(Protocol):
     def __call__(
-        self, candidate: str | Candidate, example: DataInst | None = None, **kwargs: Any
+        self, candidate: str | Candidate, example: object | None = None, **kwargs: Any
     ) -> tuple[float, SideInfo] | float:
         """
         Core evaluation interface for GEPA optimization.
@@ -767,7 +767,7 @@ class EvaluatorWrapper:
             return {k: v for k, v in kwargs.items() if k in accepted_params}
 
         def wrapped_evaluator(
-            candidate: Candidate, example: DataInst | None = None, **kwargs: Any
+            candidate: Candidate, example: object | None = None, **kwargs: Any
         ) -> tuple[float, Any, SideInfo]:
             # Create a fresh, shared log context for this evaluator call.
             # The same _LogContext is accessible from child threads via
@@ -850,7 +850,7 @@ class EvaluatorWrapper:
         self._wrapped = wrapped_evaluator
 
     def __call__(
-        self, candidate: Candidate, example: DataInst | None = None, **kwargs: Any
+        self, candidate: Candidate, example: object | None = None, **kwargs: Any
     ) -> tuple[float, Any, SideInfo]:
         return self._wrapped(candidate, example=example, **kwargs)
 
@@ -1215,7 +1215,7 @@ def optimize_anything(
     # Define evaluator function for merge proposer
     def merge_evaluator(
         inputs: list[DataInst], prog: Candidate
-    ) -> tuple[list[RolloutOutput], list[float], list[dict[str, float]] | None]:
+    ) -> tuple[list[object], list[float], list[dict[str, float]] | None]:
         eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
         return eval_out.outputs, eval_out.scores, eval_out.objective_scores
 

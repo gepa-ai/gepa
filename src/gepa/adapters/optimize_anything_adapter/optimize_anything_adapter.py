@@ -79,14 +79,14 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Refiner uses LiteLLM directly via refiner_config.refiner_lm callable
         # No separate predictor needed - the LM callable is set up in optimize_anything.py
 
-    def _get_best_example_evals(self, example: DataInst) -> list[dict]:
+    def _get_best_example_evals(self, example: object) -> list[dict]:
         """Get sorted top-K best evaluations for this example (thread-safe)."""
         key = self._example_hash(example)
         with self._best_evals_lock:
             # Return a copy to avoid mutation issues
             return list(self._best_evals_by_example.get(key, []))
 
-    def _update_best_example_evals(self, example: DataInst, score: float, side_info: "SideInfo") -> None:
+    def _update_best_example_evals(self, example: object, score: float, side_info: "SideInfo") -> None:
         """Add evaluation to example's best evals, maintain sorted top-K (thread-safe)."""
         key = self._example_hash(example)
         with self._best_evals_lock:
@@ -263,7 +263,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def _evaluate_single_with_refinement(
         self,
         candidate: "Candidate",
-        example: DataInst,
+        example: object,
     ) -> tuple[float, Any, "SideInfo"]:
         """Evaluate a single example with refinement."""
         assert self.refiner_config is not None
@@ -353,7 +353,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def _refine_and_evaluate(
         self,
         candidate: "Candidate",
-        example: DataInst,
+        example: object,
         refiner_prompt: str,
         original_score: float,
         original_side_info: "SideInfo",
@@ -400,7 +400,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     candidate_to_improve=json.dumps(current_params, indent=2),
                     evaluation_feedback=current_feedback,
                 )
-                raw_output = self.refiner_config.refiner_lm(prompt).strip()
+                refiner_lm = self.refiner_config.refiner_lm
+                assert callable(refiner_lm), (
+                    "refiner_lm must be a callable LanguageModel, not a string or None. "
+                    "Ensure optimize_anything() has converted it via make_litellm_lm()."
+                )
+                raw_output = refiner_lm(prompt).strip()
                 # Strip markdown code fences if present
                 if raw_output.startswith("```"):
                     # Remove first line (```json or ```) and last line (```)
