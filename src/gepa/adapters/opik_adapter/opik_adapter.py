@@ -66,6 +66,8 @@ def _extract_system_text(candidate: dict[str, str], fallback: str) -> str:
 
 
 def _apply_system_text(prompt_obj: chat_prompt.ChatPrompt, system_text: str) -> chat_prompt.ChatPrompt:
+    # TODO(opik-adapter-hooks): add prompt-segment hook support (e.g., user/developer/tool
+    # segments) once the Opik integration exposes a stable customization interface.
     updated = prompt_obj.copy()
     if updated.messages is not None:
         messages = updated.get_messages()
@@ -156,6 +158,10 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
             return None
 
     def _to_score(self, dataset_item: dict[str, Any], output: str) -> float:
+        # NOTE: release path keeps GEPA scalar-only. We pass the combined/finalized score to
+        # GEPA and intentionally ignore objective vectors to preserve current frontier behavior.
+        # FIXME(opik-adapter-multimetric): support opt-in objective_scores propagation once
+        # objective frontier mode is rolled out end-to-end.
         metric_result = self._metric(dataset_item, output)
         if hasattr(metric_result, "value"):
             return float(metric_result.value)
