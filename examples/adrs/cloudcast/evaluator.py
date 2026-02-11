@@ -453,7 +453,8 @@ def create_fitness_function(timeout: int = 300):
             }
             # Only keep lightweight fields in output (stored/cached by GEPA);
             # bulky lists were already consumed to build side_info above.
-            output = {
+            # Add output fields to side_info for consistency
+            side_info["output_metadata"] = {
                 "config_file": config_file,
                 "cost": cost,
                 "transfer_time": transfer_time,
@@ -464,7 +465,7 @@ def create_fitness_function(timeout: int = 300):
                 "instance_cost": detailed_info.get("instance_cost"),
                 "bottleneck_destination": bottleneck,
             }
-            return (score, output, side_info)
+            return (score, side_info)
         else:
             score = FAILED_SCORE
             side_info = {
