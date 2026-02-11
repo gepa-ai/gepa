@@ -30,6 +30,8 @@ full = [
 dspy = []
 test = [
     "gepa[full]",
+    # Temporary integration pin while Opik GEPA adapter changes are under review.
+    "opik_optimizer @ git+https://github.com/comet-ml/opik.git@vincentkoc-code/optimizer-gepa-native-rebased#subdirectory=sdks/opik_optimizer",
     "pytest",
     "pyright"
 ]
