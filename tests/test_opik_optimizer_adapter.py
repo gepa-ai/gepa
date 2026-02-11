@@ -287,7 +287,7 @@ def test_opik_adapter_uses_validation_dataset(monkeypatch: pytest.MonkeyPatch) -
     assert result.scores == [1.0]
 
 
-def test_opik_adapter_propagates_objective_scores(
+def test_opik_adapter_uses_primary_combined_score_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     prompt = ChatPrompt(system="Answer", user="{input}")
@@ -336,7 +336,7 @@ def test_opik_adapter_propagates_objective_scores(
     result = adapter.evaluate(batch, {"system_prompt": "Answer"}, capture_traces=False)
 
     assert result.scores == [0.9]
-    assert result.objective_scores == [{"coherence": 0.7, "factuality": 0.8}]
+    assert result.objective_scores is None
 
 
 def test_opik_adapter_sampling_selects_best_candidate(
