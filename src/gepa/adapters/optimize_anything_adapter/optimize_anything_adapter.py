@@ -11,7 +11,7 @@ from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
 
 if TYPE_CHECKING:
-    from gepa.optimize_anything import OptimizationState, RefinerConfig, SideInfo
+    from gepa.optimize_anything import Candidate, OptimizationState, RefinerConfig, SideInfo
 
 
 REFINER_PROMPT_TEMPLATE = """You are refining a candidate to improve its performance.
@@ -157,7 +157,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
     def _call_evaluator(
         self,
-        candidate: dict[str, str],
+        candidate: "Candidate",
         example: Any,
     ) -> tuple[float, Any, dict]:
         """Call evaluator with optional caching."""
@@ -195,7 +195,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def evaluate(
         self,
         batch: list[DataInst],
-        candidate: dict[str, str],
+        candidate: "Candidate",
         capture_traces: bool = False,
     ) -> EvaluationBatch:
         # Backward compatibility: if refiner_config is None, use old behavior
@@ -219,7 +219,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Update best evals history for each example
         # (skip when refiner is on — refiner path already records evals internally)
         if self.refiner_config is None:
-            for example, (score, _, side_info) in zip(batch, eval_output, strict=False):
+            for example, (score, _, side_info) in zip(batch, eval_output, strict=True):
                 self._update_best_example_evals(example, score, side_info)
 
         scores = [score for score, _, _ in eval_output]
@@ -248,7 +248,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def _evaluate_with_refinement(
         self,
         batch: list[DataInst],
-        candidate: dict[str, str],
+        candidate: "Candidate",
     ) -> list[tuple[float, Any, "SideInfo"]]:
         """Evaluate batch with automatic refinement."""
         if self.parallel and len(batch) > 1:
@@ -262,7 +262,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
     def _evaluate_single_with_refinement(
         self,
-        candidate: dict[str, str],
+        candidate: "Candidate",
         example: DataInst,
     ) -> tuple[float, Any, "SideInfo"]:
         """Evaluate a single example with refinement."""
@@ -327,7 +327,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def _run_parallel(
         self,
         batch: list[DataInst],
-        candidate: dict[str, str],
+        candidate: "Candidate",
         eval_fn,  # callable(candidate, example) -> result
     ) -> list[tuple[float, Any, "SideInfo"]]:
         """Run evaluation function in parallel across batch."""
@@ -352,7 +352,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
     def _refine_and_evaluate(
         self,
-        candidate: dict[str, str],
+        candidate: "Candidate",
         example: DataInst,
         refiner_prompt: str,
         original_score: float,

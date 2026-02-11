@@ -128,37 +128,37 @@ useful when different parameters have different failure modes.
 
 **Complete Example:**
 
-::
+```python
+{
+    # Multi-objective scores
+    "scores": {
+        "accuracy": 0.73,
+        "response_time_ms": 850,  # Already inverted (higher=better)
+        "user_satisfaction": 4.2
+    },
 
-    {
-        # Multi-objective scores
+    # Shared evaluation context
+    "Input": "Translate 'Hello world' to French",
+    "Output": "Salut monde",
+    "Expected": "Bonjour le monde",
+    "Feedback": "Translation is too informal for the context",
+    "ExecutionTime": 0.85, # Numeric value, still useful for context, but not "higher is better".
+
+    # Parameter-specific diagnostics
+    "system_prompt_specific_info": {
         "scores": {
-            "accuracy": 0.73,
-            "response_time_ms": 850,  # Already inverted (higher=better)
-            "user_satisfaction": 4.2
+            "tone_appropriateness": 0.3  # Low score explains the issue
         },
+        "ParsedTone": "casual",
+        "ExpectedTone": "formal",
+        "Analysis": "System prompt led to overly casual translation"
+    },
 
-        # Shared evaluation context
-        "Input": "Translate 'Hello world' to French",
-        "Output": "Salut monde",
-        "Expected": "Bonjour le monde",
-        "Feedback": "Translation is too informal for the context",
-        "ExecutionTime": 0.85, # Numeric value, still useful for context, but not "higher is better".
-
-        # Parameter-specific diagnostics
-        "system_prompt_specific_info": {
-            "scores": {
-                "tone_appropriateness": 0.3  # Low score explains the issue
-            },
-            "ParsedTone": "casual",
-            "ExpectedTone": "formal",
-            "Analysis": "System prompt led to overly casual translation"
-        },
-
-        "temperature_specific_info": {
-            "Feedback": "Temperature 0.9 caused inconsistent outputs"
-        }
+    "temperature_specific_info": {
+        "Feedback": "Temperature 0.9 caused inconsistent outputs"
     }
+}
+```
 
 **Best Practices:**
 
