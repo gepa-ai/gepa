@@ -61,10 +61,12 @@ class DummyCandidateAgent(DummyAgent):
 
 
 class DummyDataset:
-    name = "dummy"
+    def __init__(self, name: str = "dummy", items: list[dict[str, Any]] | None = None) -> None:
+        self.name = name
+        self._items = items or []
 
     def get_items(self, *_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
-        return []
+        return self._items
 
 
 def _make_metric(score_value: float):
@@ -232,6 +234,109 @@ def test_opik_adapter_reflective_dataset(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "Generated Outputs" in entry
     assert "Feedback" in entry
     assert tracker_count["count"] == 1
+
+
+def test_opik_adapter_uses_validation_dataset(monkeypatch: pytest.MonkeyPatch) -> None:
+    prompt = ChatPrompt(system="Answer", user="{input}")
+    metric = _make_metric(1.0)
+    train_dataset = DummyDataset(name="train", items=[{"id": "train-1"}])
+    val_dataset = DummyDataset(name="val", items=[{"id": "val-1"}])
+
+    batch = [
+        OpikDataInst(
+            input_text="Which?",
+            answer="A",
+            additional_context={},
+            opik_item={"id": "val-1", "input": "Which?", "answer": "A"},
+        )
+    ]
+
+    captured: dict[str, Any] = {}
+
+    def fake_evaluate_with_result(**kwargs: Any) -> tuple[float, Any]:
+        captured["dataset"] = kwargs["dataset"]
+        evaluated_task = kwargs["evaluated_task"]
+        output = evaluated_task(batch[0].opik_item)
+        score_result = SimpleNamespace(name=metric.__name__, value=1.0)
+        test_result = SimpleNamespace(
+            test_case=SimpleNamespace(
+                dataset_item_id=batch[0].opik_item["id"],
+                task_output=output,
+            ),
+            score_results=[score_result],
+        )
+        return 1.0, SimpleNamespace(test_results=[test_result])
+
+    monkeypatch.setattr(
+        "gepa.adapters.opik_adapter.opik_adapter.evaluate_with_result",
+        fake_evaluate_with_result,
+    )
+
+    adapter = OpikAdapter(
+        base_prompt=prompt,
+        dataset=train_dataset,
+        validation_dataset=val_dataset,
+        metric=metric,
+        instantiate_agent=lambda _prompt, _project=None: DummyAgent(),
+        prepare_experiment_config=lambda **_: {"project_name": "TestProject"},
+        system_fallback="Answer",
+    )
+
+    result = adapter.evaluate(batch, {"system_prompt": "Answer"}, capture_traces=False)
+    assert captured["dataset"] is val_dataset
+    assert result.scores == [1.0]
+
+
+def test_opik_adapter_propagates_objective_scores(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prompt = ChatPrompt(system="Answer", user="{input}")
+    metric = _make_metric(1.0)
+
+    batch = [
+        OpikDataInst(
+            input_text="Which?",
+            answer="A",
+            additional_context={},
+            opik_item={"id": "item-1", "input": "Which?", "answer": "A"},
+        )
+    ]
+
+    def fake_evaluate_with_result(**kwargs: Any) -> tuple[float, Any]:
+        evaluated_task = kwargs["evaluated_task"]
+        output = evaluated_task(batch[0].opik_item)
+        score_results = [
+            SimpleNamespace(name=metric.__name__, value=0.9),
+            SimpleNamespace(name="coherence", value=0.7),
+            SimpleNamespace(name="factuality", value=0.8),
+        ]
+        test_result = SimpleNamespace(
+            test_case=SimpleNamespace(
+                dataset_item_id=batch[0].opik_item["id"],
+                task_output=output,
+            ),
+            score_results=score_results,
+        )
+        return 0.9, SimpleNamespace(test_results=[test_result])
+
+    monkeypatch.setattr(
+        "gepa.adapters.opik_adapter.opik_adapter.evaluate_with_result",
+        fake_evaluate_with_result,
+    )
+
+    adapter = OpikAdapter(
+        base_prompt=prompt,
+        dataset=DummyDataset(),
+        metric=metric,
+        instantiate_agent=lambda _prompt, _project=None: DummyAgent(),
+        prepare_experiment_config=lambda **_: {"project_name": "TestProject"},
+        system_fallback="Answer",
+    )
+
+    result = adapter.evaluate(batch, {"system_prompt": "Answer"}, capture_traces=False)
+
+    assert result.scores == [0.9]
+    assert result.objective_scores == [{"coherence": 0.7, "factuality": 0.8}]
 
 
 def test_opik_adapter_sampling_selects_best_candidate(

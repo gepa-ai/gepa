@@ -103,6 +103,7 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         instantiate_agent: InstantiateAgentFn,
         prepare_experiment_config: PrepareExperimentFn,
         *,
+        validation_dataset: Dataset | None = None,
         experiment_config: dict[str, Any] | None = None,
         system_fallback: str = "You are a helpful assistant.",
         project_name: str | None = None,
@@ -113,6 +114,7 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
     ) -> None:
         self._base_prompt = base_prompt
         self._dataset = dataset
+        self._validation_dataset = validation_dataset
         self._metric = metric
         self._instantiate_agent = instantiate_agent
         self._prepare_experiment_config = prepare_experiment_config
@@ -124,6 +126,16 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         self._metric_name = getattr(metric, "__name__", str(metric))
         self._allow_tool_use = allow_tool_use
         self._candidate_selection_policy = candidate_selection_policy
+        self._val_item_ids: set[str] = set()
+        if validation_dataset is not None:
+            try:
+                self._val_item_ids = {
+                    str(item.get("id"))
+                    for item in validation_dataset.get_items()
+                    if item.get("id") is not None
+                }
+            except Exception:
+                self._val_item_ids = set()
 
     def _resolve_policy(self, prompt_variant: chat_prompt.ChatPrompt) -> str:
         if self._candidate_selection_policy:
@@ -150,6 +162,36 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         if hasattr(metric_result, "score"):
             return float(metric_result.score)
         return float(metric_result)
+
+    def _extract_objective_scores(self, metric_result: Any) -> dict[str, float] | None:
+        if hasattr(metric_result, "metadata") and isinstance(metric_result.metadata, dict):
+            raw = metric_result.metadata.get("raw_score_results")
+            if isinstance(raw, list):
+                objective_scores: dict[str, float] = {}
+                for score_result in raw:
+                    name = getattr(score_result, "name", None)
+                    value = getattr(score_result, "value", None)
+                    if name is None or value is None:
+                        continue
+                    objective_scores[str(name)] = float(value)
+                if objective_scores:
+                    return objective_scores
+        if hasattr(metric_result, "objective_scores") and isinstance(
+            metric_result.objective_scores, dict
+        ):
+            return {
+                str(k): float(v)
+                for k, v in metric_result.objective_scores.items()
+                if v is not None
+            }
+        return None
+
+    def _resolve_dataset_for_item_ids(self, dataset_item_ids: list[str]) -> Dataset:
+        if self._validation_dataset is None or not self._val_item_ids:
+            return self._dataset
+        if any(item_id in self._val_item_ids for item_id in dataset_item_ids):
+            return self._validation_dataset
+        return self._dataset
 
     def _collect_candidates(
         self,
@@ -276,6 +318,7 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
             outputs: list[dict[str, Any]] = []
             scores: list[float] = []
             trajectories: list[dict[str, Any]] | None = [] if capture_traces else None
+            objective_scores: list[dict[str, float]] | None = None
 
             agent = _create_agent()
             for inst in batch:
@@ -294,6 +337,14 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
 
                 outputs.append({"output": raw_output})
                 scores.append(score)
+                metric_result = self._metric(dataset_item, raw_output)
+                objective_score = self._extract_objective_scores(metric_result)
+                if objective_score is not None:
+                    if objective_scores is None:
+                        objective_scores = [{} for _ in scores[:-1]]
+                    objective_scores.append(objective_score)
+                elif objective_scores is not None:
+                    objective_scores.append({})
                 self._metric_tracker()
                 if trajectories is not None:
                     trajectories.append(
@@ -303,7 +354,12 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
                             "score": score,
                         }
                     )
-            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
+            return EvaluationBatch(
+                outputs=outputs,
+                scores=scores,
+                trajectories=trajectories,
+                objective_scores=objective_scores,
+            )
 
         if missing_ids:
             logger.debug("Dataset items missing IDs; using local evaluation")
@@ -325,9 +381,10 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
             )
             return {"llm_output": output}
 
+        eval_dataset = self._resolve_dataset_for_item_ids(dataset_item_ids)
         try:
             _, eval_result = evaluate_with_result(
-                dataset=self._dataset,
+                dataset=eval_dataset,
                 evaluated_task=llm_task,
                 metric=self._metric,
                 num_threads=self._num_threads,
@@ -351,6 +408,7 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
         outputs: list[dict[str, Any]] = []
         scores: list[float] = []
         trajectories: list[dict[str, Any]] | None = [] if capture_traces else None
+        objective_scores: list[dict[str, float]] | None = None
 
         for inst in batch:
             dataset_item = inst.opik_item
@@ -359,17 +417,32 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
 
             output_text = ""
             score_value = 0.0
+            objective_score_value: dict[str, float] = {}
             if test_result is not None:
                 output_text = str(test_result.test_case.task_output.get("llm_output", "")).strip()
                 score_result = next(
                     (sr for sr in test_result.score_results if sr.name == self._metric_name),
                     None,
                 )
+                if score_result is None and test_result.score_results:
+                    score_result = test_result.score_results[0]
                 if score_result is not None and score_result.value is not None:
                     score_value = float(score_result.value)
+                for sr in test_result.score_results:
+                    if sr.value is None:
+                        continue
+                    if score_result is not None and sr.name == score_result.name:
+                        continue
+                    objective_score_value[str(sr.name)] = float(sr.value)
 
             outputs.append({"output": output_text})
             scores.append(score_value)
+            if objective_score_value:
+                if objective_scores is None:
+                    objective_scores = [{} for _ in scores[:-1]]
+                objective_scores.append(objective_score_value)
+            elif objective_scores is not None:
+                objective_scores.append({})
             self._metric_tracker()
 
             if trajectories is not None:
@@ -381,7 +454,12 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, dict[str, Any], dict[str, Any]]):
                     }
                 )
 
-        return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
+        return EvaluationBatch(
+            outputs=outputs,
+            scores=scores,
+            trajectories=trajectories,
+            objective_scores=objective_scores,
+        )
 
     def make_reflective_dataset(
         self,
