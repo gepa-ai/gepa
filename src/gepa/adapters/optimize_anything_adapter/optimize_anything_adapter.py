@@ -1,18 +1,16 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import pickle
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
 
 if TYPE_CHECKING:
-    import dspy  # type: ignore[import-not-found]
-
-    from gepa.optimize_anything import RefinerConfig, SideInfo
+    from gepa.optimize_anything import FitnessFn, RefinerConfig, SideInfo
 
 
 REFINER_PROMPT_TEMPLATE = """You are refining a candidate to improve its performance.
@@ -40,7 +38,7 @@ Return ONLY a valid JSON object with the improved parameters (no explanation, no
 class OptimizeAnythingAdapter(GEPAAdapter):
     def __init__(
         self,
-        fitness_fn: Callable[..., tuple[float, Any, dict[str, Any]]],
+        fitness_fn: "FitnessFn",
         reflection_lm: LanguageModel | None = None,
         reflection_prompt_template: str | None = None,
         parallel: bool = True,
@@ -223,7 +221,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Update best evals history for each example
         # (skip when refiner is on — refiner path already records evals internally)
         if self.refiner_config is None:
-            for example, (score, _, side_info) in zip(batch, eval_output):
+            for example, (score, _, side_info) in zip(batch, eval_output, strict=False):
                 self._update_best_example_evals(example, score, side_info)
 
         scores = [score for score, _, _ in eval_output]
@@ -302,11 +300,22 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         # 5. Add refiner_prompt_specific_info with best refined scores + attempt history
         #    "scores" = actual best metric values across all attempts (for objective frontier)
-        best_attempt = max(all_attempts, key=lambda x: x.get("score", float("-inf")))
-        best_attempt_side_info = best_attempt.get("side_info")
+        # Only consider attempts that produced real
+        # evaluation results (have "side_info")
+        # so that failed attempts (JSON parse errors,
+        # exceptions) with placeholder score=0.0
+        # don't mask real evaluations when original
+        # scores are negative
+        evaluated_attempts = [a for a in all_attempts if "side_info" in a]
         best_refined_scores = {}
-        if isinstance(best_attempt_side_info, dict) and "scores" in best_attempt_side_info:
-            best_refined_scores = best_attempt_side_info["scores"]
+        if evaluated_attempts:
+            best_attempt = max(
+                evaluated_attempts,
+                key=lambda x: x.get("score", float("-inf")),
+            )
+            best_attempt_side_info = best_attempt.get("side_info")
+            if isinstance(best_attempt_side_info, dict) and "scores" in best_attempt_side_info:
+                best_refined_scores = best_attempt_side_info["scores"]
 
         aggregated_side_info["refiner_prompt_specific_info"] = {
             "scores": best_refined_scores,
@@ -362,17 +371,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             (best_refined_score, best_refined_candidate, best_refined_side_info, all_attempts)
             best_refined_candidate is the candidate dict that achieved best refined score,
             or None if no refinement improved over original.
-            best_refined_side_info is None if no refinement improved over original.
+            or None if no refinement improved over original.
         """
-        # This method should only be called when refiner_config is not None
-        assert self.refiner_config is not None, "refiner_config must be set to use refinement"
-
-        # Lazy-initialize refiner on first use (imports dspy here)
-        self._initialize_refiner()
-        assert self.refiner_predictor is not None, "refiner_predictor must be initialized"
-
-        # Import dspy for context manager
-        import dspy  # type: ignore[import-not-found]
 
         # Build params dict: all non-refiner params
         params_dict = {k: v for k, v in candidate.items() if k != "refiner_prompt"}
