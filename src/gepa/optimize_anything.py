@@ -799,8 +799,11 @@ class EvaluatorWrapper:
                 stdout_capturer.start_capture()
                 stderr_capturer.start_capture()
 
+            exc: Exception | None = None
             try:
                 result = evaluator_fn(eval_candidate, **filtered)
+            except Exception as e:
+                exc = e
             finally:
                 captured_stdout = stdout_capturer.stop_capture() if stdout_capturer else ""
                 captured_stderr = stderr_capturer.stop_capture() if stderr_capturer else ""
@@ -808,6 +811,17 @@ class EvaluatorWrapper:
                     stream_manager.release()
                 log_output = log_ctx.reset()
                 _set_log_context(None)
+
+            # If evaluator raised, preserve captured diagnostics before re-raising
+            if exc is not None:
+                fail_side_info: SideInfo = {"error": str(exc)}
+                if log_output:
+                    fail_side_info["log"] = log_output
+                if captured_stdout:
+                    fail_side_info["stdout"] = captured_stdout
+                if captured_stderr:
+                    fail_side_info["stderr"] = captured_stderr
+                return float("-inf"), None, fail_side_info
 
             # Detect return type and normalize to (score, output, side_info)
             if isinstance(result, tuple):

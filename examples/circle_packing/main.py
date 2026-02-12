@@ -50,7 +50,7 @@ def fitness_fn(candidate, best_example_evals):
         metrics = {"sum_radii": 0.0}
         
     side_info = {
-        "score": {"sum_radii": score}, 
+        "scores": {"sum_radii": score},
         "metrics": metrics,
         "code": code,
         "circles": circles,
