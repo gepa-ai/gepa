@@ -1,10 +1,15 @@
-"""
-Utilities for GEPA optimization.
+"""Utilities for ``optimize_anything`` evaluators and optimization control.
 
-This module provides:
-- Stop conditions for controlling optimization loops
-- Code execution utilities for safely running generated code in fitness functions
-- Thread-safe stdout/stderr capture for evaluation
+Re-exports:
+    **Stop conditions** — control when optimization terminates:
+    ``MaxMetricCallsStopper``, ``TimeoutStopCondition``, ``NoImprovementStopper``,
+    ``ScoreThresholdStopper``, ``FileStopper``, ``SignalStopper``, ``CompositeStopper``.
+
+    **Code execution** — safe sandboxed execution for code-evolution evaluators:
+    ``execute_code``, ``CodeExecutionResult``, ``ExecutionMode``.
+
+    **Stdio capture** — thread-safe stdout/stderr capture during evaluation:
+    ``StreamCaptureManager``, ``ThreadLocalStreamCapture``.
 """
 
 # Code execution utilities for fitness functions that evaluate generated code

@@ -2,9 +2,25 @@
 
 Welcome to the GEPA API Reference. This documentation is auto-generated from the source code docstrings.
 
+## `optimize_anything` API
+
+The primary interface for GEPA optimization.  Write an evaluator function, and GEPA handles the evolutionary loop.
+
+- [`optimize_anything`](core/optimize_anything.md) — main entry point
+- [`GEPAConfig`](core/GEPAConfig.md) — top-level configuration
+- [`EngineConfig`](core/EngineConfig.md) — budget, parallelism, caching
+- [`ReflectionConfig`](core/ReflectionConfig.md) — reflection LM settings
+- [`RefinerConfig`](core/RefinerConfig.md) — per-evaluation refinement
+- [`MergeConfig`](core/MergeConfig.md) — cross-candidate merging
+- [`TrackingConfig`](core/TrackingConfig.md) — experiment tracking
+- [`SideInfo`](core/SideInfo.md) — evaluator diagnostic output (type alias)
+- [`Evaluator`](core/Evaluator.md) — evaluator function protocol
+- [`OptimizationState`](core/OptimizationState.md) — injected optimization context
+- [`Image`](core/Image.md) — image wrapper for VLM reflection
+
 ## Core
 
-The core module contains the main optimization function and fundamental classes.
+Lower-level engine classes and interfaces.
 
 - [`optimize`](core/optimize.md)
 - [`GEPAAdapter`](core/GEPAAdapter.md)

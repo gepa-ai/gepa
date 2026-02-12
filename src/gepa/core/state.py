@@ -140,7 +140,15 @@ class ValsetEvaluation(Generic[RolloutOutput, DataId]):
 
 
 class GEPAState(Generic[RolloutOutput, DataId]):
-    """Persistent optimizer state tracking candidates, sparse validation coverage, and objective frontiers."""
+    """Internal persistent state of a GEPA optimization run.
+
+    Tracks all explored candidates, their per-example and per-objective scores,
+    Pareto frontiers, evaluation budget, and optional evaluation cache.
+    Saved/loaded automatically when ``EngineConfig.run_dir`` is set.
+
+    Users interact with this indirectly via :class:`~gepa.core.result.GEPAResult`
+    returned by :func:`~gepa.optimize_anything.optimize_anything`.
+    """
 
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 4
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
@@ -665,7 +673,9 @@ def initialize_gepa_state(
         for seed_candidate_2 in seed_candidate[1:]:
             eval_result_2 = valset_evaluator(seed_candidate_2)
             if run_dir is not None:
-                write_eval_scores_to_directory(eval_result_2.scores_by_val_id, os.path.join(run_dir, "generated_best_outputs_valset"))
+                write_eval_scores_to_directory(
+                    eval_result_2.scores_by_val_id, os.path.join(run_dir, "generated_best_outputs_valset")
+                )
             num_evals_run += len(eval_result_2.scores_by_val_id)
             gepa_state.update_state_with_new_program(
                 [None],

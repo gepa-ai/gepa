@@ -1,3 +1,17 @@
+"""GEPAAdapter implementation for the ``optimize_anything`` API.
+
+This adapter bridges the user-facing ``optimize_anything`` API and GEPA's
+internal engine.  It handles:
+
+- **Evaluation**: calls the user's wrapped evaluator (single or parallel)
+- **Caching**: optional memory or disk cache for ``(candidate, example)`` pairs
+- **Refinement**: when :class:`~gepa.optimize_anything.RefinerConfig` is set,
+  iteratively improves candidates via an LLM after each evaluation
+- **Best-evals tracking**: maintains top-K evaluations per example for
+  warm-starting via :class:`~gepa.optimize_anything.OptimizationState`
+- **Reflective dataset**: formats evaluation results for the reflection LLM
+"""
+
 import hashlib
 import json
 import logging
@@ -40,6 +54,12 @@ Return ONLY a valid JSON object with the improved parameters (no explanation, no
 
 
 class OptimizeAnythingAdapter(GEPAAdapter):
+    """Adapter connecting the ``optimize_anything`` API to GEPA's engine.
+
+    Created automatically by :func:`~gepa.optimize_anything.optimize_anything` —
+    users do not instantiate this directly.
+    """
+
     def __init__(
         self,
         evaluator: Callable[..., tuple[float, Any, dict[str, Any]]],
@@ -201,6 +221,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         candidate: "Candidate",
         capture_traces: bool = False,
     ) -> EvaluationBatch:
+        """Evaluate a candidate on a batch of examples, with optional refinement.
+
+        When ``refiner_config`` is set, each example goes through an
+        evaluate→refine→re-evaluate loop before returning the best result.
+        Multi-objective scores from ``side_info["scores"]`` are extracted and
+        forwarded as ``objective_scores`` in the returned batch.
+        """
         # Backward compatibility: if refiner_config is None, use old behavior
         if self.refiner_config is None:
             # Old path: direct evaluation without refinement
@@ -484,6 +511,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         eval_batch: EvaluationBatch,
         components_to_update: list[str],
     ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
+        """Format evaluation results into per-component reflection datasets.
+
+        For each component being updated, produces a list of dicts (one per
+        example) combining shared SideInfo fields with any
+        ``<component>_specific_info`` data.  The ``"scores"`` key is renamed
+        to ``"Scores (Higher is Better)"`` for clarity in the LLM prompt.
+        """
         scores, side_infos = eval_batch.scores, eval_batch.trajectories
         assert side_infos is not None
         ret: dict[str, list[dict[str, Any]]] = {}

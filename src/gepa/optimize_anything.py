@@ -1,8 +1,79 @@
 """
-optimize_anything API - A simplified interface for GEPA optimization.
+``optimize_anything`` — optimize any text artifact with LLM-guided evolution.
 
-This module provides a clean, configuration-based API for optimizing any
-parameterized system using evolutionary algorithms with LLM-based reflection.
+This is the primary public API for GEPA.  You bring a **text-representable
+artifact** (prompt, code, config, policy, agent harness, or numeric
+parameters) and an **evaluator** that scores candidates;
+``optimize_anything`` uses LLMs as intelligent proposers to iteratively
+refine that artifact, leveraging rich evaluation feedback called
+**Actionable Side Information (ASI)**.
+
+Core workflow::
+
+    seed_candidate  →  evaluate  →  reflect on ASI  →  mutate  →  repeat
+                          ↑                                  |
+                          └──────────────────────────────────┘
+
+Three optimization modes
+------------------------
+``optimize_anything`` unifies three optimization paradigms via the
+``dataset`` and ``valset`` arguments:
+
+1. **Single-Task Search** (``dataset=None, valset=None``):
+   Solve one hard problem instance.  The candidate *is* the solution.
+   Evaluator is called without ``example``.
+   *Examples: circle packing, rocket trajectory, mathematical optimization.*
+
+2. **Multi-Task Search** (``dataset=<list>, valset=None``):
+   Solve a batch of related problems with cross-task transfer.
+   Evaluator is called per-example; ``valset`` defaults to ``dataset``.
+   *Examples: CUDA kernel optimization across multiple models.*
+
+3. **Generalization** (``dataset=<list>, valset=<list>``):
+   Learn a general skill that transfers to unseen examples.
+   Evaluator is called per-example; candidates must generalize to ``valset``.
+   *Examples: prompt optimization for AIME math, agent evolution for ARC-AGI.*
+
+Quick example::
+
+    import gepa.optimize_anything as oa
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig
+
+    def evaluate(candidate: str) -> float:
+        score, diagnostic = run_candidate(candidate)
+        oa.log("Diagnostic:", diagnostic)   # captured as ASI
+        return score
+
+    result = optimize_anything(
+        seed_candidate="<initial code>",
+        evaluator=evaluate,
+        objective="Maximize throughput.",
+        config=GEPAConfig(engine=EngineConfig(max_metric_calls=300)),
+    )
+    print(result.best_candidate)
+
+Key concepts:
+    - **Candidate**: ``dict[str, str]`` or plain ``str`` of optimizable text
+      parameters — prompts, code, configs, numeric params, etc.
+    - **Evaluator**: Your scoring function.  Returns ``(score, side_info)`` or
+      just ``score``.  Higher scores are better.
+    - **ASI / SideInfo**: Diagnostic dict returned by the evaluator (or
+      captured via ``oa.log()``).  This is the *actionable side information*
+      that powers the LLM reflection — error messages, expected vs actual
+      output, profiling data, etc.
+    - **Objective / Background**: Natural-language strings that guide the
+      reflection LLM (what to optimize for, domain constraints).
+
+Public API:
+    - :func:`optimize_anything` — main entry point
+    - :data:`SideInfo` — type alias for evaluation diagnostics (ASI)
+    - :class:`Evaluator` — evaluator protocol
+    - :class:`OptimizationState` — context injected into evaluators
+    - :class:`GEPAConfig`, :class:`EngineConfig`, :class:`ReflectionConfig`,
+      :class:`RefinerConfig`, :class:`MergeConfig`, :class:`TrackingConfig`
+    - :func:`log`, :func:`get_log_context`, :func:`set_log_context` — in-evaluator logging
+    - :func:`make_litellm_lm` — convert a model name string to a callable
+    - :class:`Image` — wrapper for including images in side_info (VLM reflection)
 """
 
 import inspect
@@ -68,150 +139,86 @@ _SINGLE_INSTANCE_SENTINEL = _SingleInstanceSentinel()
 _STR_CANDIDATE_KEY = "current_candidate"
 
 SideInfo: TypeAlias = dict[str, Any]
-"""
-Auxiliary evaluation information that powers LLM-based reflection in GEPA optimization.
+"""Actionable Side Information (ASI) returned by the evaluator alongside each score.
 
-SideInfo is a dictionary returned alongside each evaluation score from your evaluator.
-It contains rich diagnostic information that GEPA's reflective mutation proposer uses to
-understand what went wrong and generate targeted improvements to candidates. The more
-informative your SideInfo, the more effective the LLM-guided optimization becomes.
+Traditional optimizers know *that* a candidate failed but not *why*.  SideInfo
+provides the *why* — error messages, expected vs actual output, profiling
+traces, compiler diagnostics — enabling the reflection LLM to take targeted
+corrective action rather than random mutation.
 
-**Role in the Optimization Loop:**
+**More informative SideInfo → better optimization.**
 
-1. Your evaluator evaluates a candidate and returns (score, side_info) or just score
-2. GEPA collects side_info across multiple evaluation instances
-3. The reflective proposer presents this information to an LLM with the candidate parameters
-4. The LLM analyzes failures/successes and proposes parameter improvements
-5. New candidates are generated and the cycle repeats
+You can provide SideInfo in two ways:
 
-**Structure:**
+1. Return ``(score, side_info_dict)`` from your evaluator.
+2. Call ``oa.log(...)`` inside your evaluator (captured under ``"log"`` key).
 
-SideInfo has two primary components:
+Structure
+---------
+1. **``"scores"`` (optional)** — multi-objective metrics for Pareto tracking.
+   All values must follow "higher is better" convention.
 
-1. **Multi-dimensional Scores** (optional, via "scores" field):
-    Additional numeric metrics beyond the main fitness score, used for multi-objective
-    optimization and providing quantitative feedback to the reflection LLM.
-    
-    - Must be specified as: {"scores": {"metric1": value1, "metric2": value2, ...}}
-    - All scores must follow "higher is better" convention (invert if needed)
-    - Enables Pareto-optimal candidate selection across multiple objectives
-    - Example: {"scores": {"accuracy": 0.85, "speed": 12.5, "robustness": 0.72}}
+   ``{"scores": {"accuracy": 0.85, "latency_inv": 12.5}}``
 
-2. **Contextual Information** (all other fields):
-    Qualitative and quantitative information that helps the LLM understand the evaluation
-    context and guide parameter improvements. Can include text, numbers, or structured data.
-    
-    Example fields:
-    - "Input" / "Inputs": The input(s) provided to the candidate
-    - "Output" / "Outputs": What the candidate actually produced
-    - "Expected" / "ExpectedOutput": Ground truth or desired output, if available
-    - "Feedback": Qualitative assessment of candidate performance. Can be human-written or machine-generated.
-    - "Error" / "ErrorMessage": Parsing / Compilation / Execution / Other errors or failure descriptions
-    - "Reasoning": Step-by-step reasoning trace or intermediate computations
-    - "ProfilerData": Performance profiling information
-    - "ValidationErrors": Schema validation or constraint violations
-    
-    Design principle: Include anything that would help a human understand why the
-    candidate succeeded or failed on this instance. Be descriptive in field names and values.
+2. **Contextual fields** — any other keys.  Common conventions:
 
-**Parameter-Specific Information** (optional):
+   - ``"Input"`` / ``"Output"`` / ``"Expected"`` — what went in and came out
+   - ``"Feedback"`` — qualitative assessment (human or machine)
+   - ``"Error"`` — error messages, tracebacks, compilation failures
+   - ``"Reasoning"`` — intermediate reasoning traces
 
-For multi-parameter optimization, you can provide targeted diagnostic information for
-individual parameters using "<param_name>_specific_info" fields. This is especially
-useful when different parameters have different failure modes.
+3. **Parameter-specific info** — ``"<param_name>_specific_info"`` dicts with
+   their own ``"scores"`` and contextual fields.  During reflection on
+   parameter *X*, GEPA merges top-level fields with ``X_specific_info``.
 
-- Format: {"<param_name>_specific_info": <nested_SideInfo_dict>}
-- The nested dict can contain its own "scores" and contextual fields
-- During reflection on parameter X, GEPA combines:
-    * All top-level SideInfo fields (shared context)
-    * The "<X>_specific_info" fields (parameter-specific context)
-- Use cases: parsing errors, parameter-specific constraints, component-level metrics
+4. **Images** — use :class:`~gepa.image.Image` for visual feedback (rendered
+   SVGs, charts, screenshots).  Requires a VLM as ``reflection_lm``.
 
-**Complete Example:**
+Example::
 
-```python
-{
-    # Multi-objective scores
-    "scores": {
-        "accuracy": 0.73,
-        "response_time_ms": 850,  # Already inverted (higher=better)
-        "user_satisfaction": 4.2
-    },
-
-    # Shared evaluation context
-    "Input": "Translate 'Hello world' to French",
-    "Output": "Salut monde",
-    "Expected": "Bonjour le monde",
-    "Feedback": "Translation is too informal for the context",
-    "ExecutionTime": 0.85, # Numeric value, still useful for context, but not "higher is better".
-
-    # Parameter-specific diagnostics
-    "system_prompt_specific_info": {
-        "scores": {
-            "tone_appropriateness": 0.3  # Low score explains the issue
+    {
+        "scores": {"accuracy": 0.73, "user_satisfaction": 4.2},
+        "Input": "Translate 'Hello world' to French",
+        "Output": "Salut monde",
+        "Expected": "Bonjour le monde",
+        "Feedback": "Translation is too informal for the context",
+        "system_prompt_specific_info": {
+            "scores": {"tone": 0.3},
+            "Analysis": "System prompt led to overly casual translation",
         },
-        "ParsedTone": "casual",
-        "ExpectedTone": "formal",
-        "Analysis": "System prompt led to overly casual translation"
-    },
-
-    "temperature_specific_info": {
-        "Feedback": "Temperature 0.9 caused inconsistent outputs"
-    }
-}
-```
-
-**Visual / Image Data** (optional, via :class:`~gepa.image.Image`):
-
-When evaluation results are best understood visually (rendered outputs, charts,
-screenshots, etc.), you can include images in ``side_info`` using the
-:class:`~gepa.image.Image` wrapper.  GEPA will pass these images inline to a
-vision-capable reflection LM (VLM) so it can analyze both textual and visual
-feedback.
-
-.. code-block:: python
-
-    from gepa.optimize_anything import Image
-
-    side_info = {
-        "Input": "design a logo with warm tones",
-        "RenderedOutput": Image(path="/tmp/logo_v3.png"),
-        "Feedback": "Colors are too muted",
     }
 
-``Image`` accepts one of: ``url`` (a URL or data-URI), ``path`` (local file),
-or ``base64_data`` + ``media_type``.  Images can appear at any nesting depth
-inside ``side_info``.
-
-**Best Practices:**
-
-- **Be generous with information**: More context = better LLM reflection
-- **Include failures prominently**: Error messages and failure reasons are crucial
-- **Use consistent field names**: Helps the LLM recognize patterns across evaluations
-- **Normalize scores**: Ensure "higher is better" for all metrics in "scores"
-- **Add context for metrics**: Don't just say accuracy=0.7, explain what was wrong
-- **Use parameter-specific info judiciously**: Only when you have parameter-targeted insights
-- **Use a VLM for reflection when passing images**: Ensure ``reflection_lm`` points to a
-  vision-capable model (e.g. ``openai/gpt-4o``) when including images in ``side_info``
-
-**Integration with Evaluator:**
-
-Your evaluator should construct SideInfo for each evaluation instance. See the
-Evaluator protocol documentation for the complete evaluation interface.
+Best practices:
+    - Include error messages and failure reasons prominently
+    - Use consistent field names across evaluations
+    - Add context beyond raw numbers (explain *what* went wrong)
+    - Use ``"scores"`` only for "higher is better" metrics used in Pareto tracking
 """
 
 
 @dataclass
 class OptimizationState:
-    """Optimization context passed to the evaluator function.
+    """Accumulated optimization context injected into evaluators that declare an ``opt_state`` parameter.
 
-    Contains accumulated optimization state that the evaluator can use
-    for warm-starting or informed evaluation decisions.
+    Provides historical evaluation results so your evaluator can warm-start
+    from previous best solutions (e.g., pass the best-known circle packing to
+    a new optimization attempt).
+
+    To receive this, simply add ``opt_state: OptimizationState`` to your
+    evaluator signature — GEPA injects it automatically.
+
+    Example::
+
+        def evaluator(candidate, example, opt_state: OptimizationState):
+            prev_best = opt_state.best_example_evals[0]["side_info"] if opt_state.best_example_evals else None
+            # ... use prev_best to warm-start ...
     """
 
     best_example_evals: list[dict]
-    """Top-K best evaluations for the current example, sorted descending by score.
-    Each entry is {"score": float, "side_info": dict}."""
+    """Top-K best evaluations for the current example, sorted by score (descending).
+
+    Each entry: ``{"score": float, "side_info": dict}``.  K is controlled by
+    ``EngineConfig.best_example_evals_k`` (default 30)."""
 
 
 # ---------------------------------------------------------------------------
@@ -345,99 +352,67 @@ class Evaluator(Protocol):
     def __call__(
         self, candidate: str | Candidate, example: object | None = None, **kwargs: Any
     ) -> tuple[float, SideInfo] | float:
-        """
-        Core evaluation interface for GEPA optimization.
+        """Score a candidate, returning a score and diagnostic side information (ASI).
 
-        Evaluates a candidate on a single example, returning a score and optional
-        diagnostic information that guide the optimization process.
+        This is the function you write.  GEPA calls it repeatedly with
+        mutated candidates and collects the returned scores and diagnostics
+        to drive the optimization loop.
 
-        **Parameters:**
+        Args:
+            candidate: The text parameter(s) to evaluate.  Type matches
+                ``seed_candidate``: plain ``str`` if you passed a string,
+                or ``dict[str, str]`` if you passed a dict.
+            example: One item from ``dataset``.  **Not passed** in
+                single-task search mode (``dataset=None``).
+            opt_state: *(optional)* Declare ``opt_state: OptimizationState``
+                in your signature to receive historical best evaluations
+                for warm-starting.  This is a **reserved parameter name**
+                — GEPA injects it automatically.
 
-        - **candidate**: The system configuration to evaluate.  Receives the same
-          type passed as ``seed_candidate`` to ``optimize_anything``:
-          ``str`` when ``seed_candidate`` is a plain string, or
-          ``dict[str, str]`` when ``seed_candidate`` is a dict.
+        Returns:
+            Either ``(score, side_info)`` or just ``score``:
 
-        - **example**: A single example from the dataset to evaluate on (test case,
-          input-output pair, task instance). In single-instance mode (when both ``dataset=None``
-          and ``valset=None`` are passed to ``optimize_anything``), this parameter will NOT be
-          passed to the evaluator at all.
+            - **score** (float): Higher is better.
+            - **side_info** (:data:`SideInfo`): Diagnostic dict (ASI)
+              powering LLM reflection.
 
-        - **opt_state** *(optional)*: An ``OptimizationState`` instance containing
-          accumulated optimization context (e.g. ``best_example_evals``).  To receive it,
-          simply declare ``opt_state`` as a parameter in your evaluator signature; it will
-          be filtered out automatically if not declared.
+            If you return score-only, use ``oa.log()`` or
+            ``capture_stdio=True`` to provide diagnostic context.
 
-          **Note:** ``opt_state`` is a **reserved parameter name**.  GEPA injects this
-          keyword argument automatically during evaluation.  Do not use the
-          name ``opt_state`` for an unrelated parameter in your evaluator
-          signature — doing so will cause it to receive the
-          ``OptimizationState`` object instead of whatever value you intended.
+        Evaluator signature per mode:
 
-        **Returns:**
+        **Single-Task Search** (``dataset=None``) — called without ``example``::
 
-        The evaluator can return values in two formats:
-
-        1. **Tuple format**: ``(score, side_info)``
-           - **score** (float): Fitness score for this instance. Higher is better.
-           - **side_info** (SideInfo): Auxiliary evaluation information powering LLM-based
-             reflection. See SideInfo documentation for details.
-
-        2. **Score-only format**: ``score`` (float)
-           - Returns only the score as a float.
-           - Diagnostic output can be provided via ``oa.log()`` (captured per-thread,
-             included in side_info under ``"log"``).
-           - If ``capture_stdio=True`` in ``EngineConfig``, stdout/stderr are also
-             captured automatically and included in side_info.
-
-        **Reserved side_info keys:**
-
-        The keys ``"log"``, ``"stdout"``, and ``"stderr"`` are used by
-        GEPA's automatic capture output.  If your evaluator returns a
-        ``side_info`` dict containing any of these keys *and* the corresponding
-        capture mechanism is active (``oa.log()`` for ``"log"``,
-        ``capture_stdio=True`` for ``"stdout"``/``"stderr"``), a warning
-        will be emitted and the captured output will be stored under a
-        prefixed key (e.g. ``"_gepa_log"``) to avoid data loss.  Rename
-        your keys to avoid the warning.
-
-        **Single-Instance Mode (Holistic Optimization):**
-
-        When both ``dataset=None`` and ``valset=None`` are passed to ``optimize_anything``, the
-        evaluator is called WITHOUT the ``example`` parameter::
-
-            # With explicit side_info (recommended)
-            def evaluate(candidate):
-                result = execute_my_code(candidate["code"])
-                score = compute_score(result)
-                return score, {"Output": str(result), "ExecutionTime": result.time}
-
-            # With oa.log()
             import gepa.optimize_anything as oa
+
             def evaluate(candidate):
-                result = execute_my_code(candidate["code"])
-                score = compute_score(result)
-                oa.log(f"Output: {result}")
-                oa.log(f"Execution time: {result.time}")
-                return score
+                result = run_code(candidate["code"])
+                oa.log(f"Output: {result}")      # ASI via oa.log()
+                return compute_score(result)
 
-        **Per-Instance Mode:**
-
-        When a dataset is provided, the evaluator is called with each example::
+        **Multi-Task Search / Generalization** (``dataset`` provided) — called per example::
 
             def evaluate(candidate, example):
-                prediction = candidate_predict(candidate, example["input"])
-                score = compute_score(prediction, example["expected"])
-                return score, {"Input": example["input"], "Prediction": prediction}
+                pred = run(candidate["prompt"], example["input"])
+                score = 1.0 if pred == example["expected"] else 0.0
+                return score, {"Input": example["input"], "Output": pred}
+
+        Reserved side_info keys:
+            ``"log"``, ``"stdout"``, ``"stderr"`` are used by GEPA's
+            automatic capture.  If you use them, GEPA stores captured
+            output under ``"_gepa_log"`` etc. to avoid collisions.
         """
         ...
 
 
 # --- Component 1: Engine & Stopping Configuration ---
-# Controls the main GEPAEngine run loop
 @dataclass
 class EngineConfig:
-    """Configuration for the GEPA engine run loop."""
+    """Controls the optimization run loop: budget, parallelism, caching, and stopping.
+
+    Most users only need to set ``max_metric_calls`` (evaluation budget) and
+    optionally ``parallel``/``max_workers`` for concurrent evaluation.
+    """
 
     run_dir: str | None = None
     seed: int = 0
@@ -604,10 +579,14 @@ Provide the new parameter value within ``` blocks."""
 
 
 # --- Component 2: Proposer Configurations ---
-# Config for the main reflective proposer
 @dataclass
 class ReflectionConfig:
-    """Configuration for the reflective mutation proposer."""
+    """Controls how the LLM proposes improved candidates each iteration.
+
+    The reflection LM sees evaluation feedback (side_info) for a minibatch of
+    examples and proposes a mutated candidate.  ``reflection_lm`` is the model
+    used for this step (defaults to ``openai/gpt-5.1``).
+    """
 
     skip_perfect_score: bool = False
     perfect_score: float | None = None
@@ -619,11 +598,13 @@ class ReflectionConfig:
     custom_candidate_proposer: ProposalFn | None = None
 
 
-# Config for the optional merge proposer
-# The existence of this config signals to use merge functionality
 @dataclass
 class MergeConfig:
-    """Configuration for the merge proposer."""
+    """Enables cross-pollination between candidates on the Pareto frontier.
+
+    When set, GEPA periodically attempts to merge strengths of two candidates
+    that each excel on different subsets of the validation set.
+    """
 
     max_merge_invocations: int = 5
     merge_val_overlap_floor: int = 5
@@ -653,14 +634,17 @@ Given a candidate and its evaluation feedback:
 
 @dataclass
 class RefinerConfig:
-    """Configuration for automatic candidate refinement (enabled by default).
+    """Automatic per-evaluation candidate refinement via LLM.
 
-    The refiner automatically improves candidates by calling an LLM after each
-    evaluation. A `refiner_prompt` is auto-injected into seed candidates and
-    co-evolved by GEPA. All non-refiner params are refined together as a JSON dict.
+    When enabled, after each evaluation GEPA calls an LLM to propose a refined
+    version of the candidate based on the evaluation feedback.  The refined
+    candidate is re-evaluated, and the better of (original, refined) is kept.
 
-    Refinement runs at least once, then continues until no improvement or max_refinements.
-    Set `config.refiner = None` to disable.
+    A ``refiner_prompt`` parameter is auto-injected into seed candidates and
+    co-evolved alongside the other parameters.  All non-refiner params are
+    refined together as a JSON dict.
+
+    Set ``config.refiner = None`` to disable refinement.
     """
 
     # Language model for refinement (defaults to reflection_lm if not specified)
@@ -671,10 +655,9 @@ class RefinerConfig:
 
 
 # --- Component 3: Experiment Tracking Configuration ---
-# Groups all logging and tracking settings
 @dataclass
 class TrackingConfig:
-    """Configuration for experiment tracking and logging."""
+    """Experiment tracking and logging (W&B, MLflow, or custom logger)."""
 
     logger: LoggerProtocol | None = None
     use_wandb: bool = False
@@ -685,15 +668,21 @@ class TrackingConfig:
     mlflow_experiment_name: str | None = None
 
 
-# --- The NEW Top-Level Configuration Class ---
-# This class is now a clean container for component-specific configs
 @dataclass
 class GEPAConfig:
-    """
-    Top-level configuration for GEPA optimization.
+    """Top-level configuration for :func:`optimize_anything`.
 
-    This config follows a nested structure inspired by Hugging Face Trainer,
-    Lightning, and Hydra, where each component has its own configuration class.
+    Groups all settings into nested component configs.  Sensible defaults are
+    provided — most users only need to set ``engine.max_metric_calls`` and
+    optionally ``reflection.reflection_lm``.
+
+    Example::
+
+        config = GEPAConfig(
+            engine=EngineConfig(max_metric_calls=200, parallel=True, max_workers=16),
+            reflection=ReflectionConfig(reflection_lm="openai/gpt-5.1"),
+            refiner=RefinerConfig(max_refinements=2),
+        )
     """
 
     # Component configurations
@@ -752,21 +741,12 @@ def make_litellm_lm(model_name: str) -> LanguageModel:
 
 
 class EvaluatorWrapper:
-    """Wraps a user's evaluator with GEPA's normalization layer.
+    """Internal wrapper that adapts a user's evaluator to GEPA's internal interface.
 
-    Wraps the user's evaluator to:
-
-    1. Handle single-instance mode (calls evaluator without ``example`` parameter)
-    2. Unwrap candidate dict to str when ``str_candidate_mode`` is True
-    3. Filter kwargs to only pass what the evaluator accepts (incl. ``opt_state``)
-    4. Capture ``oa.log()`` output and optionally stdout/stderr
-    5. Detect whether evaluator returns ``(score, side_info)`` tuple or just ``score``
-    6. Normalize return value to always be ``(score, output, side_info)`` tuple
-
-    The wrapper is callable — calling the instance invokes the wrapped evaluator::
-
-        wrapper = EvaluatorWrapper(eval_fn, single_instance_mode=True)
-        score, output, side_info = wrapper(candidate, example=example)
+    Handles: single-instance mode (omits ``example``), str-candidate unwrapping,
+    kwarg filtering (incl. ``opt_state`` injection), ``oa.log()`` capture,
+    optional stdout/stderr capture, and normalizing the return value to
+    ``(score, output, side_info)`` regardless of what the user returns.
     """
 
     def __init__(
@@ -906,62 +886,89 @@ def optimize_anything(
     background: str | None = None,
     config: GEPAConfig | None = None,
 ) -> GEPAResult:
-    """
-    Optimize any parameterized system using evolutionary algorithms with LLM-based reflection.
+    """Optimize any text artifact using LLM-guided evolutionary search.
 
-    This is the main entry point for GEPA optimization. It accepts a seed candidate (initial
-    parameter configuration), an evaluator function, and optionally a dataset of test cases.
+    This is the main entry point for GEPA.  You provide a starting candidate,
+    a scoring function, and GEPA handles the evolutionary loop: selecting
+    parents from a Pareto frontier, reflecting on evaluation feedback (ASI)
+    with an LLM, and proposing improved mutations.
 
-    **Two modes of operation:**
+    **Three optimization modes** (determined by ``dataset`` / ``valset``):
 
-    1. **Per-instance mode** (when ``dataset`` is provided): The evaluator is called
-       once per example in the dataset, and scores are aggregated.
+    1. **Single-Task Search** (``dataset=None, valset=None``):
+       Solve one hard problem.  Evaluator called without ``example``.
+       *E.g. circle packing, mathematical optimization, rocket trajectories.*
 
-    2. **Single-instance mode** (default, when ``dataset=None``): The evaluator is called
-       without the ``example`` parameter.
+    2. **Multi-Task Search** (``dataset=<list>, valset=None``):
+       Solve a batch of related problems with cross-transfer.
+       ``valset`` defaults to ``dataset``.
+       *E.g. CUDA kernel optimization for multiple models.*
+
+    3. **Generalization** (``dataset=<list>, valset=<list>``):
+       Build a general skill that transfers to unseen examples.
+       *E.g. prompt optimization for AIME math, agent evolution for ARC-AGI.*
 
     Args:
-        seed_candidate: Initial candidate(s) to start optimization from.  Can be:
-            - A plain ``str`` (wrapped internally; the evaluator receives the
-              raw ``str``).
-            - A ``dict[str, str]`` mapping parameter names to values.
-            - A ``list`` of candidate dicts for population-based initialization.
-        evaluator: Function that evaluates a candidate, returning ``score`` or
-            ``(score, side_info)``.  See :class:`Evaluator` protocol for details.
-        dataset: Examples to evaluate on. ``None`` → single-instance mode.
-        valset: Optional separate validation set. Defaults to ``dataset``.
-        objective: High-level goal guiding LLM reflection.
-        background: Domain knowledge / constraints for reflection.
-        config: Optional :class:`GEPAConfig`.
+        seed_candidate: Starting point for optimization.
+
+            - ``str`` — single text parameter (evaluator receives ``str``).
+            - ``dict[str, str]`` — named parameters (evaluator receives the dict).
+            - ``list[dict]`` — multiple seeds for population initialization.
+
+        evaluator: Scoring function.  Returns ``(score, side_info)`` or ``score``.
+            See :class:`Evaluator`.  Print diagnostics via ``oa.log()`` for ASI.
+        dataset: Examples for multi-task or generalization modes.
+            ``None`` = single-task search mode.
+        valset: Held-out validation set for generalization mode.
+            ``None`` = defaults to ``dataset`` (multi-task search).
+        objective: Natural-language goal for the reflection LLM (e.g.
+            ``"Generate prompts that solve competition math problems."``).
+        background: Domain knowledge, constraints, or strategies for the
+            reflection LLM.
+        config: Full configuration.  See :class:`GEPAConfig`.
 
     Returns:
-        :class:`GEPAResult` with the best candidate(s), history, and metrics.
+        :class:`~gepa.core.result.GEPAResult` — access ``result.best_candidate``
+        for the optimized parameter(s) and the full optimization history.
 
-    Example (per-instance mode)::
+    Examples:
 
-        result = optimize_anything(
-            seed_candidate={"prompt": "Solve this math problem:"},
-            evaluator=my_evaluator,
-            dataset=test_cases,
-            objective="Generate prompts that help solve math word problems.",
-            config=GEPAConfig(engine=EngineConfig(max_metric_calls=100)),
-        )
+        Single-task search (code evolution)::
 
-    Example (single-instance mode with str seed)::
+            import gepa.optimize_anything as oa
 
-        import gepa.optimize_anything as oa
+            def evaluate(candidate: str) -> float:
+                result = run_code(candidate)
+                oa.log(f"Output: {result}")
+                return compute_score(result)
 
-        def evaluate(candidate: str) -> float:
-            result = run_code(candidate)
-            oa.log(f"Output: {result}")
-            return compute_score(result)
+            result = optimize_anything(
+                seed_candidate="def solve(): return 0",
+                evaluator=evaluate,
+                objective="Evolve code that maximizes the objective.",
+                config=GEPAConfig(engine=EngineConfig(max_metric_calls=500)),
+            )
 
-        result = optimize_anything(
-            seed_candidate="def solve(): return 0",
-            evaluator=evaluate,
-            objective="Evolve code to maximize the objective function.",
-            config=GEPAConfig(engine=EngineConfig(max_metric_calls=500)),
-        )
+        Multi-task search (CUDA kernels)::
+
+            result = optimize_anything(
+                seed_candidate={"prompt": "Write an optimized CUDA kernel."},
+                evaluator=kernel_evaluator,
+                dataset=kernel_problems,       # batch of related problems
+                objective="Generate prompts that produce fast, correct CUDA kernels.",
+                config=GEPAConfig(engine=EngineConfig(max_metric_calls=300)),
+            )
+
+        Generalization (prompt optimization)::
+
+            result = optimize_anything(
+                seed_candidate={"prompt": "Solve this math problem:"},
+                evaluator=math_evaluator,
+                dataset=train_problems,        # train on these
+                valset=val_problems,           # must generalize to these
+                objective="Generate prompts that solve math word problems.",
+                config=GEPAConfig(engine=EngineConfig(max_metric_calls=200)),
+            )
     """
     # Use default config if not provided
     if config is None:
@@ -1210,9 +1217,7 @@ def optimize_anything(
 
     # --- 10. Validate reflection prompt template ---
     if config.reflection.reflection_prompt_template is not None:
-        assert not (
-            active_adapter is not None and getattr(active_adapter, "propose_new_texts", None) is not None
-        ), (
+        assert not (active_adapter is not None and getattr(active_adapter, "propose_new_texts", None) is not None), (
             f"Adapter {active_adapter!s} provides its own propose_new_texts method; "
             "reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
         )

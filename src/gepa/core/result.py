@@ -14,39 +14,27 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class GEPAResult(Generic[RolloutOutput, DataId]):
-    """
-    Immutable snapshot of a GEPA run with convenience accessors.
+    """Immutable snapshot returned by :func:`~gepa.optimize_anything.optimize_anything`.
 
-    - candidates: list of proposed candidates (component_name -> component_text)
-    - parents: lineage info; for each candidate i, parents[i] is a list of parent indices or None
-    - val_aggregate_scores: per-candidate aggregate score on the validation set (higher is better)
-    - val_subscores: per-candidate mapping from validation id to score on the validation set (sparse dict)
-    - val_aggregate_subscores: optional per-candidate aggregate subscores across objectives
-    - per_val_instance_best_candidates: for each val instance t, a set of candidate indices achieving the current best score on t
-    - per_objective_best_candidates: optional per-objective set of candidate indices achieving best aggregate subscore
-    - discovery_eval_counts: number of metric calls accumulated up to the discovery of each candidate
+    Key attributes:
+        best_candidate: The optimized parameter(s) — ``dict[str, str]`` or plain
+            ``str`` when ``seed_candidate`` was a string.
+        best_idx: Index of the highest-scoring candidate.
+        val_aggregate_scores: Per-candidate average validation score (higher is better).
+        candidates: All candidates explored during optimization.
+        parents: Lineage — ``parents[i]`` is a list of parent indices for candidate ``i``.
+        per_val_instance_best_candidates: Pareto frontier — per validation example,
+            the set of candidate indices achieving the best score.
+        best_refiner_prompt: The refiner prompt from the best candidate (if refiner was enabled).
 
-    Optional fields:
-    - best_outputs_valset: per-task best outputs on the validation set. [task_idx -> [(program_idx_1, output_1), (program_idx_2, output_2), ...]]
+    Serialization:
+        ``to_dict()`` / ``from_dict()`` for JSON-safe round-tripping.
 
-    Run-level metadata:
-    - total_metric_calls: total number of metric calls made across the run
-    - num_full_val_evals: number of full validation evaluations performed
-    - run_dir: where artifacts were written (if any)
-    - seed: RNG seed for reproducibility (if known)
-    - tracked_scores: optional tracked aggregate scores (if different from val_aggregate_scores)
+    Example::
 
-    Convenience:
-    - best_idx: candidate index with the highest val_aggregate_scores
-    - best_candidate: the program text mapping for best_idx (or a plain ``str``
-      when optimize_anything was called with a ``str`` seed_candidate)
-    - best_refiner_prompt: the refiner prompt from the best candidate, or None
-    - non_dominated_indices(): candidate indices that are not dominated across per-instance pareto fronts
-    - lineage(idx): parent chain from base to idx
-    - diff(parent_idx, child_idx, only_changed=True): component-wise diff between two candidates
-    - best_k(k): top-k candidates by aggregate val score
-    - instance_winners(t): set of candidates on the pareto front for val instance t
-    - to_dict(...), save_json(...): serialization helpers
+        result = optimize_anything(...)
+        print(result.best_candidate)
+        print(result.val_aggregate_scores[result.best_idx])
     """
 
     # Core data
