@@ -450,7 +450,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                             "iteration": refinement_iter + 1,
                             "error": f"JSON parse error: {parse_err}",
                             "raw_output": raw_output[:2000],
-                            "score": 0.0,
+                            "score": -1e9,
                         }
                     )
                     continue
@@ -490,7 +490,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     {
                         "iteration": refinement_iter + 1,
                         "error": str(e),
-                        "score": 0.0,
+                        "score": -1e9,
                     }
                 )
                 break
