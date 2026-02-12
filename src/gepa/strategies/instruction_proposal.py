@@ -47,7 +47,7 @@ Provide the new instructions within ``` blocks."""
             raise TypeError("current_instruction_doc must be a string")
 
         dataset = input_dict.get("dataset_with_feedback")
-        if not isinstance(dataset, Sequence) or isinstance(dataset, (str, bytes)):
+        if not isinstance(dataset, Sequence) or isinstance(dataset, str | bytes):
             raise TypeError("dataset_with_feedback must be a sequence of records")
 
         def format_samples(samples):

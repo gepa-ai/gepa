@@ -20,7 +20,7 @@ ProgramIdx = int
 # Type aliases
 ObjectiveScores: TypeAlias = dict[str, float]
 FrontierType: TypeAlias = Literal["instance", "objective", "hybrid", "cartesian"]
-"""Strategy for tracking Pareto frontiers: 'instance' (per validation example), 'objective' (per objective metric), 'hybrid' (both), or 'cartesian' (per example × objective)."""
+"""Strategy for tracking Pareto frontiers: 'instance' (per validation example), 'objective' (per objective metric), 'hybrid' (both), or 'cartesian' (per example x objective)."""
 FrontierKey: TypeAlias = DataId | str | tuple[str, DataId] | tuple[str, DataId, str]
 """Key type for frontier mappings depending on frontier_type."""
 
@@ -193,7 +193,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.parent_program_for_candidate = [[None]]
 
         self.frontier_type: FrontierType = frontier_type
-        self.pareto_front_valset = {val_id: score for val_id, score in base_evaluation.scores_by_val_id.items()}
+        self.pareto_front_valset = dict(base_evaluation.scores_by_val_id)
         self.program_at_pareto_front_valset = {val_id: {0} for val_id in base_evaluation.scores_by_val_id.keys()}
         self.objective_pareto_front = dict(base_objective_aggregates)
         self.program_at_pareto_front_objectives = {objective: {0} for objective in base_objective_aggregates.keys()}
@@ -332,13 +332,11 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         assert isinstance(d["prog_candidate_val_subscores"], list)
         assert all(isinstance(scores, list) for scores in d["prog_candidate_val_subscores"])
         legacy_scores: list[list[float]] = d.pop("prog_candidate_val_subscores", [])
-        d["prog_candidate_val_subscores"] = [
-            {idx: score for idx, score in enumerate(scores)} for scores in legacy_scores
-        ]
+        d["prog_candidate_val_subscores"] = [dict(enumerate(scores)) for scores in legacy_scores]
 
         pareto_front = d.get("pareto_front_valset")
         if isinstance(pareto_front, list):
-            d["pareto_front_valset"] = {idx: score for idx, score in enumerate(pareto_front)}
+            d["pareto_front_valset"] = dict(enumerate(pareto_front))
 
         program_at_front = d.get("program_at_pareto_front_valset")
         if isinstance(program_at_front, list):

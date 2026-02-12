@@ -67,18 +67,24 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.skip_perfect_score = skip_perfect_score
         self.experiment_tracker = experiment_tracker
         self.reflection_lm = reflection_lm
-        self.custom_parameter_proposer = custom_candidate_proposer
+        self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
+
         self.reflection_prompt_template = reflection_prompt_template
+        # Track parameters for which we've already logged missing template warnings
+        self._missing_template_warnings: set[str] = set()
 
         if isinstance(reflection_prompt_template, dict):
-            for param_name, template in reflection_prompt_template.items():
+            for _param_name, template in reflection_prompt_template.items():
                 InstructionProposalSignature.validate_prompt_template(template)
         else:
             InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
 
         if self.skip_perfect_score and self.perfect_score is None:
-            raise ValueError("perfect_score must be provided when skip_perfect_score is True.")
+            raise ValueError(
+                "perfect_score must be provided when skip_perfect_score is True. "
+                "If you do not have a perfect target score, set skip_perfect_score=False."
+            )
 
     def propose_new_texts(
         self,
@@ -89,8 +95,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         if self.adapter.propose_new_texts is not None:
             return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update)
 
-        if self.custom_parameter_proposer is not None:
-            return self.custom_parameter_proposer(candidate, reflective_dataset, components_to_update)
+        if self.custom_candidate_proposer is not None:
+            return self.custom_candidate_proposer(candidate, reflective_dataset, components_to_update)
 
         if self.reflection_lm is None:
             raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
@@ -110,10 +116,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             if isinstance(self.reflection_prompt_template, dict):
                 # Use parameter-specific template if available
                 prompt_template = self.reflection_prompt_template.get(name)
-                if prompt_template is None:
+                if prompt_template is None and name not in self._missing_template_warnings:
                     self.logger.log(
                         f"No reflection_prompt_template found for parameter '{name}'. Using default template."
                     )
+                    self._missing_template_warnings.add(name)
             else:
                 # Use the single template for all parameters
                 prompt_template = self.reflection_prompt_template
@@ -231,7 +238,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         if (
             self.skip_perfect_score
             and self.perfect_score is not None
-            and all(s >= self.perfect_score for s in eval_curr.scores)
+            and all(s is not None and s >= self.perfect_score for s in eval_curr.scores)
         ):
             self.logger.log(f"Iteration {i}: All subsample scores perfect. Skipping.")
             notify_callbacks(
