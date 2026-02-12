@@ -171,7 +171,7 @@ Structure
    their own ``"scores"`` and contextual fields.  During reflection on
    parameter *X*, GEPA merges top-level fields with ``X_specific_info``.
 
-4. **Images** — use :class:`~gepa.image.Image` for visual feedback (rendered
+4. **Images** — use :class:`~gepa.Image` for visual feedback (rendered
    SVGs, charts, screenshots).  Requires a VLM as ``reflection_lm``.
 
 Example::

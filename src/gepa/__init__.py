@@ -3,6 +3,7 @@
 
 from .adapters import default_adapter
 from .api import optimize
+from .optimize_anything import optimize_anything
 from .core.adapter import EvaluationBatch, GEPAAdapter
 from .core.result import GEPAResult
 from .examples import aime
