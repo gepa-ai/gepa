@@ -15,6 +15,7 @@ from examples.polynomial.utils import (
 from gepa.optimize_anything import (
     EngineConfig,
     GEPAConfig,
+    OptimizationState,
     ReflectionConfig,
     optimize_anything,
 )
@@ -28,9 +29,9 @@ TIMEOUT = 300
 def main():
     log_dir = f"outputs/polynomial/{time.strftime('%y%m%d_%H%M%S')}"
 
-    def fitness_fn(candidate, best_example_evals):
+    def fitness_fn(candidate, opt_state: OptimizationState | None = None):
         code = candidate["code"]
-        best_xs = extract_best_xs(best_example_evals)
+        best_xs = extract_best_xs(opt_state)
 
         result = execute_code(
             code=code,

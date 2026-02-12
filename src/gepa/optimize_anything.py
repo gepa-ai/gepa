@@ -750,6 +750,7 @@ class EvaluatorWrapper:
         single_instance_mode: bool,
         capture_stdio: bool = False,
         str_candidate_mode: bool = False,
+        raise_on_exception: bool = True,
     ) -> None:
         # Inspect the evaluator's signature once to determine which kwargs it accepts.
         sig = inspect.signature(evaluator_fn)
@@ -802,6 +803,8 @@ class EvaluatorWrapper:
                     stderr_capturer.start_capture()
 
                 result = evaluator_fn(eval_candidate, **filtered)
+            except Exception as e:
+                result = e  # Sentinel; handled below after cleanup
             finally:
                 captured_stdout = stdout_capturer.stop_capture() if stdout_capturer else ""
                 captured_stderr = stderr_capturer.stop_capture() if stderr_capturer else ""
@@ -809,6 +812,19 @@ class EvaluatorWrapper:
                     stream_manager.release()
                 log_output = log_ctx.reset()
                 _set_log_context(None)
+
+            # If evaluator raised, preserve captured diagnostics
+            if isinstance(result, Exception):
+                if raise_on_exception:
+                    raise result
+                fail_side_info: SideInfo = {"error": str(result)}
+                if log_output:
+                    fail_side_info["log"] = log_output
+                if captured_stdout:
+                    fail_side_info["stdout"] = captured_stdout
+                if captured_stderr:
+                    fail_side_info["stderr"] = captured_stderr
+                return 0.0, None, fail_side_info
 
             # Detect return type and normalize to (score, output, side_info)
             if isinstance(result, tuple):
@@ -952,6 +968,7 @@ def optimize_anything(
         single_instance_mode,
         capture_stdio=config.engine.capture_stdio,
         str_candidate_mode=str_candidate_mode,
+        raise_on_exception=config.engine.raise_on_exception,
     )
 
     # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where

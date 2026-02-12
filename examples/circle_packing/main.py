@@ -1,44 +1,24 @@
 #!/usr/bin/env python3
-import numpy as np
-
 from examples.circle_packing.utils import (
     execute_code,
+    extract_best_circles,
     SEED_CODE1,
-    SEED_CODE2,
     compute_multiple_metrics,
     CIRCLE_PACKING_BACKGROUND,
 )
 from gepa.optimize_anything import (
     EngineConfig,
     GEPAConfig,
-    RefinerConfig,
+    OptimizationState,
     ReflectionConfig,
     optimize_anything,
 )
 
-# Constants
-MAX_METRIC_CALLS = 150
-NUM_CIRCLES = 26
-TIMEOUT = 600  # 10 minutes, same as OpenEvolve
 
-
-
-def extract_best_circles(best_example_evals: list[dict]) -> np.ndarray | None:
-    """Extract best circles from result."""
-    if not best_example_evals:
-        return None
-    circles = [
-        e["side_info"]["Circles"]
-        for e in best_example_evals
-        if e["side_info"].get("Circles") is not None
-    ]
-    return np.array(circles) if circles else None
-
-
-def fitness_fn(candidate, best_example_evals):
+def fitness_fn(candidate, opt_state: OptimizationState | None = None):
     code = candidate["code"]
-    warm_start = extract_best_circles(best_example_evals)
-    result = execute_code(code, TIMEOUT, warm_start)
+    warm_start = extract_best_circles(opt_state)
+    result = execute_code(code, 600, warm_start)
 
     if result["success"]:
         circles = result["result"]["circles"]
@@ -50,7 +30,7 @@ def fitness_fn(candidate, best_example_evals):
         metrics = {"sum_radii": 0.0}
         
     side_info = {
-        "score": {"sum_radii": score}, 
+        "scores": {"sum_radii": score},
         "metrics": metrics,
         "code": code,
         "circles": circles,
@@ -71,13 +51,12 @@ def main():
     gepa_config = GEPAConfig(
         engine=EngineConfig(
             run_dir="outputs/circle_packing",
-            max_metric_calls=MAX_METRIC_CALLS,
+            max_metric_calls=150,
             track_best_outputs=True,
             frontier_type="objective",
             cache_evaluation=True,
         ),
-        reflection=ReflectionConfig(),
-        refiner=RefinerConfig(),
+        reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
     )
 
     optimize_anything(

@@ -39,7 +39,7 @@ def solve(train_inputs, train_outputs, test_inputs, llm):
     training_examples = "\\n".join(f"Input: {i}\\nOutput: {o}" for i, o in zip(train_inputs, train_outputs))
     problem_inputs = "\\n".join(f"Input {i}: {x}" for i, x in enumerate(train_inputs + test_inputs))
 
-    prompt = f"ARC puzzle. Training examples:\\n{training_examples}\\n\\nPredict output for EACH input as JSON [[...]]:\\n{problem_inputs}"
+    prompt = f"Solve an ARC AGI puzzle. Training examples:\\n{training_examples}\\n\\nPredict output for EACH input as JSON [[...]]:\\n{problem_inputs}"
     response = llm(prompt)
 
     grids = [json.loads(g) for g in re.findall(r"\\[\\[.*?\\]\\]", response.replace("\\n", ""))]

@@ -294,31 +294,27 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # 4. Side_info = original evaluation (so reflection sees raw candidate quality)
         aggregated_side_info = dict(original_side_info)
 
-        # 5. Add refiner_prompt_specific_info with best refined scores + attempt history
-        #    "scores" = actual best metric values across all attempts (for objective frontier)
-        #    Only consider attempts that produced real evaluation results (have "side_info"),
-        #    so that failed attempts (JSON parse errors, exceptions) with placeholder score=0.0
-        #    don't mask real evaluations when original scores are negative.
-        #    Fallback: if no refinement attempts produced evaluation results, use the
-        #    original evaluation's side_info (iteration 0 always has "side_info").
-        evaluated_attempts = [a for a in all_attempts if "side_info" in a]
-        best_refined_scores = {}
-        if evaluated_attempts:
-            best_attempt = max(evaluated_attempts, key=lambda x: x.get("score", float("-inf")))
-            best_attempt_side_info = best_attempt.get("side_info")
-            if isinstance(best_attempt_side_info, dict) and "scores" in best_attempt_side_info:
-                best_refined_scores = best_attempt_side_info["scores"]
-        else:
-            # All refinement attempts failed (JSON parse errors, exceptions).
-            # Fall back to the original evaluation's scores so the objective
-            # frontier still has meaningful metric values.
-            if isinstance(original_side_info, dict) and "scores" in original_side_info:
-                best_refined_scores = original_side_info["scores"]
+        # 5. Add refiner_prompt_specific_info with attempt history
+        #    Only include "scores" if the user's side_info has "scores" (for objective frontier)
+        refiner_side_info: dict[str, Any] = {"Attempts": all_attempts}
 
-        aggregated_side_info["refiner_prompt_specific_info"] = {
-            "scores": best_refined_scores,
-            "Attempts": all_attempts,
-        }
+        if "scores" in original_side_info:
+            # Only consider attempts that produced real evaluation results (have "side_info")
+            # so that failed attempts (JSON parse errors, exceptions) with placeholder score=0.0
+            # don't mask real evaluations when original scores are negative
+            evaluated_attempts = [a for a in all_attempts if "side_info" in a]
+            best_refined_scores = {}
+            if evaluated_attempts:
+                best_attempt = max(
+                    evaluated_attempts,
+                    key=lambda x: x.get("score", float("-inf")),
+                )
+                best_attempt_side_info = best_attempt.get("side_info")
+                if isinstance(best_attempt_side_info, dict) and "scores" in best_attempt_side_info:
+                    best_refined_scores = best_attempt_side_info["scores"]
+            refiner_side_info["scores"] = best_refined_scores
+
+        aggregated_side_info["refiner_prompt_specific_info"] = refiner_side_info
 
         # Package output as (score, best_candidate, side_info) tuple
         output = (final_score, best_candidate, aggregated_side_info)
@@ -389,6 +385,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         ]
 
         # Iterative refinement
+        refiner_lm = self.refiner_config.refiner_lm
+        assert callable(refiner_lm), (
+            "refiner_lm must be a callable LanguageModel, not a string or None. "
+            "Ensure optimize_anything() has converted it via make_litellm_lm()."
+        )
+
         current_params = params_dict
         for refinement_iter in range(self.refiner_config.max_refinements):
             # Format ALL attempts so far for the refiner (provides full history)
@@ -399,11 +401,6 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     refiner_prompt=refiner_prompt,
                     candidate_to_improve=json.dumps(current_params, indent=2),
                     evaluation_feedback=current_feedback,
-                )
-                refiner_lm = self.refiner_config.refiner_lm
-                assert callable(refiner_lm), (
-                    "refiner_lm must be a callable LanguageModel, not a string or None. "
-                    "Ensure optimize_anything() has converted it via make_litellm_lm()."
                 )
                 raw_output = refiner_lm(prompt).strip()
                 # Strip markdown code fences if present
