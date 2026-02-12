@@ -750,6 +750,7 @@ class EvaluatorWrapper:
         single_instance_mode: bool,
         capture_stdio: bool = False,
         str_candidate_mode: bool = False,
+        raise_on_exception: bool = True,
     ) -> None:
         self._capture_stdio = capture_stdio
 
@@ -813,6 +814,8 @@ class EvaluatorWrapper:
 
             # If evaluator raised, preserve captured diagnostics
             if isinstance(result, Exception):
+                if raise_on_exception:
+                    raise result
                 fail_side_info: SideInfo = {"error": str(result)}
                 if log_output:
                     fail_side_info["log"] = log_output
@@ -964,6 +967,7 @@ def optimize_anything(
         single_instance_mode,
         capture_stdio=config.engine.capture_stdio,
         str_candidate_mode=str_candidate_mode,
+        raise_on_exception=config.engine.raise_on_exception,
     )
 
     # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where

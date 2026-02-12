@@ -232,6 +232,21 @@ OUTPUT REQUIREMENTS:
 
 
 
+def extract_best_circles(opt_state: Any) -> np.ndarray | None:
+    """Extract best circles from OptimizationState for warm-starting."""
+    if opt_state is None:
+        return None
+    best_evals = opt_state.best_example_evals
+    if not best_evals:
+        return None
+    circles = [
+        e["side_info"]["Circles"]
+        for e in best_evals
+        if e["side_info"].get("Circles") is not None
+    ]
+    return np.array(circles) if circles else None
+
+
 def compute_multiple_metrics(all_scores: list[float]) -> dict[str, float]:
     """Compute various metrics from score history."""
     alpha_fixed = 0.1

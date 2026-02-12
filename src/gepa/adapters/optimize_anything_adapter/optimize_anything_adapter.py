@@ -385,6 +385,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         ]
 
         # Iterative refinement
+        refiner_lm = self.refiner_config.refiner_lm
+        assert callable(refiner_lm), (
+            "refiner_lm must be a callable LanguageModel, not a string or None. "
+            "Ensure optimize_anything() has converted it via make_litellm_lm()."
+        )
+
         current_params = params_dict
         for refinement_iter in range(self.refiner_config.max_refinements):
             # Format ALL attempts so far for the refiner (provides full history)
@@ -395,11 +401,6 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     refiner_prompt=refiner_prompt,
                     candidate_to_improve=json.dumps(current_params, indent=2),
                     evaluation_feedback=current_feedback,
-                )
-                refiner_lm = self.refiner_config.refiner_lm
-                assert callable(refiner_lm), (
-                    "refiner_lm must be a callable LanguageModel, not a string or None. "
-                    "Ensure optimize_anything() has converted it via make_litellm_lm()."
                 )
                 raw_output = refiner_lm(prompt).strip()
                 # Strip markdown code fences if present

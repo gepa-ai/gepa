@@ -78,10 +78,15 @@ def append_eval_history(log_dir: str, all_attempts: list[dict]):
             f.write(json.dumps(entry) + "\n")
 
 
-def extract_best_xs(best_example_evals: list[dict], top_k: int = 100) -> list[dict]:
-    """Extract best_xs from best evaluations, sorted by score (best first)."""
+def extract_best_xs(opt_state, top_k: int = 100) -> list[dict]:
+    """Extract best_xs from OptimizationState, sorted by score (best first)."""
+    if opt_state is None:
+        return []
+    best_example_evals = opt_state.best_example_evals
+    if not best_example_evals:
+        return []
     all_attempts = []
-    for e in best_example_evals or []:
+    for e in best_example_evals:
         side_info = e.get("side_info", {})
         all_attempts.extend(side_info.get("top_50_attempts", []))
     sorted_attempts = sorted(all_attempts, key=lambda t: t["score"])[:top_k]
