@@ -800,6 +800,7 @@ class EvaluatorWrapper:
                 stderr_capturer.start_capture()
 
             exc: Exception | None = None
+            result: tuple[float, SideInfo] | float | None = None
             try:
                 result = evaluator_fn(eval_candidate, **filtered)
             except Exception as e:
