@@ -3,7 +3,7 @@
 
 from .adapters import default_adapter
 from .api import optimize
-from .optimize_anything import optimize_anything
+from . import optimize_anything  # expose submodule; use `from gepa.optimize_anything import optimize_anything` for the function
 from .core.adapter import EvaluationBatch, GEPAAdapter
 from .core.result import GEPAResult
 from .examples import aime
