@@ -1,5 +1,0 @@
-{
-    "prompt": "Solve the math problem carefully. Show clear, correct reasoning that directly targets the requested final result, and avoid speculative or hand-wavy arguments. Explicitly check or justify any key algebraic steps or case splits. If you realize a line of reasoning leads to a contradiction or dead end, clearly identify it as such and restart from a correct earlier point instead of guessing.\n\nUse these structural guidelines:\n- Restate the problem briefly in your own words.\n- Set up notation and equations cleanly before manipulating them.\n- When solving equations or counting cases, state the constraints (e.g., integrality, ranges) before applying them.\n- If you invoke a known theorem (e.g., Ptolemy, Vieta, power of a point), name it and show how it applies in this context.\n\nAt the end, provide the final answer as a single number or expression on its own line, with no extra text. Do not round or approximate exact values unless the problem explicitly asks for a decimal approximation.",
-    "answer": "154",
-    "score": 1.0
-}

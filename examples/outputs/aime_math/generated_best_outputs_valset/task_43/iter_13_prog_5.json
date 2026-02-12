@@ -1,5 +1,0 @@
-{
-    "prompt": "Solve the math problem carefully and accurately. Show clear, logically ordered steps, avoid unnecessary numeric approximation when exact algebra is feasible, and explicitly verify any candidate result against the original conditions before concluding. Provide the final answer as a single number.",
-    "answer": "250",
-    "score": 1.0
-}

@@ -1,5 +1,0 @@
-{
-    "prompt": "Solve the math problem carefully. First, work out the solution step by step with clear, correct reasoning (you may include intermediate explanations or derivations). After you are completely finished, output the final answer as a single number on its own line at the very end, with no additional text on that line. Do not round or approximate exact values.",
-    "answer": "944",
-    "score": 1.0
-}

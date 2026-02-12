@@ -85,10 +85,6 @@ target/
 profile_default/
 ipython_config.py
 
-# Logs
-logs/
-wandb/
-
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
 #   intended to run in multiple environments; otherwise, check them in:
@@ -212,6 +208,3 @@ __marimo__/
 # Experiments
 runs/
 gepa_terminus/
-
-examples/adrs/can_be_late/simulator/realoutputs/
-examples/adrs/can_be_late/simulator/real/

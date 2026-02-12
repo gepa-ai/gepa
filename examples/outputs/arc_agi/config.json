@@ -1,6 +1,0 @@
-{
-  "max_metric_calls": 100,
-  "reflection_minibatch_size": 3,
-  "llm_model": "openai/gpt-5",
-  "seed": 0
-}

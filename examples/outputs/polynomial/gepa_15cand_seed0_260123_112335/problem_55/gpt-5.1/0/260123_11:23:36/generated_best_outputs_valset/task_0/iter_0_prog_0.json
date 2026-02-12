@@ -1,9 +1,0 @@
-{
-    "score": 1.3412026987445147,
-    "Input": "Xor",
-    "Prints": "",
-    "Logs": "",
-    "Error": "",
-    "code": "\nimport numpy as np\n\ndef solve(objective_function, config, prev_best_x=None):\n    bounds = np.array(config['bounds'])\n    x = np.random.uniform(bounds[:, 0], bounds[:, 1])\n    y = objective_function(x)\n    return x\n",
-    "X": "0.0976270078546495 0.43037873274483895 0.20552675214328775 0.08976636599379373 -0.15269040132219058 0.29178822613331223 -0.12482557747461498 0.7835460015641595 0.9273255210020586"
-}
