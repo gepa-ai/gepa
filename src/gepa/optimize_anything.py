@@ -27,6 +27,7 @@ from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
+from gepa.image import Image  # noqa: F401 — re-exported for user convenience
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -160,6 +161,28 @@ useful when different parameters have different failure modes.
 }
 ```
 
+**Visual / Image Data** (optional, via :class:`~gepa.image.Image`):
+
+When evaluation results are best understood visually (rendered outputs, charts,
+screenshots, etc.), you can include images in ``side_info`` using the
+:class:`~gepa.image.Image` wrapper.  GEPA will pass these images inline to a
+vision-capable reflection LM (VLM) so it can analyze both textual and visual
+feedback.
+
+.. code-block:: python
+
+    from gepa.optimize_anything import Image
+
+    side_info = {
+        "Input": "design a logo with warm tones",
+        "RenderedOutput": Image(path="/tmp/logo_v3.png"),
+        "Feedback": "Colors are too muted",
+    }
+
+``Image`` accepts one of: ``url`` (a URL or data-URI), ``path`` (local file),
+or ``base64_data`` + ``media_type``.  Images can appear at any nesting depth
+inside ``side_info``.
+
 **Best Practices:**
 
 - **Be generous with information**: More context = better LLM reflection
@@ -168,6 +191,8 @@ useful when different parameters have different failure modes.
 - **Normalize scores**: Ensure "higher is better" for all metrics in "scores"
 - **Add context for metrics**: Don't just say accuracy=0.7, explain what was wrong
 - **Use parameter-specific info judiciously**: Only when you have parameter-targeted insights
+- **Use a VLM for reflection when passing images**: Ensure ``reflection_lm`` points to a
+  vision-capable model (e.g. ``openai/gpt-4o``) when including images in ``side_info``
 
 **Integration with Evaluator:**
 
@@ -710,14 +735,14 @@ def make_litellm_lm(model_name: str) -> LanguageModel:
     """Convert a LiteLLM model name string to a :class:`LanguageModel` callable.
 
     The returned callable conforms to the ``LanguageModel`` protocol and
-    accepts both a plain ``str`` prompt and a ``list[dict[str, str]]``
-    chat-messages list.
+    accepts a plain ``str`` prompt, a ``list[dict]`` chat-messages list, or
+    a multimodal messages list (with content arrays containing images).
     """
     import litellm
 
-    def _lm(prompt: str | list[dict[str, str]]) -> str:
+    def _lm(prompt: str | list[dict[str, Any]]) -> str:
         if isinstance(prompt, str):
-            messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+            messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
         else:
             messages = prompt
         completion = litellm.completion(model=model_name, messages=messages)
