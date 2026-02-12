@@ -799,12 +799,10 @@ class EvaluatorWrapper:
                 stdout_capturer.start_capture()
                 stderr_capturer.start_capture()
 
-            exc: Exception | None = None
-            result: tuple[float, SideInfo] | float | None = None
             try:
                 result = evaluator_fn(eval_candidate, **filtered)
             except Exception as e:
-                exc = e
+                result = e  # Sentinel; handled below after cleanup
             finally:
                 captured_stdout = stdout_capturer.stop_capture() if stdout_capturer else ""
                 captured_stderr = stderr_capturer.stop_capture() if stderr_capturer else ""
@@ -813,9 +811,9 @@ class EvaluatorWrapper:
                 log_output = log_ctx.reset()
                 _set_log_context(None)
 
-            # If evaluator raised, preserve captured diagnostics before re-raising
-            if exc is not None:
-                fail_side_info: SideInfo = {"error": str(exc)}
+            # If evaluator raised, preserve captured diagnostics
+            if isinstance(result, Exception):
+                fail_side_info: SideInfo = {"error": str(result)}
                 if log_output:
                     fail_side_info["log"] = log_output
                 if captured_stdout:
