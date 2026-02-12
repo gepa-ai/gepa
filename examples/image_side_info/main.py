@@ -164,7 +164,7 @@ def main():
     parser = argparse.ArgumentParser(description="E2E example: images in side_info")
     parser.add_argument("--mock", action="store_true", help="Use a local mock LM (no API key needed)")
     parser.add_argument("--model", default="openai/gpt-4o-mini", help="LiteLLM model name for reflection")
-    parser.add_argument("--max-calls", type=int, default=6, help="Max evaluator calls")
+    parser.add_argument("--max-calls", type=int, default=10, help="Max evaluator calls")
     args = parser.parse_args()
 
     # Pick reflection LM

@@ -453,7 +453,7 @@ class EngineConfig:
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
     candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto"
-    frontier_type: FrontierType = "instance"
+    frontier_type: FrontierType = "hybrid"
 
     # Parallelization settings for evaluation
     parallel: bool = False
