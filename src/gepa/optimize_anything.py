@@ -211,8 +211,8 @@ class LogContext:
         with self._lock:
             self._buffer.write(text)
 
-    def reset(self) -> str:
-        """Read and reset the buffer contents.  Returns accumulated text."""
+    def drain(self) -> str:
+        """Drain and return all accumulated text, leaving the buffer empty."""
         with self._lock:
             old = self._buffer
             text = old.getvalue()
@@ -810,7 +810,7 @@ class EvaluatorWrapper:
                 captured_stderr = stderr_capturer.stop_capture() if stderr_capturer else ""
                 if capture_stdio and stdout_capturer is not None:
                     stream_manager.release()
-                log_output = log_ctx.reset()
+                log_output = log_ctx.drain()
                 _set_log_context(None)
 
             # If evaluator raised, preserve captured diagnostics
