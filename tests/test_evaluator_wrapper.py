@@ -146,7 +146,7 @@ class TestOaLog:
     def test_log_parallel_evaluators_no_cross_contamination(self):
         """Parallel evaluator calls should not cross-contaminate log output.
 
-        Each EvaluatorWrapper call creates a fresh _LogContext in thread-local
+        Each EvaluatorWrapper call creates a fresh LogContext in thread-local
         storage, so concurrent calls on different threads are structurally
         isolated — no timing tricks needed.
         """

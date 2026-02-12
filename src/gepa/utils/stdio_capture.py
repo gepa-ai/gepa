@@ -84,7 +84,13 @@ class ThreadLocalStreamCapture:
         self._local.buffer = io.StringIO()
 
     def stop_capture(self) -> str:
-        """Stop capturing and return the captured text for the current thread."""
+        """Stop capturing and return the captured text for the current thread.
+
+        Safe to call even if :meth:`start_capture` was never called on this
+        thread — returns an empty string in that case.
+        """
+        if not getattr(self._local, "capturing", False):
+            return ""
         self._local.capturing = False
         text = self._local.buffer.getvalue()
         self._local.buffer = io.StringIO()

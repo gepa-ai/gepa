@@ -194,7 +194,7 @@ class OptimizationState:
 # ---------------------------------------------------------------------------
 
 
-class _LogContext:
+class LogContext:
     """Thread-safe log buffer for a single evaluator invocation.
 
     All ``oa.log()`` calls within the same evaluator call write to the same
@@ -221,21 +221,21 @@ class _LogContext:
             return text
 
 
-# Thread-local storage for the active _LogContext on each thread.
+# Thread-local storage for the active LogContext on each thread.
 _log_tls = threading.local()
 
 
-def _get_log_context() -> "_LogContext | None":
+def _get_log_context() -> "LogContext | None":
     """Return the active log context for the current thread, or None."""
     return getattr(_log_tls, "context", None)
 
 
-def _set_log_context(ctx: "_LogContext | None") -> None:
+def _set_log_context(ctx: "LogContext | None") -> None:
     """Set (or clear) the active log context on the current thread."""
     _log_tls.context = ctx
 
 
-def get_log_context() -> _LogContext:
+def get_log_context() -> LogContext:
     """Return the active log context for the current evaluator call.
 
     Use this to propagate ``oa.log()`` capture to child threads spawned
@@ -268,7 +268,7 @@ def get_log_context() -> _LogContext:
     return ctx
 
 
-def set_log_context(ctx: _LogContext) -> None:
+def set_log_context(ctx: LogContext) -> None:
     """Set the log context on the current thread.
 
     Call this at the start of a child thread to route ``oa.log()`` output
@@ -751,8 +751,6 @@ class EvaluatorWrapper:
         capture_stdio: bool = False,
         str_candidate_mode: bool = False,
     ) -> None:
-        self._capture_stdio = capture_stdio
-
         # Inspect the evaluator's signature once to determine which kwargs it accepts.
         sig = inspect.signature(evaluator_fn)
         has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
@@ -770,9 +768,9 @@ class EvaluatorWrapper:
             candidate: Candidate, example: object | None = None, **kwargs: Any
         ) -> tuple[float, Any, SideInfo]:
             # Create a fresh, shared log context for this evaluator call.
-            # The same _LogContext is accessible from child threads via
+            # The same LogContext is accessible from child threads via
             # oa.get_log_context() / oa.set_log_context().
-            log_ctx = _LogContext()
+            log_ctx = LogContext()
             _set_log_context(log_ctx)
 
             # Build full kwargs dict. In single-instance mode, don't forward
@@ -792,19 +790,22 @@ class EvaluatorWrapper:
             # Acquire per-thread stream capture from the shared manager per-call.
             # This scopes the sys.stdout/stderr replacement to only the duration
             # of evaluator execution, restoring the originals between calls.
+            # Both acquire/start_capture and the evaluator call are inside the
+            # same try/finally so that stream_manager.release() is always called
+            # even if start_capture() raises (e.g. assertion on double-capture).
             stdout_capturer: ThreadLocalStreamCapture | None = None
             stderr_capturer: ThreadLocalStreamCapture | None = None
-            if capture_stdio:
-                stdout_capturer, stderr_capturer = stream_manager.acquire()
-                stdout_capturer.start_capture()
-                stderr_capturer.start_capture()
-
             try:
+                if capture_stdio:
+                    stdout_capturer, stderr_capturer = stream_manager.acquire()
+                    stdout_capturer.start_capture()
+                    stderr_capturer.start_capture()
+
                 result = evaluator_fn(eval_candidate, **filtered)
             finally:
                 captured_stdout = stdout_capturer.stop_capture() if stdout_capturer else ""
                 captured_stderr = stderr_capturer.stop_capture() if stderr_capturer else ""
-                if capture_stdio:
+                if capture_stdio and stdout_capturer is not None:
                     stream_manager.release()
                 log_output = log_ctx.reset()
                 _set_log_context(None)
@@ -1263,4 +1264,9 @@ def optimize_anything(
     with experiment_tracker:
         state = engine.run()
 
-    return GEPAResult.from_state(state, run_dir=config.engine.run_dir, seed=config.engine.seed)
+    return GEPAResult.from_state(
+        state,
+        run_dir=config.engine.run_dir,
+        seed=config.engine.seed,
+        str_candidate_key=_STR_CANDIDATE_KEY if str_candidate_mode else None,
+    )
