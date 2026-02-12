@@ -2,25 +2,28 @@
 
 Welcome to the GEPA API Reference. This documentation is auto-generated from the source code docstrings.
 
-## `optimize_anything` API
+## optimize_anything
 
-The primary interface for GEPA optimization.  Write an evaluator function, and GEPA handles the evolutionary loop.
+The primary public API for GEPA. Optimize any text artifact with LLM-guided evolution — bring a seed candidate and an evaluator, and GEPA handles the rest.
 
-- [`optimize_anything`](core/optimize_anything.md) — main entry point
-- [`GEPAConfig`](core/GEPAConfig.md) — top-level configuration
-- [`EngineConfig`](core/EngineConfig.md) — budget, parallelism, caching
-- [`ReflectionConfig`](core/ReflectionConfig.md) — reflection LM settings
-- [`RefinerConfig`](core/RefinerConfig.md) — per-evaluation refinement
-- [`MergeConfig`](core/MergeConfig.md) — cross-candidate merging
-- [`TrackingConfig`](core/TrackingConfig.md) — experiment tracking
-- [`SideInfo`](core/SideInfo.md) — evaluator diagnostic output (type alias)
-- [`Evaluator`](core/Evaluator.md) — evaluator function protocol
-- [`OptimizationState`](core/OptimizationState.md) — injected optimization context
-- [`Image`](core/Image.md) — image wrapper for VLM reflection
+- [`optimize_anything`](optimize_anything/optimize_anything.md)
+- [`GEPAConfig`](optimize_anything/GEPAConfig.md)
+- [`EngineConfig`](optimize_anything/EngineConfig.md)
+- [`ReflectionConfig`](optimize_anything/ReflectionConfig.md)
+- [`MergeConfig`](optimize_anything/MergeConfig.md)
+- [`RefinerConfig`](optimize_anything/RefinerConfig.md)
+- [`TrackingConfig`](optimize_anything/TrackingConfig.md)
+- [`Evaluator`](optimize_anything/Evaluator.md)
+- [`OptimizationState`](optimize_anything/OptimizationState.md)
+- [`LogContext`](optimize_anything/LogContext.md)
+- [`log`](optimize_anything/log.md)
+- [`get_log_context`](optimize_anything/get_log_context.md)
+- [`set_log_context`](optimize_anything/set_log_context.md)
+- [`make_litellm_lm`](optimize_anything/make_litellm_lm.md)
 
 ## Core
 
-Lower-level engine classes and interfaces.
+The core module contains the main optimization function and fundamental classes.
 
 - [`optimize`](core/optimize.md)
 - [`GEPAAdapter`](core/GEPAAdapter.md)
