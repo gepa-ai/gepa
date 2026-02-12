@@ -79,7 +79,7 @@ def main():
 
     optimize_anything(
         seed_candidate=seed,
-        fitness_fn=fitness_fn,
+        evaluator=fitness_fn,
         dataset=dataset,
         config=config,
         objective=OBJECTIVE,

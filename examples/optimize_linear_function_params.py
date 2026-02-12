@@ -85,7 +85,7 @@ def main():
 
     result = optimize_anything(
         seed_candidate=seed_candidate,
-        fitness_fn=fitness_fn,
+        evaluator=fitness_fn,
         dataset=trainset,
         valset=valset,
         config=config,

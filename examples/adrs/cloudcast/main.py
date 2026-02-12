@@ -386,7 +386,7 @@ def main():
 
     gepa_result = optimize_anything(
         seed_candidate=seed_candidate,
-        fitness_fn=fitness_fn,  # type: ignore[arg-type]
+        evaluator=fitness_fn,  # type: ignore[arg-type]
         dataset=train_set,
         valset=val_set,
         objective=OPTIMIZATION_OBJECTIVE,

@@ -1,18 +1,17 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import pickle
 import threading
+from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
 
 if TYPE_CHECKING:
-    import dspy  # type: ignore[import-not-found]
-
-    from gepa.optimize_anything import RefinerConfig, SideInfo
+    from gepa.optimize_anything import Candidate, OptimizationState, RefinerConfig, SideInfo
 
 
 REFINER_PROMPT_TEMPLATE = """You are refining a candidate to improve its performance.
@@ -40,7 +39,7 @@ Return ONLY a valid JSON object with the improved parameters (no explanation, no
 class OptimizeAnythingAdapter(GEPAAdapter):
     def __init__(
         self,
-        fitness_fn: Callable[..., tuple[float, Any, dict[str, Any]]],
+        evaluator: Callable[..., tuple[float, Any, dict[str, Any]]],
         reflection_lm: LanguageModel | None = None,
         reflection_prompt_template: str | None = None,
         parallel: bool = True,
@@ -52,7 +51,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         cache_mode: str = "memory",  # "off", "memory", "disk"
         cache_dir: str | Path | None = None,
     ):
-        self.fitness_fn = fitness_fn
+        self.evaluator = evaluator
         self.parallel = parallel
         self.max_workers = max_workers
         self.refiner_config = refiner_config
@@ -66,9 +65,9 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self._best_evals_by_example: dict[str, list[dict]] = {}  # keyed by _example_hash
         self._best_evals_lock = threading.Lock()  # Thread safety for parallel execution
 
-        # Initialize fitness evaluation cache
-        self._fitness_cache: dict[tuple[str, str], tuple[float, Any, dict]] = {}
-        self._fitness_cache_lock = threading.Lock()
+        # Initialize evaluation cache
+        self._eval_cache: dict[tuple[str, str], tuple[float, Any, dict]] = {}
+        self._eval_cache_lock = threading.Lock()
 
         # Setup disk cache directory and load existing entries
         self._cache_dir_path: Path | None = None
@@ -80,16 +79,14 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Refiner uses LiteLLM directly via refiner_config.refiner_lm callable
         # No separate predictor needed - the LM callable is set up in optimize_anything.py
 
-    def _get_best_example_evals(self, example: DataInst) -> list[dict]:
+    def _get_best_example_evals(self, example: object) -> list[dict]:
         """Get sorted top-K best evaluations for this example (thread-safe)."""
         key = self._example_hash(example)
         with self._best_evals_lock:
             # Return a copy to avoid mutation issues
             return list(self._best_evals_by_example.get(key, []))
 
-    def _update_best_example_evals(
-        self, example: DataInst, score: float, side_info: "SideInfo"
-    ) -> None:
+    def _update_best_example_evals(self, example: object, score: float, side_info: "SideInfo") -> None:
         """Add evaluation to example's best evals, maintain sorted top-K (thread-safe)."""
         key = self._example_hash(example)
         with self._best_evals_lock:
@@ -103,15 +100,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 self._best_evals_by_example[key],
                 key=lambda x: x["score"],
                 reverse=True,
-            )[:self.best_example_evals_k]
+            )[: self.best_example_evals_k]
 
-    # --- Fitness evaluation caching methods ---
+    # --- Evaluation caching methods ---
 
     def _candidate_hash(self, candidate: dict[str, str]) -> str:
         """SHA256 hash of candidate for cache key (first 16 chars)."""
-        return hashlib.sha256(
-            json.dumps(sorted(candidate.items())).encode()
-        ).hexdigest()[:16]
+        return hashlib.sha256(json.dumps(sorted(candidate.items())).encode()).hexdigest()[:16]
 
     def _example_hash(self, example: Any) -> str:
         """Hash example for cache key (first 16 chars)."""
@@ -119,9 +114,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             return "none"
         try:
             # Try JSON serialization for dicts, lists, primitives
-            return hashlib.sha256(
-                json.dumps(example, sort_keys=True, default=str).encode()
-            ).hexdigest()[:16]
+            return hashlib.sha256(json.dumps(example, sort_keys=True, default=str).encode()).hexdigest()[:16]
         except (TypeError, ValueError):
             # Fallback to id for unhashable objects
             return f"id_{id(example)}"
@@ -143,7 +136,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 with open(cache_file, "rb") as f:
                     data = pickle.load(f)
                     # File stores: {"key": (cand_hash, ex_hash), "result": (score, output, side_info)}
-                    self._fitness_cache[data["key"]] = data["result"]
+                    self._eval_cache[data["key"]] = data["result"]
             except Exception:
                 pass  # Skip corrupted files
 
@@ -156,38 +149,44 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         with open(filepath, "wb") as f:
             pickle.dump({"key": cache_key, "result": result}, f)
 
-    def _call_fitness_fn(
+    def _build_opt_state(self, example: Any) -> "OptimizationState":
+        """Build an OptimizationState for the given example."""
+        from gepa.optimize_anything import OptimizationState
+
+        return OptimizationState(best_example_evals=self._get_best_example_evals(example))
+
+    def _call_evaluator(
         self,
-        candidate: dict[str, str],
+        candidate: "Candidate",
         example: Any,
     ) -> tuple[float, Any, dict]:
-        """Call fitness_fn with optional caching."""
+        """Call evaluator with optional caching."""
         # No caching
         if self.cache_mode == "off":
-            return self.fitness_fn(
+            return self.evaluator(
                 candidate,
                 example=example,
-                best_example_evals=self._get_best_example_evals(example),
+                opt_state=self._build_opt_state(example),
             )
 
         # Build cache key
         cache_key = self._cache_key(candidate, example)
 
         # Check cache (thread-safe)
-        with self._fitness_cache_lock:
-            if cache_key in self._fitness_cache:
-                return self._fitness_cache[cache_key]
+        with self._eval_cache_lock:
+            if cache_key in self._eval_cache:
+                return self._eval_cache[cache_key]
 
-        # Cache miss - call fitness_fn
-        result = self.fitness_fn(
+        # Cache miss - call evaluator
+        result = self.evaluator(
             candidate,
             example=example,
-            best_example_evals=self._get_best_example_evals(example),
+            opt_state=self._build_opt_state(example),
         )
 
         # Store in cache (thread-safe)
-        with self._fitness_cache_lock:
-            self._fitness_cache[cache_key] = result
+        with self._eval_cache_lock:
+            self._eval_cache[cache_key] = result
             if self.cache_mode == "disk":
                 self._save_cache_entry(cache_key, result)
 
@@ -196,7 +195,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def evaluate(
         self,
         batch: list[DataInst],
-        candidate: dict[str, str],
+        candidate: "Candidate",
         capture_traces: bool = False,
     ) -> EvaluationBatch:
         # Backward compatibility: if refiner_config is None, use old behavior
@@ -205,10 +204,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             if self.parallel and len(batch) > 1:
                 raw_results = self._evaluate_parallel(batch, candidate)
             else:
-                raw_results = [
-                    self._call_fitness_fn(candidate, example)
-                    for example in batch
-                ]
+                raw_results = [self._call_evaluator(candidate, example) for example in batch]
             # Package outputs as (score, candidate, side_info) tuples
             eval_output = []
             for score, _, side_info in raw_results:
@@ -223,7 +219,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Update best evals history for each example
         # (skip when refiner is on — refiner path already records evals internally)
         if self.refiner_config is None:
-            for example, (score, _, side_info) in zip(batch, eval_output):
+            for example, (score, _, side_info) in zip(batch, eval_output, strict=True):
                 self._update_best_example_evals(example, score, side_info)
 
         scores = [score for score, _, _ in eval_output]
@@ -252,7 +248,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def _evaluate_with_refinement(
         self,
         batch: list[DataInst],
-        candidate: dict[str, str],
+        candidate: "Candidate",
     ) -> list[tuple[float, Any, "SideInfo"]]:
         """Evaluate batch with automatic refinement."""
         if self.parallel and len(batch) > 1:
@@ -266,8 +262,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
     def _evaluate_single_with_refinement(
         self,
-        candidate: dict[str, str],
-        example: DataInst,
+        candidate: "Candidate",
+        example: object,
     ) -> tuple[float, Any, "SideInfo"]:
         """Evaluate a single example with refinement."""
         assert self.refiner_config is not None
@@ -276,9 +272,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         refiner_prompt = candidate.get("refiner_prompt", "")
 
         # 1. Evaluate original candidate
-        original_score, original_output, original_side_info = self._call_fitness_fn(
-            candidate, example
-        )
+        original_score, original_output, original_side_info = self._call_evaluator(candidate, example)
 
         # Update best evals with original evaluation
         self._update_best_example_evals(example, original_score, original_side_info)
@@ -300,18 +294,27 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # 4. Side_info = original evaluation (so reflection sees raw candidate quality)
         aggregated_side_info = dict(original_side_info)
 
-        # 5. Add refiner_prompt_specific_info with best refined scores + attempt history
-        #    "scores" = actual best metric values across all attempts (for objective frontier)
-        best_attempt = max(all_attempts, key=lambda x: x.get("score", float("-inf")))
-        best_attempt_side_info = best_attempt.get("side_info")
-        best_refined_scores = {}
-        if isinstance(best_attempt_side_info, dict) and "scores" in best_attempt_side_info:
-            best_refined_scores = best_attempt_side_info["scores"]
+        # 5. Add refiner_prompt_specific_info with attempt history
+        #    Only include "scores" if the user's side_info has "scores" (for objective frontier)
+        refiner_side_info: dict[str, Any] = {"Attempts": all_attempts}
 
-        aggregated_side_info["refiner_prompt_specific_info"] = {
-            "scores": best_refined_scores,
-            "Attempts": all_attempts,
-        }
+        if "scores" in original_side_info:
+            # Only consider attempts that produced real evaluation results (have "side_info")
+            # so that failed attempts (JSON parse errors, exceptions) with placeholder score=0.0
+            # don't mask real evaluations when original scores are negative
+            evaluated_attempts = [a for a in all_attempts if "side_info" in a]
+            best_refined_scores = {}
+            if evaluated_attempts:
+                best_attempt = max(
+                    evaluated_attempts,
+                    key=lambda x: x.get("score", float("-inf")),
+                )
+                best_attempt_side_info = best_attempt.get("side_info")
+                if isinstance(best_attempt_side_info, dict) and "scores" in best_attempt_side_info:
+                    best_refined_scores = best_attempt_side_info["scores"]
+            refiner_side_info["scores"] = best_refined_scores
+
+        aggregated_side_info["refiner_prompt_specific_info"] = refiner_side_info
 
         # Package output as (score, best_candidate, side_info) tuple
         output = (final_score, best_candidate, aggregated_side_info)
@@ -320,17 +323,14 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def _run_parallel(
         self,
         batch: list[DataInst],
-        candidate: dict[str, str],
+        candidate: "Candidate",
         eval_fn,  # callable(candidate, example) -> result
     ) -> list[tuple[float, Any, "SideInfo"]]:
         """Run evaluation function in parallel across batch."""
         results: list[tuple[int, tuple[float, Any, SideInfo]]] = []
 
         with ThreadPoolExecutor(max_workers=self.max_workers or len(batch)) as executor:
-            future_to_idx = {
-                executor.submit(eval_fn, candidate, example): idx
-                for idx, example in enumerate(batch)
-            }
+            future_to_idx = {executor.submit(eval_fn, candidate, example): idx for idx, example in enumerate(batch)}
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]
                 results.append((idx, future.result()))
@@ -340,7 +340,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
     def _evaluate_parallel(self, batch, candidate):
         """Evaluate batch in parallel (no refinement)."""
-        return self._run_parallel(batch, candidate, self._call_fitness_fn)
+        return self._run_parallel(batch, candidate, self._call_evaluator)
 
     def _evaluate_with_refinement_parallel(self, batch, candidate):
         """Evaluate batch in parallel with refinement."""
@@ -348,8 +348,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
     def _refine_and_evaluate(
         self,
-        candidate: dict[str, str],
-        example: DataInst,
+        candidate: "Candidate",
+        example: object,
         refiner_prompt: str,
         original_score: float,
         original_side_info: "SideInfo",
@@ -367,13 +367,6 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # This method should only be called when refiner_config is not None
         assert self.refiner_config is not None, "refiner_config must be set to use refinement"
 
-        # Lazy-initialize refiner on first use (imports dspy here)
-        self._initialize_refiner()
-        assert self.refiner_predictor is not None, "refiner_predictor must be initialized"
-
-        # Import dspy for context manager
-        import dspy  # type: ignore[import-not-found]
-
         # Build params dict: all non-refiner params
         params_dict = {k: v for k, v in candidate.items() if k != "refiner_prompt"}
 
@@ -382,14 +375,22 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         best_side_info: SideInfo | None = None
 
         # Initialize attempts with original evaluation (iteration 0)
-        all_attempts: list[dict] = [{
-            "iteration": 0,
-            "candidate": params_dict,
-            "score": original_score,
-            "side_info": original_side_info,
-        }]
+        all_attempts: list[dict] = [
+            {
+                "iteration": 0,
+                "candidate": params_dict,
+                "score": original_score,
+                "side_info": original_side_info,
+            }
+        ]
 
         # Iterative refinement
+        refiner_lm = self.refiner_config.refiner_lm
+        assert callable(refiner_lm), (
+            "refiner_lm must be a callable LanguageModel, not a string or None. "
+            "Ensure optimize_anything() has converted it via make_litellm_lm()."
+        )
+
         current_params = params_dict
         for refinement_iter in range(self.refiner_config.max_refinements):
             # Format ALL attempts so far for the refiner (provides full history)
@@ -401,7 +402,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     candidate_to_improve=json.dumps(current_params, indent=2),
                     evaluation_feedback=current_feedback,
                 )
-                raw_output = self.refiner_config.refiner_lm(prompt).strip()
+                raw_output = refiner_lm(prompt).strip()
                 # Strip markdown code fences if present
                 if raw_output.startswith("```"):
                     # Remove first line (```json or ```) and last line (```)
@@ -414,17 +415,19 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                         raise ValueError(f"Expected JSON dict, got {type(parsed_refined).__name__}")
                 except (json.JSONDecodeError, ValueError) as parse_err:
                     # JSON parse failed: record error so refiner can learn, continue to next iteration
-                    all_attempts.append({
-                        "iteration": refinement_iter + 1,
-                        "error": f"JSON parse error: {parse_err}",
-                        "raw_output": raw_output[:2000],
-                        "score": 0.0,
-                    })
+                    all_attempts.append(
+                        {
+                            "iteration": refinement_iter + 1,
+                            "error": f"JSON parse error: {parse_err}",
+                            "raw_output": raw_output[:2000],
+                            "score": 0.0,
+                        }
+                    )
                     continue
 
                 # Reconstruct full candidate: refined params + original refiner_prompt
                 refined_candidate_dict = {**parsed_refined, "refiner_prompt": candidate.get("refiner_prompt", "")}
-                refined_score, refined_output, refined_eval_side_info = self._call_fitness_fn(
+                refined_score, refined_output, refined_eval_side_info = self._call_evaluator(
                     refined_candidate_dict, example
                 )
 
@@ -432,12 +435,14 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 self._update_best_example_evals(example, refined_score, refined_eval_side_info)
 
                 # Track attempt
-                all_attempts.append({
-                    "iteration": refinement_iter + 1,
-                    "candidate": parsed_refined,
-                    "score": refined_score,
-                    "side_info": refined_eval_side_info,
-                })
+                all_attempts.append(
+                    {
+                        "iteration": refinement_iter + 1,
+                        "candidate": parsed_refined,
+                        "score": refined_score,
+                        "side_info": refined_eval_side_info,
+                    }
+                )
 
                 # Update best if improved
                 if refined_score > best_score:
@@ -451,11 +456,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
             except Exception as e:
                 # Refinement failed, record error and stop
-                all_attempts.append({
-                    "iteration": refinement_iter + 1,
-                    "error": str(e),
-                    "score": 0.0,
-                })
+                all_attempts.append(
+                    {
+                        "iteration": refinement_iter + 1,
+                        "error": str(e),
+                        "score": 0.0,
+                    }
+                )
                 break
 
         return best_score, best_candidate, best_side_info, all_attempts

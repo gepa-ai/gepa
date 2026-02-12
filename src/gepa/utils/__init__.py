@@ -4,6 +4,7 @@ Utilities for GEPA optimization.
 This module provides:
 - Stop conditions for controlling optimization loops
 - Code execution utilities for safely running generated code in fitness functions
+- Thread-safe stdout/stderr capture for evaluation
 """
 
 # Code execution utilities for fitness functions that evaluate generated code
@@ -13,6 +14,11 @@ from .code_execution import (
     TimeLimitError,
     execute_code,
     get_code_hash,
+)
+from .stdio_capture import (
+    StreamCaptureManager,
+    ThreadLocalStreamCapture,
+    stream_manager,
 )
 from .stop_condition import (
     CompositeStopper,
@@ -41,4 +47,8 @@ __all__ = [
     "TimeLimitError",
     "execute_code",
     "get_code_hash",
+    # Stdio capture utilities
+    "StreamCaptureManager",
+    "ThreadLocalStreamCapture",
+    "stream_manager",
 ]
