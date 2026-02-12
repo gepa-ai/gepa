@@ -822,8 +822,7 @@ class EvaluatorWrapper:
                     fail_side_info["stdout"] = captured_stdout
                 if captured_stderr:
                     fail_side_info["stderr"] = captured_stderr
-                score_neg_inf: float = float("-inf")
-                return score_neg_inf, None, fail_side_info
+                return 0.0, None, fail_side_info
 
             # Detect return type and normalize to (score, output, side_info)
             if isinstance(result, tuple):
