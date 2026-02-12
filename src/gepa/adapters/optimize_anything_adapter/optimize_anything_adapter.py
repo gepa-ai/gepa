@@ -1,11 +1,14 @@
 import hashlib
 import json
+import logging
 import pickle
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
 from gepa.proposer.reflective_mutation.base import LanguageModel
@@ -137,8 +140,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     data = pickle.load(f)
                     # File stores: {"key": (cand_hash, ex_hash), "result": (score, output, side_info)}
                     self._eval_cache[data["key"]] = data["result"]
-            except Exception:
-                pass  # Skip corrupted files
+            except Exception as exc:
+                logger.warning("Failed to load cache file %s: %s", cache_file, exc)
 
     def _save_cache_entry(self, cache_key: tuple[str, str], result: tuple) -> None:
         """Save single cache entry to disk."""

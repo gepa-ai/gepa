@@ -1061,17 +1061,7 @@ def optimize_anything(
 
     # Add max_candidate_proposals stopper if provided
     if config.engine.max_candidate_proposals is not None:
-        # Define stopper inline to avoid modifying stop_condition.py
-        # Note: state.i starts at -1, and is incremented at the START of each loop iteration.
-        # The stopper is checked BEFORE the increment, so when state.i = N-1, we're about to
-        # run proposal N. To allow exactly max_proposals proposals, we stop when
-        # state.i >= max_proposals - 1 (i.e., we've completed max_proposals proposals).
-        class MaxCandidateProposalsStopper:
-            def __init__(self, max_proposals: int):
-                self.max_proposals = max_proposals
-
-            def __call__(self, gepa_state) -> bool:
-                return gepa_state.i >= self.max_proposals - 1
+        from gepa.utils import MaxCandidateProposalsStopper
 
         proposals_stopper = MaxCandidateProposalsStopper(config.engine.max_candidate_proposals)
         stop_callbacks_list.append(proposals_stopper)

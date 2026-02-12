@@ -7,7 +7,7 @@ import os
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Generic, Literal, Sequence, TypeAlias
+from typing import Any, ClassVar, Generic, Literal, TypeAlias
 
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId

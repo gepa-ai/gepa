@@ -123,6 +123,10 @@ class TestExampleBestEvals:
         if len(call_log) > 1:
             # At least some later calls should have accumulated best_evals
             max_best_evals = max(best_evals_counts)
+            assert max_best_evals > 0, (
+                f"Expected at least one call to receive non-empty best_example_evals, "
+                f"but max was {max_best_evals}. Counts: {best_evals_counts}"
+            )
             print(f"Max best_evals seen: {max_best_evals}")
 
     def test_best_example_evals_contains_scores(self):

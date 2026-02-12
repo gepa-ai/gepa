@@ -23,6 +23,7 @@ from .stdio_capture import (
 from .stop_condition import (
     CompositeStopper,
     FileStopper,
+    MaxCandidateProposalsStopper,
     MaxMetricCallsStopper,
     NoImprovementStopper,
     ScoreThresholdStopper,
@@ -35,6 +36,7 @@ __all__ = [
     # Stop conditions
     "CompositeStopper",
     "FileStopper",
+    "MaxCandidateProposalsStopper",
     "MaxMetricCallsStopper",
     "NoImprovementStopper",
     "ScoreThresholdStopper",
