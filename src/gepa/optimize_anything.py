@@ -878,7 +878,7 @@ class EvaluatorWrapper:
 
 
 def optimize_anything(
-    seed_candidate: str | Candidate | list[Candidate],
+    seed_candidate: str | Candidate,
     evaluator: Evaluator,
     dataset: list[DataInst] | None = None,
     valset: list[DataInst] | None = None,
@@ -1108,17 +1108,15 @@ def optimize_anything(
         if isinstance(config.refiner.refiner_lm, str):
             config.refiner.refiner_lm = make_litellm_lm(config.refiner.refiner_lm)
 
-    # Auto-inject refiner_prompt into seed_candidate(s) if refiner is enabled
+    # Auto-inject refiner_prompt into seed_candidate if refiner is enabled
     if config.refiner is not None:
         formatted_refiner_prompt = DEFAULT_REFINER_PROMPT.format(
             objective=objective or "Maximize the score",
             background=background or "No additional background provided.",
         )
-        candidates_to_check = seed_candidate if isinstance(seed_candidate, list) else [seed_candidate]
-        for sc in candidates_to_check:
-            if "refiner_prompt" not in sc:
-                sc["refiner_prompt"] = formatted_refiner_prompt
-            # If user provides their own refiner_prompt, use it (allows custom refiner prompts)
+        if "refiner_prompt" not in seed_candidate:
+            seed_candidate["refiner_prompt"] = formatted_refiner_prompt
+        # If user provides their own refiner_prompt, use it (allows custom refiner prompts)
 
     # Setup default logger if not provided
     if config.tracking.logger is None:
@@ -1280,7 +1278,7 @@ def optimize_anything(
         adapter=active_adapter,
         run_dir=config.engine.run_dir,
         valset=val_loader,
-        seed_candidate=[seed_candidate] if not isinstance(seed_candidate, list) else seed_candidate,
+        seed_candidate=seed_candidate,
         perfect_score=config.reflection.perfect_score,
         seed=config.engine.seed,
         reflective_proposer=reflective_proposer,
