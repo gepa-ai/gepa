@@ -1,25 +1,83 @@
 /* Custom styles for GEPA documentation */
 
-/* Make the header logo larger (2.5x default size) */
-.md-header__button.md-logo img,
-.md-header__button.md-logo svg {
-    height: 60px;  /* Default is 24px, this is 2.5x */
+/* Hide separate "GEPA" title text since it's in the logo,
+   but keep the element in flex layout as a spacer */
+.md-header__title {
+    visibility: hidden;
+}
+
+/* Hide "GEPA" text in the mobile sidebar drawer (logo already has it) */
+label.md-nav__title[for="__drawer"] {
+    font-size: 0;
+    line-height: 0;
+    padding-bottom: 0;
+}
+
+label.md-nav__title[for="__drawer"] .md-nav__button {
+    font-size: 1rem;
+}
+
+/* ============================================
+   Landing page: sleek single-row header
+   ============================================ */
+
+.md-header--landing .md-header__inner {
+    height: 2.4rem;
+    max-width: none;
+    padding: 0 1.5rem;
+}
+
+@media screen and (max-width: 76.25em) {
+    .md-header--landing .md-header__inner {
+        padding: 0 0.2rem;
+    }
+}
+
+/* Logo: prevent clipping, allow full width */
+.md-header--landing .md-header__button.md-logo {
+    flex-shrink: 0;
+    overflow: visible;
+    padding: 2px 4px;
+    margin-right: 0.5rem;
+}
+
+.md-header--landing .md-header__button.md-logo img,
+.md-header--landing .md-header__button.md-logo svg {
+    height: 28px;
     width: auto;
 }
 
-/* Adjust the header to accommodate the larger logo */
-.md-header__button.md-logo {
-    padding: 4px;
+.md-header--landing .md-header__button {
+    padding: 2px 6px;
 }
 
-/* Make the site title (GEPA) text larger */
-.md-header__title {
-    font-size: 1.4rem;  /* Default is ~0.9rem */
-    font-weight: 600;
+/* Nav links fill the middle, push to the right */
+.landing-nav {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0;
+    margin-right: 0.25rem;
 }
 
-.md-header__topic {
-    font-size: 1.4rem;
+.landing-nav__link {
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.3rem 0.9rem;
+    color: rgba(255, 255, 255, 0.7);
+    text-decoration: none;
+    transition: color 0.15s;
+    white-space: nowrap;
+}
+
+.landing-nav__link:hover {
+    color: #fff;
+}
+
+/* Push repo source to far right */
+.md-header--landing .md-header__source {
+    margin-left: auto;
 }
 
 /* ============================================

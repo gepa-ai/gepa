@@ -9,7 +9,6 @@ edit_uri: blob/main/docs/docs/
 docs_dir: "docs/"
 
 nav:
-    - Get Started: index.md
     - GEPA in Action: guides/use-cases.md
     - Guides:
         - Guides Overview: guides/index.md
@@ -132,7 +131,7 @@ theme:
         repo: fontawesome/brands/git-alt
         edit: material/pencil
         view: material/eye
-    logo: static/img/gepa_logo.svg
+    logo: static/img/gepa_logo_with_text_white.svg
     favicon: static/img/gepa_logo.svg
 
 plugins:
