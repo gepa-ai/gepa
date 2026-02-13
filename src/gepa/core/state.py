@@ -142,7 +142,7 @@ class ValsetEvaluation(Generic[RolloutOutput, DataId]):
 class GEPAState(Generic[RolloutOutput, DataId]):
     """Persistent optimizer state tracking candidates, sparse validation coverage, and objective frontiers."""
 
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 4
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 5
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
     _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
 
@@ -157,6 +157,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     program_at_pareto_front_objectives: dict[str, set[ProgramIdx]]
     pareto_front_cartesian: dict[tuple[DataId, str], float]
     program_at_pareto_front_cartesian: dict[tuple[DataId, str], set[ProgramIdx]]
+
+    num_seed_candidates: int
 
     list_of_named_predictors: list[str]
     named_predictor_id_to_update_next_for_program_candidate: list[int]
@@ -223,6 +225,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             self.pareto_front_cartesian = {}
             self.program_at_pareto_front_cartesian = {}
 
+        self.num_seed_candidates = 1
+
         self.list_of_named_predictors = list(seed_candidate.keys())
         self.named_predictor_id_to_update_next_for_program_candidate = [0]
         self.i = -1
@@ -246,6 +250,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         assert len(self.program_candidates) == len(self.prog_candidate_val_subscores)
         assert len(self.program_candidates) == len(self.prog_candidate_objective_scores)
         assert len(self.program_candidates) == len(self.num_metric_calls_by_discovery)
+        assert 1 <= self.num_seed_candidates <= len(self.program_candidates)
 
         assert len(self.pareto_front_valset) == len(self.program_at_pareto_front_valset)
         assert set(self.pareto_front_valset.keys()) == set(self.program_at_pareto_front_valset.keys())
@@ -365,6 +370,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         # evaluation_cache is not persisted across runs by default; initialize to None if missing
         if "evaluation_cache" not in d:
             d["evaluation_cache"] = None
+        if "num_seed_candidates" not in d:
+            d["num_seed_candidates"] = 1
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
@@ -474,7 +481,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     def update_state_with_new_program(
         self,
-        parent_program_idx: list[ProgramIdx],
+        parent_program_idx: Sequence[ProgramIdx | None],
         new_program: dict[str, str],
         valset_evaluation: ValsetEvaluation,
         run_dir: str | None,
@@ -485,7 +492,11 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.num_metric_calls_by_discovery.append(num_metric_calls_by_discovery_of_new_program)
 
         max_predictor_id = max(
-            [self.named_predictor_id_to_update_next_for_program_candidate[p] for p in parent_program_idx],
+            [
+                self.named_predictor_id_to_update_next_for_program_candidate[p]
+                for p in parent_program_idx
+                if p is not None
+            ],
             default=0,
         )
         self.named_predictor_id_to_update_next_for_program_candidate.append(max_predictor_id)
@@ -581,14 +592,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         return outputs_by_id, scores_by_id, objective_by_id, len(example_ids)
 
 
-def write_eval_scores_to_directory(scores: dict[DataId, float], output_dir: str) -> None:
-    for val_id, score in scores.items():
-        task_dir = os.path.join(output_dir, f"task_{val_id}")
-        os.makedirs(task_dir, exist_ok=True)
-        with open(os.path.join(task_dir, f"iter_{0}_prog_0.json"), "w") as f:
-            json.dump(score, f, indent=4, default=json_default)
-
-
 def write_eval_outputs_to_directory(outputs, output_dir: str) -> None:
     """
     Write generated rollout outputs (not scalar scores) to disk.
@@ -608,7 +611,7 @@ def write_eval_outputs_to_directory(outputs, output_dir: str) -> None:
 def initialize_gepa_state(
     run_dir: str | None,
     logger: LoggerProtocol,
-    seed_candidate: dict[str, str],
+    seed_candidate: list[dict[str, str]],
     valset_evaluator: Callable[
         [dict[str, str]],
         ValsetEvaluation[RolloutOutput, DataId],
@@ -617,6 +620,18 @@ def initialize_gepa_state(
     frontier_type: FrontierType = "instance",
     evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None" = None,
 ) -> GEPAState[RolloutOutput, DataId]:
+    if not seed_candidate:
+        raise ValueError("seed_candidate must be a non-empty list of candidate dictionaries")
+
+    expected_keys = set(seed_candidate[0].keys())
+    for idx, sc in enumerate(seed_candidate[1:], start=1):
+        if set(sc.keys()) != expected_keys:
+            raise ValueError(
+                f"All seed candidates must have the same component keys. "
+                f"seed_candidate[0] has keys {sorted(expected_keys)}, "
+                f"but seed_candidate[{idx}] has keys {sorted(sc.keys())}"
+            )
+
     if run_dir is not None and os.path.exists(os.path.join(run_dir, "gepa_state.bin")):
         logger.log("Loading gepa state from run dir")
         gepa_state = GEPAState.load(run_dir)
@@ -637,18 +652,14 @@ def initialize_gepa_state(
             gepa_state.evaluation_cache = evaluation_cache
         # else: keep the loaded cache (gepa_state.evaluation_cache is already set)
     else:
-        num_evals_run = 0
-
-        eval_result = valset_evaluator(seed_candidate)
+        eval_result = valset_evaluator(seed_candidate[0])
         if run_dir is not None:
             write_eval_outputs_to_directory(
                 eval_result.outputs_by_val_id, os.path.join(run_dir, "generated_best_outputs_valset")
             )
 
-        num_evals_run += len(eval_result.scores_by_val_id)
-
         gepa_state = GEPAState(
-            seed_candidate,
+            seed_candidate[0],
             eval_result,
             track_best_outputs=track_best_outputs,
             frontier_type=frontier_type,
@@ -656,6 +667,25 @@ def initialize_gepa_state(
         )
 
         gepa_state.num_full_ds_evals = 1
-        gepa_state.total_num_evals = num_evals_run
+        gepa_state.total_num_evals = len(eval_result.scores_by_val_id)
+        gepa_state.num_seed_candidates = len(seed_candidate)
+
+        for seed_idx, seed_candidate_2 in enumerate(seed_candidate[1:], start=1):
+            num_metric_calls_before = gepa_state.total_num_evals
+            eval_result_2 = valset_evaluator(seed_candidate_2)
+            if run_dir is not None:
+                write_eval_outputs_to_directory(
+                    eval_result_2.outputs_by_val_id,
+                    os.path.join(run_dir, "generated_seed_outputs", f"seed_{seed_idx}"),
+                )
+            gepa_state.increment_evals(len(eval_result_2.scores_by_val_id))
+            gepa_state.num_full_ds_evals += 1
+            gepa_state.update_state_with_new_program(
+                [None],
+                seed_candidate_2,
+                eval_result_2,
+                run_dir,
+                num_metric_calls_before,
+            )
 
     return gepa_state
