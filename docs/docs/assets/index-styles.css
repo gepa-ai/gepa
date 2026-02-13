@@ -411,7 +411,7 @@ article > h1 {
    ============================== */
 .how-it-works-flow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   gap: 0.25rem;
   flex-wrap: wrap;
@@ -500,6 +500,7 @@ article > h1 {
   color: rgba(147, 197, 253, 0.5);
   font-weight: 300;
   flex-shrink: 0;
+  margin-top: 2.75rem;
 }
 
 .flow-loop {
@@ -569,6 +570,8 @@ article > h1 {
   transform: translateZ(0);
   flex-shrink: 0;
   width: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .testimonial-card::before {
@@ -606,7 +609,8 @@ article > h1 {
   justify-content: center;
 }
 
-.testimonial-icon img {
+.testimonial-icon img,
+.testimonial-icon > svg {
   width: 2rem;
   height: 2rem;
   filter: brightness(0) invert(0.5);
@@ -618,7 +622,8 @@ article > h1 {
   font-size: 2rem;
 }
 
-.testimonial-card:hover .testimonial-icon img {
+.testimonial-card:hover .testimonial-icon img,
+.testimonial-card:hover .testimonial-icon > svg {
   opacity: 1;
   filter: brightness(0) invert(0.7) !important;
 }
@@ -641,6 +646,7 @@ article > h1 {
   line-height: 1.6;
   color: var(--md-default-fg-color--light);
   margin-bottom: 0.5rem;
+  flex: 1;
 }
 
 .testimonial-link {
@@ -944,22 +950,26 @@ article > h1 {
   background: rgba(59, 130, 246, 0.08);
 }
 
-[data-md-color-scheme="default"] .testimonial-icon img {
+[data-md-color-scheme="default"] .testimonial-icon img,
+[data-md-color-scheme="default"] .testimonial-icon > svg {
   filter: brightness(0) invert(0.35);
 }
 
-[data-md-color-scheme="default"] .testimonial-card:hover .testimonial-icon img {
+[data-md-color-scheme="default"] .testimonial-card:hover .testimonial-icon img,
+[data-md-color-scheme="default"] .testimonial-card:hover .testimonial-icon > svg {
   filter: brightness(0) invert(0.2) !important;
 }
 
 /* ==============================
    Dark Mode Overrides
    ============================== */
-[data-md-color-scheme="slate"] .testimonial-icon img {
+[data-md-color-scheme="slate"] .testimonial-icon img,
+[data-md-color-scheme="slate"] .testimonial-icon > svg {
   filter: brightness(0) invert(0.7);
 }
 
-[data-md-color-scheme="slate"] .testimonial-card:hover .testimonial-icon img {
+[data-md-color-scheme="slate"] .testimonial-card:hover .testimonial-icon img,
+[data-md-color-scheme="slate"] .testimonial-card:hover .testimonial-icon > svg {
   filter: brightness(0) invert(0.9) !important;
 }
 
