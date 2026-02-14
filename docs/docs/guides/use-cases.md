@@ -106,6 +106,14 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: View documentation](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer)
 
+-   **BAML Prompt Optimization**
+
+    ---
+
+    BAML integrates GEPA into `baml-cli optimize` for test-driven prompt optimization with multi-objective support (accuracy, latency, tokens).
+
+    [:material-arrow-right: Read the guide](https://docs.boundaryml.com/guide/baml-advanced/prompt-optimization)
+
 </div>
 
 ---
