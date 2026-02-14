@@ -106,6 +106,18 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: View documentation](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer)
 
+-   **Prompt Optimization with Pydantic AI**
+
+    ---
+
+    Tutorial demonstrating GEPA integration with Pydantic AI using `Agent.override()` for instruction injection and Pydantic Evals for parallel evaluation.
+
+    **Results:** Contact extraction improved from 86% → 97% accuracy
+
+    [:material-arrow-right: Read the tutorial](https://pydantic.dev/articles/prompt-optimization-with-gepa)
+
+    [:material-arrow-right: View code examples](https://github.com/pydantic/pydantic-stack-demo/tree/main/pai-gepa-prompt-optimization)
+
 </div>
 
 ---
