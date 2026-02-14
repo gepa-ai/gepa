@@ -1,4 +1,4 @@
-# GEPA in Action
+# Showcase
 
 Discover how organizations and researchers are using GEPA to optimize AI systems across diverse domains. These examples showcase the versatility and impact of reflective prompt evolution.
 

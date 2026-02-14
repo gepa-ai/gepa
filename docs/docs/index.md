@@ -1,4 +1,5 @@
 ---
+template: landing.html
 hide:
   - navigation
   - toc
@@ -9,7 +10,8 @@ hide:
 
 <div class="hero-section">
   <div style="text-align: center; margin-bottom: 1rem;">
-    <img src="assets/gepa_logo_with_text_gradient.svg" alt="GEPA Logo" style="max-width: 400px; width: 100%;">
+    <img src="assets/gepa_logo_with_text_gradient.svg" alt="GEPA Logo" class="hero-logo hero-logo--light" style="max-width: 400px; width: 100%;">
+    <img src="assets/gepa_logo_with_text_gradient_dark.svg" alt="GEPA Logo" class="hero-logo hero-logo--dark" style="max-width: 400px; width: 100%;">
   </div>
   <p class="hero-subtitle">Automatically optimize prompts for any AI system</p>
   <p class="hero-stats-line">
@@ -140,107 +142,140 @@ hide:
   </div>
 </div>
 
-<div class="testimonials-section">
-  <button class="carousel-arrow carousel-prev" aria-label="Previous testimonial">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-  </button>
-  <button class="carousel-arrow carousel-next" aria-label="Next testimonial">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
-  </button>
-  <div class="testimonials-carousel-wrapper">
-    <div class="testimonials-track">
-      <div class="testimonial-card">
-        <div class="testimonial-header">
-          <div class="testimonial-icon"><span>&#x1F6CD;&#xFE0F;</span></div>
-          <div>
-            <div class="testimonial-author">Chad Boyda</div>
-            <div class="testimonial-role">CTO, AppSumo</div>
-          </div>
-        </div>
-        <div class="testimonial-content">DSPy's GEPA is prompt engineering! <strong>The only kind we should all collectively be doing.</strong> What a work of art</div>
-        <a href="https://x.com/chadboyda/status/1955298177197764963" class="testimonial-link" target="_blank">
-          <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></span>
-          View on X
-        </a>
-      </div>
-    </div>
-    <div class="testimonials-track">
-      <div class="testimonial-card">
-        <div class="testimonial-header">
-          <div class="testimonial-icon"><span>&#x1F9E0;</span></div>
-          <div>
-            <div class="testimonial-author">OpenAI</div>
-            <div class="testimonial-role">Official Cookbook</div>
-          </div>
-        </div>
-        <div class="testimonial-content">Self-evolving agents that autonomously retrain themselves using GEPA to improve performance over time.</div>
-        <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" class="testimonial-link" target="_blank">
-          <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg></span>
-          Read Cookbook
-        </a>
-      </div>
-    </div>
-    <div class="testimonials-track">
-      <div class="testimonial-card">
-        <div class="testimonial-header">
-          <div class="testimonial-icon">
-            <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg" alt="Dropbox" loading="lazy">
-          </div>
-          <div>
-            <div class="testimonial-author">Josh Clemm</div>
-            <div class="testimonial-role">VP of Engineering, Dropbox Dash</div>
-          </div>
-        </div>
-        <div class="testimonial-content">With DSPy [GEPA], <strong>you just plug the model in, define your goals, and out spits the prompt that works</strong>. So you can do this model switching far more rapidly.</div>
-        <a href="https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash" class="testimonial-link" target="_blank">
-          <span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg></span>
-          Read More
-        </a>
-      </div>
-    </div>
-  </div>
-  <div class="carousel-nav">
-    <button class="carousel-dot active" data-index="0" aria-label="Go to testimonial 1"></button>
-    <button class="carousel-dot" data-index="1" aria-label="Go to testimonial 2"></button>
-    <button class="carousel-dot" data-index="2" aria-label="Go to testimonial 3"></button>
-  </div>
-</div>
-
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  const wrapper = document.querySelector('.testimonials-carousel-wrapper');
-  const dots = document.querySelectorAll('.carousel-dot');
-  const prevBtn = document.querySelector('.carousel-prev');
-  const nextBtn = document.querySelector('.carousel-next');
-  const totalSlides = document.querySelectorAll('.testimonials-track').length;
-  let currentSlide = 0;
-  let autoplayInterval;
+  const allTestimonials = [
+    {
+      icon: '<img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/shopify.svg" alt="Shopify" loading="lazy">',
+      author: 'Tobi Lutke',
+      role: 'CEO, Shopify',
+      content: 'Both DSPy and (especially) <strong>GEPA are currently severely under hyped</strong> in the AI context engineering world',
+      linkUrl: 'https://x.com/tobi/status/1963434604741701909',
+      linkIcon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>',
+      linkText: 'View on X'
+    },
+    {
+      icon: '<img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/databricks.svg" alt="Databricks" loading="lazy">',
+      author: 'Ivan Zhou',
+      role: 'Research Engineer, Databricks Mosaic',
+      content: 'GEPA can <strong>push open models beyond frontier performance;</strong> gpt-oss-120b + GEPA beats Claude Opus 4.1 while being <strong>90x cheaper</strong>',
+      linkUrl: 'https://x.com/ivanhzyy/status/1971066193747689521',
+      linkIcon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>',
+      linkText: 'View on X'
+    },
+    {
+      icon: '<img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg" alt="Dropbox" loading="lazy">',
+      author: 'Drew Houston',
+      role: 'CEO, Dropbox',
+      content: 'Have heard great things about DSPy plus GEPA, which is an <strong>even stronger prompt optimizer than miprov2</strong> &mdash; repo and (fascinating) examples of generated prompts',
+      linkUrl: 'https://x.com/drewhouston/status/1974750621690728623',
+      linkIcon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>',
+      linkText: 'View on X'
+    },
+    {
+      icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 6h-2c0-2.21-1.79-4-4-4S8 3.79 8 6H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6-2c1.1 0 2 .9 2 2h-4c0-1.1.9-2 2-2zm6 14H6V8h2v2c0 .55.45 1 1 1s1-.45 1-1V8h4v2c0 .55.45 1 1 1s1-.45 1-1V8h2v10z"/></svg>',
+      author: 'Chad Boyda',
+      role: 'CTO, AppSumo',
+      content: 'DSPy\'s GEPA is prompt engineering! <strong>The only kind we should all collectively be doing.</strong> What a work of art',
+      linkUrl: 'https://x.com/chadboyda/status/1955298177197764963',
+      linkIcon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>',
+      linkText: 'View on X'
+    },
+    {
+      icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364l2.0201-1.1638a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.4092-.6813zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997z"/></svg>',
+      author: 'OpenAI',
+      role: 'Official Cookbook',
+      content: 'Self-evolving agents that autonomously retrain themselves using GEPA to improve performance over time.',
+      linkUrl: 'https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining',
+      linkIcon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg>',
+      linkText: 'Read Cookbook'
+    },
+    {
+      icon: '<img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/dropbox.svg" alt="Dropbox" loading="lazy">',
+      author: 'Josh Clemm',
+      role: 'VP of Engineering, Dropbox Dash',
+      content: 'With DSPy [GEPA], <strong>you just plug the model in, define your goals, and out spits the prompt that works</strong>. So you can do this model switching far more rapidly.',
+      linkUrl: 'https://dropbox.tech/machine-learning/vp-josh-clemm-knowledge-graphs-mcp-and-dspy-dash',
+      linkIcon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14 3v2H4v14h14v-8h2v10H2V3z"/><path d="M19 2h-7l2.29 2.29-2.88 2.88 1.42 1.42 2.88-2.88L18 8V2z"/></svg>',
+      linkText: 'Read More'
+    }
+  ];
 
-  function goToSlide(index) {
-    currentSlide = (index + totalSlides) % totalSlides;
-    wrapper.style.animation = 'none';
-    wrapper.style.transform = `translateX(-${currentSlide * 100}%)`;
-    dots.forEach((dot, i) => dot.classList.toggle('active', i === currentSlide));
+  function renderCard(t) {
+    return `<div class="testimonial-header">
+      <div class="testimonial-icon">${t.icon}</div>
+      <div>
+        <div class="testimonial-author">${t.author}</div>
+        <div class="testimonial-role">${t.role}</div>
+      </div>
+    </div>
+    <div class="testimonial-content">${t.content}</div>
+    <a href="${t.linkUrl}" class="testimonial-link" target="_blank">
+      <span class="twemoji">${t.linkIcon}</span>
+      ${t.linkText}
+    </a>`;
   }
 
-  function startAutoplay() {
-    clearInterval(autoplayInterval);
-    autoplayInterval = setInterval(() => goToSlide(currentSlide + 1), 5000);
+  const grid = document.querySelector('.testimonials-grid');
+  if (!grid) return;
+  const cards = grid.querySelectorAll('.testimonial-card');
+
+  // Track which testimonials are currently visible (indices into allTestimonials)
+  let visible = [0, 1, 2];
+  // Queue of testimonials waiting to be shown
+  let queue = [3, 4, 5];
+  let swapInterval;
+
+  function swapOne() {
+    if (queue.length === 0) {
+      // Rebuild queue from all non-visible testimonials
+      queue = [];
+      for (let i = 0; i < allTestimonials.length; i++) {
+        if (!visible.includes(i)) queue.push(i);
+      }
+      // Shuffle the queue
+      for (let i = queue.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [queue[i], queue[j]] = [queue[j], queue[i]];
+      }
+    }
+
+    // Pick a random slot (0, 1, or 2) to replace
+    const slotIndex = Math.floor(Math.random() * 3);
+    const card = cards[slotIndex];
+    const nextTestimonialIndex = queue.shift();
+
+    // Animate out
+    card.classList.add('testimonial-swap-out');
+
+    setTimeout(() => {
+      // Swap content
+      card.innerHTML = renderCard(allTestimonials[nextTestimonialIndex]);
+      visible[slotIndex] = nextTestimonialIndex;
+
+      // Animate in
+      card.classList.remove('testimonial-swap-out');
+      card.classList.add('testimonial-swap-in');
+
+      setTimeout(() => {
+        card.classList.remove('testimonial-swap-in');
+      }, 500);
+    }, 500);
   }
 
-  function stopAutoplay() {
-    clearInterval(autoplayInterval);
+  function startSwapping() {
+    clearInterval(swapInterval);
+    swapInterval = setInterval(swapOne, 3500);
   }
 
-  prevBtn.addEventListener('click', () => { stopAutoplay(); goToSlide(currentSlide - 1); startAutoplay(); });
-  nextBtn.addEventListener('click', () => { stopAutoplay(); goToSlide(currentSlide + 1); startAutoplay(); });
-  dots.forEach(dot => dot.addEventListener('click', () => { stopAutoplay(); goToSlide(parseInt(dot.dataset.index)); startAutoplay(); }));
+  function stopSwapping() {
+    clearInterval(swapInterval);
+  }
 
-  wrapper.addEventListener('mouseenter', stopAutoplay);
-  wrapper.addEventListener('mouseleave', startAutoplay);
+  grid.addEventListener('mouseenter', stopSwapping);
+  grid.addEventListener('mouseleave', startSwapping);
 
-  goToSlide(0);
-  startAutoplay();
+  startSwapping();
 });
 </script>
 

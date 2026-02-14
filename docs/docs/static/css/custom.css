@@ -1,25 +1,107 @@
 /* Custom styles for GEPA documentation */
 
-/* Make the header logo larger (2.5x default size) */
+/* Slightly increase base body text size from Material default of 0.8rem */
+.md-typeset {
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+/* Hide separate "GEPA" title text since it's in the logo,
+   but keep the element in flex layout as a spacer */
+.md-header__title {
+    visibility: hidden;
+}
+
+/* Hide "GEPA" text in the mobile sidebar drawer (logo already has it) */
+label.md-nav__title[for="__drawer"] {
+    font-size: 0;
+    line-height: 0;
+    padding-bottom: 0;
+}
+
+label.md-nav__title[for="__drawer"] .md-nav__button {
+    font-size: 1rem;
+}
+
+/* ============================================
+   Compact single-row header (all pages)
+   ============================================ */
+
+.md-header__inner {
+    height: 2.4rem;
+    max-width: none;
+    padding: 0 1.5rem;
+}
+
+@media screen and (max-width: 76.25em) {
+    .md-header__inner {
+        padding: 0 0.2rem;
+    }
+}
+
+/* Logo: prevent clipping, allow full width */
+.md-header__button.md-logo {
+    flex-shrink: 0;
+    overflow: visible;
+    padding: 2px 4px;
+    margin-right: 0.5rem;
+}
+
 .md-header__button.md-logo img,
 .md-header__button.md-logo svg {
-    height: 60px;  /* Default is 24px, this is 2.5x */
+    height: 28px;
     width: auto;
 }
 
-/* Adjust the header to accommodate the larger logo */
-.md-header__button.md-logo {
-    padding: 4px;
+.md-header__button {
+    padding: 2px 6px;
 }
 
-/* Make the site title (GEPA) text larger */
-.md-header__title {
-    font-size: 1.4rem;  /* Default is ~0.9rem */
-    font-weight: 600;
+/* Nav links fill the middle, push to the right */
+.landing-nav {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0;
+    margin-right: 0.25rem;
 }
 
-.md-header__topic {
-    font-size: 1.4rem;
+.landing-nav__link {
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.3rem 0.7rem;
+    color: rgba(255, 255, 255, 0.7);
+    text-decoration: none;
+    transition: color 0.15s;
+    white-space: nowrap;
+}
+
+.landing-nav__link:hover {
+    color: #fff;
+}
+
+/* Active nav link */
+.landing-nav__link--active {
+    color: #fff;
+}
+
+/* Push repo source to far right */
+.md-header__source {
+    margin-left: auto;
+}
+
+/* Landing page: wider nav link spacing (only 3 links) */
+.md-header--landing .landing-nav__link {
+    padding: 0.3rem 0.9rem;
+}
+
+/* Hide nav links on small screens — sidebar/drawer handles navigation.
+   Keep them visible on the landing page (only 3 links, fits fine). */
+@media screen and (max-width: 40em) {
+    .md-header:not(.md-header--landing) .landing-nav {
+        display: none;
+    }
 }
 
 /* ============================================
@@ -193,4 +275,195 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+}
+
+/* ============================================
+   Blog: Clean, Consistent Styling
+   ============================================ */
+
+/* --- Blog listing page --- */
+
+/* Blog subscribe link (appended via template at bottom of listing) */
+.blog-subscribe {
+    font-size: 0.85rem;
+    margin-top: 2rem;
+    text-align: center;
+}
+
+.blog-subscribe a {
+    color: var(--md-default-fg-color--lighter);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.blog-subscribe a:hover {
+    color: var(--md-primary-fg-color);
+}
+
+/* Blog listing: hide author avatar images */
+.md-post--excerpt .md-post__authors {
+    display: none;
+}
+
+/* Blog post listing: cleaner spacing */
+.md-post {
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-post:last-child {
+    border-bottom: none;
+}
+
+/* Post metadata: date and category — consistent secondary text size */
+.md-post__meta {
+    font-size: 0.85rem;
+    color: var(--md-default-fg-color--light);
+    margin-bottom: 0.75rem;
+}
+
+/* Blog post content: let Material defaults handle font-size */
+.md-post .md-post__content {
+    line-height: 1.7;
+}
+
+/* Blog post title links (listing page) */
+.md-post .md-post__title a {
+    text-decoration: none;
+    color: var(--md-default-fg-color);
+    font-weight: 600;
+    transition: color 0.2s;
+}
+
+.md-post .md-post__title a:hover {
+    color: var(--md-primary-fg-color);
+}
+
+/* Blog excerpt on listing page */
+.md-post__excerpt {
+    color: var(--md-default-fg-color--light);
+    line-height: 1.7;
+}
+
+/* Blog categories/tags: subtle pills */
+.md-post .md-categories a {
+    font-size: 0.85rem;
+    padding: 0.15rem 0.6rem;
+    border-radius: 12px;
+    background: rgba(147, 197, 253, 0.1);
+    color: var(--md-primary-fg-color);
+    text-decoration: none;
+    border: 1px solid rgba(147, 197, 253, 0.2);
+    transition: all 0.2s;
+}
+
+.md-post .md-categories a:hover {
+    background: rgba(147, 197, 253, 0.2);
+    border-color: rgba(147, 197, 253, 0.4);
+}
+
+/* "Continue reading" link */
+.md-post .md-post__action {
+    font-size: 0.85rem;
+}
+
+/* Dark mode adjustments for blog listing */
+[data-md-color-scheme="slate"] .md-post .md-categories a {
+    background: rgba(147, 197, 253, 0.08);
+}
+
+/* --- Blog post page: academic paper style --- */
+
+/* Ensure the post content container fills viewport width */
+.md-content--post {
+    width: 100%;
+    overflow-wrap: break-word;
+}
+
+/* Constrain post article width for readability */
+.md-content--post article.md-content__inner {
+    width: 100%;
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 1rem 1.2rem 0;
+    box-sizing: border-box;
+}
+
+/* Prevent wide elements from causing page-level horizontal scroll */
+.blog-post-body pre,
+.blog-post-body .arithmatex {
+    overflow-x: auto;
+}
+
+/* Academic header block */
+.blog-post-header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.blog-post-header .blog-post-title {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 0.75rem;
+}
+
+/* Byline: "Author1, Author2 · Date" */
+.blog-post-byline {
+    font-size: 0.95rem;
+    color: var(--md-default-fg-color--light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.blog-post-authors a {
+    color: var(--md-primary-fg-color);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.blog-post-authors a:hover {
+    text-decoration: underline;
+}
+
+/* Separator dot between authors and date */
+.blog-post-authors + .blog-post-date::before {
+    content: "\00b7";
+    margin: 0 0.4rem;
+    color: var(--md-default-fg-color--lighter);
+}
+
+.blog-post-date {
+    color: var(--md-default-fg-color--light);
+}
+
+/* Hide the duplicate h1 rendered from page.content */
+.blog-post-body h1:first-of-type {
+    display: none;
+}
+
+/* Post body typography */
+.blog-post-body {
+    line-height: 1.8;
+}
+
+/* Mobile: left-align header like vLLM, scale down title */
+@media screen and (max-width: 76.25em) {
+    .blog-post-header {
+        text-align: left;
+    }
+
+    .blog-post-header .blog-post-title {
+        font-size: 1.6rem;
+    }
+
+    .blog-post-byline {
+        justify-content: flex-start;
+    }
 }

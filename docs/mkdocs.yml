@@ -9,8 +9,9 @@ edit_uri: blob/main/docs/docs/
 docs_dir: "docs/"
 
 nav:
-    - Get Started: index.md
-    - GEPA in Action: guides/use-cases.md
+    - Showcase: guides/use-cases.md
+    - Blog:
+        - blog/index.md
     - Guides:
         - Guides Overview: guides/index.md
         - Quick Start: guides/quickstart.md
@@ -132,13 +133,41 @@ theme:
         repo: fontawesome/brands/git-alt
         edit: material/pencil
         view: material/eye
-    logo: static/img/gepa_logo.svg
+    logo: static/img/gepa_logo_with_text_white.svg
     favicon: static/img/gepa_logo.svg
 
 plugins:
     - search:
         lang: en
         separator: '[\s\-\.]+'
+    - blog:
+        blog_dir: blog
+        post_date_format: long
+        post_url_format: "{date}/{slug}"
+        post_excerpt: optional
+        post_excerpt_separator: "<!-- more -->"
+        post_readtime: true
+        post_readtime_words_per_minute: 265
+        authors: true
+        authors_profiles: false
+        archive: true
+        archive_name: Archive
+        categories: false
+        pagination: true
+        pagination_per_page: 10
+        draft_if_future_date: true
+    - rss:
+        match_path: "blog/posts/.*"
+        date_from_meta:
+            as_creation: date.created
+        categories:
+            - categories
+        feeds_filenames:
+            rss_created: blog/feed.xml
+            rss_updated: blog/feed_updated.xml
+            json_created: blog/feed.json
+            json_updated: blog/feed_updated.json
+        enabled: true
     - mkdocstrings:
         handlers:
             python:
@@ -166,6 +195,10 @@ plugins:
 
 extra_css:
     - static/css/custom.css
+
+extra_javascript:
+    - javascripts/mathjax.js
+    - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 
 extra:
     social:
