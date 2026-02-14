@@ -451,6 +451,11 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     text-decoration: underline;
 }
 
+.blog-post-equal-contrib {
+    font-size: 0.85rem;
+    color: var(--md-default-fg-color--lighter);
+}
+
 /* Separator dot between authors and date */
 .blog-post-authors + .blog-post-date::before {
     content: "\00b7";

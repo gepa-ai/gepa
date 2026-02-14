@@ -11,15 +11,21 @@
             <div class="blog-post-byline">
                 {% if page.authors %}
                     <span class="blog-post-authors">
-                        {% for author in page.authors %}
-                            {% if author.url %}
+                        {%- for author in page.authors %}
+                            {%- if author.url -%}
                                 <a href="{{ author.url }}">{{ author.name }}</a>
-                            {% else %}
+                            {%- else -%}
                                 {{ author.name }}
-                            {% endif %}
-                            {% if not loop.last %}, {% endif %}
-                        {% endfor %}
+                            {%- endif -%}
+                            {%- if page.meta.equal_contribution and author.name in page.meta.equal_contribution -%}
+                                <sup>*</sup>
+                            {%- endif -%}
+                            {%- if not loop.last %}, {% endif -%}
+                        {%- endfor %}
                     </span>
+                    {%- if page.meta.equal_contribution %}
+                    <span class="blog-post-equal-contrib">(<sup>*</sup> Equal Contribution)</span>
+                    {%- endif %}
                 {% endif %}
 
                 {% if page.meta.date and page.meta.date.created %}
