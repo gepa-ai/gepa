@@ -11,7 +11,7 @@ hide:
 <div class="hero-section">
   <div style="text-align: center; margin-bottom: 1rem;">
     <img src="assets/gepa_logo_with_text_gradient.svg" alt="GEPA Logo" class="hero-logo hero-logo--light" style="max-width: 400px; width: 100%;">
-    <img src="assets/gepa_logo_with_text_gradient_dark.svg" alt="GEPA Logo" class="hero-logo hero-logo--dark" style="max-width: 400px; width: 100%;">
+    <img src="static/img/gepa_logo_with_text_white.svg" alt="GEPA Logo" class="hero-logo hero-logo--dark" style="max-width: 400px; width: 100%;">
   </div>
   <p class="hero-subtitle">Automatically optimize prompts for any AI system</p>
   <p class="hero-stats-line">
@@ -63,7 +63,7 @@ hide:
       <span>NuBank</span>
       <span>Infosys</span>
       <span>Invitae</span>
-      <span>Bespoke AI Labs</span>
+      <span>Bespoke Labs</span>
       <!-- duplicate set for seamless loop -->
       <a href="https://x.com/tobi/status/1963434604741701909" target="_blank">Shopify</a>
       <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank">OpenAI</a>
@@ -84,7 +84,7 @@ hide:
       <span>NuBank</span>
       <span>Infosys</span>
       <span>Invitae</span>
-      <span>Bespoke AI Labs</span>
+      <span>Bespoke Labs</span>
     </div>
   </div>
 </div>

@@ -3,6 +3,11 @@ article > h1 {
   display: none !important;
 }
 
+/* Hide the edit button on the landing page so it doesn't offset centered content */
+.md-content__button[rel="edit"] {
+  display: none !important;
+}
+
 /* ==============================
    Page Background
    ============================== */
