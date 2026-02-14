@@ -121,14 +121,14 @@ theme:
           toggle:
             icon: material/weather-night
             name: Switch to dark mode
-          primary: deep purple
-          accent: amber
+          primary: indigo
+          accent: blue
         - scheme: slate
           toggle:
             icon: material/weather-sunny
             name: Switch to light mode
-          primary: deep purple
-          accent: amber
+          primary: indigo
+          accent: blue
     icon:
         repo: fontawesome/brands/git-alt
         edit: material/pencil

@@ -1,5 +1,24 @@
 /* Custom styles for GEPA documentation */
 
+/* ============================================
+   Deep Research Theme – Color Overrides
+   ============================================ */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #2563EB;
+  --md-primary-fg-color--light: #3B82F6;
+  --md-primary-fg-color--dark: #1D4ED8;
+  --md-accent-fg-color: #2563EB;
+  --md-accent-fg-color--transparent: rgba(37, 99, 235, 0.1);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #2563EB;
+  --md-primary-fg-color--light: #3B82F6;
+  --md-primary-fg-color--dark: #1D4ED8;
+  --md-accent-fg-color: #38BDF8;
+  --md-accent-fg-color--transparent: rgba(56, 189, 248, 0.1);
+}
+
 /* Slightly increase base body text size from Material default of 0.8rem */
 .md-typeset {
     font-size: 0.875rem;
@@ -351,16 +370,16 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     font-size: 0.85rem;
     padding: 0.15rem 0.6rem;
     border-radius: 12px;
-    background: rgba(147, 197, 253, 0.1);
+    background: rgba(37, 99, 235, 0.1);
     color: var(--md-primary-fg-color);
     text-decoration: none;
-    border: 1px solid rgba(147, 197, 253, 0.2);
+    border: 1px solid rgba(37, 99, 235, 0.2);
     transition: all 0.2s;
 }
 
 .md-post .md-categories a:hover {
-    background: rgba(147, 197, 253, 0.2);
-    border-color: rgba(147, 197, 253, 0.4);
+    background: rgba(37, 99, 235, 0.2);
+    border-color: rgba(37, 99, 235, 0.4);
 }
 
 /* "Continue reading" link */
@@ -370,7 +389,7 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 
 /* Dark mode adjustments for blog listing */
 [data-md-color-scheme="slate"] .md-post .md-categories a {
-    background: rgba(147, 197, 253, 0.08);
+    background: rgba(37, 99, 235, 0.08);
 }
 
 /* --- Blog post page: academic paper style --- */
