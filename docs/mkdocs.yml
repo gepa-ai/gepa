@@ -149,17 +149,10 @@ plugins:
         post_readtime: true
         post_readtime_words_per_minute: 265
         authors: true
-        authors_profiles: true
+        authors_profiles: false
         archive: true
         archive_name: Archive
-        categories: true
-        categories_name: Categories
-        categories_allowed:
-            - Research
-            - Engineering
-            - Announcements
-            - Tutorials
-            - Community
+        categories: false
         pagination: true
         pagination_per_page: 10
         draft_if_future_date: true
