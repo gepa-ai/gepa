@@ -14,37 +14,27 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class GEPAResult(Generic[RolloutOutput, DataId]):
-    """
-    Immutable snapshot of a GEPA run with convenience accessors.
+    """Immutable snapshot returned by :func:`~gepa.optimize_anything.optimize_anything`.
 
-    - candidates: list of proposed candidates (component_name -> component_text)
-    - parents: lineage info; for each candidate i, parents[i] is a list of parent indices or None
-    - val_aggregate_scores: per-candidate aggregate score on the validation set (higher is better)
-    - val_subscores: per-candidate mapping from validation id to score on the validation set (sparse dict)
-    - val_aggregate_subscores: optional per-candidate aggregate subscores across objectives
-    - per_val_instance_best_candidates: for each val instance t, a set of candidate indices achieving the current best score on t
-    - per_objective_best_candidates: optional per-objective set of candidate indices achieving best aggregate subscore
-    - discovery_eval_counts: number of metric calls accumulated up to the discovery of each candidate
+    Key attributes:
+        best_candidate: The optimized parameter(s) — ``dict[str, str]`` or plain
+            ``str`` when ``seed_candidate`` was a string.
+        best_idx: Index of the highest-scoring candidate.
+        val_aggregate_scores: Per-candidate average validation score (higher is better).
+        candidates: All candidates explored during optimization.
+        parents: Lineage — ``parents[i]`` is a list of parent indices for candidate ``i``.
+        per_val_instance_best_candidates: Pareto frontier — per validation example,
+            the set of candidate indices achieving the best score.
+        best_refiner_prompt: The refiner prompt from the best candidate (if refiner was enabled).
 
-    Optional fields:
-    - best_outputs_valset: per-task best outputs on the validation set. [task_idx -> [(program_idx_1, output_1), (program_idx_2, output_2), ...]]
+    Serialization:
+        ``to_dict()`` / ``from_dict()`` for JSON-safe round-tripping.
 
-    Run-level metadata:
-    - total_metric_calls: total number of metric calls made across the run
-    - num_full_val_evals: number of full validation evaluations performed
-    - run_dir: where artifacts were written (if any)
-    - seed: RNG seed for reproducibility (if known)
-    - tracked_scores: optional tracked aggregate scores (if different from val_aggregate_scores)
+    Example::
 
-    Convenience:
-    - best_idx: candidate index with the highest val_aggregate_scores
-    - best_candidate: the program text mapping for best_idx
-    - non_dominated_indices(): candidate indices that are not dominated across per-instance pareto fronts
-    - lineage(idx): parent chain from base to idx
-    - diff(parent_idx, child_idx, only_changed=True): component-wise diff between two candidates
-    - best_k(k): top-k candidates by aggregate val score
-    - instance_winners(t): set of candidates on the pareto front for val instance t
-    - to_dict(...), save_json(...): serialization helpers
+        result = optimize_anything(...)
+        print(result.best_candidate)
+        print(result.val_aggregate_scores[result.best_idx])
     """
 
     # Core data
@@ -67,6 +57,10 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     run_dir: str | None = None
     seed: int | None = None
 
+    # When set, best_candidate unwraps the dict to return a plain str.
+    # This is the internal dict key used to wrap str seed_candidates.
+    _str_candidate_key: str | None = None
+
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 2
 
     # -------- Convenience properties --------
@@ -84,8 +78,23 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         return max(range(len(scores)), key=lambda i: scores[i])
 
     @property
-    def best_candidate(self) -> dict[str, str]:
-        return self.candidates[self.best_idx]
+    def best_candidate(self) -> str | dict[str, str]:
+        """Return the best candidate.
+
+        When ``optimize_anything`` was called with a ``str`` seed_candidate,
+        returns the plain ``str`` value.  Otherwise returns the full
+        ``dict[str, str]`` parameter mapping.
+        """
+        cand = self.candidates[self.best_idx]
+        if self._str_candidate_key is not None and self._str_candidate_key in cand:
+            return cand[self._str_candidate_key]
+        return cand
+
+    @property
+    def best_refiner_prompt(self) -> str | None:
+        """Return the refiner prompt from the best candidate, or ``None`` if
+        the refiner was not enabled."""
+        return self.candidates[self.best_idx].get("refiner_prompt")
 
     def to_dict(self) -> dict[str, Any]:
         cands = [dict(cand.items()) for cand in self.candidates]
@@ -111,6 +120,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             "num_full_val_evals": self.num_full_val_evals,
             "run_dir": self.run_dir,
             "seed": self.seed,
+            "_str_candidate_key": self._str_candidate_key,
             "best_idx": self.best_idx,
             "validation_schema_version": GEPAResult._VALIDATION_SCHEMA_VERSION,
         }
@@ -140,6 +150,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             "num_full_val_evals": d.get("num_full_val_evals"),
             "run_dir": d.get("run_dir"),
             "seed": d.get("seed"),
+            "_str_candidate_key": d.get("_str_candidate_key"),
         }
 
     @staticmethod
@@ -202,8 +213,14 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         state: "GEPAState[RolloutOutput, DataId]",
         run_dir: str | None = None,
         seed: int | None = None,
+        str_candidate_key: str | None = None,
     ) -> "GEPAResult[RolloutOutput, DataId]":
-        """Build a GEPAResult from a GEPAState."""
+        """Build a GEPAResult from a GEPAState.
+
+        Args:
+            str_candidate_key: When set, ``best_candidate`` unwraps the internal
+                dict to return the plain ``str`` value stored under this key.
+        """
         objective_scores_list = [dict(scores) for scores in state.prog_candidate_objective_scores]
         has_objective_scores = any(obj for obj in objective_scores_list)
         per_objective_best = {
@@ -228,4 +245,5 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             num_full_val_evals=getattr(state, "num_full_ds_evals", None),
             run_dir=run_dir,
             seed=seed,
+            _str_candidate_key=str_candidate_key,
         )

@@ -75,16 +75,10 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self._missing_template_warnings: set[str] = set()
 
         if isinstance(reflection_prompt_template, dict):
-            for param_name, template in reflection_prompt_template.items():
+            for _param_name, template in reflection_prompt_template.items():
                 InstructionProposalSignature.validate_prompt_template(template)
         else:
             InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
-
-        if self.skip_perfect_score and self.perfect_score is None:
-            raise ValueError(
-                "perfect_score must be provided when skip_perfect_score is True. "
-                "If you do not have a perfect target score, set skip_perfect_score=False."
-            )
 
         if self.skip_perfect_score and self.perfect_score is None:
             raise ValueError(
@@ -106,6 +100,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
         if self.reflection_lm is None:
             raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
+
         new_texts: dict[str, str] = {}
         for name in components_to_update:
             # Gracefully handle cases where a selected component has no data in reflective_dataset
@@ -312,6 +307,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                     new_instructions=new_texts,
                 ),
             )
+
 
             for pname, text in new_texts.items():
                 self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
