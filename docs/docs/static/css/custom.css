@@ -1,5 +1,11 @@
 /* Custom styles for GEPA documentation */
 
+/* Slightly increase base body text size from Material default of 0.8rem */
+.md-typeset {
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
 /* Hide separate "GEPA" title text since it's in the logo,
    but keep the element in flex layout as a spacer */
 .md-header__title {
@@ -18,36 +24,36 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 }
 
 /* ============================================
-   Landing page: sleek single-row header
+   Compact single-row header (all pages)
    ============================================ */
 
-.md-header--landing .md-header__inner {
+.md-header__inner {
     height: 2.4rem;
     max-width: none;
     padding: 0 1.5rem;
 }
 
 @media screen and (max-width: 76.25em) {
-    .md-header--landing .md-header__inner {
+    .md-header__inner {
         padding: 0 0.2rem;
     }
 }
 
 /* Logo: prevent clipping, allow full width */
-.md-header--landing .md-header__button.md-logo {
+.md-header__button.md-logo {
     flex-shrink: 0;
     overflow: visible;
     padding: 2px 4px;
     margin-right: 0.5rem;
 }
 
-.md-header--landing .md-header__button.md-logo img,
-.md-header--landing .md-header__button.md-logo svg {
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
     height: 28px;
     width: auto;
 }
 
-.md-header--landing .md-header__button {
+.md-header__button {
     padding: 2px 6px;
 }
 
@@ -64,7 +70,7 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 .landing-nav__link {
     font-size: 0.75rem;
     font-weight: 500;
-    padding: 0.3rem 0.9rem;
+    padding: 0.3rem 0.7rem;
     color: rgba(255, 255, 255, 0.7);
     text-decoration: none;
     transition: color 0.15s;
@@ -75,9 +81,27 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     color: #fff;
 }
 
+/* Active nav link */
+.landing-nav__link--active {
+    color: #fff;
+}
+
 /* Push repo source to far right */
-.md-header--landing .md-header__source {
+.md-header__source {
     margin-left: auto;
+}
+
+/* Landing page: wider nav link spacing (only 3 links) */
+.md-header--landing .landing-nav__link {
+    padding: 0.3rem 0.9rem;
+}
+
+/* Hide nav links on small screens — sidebar/drawer handles navigation.
+   Keep them visible on the landing page (only 3 links, fits fine). */
+@media screen and (max-width: 40em) {
+    .md-header:not(.md-header--landing) .landing-nav {
+        display: none;
+    }
 }
 
 /* ============================================
@@ -360,7 +384,7 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 /* Constrain post article width for readability */
 .md-content--post article.md-content__inner {
     width: 100%;
-    max-width: 800px;
+    max-width: 880px;
     margin: 0 auto;
     padding: 1rem 1.2rem 0;
     box-sizing: border-box;

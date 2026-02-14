@@ -127,6 +127,10 @@ article > h1 {
   filter: brightness(1.1);
 }
 
+/* Hero logo: show light variant in light mode, dark variant in dark mode */
+[data-md-color-scheme="default"] .hero-logo--dark { display: none; }
+[data-md-color-scheme="slate"] .hero-logo--light { display: none; }
+
 /* Logo hover effect */
 .hero-section img {
   transition: all 0.3s ease;

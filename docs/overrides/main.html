@@ -11,3 +11,49 @@
   gtag('config', 'G-HGHHSE0CDS');
 </script>
 {% endblock %}
+
+{% block tabs %}{% endblock %}
+
+{% block header %}
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="{{ lang.t('header') }}">
+    <a href="{{ config.extra.homepage | d(nav.homepage.url, true) | url }}" title="{{ config.site_name | e }}" class="md-header__button md-logo" aria-label="{{ config.site_name }}" data-md-component="logo">
+      <img src="{{ 'static/img/gepa_logo_with_text_white.svg' | url }}" alt="logo">
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      {% set icon = config.theme.icon.menu or "material/menu" %}
+      {% include ".icons/" ~ icon ~ ".svg" %}
+    </label>
+    <div class="landing-nav">
+      <a href="{{ 'guides/use-cases/' | url }}" class="landing-nav__link{% if page and page.url and 'use-cases' in page.url %} landing-nav__link--active{% endif %}">Showcase</a>
+      <a href="{{ 'blog/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('blog') %} landing-nav__link--active{% endif %}">Blog</a>
+      <a href="{{ 'guides/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('guides') and 'use-cases' not in page.url %} landing-nav__link--active{% endif %}">Docs</a>
+      <a href="{{ 'tutorials/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('tutorials') %} landing-nav__link--active{% endif %}">Tutorials</a>
+      <a href="{{ 'api/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('api') %} landing-nav__link--active{% endif %}">API</a>
+    </div>
+    {% if config.theme.palette %}
+      {% if not config.theme.palette is mapping %}
+        {% include "partials/palette.html" %}
+      {% endif %}
+    {% endif %}
+    {% if not config.theme.palette is mapping %}
+      {% include "partials/javascripts/palette.html" %}
+    {% endif %}
+    {% if "material/search" in config.plugins %}
+      {% set search = config.plugins["material/search"] | attr("config") %}
+      {% if search.enabled %}
+        <label class="md-header__button md-icon" for="__search">
+          {% set icon = config.theme.icon.search or "material/magnify" %}
+          {% include ".icons/" ~ icon ~ ".svg" %}
+        </label>
+        {% include "partials/search.html" %}
+      {% endif %}
+    {% endif %}
+    {% if config.repo_url %}
+      <div class="md-header__source">
+        {% include "partials/source.html" %}
+      </div>
+    {% endif %}
+  </nav>
+</header>
+{% endblock %}

@@ -10,7 +10,8 @@ hide:
 
 <div class="hero-section">
   <div style="text-align: center; margin-bottom: 1rem;">
-    <img src="assets/gepa_logo_with_text_gradient.svg" alt="GEPA Logo" style="max-width: 400px; width: 100%;">
+    <img src="assets/gepa_logo_with_text_gradient.svg" alt="GEPA Logo" class="hero-logo hero-logo--light" style="max-width: 400px; width: 100%;">
+    <img src="assets/gepa_logo_with_text_gradient_dark.svg" alt="GEPA Logo" class="hero-logo hero-logo--dark" style="max-width: 400px; width: 100%;">
   </div>
   <p class="hero-subtitle">Automatically optimize prompts for any AI system</p>
   <p class="hero-stats-line">
