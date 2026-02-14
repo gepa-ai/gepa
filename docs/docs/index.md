@@ -35,7 +35,7 @@ hide:
     </a>
   </div>
   <div class="hero-badges">
-    <a href="https://pypistats.org/packages/gepa" target="_blank"><img src="https://img.shields.io/pypi/dm/gepa?style=for-the-badge&logo=python&logoColor=white&label=Downloads/month&labelColor=60a5fa&color=a78bfa" alt="Downloads" style="height: 28px;" loading="lazy"></a>
+    <a href="https://pypistats.org/packages/gepa" target="_blank"><img src="https://img.shields.io/pypi/dm/gepa?style=for-the-badge&logo=python&logoColor=white&label=Downloads/month&labelColor=2563EB&color=38BDF8" alt="Downloads" style="height: 28px;" loading="lazy"></a>
   </div>
 </div>
 
@@ -422,7 +422,7 @@ pip install gepa
 <div class="how-it-works-flow">
   <div class="flow-step">
     <div class="flow-step-num">1</div>
-    <div class="flow-step-icon" style="color: #a855f7;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg></div>
+    <div class="flow-step-icon" style="color: #2563EB;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg></div>
     <div class="flow-step-label">Select from<br>Pareto Front</div>
     <div class="flow-step-desc">Pick candidate excelling on <em>some</em> examples</div>
   </div>
