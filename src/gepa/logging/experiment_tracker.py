@@ -111,6 +111,39 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to log to mlflow: {e}")
 
+    def log_text(self, text_data: dict[str, str], step: int | None = None):
+        """
+        Log text data to the active backends.
+        
+        For MLflow, uses log_text to store text artifacts.
+        For wandb, uses wandb.log() which supports arbitrary types.
+        
+        Args:
+            text_data: Dictionary mapping keys to text values
+            step: Optional step number for the logged data
+        """
+        if self.use_wandb:
+            try:
+                import wandb  # type: ignore
+
+                wandb.log(text_data, step=step)
+            except Exception as e:
+                print(f"Warning: Failed to log text to wandb: {e}")
+
+        if self.use_mlflow:
+            try:
+                import mlflow  # type: ignore
+
+                # MLflow requires us to log text as artifacts
+                # For each text entry, create a text artifact
+                for key, value in text_data.items():
+                    if isinstance(value, str):
+                        # Create a unique artifact name using key and step
+                        artifact_name = f"{key}_step_{step}.txt" if step is not None else f"{key}.txt"
+                        mlflow.log_text(value, artifact_name)
+            except Exception as e:
+                print(f"Warning: Failed to log text to mlflow: {e}")
+
     def end_run(self):
         """End the current run."""
         if self.use_wandb:

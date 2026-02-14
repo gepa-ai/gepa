@@ -653,3 +653,130 @@ class TestExperimentTrackerIntegration:
         assert "model_name" not in metrics
         assert "config" not in metrics
         assert "tags" not in metrics
+
+    @pytest.mark.skipif(not has_mlflow(), reason="mlflow not available")
+    def test_mlflow_log_text(self, temp_dir):
+        """Test that log_text properly logs text data to mlflow."""
+        tracker = ExperimentTracker(
+            use_wandb=False,
+            use_mlflow=True,
+            mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+            mlflow_experiment_name="test-experiment",
+        )
+
+        with tracker:
+            # Log text data
+            tracker.log_text(
+                {
+                    "new_instruction_predictor1": "You are a helpful assistant",
+                    "new_instruction_predictor2": "Please answer concisely",
+                },
+                step=1,
+            )
+
+        # Verify text was logged as artifacts
+        import mlflow
+        from mlflow.tracking import MlflowClient
+
+        client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
+        experiment = client.get_experiment_by_name("test-experiment")
+        runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+        assert len(runs) > 0
+
+        run = runs[0]
+        run_id = run.info.run_id
+
+        # List artifacts for this run
+        artifacts = client.list_artifacts(run_id)
+        artifact_names = [artifact.path for artifact in artifacts]
+
+        # Check that text artifacts were created
+        assert "new_instruction_predictor1_step_1.txt" in artifact_names
+        assert "new_instruction_predictor2_step_1.txt" in artifact_names
+
+    @pytest.mark.skipif(not has_wandb(), reason="wandb not available")
+    def test_wandb_log_text(self, mock_wandb, temp_dir):
+        """Test that log_text properly logs text data to wandb."""
+        tracker = ExperimentTracker(
+            use_wandb=True,
+            wandb_init_kwargs={
+                "project": "test-project",
+                "dir": temp_dir,
+            },
+            use_mlflow=False,
+        )
+
+        with tracker:
+            # Log text data
+            tracker.log_text(
+                {
+                    "new_instruction_predictor1": "You are a helpful assistant",
+                    "new_instruction_predictor2": "Please answer concisely",
+                },
+                step=1,
+            )
+
+            # Verify wandb.log was called with the text data
+            # The mock_wandb.log should have been called twice: once from context manager, once from log_text
+            # We need to check the last call (log_text)
+            assert mock_wandb.log.call_count >= 1
+            
+            # Find the call with text data
+            text_logged = False
+            for call in mock_wandb.log.call_args_list:
+                call_args, call_kwargs = call
+                if "new_instruction_predictor1" in call_args[0]:
+                    assert call_args[0]["new_instruction_predictor1"] == "You are a helpful assistant"
+                    assert call_args[0]["new_instruction_predictor2"] == "Please answer concisely"
+                    assert call_kwargs["step"] == 1
+                    text_logged = True
+                    break
+            
+            assert text_logged, "Text data was not logged to wandb"
+
+    @pytest.mark.skipif(not has_wandb() or not has_mlflow(), reason="wandb or mlflow not available")
+    def test_log_text_both_backends(self, mock_wandb, temp_dir):
+        """Test that log_text works with both backends."""
+        tracker = ExperimentTracker(
+            use_wandb=True,
+            wandb_init_kwargs={
+                "project": "test-project",
+                "dir": temp_dir,
+            },
+            use_mlflow=True,
+            mlflow_tracking_uri=f"file://{temp_dir}/mlflow",
+            mlflow_experiment_name="test-experiment",
+        )
+
+        with tracker:
+            # Log text data
+            tracker.log_text(
+                {
+                    "instruction": "You are a helpful assistant",
+                },
+                step=5,
+            )
+
+        # Verify wandb received the text data
+        text_logged_to_wandb = False
+        for call in mock_wandb.log.call_args_list:
+            call_args, call_kwargs = call
+            if "instruction" in call_args[0]:
+                assert call_args[0]["instruction"] == "You are a helpful assistant"
+                text_logged_to_wandb = True
+                break
+        assert text_logged_to_wandb, "Text data was not logged to wandb"
+
+        # Verify mlflow received the text as an artifact
+        from mlflow.tracking import MlflowClient
+
+        client = MlflowClient(tracking_uri=f"file://{temp_dir}/mlflow")
+        experiment = client.get_experiment_by_name("test-experiment")
+        runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+        assert len(runs) > 0
+
+        run = runs[0]
+        artifacts = client.list_artifacts(run.info.run_id)
+        artifact_names = [artifact.path for artifact in artifacts]
+
+        assert "instruction_step_5.txt" in artifact_names
