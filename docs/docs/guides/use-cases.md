@@ -668,6 +668,14 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the blog post](https://super-agentic.ai/resources/super-posts/gepa-dspy-optimizer-superoptix-revolutionizing-ai-agent-optimization)
 
+-   **BAML Prompt Optimization**
+
+    ---
+
+    BAML integrates GEPA into `baml-cli optimize` for test-driven prompt optimization with multi-objective support (accuracy, latency, tokens).
+
+    [:material-arrow-right: Read the guide](https://docs.boundaryml.com/guide/baml-advanced/prompt-optimization)
+
 </div>
 
 ---
