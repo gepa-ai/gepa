@@ -4,7 +4,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="5940px" height="1800px" viewBox="-0.5 -0.5 5940 1800">
   <defs>
     <style type="text/css">
-      @import url(https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500);
     </style>
   </defs>
 
@@ -26,6 +25,6 @@
       <path d="M 163.31 983.31 L 163.31 683.31 Q 163.31 583.31 246.51 638.78 L 680.1 927.84 Q 763.31 983.31 680.1 1038.78 L 246.51 1327.84 Q 163.31 1383.31 163.31 1283.31 Z" fill="#dae8fc" stroke="#6c8ebf" stroke-width="30" stroke-miterlimit="10" transform="rotate(-15,463.31,983.31)" pointer-events="all"/>
     </g>
     <!-- GEPA Text -->
-    <text x="1850" y="900" fill="#2e4464" font-family="'Red Hat Display', Helvetica, Arial, sans-serif" font-size="1500" text-anchor="start" font-weight="500" dominant-baseline="central">GEPA</text>
+    <text x="1850" y="900" fill="#2e4464" font-family="'Arial Rounded MT', Helvetica, Arial, sans-serif" font-size="1500" text-anchor="start" font-weight="500" dominant-baseline="central">GEPA</text>
   </g>
 </svg>

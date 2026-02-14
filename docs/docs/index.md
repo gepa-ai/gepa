@@ -63,7 +63,7 @@ hide:
       <span>NuBank</span>
       <span>Infosys</span>
       <span>Invitae</span>
-      <span>Bespoke AI Labs</span>
+      <span>Bespoke Labs</span>
       <!-- duplicate set for seamless loop -->
       <a href="https://x.com/tobi/status/1963434604741701909" target="_blank">Shopify</a>
       <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank">OpenAI</a>
@@ -84,7 +84,7 @@ hide:
       <span>NuBank</span>
       <span>Infosys</span>
       <span>Invitae</span>
-      <span>Bespoke AI Labs</span>
+      <span>Bespoke Labs</span>
     </div>
   </div>
 </div>
