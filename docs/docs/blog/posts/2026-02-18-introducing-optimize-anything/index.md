@@ -18,6 +18,7 @@ equal_contribution:
   - "Lakshya A Agrawal"
   - "Donghyun Lee"
 slug: introducing-optimize-anything
+readtime: 12
 title: "optimize_anything: A Universal API for Any Text Optimization"
 description: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more — if you can measure it, you can optimize it."
 ---
@@ -342,302 +343,312 @@ result = oa.optimize_anything(
 
 ---
 
-## Appendix: Case Study Code
+## Appendix: Detailed Code Walkthroughs for each Case Study
 
-### Appendix A: Blackbox Mathematical Optimization
+<div class="appendix-tiles" markdown>
 
-`optimize_anything` evolves Python code that implements a blackbox optimizer. The evaluator sandboxes the proposed code, runs it on benchmark functions, and returns execution diagnostics as ASI.
+<span id="appendix-a-blackbox-mathematical-optimization"></span>
+??? example "Blackbox Mathematical Optimization"
 
-<!-- @luke: come back here to match the demo code to my actual implementation -->
+    `optimize_anything` evolves Python code that implements a blackbox optimizer. The evaluator sandboxes the proposed code, runs it on benchmark functions, and returns execution diagnostics as ASI.
 
-```python
-from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+    <!-- @luke: come back here to match the demo code to my actual implementation -->
 
-SEED_CODE = """
-import numpy as np
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
 
-def solve(objective_function, config, best_xs=None):
-    bounds = np.array(config['bounds'])
-    x = np.random.uniform(bounds[:, 0], bounds[:, 1])
-    score = objective_function(x)
-    all_attempts = [{"x": x.copy(), "score": score})]
+    SEED_CODE = """
+    import numpy as np
 
-    return {"x": x, "score": score, "all_attempts": all_attempts}
-"""
+    def solve(objective_function, config, best_xs=None):
+        bounds = np.array(config['bounds'])
+        x = np.random.uniform(bounds[:, 0], bounds[:, 1])
+        score = objective_function(x)
+        all_attempts = [{"x": x.copy(), "score": score})]
 
-def evaluate(candidate, opt_state):
-    code = candidate["code"]
-    best_xs = extract_best_xs(opt_state)  # warm-start from prior evaluations
-    result = execute_code(code, problem_index=0, budget=100, best_xs=best_xs)
+        return {"x": x, "score": score, "all_attempts": all_attempts}
+    """
 
-    return result["score"], {
-        "top_50_attempts": result["top_50_attempts"],
-        "bottom_50_attempts": result["bottom_50_attempts"],
-        "Stdout": result.get("stdout", ""),
-        "Error": result.get("error", ""),
-        "Traceback": result.get("traceback", ""),
-    }
+    def evaluate(candidate, opt_state):
+        code = candidate["code"]
+        best_xs = extract_best_xs(opt_state)  # warm-start from prior evaluations
+        result = execute_code(code, problem_index=0, budget=100, best_xs=best_xs)
 
-optimize_anything(
-    seed_candidate={"code": SEED_CODE},
-    evaluator=evaluate,
-    config=GEPAConfig(
-        engine=EngineConfig(max_candidate_proposals=20, cache_evaluation=True),
-        reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
-    ),
-    objective="Evolve Python code that minimizes a blackbox objective function "
-              "using the available evaluation budget efficiently.",
-)
-```
+        return result["score"], {
+            "top_50_attempts": result["top_50_attempts"],
+            "bottom_50_attempts": result["bottom_50_attempts"],
+            "Stdout": result.get("stdout", ""),
+            "Error": result.get("error", ""),
+            "Traceback": result.get("traceback", ""),
+        }
 
-### Appendix B: Circle Packing
-
-Optimize code that packs n=26 circles within a unit square, maximizing the sum of radii. The evaluator executes the packing code, validates circle positions, and returns geometric diagnostics.
-
-```python
-from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
-
-def evaluate(candidate, opt_state):
-    code = candidate["code"]
-    warm_start = extract_best_circles(opt_state)
-    result = execute_code(code, 600, warm_start)
-
-    if result["success"]:
-        circles = result["result"]["circles"]
-        score = result["result"]["validation_details"]["sum_radii"]
-        metrics = compute_multiple_metrics(result["result"]["all_scores"])
-    else:
-        circles = None
-        score = 0.0
-        metrics = {"sum_radii": 0.0}
-        
-    side_info = {
-        "scores": {"sum_radii": score},
-        "metrics": metrics,
-        "code": code,
-        "circles": circles,
-        "stdout": result.get("stdout", ""),
-        "error": result.get("error"),
-        "traceback": result.get("traceback"),
-        "validation_details": result.get("validation_details"),
-    }
-
-    return score, side_info
-
-optimize_anything(
-    seed_candidate={"code": SEED_CODE},
-    evaluator=evaluate,
-    config=GEPAConfig(
-        engine=EngineConfig(max_metric_calls=150, cache_evaluation=True, frontier_type="objective"),
-        reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
-    ),
-    objective="Optimize circle packing code to maximize sum of circle radii "
-              "within a unit square for N=26 circles.",
-)
-```
-
-### Appendix C: CUDA Kernel Generation
-
-Multi-task search over KernelBench problems. A shared prompt is optimized to instruct an LLM to generate fast, correct CUDA kernels across multiple algorithms. The `RefinerConfig` enables automatic per-evaluation refinement — after each evaluation, an LLM proposes a refined candidate based on the feedback.
-
-```python
-from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, RefinerConfig
-
-def evaluate(candidate, example):
-    baseline = baselines[example.problem_id]
-    code, cuda_docs, eval_result = run_kernel(
-        candidate["kernel_gen_prompt"], example.ref_arch, lm, predictor
-    )
-    score = compute_score(eval_result, baseline)
-
-    runtime = eval_result.get("PerformanceStatsMean")
-    side_info =  {
-        "score": score,
-        "problem_id": example.problem_id,
-        "level": example.level,
-        "baseline_ms": baseline,
-        "code": code,
-        "cuda_docs": cuda_docs,
-        "runtime_ms": runtime,
-        "speedup": baseline / runtime if runtime else None,
-        "is_correct": eval_result.get("CorrectnessSucceeded", False),
-        "error_feedback": format_error(eval_result) if eval_result.get("ErrorType") else None,
-    }
-
-optimize_anything(
-    seed_candidate={"kernel_gen_prompt": KERNEL_GEN_PROMPT},
-    evaluator=evaluate,
-    dataset=dataset,  # multiple KernelBench problems
-    config=GEPAConfig(
-        engine=EngineConfig(max_metric_calls=2000, cache_evaluation=True),
-        refiner=RefinerConfig(),  # auto-refine after each evaluation
-    ),
-    objective=OBJECTIVE,
-    background=BACKGROUND,
-)
-```
-
-### Appendix D: CloudCast & Can't Be Late
-
-Generalization mode for cloud infrastructure optimization. Both examples optimize Python code implementing scheduling/routing strategies, evaluated by simulation.
-
-**CloudCast** — broadcast routing for multi-cloud data transfer:
-
-```python
-from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
-
-INITIAL_PROGRAM = """
-def search_algorithm(src, dsts, G, num_partitions):
-    # Baseline: Dijkstra shortest path by cost
-    ...
-"""
-
-optimize_anything(
-    seed_candidate={"program": INITIAL_PROGRAM},
-    evaluator=create_evaluator(timeout=300),
-    dataset=train_set,
-    valset=val_set,
-    objective="Optimize a broadcast routing algorithm for multi-cloud data transfer. "
-              "Minimize total cost while maintaining good transfer times.",
-    background="Nodes are cloud regions. Edges have cost ($/GB) and throughput (Gbps). "
-               "Data is partitioned into chunks that can be routed independently.",
-    config=GEPAConfig(
-        engine=EngineConfig(max_metric_calls=100),
-        reflection=ReflectionConfig(reflection_lm=llm_model),
-    ),
-)
-```
-
-**Can't Be Late** — cloud scheduling with SPOT vs ON_DEMAND instances:
-
-```python
-INITIAL_STRATEGY = """
-class EvolveSingleRegionStrategy(Strategy):
-    def _step(self, last_cluster_type, has_spot):
-        remaining_time = self.deadline - self.env.elapsed_seconds
-        remaining_task = self.task_duration - sum(self.task_done_time)
-        if remaining_task + self.restart_overhead >= remaining_time:
-            return ClusterType.ON_DEMAND  # deadline pressure
-        return ClusterType.SPOT if has_spot else ClusterType.NONE
-"""
-
-optimize_anything(
-    seed_candidate={"program": INITIAL_STRATEGY},
-    evaluator=create_evaluator(timeout=300),
-    dataset=train_set,
-    valset=val_set,
-    objective="Optimize a cloud scheduling strategy. Minimize cost while "
-              "ensuring task completion before deadline.",
-    background="SPOT: ~$0.3/hr, preemptible. ON_DEMAND: ~$1/hr, reliable. "
-               "The strategy must guarantee deadline completion.",
-    config=GEPAConfig(
-        engine=EngineConfig(max_metric_calls=100, parallel=True, max_workers=128),
-        reflection=ReflectionConfig(reflection_lm=llm_model),
-    ),
-)
-```
-
-### Appendix E: AIME Prompt Optimization
-
-Generalization mode for prompt optimization. The evaluator runs a math-solving LLM with the candidate prompt and checks whether the answer is correct.
-
-```python
-import dspy
-from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
-from examples.aime_math.dataset import load_math_dataset
-
-def evaluate(candidate: dict[str, str], example) -> tuple[float, SideInfo]:
-    prediction = run_llm(example, candidate["prompt"])
-    metric_result = math_metric(example, prediction)
-    score = metric_result.score
-    feedback = metric_result.feedback
-
-    side_info = {
-        "Score": score,
-        "Input": example.input,
-        "Prompt": candidate["prompt"],
-        "Output": prediction.answer,
-        "Reasoning": getattr(prediction, "reasoning", ""),
-        "ExecutionFeedback": feedback,
-    }
-
-    return score, side_info
-
-trainset, valset, testset = load_math_dataset()
-
-result = optimize_anything(
-    seed_candidate={"prompt": "Solve the math problem carefully. "
-                              "Break down the steps and provide the final answer."},
-    evaluator=evaluate,
-    dataset=trainset,
-    valset=valset,
-    config=GEPAConfig(
-        engine=EngineConfig(max_metric_calls=600, parallel=True, max_workers=32, cache_evaluation=True),
-    ),
-)
-```
-
-### Appendix F: ARC-AGI Agent Architecture Discovery
-
-Generalization mode where the **entire agent code** is the artifact being optimized. The seed is a 10-line naive agent; GEPA evolves it into a multi-stage system with rule induction, code verification, iterative refinement, and structured fallbacks.
-
-```python
-from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
-from examples.arc_agi.utils import load_arc_dataset
-
-SEED_AGENT = '''
-import json, re
-def solve(train_inputs, train_outputs, test_inputs, llm):
-    examples = "\\n".join(f"Input: {i}\\nOutput: {o}"
-                          for i, o in zip(train_inputs, train_outputs))
-    response = llm(f"Solve an ARC AGI puzzle. Training:\\n{examples}\\n"
-                   f"Predict outputs as JSON [[...]]:")
-    grids = [json.loads(g) for g in re.findall(r"\\[\\[.*?\\]\\]",
-             response.replace("\\n", ""))]
-    return {"train": grids[:len(train_inputs)],
-            "test": [[g] for g in grids[len(train_inputs):]]}
-'''
-
-def evaluate(candidate, **kwargs):
-    ex = kwargs["example"]
-    result = run_agent(
-        agent_code=candidate["agent_code"],
-        train_in=ex.train_in, train_out=ex.train_out,
-        test_in=ex.test_in, test_out=ex.test_out,
-        model_id="openrouter/google/gemini-3-flash-preview",
-        max_llm_calls=10,
-    )
-    score = result["test_score"]
-
-    return score, {
-        "problem_id": ex.problem_id,
-        "training_score": result["training_score"],
-        "test_score": result["test_score"],
-        "error": result["error"],
-        "train_examples": result["train_examples"],
-        "test_examples": result["test_examples"],
-    }
-
-train_set, val_set, test_set = load_arc_dataset()
-
-result = optimize_anything(
-    seed_candidate={"agent_code": SEED_AGENT},
-    evaluator=evaluate,
-    dataset=train_set,
-    valset=val_set,
-    config=GEPAConfig(
-        engine=EngineConfig(max_metric_calls=4000, parallel=True,
-                            max_workers=64, cache_evaluation=True),
-        reflection=ReflectionConfig(
-            reflection_lm="openrouter/google/gemini-3-flash-preview",
+    optimize_anything(
+        seed_candidate={"code": SEED_CODE},
+        evaluator=evaluate,
+        config=GEPAConfig(
+            engine=EngineConfig(max_candidate_proposals=20, cache_evaluation=True),
+            reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
         ),
-    ),
-    objective="Evolve agent code to solve ARC-AGI puzzles. The agent receives "
-             "training input/output pairs and must predict test outputs.",
-    background="ARC puzzles require discovering a transformation rule from "
-               "examples and applying it to unseen inputs. The agent has access "
-               "to an LLM via the llm() callable.",
-)
-```
+        objective="Evolve Python code that minimizes a blackbox objective function "
+                  "using the available evaluation budget efficiently.",
+    )
+    ```
 
-The optimized agent grew from 10 lines to 300+ lines, developing its own helper library for grid analysis, a multi-stage rule induction pipeline, iterative code refinement with verification, and a structured fallback to direct LLM prediction — all discovered automatically by `optimize_anything`.
+<span id="appendix-b-circle-packing"></span>
+??? example "Circle Packing"
+
+    Optimize code that packs n=26 circles within a unit square, maximizing the sum of radii. The evaluator executes the packing code, validates circle positions, and returns geometric diagnostics.
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+
+    def evaluate(candidate, opt_state):
+        code = candidate["code"]
+        warm_start = extract_best_circles(opt_state)
+        result = execute_code(code, 600, warm_start)
+
+        if result["success"]:
+            circles = result["result"]["circles"]
+            score = result["result"]["validation_details"]["sum_radii"]
+            metrics = compute_multiple_metrics(result["result"]["all_scores"])
+        else:
+            circles = None
+            score = 0.0
+            metrics = {"sum_radii": 0.0}
+
+        side_info = {
+            "scores": {"sum_radii": score},
+            "metrics": metrics,
+            "code": code,
+            "circles": circles,
+            "stdout": result.get("stdout", ""),
+            "error": result.get("error"),
+            "traceback": result.get("traceback"),
+            "validation_details": result.get("validation_details"),
+        }
+
+        return score, side_info
+
+    optimize_anything(
+        seed_candidate={"code": SEED_CODE},
+        evaluator=evaluate,
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=150, cache_evaluation=True, frontier_type="objective"),
+            reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
+        ),
+        objective="Optimize circle packing code to maximize sum of circle radii "
+                  "within a unit square for N=26 circles.",
+    )
+    ```
+
+<span id="appendix-c-cuda-kernel-generation"></span>
+??? example "CUDA Kernel Generation"
+
+    Multi-task search over KernelBench problems. A shared prompt is optimized to instruct an LLM to generate fast, correct CUDA kernels across multiple algorithms. The `RefinerConfig` enables automatic per-evaluation refinement — after each evaluation, an LLM proposes a refined candidate based on the feedback.
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, RefinerConfig
+
+    def evaluate(candidate, example):
+        baseline = baselines[example.problem_id]
+        code, cuda_docs, eval_result = run_kernel(
+            candidate["kernel_gen_prompt"], example.ref_arch, lm, predictor
+        )
+        score = compute_score(eval_result, baseline)
+
+        runtime = eval_result.get("PerformanceStatsMean")
+        side_info =  {
+            "score": score,
+            "problem_id": example.problem_id,
+            "level": example.level,
+            "baseline_ms": baseline,
+            "code": code,
+            "cuda_docs": cuda_docs,
+            "runtime_ms": runtime,
+            "speedup": baseline / runtime if runtime else None,
+            "is_correct": eval_result.get("CorrectnessSucceeded", False),
+            "error_feedback": format_error(eval_result) if eval_result.get("ErrorType") else None,
+        }
+
+    optimize_anything(
+        seed_candidate={"kernel_gen_prompt": KERNEL_GEN_PROMPT},
+        evaluator=evaluate,
+        dataset=dataset,  # multiple KernelBench problems
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=2000, cache_evaluation=True),
+            refiner=RefinerConfig(),  # auto-refine after each evaluation
+        ),
+        objective=OBJECTIVE,
+        background=BACKGROUND,
+    )
+    ```
+
+<span id="appendix-d-cloudcast--cant-be-late"></span>
+??? example "CloudCast & Can't Be Late"
+
+    Generalization mode for cloud infrastructure optimization. Both examples optimize Python code implementing scheduling/routing strategies, evaluated by simulation.
+
+    **CloudCast** — broadcast routing for multi-cloud data transfer:
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+
+    INITIAL_PROGRAM = """
+    def search_algorithm(src, dsts, G, num_partitions):
+        # Baseline: Dijkstra shortest path by cost
+        ...
+    """
+
+    optimize_anything(
+        seed_candidate={"program": INITIAL_PROGRAM},
+        evaluator=create_evaluator(timeout=300),
+        dataset=train_set,
+        valset=val_set,
+        objective="Optimize a broadcast routing algorithm for multi-cloud data transfer. "
+                  "Minimize total cost while maintaining good transfer times.",
+        background="Nodes are cloud regions. Edges have cost ($/GB) and throughput (Gbps). "
+                   "Data is partitioned into chunks that can be routed independently.",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=100),
+            reflection=ReflectionConfig(reflection_lm=llm_model),
+        ),
+    )
+    ```
+
+    **Can't Be Late** — cloud scheduling with SPOT vs ON_DEMAND instances:
+
+    ```python
+    INITIAL_STRATEGY = """
+    class EvolveSingleRegionStrategy(Strategy):
+        def _step(self, last_cluster_type, has_spot):
+            remaining_time = self.deadline - self.env.elapsed_seconds
+            remaining_task = self.task_duration - sum(self.task_done_time)
+            if remaining_task + self.restart_overhead >= remaining_time:
+                return ClusterType.ON_DEMAND  # deadline pressure
+            return ClusterType.SPOT if has_spot else ClusterType.NONE
+    """
+
+    optimize_anything(
+        seed_candidate={"program": INITIAL_STRATEGY},
+        evaluator=create_evaluator(timeout=300),
+        dataset=train_set,
+        valset=val_set,
+        objective="Optimize a cloud scheduling strategy. Minimize cost while "
+                  "ensuring task completion before deadline.",
+        background="SPOT: ~$0.3/hr, preemptible. ON_DEMAND: ~$1/hr, reliable. "
+                   "The strategy must guarantee deadline completion.",
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=100, parallel=True, max_workers=128),
+            reflection=ReflectionConfig(reflection_lm=llm_model),
+        ),
+    )
+    ```
+
+<span id="appendix-e-aime-prompt-optimization"></span>
+??? example "AIME Prompt Optimization"
+
+    Generalization mode for prompt optimization. The evaluator runs a math-solving LLM with the candidate prompt and checks whether the answer is correct.
+
+    ```python
+    import dspy
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+    from examples.aime_math.dataset import load_math_dataset
+
+    def evaluate(candidate: dict[str, str], example) -> tuple[float, SideInfo]:
+        prediction = run_llm(example, candidate["prompt"])
+        metric_result = math_metric(example, prediction)
+        score = metric_result.score
+        feedback = metric_result.feedback
+
+        side_info = {
+            "Score": score,
+            "Input": example.input,
+            "Prompt": candidate["prompt"],
+            "Output": prediction.answer,
+            "Reasoning": getattr(prediction, "reasoning", ""),
+            "ExecutionFeedback": feedback,
+        }
+
+        return score, side_info
+
+    trainset, valset, testset = load_math_dataset()
+
+    result = optimize_anything(
+        seed_candidate={"prompt": "Solve the math problem carefully. "
+                                  "Break down the steps and provide the final answer."},
+        evaluator=evaluate,
+        dataset=trainset,
+        valset=valset,
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=600, parallel=True, max_workers=32, cache_evaluation=True),
+        ),
+    )
+    ```
+
+<span id="appendix-f-arc-agi-agent-architecture-discovery"></span>
+??? example "ARC-AGI Agent Architecture Discovery"
+
+    Generalization mode where the **entire agent code** is the artifact being optimized. The seed is a 10-line naive agent; GEPA evolves it into a multi-stage system with rule induction, code verification, iterative refinement, and structured fallbacks.
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+    from examples.arc_agi.utils import load_arc_dataset
+
+    SEED_AGENT = '''
+    import json, re
+    def solve(train_inputs, train_outputs, test_inputs, llm):
+        examples = "\\n".join(f"Input: {i}\\nOutput: {o}"
+                              for i, o in zip(train_inputs, train_outputs))
+        response = llm(f"Solve an ARC AGI puzzle. Training:\\n{examples}\\n"
+                       f"Predict outputs as JSON [[...]]:")
+        grids = [json.loads(g) for g in re.findall(r"\\[\\[.*?\\]\\]",
+                 response.replace("\\n", ""))]
+        return {"train": grids[:len(train_inputs)],
+                "test": [[g] for g in grids[len(train_inputs):]]}
+    '''
+
+    def evaluate(candidate, **kwargs):
+        ex = kwargs["example"]
+        result = run_agent(
+            agent_code=candidate["agent_code"],
+            train_in=ex.train_in, train_out=ex.train_out,
+            test_in=ex.test_in, test_out=ex.test_out,
+            model_id="openrouter/google/gemini-3-flash-preview",
+            max_llm_calls=10,
+        )
+        score = result["test_score"]
+
+        return score, {
+            "problem_id": ex.problem_id,
+            "training_score": result["training_score"],
+            "test_score": result["test_score"],
+            "error": result["error"],
+            "train_examples": result["train_examples"],
+            "test_examples": result["test_examples"],
+        }
+
+    train_set, val_set, test_set = load_arc_dataset()
+
+    result = optimize_anything(
+        seed_candidate={"agent_code": SEED_AGENT},
+        evaluator=evaluate,
+        dataset=train_set,
+        valset=val_set,
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=4000, parallel=True,
+                                max_workers=64, cache_evaluation=True),
+            reflection=ReflectionConfig(
+                reflection_lm="openrouter/google/gemini-3-flash-preview",
+            ),
+        ),
+        objective="Evolve agent code to solve ARC-AGI puzzles. The agent receives "
+                 "training input/output pairs and must predict test outputs.",
+        background="ARC puzzles require discovering a transformation rule from "
+                   "examples and applying it to unseen inputs. The agent has access "
+                   "to an LLM via the llm() callable.",
+    )
+    ```
+
+    The optimized agent grew from 10 lines to 300+ lines, developing its own helper library for grid analysis, a multi-stage rule induction pipeline, iterative code refinement with verification, and a structured fallback to direct LLM prediction — all discovered automatically by `optimize_anything`.
+
+</div>

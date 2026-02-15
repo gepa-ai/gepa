@@ -41,7 +41,7 @@
         {# Post content (first h1 hidden via CSS to avoid duplication) #}
         <div class="blog-post-body">
             {% block content %}
-                {% include "partials/content.html" %}
+                {{ page.content }}
             {% endblock %}
         </div>
     </article>

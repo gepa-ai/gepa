@@ -500,3 +500,108 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
         justify-content: flex-start;
     }
 }
+
+/* ============================================
+   Appendix Tiles – card-style collapsibles
+   ============================================
+
+   DOM: article.md-typeset > .blog-post-body > .appendix-tiles > details.example
+   Material targets:  .md-typeset details.example          (0,2,1)  border-color
+                      .md-typeset .example > summary       (0,2,1)  background-color
+                      .md-typeset .example > summary:before (0,2,1) background-color, mask
+   Our selectors use .md-typeset .appendix-tiles details[class] (0,3,1) to win. */
+
+/* --- Card container --- */
+.md-typeset .appendix-tiles details[class] {
+    border: 1px solid var(--md-default-fg-color--lightest);
+    border-radius: 0.5rem;
+    margin-bottom: 0.75rem;
+    padding: 0;
+    overflow: hidden;
+    background: var(--md-default-bg-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+    font-size: 0.875rem;
+}
+
+.md-typeset .appendix-tiles details[class]:hover {
+    border-color: var(--md-primary-fg-color--light);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+}
+
+.md-typeset .appendix-tiles details[class][open] {
+    border-color: var(--md-primary-fg-color--light);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* --- Summary row --- */
+.md-typeset .appendix-tiles details[class] > summary {
+    padding: 0.85rem 1.1rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    border: none;
+    background: transparent;
+    min-height: unset;
+    color: var(--md-default-fg-color);
+}
+
+/* Left chevron – same size as summary text, vertically aligned */
+.md-typeset .appendix-tiles details[class] > summary::before {
+    content: "▶";
+    font-size: 0.9rem;
+    line-height: 1;
+    display: inline-block;
+    position: static;
+    transition: transform 0.2s ease;
+    color: var(--md-default-fg-color--light);
+    flex-shrink: 0;
+    width: auto;
+    height: auto;
+    background-color: transparent;
+    mask-image: none;
+    -webkit-mask-image: none;
+    transform: none;
+}
+
+.md-typeset .appendix-tiles details[class][open] > summary::before {
+    transform: rotate(90deg);
+}
+
+/* Hide Material's right-side toggle arrow */
+.md-typeset .appendix-tiles details[class] > summary::after {
+    display: none;
+}
+
+/* Remove webkit default marker */
+.md-typeset .appendix-tiles details summary::-webkit-details-marker {
+    display: none;
+}
+
+/* --- Content area --- */
+.md-typeset .appendix-tiles details[class] > :not(summary) {
+    padding: 0 1.1rem 0.85rem;
+}
+
+.md-typeset .appendix-tiles details pre {
+    overflow-x: auto;
+}
+
+/* --- Dark mode --- */
+[data-md-color-scheme="slate"] .md-typeset .appendix-tiles details[class] {
+    background: var(--md-code-bg-color);
+    border-color: var(--md-default-fg-color--lighter);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .appendix-tiles details[class]:hover {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .appendix-tiles details[class][open] {
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
+}
