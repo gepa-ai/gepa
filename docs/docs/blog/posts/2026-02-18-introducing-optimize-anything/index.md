@@ -2,8 +2,8 @@
 date:
   created: 2026-02-18
 authors:
-  - donghyun
   - lakshya
+  - donghyun
   - wenjie
   - karim
   - shangyin
@@ -14,14 +14,14 @@ authors:
   - alex
   - matei
 equal_contribution:
-  - "Donghyun Lee"
   - "Lakshya A Agrawal"
+  - "Donghyun Lee"
 slug: introducing-optimize-anything
-title: "Introducing optimize_anything"
+title: "optimize_anything: A Universal API for Text Optimization"
 description: "optimize_anything is GEPA's universal API for optimizing any text artifact — prompts, code, agent harnesses, policies — using LLM-based reflection and Pareto-efficient search."
 ---
 
-# Introducing `optimize_anything`
+# `optimize_anything`: A Universal API for Text Optimization
 
 Many real-world problems — designing accurate-but-cheap AI agents, writing fast CUDA kernels, finding cost-minimizing cloud-scheduling policies, crafting effective prompts — share a common structure: maximize an objective **f(x) → score**, where **x** is a text artifact like code, a prompt, a policy, or even numeric hyperparameters serialized as a string. Today, we are introducing **`optimize_anything`**, a simple, declarative API that optimizes any artifact representable as text. You bring a **starting artifact** and an **evaluator**; `optimize_anything` uses LLMs as intelligent proposers to iteratively refine it.
 
