@@ -34,7 +34,7 @@ Many real-world problems — designing accurate-but-cheap AI agents, writing fas
 
 While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they are restricted to optimizing a single artifact for a single problem instance. `optimize_anything` provides a unified declarative API targeting **three optimization modes** — single-task search, multi-task search, and generalization — that makes LLM-based optimization as simple as defining an evaluator. It is also the first API in this paradigm to unify all three modes under one interface.
 
-We demonstrate `optimize_anything` across six diverse domains: it **matches Optuna** on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms**, achieves **state-of-the-art prompt optimization** on AIME mathematics, and rewrites entire **agent architectures** to achieve 89.5% on ARC-AGI.
+We demonstrate `optimize_anything` across six diverse domains: it **matches Optuna** on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms**, achieves **state-of-the-art prompt optimization** on AIME mathematics, and rewrites an entire **agent architecture** to improve ARC-AGI performance by **2.7x**.
 
 ## If It's Text, You Can Optimize It
 
@@ -42,7 +42,7 @@ The key insight behind `optimize_anything` is that a surprisingly wide range of 
 
 - **Code**: CUDA kernels, scheduling algorithms, solver implementations — all are text that can be evaluated by execution.
 - **Prompts**: System prompts, few-shot templates, chain-of-thought instructions — evaluated by running them against a dataset.
-- **Agent harnesses**: The entire agent — its prompts, sub-agents, control flow, and orchestration logic — is code, and code is text.
+- **Agent architectures**: The entire agent system — its prompts, sub-agents, control flow, and orchestration logic.
 - **Configurations**: Hyperparameters, policies, and decision rules can be serialized as JSON strings and evaluated by simulation.
 
 If an artifact can be serialized to text and evaluated programmatically, an LLM can reason about it and propose improvements. `optimize_anything` provides the interface to make this loop trivial to set up.
@@ -132,7 +132,7 @@ The full API signature:
 
 ```python
 def optimize_anything(
-    seed_candidate: str | dict[str, str],  # Starting artifact
+    seed_candidate: str | dict[str, str],   # Starting artifact
     evaluator: Callable,                    # Score + ASI
     dataset: list | None = None,            # Training examples (modes 2 & 3)
     valset: list | None = None,             # Validation set (mode 3)
@@ -158,32 +158,26 @@ from gepa.image import Image
 from gepa.optimize_anything import (
     optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig,
 )
+from demo_utils import convert_to_png, get_vlm_score_feedback
 
 GOAL = "a pelican riding a bicycle"
 
 def evaluate(candidate, example, *, model):
     """Render SVG → PNG, score with a VLM, return (score, side_info)."""
-    svg = re.search(r"(<svg[\s\S]*?</svg>)", candidate["svg_code"]).group(1)
-    png_b64 = base64.b64encode(
-        cairosvg.svg2png(bytestring=svg.encode(), output_width=1280, output_height=1280)
-    ).decode()
+    png = get_png(candidate["svg_code"])
+    score, feedback = get_vlm_score_feedback(model, png, example["criteria"])
 
-    resp = litellm.completion(model=model, messages=[{"role": "user", "content": [
-        {"type": "text", "text": example["criteria"]},
-        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{png_b64}"}},
-    ]}])
-    text = resp.choices[0].message.content
-    m = re.search(r"(\d+(?:\.\d+)?)\s*/\s*10", text)
-
-    return float(m.group(1)) / 10 if m else 0.0, {
-        "RenderedSVG": Image(base64_data=png_b64, media_type="image/png"),
-        "Feedback": text,
+    return score, {
+        "RenderedSVG": Image(base64_data=png, media_type="image/png"),
+        "Feedback": feedback,
     }
 
+model = "vertex_ai/gemini-3-pro-preview"
 result = optimize_anything(
     seed_candidate={"svg_code": open("seed.svg").read()},
-    evaluator=partial(evaluate, model="vertex_ai/gemini-3-pro-preview"),
-    dataset=[  # 6 visual aspects → Pareto-efficient selection
+    evaluator=partial(evaluate, model=model),
+    dataset=[
+        # 6 visual aspects → Pareto-efficient selection
         {"id": "overall",     "criteria": f"Rate overall quality of this SVG ({GOAL}). SCORE: X/10"},
         {"id": "anatomy",     "criteria": "Rate pelican accuracy: beak, pouch, plumage. SCORE: X/10"},
         {"id": "bicycle",     "criteria": "Rate bicycle: wheels, frame, handlebars, pedals. SCORE: X/10"},
@@ -195,13 +189,15 @@ result = optimize_anything(
     config=GEPAConfig(
         engine=EngineConfig(max_metric_calls=300),
         reflection=ReflectionConfig(
-            reflection_lm="vertex_ai/gemini-3-pro-preview",
+            reflection_lm=model,
             reflection_minibatch_size=2,  # focus on 2 aspects per iteration
         ),
     ),
 )
-print(f"Best score: {result.val_aggregate_scores[result.best_idx]:.3f}")
+print(result.best_candidate)
 ```
+
+
 
 A few things to note:
 
@@ -227,7 +223,7 @@ A few things to note:
 </div>
 </div>
 
-*20 candidates, 300 metric calls. The optimizer added background elements, improved anatomy, and refined the composition — all through LLM reflection on rendered image feedback.*
+*With only 20 candidates, the optimizer added background elements, improved anatomy, and refined the composition — all through LLM reflection on rendered image feedback.*
 
 
 ## Results
@@ -238,10 +234,15 @@ We apply `optimize_anything` to six diverse domains spanning search, batch optim
 
 **Mode: Single-Task Search.** We ask `optimize_anything` to write Python code that implements a blackbox optimization algorithm, and evaluate it on the [EvalSet](https://github.com/sigopt/evalset) benchmark (56 problems). GEPA doesn't solve the optimization problems directly — it evolves the *solver code* itself.
 
-<figure markdown="span">
+<figure markdown="span" style="width: 60%; margin: 0 auto;">
   ![Bar chart showing GEPA vs Optuna on 56 EvalSet problems with 1% tolerance and 8000 trials. GEPA wins on 7 problems, Optuna wins on 9, and they tie on 40.](optuna_comparison.png)
   <figcaption>GEPA's optimize_anything matches Optuna, the industry-standard blackbox optimizer, on the EvalSet benchmark. On 56 problems, GEPA ties on 40, winning 7 and losing 9.</figcaption>
 </figure>
+
+<!-- <figure markdown="span">
+  ![Detailed bar chart showing per-problem comparison between GEPA and Optuna across all 56 EvalSet problems](optuna_detailed.png)
+  <figcaption>GEPA often discovers solutions for problems where Optuna struggles. On 10 problems where Optuna struggles, GEPA wins 7 and ties with 1.</figcaption>
+</figure> -->
 
 **Key result:** `optimize_anything` matches the performance of Optuna, a mature numerical optimizer, by evolving solver code from a random-search seed. [Full code →](#appendix-a-blackbox-mathematical-optimization)
 
@@ -259,7 +260,7 @@ We apply `optimize_anything` to six diverse domains spanning search, batch optim
   <figcaption>Visual progression of the circle packing optimization: from an initial naive arrangement to a near-optimal packing.</figcaption>
 </figure>
 
-**Key result:** GEPA outperforms all three open-source LLM-evolution frameworks, reaching a score of 2.636. [Full code →](#appendix-b-circle-packing)
+**Key result:** GEPA outperforms all three open-source LLM-evolution frameworks, reaching a score of 2.63598+. [Full code →](#appendix-b-circle-packing)
 
 ### 3. CUDA Kernel Generation (KernelBench)
 
@@ -281,6 +282,8 @@ We apply `optimize_anything` to six diverse domains spanning search, batch optim
   <figcaption>GEPA optimization progress on Can't Be Late: from a simple deadline-check heuristic to a sophisticated scheduling strategy with 7.8% cost savings.</figcaption>
 </figure>
 
+<!-- @luke: ask Wenjie to update the figures with a unifed format similar to other figures? -->
+
 **Key result:** `optimize_anything` discovers state-of-the-art scheduling algorithms for both CloudCast and Can't Be Late, outperforming hand-designed heuristics. [Full code →](#appendix-d-cloudcast--cant-be-late)
 
 ### 5. Prompt Optimization: AIME Mathematics
@@ -288,7 +291,7 @@ We apply `optimize_anything` to six diverse domains spanning search, batch optim
 **Mode: Generalization.** Optimize a system prompt for solving [AIME](https://en.wikipedia.org/wiki/American_Invitational_Mathematics_Examination) 2025 math competition problems. The evaluator runs gpt-4.1-mini with the candidate prompt and scores whether the answer is correct. GEPA is the [state-of-the-art prompt optimization algorithm](https://gepa-ai.github.io/gepa/).
 
 <figure markdown="span">
-  ![Optimization trajectory for AIME 2025 with gpt-4.1-mini. Validation score improves from 46.67% to 57.78% over 400 metric calls. Best test score reaches 60.00%, up from a 46.67% baseline.](aime_results.png)
+  ![Optimization trajectory for AIME 2025 with gpt-4.1-mini. Validation score improves from 46.67% to 57.78% over 350 metric calls. Best test score reaches 60.00%, up from a 46.67% baseline.](aime_results.png)
   <figcaption>AIME 2025 prompt optimization: gpt-4.1-mini accuracy improves from 46.67% to 60.00% through prompt refinement alone.</figcaption>
 </figure>
 
@@ -329,7 +332,8 @@ result = oa.optimize_anything(
 
 - [Documentation](https://gepa-ai.github.io/gepa/)
 - [GitHub](https://github.com/gepa-ai/gepa)
-- [Discord](https://discord.gg/A7dABbtmFw)
+- [Discord](https://discord.gg/A7dABbtmFw) 
+<!-- (@luke: the discord link leads to a dspy channle. is this correct? ) -->
 
 ---
 
@@ -339,24 +343,27 @@ result = oa.optimize_anything(
 
 `optimize_anything` evolves Python code that implements a blackbox optimizer. The evaluator sandboxes the proposed code, runs it on benchmark functions, and returns execution diagnostics as ASI.
 
+<!-- @luke: come back here to match the demo code to my actual implementation -->
+
 ```python
 from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
 
 SEED_CODE = """
 import numpy as np
-def solve(objective_fn, bounds, budget):
-    best_y = float('inf')
-    for _ in range(budget):
-        x = np.random.uniform(bounds[:, 0], bounds[:, 1])
-        y = objective_fn(x)
-        if y < best_y: best_y = y
-    return best_y
+
+def solve(objective_function, config, best_xs=None):
+    bounds = np.array(config['bounds'])
+    x = np.random.uniform(bounds[:, 0], bounds[:, 1])
+    score = objective_function(x)
+    all_attempts = [{"x": x.copy(), "score": score})]
+
+    return {"x": x, "score": score, "all_attempts": all_attempts}
 """
 
-def fitness_fn(candidate, opt_state=None):
+def evaluate(candidate, opt_state=None):
     code = candidate["code"]
     best_xs = extract_best_xs(opt_state)  # warm-start from prior evaluations
-    result = execute_code(code, problem_index=0, timeout=300, budget=100, best_xs=best_xs)
+    result = execute_code(code, problem_index=0, budget=100, best_xs=best_xs)
 
     return result["score"], {
         "top_50_attempts": result["top_50_attempts"],
@@ -368,15 +375,13 @@ def fitness_fn(candidate, opt_state=None):
 
 optimize_anything(
     seed_candidate={"code": SEED_CODE},
-    evaluator=fitness_fn,
+    evaluator=evaluate,
     config=GEPAConfig(
         engine=EngineConfig(max_candidate_proposals=20, cache_evaluation=True),
         reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
     ),
-    objective="Evolve the code to implement a sophisticated black-box optimizer "
-              "that efficiently minimizes the objective function.",
-    background="The target functions are non-convex and high-dimensional. "
-               "Gradient information is not available.",
+    objective="Evolve Python code that minimizes a blackbox objective function "
+              "using the available evaluation budget efficiently.",
 )
 ```
 
@@ -387,31 +392,38 @@ Optimize code that packs n=26 circles within a unit square, maximizing the sum o
 ```python
 from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
 
-def fitness_fn(candidate, opt_state=None):
+def fitness_fn(candidate, opt_state):
     code = candidate["code"]
     warm_start = extract_best_circles(opt_state)
-    result = execute_code(code, timeout=600, warm_start=warm_start)
+    result = execute_code(code, 600, warm_start)
 
     if result["success"]:
+        circles = result["result"]["circles"]
         score = result["result"]["validation_details"]["sum_radii"]
         metrics = compute_multiple_metrics(result["result"]["all_scores"])
     else:
-        score, metrics = 0.0, {"sum_radii": 0.0}
-
-    return score, {
+        circles = None
+        score = 0.0
+        metrics = {"sum_radii": 0.0}
+        
+    side_info = {
         "scores": {"sum_radii": score},
         "metrics": metrics,
-        "circles": result.get("result", {}).get("circles"),
+        "code": code,
+        "circles": circles,
         "stdout": result.get("stdout", ""),
         "error": result.get("error"),
         "traceback": result.get("traceback"),
+        "validation_details": result.get("validation_details"),
     }
+
+    return score, side_info
 
 optimize_anything(
     seed_candidate={"code": SEED_CODE},
-    evaluator=fitness_fn,
+    evaluator=evaluate,
     config=GEPAConfig(
-        engine=EngineConfig(run_dir="outputs/circle_packing", max_metric_calls=150, cache_evaluation=True),
+        engine=EngineConfig(max_metric_calls=150, cache_evaluation=True, frontier_type="objective"),
         reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
     ),
     objective="Optimize circle packing code to maximize sum of circle radii "
@@ -426,26 +438,30 @@ Multi-task search over KernelBench problems. A shared prompt is optimized to ins
 ```python
 from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, RefinerConfig
 
-def fitness_fn(candidate, example):
+def evaluate(candidate, example):
     baseline = baselines[example.problem_id]
     code, cuda_docs, eval_result = run_kernel(
         candidate["kernel_gen_prompt"], example.ref_arch, lm, predictor
     )
     score = compute_score(eval_result, baseline)
 
-    return score, {
-        "Score": score,
+    runtime = eval_result.get("PerformanceStatsMean")
+    side_info =  {
+        "score": score,
         "problem_id": example.problem_id,
-        "Code": code,
-        "runtime_ms": eval_result.get("PerformanceStatsMean"),
-        "speedup": baseline / eval_result.get("PerformanceStatsMean") if eval_result.get("PerformanceStatsMean") else None,
+        "level": example.level,
+        "baseline_ms": baseline,
+        "code": code,
+        "cuda_docs": cuda_docs,
+        "runtime_ms": runtime,
+        "speedup": baseline / runtime if runtime else None,
         "is_correct": eval_result.get("CorrectnessSucceeded", False),
         "error_feedback": format_error(eval_result) if eval_result.get("ErrorType") else None,
     }
 
 optimize_anything(
     seed_candidate={"kernel_gen_prompt": KERNEL_GEN_PROMPT},
-    evaluator=fitness_fn,
+    evaluator=evaluate,
     dataset=dataset,  # multiple KernelBench problems
     config=GEPAConfig(
         engine=EngineConfig(max_metric_calls=2000, cache_evaluation=True),
@@ -523,37 +539,35 @@ Generalization mode for prompt optimization. The evaluator runs a math-solving L
 ```python
 import dspy
 from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+from examples.aime_math.dataset import load_math_dataset
 
-class MathSolverSignature(dspy.Signature):
-    input = dspy.InputField(desc="The math problem to solve.")
-    answer = dspy.OutputField(desc="The final numerical answer.")
+def evaluate(candidate: dict[str, str], example) -> tuple[float, SideInfo]:
+    prediction = run_llm(example, candidate["prompt"])
+    metric_result = math_metric(example, prediction)
+    score = metric_result.score
+    feedback = metric_result.feedback
 
-predictor = dspy.ChainOfThought(MathSolverSignature)
-
-def fitness_fn(candidate, example):
-    predictor.predict.signature.instructions = candidate["prompt"]
-    prediction = predictor(input=example.input)
-    score = float(int(example.answer) == int(prediction.answer))
-
-    return score, {
+    side_info = {
+        "Score": score,
         "Input": example.input,
+        "Prompt": candidate["prompt"],
         "Output": prediction.answer,
-        "Expected": example.answer,
         "Reasoning": getattr(prediction, "reasoning", ""),
-        "Feedback": f"{'Correct' if score else 'Incorrect'}. Answer: {example.answer}.",
+        "ExecutionFeedback": feedback,
     }
+
+    return score, side_info
 
 trainset, valset, testset = load_math_dataset()
 
 result = optimize_anything(
     seed_candidate={"prompt": "Solve the math problem carefully. "
                               "Break down the steps and provide the final answer."},
-    evaluator=fitness_fn,
+    evaluator=evaluate,
     dataset=trainset,
     valset=valset,
     config=GEPAConfig(
         engine=EngineConfig(max_metric_calls=600, parallel=True, max_workers=32, cache_evaluation=True),
-        reflection=ReflectionConfig(reflection_lm=dspy.LM("openai/gpt-5.1")),
     ),
 )
 ```
@@ -564,13 +578,14 @@ Generalization mode where the **entire agent code** is the artifact being optimi
 
 ```python
 from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+from examples.arc_agi.utils import load_arc_dataset
 
 SEED_AGENT = '''
 import json, re
 def solve(train_inputs, train_outputs, test_inputs, llm):
     examples = "\\n".join(f"Input: {i}\\nOutput: {o}"
                           for i, o in zip(train_inputs, train_outputs))
-    response = llm(f"Solve ARC puzzle. Training:\\n{examples}\\n"
+    response = llm(f"Solve an ARC AGI puzzle. Training:\\n{examples}\\n"
                    f"Predict outputs as JSON [[...]]:")
     grids = [json.loads(g) for g in re.findall(r"\\[\\[.*?\\]\\]",
              response.replace("\\n", ""))]
@@ -578,7 +593,7 @@ def solve(train_inputs, train_outputs, test_inputs, llm):
             "test": [[g] for g in grids[len(train_inputs):]]}
 '''
 
-def fitness_fn(candidate, **kwargs):
+def evaluate(candidate, **kwargs):
     ex = kwargs["example"]
     result = run_agent(
         agent_code=candidate["agent_code"],
@@ -602,7 +617,7 @@ train_set, val_set, test_set = load_arc_dataset()
 
 result = optimize_anything(
     seed_candidate={"agent_code": SEED_AGENT},
-    evaluator=fitness_fn,
+    evaluator=evaluate,
     dataset=train_set,
     valset=val_set,
     config=GEPAConfig(
