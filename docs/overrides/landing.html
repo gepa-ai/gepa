@@ -1,5 +1,10 @@
 {% extends "main.html" %}
 
+{% block styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ 'assets/index-styles.css' | url }}">
+{% endblock %}
+
 {% block tabs %}{% endblock %}
 
 {% block header %}

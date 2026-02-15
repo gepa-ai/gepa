@@ -11,7 +11,7 @@ article > h1 {
 /* ==============================
    Page Background
    ============================== */
-.md-content {
+body {
   background: linear-gradient(135deg,
     rgba(37, 99, 235, 0.03) 0%,
     rgba(56, 189, 248, 0.02) 25%,
@@ -21,13 +21,35 @@ article > h1 {
   background-attachment: fixed;
 }
 
+/* Make intermediate containers transparent so the body gradient shows through */
+.md-main, .md-container, .md-content {
+  background: transparent;
+}
+
+/* Remove default spacing that creates a gap below the header */
+.md-main__inner {
+  margin-top: 0;
+}
+
+.md-content__inner {
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.md-content__inner:before,
+.md-content__inner::before {
+  display: none !important;
+  height: 0 !important;
+  content: none !important;
+}
+
 /* ==============================
    Hero Section
    ============================== */
 .hero-section {
   text-align: center;
-  padding: 0 0 0.5rem 0;
-  margin-top: -0.5rem;
+  padding: 1.5rem 0 0.5rem 0;
+  margin-top: 0;
   position: relative;
   contain: layout style paint;
   animation: fadeInUp 0.8s ease-out;

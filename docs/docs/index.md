@@ -6,8 +6,6 @@ hide:
   - title
 ---
 
-<link rel="stylesheet" href="assets/index-styles.css">
-
 <div class="hero-section">
   <div style="text-align: center; margin-bottom: 1rem;">
     <img src="assets/gepa_logo_with_text_gradient.svg" alt="GEPA Logo" class="hero-logo hero-logo--light" style="max-width: 400px; width: 100%;">
