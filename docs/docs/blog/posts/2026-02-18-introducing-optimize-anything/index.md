@@ -303,11 +303,6 @@ We apply `optimize_anything` to six diverse domains spanning search, batch optim
   <figcaption>ARC-AGI agent evolution: from a naive 10-line agent (32.5% test) to a sophisticated 300+ line system (89.5% test) with Gemini 3 Flash.</figcaption>
 </figure>
 
-<figure markdown="span">
-  ![Scatter plot of ARC-AGI cost vs performance. GEPA achieves 89.5% accuracy at $0.14/task with Gemini 3 Flash, outperforming various Gemini 2.5 and 3.0 configurations at similar or higher cost.](arc_agi_cost_performance.png)
-  <figcaption>ARC-AGI cost-performance frontier. GEPA achieves 89.5% at $0.14/task, operating on the Pareto frontier.</figcaption>
-</figure>
-
 **Key result:** `optimize_anything` improves ARC-AGI test accuracy from 32.5% to **89.5%** by evolving the entire agent architecture. Many research teams manually iterate on agent designs over weeks — `optimize_anything` automates this process. [Full code →](#appendix-f-arc-agi-agent-architecture-discovery)
 
 
