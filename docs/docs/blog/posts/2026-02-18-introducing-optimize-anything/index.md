@@ -24,7 +24,7 @@ description: "A new API setting state-of-the-art results on optimizing code, pro
 
 # `optimize_anything`: A Universal API for Text Optimization
 
-Many real-world problems — designing accurate-but-cheap AI agents, writing fast CUDA kernels, finding cost-minimizing cloud-scheduling policies, crafting effective prompts — share a common structure: maximize an objective **f(x) → score**, where **x** is a text artifact like code, a prompt, a policy, or even numeric hyperparameters serialized as a string. Today, we are introducing **`optimize_anything`**, a simple, declarative API that optimizes any artifact representable as text. You bring a **starting artifact** and an **evaluator**; `optimize_anything` uses LLMs as intelligent proposers to iteratively refine it.
+Many real-world problems — designing accurate-but-cheap AI agents, writing fast CUDA kernels, finding cost-minimizing cloud-scheduling policies, crafting effective prompts — share a common structure: maximize an objective **f(x) → score**, where **x** is a text artifact like code, a prompt, a policy, or even numeric hyperparameters serialized as a string. Today, we are introducing **`optimize_anything`**, a simple, declarative API that optimizes any artifact representable as text. You bring a **starting artifact** and an **evaluator**; `optimize_anything` uses LLMs as intelligent proposers to iteratively refine it. If you can measure it, you can optimize it.
 
 <!-- more -->
 
@@ -33,9 +33,9 @@ Many real-world problems — designing accurate-but-cheap AI agents, writing fas
   <figcaption>The optimize_anything loop: evaluate a text artifact, capture diagnostic feedback (ASI), and use an LLM to propose targeted improvements.</figcaption>
 </figure>
 
-While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task search mode — optimizing one problem at a time, with no built-in support for batch optimization across related tasks or generalization to unseen inputs. `optimize_anything` provides a unified declarative API targeting **three optimization modes** — single-task search, multi-task search, and generalization — that makes LLM-based optimization as simple as defining an evaluator. It is the first API in this paradigm to unify all three modes under one interface.
+While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode — optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** — single-task search, multi-task search, and generalization — under one declarative API.
 
-We demonstrate `optimize_anything` across six diverse domains: it **matches Optuna** — a mature numerical optimizer — on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms saving 37.3% on egress costs**, achieves **state-of-the-art prompt optimization** on AIME mathematics, and rewrites an entire **agent architecture** to improve ARC-AGI performance by **2.7x**.
+We demonstrate `optimize_anything` across six diverse domains: it **matches Optuna** — a mature, purpose-built numerical optimizer — on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms saving 37.3% on egress costs**, achieves **state-of-the-art prompt optimization** on AIME math problems, and evolves an entire **agent architecture** to boost ARC-AGI accuracy from 32.5% to **89.5%**.
 
 ## If It's Text, You Can Optimize It
 
@@ -51,20 +51,20 @@ If an artifact can be serialized to text and evaluated programmatically, an LLM 
 
 ## From Evolution to Intelligent Design
 
-Traditional optimization methods — gradient descent, evolutionary strategies, Bayesian optimization — rely on purely numerical feedback. They know *that* a candidate failed, but not *why*. You can't pass a numerical optimizer a stack trace. You can't show it the compiler error that explains exactly which line crashed. All that diagnostic context — compiler errors, profiling traces, agent reasoning logs, constraint violation details — gets discarded.
+Traditional optimization methods — gradient descent, evolutionary strategies, Bayesian optimization — operate on purely numerical feedback. They know *that* a candidate failed, but not *why*. You can't pass Optuna a stack trace. You can't show a Bayesian optimizer the compiler error that explains exactly which line crashed. All that diagnostic context — compiler errors, profiling traces, agent reasoning logs, constraint violation details — is reduced to a single scalar and the rest is discarded.
 
-Optimizing without this context is like fumbling in a dark room. `optimize_anything` turns on the light. It captures diagnostic data as **Actionable Side Information (ASI)** — and because the proposer is an LLM, it can actually *read* this feedback and act on it. ASI enables the proposer to move beyond random mutation and take reasoned, corrective action — like reading a stack trace and rewriting the exact API call that caused a crash, or seeing that "Circle 3 and Circle 7 overlap by 0.02 units" and adjusting those specific coordinates.
+`optimize_anything` captures this diagnostic context as **Actionable Side Information (ASI)** — a first-class part of the evaluator contract that *you* design. ASI can be anything that would help an expert diagnose the problem: error messages, profiling data, rendered images, constraint violations, tool outputs. Because the proposer is an LLM, it can actually *read* this feedback. During a **dedicated reflection step**, it reasons about *why* specific candidates succeeded or failed — then proposes targeted improvements.
 
 <figure markdown="span">
   ![Comparison of numerical optimization (left) using gradients on a loss surface, versus text-based optimization (right) using Actionable Side Information. In numerical optimization, the gradient provides direction for improvement. In text-based optimization, ASI — execution traces, error messages, scores — provides reasoned direction for improvement via an LLM.](side_info_diagram.png)
   <figcaption>ASI is the text-optimization analogue of the gradient. Where gradients tell a numerical optimizer which direction to move, ASI tells an LLM proposer why a candidate failed and how to fix it.</figcaption>
 </figure>
 
-This marks a fundamental shift. Traditional evolutionary algorithms act like nature's "blind watchmaker" — applying random mutations and keeping whatever scores higher. An LLM with ASI acts as a **designer**: it reads the feedback, diagnoses the problem, and proposes a targeted fix. We are moving from *evolution* to **Intelligent Design**.
+Because ASI is user-defined, it can be tailored to the domain: a dictionary of constraint violations for circle packing, a profiler trace for CUDA kernels, or a rendered image of a malformed SVG (via `oa.Image`) so a vision-capable LLM can literally *see* what it's improving. This marks a fundamental shift. Traditional evolutionary algorithms act like nature's "blind watchmaker" — applying random mutations and keeping whatever scores higher. An LLM with ASI acts as a **designer**: it reads the feedback, diagnoses the problem, and proposes a targeted fix. We are moving from *evolution* to **Intelligent Design**.
 
 **Evolution (blind):** "Change a parameter and hope the score goes up."
 
-**Intelligent Design (ASI):** "The agent failed because it hallucinated an API call. I will rewrite the system prompt to restrict tools to the provided schema."
+**Intelligent Design (ASI):** "The agent failed because it called `search_api()` which doesn't exist. I will rewrite the system prompt to restrict tools to the provided schema."
 
 
 ## The `optimize_anything` API
@@ -107,7 +107,7 @@ The side information can be anything: text, structured data, or even **images** 
 `optimize_anything` unifies three distinct optimization paradigms under one API, determined by whether you provide a `dataset` and `valset`:
 
 <figure markdown="span">
-  ![Decision tree showing three optimization modes. "What is the Goal?" branches into "I want answers" (Search Mode) and "I want a system" (Generalization Mode). Search Mode further splits into "One Problem (Single-Instance)" for tasks like blackbox optimization, and "Many Related Problems (Batch/Transfer)" for tasks like writing CUDA kernels for multiple algorithms.](optimization_problem_types.png)
+  ![Decision tree showing three optimization modes. "What is the Goal?" branches into "I want answers" (Search Mode) and "I want a system" (Generalization Mode). Search Mode further splits into "One Problem (Single-Task)" for tasks like blackbox optimization, and "Many Related Problems (Multi-Task)" for tasks like writing CUDA kernels for multiple algorithms.](optimization_problem_types.png)
   <figcaption>The three optimization modes: single-task search, multi-task search, and generalization.</figcaption>
 </figure>
 
@@ -143,6 +143,8 @@ def optimize_anything(
 ) -> GEPAResult
 ```
 
+Notice what's *absent*: no mutation prompts, no task-specific instruction templates, no island configurations, no EVOLVE-BLOCK markers (all common in prior LLM-evolution frameworks). You declare the **what** — your artifact, your evaluator, and any domain knowledge as `background` — and `optimize_anything` handles the **how**: prompt construction, reflection, candidate selection, and search strategy. This declarative design, inspired by [DSPy](https://github.com/stanfordnlp/dspy)'s principle of *programming not prompting*, means the same API call works whether you're optimizing a CUDA kernel, a cloud scheduling policy, or an agent architecture.
+
 ### The Pareto Insight
 
 In multi-task and generalization modes, `optimize_anything` leverages GEPA's core algorithmic insight: **Pareto-efficient search**. Rather than asking the LLM to improve *all* metrics simultaneously, each reflection step focuses on improving a specific subset of metrics or examples. Over multiple iterations, different subsets are selected — a minibatch of 2-3 examples or objectives at a time — and the proposer can focus its effort. This cycling through subsets, combined with Pareto-efficient selection that preserves candidates that excel on different axes, consistently outperforms naive all-at-once optimization.
@@ -166,7 +168,7 @@ GOAL = "a pelican riding a bicycle"
 def evaluate(candidate, example, *, model):
     """Render SVG → image, score with a VLM, return (score, side_info)."""
     image = render_image(candidate["svg_code"])
-    score, feedback = get_vlm_score_feedback(model, png, example["criteria"])
+    score, feedback = get_vlm_score_feedback(model, image, example["criteria"])
 
     return score, {
         "RenderedSVG": Image(base64_data=image, media_type="image/png"),
@@ -307,14 +309,14 @@ We apply `optimize_anything` to six diverse domains spanning search, batch optim
   <figcaption>ARC-AGI agent evolution: from a naive 10-line agent (32.5% test) to a sophisticated 300+ line system (89.5% test) with Gemini 3 Flash.</figcaption>
 </figure>
 
-**Key result:** `optimize_anything` improves ARC-AGI test accuracy from 32.5% to **89.5%** by evolving the entire agent architecture. Many research teams manually iterate on agent designs over weeks — `optimize_anything` automates this process. [Full code →](#appendix-f-arc-agi-agent-architecture-discovery)
+**Key result:** Using the same underlying model (Gemini 3 Flash), `optimize_anything` improves ARC-AGI test accuracy from 32.5% to **89.5%** by evolving the entire agent architecture — gains that typically require weeks of manual iteration. [Full code →](#appendix-f-arc-agi-agent-architecture-discovery)
 
 
 ## Conclusion & Getting Started
 
 `optimize_anything` makes a simple bet: if your artifact is text and your evaluator is programmatic, you can optimize it. The API is minimal — a seed, an evaluator, and optionally a dataset. The results span blackbox optimization, algorithmic discovery, kernel generation, systems research, prompt tuning, and agent architecture search.
 
-The key ideas: (1) **ASI** turns the optimizer from a blind mutator into an intelligent designer; (2) **Pareto-efficient search** across metrics and examples outperforms naive all-at-once optimization; (3) **three unified modes** cover the full spectrum from solving one hard problem to learning generalizable skills.
+The key ideas: (1) **three unified modes** — single-task search, multi-task search, and generalization — under one declarative API; (2) **Actionable Side Information (ASI)** as a first-class API concept that turns the optimizer from a blind mutator into an intelligent designer; (3) **Pareto-efficient search** across metrics and examples that outperforms naive all-at-once optimization.
 
 Get started:
 
