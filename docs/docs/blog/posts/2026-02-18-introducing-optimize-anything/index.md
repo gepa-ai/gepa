@@ -18,7 +18,7 @@ equal_contribution:
   - "Donghyun Lee"
 slug: introducing-optimize-anything
 title: "optimize_anything: A Universal API for Text Optimization"
-description: "optimize_anything is GEPA's universal API for optimizing any text artifact — prompts, code, agent harnesses, policies — using LLM-based reflection and Pareto-efficient search."
+description: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more — if you can measure it, you can optimize it."
 ---
 
 # `optimize_anything`: A Universal API for Text Optimization
@@ -32,9 +32,9 @@ Many real-world problems — designing accurate-but-cheap AI agents, writing fas
   <figcaption>The optimize_anything loop: evaluate a text artifact, capture diagnostic feedback (ASI), and use an LLM to propose targeted improvements.</figcaption>
 </figure>
 
-While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they are restricted to optimizing a single artifact for a single problem instance. `optimize_anything` provides a unified declarative API targeting **three optimization modes** — single-task search, multi-task search, and generalization — that makes LLM-based optimization as simple as defining an evaluator. It is also the first API in this paradigm to unify all three modes under one interface.
+While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task search mode — optimizing one problem at a time, with no built-in support for batch optimization across related tasks or generalization to unseen inputs. `optimize_anything` provides a unified declarative API targeting **three optimization modes** — single-task search, multi-task search, and generalization — that makes LLM-based optimization as simple as defining an evaluator. It is the first API in this paradigm to unify all three modes under one interface.
 
-We demonstrate `optimize_anything` across six diverse domains: it **matches Optuna** on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms**, achieves **state-of-the-art prompt optimization** on AIME mathematics, and rewrites entire **agent architectures** to achieve 89.5% on ARC-AGI.
+We demonstrate `optimize_anything` across six diverse domains: it **matches Optuna** — a mature numerical optimizer — on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms saving 37.3% on egress costs**, achieves **state-of-the-art on prompt optimization**, and rewrites entire **agent architectures** to achieve a +57% (from 32.50% to 89.50%) on ARC-AGI using the same model.
 
 ## If It's Text, You Can Optimize It
 
@@ -50,9 +50,9 @@ If an artifact can be serialized to text and evaluated programmatically, an LLM 
 
 ## From Evolution to Intelligent Design
 
-Traditional discrete optimization methods — gradient descent, evolutionary strategies, Bayesian optimization — rely on purely numerical feedback. They know *that* a candidate failed, but not *why*. This discards a wealth of domain-specific context that is readily available: compiler error messages and profiling traces for kernel optimization, agent reasoning logs for harness discovery, violation details for constraint satisfaction.
+Traditional optimization methods — gradient descent, evolutionary strategies, Bayesian optimization — rely on purely numerical feedback. They know *that* a candidate failed, but not *why*. You can't pass a numerical optimizer a stack trace. You can't show it the compiler error that explains exactly which line crashed. All that diagnostic context — compiler errors, profiling traces, agent reasoning logs, constraint violation details — gets discarded.
 
-`optimize_anything` captures this diagnostic data as **Actionable Side Information (ASI)**. Access to ASI enables the LLM proposer to move beyond random mutation and take reasoned, corrective action — like reading a stack trace and rewriting the exact API call that caused a crash, or seeing that "Circle 3 and Circle 7 overlap by 0.02 units" and adjusting those specific coordinates.
+Optimizing without this context is like fumbling in a dark room. `optimize_anything` turns on the light. It captures diagnostic data as **Actionable Side Information (ASI)** — and because the proposer is an LLM, it can actually *read* this feedback and act on it. ASI enables the proposer to move beyond random mutation and take reasoned, corrective action — like reading a stack trace and rewriting the exact API call that caused a crash, or seeing that "Circle 3 and Circle 7 overlap by 0.02 units" and adjusting those specific coordinates.
 
 <figure markdown="span">
   ![Comparison of numerical optimization (left) using gradients on a loss surface, versus text-based optimization (right) using Actionable Side Information. In numerical optimization, the gradient provides direction for improvement. In text-based optimization, ASI — execution traces, error messages, scores — provides reasoned direction for improvement via an LLM.](side_info_diagram.png)
@@ -110,7 +110,7 @@ The side information can be anything: text, structured data, or even **images** 
   <figcaption>The three optimization modes: single-task search, multi-task search, and generalization.</figcaption>
 </figure>
 
-**1. Single-Task Search** — "Solve one hard problem." No dataset needed. The candidate *is* the solution. Examples: finding an optimal circle packing arrangement, discovering a blackbox optimization algorithm. This is the mode that AlphaEvolve, ShinkaEvolve, and OpenEvolve operate in.
+**1. Single-Task Search** — "Solve one hard problem." No dataset needed — the candidate *is* the solution, and the evaluator scores it directly (no `example` argument). Examples: finding an optimal circle packing arrangement, discovering a blackbox optimization algorithm. This is the mode that AlphaEvolve, ShinkaEvolve, and OpenEvolve operate in.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=...)
@@ -281,7 +281,7 @@ We apply `optimize_anything` to six diverse domains spanning search, batch optim
   <figcaption>GEPA optimization progress on Can't Be Late: from a simple deadline-check heuristic to a sophisticated scheduling strategy with 7.8% cost savings.</figcaption>
 </figure>
 
-**Key result:** `optimize_anything` discovers state-of-the-art scheduling algorithms for both CloudCast and Can't Be Late, outperforming hand-designed heuristics. [Full code →](#appendix-d-cloudcast--cant-be-late)
+**Key result:** `optimize_anything` discovers state-of-the-art algorithms for both problems — **37.3% cost savings** on CloudCast and **7.8% cost savings** on Can't Be Late — outperforming hand-designed heuristics. [Full code →](#appendix-d-cloudcast--cant-be-late)
 
 ### 5. Prompt Optimization: AIME Mathematics
 
@@ -353,7 +353,7 @@ def solve(objective_fn, bounds, budget):
     return best_y
 """
 
-def fitness_fn(candidate, opt_state=None):
+def evaluate(candidate, opt_state):
     code = candidate["code"]
     best_xs = extract_best_xs(opt_state)  # warm-start from prior evaluations
     result = execute_code(code, problem_index=0, timeout=300, budget=100, best_xs=best_xs)
@@ -368,7 +368,7 @@ def fitness_fn(candidate, opt_state=None):
 
 optimize_anything(
     seed_candidate={"code": SEED_CODE},
-    evaluator=fitness_fn,
+    evaluator=evaluate,
     config=GEPAConfig(
         engine=EngineConfig(max_candidate_proposals=20, cache_evaluation=True),
         reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
@@ -387,7 +387,7 @@ Optimize code that packs n=26 circles within a unit square, maximizing the sum o
 ```python
 from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
 
-def fitness_fn(candidate, opt_state=None):
+def evaluate(candidate, opt_state):
     code = candidate["code"]
     warm_start = extract_best_circles(opt_state)
     result = execute_code(code, timeout=600, warm_start=warm_start)
@@ -409,7 +409,7 @@ def fitness_fn(candidate, opt_state=None):
 
 optimize_anything(
     seed_candidate={"code": SEED_CODE},
-    evaluator=fitness_fn,
+    evaluator=evaluate,
     config=GEPAConfig(
         engine=EngineConfig(run_dir="outputs/circle_packing", max_metric_calls=150, cache_evaluation=True),
         reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
@@ -426,7 +426,7 @@ Multi-task search over KernelBench problems. A shared prompt is optimized to ins
 ```python
 from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, RefinerConfig
 
-def fitness_fn(candidate, example):
+def evaluate(candidate, example):
     baseline = baselines[example.problem_id]
     code, cuda_docs, eval_result = run_kernel(
         candidate["kernel_gen_prompt"], example.ref_arch, lm, predictor
@@ -445,7 +445,7 @@ def fitness_fn(candidate, example):
 
 optimize_anything(
     seed_candidate={"kernel_gen_prompt": KERNEL_GEN_PROMPT},
-    evaluator=fitness_fn,
+    evaluator=evaluate,
     dataset=dataset,  # multiple KernelBench problems
     config=GEPAConfig(
         engine=EngineConfig(max_metric_calls=2000, cache_evaluation=True),
@@ -473,7 +473,7 @@ def search_algorithm(src, dsts, G, num_partitions):
 
 optimize_anything(
     seed_candidate={"program": INITIAL_PROGRAM},
-    evaluator=create_fitness_function(timeout=300),
+    evaluator=create_evaluator(timeout=300),
     dataset=train_set,
     valset=val_set,
     objective="Optimize a broadcast routing algorithm for multi-cloud data transfer. "
@@ -502,7 +502,7 @@ class EvolveSingleRegionStrategy(Strategy):
 
 optimize_anything(
     seed_candidate={"program": INITIAL_STRATEGY},
-    evaluator=create_fitness_function(timeout=300),
+    evaluator=create_evaluator(timeout=300),
     dataset=train_set,
     valset=val_set,
     objective="Optimize a cloud scheduling strategy. Minimize cost while "
@@ -530,7 +530,7 @@ class MathSolverSignature(dspy.Signature):
 
 predictor = dspy.ChainOfThought(MathSolverSignature)
 
-def fitness_fn(candidate, example):
+def evaluate(candidate, example):
     predictor.predict.signature.instructions = candidate["prompt"]
     prediction = predictor(input=example.input)
     score = float(int(example.answer) == int(prediction.answer))
@@ -548,7 +548,7 @@ trainset, valset, testset = load_math_dataset()
 result = optimize_anything(
     seed_candidate={"prompt": "Solve the math problem carefully. "
                               "Break down the steps and provide the final answer."},
-    evaluator=fitness_fn,
+    evaluator=evaluate,
     dataset=trainset,
     valset=valset,
     config=GEPAConfig(
@@ -578,7 +578,7 @@ def solve(train_inputs, train_outputs, test_inputs, llm):
             "test": [[g] for g in grids[len(train_inputs):]]}
 '''
 
-def fitness_fn(candidate, **kwargs):
+def evaluate(candidate, **kwargs):
     ex = kwargs["example"]
     result = run_agent(
         agent_code=candidate["agent_code"],
@@ -602,7 +602,7 @@ train_set, val_set, test_set = load_arc_dataset()
 
 result = optimize_anything(
     seed_candidate={"agent_code": SEED_AGENT},
-    evaluator=fitness_fn,
+    evaluator=evaluate,
     dataset=train_set,
     valset=val_set,
     config=GEPAConfig(
