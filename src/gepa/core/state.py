@@ -140,7 +140,15 @@ class ValsetEvaluation(Generic[RolloutOutput, DataId]):
 
 
 class GEPAState(Generic[RolloutOutput, DataId]):
-    """Persistent optimizer state tracking candidates, sparse validation coverage, and objective frontiers."""
+    """Internal persistent state of a GEPA optimization run.
+
+    Tracks all explored candidates, their per-example and per-objective scores,
+    Pareto frontiers, evaluation budget, and optional evaluation cache.
+    Saved/loaded automatically when ``EngineConfig.run_dir`` is set.
+
+    Users interact with this indirectly via :class:`~gepa.core.result.GEPAResult`
+    returned by :func:`~gepa.optimize_anything.optimize_anything`.
+    """
 
     _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 4
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)

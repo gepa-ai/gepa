@@ -25,7 +25,7 @@ class ReflectionComponentSelector(Protocol):
 
 
 class LanguageModel(Protocol):
-    def __call__(self, prompt: str | list[dict[str, str]]) -> str: ...
+    def __call__(self, prompt: str | list[dict[str, Any]]) -> str: ...
 
 
 @dataclass
@@ -35,7 +35,7 @@ class Signature:
     output_keys: ClassVar[list[str]]
 
     @classmethod
-    def prompt_renderer(cls, input_dict: Mapping[str, Any]) -> str:
+    def prompt_renderer(cls, input_dict: Mapping[str, Any]) -> str | list[dict[str, Any]]:
         raise NotImplementedError
 
     @classmethod

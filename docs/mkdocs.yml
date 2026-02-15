@@ -25,6 +25,21 @@ nav:
         - ARC AGI Example: tutorials/arc_agi.ipynb
     - API Reference:
         - API Overview: api/index.md
+        - optimize_anything:
+            - optimize_anything: api/optimize_anything/optimize_anything.md
+            - GEPAConfig: api/optimize_anything/GEPAConfig.md
+            - EngineConfig: api/optimize_anything/EngineConfig.md
+            - ReflectionConfig: api/optimize_anything/ReflectionConfig.md
+            - MergeConfig: api/optimize_anything/MergeConfig.md
+            - RefinerConfig: api/optimize_anything/RefinerConfig.md
+            - TrackingConfig: api/optimize_anything/TrackingConfig.md
+            - Evaluator: api/optimize_anything/Evaluator.md
+            - OptimizationState: api/optimize_anything/OptimizationState.md
+            - LogContext: api/optimize_anything/LogContext.md
+            - log: api/optimize_anything/log.md
+            - get_log_context: api/optimize_anything/get_log_context.md
+            - set_log_context: api/optimize_anything/set_log_context.md
+            - make_litellm_lm: api/optimize_anything/make_litellm_lm.md
         - Core:
             - optimize: api/core/optimize.md
             - GEPAAdapter: api/core/GEPAAdapter.md
