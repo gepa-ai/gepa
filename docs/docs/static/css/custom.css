@@ -392,9 +392,13 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     background: rgba(37, 99, 235, 0.08);
 }
 
-/* Figure captions: allow full width (Material default is max-width: 24rem) */
+/* Figure captions: allow full width and remove gap above caption */
+.md-typeset figure > br {
+    display: none;
+}
 .md-typeset figcaption {
     max-width: 100%;
+    margin-top: 0.25em;
 }
 
 /* --- Blog post page: academic paper style --- */

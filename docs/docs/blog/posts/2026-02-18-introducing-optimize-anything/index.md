@@ -8,6 +8,7 @@ authors:
   - karim
   - shangyin
   - sewon
+  - dan
   - ion
   - joey
   - omar

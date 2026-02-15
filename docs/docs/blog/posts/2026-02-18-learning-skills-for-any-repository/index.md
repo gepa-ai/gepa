@@ -5,6 +5,8 @@ authors:
   - shangyin
   - lakshya
   - rohit
+  - dan
+  - koushik
   - alex
   - matei
 equal_contribution:

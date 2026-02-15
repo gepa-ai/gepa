@@ -59,3 +59,13 @@ authors:
     description: Assistant Professor, UC Berkeley
     avatar: https://www.sewonmin.com/assets/sewon-2024.jpg
     url: https://www.sewonmin.com/
+  koushik:
+    name: Koushik Sen
+    description: Professor, UC Berkeley
+    avatar: https://people.eecs.berkeley.edu/~ksen/ksen.jpeg
+    url: https://people.eecs.berkeley.edu/~ksen/?rnd=1771147393589
+  dan:
+    name: Dan Klein
+    description: Professor, UC Berkeley
+    avatar: https://bakarfellows.berkeley.edu/profile/dan-klein/
+    url: https://www2.eecs.berkeley.edu/Faculty/Homepages/klein.html
