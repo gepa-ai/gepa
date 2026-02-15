@@ -158,17 +158,17 @@ from gepa.image import Image
 from gepa.optimize_anything import (
     optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig,
 )
-from demo_utils import convert_to_png, get_vlm_score_feedback
+from demo_utils import render_image, get_vlm_score_feedback
 
 GOAL = "a pelican riding a bicycle"
 
 def evaluate(candidate, example, *, model):
-    """Render SVG → PNG, score with a VLM, return (score, side_info)."""
-    png = get_png(candidate["svg_code"])
+    """Render SVG → image, score with a VLM, return (score, side_info)."""
+    image = render_image(candidate["svg_code"])
     score, feedback = get_vlm_score_feedback(model, png, example["criteria"])
 
     return score, {
-        "RenderedSVG": Image(base64_data=png, media_type="image/png"),
+        "RenderedSVG": Image(base64_data=image, media_type="image/png"),
         "Feedback": feedback,
     }
 
