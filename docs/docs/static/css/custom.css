@@ -392,6 +392,11 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     background: rgba(37, 99, 235, 0.08);
 }
 
+/* Figure captions: allow full width (Material default is max-width: 24rem) */
+.md-typeset figcaption {
+    max-width: 100%;
+}
+
 /* --- Blog post page: academic paper style --- */
 
 /* Ensure the post content container fills viewport width */
