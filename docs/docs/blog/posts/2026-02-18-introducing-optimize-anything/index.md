@@ -18,11 +18,11 @@ equal_contribution:
   - "Lakshya A Agrawal"
   - "Donghyun Lee"
 slug: introducing-optimize-anything
-title: "optimize_anything: A Universal API for Text Optimization"
+title: "optimize_anything: A Universal API for Any Text Optimization"
 description: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more — if you can measure it, you can optimize it."
 ---
 
-# `optimize_anything`: A Universal API for Text Optimization
+# `optimize_anything`: A Universal API for Any Text Optimization
 
 Many real-world problems — designing accurate-but-cheap AI agents, writing fast CUDA kernels, finding cost-minimizing cloud-scheduling policies, crafting effective prompts — share a common structure: maximize an objective **f(x) → score**, where **x** is a text artifact like code, a prompt, a policy, or even numeric hyperparameters serialized as a string. Today, we are introducing **`optimize_anything`**, a simple, declarative API that optimizes any artifact representable as text. You bring a **starting artifact** and an **evaluator**; `optimize_anything` uses LLMs as intelligent proposers to iteratively refine it. If you can measure it, you can optimize it.
 
@@ -60,7 +60,7 @@ Traditional optimization methods — gradient descent, evolutionary strategies, 
   <figcaption>ASI is the text-optimization analogue of the gradient. Where gradients tell a numerical optimizer which direction to move, ASI tells an LLM proposer why a candidate failed and how to fix it.</figcaption>
 </figure>
 
-Because ASI is user-defined, it can be tailored to the domain: a dictionary of constraint violations for circle packing, a profiler trace for CUDA kernels, or a rendered image of a malformed SVG (via `oa.Image`) so a vision-capable LLM can literally *see* what it's improving. This marks a fundamental shift. Traditional evolutionary algorithms act like nature's "blind watchmaker" — applying random mutations and keeping whatever scores higher. An LLM with ASI acts as a **designer**: it reads the feedback, diagnoses the problem, and proposes a targeted fix. We are moving from *evolution* to **Intelligent Design**.
+Because ASI is user-defined, it can be tailored to the domain: a dictionary of constraint violations for circle packing, a profiler trace for CUDA kernels, or a rendered image of a malformed SVG (via `gepa.image.Image`) so a vision-capable LLM (VLM) can literally *see* what it's improving. This marks a fundamental shift. Traditional evolutionary algorithms act like nature's "blind watchmaker" — applying random mutations and keeping whatever scores higher. An LLM with ASI acts as a **designer**: it reads the feedback, diagnoses the problem, and proposes a targeted fix. We are moving from *evolution* to **Intelligent Design**.
 
 **Evolution (blind):** "Change a parameter and hope the score goes up."
 
@@ -151,7 +151,7 @@ In multi-task and generalization modes, `optimize_anything` leverages GEPA's cor
 
 ## Let's Take It for a Spin
 
-Here is a complete, working example that optimizes SVG code to depict "a pelican riding a bicycle." The evaluator renders the SVG to PNG, asks a VLM to score it on multiple visual aspects, and passes the rendered image back as ASI so the LLM proposer can *see* what it's improving:
+Here is a complete, working example that optimizes SVG code to depict "a pelican riding a bicycle." Noteably, we use `optimize_anything` to directly optimize the SVG code itself, rather than, optimizing prompts for an LLM to produce the SVG code. Our evaluator renders the SVG code as a PNG image, asks a VLM to score it on a set of visual aspects, and passes the rendered image back as ASI so the LLM proposer can *see* what it's improving:
 
 ```python
 import base64, re
@@ -185,7 +185,7 @@ result = optimize_anything(
         {"id": "anatomy",     "criteria": "Rate pelican accuracy: beak, pouch, plumage. SCORE: X/10"},
         {"id": "bicycle",     "criteria": "Rate bicycle: wheels, frame, handlebars, pedals. SCORE: X/10"},
         {"id": "composition", "criteria": "Rate how convincingly the pelican rides the bicycle. SCORE: X/10"},
-        {"id": "visual",      "criteria": "Rate visual appeal and color usage. SCORE: X/10"},
+        {"id": "visual",      "criteria": "Rate visual appeal, scenery, and color usage. SCORE: X/10"},
         {"id": "craft",       "criteria": "Rate SVG technical quality: shapes, layering. SCORE: X/10"},
     ],
     objective=f"Optimize SVG code to illustrate '{GOAL}'. Output ONLY valid SVG.",
@@ -205,16 +205,18 @@ print(result.best_candidate)
 A few things to note:
 
 - The **`dataset`** contains 6 evaluation aspects. GEPA calls the evaluator once per aspect per candidate, tracking scores individually. This enables Pareto-efficient selection: a candidate that excels at bicycle structure but struggles with pelican anatomy is preserved on the frontier, not discarded behind a mediocre average.
+- Our desired visual aspects are defined in concise natural language. We avoid the need for detailed rubrics and simply rely on the VLM's judgment for scoring.
 - **`reflection_minibatch_size=2`** means each reflection step shows the LLM feedback from just 2 aspects. Over multiple iterations, all 6 aspects get attention — but each reflection is focused and targeted.
-- The **rendered image** is passed in `side_info` via `Image(base64_data=...)`, so the VLM proposer can literally *see* what it's improving.
-- Starting from a simple seed (score 0.017), the optimizer produces a detailed illustration scoring **0.817** in 20 candidates:
+- The **rendered image** is passed in `side_info` via `Image(base64_data=...)`, so the VLM proposer can literally *see* what needs improvement. The VLM evaluator **never** sees the SVG code — only the rendered image.
+- The reflection model see the feedback (both positive and negative) along with the optimization artifact (source code), and directly optimizes it.
+- Starting from a plain white canvas, the optimizer produces a detailed illustration scoring an average of **0.817** across all six aspects in 20 candidates:
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
 ![Initial SVG: a basic pelican sketch on a red-framed bicycle against a white background.](initial-pelican.png){ style="width: 100%;" }
 
-<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Seed (score: 0.017)</em></div>
+<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Zero-shot attempt from Gemini 3 Pro</em></div>
 
 </div>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
@@ -226,7 +228,7 @@ A few things to note:
 </div>
 </div>
 
-*With only 20 candidates, the optimizer added background elements, improved anatomy, and refined the composition — all through LLM reflection on rendered image feedback.*
+*With only 20 candidates, the optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition — all through LLM reflection on rendered image feedback.*
 
 
 ## Results
