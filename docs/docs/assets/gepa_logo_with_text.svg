@@ -31,14 +31,14 @@
         fill="#6c8ebf" stroke="#6c8ebf" stroke-width="30"
         transform="rotate(-15,463.31,983.31)" />
 
-  <!-- ===== TEXT (white) ===== -->
+  <!-- ===== TEXT (same style; moved right for more gap; not clipped) ===== -->
 
   <text x="3950"
         y="1080"
         font-family="Inter, Helvetica, Arial, sans-serif"
         font-size="1500"
         font-weight="600"
-        fill="#ffffff"
+        fill="#2e4464"
         text-anchor="middle"
         dominant-baseline="middle">
     GEPA

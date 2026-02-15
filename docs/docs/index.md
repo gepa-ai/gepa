@@ -7,9 +7,9 @@ hide:
 ---
 
 <div class="hero-section">
-  <div style="text-align: center; margin-bottom: 1rem;">
-    <img src="assets/gepa_logo_with_text_gradient.svg" alt="GEPA Logo" class="hero-logo hero-logo--light" style="max-width: 400px; width: 100%;">
-    <img src="static/img/gepa_logo_with_text_white.svg" alt="GEPA Logo" class="hero-logo hero-logo--dark" style="max-width: 400px; width: 100%;">
+  <div style="text-align: center; margin-bottom: 1rem; padding-top: 1.5rem; margin-right: 2rem;">
+    <img src="assets/gepa_logo_with_text.svg" alt="GEPA Logo" class="hero-logo hero-logo--light" style="max-width: 440px; width: 100%;">
+    <img src="static/img/gepa_logo_with_text_white.svg" alt="GEPA Logo" class="hero-logo hero-logo--dark" style="max-width: 440px; width: 100%;">
   </div>
   <p class="hero-subtitle">Automatically optimize prompts for any AI system</p>
   <p class="hero-stats-line">
@@ -420,7 +420,7 @@ pip install gepa
 <div class="how-it-works-flow">
   <div class="flow-step">
     <div class="flow-step-num">1</div>
-    <div class="flow-step-icon" style="color: #2563EB;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg></div>
+    <div class="flow-step-icon" style="color: #212C4D;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg></div>
     <div class="flow-step-label">Select from<br>Pareto Front</div>
     <div class="flow-step-desc">Pick candidate excelling on <em>some</em> examples</div>
   </div>
