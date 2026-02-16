@@ -555,7 +555,7 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
    Our selectors use .md-typeset .appendix-tiles details[class] (0,3,1) to win. */
 
 /* --- Card container --- */
-.md-typeset .appendix-tiles > details[class] {
+.md-typeset .appendix-tiles details[class] {
     border: 1px solid var(--md-default-fg-color--lightest);
     border-radius: 0.5rem;
     margin-bottom: 0.75rem;
@@ -567,18 +567,18 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     font-size: 0.875rem;
 }
 
-.md-typeset .appendix-tiles > details[class]:hover {
+.md-typeset .appendix-tiles details[class]:hover {
     border-color: var(--md-primary-fg-color--light);
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
 }
 
-.md-typeset .appendix-tiles > details[class][open] {
+.md-typeset .appendix-tiles details[class][open] {
     border-color: var(--md-primary-fg-color--light);
     box-shadow: 0 3px 12px rgba(0, 0, 0, 0.1);
 }
 
 /* --- Summary row --- */
-.md-typeset .appendix-tiles > details[class] > summary {
+.md-typeset .appendix-tiles details[class] > summary {
     padding: 0.85rem 1.1rem;
     font-weight: 600;
     font-size: 0.9rem;
@@ -594,7 +594,7 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 }
 
 /* Left chevron – same size as summary text, vertically aligned */
-.md-typeset .appendix-tiles > details[class] > summary::before {
+.md-typeset .appendix-tiles details[class] > summary::before {
     content: "▶";
     font-size: 0.9rem;
     line-height: 1;
@@ -611,45 +611,40 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     transform: none;
 }
 
-.md-typeset .appendix-tiles > details[class][open] > summary::before {
+.md-typeset .appendix-tiles details[class][open] > summary::before {
     transform: rotate(90deg);
 }
 
 /* Hide Material's right-side toggle arrow */
-.md-typeset .appendix-tiles > details[class] > summary::after {
+.md-typeset .appendix-tiles details[class] > summary::after {
     display: none;
 }
 
 /* Remove webkit default marker */
-.md-typeset .appendix-tiles > details summary::-webkit-details-marker {
+.md-typeset .appendix-tiles details summary::-webkit-details-marker {
     display: none;
 }
 
 /* --- Content area --- */
-.md-typeset .appendix-tiles > details[class] > :not(summary) {
-    padding: 0 1.5rem 1.5rem;
+.md-typeset .appendix-tiles details[class] > :not(summary) {
+    padding: 0 1.1rem 0.85rem;
 }
 
-.md-typeset .appendix-tiles > details pre {
+.md-typeset .appendix-tiles details pre {
     overflow-x: auto;
 }
 
-/* --- Nested collapsibles: add breathing room inside parent --- */
-.md-typeset .appendix-tiles > details[class] details[class] {
-    margin: 1.5rem 0 0.5rem;
-}
-
 /* --- Dark mode --- */
-[data-md-color-scheme="slate"] .md-typeset .appendix-tiles > details[class] {
+[data-md-color-scheme="slate"] .md-typeset .appendix-tiles details[class] {
     background: var(--md-code-bg-color);
     border-color: var(--md-default-fg-color--lighter);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
-[data-md-color-scheme="slate"] .md-typeset .appendix-tiles > details[class]:hover {
+[data-md-color-scheme="slate"] .md-typeset .appendix-tiles details[class]:hover {
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
 }
 
-[data-md-color-scheme="slate"] .md-typeset .appendix-tiles > details[class][open] {
+[data-md-color-scheme="slate"] .md-typeset .appendix-tiles details[class][open] {
     box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
 }
