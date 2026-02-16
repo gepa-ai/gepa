@@ -59,8 +59,10 @@ Traditional optimization methods — gradient descent, evolutionary strategies, 
 
 `optimize_anything` captures this diagnostic context as **Actionable Side Information (ASI)** — a first-class part of the evaluator contract that *you* design. ASI can be anything that would help an expert diagnose the problem: error messages, profiling data, rendered images, constraint violations, tool outputs. Because the proposer is an LLM, it can actually *read* this feedback. During a **dedicated reflection step**, it reasons about *why* specific candidates succeeded or failed — then proposes targeted improvements.
 
-<figure markdown="span">
-  ![Comparison of numerical optimization (left) using gradients on a loss surface, versus text-based optimization (right) using Actionable Side Information. In numerical optimization, the gradient provides direction for improvement. In text-based optimization, ASI — execution traces, error messages, scores — provides reasoned direction for improvement via an LLM.](side_info_diagram.png)
+<figure>
+  <div style="width:100%; max-width:800px; margin:0 auto; position:relative; padding-bottom:61.25%; height:0; overflow:hidden;">
+    <iframe src="/static/diagrams/side_info_diagram.html" scrolling="no" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none;"></iframe>
+  </div>
   <figcaption>ASI is the text-optimization analogue of the gradient. Where gradients tell a numerical optimizer which direction to move, ASI tells an LLM proposer why a candidate failed and how to fix it.</figcaption>
 </figure>
 
