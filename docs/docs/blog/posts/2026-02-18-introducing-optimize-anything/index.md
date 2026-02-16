@@ -147,7 +147,7 @@ def optimize_anything(
 ) -> GEPAResult
 ```
 
-Notice what's *absent*: no mutation prompts, no task-specific instruction templates, no island configurations, no EVOLVE-BLOCK markers (all common in prior LLM-evolution frameworks). You declare the **what** — your artifact, your evaluator, and any domain knowledge as `background` — and `optimize_anything` handles the **how**: prompt construction, reflection, candidate selection, and search strategy. This declarative design, inspired by [DSPy](https://github.com/stanfordnlp/dspy)'s principle of *programming not prompting*, means the same API call works whether you're optimizing a CUDA kernel, a cloud scheduling policy, or an agent architecture.
+Notice what's *absent*: no mutation prompts, no task-specific instruction templates, no island configurations, no EVOLVE-BLOCK markers (all common in prior LLM-evolution frameworks). You declare the **what** (your artifact, your evaluator, and any domain knowledge as `background`) and `optimize_anything` handles the **how**: prompt construction, reflection, candidate selection, and search strategy. This declarative design, inspired by [DSPy](https://github.com/stanfordnlp/dspy)'s principle of *programming not prompting*, means the same API call works whether you're optimizing a CUDA kernel, a cloud scheduling policy, or an agent architecture.
 
 ### The Pareto Insight
 
@@ -362,11 +362,11 @@ We apply `optimize_anything` to seven diverse domains spanning search, batch opt
 
 ### 1. Blackbox Mathematical Optimization: Matching Optuna
 
-**Mode: Single-Task Search.** Given a blackbox objective function, `optimize_anything` discovers an optimization algorithm tailored to it: and matches [Optuna](https://optuna.org/) across the 56-problem [EvalSet](https://github.com/sigopt/evalset) benchmark.
+**Mode: Single-Task Search.** Given a blackbox objective function, `optimize_anything` discovers an optimization algorithm tailored to it and matches [Optuna](https://optuna.org/), the industry-standard blackbox optimizer, across the 56-problem [EvalSet](https://github.com/sigopt/evalset) benchmark.
 
 <figure markdown="span" style="margin: 0 auto;">
   ![Bar chart showing GEPA vs Optuna on 56 EvalSet problems with 1% tolerance and 8000 trials. GEPA wins on 7 problems, Optuna wins on 9, and they tie on 40.](optuna_combined2.png)
-  <figcaption>GEPA's optimize_anything matches Optuna (the industry-standard blackbox optimizer) on the EvalSet benchmark. (a) Over all 56 EvalSet problems (1 independent run, 8,000 evaluations), GEPA ties Optuna on 40, wins 7, and loses 9. (b) On 10 selected problems where Optuna struggles (2,000 evaluations, 10 independent runs), GEPA finds better solutions on 7 out of 10.</figcaption>
+  <figcaption>GEPA's optimize_anything matches Optuna on the EvalSet benchmark. (a) Over all 56 EvalSet problems (8,000 evaluations), GEPA ties Optuna on 40, wins 7, and loses 9. (b) On 10 selected problems where Optuna struggles (2,000 evaluations, 10 independent runs), GEPA finds better solutions on 7 out of 10.</figcaption>
 </figure>
 
 On the 56-problem evalset benchmark with large budgets, GEPA and Optuna tie on most problems. But on the hardest problems with lower budgets where Optuna struggles, a striking pattern emerges: Optuna's fixed TPE-CMA-ES pipeline fails in predictable, structural ways. On McCourt13, all 10 Optuna independent runs converge to the same local minimum because TPE's independent per-dimension sampling always falls into the dominant trap basin. On Tripod, CMA-ES assumes a smooth, unimodal landscape, but the objective is piecewise-linear with hard discontinuities, so it converges to the wrong basin and cannot escape.
