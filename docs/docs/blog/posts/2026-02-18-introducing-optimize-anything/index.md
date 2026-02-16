@@ -38,7 +38,7 @@ While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonst
   <figcaption>The optimize_anything loop: evaluate a text artifact, capture diagnostic feedback (ASI), and use an LLM to propose targeted improvements.</figcaption>
 </figure>
 
-## If It's Text, You Can Optimize It
+## If You Can Write It, You Can Optimize It
 
 The key insight behind `optimize_anything` is that a surprisingly wide range of problems can be formulated as optimizing a text artifact. Consider:
 
@@ -64,7 +64,7 @@ Traditional optimization methods (gradient descent, evolutionary strategies, Bay
   <figcaption>ASI is the text-optimization analogue of the gradient. Where gradients tell a numerical optimizer which direction to move, ASI tells an LLM proposer why a candidate failed and how to fix it.</figcaption>
 </figure>
 
-Because ASI is user-defined, it can be tailored to the domain: a dictionary of constraint violations for circle packing, a profiler trace for CUDA kernels, or a rendered image of a malformed SVG (via `gepa.image.Image`) so a vision-capable LLM (VLM) can literally *see* what it's improving. This marks a fundamental shift. Traditional evolutionary algorithms act like nature's "blind watchmaker," applying random mutations and keeping whatever scores higher. An LLM with ASI acts as a **designer**: it reads the feedback, diagnoses the problem, and proposes a targeted fix. We are moving from *evolution* to **Intelligent Design**.
+Because ASI is user-defined, it can be tailored to the domain: a dictionary of constraint violations for circle packing, a profiler trace for CUDA kernels, or a rendered image of a malformed SVG (via `gepa.Image`) so a vision-capable LLM (VLM) can literally *see* what it's improving. This marks a fundamental shift. Traditional evolutionary algorithms act like nature's "blind watchmaker," applying random mutations and keeping whatever scores higher. An LLM with ASI acts as a **designer**: it reads the feedback, diagnoses the problem, and proposes a targeted fix. We are moving from *evolution* to **Intelligent Design**.
 
 **Evolution (blind):** "Change a parameter and hope the score goes up."
 
@@ -104,7 +104,7 @@ def evaluate(candidate: str) -> tuple[float, dict]:
     }
 ```
 
-The side information can be anything: text, structured data, or even **images** (via `gepa.image.Image`) for vision-capable LLMs. The principle is simple: include anything that would help a human expert understand why the candidate succeeded or failed. The LLM will use it to make targeted improvements.
+The side information can be anything: text, structured data, or even **images** (via `gepa.Image`) for vision-capable LLMs. The principle is simple: include anything that would help a human expert understand why the candidate succeeded or failed. The LLM will use it to make targeted improvements.
 
 ### One Interface, Three Optimization Modes
 
@@ -161,7 +161,7 @@ Here is a complete, working example that optimizes SVG code to depict "a pelican
 import base64, re
 from functools import partial
 import cairosvg, litellm
-from gepa.image import Image
+from gepa import Image
 from gepa.optimize_anything import (
     optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig,
 )
