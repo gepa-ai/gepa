@@ -1,0 +1,65 @@
+<span id="appendix-f-arc-agi-agent-architecture-discovery"></span>
+??? example "ARC-AGI Agent Architecture Discovery"
+
+    Generalization mode where the **entire agent code** is the artifact being optimized. The seed is a 10-line naive agent; GEPA evolves it into a multi-stage system with rule induction, code verification, iterative refinement, and structured fallbacks.
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+    from examples.arc_agi.utils import load_arc_dataset
+
+    SEED_AGENT = '''
+    import json, re
+    def solve(train_inputs, train_outputs, test_inputs, llm):
+        examples = "\\n".join(f"Input: {i}\\nOutput: {o}"
+                              for i, o in zip(train_inputs, train_outputs))
+        response = llm(f"Solve an ARC AGI puzzle. Training:\\n{examples}\\n"
+                       f"Predict outputs as JSON [[...]]:")
+        grids = [json.loads(g) for g in re.findall(r"\\[\\[.*?\\]\\]",
+                 response.replace("\\n", ""))]
+        return {"train": grids[:len(train_inputs)],
+                "test": [[g] for g in grids[len(train_inputs):]]}
+    '''
+
+    def evaluate(candidate, **kwargs):
+        ex = kwargs["example"]
+        result = run_agent(
+            agent_code=candidate["agent_code"],
+            train_in=ex.train_in, train_out=ex.train_out,
+            test_in=ex.test_in, test_out=ex.test_out,
+            model_id="openrouter/google/gemini-3-flash-preview",
+            max_llm_calls=10,
+        )
+        score = result["test_score"]
+
+        return score, {
+            "problem_id": ex.problem_id,
+            "training_score": result["training_score"],
+            "test_score": result["test_score"],
+            "error": result["error"],
+            "train_examples": result["train_examples"],
+            "test_examples": result["test_examples"],
+        }
+
+    train_set, val_set, test_set = load_arc_dataset()
+
+    result = optimize_anything(
+        seed_candidate={"agent_code": SEED_AGENT},
+        evaluator=evaluate,
+        dataset=train_set,
+        valset=val_set,
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=4000, parallel=True,
+                                max_workers=64, cache_evaluation=True),
+            reflection=ReflectionConfig(
+                reflection_lm="openrouter/google/gemini-3-flash-preview",
+            ),
+        ),
+        objective="Evolve agent code to solve ARC-AGI puzzles. The agent receives "
+                 "training input/output pairs and must predict test outputs.",
+        background="ARC puzzles require discovering a transformation rule from "
+                   "examples and applying it to unseen inputs. The agent has access "
+                   "to an LLM via the llm() callable.",
+    )
+    ```
+
+    The optimized agent grew from 10 lines to 300+ lines, developing its own helper library for grid analysis, a multi-stage rule induction pipeline, iterative code refinement with verification, and a structured fallback to direct LLM prediction — all discovered automatically by `optimize_anything`.
