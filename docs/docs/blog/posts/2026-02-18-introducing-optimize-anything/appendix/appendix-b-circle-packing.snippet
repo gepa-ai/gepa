@@ -93,7 +93,7 @@
 
         side_info = {
             "scores": {"sum_radii": score},
-            "metrics": metrics,
+            "metrics": metrics,  # mean, min, max, EMA1, EMA2 of the circles proposed
             "code": code,
             "circles": circles,
             "stdout": result.get("stdout", ""),
@@ -105,7 +105,12 @@
         return score, side_info
     ```
 
-    **Optimizer** — This is a Single-Task Search with no `dataset`, just an `objective`. `frontier_type="objective"` tracks the Pareto frontier per objective metric (e.g., `sum_radii`) rather than per dataset example — the right choice when there is no dataset and the evaluator returns named objective scores. `RefinerConfig()` adds an inner-loop refinement step: after each evaluation, a Refiner LLM reads the feedback and proposes an improved candidate; GEPA keeps whichever is better, and the refiner's own prompt is co-evolved alongside the candidate so refinement quality improves over time. `cache_evaluation=True` avoids re-evaluating identical code.
+    **Optimizer** — This is a Single-Task Search with no `dataset`, just an `objective`. 
+    `frontier_type="objective"` tracks the Pareto frontier per objective metric (e.g., `sum_radii`) rather than per dataset example. 
+    `RefinerConfig()` injects a `refiner_prompt` into a candidate dictionary to add an inner-loop refinement step after each evaluation.
+    A Refiner LLM reads the feedback and proposes an improved candidate.
+    GEPA keeps whichever is better, and the refiner's own prompt is co-evolved alongside the candidate so refinement quality improves over time.
+    Combined with `frontier_type="objective"`, the `RefinerConfig()` doubles the pareto metrics: the original candidates' metrics + the refiner's metrics.
 
     ```python
     from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
