@@ -394,14 +394,22 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
 
 ### 3. CUDA Kernel Generation (KernelBench)
 
-**Mode: Multi-Task Search.** Optimize a prompt that instructs an LLM to generate fast CUDA kernels for multiple algorithms from [KernelBench](https://github.com/ScalingIntelligence/KernelBench). Insights from optimizing one kernel transfer to others via shared prompt improvements.
+**Mode: Multi-Task Search.** Generate fast CUDA kernels for multiple algorithms from [KernelBench](https://github.com/ScalingIntelligence/KernelBench) on V100 32GB. Under the hood, GEPA evolves the prompt that drives kernel generation, so improvements discovered for one problem transfer to others automatically.
 
 <figure markdown="span">
-  ![Line chart showing KernelBench performance vs budget. Fast_p(0) — any correct kernel — reaches 100%. Fast_p(1.0) — matching baseline speed — reaches 87%. Fast_p(1.1) — 10% faster — reaches 48%. Fast_p(1.2) — 20% faster — reaches 25%.](kernelbench_results.png)
-  <figcaption>KernelBench results with GEPA (gpt-5 as proposer). 87% of generated kernels match or beat baseline performance; 25% are 20%+ faster.</figcaption>
+  ![Line chart showing KernelBench performance vs budget. Fast_p(0) (any correct kernel) reaches 100%. Fast_p(1.0) (matching baseline speed) reaches 87%. Fast_p(1.1) (10% faster) reaches 48%. Fast_p(1.2) (20% faster) reaches 25%.](kernelbench_results.png)
+  <figcaption>KernelBench results with GEPA (gpt-5 as proposer). 87% of generated kernels match or beat baseline performance; 25% are 20%+ faster. We use 31 of the 35 hand-curated problems from the KernelBench authors.<a href="#fn-kernelbench" class="fn-ref" id="fn-ref-kernelbench"><sup>1</sup></a></figcaption>
 </figure>
 
-**Key result:** 87% of GEPA-generated kernels match or beat the baseline, with 25% achieving 20%+ speedups. [Full code →](#appendix-c-cuda-kernel-generation)
+To gauge the effectiveness of cross-task learning, we take the 10 problems where multi-task mode performed best and re-optimize each from scratch in single-task mode, asking: can a dedicated single-problem run beat the multi-task result?
+
+<figure markdown="span">
+  ![Line charts comparing Single vs Batch mode on 10 KernelBench problems across F(1.0), F(1.1), and F(1.2) metrics. Batch mode (solid lines) consistently outperforms Single mode (dashed lines), reaching higher fractions of solved problems with fewer metric calls.](kernelbench_single_vs_batch.png)
+  <figcaption>Single-task vs multi-task (batch) mode on 10 KernelBench problems. Batch mode converges faster and solves more problems across all speedup thresholds.</figcaption>
+</figure>
+
+**Key result:** 87% of GEPA-generated kernels match or beat the baseline, with 25% achieving 20%+ speedups. Multi-task mode can outperform dedicated single-task search modes, suggesting the efficiency of cross-task learning. [Full code →](#appendix-c-cuda-kernel-generation)
+
 
 ### 4. AI-Driven Systems Research: CloudCast & Can't Be Late
 
