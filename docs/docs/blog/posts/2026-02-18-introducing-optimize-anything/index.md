@@ -399,7 +399,7 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
 **Mode: Multi-Task Search.** Optimize a prompt that instructs an LLM to generate fast CUDA kernels for multiple algorithms from [KernelBench](https://github.com/ScalingIntelligence/KernelBench) on V1000 32GB. Insights from optimizing one kernel transfer to others via shared prompt improvements.
 
 <figure markdown="span">
-  ![Line chart showing KernelBench performance vs budget. Fast_p(0) — any correct kernel — reaches 100%. Fast_p(1.0) — matching baseline speed — reaches 87%. Fast_p(1.1) — 10% faster — reaches 48%. Fast_p(1.2) — 20% faster — reaches 25%.](kernelbench_results.png)
+  ![Line chart showing KernelBench performance vs budget. Fast_p(0) (any correct kernel) reaches 100%. Fast_p(1.0) (matching baseline speed) reaches 87%. Fast_p(1.1) (10% faster) reaches 48%. Fast_p(1.2) (20% faster) reaches 25%.](kernelbench_results.png)
   <figcaption>KernelBench results with GEPA (gpt-5 as proposer). 87% of generated kernels match or beat baseline performance; 25% are 20%+ faster. We use 31 of the 35 hand-curated problems from the KernelBench authors (4 excluded due to OOM).</figcaption>
 </figure>
 
@@ -437,7 +437,7 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
   <figcaption>AIME 2025 prompt optimization: gpt-4.1-mini accuracy improves from 46.67% to 60.00% through prompt refinement alone.</figcaption>
 </figure>
 
-**Key result:** Pure prompt optimization improves gpt-4.1-mini from 46.67% to **60.00%** on AIME 2025 — a 13.3 percentage point gain from changing only the system prompt. [Full code →](#appendix-e-aime-prompt-optimization)
+**Key result:** Pure prompt optimization improves gpt-4.1-mini from 46.67% to **60.00%** on AIME 2025, a 13.3 percentage point gain from changing only the system prompt. [Full code →](#appendix-e-aime-prompt-optimization)
 
 ### 6. Agent Architecture Discovery: ARC-AGI
 
@@ -452,18 +452,18 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
 
 ### 7. Coding Agent Skills: Learning Skills for Any Repository
 
-**Mode: Generalization.** Skills — natural-language instructions and best practices for working with a specific codebase — are text artifacts too. `optimize_anything` can optimize them: the evaluator runs a coding agent on real tasks from the repository and scores whether it resolves them; the optimized skills must generalize to unseen tasks.
+**Mode: Generalization.** Skills (natural-language instructions and best practices for working with a specific codebase) are text artifacts too. `optimize_anything` can optimize them: the evaluator runs a coding agent on real tasks from the repository and scores whether it resolves them; the optimized skills must generalize to unseen tasks.
 
-The results are striking: GEPA-optimized skills boost resolve rates from 24% to **93%** on one repository and from 55% to **82%** on another — and transfer directly to Claude Code, pushing it to near-perfect pass rates while also reducing task duration.
+The results are striking: GEPA-optimized skills boost resolve rates from 24% to **93%** on one repository and from 55% to **82%** on another, and transfer directly to Claude Code, pushing it to near-perfect pass rates while also reducing task duration.
 
 **Key result:** `optimize_anything` learns repository-specific skills that dramatically improve coding agent performance and transfer across models. [Read the full post →](../learning-skills-for-any-repository/)
 
 
 ## Conclusion & Getting Started
 
-`optimize_anything` makes a simple bet: if your artifact is text and your evaluator is programmatic, you can optimize it. The API is minimal — a seed, an evaluator, and optionally a dataset. The results span blackbox optimization, algorithmic discovery, kernel generation, systems research, prompt tuning, agent architecture search, and coding agent skill learning.
+`optimize_anything` makes a simple bet: if your artifact is text and your evaluator is programmatic, you can optimize it. The API is minimal: a seed, an evaluator, and optionally a dataset. The results span blackbox optimization, algorithmic discovery, kernel generation, systems research, prompt tuning, agent architecture search, and coding agent skill learning.
 
-The key ideas: (1) **three unified modes** — single-task search, multi-task search, and generalization — under one declarative API; (2) **Actionable Side Information (ASI)** as a first-class API concept that turns the optimizer from a blind mutator into an intelligent designer; (3) **Pareto-efficient search** across metrics and examples that outperforms naive all-at-once optimization.
+The key ideas: (1) **three unified modes** (single-task search, multi-task search, and generalization) under one declarative API; (2) **Actionable Side Information (ASI)** as a first-class API concept that turns the optimizer from a blind mutator into an intelligent designer; (3) **Pareto-efficient search** across metrics and examples that outperforms naive all-at-once optimization.
 
 Get started:
 
