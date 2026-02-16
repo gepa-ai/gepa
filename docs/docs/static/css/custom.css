@@ -630,8 +630,18 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     padding: 0 1.1rem 0.85rem;
 }
 
+.md-typeset .appendix-tiles details[class] p {
+    margin-top: 0.4em !important;
+    margin-bottom: 0.4em !important;
+}
+
 .md-typeset .appendix-tiles details pre {
     overflow-x: auto;
+}
+
+.md-typeset .scrollable-code .highlight {
+    max-height: 400px;
+    overflow-y: auto;
 }
 
 /* --- Dark mode --- */
