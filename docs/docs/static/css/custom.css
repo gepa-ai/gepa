@@ -105,6 +105,49 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     color: #fff;
 }
 
+/* Highlighted nav link (button-like) */
+.landing-nav__link--highlight {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 8px;
+    color: #fff !important;
+    position: relative;
+    padding: 0.25rem 0.65rem !important;
+    transition: all 0.25s ease;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.08);
+}
+
+.landing-nav__link--highlight:hover {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.14));
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 0 14px rgba(255, 255, 255, 0.15);
+    transform: translateY(-1px);
+}
+
+/* "New" badge */
+.landing-nav__badge {
+    font-size: 0.5rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    color: #fff;
+    padding: 1px 5px;
+    border-radius: 4px;
+    margin-left: 5px;
+    position: relative;
+    top: -1px;
+    line-height: 1.4;
+    display: inline-block;
+    animation: badge-pulse 2s ease-in-out infinite;
+    box-shadow: 0 1px 4px rgba(245, 158, 11, 0.4);
+}
+
+@keyframes badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
 /* Push repo source to far right */
 .md-header__source {
     margin-left: auto;
