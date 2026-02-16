@@ -159,9 +159,12 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 }
 
 /* Hide nav links on small screens — sidebar/drawer handles navigation.
-   Keep them visible on the landing page (only 3 links, fits fine). */
+   Keep them visible on the landing page (core links fit fine). */
 @media screen and (max-width: 40em) {
     .md-header:not(.md-header--landing) .landing-nav {
+        display: none;
+    }
+    .md-header--landing .landing-nav__link--hide-mobile {
         display: none;
     }
 }
@@ -642,6 +645,145 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 .md-typeset .scrollable-code .highlight {
     max-height: 400px;
     overflow-y: auto;
+}
+
+/* ============================================
+   About Page – People Grid
+   ============================================ */
+
+.people-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 1.25rem;
+    margin: 1.5rem 0 2.5rem;
+}
+
+.people-grid--advisors {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+.person-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    text-decoration: none !important;
+    padding: 1rem 0.5rem;
+    border-radius: 0.75rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    cursor: pointer;
+}
+
+.person-card:hover {
+    transform: translateY(-4px);
+    background: var(--md-accent-fg-color--transparent);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+}
+
+/* Avatar: circular image (override Material's img { height: auto }) */
+img.person-avatar,
+div.person-avatar {
+    width: 88px;
+    height: 88px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: 0.6rem;
+    border: 3px solid var(--md-default-fg-color--lightest);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    background: var(--md-default-fg-color--lightest);
+    flex-shrink: 0;
+}
+
+.person-card:hover .person-avatar {
+    border-color: var(--md-primary-fg-color);
+    box-shadow: 0 0 0 3px var(--md-accent-fg-color--transparent);
+}
+
+/* Avatar: initials fallback */
+.person-avatar--initials {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--md-primary-fg-color), var(--md-primary-fg-color--light));
+    border-color: transparent;
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.3rem;
+    letter-spacing: 0.03em;
+}
+
+.person-avatar--initials::before {
+    content: attr(data-initials);
+}
+
+.person-card:hover .person-avatar--initials {
+    border-color: transparent;
+    box-shadow: 0 0 0 3px var(--md-accent-fg-color--transparent);
+}
+
+/* Name and role text */
+.person-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--md-default-fg-color);
+    line-height: 1.3;
+}
+
+.person-role {
+    font-size: 0.7rem;
+    color: var(--md-default-fg-color--light);
+    margin-top: 0.15rem;
+    line-height: 1.3;
+}
+
+/* Note below contributors grid */
+.people-grid-note {
+    font-size: 0.78rem;
+    color: var(--md-default-fg-color--light);
+    text-align: center;
+    margin-top: -1.5rem;
+    margin-bottom: 2rem;
+}
+
+.people-grid-note a {
+    color: var(--md-primary-fg-color);
+    text-decoration: none;
+}
+
+.people-grid-note a:hover {
+    text-decoration: underline;
+}
+
+/* Responsive: smaller avatars on mobile */
+@media screen and (max-width: 40em) {
+    .people-grid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 0.75rem;
+    }
+    .people-grid--advisors {
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    }
+    img.person-avatar,
+    div.person-avatar {
+        width: 68px;
+        height: 68px;
+    }
+    .person-card {
+        padding: 0.75rem 0.25rem;
+    }
+    .person-avatar--initials {
+        font-size: 1.1rem;
+    }
+}
+
+/* Dark mode adjustments */
+[data-md-color-scheme="slate"] .person-card:hover {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+[data-md-color-scheme="slate"] .person-avatar {
+    border-color: var(--md-default-fg-color--lighter);
 }
 
 /* --- Dark mode --- */

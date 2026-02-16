@@ -13,6 +13,7 @@ watch:
 
 nav:
     - Showcase: guides/use-cases.md
+    - About: about.md
     - Blog:
         - blog/index.md
     - Guides:
