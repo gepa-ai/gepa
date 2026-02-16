@@ -559,8 +559,12 @@ body {
   font-size: 0.95rem;
   color: var(--md-default-fg-color--light);
   margin: 0.75rem auto 0;
-  max-width: 700px;
   line-height: 1.6;
+}
+
+.how-it-works-insight .insight-links {
+  display: block;
+  margin-top: 0.5rem;
 }
 
 .how-it-works-insight a {
