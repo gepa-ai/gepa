@@ -155,7 +155,7 @@ GEPA is developed at the [UC Berkeley Sky Computing Lab](https://sky.cs.berkeley
     <div class="person-role">Assistant Professor, MIT EECS</div>
   </a>
   <a href="https://people.eecs.berkeley.edu/~istoica/" class="person-card" target="_blank">
-    <img class="person-avatar" src="https://github.com/istoica.png" alt="Ion Stoica" loading="lazy">
+    <img class="person-avatar" src="https://people.eecs.berkeley.edu/~istoica/ion_picture_small.jpg" alt="Ion Stoica" loading="lazy">
     <div class="person-name">Ion Stoica</div>
     <div class="person-role">Professor, UC Berkeley EECS</div>
   </a>
@@ -173,6 +173,11 @@ GEPA is developed at the [UC Berkeley Sky Computing Lab](https://sky.cs.berkeley
     <img class="person-avatar" src="https://github.com/jegonzal.png" alt="Joseph E. Gonzalez" loading="lazy">
     <div class="person-name">Joseph E. Gonzalez</div>
     <div class="person-role">Associate Professor, UC Berkeley EECS</div>
+  </a>
+  <a href="https://andykonwinski.com" class="person-card" target="_blank">
+    <img class="person-avatar" src="https://github.com/andyk.png" alt="Andy Konwinski" loading="lazy">
+    <div class="person-name">Andy Konwinski</div>
+    <div class="person-role">Co-Founder, Laude Institute</div>
   </a>
   <a href="https://web.stanford.edu/~cgpotts/" class="person-card" target="_blank">
     <img class="person-avatar" src="https://github.com/cgpotts.png" alt="Christopher Potts" loading="lazy">
