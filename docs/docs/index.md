@@ -33,7 +33,7 @@ hide:
     </a>
   </div>
   <div class="hero-badges">
-    <a href="https://pypistats.org/packages/gepa" target="_blank"><img src="https://img.shields.io/pypi/dm/gepa?style=for-the-badge&logo=python&logoColor=white&label=Downloads/month&labelColor=2563EB&color=38BDF8" alt="Downloads" style="height: 28px;" loading="lazy"></a>
+    <a href="https://pypistats.org/packages/gepa" target="_blank"><img src="https://img.shields.io/pypi/dm/gepa?style=for-the-badge&logo=python&logoColor=white&label=Downloads/month&labelColor=212C4D&color=90E0EF" alt="Downloads" style="height: 28px;" loading="lazy"></a>
   </div>
 </div>
 
