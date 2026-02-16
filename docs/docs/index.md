@@ -400,7 +400,7 @@ pip install gepa
   </a>
   <a href="blog/introducing-optimize-anything/#6-agent-architecture-discovery-arc-agi" class="stat-card">
     <span class="stat-number">32→89</span>
-    <span class="stat-label">Improvement on ARC-AGI</span>
+    <span class="stat-label">Gains on ARC-AGI</span>
     <span class="stat-desc">Agent architecture evolved from 10 lines to 300+</span>
   </a>
   <a href="blog/introducing-optimize-anything/#4-ai-driven-systems-research-cloudcast-cant-be-late" class="stat-card">
