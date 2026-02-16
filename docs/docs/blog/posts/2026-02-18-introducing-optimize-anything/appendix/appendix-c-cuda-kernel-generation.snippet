@@ -28,10 +28,14 @@
             "baseline_ms": baseline,
             "code": code,
             "cuda_docs": cuda_docs,
+            "cuda_docs_post": post_docs,
             "runtime_ms": runtime,
             "speedup": baseline / runtime if runtime else None,
-            "is_correct": eval_result.get("CorrectnessSucceeded", False),
-            "error_feedback": format_error(eval_result) if eval_result.get("ErrorType") else None,
+            "compiled_successfully": eval_result.get("CompilationSucceeded", False),
+            "ran_without_error": eval_result.get("NoRuntimeErrorDuringCorrectnessCheck", False),
+            "output_values_correct": eval_result.get("CorrectnessSucceeded", False),
+            "error_type": eval_result.get("ErrorType"),
+            "error_detail": eval_result.get("ErrorDetail"),
         }
     ```
 
