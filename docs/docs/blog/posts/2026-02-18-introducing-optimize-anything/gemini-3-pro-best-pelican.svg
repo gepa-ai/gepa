@@ -1,0 +1,207 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1280">
+  <!-- Sky Background -->
+  <rect width="1280" height="1280" fill="#e0f7fa" />
+  
+  <!-- Ground -->
+  <rect y="1000" width="1280" height="280" fill="#aed581" />
+
+  <!-- Complex Shadow for grounding -->
+  <g opacity="0.15" fill="#000">
+     <!-- General grounding oval -->
+     <ellipse cx="640" cy="1080" rx="420" ry="35" />
+     <!-- Cast shadow for bike frame (skewed) -->
+     <path d="M300 1080 L840 1080 L900 1100 L300 1100 Z" opacity="0.5"/>
+  </g>
+
+  <!-- Bicycle Group -->
+  <g transform="translate(100, 0)">
+    <!-- Speed Lines (Motion) -->
+    <g stroke="#b0bec5" stroke-width="6" stroke-linecap="round" opacity="0.6">
+      <line x1="80" y1="920" x2="20" y2="920" />
+      <line x1="100" y1="950" x2="40" y2="950" />
+      <line x1="80" y1="980" x2="30" y2="980" />
+    </g>
+
+    <!-- Wheels Group -->
+    <g stroke="#cfd8dc" stroke-width="4">
+      <!-- Back Wheel Spokes (Doubled density for robustness) -->
+      <g transform="translate(300, 950)">
+         <g id="spokes-rear">
+           <line y1="-130" y2="130" transform="rotate(0)" />
+           <line y1="-130" y2="130" transform="rotate(15)" />
+           <line y1="-130" y2="130" transform="rotate(30)" />
+           <line y1="-130" y2="130" transform="rotate(45)" />
+           <line y1="-130" y2="130" transform="rotate(60)" />
+           <line y1="-130" y2="130" transform="rotate(75)" />
+           <line y1="-130" y2="130" transform="rotate(90)" />
+           <line y1="-130" y2="130" transform="rotate(105)" />
+           <line y1="-130" y2="130" transform="rotate(120)" />
+           <line y1="-130" y2="130" transform="rotate(135)" />
+           <line y1="-130" y2="130" transform="rotate(150)" />
+           <line y1="-130" y2="130" transform="rotate(165)" />
+         </g>
+      </g>
+      <!-- Front Wheel Spokes (Doubled density) -->
+      <g transform="translate(900, 950)">
+          <use href="#spokes-rear" />
+      </g>
+    </g>
+
+    <!-- Tires & Rims -->
+    <circle cx="300" cy="950" r="130" fill="none" stroke="#333" stroke-width="20" />
+    <circle cx="300" cy="950" r="118" fill="none" stroke="#eceff1" stroke-width="6" />
+    <circle cx="900" cy="950" r="130" fill="none" stroke="#333" stroke-width="20" />
+    <circle cx="900" cy="950" r="118" fill="none" stroke="#eceff1" stroke-width="6" />
+
+    <!-- Chain Stays (Lower frame part, behind chain) -->
+    <path d="M300 950 L550 950" fill="none" stroke="#d32f2f" stroke-width="16" />
+
+    <!-- Chain (Lower run) -->
+    <path d="M550 975 L300 975" fill="none" stroke="#455a64" stroke-width="6" />
+    <!-- Rear Hub -->
+    <circle cx="300" cy="950" r="18" fill="#546e7a" />
+
+    <!-- Left Leg (Background Leg) -->
+    <g transform="translate(-20, -10)">
+      <!-- Far Side Pedal arm -->
+      <path d="M550 950 L520 880" fill="none" stroke="#546e7a" stroke-width="14" stroke-linecap="round" />
+      <!-- Far Pedal -->
+      <rect x="500" y="870" width="60" height="15" rx="3" fill="#263238" transform="rotate(-10 530 877)" />
+      
+      <!-- Left Leg (Thigh hidden, lower leg visible) -->
+      <path d="M540 820 L530 880 L510 870" fill="none" stroke="#fbc02d" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" opacity="0.9" /> <!-- Darker yellow for depth -->
+       <!-- Webbed Foot Left -->
+       <path d="M500 870 L480 880 L490 895 Z" fill="#f9a825" />
+    </g>
+
+    <!-- Bicycle Frame (Refined Geometry) -->
+    <!-- Seat Tube -->
+    <path d="M550 950 L450 700" fill="none" stroke="#d32f2f" stroke-width="20" stroke-linecap="butt" />
+    <!-- Seat Stays -->
+    <path d="M450 700 L300 950" fill="none" stroke="#d32f2f" stroke-width="20" stroke-linecap="round" />
+    <!-- Down tube -->
+    <path d="M550 950 L840 600" fill="none" stroke="#d32f2f" stroke-width="20" stroke-linecap="butt" /> 
+    <!-- Top tube -->
+    <path d="M450 700 L840 600" fill="none" stroke="#d32f2f" stroke-width="20" stroke-linejoin="round" /> 
+    
+    <!-- Seat Post and Saddle (Explicitly drawn now) -->
+    <path d="M450 700 L450 640" fill="none" stroke="#546e7a" stroke-width="16" /> <!-- Seat post -->
+    <!-- Saddle Base -->
+    <path d="M400 640 L480 640 Q500 640 500 625 L400 625 Q380 625 400 640 Z" fill="#3e2723" />
+    
+    <!-- Headset & Front Fork -->
+    <path d="M830 580 L860 620" fill="none" stroke="#b71c1c" stroke-width="24" stroke-linecap="butt" /> <!-- Head tube -->
+    <!-- Fork -->
+    <path d="M845 600 L900 950" fill="none" stroke="#546e7a" stroke-width="16" stroke-linecap="round" /> 
+    
+    <!-- Chain (Upper run) -->
+    <path d="M550 925 L300 925" fill="none" stroke="#455a64" stroke-width="6" />
+    
+    <!-- Crankset -->
+    <circle cx="550" cy="950" r="42" fill="#cfd8dc" stroke="#455a64" stroke-width="2" />
+    <circle cx="550" cy="950" r="12" fill="#b0bec5" />
+
+    <!-- Handlebar Stem & Bar -->
+    <!-- Vertical stem part -->
+    <path d="M845 600 L845 560" fill="none" stroke="#37474f" stroke-width="16" /> 
+    <!-- Stem connection block -->
+    <rect x="835" y="555" width="20" height="20" fill="#263238" rx="2" />
+    <!-- Horizontal bar -->
+    <path d="M845 565 L760 565" fill="none" stroke="#37474f" stroke-width="16" stroke-linecap="round" /> 
+    
+    <!-- Handlebar Grip -->
+    <rect x="730" y="555" width="40" height="20" rx="5" fill="#263238" /> 
+    
+    <!-- Near Side Pedal Arm (Right) -->
+    <line x1="550" y1="950" x2="600" y2="1040" stroke="#78909c" stroke-width="14" stroke-linecap="round" />
+    <!-- Pedal Platform -->
+    <rect x="580" y="1030" width="60" height="15" rx="3" fill="#263238" transform="rotate(10 610 1037)" />
+  </g>
+
+  <!-- Pelican Group -->
+  <g transform="translate(100, 0)">
+    
+    <!-- Tail (Rounded and softened) -->
+    <path d="M350 630 L290 650 C280 660 280 690 290 700 L340 710 L380 660" fill="#f5f5f5" stroke="#bdbdbd" stroke-width="1" />
+
+    <!-- Main Body - Adjusted for sitting posture -->
+    <path d="M480 500 C620 500 680 650 620 780 C570 900 380 850 360 700 C350 580 400 500 480 500" fill="#ffffff" stroke="#e0e0e0" stroke-width="2" />
+    
+    <!-- Thigh indication (Hip Joint Crease) -->
+    <path d="M560 800 Q580 820 600 790" fill="none" stroke="#e0e0e0" stroke-width="3" opacity="0.4" stroke-linecap="round"/>
+
+    <!-- Neck -->
+    <path d="M510 540 Q580 540 620 480 Q660 420 700 420 L760 420 Q700 500 660 600" fill="#ffffff" stroke="#e0e0e0" stroke-width="2" />
+    <!-- Neck blending patch -->
+    <path d="M512 540 Q580 540 620 480 Q660 420 700 420 L760 420 Q700 500 660 600 Z" fill="#ffffff" stroke="none" />
+    
+    <!-- Head Circle Base -->
+    <circle cx="730" cy="380" r="60" fill="#ffffff" />
+
+    <!-- Eye -->
+    <g transform="translate(735, 370)">
+        <circle cx="0" cy="0" r="10" fill="#fff" stroke="#e0e0e0" stroke-width="1"/>
+        <circle cx="0" cy="0" r="7" fill="#212121" />
+        <circle cx="2" cy="-2" r="2.5" fill="#ffffff" />
+    </g>
+
+    <!-- Bill Structure -->
+    <!-- Pouch -->
+    <path d="M780 405 C780 405 820 620 920 580 C1000 540 1010 400 1010 400 L780 405" fill="#ffeb3b" stroke="#fbc02d" stroke-width="3" />
+    <!-- Pouch Detail - Fold -->
+    <path d="M820 420 Q870 520 920 470" fill="none" stroke="#fbc02d" stroke-width="2" opacity="0.5" />
+    
+    <!-- Upper Mandible -->
+    <path d="M760 360 Q850 355 1020 385 L1020 400 L770 405 L770 380 Z" fill="#fdd835" stroke="#f9a825" stroke-width="1" />
+    <!-- Top Ridge Highlight -->
+    <path d="M760 360 Q850 355 1020 385" fill="none" stroke="#fff176" stroke-width="2" />
+    <!-- Nostril -->
+    <ellipse cx="800" cy="375" rx="6" ry="2" fill="#f57f17" opacity="0.6"/>
+    
+    <!-- Separation Line -->
+    <path d="M770 405 L1020 400" fill="none" stroke="#f57f17" stroke-width="2" /> 
+    <!-- Hook tip -->
+    <path d="M1020 385 L1015 400 L1030 395 Z" fill="#424242" /> 
+
+    <!-- Smile line -->
+    <path d="M780 405 Q850 415 900 405" fill="none" stroke="#f57f17" stroke-width="2" opacity="0.4" />
+
+    <!-- Wing / Arm -->
+    <!-- Main Wing Shape -->
+    <path d="M560 620 C560 620 620 580 700 570 C720 568 740 575 730 590" fill="none" stroke="#ffffff" stroke-width="60" stroke-linecap="round" />
+    
+    <!-- Wing Texture -->
+    <path d="M560 650 Q580 660 600 640 Q620 650 640 630" fill="none" stroke="#e0e0e0" stroke-width="2" />
+    
+    <!-- Hand/Wing Tip Grasping Handlebar (Refined to show wrap) -->
+    <g transform="translate(730, 560)">
+        <!-- Thumb feather behind bar -->
+        <path d="M10 -5 Q15 5 10 15" fill="#ffffff" stroke="#e0e0e0" stroke-width="2" />
+        <!-- Hand base -->
+        <ellipse cx="10" cy="0" rx="20" ry="15" fill="#ffffff" />
+        <!-- Finger feathers wrapping over bar -->
+        <path d="M-5 -5 Q10 -20 35 0 C40 5 35 15 25 10" fill="#ffffff" stroke="#e0e0e0" stroke-width="2" />
+        <path d="M0 5 Q15 -5 30 10" fill="none" stroke="#e0e0e0" stroke-width="2" opacity="0.5" />
+    </g>
+
+    <!-- Right Leg (Pedaling Leg - Improved connection) -->
+    <g>
+       <!-- Upper leg blend -->
+       <path d="M560 800 Q570 850 580 905" fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="butt"/>
+       <!-- Lower Leg -->
+       <path d="M585 910 L600 1040" fill="none" stroke="#fdd835" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" />
+       <!-- Knee Joint Cover -->
+       <circle cx="585" cy="910" r="14" fill="#ffffff" />
+    </g>
+
+    <!-- Webbed Foot on Pedal -->
+    <g transform="translate(600, 1040) rotate(10)">
+        <path d="M0 0 L40 0 L55 20 L30 15 L15 30 L0 15 Z" fill="#fbc02d" stroke="#f9a825" stroke-width="2" />
+    </g>
+
+    <!-- Hat -->
+    <path d="M690 340 L770 340 L770 330 L690 330 Z" fill="#1565c0" /> <!-- Brim -->
+    <path d="M700 330 L705 270 L755 270 L760 330 Z" fill="#1565c0" /> <!-- Top -->
+    <rect x="705" y="320" width="55" height="12" fill="#0d47a1" /> <!-- Band -->
+  </g>
+</svg>
