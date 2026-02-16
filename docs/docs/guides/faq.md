@@ -92,6 +92,17 @@ config = GEPAConfig(
 
 Available stoppers: `MaxMetricCallsStopper`, `TimeoutStopCondition`, `NoImprovementStopper`, `ScoreThresholdStopper`, `SignalStopper`, `FileStopper`, `CompositeStopper`.
 
+### What does a single GEPA iteration cost?
+
+Each iteration involves:
+
+1. **Minibatch evaluation**: Run the candidate on a minibatch of training examples (typically 2–5, set through `reflection_minibatch_size`) using the `task_lm`.
+2. **Reflection**: 1 LLM call to the `reflection_lm` to analyze minibatch traces, diagnose failure modes and propose a new candidate.
+3. **Minibatch validation**: Run the new candidate on same minibatch of training examples using the `task_lm`.
+5. **Full validation** (if improved): If the new candidate improved on the minibatch, proceed to full validation.
+
+We typically recommend calling GEPA with at least 15-30x of len(valset) to allow it to propose and evaluate upto 15 new candidates.
+
 ### What's the recommended train/validation split?
 
 Use **80% train / 20% validation** when you have more than **200 total datapoints**. If you have fewer than 200 total datapoints, a **50/50 split** is usually better.
@@ -111,6 +122,16 @@ valset = examples[80:]    # 20% for validation
 Yes! GEPA can show improvements with as few as **3 examples**. We've demonstrated +9% improvement on held-out data with just 3 examples in one GEPA iteration.
 
 That said, more data generally leads to better optimization. Aim for **30-300 examples** for best results, using **80/20** when total examples exceed 200 and **50/50** when you have fewer than 200.
+
+### How does GEPA differ from gradient-based RL (e.g., GRPO)?
+
+GRPO and similar RL methods use random perturbations in LLM behavior over 25,000–100,000+ rollouts, collapsing all feedback — compiler errors, reasoning traces, constraint violations — into a single scalar reward. The optimizer never sees *why* a candidate failed, only *that* its score increased / decreased.
+
+GEPA uses LLM self-reflection on full execution traces to generate directional updates in text space. The reflection LM reads the actual diagnostic output (ASI) and proposes targeted fixes: "The agent called `search_api()` which doesn't exist — rewrite the prompt to restrict tools to the provided schema."
+
+Concrete comparison on HotPotQA: GEPA achieves **20% better performance** than GRPO in **35x fewer rollouts** (100–500 vs. 5,000+), **8x faster** wall-clock time (3 hours vs. 24 hours), at **15x lower cost** ($20 vs. $300).
+
+**When to use which:** Use GEPA when rollouts are expensive or slow, data is scarce, or you need API-only optimization. For scenarios with abundant supervised data and capacity for 100,000+ cheap rollouts, gradient-based RL may outperform. The two are complementary — run GEPA first for rapid gains, then apply RL/SFT on top following the [BetterTogether](https://arxiv.org/abs/2407.10930) / [mmGRPO](https://arxiv.org/abs/2508.04660) recipe.
 
 ---
 
