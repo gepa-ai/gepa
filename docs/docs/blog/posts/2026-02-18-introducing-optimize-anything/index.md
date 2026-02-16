@@ -43,7 +43,7 @@ While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonst
 
 The key insight behind `optimize_anything` is that a surprisingly wide range of problems can be formulated as optimizing a text artifact. Consider:
 
-- **Code**: CUDA kernels, scheduling algorithms, solver implementations: all are text that can be evaluated by execution.
+- **Code**: CUDA kernels, scheduling algorithms, solver implementations, all of which are text that can be evaluated by execution.
 - **Prompts**: System prompts, few-shot templates, chain-of-thought instructions, evaluated by running them against a dataset.
 - **Agent architectures**: The entire agent system, including its prompts, sub-agents, control flow, and orchestration logic.
 - **Configurations**: Hyperparameters, policies, and decision rules can be serialized as JSON strings and evaluated by simulation.
@@ -116,7 +116,7 @@ The side information can be anything: text, structured data, or even **images** 
   <figcaption>The three optimization modes: single-task search, multi-task search, and generalization.</figcaption>
 </figure>
 
-**1. Single-Task Search**: "Solve one hard problem." No dataset needed: the candidate *is* the solution, and the evaluator scores it directly (no `example` argument). Examples: finding an optimal circle packing arrangement, discovering a blackbox optimization algorithm. This is the mode that AlphaEvolve, ShinkaEvolve, and OpenEvolve operate in.
+**1. Single-Task Search**: "Solve one hard problem." No dataset needed; the candidate *is* the solution, and the evaluator scores it directly (no `example` argument). Examples: finding an optimal circle packing arrangement, discovering a blackbox optimization algorithm. This is the mode that AlphaEvolve, ShinkaEvolve, and OpenEvolve operate in.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=...)
@@ -466,7 +466,7 @@ The results are striking: GEPA-optimized skills boost resolve rates from 24% to 
 
 ## Conclusion & Getting Started
 
-`optimize_anything` makes a simple bet: if your artifact is text and your evaluator is programmatic, you can optimize it. The API is minimal: a seed, an evaluator, and optionally a dataset. The results span algorithmic discovery, kernel generation, systems research, prompt tuning, agent architecture search, blackbox optimization, and coding agent skill learning.
+`optimize_anything` makes a simple bet: if your artifact is text and its performance can be measured, you can optimize it. The API is minimal, requiring only a seed, an evaluator, and optionally a dataset. The results span algorithmic discovery, kernel generation, systems research, prompt tuning, agent architecture search, blackbox optimization, and coding agent skill learning.
 
 The key ideas: (1) **three unified modes** (single-task search, multi-task search, and generalization) under one declarative API; (2) **Actionable Side Information (ASI)** as a first-class API concept that turns the optimizer from a blind mutator into an intelligent designer; (3) **Pareto-efficient search** across metrics and examples that outperforms naive all-at-once optimization.
 
