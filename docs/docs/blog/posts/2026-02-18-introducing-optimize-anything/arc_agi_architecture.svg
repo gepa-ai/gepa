@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="80 5 640 575" width="640" height="575">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="80 5 640 585" width="640" height="585">
   <style>
     text { font-family: "Inter", "Helvetica Neue", Arial, sans-serif; }
   </style>
@@ -29,7 +29,7 @@
   <circle cx="252" cy="100" r="12" fill="#e8732a" fill-opacity="0.12"/>
   <text x="252" y="105" text-anchor="middle" font-size="11.5" fill="#e8732a" font-weight="700">1</text>
   <text x="272" y="104" font-size="14" fill="#e8732a" font-weight="700">Programmer</text>
-  <text x="240" y="131" font-size="12" fill="#6a6a8a">LLM generates <tspan fill="#3a3a5c" font-weight="600" font-family="'SF Mono','Fira Code','Courier New',monospace">transform(grid)</tspan> code</text>
+  <text x="240" y="131" font-size="12" fill="#6a6a8a">LLM writes Python <tspan fill="#3a3a5c" font-weight="600" font-family="'SF Mono','Fira Code','Courier New',monospace">transform(grid)</tspan> from training I/O</text>
 
   <!-- Arrow: Stage 1 → Stage 2 -->
   <line x1="400" y1="148" x2="400" y2="178" stroke="#8888aa" stroke-width="1.6" marker-end="url(#arrow)"/>
@@ -39,11 +39,11 @@
     <rect x="220" y="178" width="360" height="84" rx="8" fill="#fff" stroke="#d0d3e0" stroke-width="1.3"/>
     <rect x="220" y="178" width="5" height="84" rx="2.5" fill="#0d8a72"/>
   </g>
-  <circle cx="252" cy="204" r="12" fill="#0d8a72" fill-opacity="0.12"/>
-  <text x="252" y="209" text-anchor="middle" font-size="11.5" fill="#0d8a72" font-weight="700">2</text>
-  <text x="272" y="208" font-size="14" fill="#0d8a72" font-weight="700">Validator</text>
-  <text x="240" y="237" font-size="12" fill="#6a6a8a">Execute code on training pairs</text>
-  <text x="240" y="253" font-size="12" fill="#6a6a8a">On failure &#x2192; LLM fixes code</text>
+  <circle cx="252" cy="199" r="12" fill="#0d8a72" fill-opacity="0.12"/>
+  <text x="252" y="204" text-anchor="middle" font-size="11.5" fill="#0d8a72" font-weight="700">2</text>
+  <text x="272" y="203" font-size="14" fill="#0d8a72" font-weight="700">Validator</text>
+  <text x="240" y="228" font-size="12" fill="#6a6a8a">Run code against all training pairs</text>
+  <text x="240" y="244" font-size="12" fill="#6a6a8a">Wrong output &#x2192; LLM debugs &amp; rewrites</text>
 
   <!-- Feedback loop on right side -->
   <path d="M580,248 C628,248 628,202 580,202" fill="none" stroke="#0d8a72" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowGreen)"/>
@@ -60,46 +60,47 @@
 
   <!-- ============ STAGE 3: CODE EXECUTION (left) ============ -->
   <g filter="url(#cardShadow)">
-    <rect x="130" y="326" width="240" height="76" rx="8" fill="#fff" stroke="#d0d3e0" stroke-width="1.3"/>
-    <rect x="130" y="326" width="5" height="76" rx="2.5" fill="#6670a0"/>
+    <rect x="130" y="326" width="240" height="84" rx="8" fill="#fff" stroke="#d0d3e0" stroke-width="1.3"/>
+    <rect x="130" y="326" width="5" height="84" rx="2.5" fill="#6670a0"/>
   </g>
   <circle cx="162" cy="352" r="12" fill="#6670a0" fill-opacity="0.12"/>
   <text x="162" y="357" text-anchor="middle" font-size="11.5" fill="#6670a0" font-weight="700">3</text>
   <text x="182" y="356" font-size="14" fill="#6670a0" font-weight="700">Code Execution</text>
-  <text x="150" y="384" font-size="12" fill="#6a6a8a">Run validated code on test inputs</text>
+  <text x="150" y="384" font-size="12" fill="#6a6a8a">Execute validated code on test input</text>
 
   <!-- ============ STAGE 4: FALLBACK (right) ============ -->
   <g filter="url(#cardShadow)">
-    <rect x="430" y="326" width="240" height="76" rx="8" fill="#fff" stroke="#d0d3e0" stroke-width="1.3"/>
-    <rect x="430" y="326" width="5" height="76" rx="2.5" fill="#e8732a"/>
+    <rect x="430" y="326" width="240" height="84" rx="8" fill="#fff" stroke="#d0d3e0" stroke-width="1.3"/>
+    <rect x="430" y="326" width="5" height="84" rx="2.5" fill="#e8732a"/>
   </g>
   <circle cx="462" cy="352" r="12" fill="#e8732a" fill-opacity="0.12"/>
   <text x="462" y="357" text-anchor="middle" font-size="11.5" fill="#e8732a" font-weight="700">4</text>
   <text x="482" y="356" font-size="14" fill="#e8732a" font-weight="700">Fallback</text>
-  <text x="450" y="384" font-size="12" fill="#6a6a8a">Direct LLM grid prediction</text>
+  <text x="450" y="380" font-size="12" fill="#6a6a8a">LLM predicts output grid directly</text>
+  <text x="450" y="396" font-size="12" fill="#6a6a8a">from examples (no code)</text>
 
   <!-- ============ CONVERGE ============ -->
-  <line x1="250" y1="402" x2="250" y2="430" stroke="#8888aa" stroke-width="1.6"/>
-  <line x1="250" y1="430" x2="400" y2="430" stroke="#8888aa" stroke-width="1.6"/>
-  <line x1="550" y1="402" x2="550" y2="430" stroke="#8888aa" stroke-width="1.6"/>
-  <line x1="550" y1="430" x2="400" y2="430" stroke="#8888aa" stroke-width="1.6"/>
-  <circle cx="400" cy="430" r="4" fill="#d0d3e0"/>
-  <line x1="400" y1="430" x2="400" y2="456" stroke="#8888aa" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <text x="265" y="422" font-size="10" fill="#6670a0" font-weight="600">Attempt 1</text>
-  <text x="535" y="422" font-size="10" fill="#e8732a" font-weight="600" text-anchor="end">Attempt 2</text>
+  <line x1="250" y1="410" x2="250" y2="438" stroke="#8888aa" stroke-width="1.6"/>
+  <line x1="250" y1="438" x2="400" y2="438" stroke="#8888aa" stroke-width="1.6"/>
+  <line x1="550" y1="410" x2="550" y2="438" stroke="#8888aa" stroke-width="1.6"/>
+  <line x1="550" y1="438" x2="400" y2="438" stroke="#8888aa" stroke-width="1.6"/>
+  <circle cx="400" cy="438" r="4" fill="#d0d3e0"/>
+  <line x1="400" y1="438" x2="400" y2="464" stroke="#8888aa" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="265" y="430" font-size="10" fill="#6670a0" font-weight="600">Attempt 1</text>
+  <text x="535" y="430" font-size="10" fill="#e8732a" font-weight="600" text-anchor="end">Attempt 2</text>
 
   <!-- ============ ASSEMBLY ============ -->
   <g filter="url(#cardShadow)">
-    <rect x="220" y="460" width="360" height="60" rx="8" fill="#fff" stroke="#d0d3e0" stroke-width="1.3"/>
-    <rect x="220" y="460" width="5" height="60" rx="2.5" fill="#3a3a5c"/>
+    <rect x="220" y="468" width="360" height="60" rx="8" fill="#fff" stroke="#d0d3e0" stroke-width="1.3"/>
+    <rect x="220" y="468" width="5" height="60" rx="2.5" fill="#3a3a5c"/>
   </g>
-  <text x="400" y="485" text-anchor="middle" font-size="14" fill="#3a3a5c" font-weight="700">Assembly</text>
-  <text x="400" y="505" text-anchor="middle" font-size="12" fill="#6a6a8a">Combine code output (Attempt 1) + fallback (Attempt 2)</text>
+  <text x="400" y="493" text-anchor="middle" font-size="14" fill="#3a3a5c" font-weight="700">Assembly</text>
+  <text x="400" y="513" text-anchor="middle" font-size="12" fill="#6a6a8a">Attempt 1: code output  |  Attempt 2: LLM fallback</text>
 
   <!-- Arrow: Assembly → output -->
-  <line x1="400" y1="520" x2="400" y2="540" stroke="#8888aa" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="400" y1="528" x2="400" y2="548" stroke="#8888aa" stroke-width="1.6" marker-end="url(#arrow)"/>
 
   <!-- ============ OUTPUT ============ -->
-  <rect x="280" y="544" width="240" height="34" rx="17" fill="#3a3a5c" fill-opacity="0.07" stroke="#3a3a5c" stroke-opacity="0.25" stroke-width="1.3"/>
-  <text x="400" y="566" text-anchor="middle" font-size="13" fill="#3a3a5c" font-weight="600">Final Predictions (2 attempts)</text>
+  <rect x="280" y="552" width="240" height="34" rx="17" fill="#3a3a5c" fill-opacity="0.07" stroke="#3a3a5c" stroke-opacity="0.25" stroke-width="1.3"/>
+  <text x="400" y="574" text-anchor="middle" font-size="13" fill="#3a3a5c" font-weight="600">Final Predictions (2 attempts)</text>
 </svg>
