@@ -385,14 +385,14 @@ The punchline: `optimize_anything` beats AlphaEvolve at circle packing, evolves 
   <figcaption>KernelBench results with GEPA (gpt-5 as proposer). 87% of generated kernels match or beat baseline performance; 25% are 20%+ faster. We use 31 of the 35 hand-curated problems from the KernelBench authors.<a href="#fn-kernelbench" class="fn-ref" id="fn-ref-kernelbench"><sup>1</sup></a></figcaption>
 </figure>
 
-To gauge the effectiveness of cross-task learning, we take the 10 problems where multi-task mode performed best and re-optimize each from scratch in single-task mode, asking: can a dedicated single-problem run beat the multi-task result?
+To gauge the effectiveness of cross-task learning, we take the 10 problems where multi-task mode performed best and re-optimize each from scratch in single-task mode to see whether a dedicated single-task run can beat the multi-task result. The graph below shows that a multi-task mode converges faster and solves more problems across all speedup thresholds.
 
 <figure markdown="span">
   ![Line charts comparing Single vs Batch mode on 10 KernelBench problems across F(1.0), F(1.1), and F(1.2) metrics. Batch mode (solid lines) consistently outperforms Single mode (dashed lines), reaching higher fractions of solved problems with fewer metric calls.](kernelbench_single_vs_batch.png)
-  <figcaption>Single-task vs multi-task (batch) mode on 10 KernelBench problems. Batch mode converges faster and solves more problems across all speedup thresholds.</figcaption>
+  <figcaption>Single-task vs multi-task mode on 10 KernelBench problems. </figcaption>
 </figure>
 
-**Key result:** 87% of GEPA-generated kernels match or beat the baseline, with 25% achieving 20%+ speedups. Multi-task mode can outperform dedicated single-task search modes, suggesting the efficiency of cross-task learning. [Full code →](#appendix-c-cuda-kernel-generation)
+**Key result:** 87% of GEPA-generated kernels match or beat the baseline, with 25% achieving 20%+ speedups. Multi-task mode outperforms dedicated single-task search modes, suggesting the efficiency of cross-task learning. [Full code →](#appendix-c-cuda-kernel-generation)
 
 
 ### 3. AI-Driven Systems Research: CloudCast & Can't Be Late
@@ -435,10 +435,15 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 
 <figure markdown="span">
   ![Optimization trajectory for ARC-AGI with Gemini 3 Flash. Validation accuracy improves from 56.5% to 93.5%. Base test score is 32.5%, best test score reaches 89.5%.](arc_agi_trajectory.png)
-  <figcaption>ARC-AGI agent evolution: from a naive 10-line agent (32.5% test) to a sophisticated 300+ line system (89.5% test) with Gemini 3 Flash.</figcaption>
+  <figcaption>ARC-AGI agent evolution: from a naive agent (32.5% test) to a sophisticated 300+ line system (89.5% test) with Gemini 3 Flash.</figcaption>
 </figure>
 
-**Key result:** Using the same underlying model (Gemini 3 Flash), `optimize_anything` improves ARC-AGI test accuracy from 32.5% to **89.5%** by evolving the entire agent architecture, gains that typically require weeks of manual iteration. [Full code →](#appendix-f-arc-agi-agent-architecture-discovery)
+<figure markdown="span">
+  ![The evolved ARC-AGI agent architecture: a multi-stage pipeline with code generation, iterative validation, and dual-path prediction.](arc_agi_architecture.svg)
+  <figcaption>The optimized ARC-AGI agent architecture with a multi-stage pipeline with code generation, iterative validation, and dual-path prediction</figcaption>
+</figure>
+
+**Key result:** Using the same underlying model (Gemini 3 Flash), `optimize_anything` improves ARC-AGI test accuracy from 32.5% to **89.5%** by evolving the entire agent architecture, achieving gains that typically require significant manual iteration. [Full code →](#appendix-f-arc-agi-agent-architecture-discovery)
 ### 6. Blackbox Mathematical Optimization: Matching Optuna
 
 **Mode: Single-Task Search.** Given a blackbox objective function, `optimize_anything` discovers an optimization algorithm tailored to it and matches [Optuna](https://optuna.org/), the industry-standard blackbox optimizer, across the 56-problem [EvalSet](https://github.com/sigopt/evalset) benchmark.
