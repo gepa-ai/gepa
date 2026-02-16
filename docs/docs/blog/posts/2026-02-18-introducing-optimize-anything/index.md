@@ -27,16 +27,16 @@ description: "A new API setting state-of-the-art results on optimizing code, pro
 
 # `optimize_anything`: A Universal API for Text Optimization
 
-Today we are introducing **`optimize_anything`**, a declarative API that optimizes any artifact representable as text — code, prompts, agent architectures and skills, vector graphics, configurations — and is **competitive with or surpasses domain-specific state-of-the-art** in several domains we tested. With the same simple interface, it matches Optuna on blackbox optimization, outperforms (Alpha/Shinka/Open)Evolve on circle packing, discovers state-of-the-art cloud scheduling algorithms saving 40.2% on egress costs, and boosts ARC-AGI accuracy from 32.5% to 89.5%. You bring a **starting artifact** and an **evaluator**; `optimize_anything` uses LLMs as intelligent proposers to iteratively refine it. If you can measure it, you can optimize it.
+Today we are introducing **`optimize_anything`**, a declarative API that optimizes any artifact representable as text — code, prompts, agent architectures and skills, vector graphics, configurations — and is **competitive with or surpasses domain-specific state-of-the-art** in several domains we tested. With the same simple interface, it matches Optuna on blackbox optimization, outperforms (Alpha/Shinka/Open)Evolve on circle packing, discovers state-of-the-art cloud scheduling algorithms saving 40.2% on egress costs, and boosts ARC-AGI accuracy from 32.5% to 89.5%. Where prior LLM-evolution frameworks require configuring island topologies, prompt samplers, and multi-component pipelines, `optimize_anything` asks for just two things: a **starting artifact** and an **evaluator**. You declare what to optimize and how to measure it; the system handles the search — and as models and search-techniques advance, the search improves without changing your code. If you can measure it, you can optimize it.
 
 <!-- more -->
+
+While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode — optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** — single-task search, multi-task search, and generalization — under one declarative API, enabling optimization tasks that prior frameworks cannot directly express: learning prompts that generalize to unseen examples, discovering agent architectures from scratch, and optimizing coding agent skills that transfer across models.
 
 <figure markdown="span">
   ![optimize_anything diagram showing the core loop: a string x is passed to an evaluator f(x) which returns a score plus Actionable Side Information, which is then consumed by an LLM intelligent proposer to produce an improved string. Example instantiations shown below: Code Optimization, Numeric Optimization, Prompt/Agent Harness, Policy Optimization.](header_image.png)
   <figcaption>The optimize_anything loop: evaluate a text artifact, capture diagnostic feedback (ASI), and use an LLM to propose targeted improvements.</figcaption>
 </figure>
-
-While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode — optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** — single-task search, multi-task search, and generalization — under one declarative API, enabling optimization tasks that prior frameworks cannot directly express: learning prompts that generalize to unseen examples, discovering agent architectures from scratch, and optimizing coding agent skills that transfer across models.
 
 ## If It's Text, You Can Optimize It
 
