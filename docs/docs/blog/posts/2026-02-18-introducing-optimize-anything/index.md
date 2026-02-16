@@ -565,15 +565,24 @@ Here is the best artifact produced for P31: McCourt20. 250+ lines of solver code
 
 **Mode: Generalization.** We optimize cloud infrastructure algorithms: **CloudCast** discovers broadcast routing strategies for multi-cloud data transfer (minimizing egress cost), and **Can't Be Late** learns scheduling policies that decide when to use cheap-but-preemptible SPOT instances versus reliable ON_DEMAND instances to complete tasks before deadlines.
 
-<figure markdown="span">
-  ![Optimization trajectory for CloudCast showing cost savings (%) vs metric calls. Starting from 0% savings, GEPA rapidly discovers routing strategies reaching 37.9% savings within 100 metric calls, ultimately achieving 40.2% cost savings on the test set.](cloudcast_trajectory.png)
-  <figcaption>GEPA optimization progress on CloudCast: from a baseline Dijkstra routing strategy to a sophisticated provider-aware Steiner tree algorithm with Pareto-frontier candidate selection, achieving 40.2% cost savings.</figcaption>
-</figure>
+<div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
+<div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
-<figure markdown="span">
-  ![Optimization trajectory for Can't Be Late showing cost savings (%) vs metric calls. Starting from 0% savings (baseline cost=$96.5), GEPA discovers a strategy achieving 7.8% cost savings (optimized cost=$89.0).](cant_be_late_trajectory.png)
-  <figcaption>GEPA optimization progress on Can't Be Late: from a simple deadline-check heuristic to an adaptive scheduling strategy that tracks spot availability patterns and computes break-even switching costs, achieving 7.8% cost savings.</figcaption>
-</figure>
+![Optimization trajectory for CloudCast showing cost savings (%) vs metric calls, achieving 40.2% test savings.](cloudcast_trajectory.png){ style="width: 100%;" }
+
+<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>CloudCast: 40.2% cost savings</em></div>
+
+</div>
+<div style="flex: 1; text-align: center; min-width: 0;" markdown>
+
+![Optimization trajectory for Can't Be Late showing cost savings (%) vs metric calls, achieving 7.8% test savings.](cant_be_late_trajectory.png){ style="width: 100%;" }
+
+<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Can't Be Late: 7.8% cost savings</em></div>
+
+</div>
+</div>
+
+*GEPA optimization progress on cloud infrastructure tasks. **Left:** CloudCast evolves from baseline Dijkstra routing to a provider-aware Steiner tree algorithm with Pareto-frontier candidate selection. **Right:** Can't Be Late evolves from a simple deadline-check heuristic to an adaptive scheduling strategy that tracks spot availability patterns and computes break-even switching costs.*
 
 **Key result:** `optimize_anything` discovers state-of-the-art algorithms for both problems — **40.2% cost savings** on CloudCast and **7.8% cost savings** on Can't Be Late — outperforming hand-designed heuristics. [Full code →](#appendix-d-cloudcast--cant-be-late)
 
