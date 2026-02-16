@@ -22,12 +22,12 @@ equal_contribution:
 slug: introducing-optimize-anything
 readtime: 12
 title: "optimize_anything: A Universal API for Text Optimization"
-description: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more — if you can measure it, you can optimize it."
+description: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more: if you can measure it, you can optimize it."
 ---
 
 # `optimize_anything`: A Universal API for Text Optimization
 
-Many real-world problems — designing accurate-but-cheap AI agents, writing fast CUDA kernels, finding cost-minimizing cloud-scheduling policies, crafting effective prompts, learning agent skills for coding agents (claude-code) — share a common structure: maximize an objective **f(x) → score**, where **x** is a text artifact like code, a prompt, a policy, or even numeric hyperparameters serialized as a string. Today, we are introducing **`optimize_anything`**, a simple, declarative API that optimizes any artifact representable as text. You bring a **starting artifact** and an **evaluator**; `optimize_anything` uses LLMs as intelligent proposers to iteratively refine it. If you can measure it, you can optimize it.
+Many real-world problems, such as designing accurate-but-cheap AI agents, writing fast CUDA kernels, finding cost-minimizing cloud-scheduling policies, crafting effective prompts, and learning agent skills for coding agents (claude-code), share a common structure: maximize an objective **f(x) → score**, where **x** is a text artifact like code, a prompt, a policy, or even numeric hyperparameters serialized as a string. Today, we are introducing **`optimize_anything`**, a simple, declarative API that optimizes any artifact representable as text. You bring a **starting artifact** and an **evaluator**; `optimize_anything` uses LLMs as intelligent proposers to iteratively refine it. If you can measure it, you can optimize it.
 
 <!-- more -->
 
@@ -36,19 +36,19 @@ Many real-world problems — designing accurate-but-cheap AI agents, writing fas
   <figcaption>The optimize_anything loop: evaluate a text artifact, capture diagnostic feedback (ASI), and use an LLM to propose targeted improvements.</figcaption>
 </figure>
 
-While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode — optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** — single-task search, multi-task search, and generalization — under one declarative API.
+While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode, optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** (single-task search, multi-task search, and generalization) under one declarative API.
 
-We demonstrate `optimize_anything` across seven diverse domains: it **matches Optuna** — a mature, purpose-built numerical optimizer — on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms saving 40.2% on egress costs**, achieves **state-of-the-art prompt optimization**, designs an entire **agent architecture** to boost ARC-AGI accuracy from 32.5% to **89.5%**, and **learns agent skills** that boost Claude Code to near-perfect resolve rates while cutting resolution time by 40%.
+We demonstrate `optimize_anything` across seven diverse domains: it **matches Optuna** (a mature, purpose-built numerical optimizer) on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms saving 40.2% on egress costs**, achieves **state-of-the-art prompt optimization**, designs an entire **agent architecture** to boost ARC-AGI accuracy from 32.5% to **89.5%**, and **learns agent skills** that boost Claude Code to near-perfect resolve rates while cutting resolution time by 40%.
 
 ## If It's Text, You Can Optimize It
 
 The key insight behind `optimize_anything` is that a surprisingly wide range of problems can be formulated as optimizing a text artifact. Consider:
 
-- **Code**: CUDA kernels, scheduling algorithms, solver implementations — all are text that can be evaluated by execution.
-- **Prompts**: System prompts, few-shot templates, chain-of-thought instructions — evaluated by running them against a dataset.
-- **Agent architectures**: The entire agent system — its prompts, sub-agents, control flow, and orchestration logic.
+- **Code**: CUDA kernels, scheduling algorithms, and solver implementations, all of which are text that can be evaluated by execution.
+- **Prompts**: System prompts, few-shot templates, and chain-of-thought instructions, evaluated by running them against a dataset.
+- **Agent architectures**: The entire agent system, including its prompts, sub-agents, control flow, and orchestration logic.
 - **Configurations**: Hyperparameters, policies, and decision rules can be serialized as JSON strings and evaluated by simulation.
-- **Agent Skills**: Repository-specific instructions and best practices for coding agents — evaluated by running the agent on real tasks from the codebase.
+- **Agent Skills**: Repository-specific instructions and best practices for coding agents, evaluated by running the agent on real tasks from the codebase.
 
 If an artifact can be serialized to text and evaluated programmatically, an LLM can reason about it and propose improvements. `optimize_anything` provides the interface to make this loop trivial to set up.
 
@@ -57,7 +57,7 @@ If an artifact can be serialized to text and evaluated programmatically, an LLM 
 
 Traditional optimization methods like gradient descent, evolutionary strategies, and Bayesian optimization operate on purely numerical feedback. They know *that* a candidate failed, but not *why*. You can't pass Optuna a stack trace. You can't show a Bayesian optimizer the compiler error that explains exactly which line crashed. All that diagnostic context (compiler errors, profiling traces, agent reasoning logs, and constraint violation details) is reduced to a single scalar and the rest is discarded.
 
-`optimize_anything` captures this diagnostic context as **Actionable Side Information (ASI)**: a first-class part of the evaluator contract that *you* design. ASI can be anything that would help an expert diagnose the problem: error messages, profiling data, rendered images, constraint violations, tool outputs. Because the proposer is an LLM, it can actually *read* this feedback. During a **dedicated reflection step**, it reasons about *why* specific candidates succeeded or failed — then proposes targeted improvements.
+`optimize_anything` captures this diagnostic context as **Actionable Side Information (ASI)**: a first-class part of the evaluator contract that *you* design. ASI can be anything that would help an expert diagnose the problem: error messages, profiling data, rendered images, constraint violations, tool outputs. Because the proposer is an LLM, it can actually *read* this feedback. During a **dedicated reflection step**, it reasons about *why* specific candidates succeeded or failed, then proposes targeted improvements.
 
 <figure>
   <div style="width:100%; max-width:800px; margin:0 auto; position:relative; padding-bottom:61.25%; height:0; overflow:hidden;">
@@ -117,19 +117,19 @@ The side information can be anything: text, structured data, or even **images** 
   <figcaption>The three optimization modes: single-task search, multi-task search, and generalization.</figcaption>
 </figure>
 
-**1. Single-Task Search** — "Solve one hard problem." No dataset needed. The candidate *is* the solution, and the evaluator scores it directly (no `example` argument). Examples: finding an optimal circle packing arrangement, discovering a blackbox optimization algorithm. This is the mode that AlphaEvolve, ShinkaEvolve, and OpenEvolve operate in.
+**1. Single-Task Search**: "Solve one hard problem." No dataset needed. The candidate *is* the solution, and the evaluator scores it directly (no `example` argument). Examples: finding an optimal circle packing arrangement, discovering a blackbox optimization algorithm. This is the mode that AlphaEvolve, ShinkaEvolve, and OpenEvolve operate in.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=...)
 ```
 
-**2. Multi-Task Search** — "Solve a batch of related problems with cross-transfer." You provide a `dataset` of related tasks. Insights from solving one task help solve the others. Example: optimizing CUDA kernels for multiple algorithms on the same hardware.
+**2. Multi-Task Search**: "Solve a batch of related problems with cross-transfer." You provide a `dataset` of related tasks. Insights from solving one task help solve the others. Example: optimizing CUDA kernels for multiple algorithms on the same hardware.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=..., dataset=tasks)
 ```
 
-**3. Generalization** — "Build a skill that transfers to unseen problems." You provide both a training `dataset` and a held-out `valset`. The optimizer must learn a general artifact (a prompt, an agent, a policy, etc.) that generalizes. This abstracts over traditional machine learning and program synthesis. Examples: prompt optimization, agent architecture discovery, cloud scheduling policy learning.
+**3. Generalization**: "Build a skill that transfers to unseen problems." You provide both a training `dataset` and a held-out `valset`. The optimizer must learn a general artifact (a prompt, an agent, a policy, etc.) that generalizes. This abstracts over traditional machine learning and program synthesis. Examples: prompt optimization, agent architecture discovery, cloud scheduling policy learning.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=..., dataset=train, valset=val)
@@ -149,11 +149,11 @@ def optimize_anything(
 ) -> GEPAResult
 ```
 
-Notice what's *absent*: no mutation prompts, no task-specific instruction templates, no island configurations, no EVOLVE-BLOCK markers (all common in prior LLM-evolution frameworks). You declare the **what** — your artifact, your evaluator, and any domain knowledge as `background` — and `optimize_anything` handles the **how**: prompt construction, reflection, candidate selection, and search strategy. This declarative design, inspired by [DSPy](https://github.com/stanfordnlp/dspy)'s principle of *programming not prompting*, means the same API call works whether you're optimizing a CUDA kernel, a cloud scheduling policy, or an agent architecture.
+Notice what's *absent*: no mutation prompts, no task-specific instruction templates, no island configurations, no EVOLVE-BLOCK markers (all common in prior LLM-evolution frameworks). You declare the **what** (your artifact, your evaluator, and any domain knowledge as `background`) and `optimize_anything` handles the **how**: prompt construction, reflection, candidate selection, and search strategy. This declarative design, inspired by [DSPy](https://github.com/stanfordnlp/dspy)'s principle of *programming not prompting*, means the same API call works whether you're optimizing a CUDA kernel, a cloud scheduling policy, or an agent architecture.
 
 ### The Pareto Insight
 
-In multi-task and generalization modes, `optimize_anything` leverages GEPA's core algorithmic insight: **Pareto-efficient search**. Rather than asking the LLM to improve *all* metrics simultaneously, each reflection step focuses on improving a specific subset of metrics or examples. Over multiple iterations, different subsets are selected — a minibatch of 2-3 examples or objectives at a time — and the proposer can focus its effort. This cycling through subsets, combined with Pareto-efficient selection that preserves candidates that excel on different axes, consistently outperforms naive all-at-once optimization.
+In multi-task and generalization modes, `optimize_anything` leverages GEPA's core algorithmic insight: **Pareto-efficient search**. Rather than asking the LLM to improve *all* metrics simultaneously, each reflection step focuses on improving a specific subset of metrics or examples. Over multiple iterations, different subsets are selected (a minibatch of 2-3 examples or objectives at a time), allowing the proposer to focus its effort. This cycling through subsets, combined with Pareto-efficient selection that preserves candidates that excel on different axes, consistently outperforms naive all-at-once optimization.
 
 ## Let's Take It for a Spin
 
@@ -212,8 +212,8 @@ A few things to note:
 
 - The **`dataset`** contains 6 evaluation aspects. GEPA calls the evaluator once per aspect per candidate, tracking scores individually. This enables Pareto-efficient selection: a candidate that excels at bicycle structure but struggles with pelican anatomy is preserved on the frontier, not discarded behind a mediocre average.
 - Our desired visual aspects are defined in concise natural language. We avoid the need for detailed rubrics and simply rely on the VLM's judgment for scoring.
-- **`reflection_minibatch_size=2`** means each reflection step shows the LLM feedback from just 2 aspects. Over multiple iterations, all 6 aspects get attention — but each reflection is focused and targeted.
-- The **rendered image** is passed in `side_info` via `Image(base64_data=...)`, so the VLM proposer can literally *see* what needs improvement. The VLM evaluator **never** sees the SVG code — only the rendered image.
+- **`reflection_minibatch_size=2`** means each reflection step shows the LLM feedback from just 2 aspects. Over multiple iterations, all 6 aspects get attention, but each reflection is focused and targeted.
+- The **rendered image** is passed in `side_info` via `Image(base64_data=...)`, so the VLM proposer can literally *see* what needs improvement. The VLM evaluator **never** sees the SVG code, only the rendered image.
 - The reflection model see the feedback (both positive and negative) along with the optimization artifact (source code), and directly optimizes it.
 - Starting from a plain white canvas, the optimizer produces a detailed illustration scoring an average of **0.825** across all six aspects in 12 candidates:
 
@@ -234,7 +234,7 @@ A few things to note:
 </div>
 </div>
 
-*With only 12 candidates, the optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition — all through LLM reflection on rendered image feedback. Similar results were also observed with Claude Opus 4.6 which produced 20 candidates.*
+*With only 12 candidates, the optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition, all through LLM reflection on rendered image feedback. Similar results were also observed with Claude Opus 4.6 which produced 20 candidates.*
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
