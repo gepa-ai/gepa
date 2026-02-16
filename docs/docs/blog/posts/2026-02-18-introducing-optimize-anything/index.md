@@ -360,23 +360,23 @@ A few things to note:
 
 ## Results
 
-We apply `optimize_anything` to seven diverse domains spanning search, batch optimization, and generalization. Each result below links to the corresponding [appendix section](#appendix-case-study-code) with the full code.
+We apply `optimize_anything` to seven diverse domains spanning search, batch optimization, and generalization. Each result below links to the corresponding [appendix section](#appendix-case-study-code) with the full code and optimized artifacts.
 
 ### 1. Blackbox Mathematical Optimization: Matching Optuna
 
 **Mode: Single-Task Search.** Given a blackbox objective function, `optimize_anything` discovers an optimization algorithm tailored to it and matches [Optuna](https://optuna.org/) across the 56-problem [EvalSet](https://github.com/sigopt/evalset) benchmark.
 
 <figure markdown="span" style="margin: 0 auto;">
-  ![Bar chart showing GEPA vs Optuna on 56 EvalSet problems with 1% tolerance and 8000 trials. GEPA wins on 7 problems, Optuna wins on 9, and they tie on 40.](optuna_combined2.png)
-  <figcaption>GEPA's optimize_anything matches Optuna, the industry-standard blackbox optimizer, on the EvalSet benchmark. (a) Over all 56 EvalSet problems (1 seed, 8 000 trials), GEPA ties Optuna on 40, wins 7, and loses 9. (b) On 10 selected problems where Optuna struggles (2 000 trials, 10 seeds), GEPA finds better solutions on 7 out of 10.</figcaption>
+  ![Bar chart showing GEPA vs Optuna on 56 EvalSet problems with 1% tolerance and 8000 evaluations. GEPA wins on 7 problems, Optuna wins on 9, and they tie on 40.](optuna_combined2.png)
+  <figcaption>GEPA's optimize_anything matches Optuna (the industry-standard blackbox optimizer) on the EvalSet benchmark. (a) Over all 56 EvalSet problems (1 independent run, 8,000 evaluations), GEPA ties Optuna on 40, wins 7, and loses 9. (b) On 10 selected problems where Optuna struggles (2,000 evaluations, 10 independent runs), GEPA finds better solutions on 7 out of 10.</figcaption>
 </figure>
 
-On the 56-problem evalset benchmark with large budgets, GEPA and Optuna tie on most problems. But on the hardest problems with lower budgets where Optuna struggles, a striking pattern emerges: Optuna's fixed TPE→CMA-ES pipeline fails in predictable, structural ways. On McCourt13, all 10 Optuna seeds converge to the same local minimum because TPE's independent per-dimension sampling always falls into the dominant trap basin. On Tripod, CMA-ES assumes a smooth, unimodal landscape, but the objective is piecewise-linear with hard discontinuities, so it converges to the wrong basin and cannot escape.
+On the 56-problem evalset benchmark with large budgets, GEPA and Optuna tie on most problems. But on the hardest problems with lower budgets where Optuna struggles, a striking pattern emerges: Optuna's fixed TPE→CMA-ES pipeline fails in predictable, structural ways. On McCourt13, all 10 Optuna runs converge to the same local minimum because TPE's independent per-dimension sampling always falls into the dominant trap basin. On Tripod, CMA-ES assumes a smooth, unimodal landscape, but the objective is piecewise-linear with hard discontinuities, so it converges to the wrong basin and cannot escape.
 
 GEPA tailors the solver to each problem by learning from accumulated evaluation history. For boundary optima, it discovers L-BFGS-B, a box-constrained optimizer that naturally sticks to boundaries. For deceptive traps, it designs multi-start search from diverse starting points, escaping basins that trap single-trajectory methods. While Optuna tunes parameters within a fixed algorithm, GEPA learns to optimize the algorithm itself on the fly.
 
-**Key result:** `optimize_anything` matches the performance of Optuna, a mature numerical optimizer, by optimizing a solver program tailored to a target problem. [Full code →](#appendix-a-blackbox-mathematical-optimization)
-
+**Key result:** `optimize_anything` matches the performance of Optuna, a mature numerical optimizer, by optimizing a solver program tailored to each target problem. 
+[Full code →](#appendix-a-blackbox-mathematical-optimization)
 
 ### 2. Circle Packing: Outperforming AlphaEvolve
 
