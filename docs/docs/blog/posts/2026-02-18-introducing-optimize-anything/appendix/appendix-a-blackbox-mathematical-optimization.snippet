@@ -19,7 +19,7 @@
     """
     ```
 
-    **Evaluator** — The evaluator sandboxes the proposed solver code, runs it on a benchmark function, and returns rich **Actionable Side Information (ASI)** — trial attempts, stdout/stderr, tracebacks, and budget status. A `BudgetTracker` helper distributes whatever evaluation budget is left across the remaining proposals, accounting for failures gracefully. `opt_state` passed through the `evaluate` function tracks the full optimization state; here we extract the best trials so far for warm-starting new proposals.
+    **Evaluator** — The evaluator sandboxes the proposed solver code, runs it on a benchmark function, and returns rich **Actionable Side Information (ASI)**: trial attempts, stdout/stderr, tracebacks, and budget status. A `BudgetTracker` helper distributes whatever evaluation budget is left across the remaining proposals, accounting for failures gracefully. `opt_state` passed through the `evaluate` function tracks the full optimization state; here we extract the best trials so far for warm-starting new proposals.
 
     ```python
     from gepa.examples.mathematical_optimization.utils import BudgetTracker
