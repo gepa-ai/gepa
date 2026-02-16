@@ -229,12 +229,12 @@ A few things to note:
 
 ![Optimized SVG: a polished pelican riding a bicycle with sky, clouds, sun, road, and grass.](optimized_pelican_gemini_3_flash.svg){ style="width: 100%;" }
 
-<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Best candidate out of 12 (score: 0.825)</em></div>
+<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Best candidate (score: 0.825)</em></div>
 
 </div>
 </div>
 
-*With only 12 candidates, the optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition — all through LLM reflection on rendered image feedback. Similar results were also observed with Claude Opus 4.6 who produced 20 candidates.*
+*With only 12 candidates, the optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition — all through LLM reflection on rendered image feedback. Similar results were also observed with Claude Opus 4.6 which produced 20 candidates.*
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
@@ -248,7 +248,7 @@ A few things to note:
 
 ![Optimized SVG: a polished pelican riding a bicycle with sky, clouds, sun, road, and grass.](claude-opus-best-pelican.png){ style="width: 100%;" }
 
-<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Best candidate out of 20 (score: 0.817)</em></div>
+<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Best candidate (score: 0.817)</em></div>
 
 </div>
 </div>
