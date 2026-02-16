@@ -44,6 +44,11 @@ jobs:
           cd docs
           uv run -p ../.venv python scripts/generate_api_docs.py
 
+      - name: Disable draft_if_future_date for staging
+        run: |
+          cd docs
+          sed -i 's/draft_if_future_date: true/draft_if_future_date: false/' mkdocs.yml
+
       - name: Build documentation
         run: |
           cd docs
