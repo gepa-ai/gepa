@@ -20,7 +20,7 @@
   }
   .container {
     width: 800px;
-    padding: 24px 24px 20px;
+    padding: 12px 24px 8px;
   }
   svg text {
     font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
@@ -29,7 +29,7 @@
 </head>
 <body>
 <div class="container">
-  <svg width="800" height="580" viewBox="0 0 800 580">
+  <svg width="800" height="620" viewBox="80 5 640 575">
     <defs>
       <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
         <path d="M0,1 L8,4 L0,7 Z" fill="#8888aa"/>
@@ -142,7 +142,7 @@
 <script>
 (function() {
   function fit() {
-    var s = Math.min(1, window.innerWidth / 800);
+    var s = window.innerWidth / 800;
     document.body.style.transform = 'scale(' + s + ')';
     document.documentElement.style.height = (document.body.scrollHeight * s) + 'px';
   }

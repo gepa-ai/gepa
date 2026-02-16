@@ -436,17 +436,15 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 
 <figure markdown="span">
   ![Optimization trajectory for ARC-AGI with Gemini 3 Flash. Validation accuracy improves from 56.5% to 93.5%. Base test score is 32.5%, best test score reaches 89.5%.](arc_agi_trajectory.png)
-  <figcaption>ARC-AGI agent evolution: from a naive 10-line agent (32.5% test) to a sophisticated 300+ line system (89.5% test) with Gemini 3 Flash.</figcaption>
+  <figcaption>ARC-AGI agent evolution: from a naive agent (32.5% test) to a sophisticated 300+ line system (89.5% test) with Gemini 3 Flash.</figcaption>
 </figure>
 
-<figure>
-  <div style="width:100%; max-width:800px; margin:0 auto; position:relative; padding-bottom:78%; height:0; overflow:hidden;">
-    <iframe src="/static/diagrams/arc_agi_architecture.html" scrolling="no" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none;"></iframe>
-  </div>
-  <figcaption>The evolved ARC-AGI agent architecture: a multi-stage pipeline with code generation, iterative validation, and dual-path prediction — all discovered automatically by optimize_anything.</figcaption>
+<figure markdown="span">
+  ![The evolved ARC-AGI agent architecture: a multi-stage pipeline with code generation, iterative validation, and dual-path prediction.](arc_agi_architecture.svg)
+  <figcaption>The optimized ARC-AGI agent architecture with a multi-stage pipeline with code generation, iterative validation, and dual-path prediction</figcaption>
 </figure>
 
-**Key result:** Using the same underlying model (Gemini 3 Flash), `optimize_anything` improves ARC-AGI test accuracy from 32.5% to **89.5%** by evolving the entire agent architecture, gains that typically require weeks of manual iteration. [Full code →](#appendix-f-arc-agi-agent-architecture-discovery)
+**Key result:** Using the same underlying model (Gemini 3 Flash), `optimize_anything` improves ARC-AGI test accuracy from 32.5% to **89.5%** by evolving the entire agent architecture, achieving gains that typically require significant manual iteration. [Full code →](#appendix-f-arc-agi-agent-architecture-discovery)
 ### 6. Blackbox Mathematical Optimization: Matching Optuna
 
 **Mode: Single-Task Search.** Given a blackbox objective function, `optimize_anything` discovers an optimization algorithm tailored to it and matches [Optuna](https://optuna.org/), the industry-standard blackbox optimizer, across the 56-problem [EvalSet](https://github.com/sigopt/evalset) benchmark.
