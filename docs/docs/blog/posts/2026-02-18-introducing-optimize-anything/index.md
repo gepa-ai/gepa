@@ -48,7 +48,7 @@ The key insight behind `optimize_anything` is that a surprisingly wide range of 
 - **Configurations**: Hyperparameters, policies, and decision rules can be serialized as JSON strings and evaluated by simulation.
 - **Agent Skills**: Repository-specific instructions and best practices for coding agents — evaluated by running the agent on real tasks from the codebase.
 
-If an artifact can be serialized to text and evaluated programmatically, an LLM can reason about it and propose improvements. `optimize_anything` provides the interface to make this loop trivial to set up.
+If an artifact can be serialized to text and its performance can be measured, an LLM can reason about it and propose improvements. `optimize_anything` provides the interface to make this loop easier to set up.
 
 
 ## From Evolution to Intelligent Design
