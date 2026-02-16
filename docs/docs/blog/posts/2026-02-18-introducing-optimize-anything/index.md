@@ -400,7 +400,7 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
 
 <figure markdown="span">
   ![Line chart showing KernelBench performance vs budget. Fast_p(0) (any correct kernel) reaches 100%. Fast_p(1.0) (matching baseline speed) reaches 87%. Fast_p(1.1) (10% faster) reaches 48%. Fast_p(1.2) (20% faster) reaches 25%.](kernelbench_results.png)
-  <figcaption>KernelBench results with GEPA (gpt-5 as proposer). 87% of generated kernels match or beat baseline performance; 25% are 20%+ faster. We use 31 of the 35 hand-curated problems from the KernelBench authors (4 excluded due to OOM).</figcaption>
+  <figcaption>KernelBench results with GEPA (gpt-5 as proposer). 87% of generated kernels match or beat baseline performance; 25% are 20%+ faster. We use 31 of the 35 hand-curated problems from the KernelBench authors.<a href="#fn-kernelbench" class="fn-ref" id="fn-ref-kernelbench"><sup>1</sup></a></figcaption>
 </figure>
 
 **Key result:** 87% of GEPA-generated kernels match or beat the baseline, with 25% achieving 20%+ speedups. [Full code →](#appendix-c-cuda-kernel-generation)
@@ -484,6 +484,12 @@ result = oa.optimize_anything(
 - [GitHub](https://github.com/gepa-ai/gepa)
 - [Discord](https://discord.gg/A7dABbtmFw) 
 <!-- (@luke: the discord link leads to a dspy channle. is this correct? ) -->
+
+<div class="blog-footnotes">
+<ol>
+<li id="fn-kernelbench">4 of the 35 problems were excluded due to out-of-memory errors on V100 32GB. <a href="#fn-ref-kernelbench" class="fn-backref">↩</a></li>
+</ol>
+</div>
 
 ---
 
