@@ -27,8 +27,7 @@ description: "A new API setting state-of-the-art results on optimizing code, pro
 
 # `optimize_anything`: A Universal API for Text Optimization
 
-Today we are introducing **`optimize_anything`**, a declarative API that optimizes any artifact representable as text (code, prompts, 
-agent architectures and skills, vector graphics, configurations) and is **competitive with or surpasses domain-specific state-of-the-art** in several domains we tested. With the same simple interface, it outperforms (Alpha/Shinka/Open)Evolve on circle packing, discovers state-of-the-art cloud scheduling algorithms saving 40.2% on egress costs, boosts ARC-AGI accuracy from 32.5% to 89.5%, and matches Optuna on blackbox numerical optimization. Where prior LLM-evolution frameworks require configuring island topologies, prompt samplers, and multi-component pipelines, `optimize_anything` asks for just two things: a **starting artifact** and an **evaluator**. You declare what to optimize and how to measure it; the system handles the search, and as models and search-techniques advance, the search improves without changing your code. If you can measure it, you can optimize it.
+Today we are introducing **`optimize_anything`**, a declarative API that optimizes any artifact representable as text — code, prompts, agent architectures, vector graphics, configurations — using just two inputs: a **starting artifact** and an **evaluator**. You declare what to optimize and how to measure it; the system handles the search. Where prior LLM-evolution frameworks require configuring island topologies, prompt samplers, and multi-component pipelines, `optimize_anything` strips the interface down to its essence. We've tested it across [several domains](#results) — from code optimization to agent architecture discovery — and it consistently matches or outperforms domain-specific tools, including some purpose-built for each task. As models and search techniques advance, the search improves without changing your code. If you can measure it, you can optimize it.
 
 <!-- more -->
 
@@ -359,7 +358,7 @@ A few things to note:
 
 ## Results
 
-We apply `optimize_anything` to seven diverse domains spanning search, batch optimization, and generalization. Each result below links to the corresponding [appendix section](#appendix-case-study-code) with the full code.
+The punchline: `optimize_anything` beats AlphaEvolve at circle packing, evolves a 10-line agent stub into a 300+ line system that nearly triples its test accuracy on ARC-AGI, discovers novel cloud scheduling algorithms, and matches Optuna — a mature numerical optimizer — by generating solver code from scratch. We test across seven domains spanning search, batch optimization, and generalization. Each section below walks through the setup and links to [full, runnable code](#appendix-case-study-code).
 
 ### 1. Circle Packing: Outperforming AlphaEvolve
 
