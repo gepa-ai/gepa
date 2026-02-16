@@ -36,7 +36,7 @@ Many real-world problems — designing accurate-but-cheap AI agents, writing fas
 
 While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode — optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** — single-task search, multi-task search, and generalization — under one declarative API.
 
-We demonstrate `optimize_anything` across six diverse domains: it **matches Optuna** — a mature, purpose-built numerical optimizer — on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms saving 37.3% on egress costs**, achieves **state-of-the-art prompt optimization** on AIME math problems, and evolves an entire **agent architecture** to boost ARC-AGI accuracy from 32.5% to **89.5%**.
+We demonstrate `optimize_anything` across six diverse domains: it **matches Optuna** — a mature, purpose-built numerical optimizer — on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms saving 40.2% on egress costs**, achieves **state-of-the-art prompt optimization** on AIME math problems, and evolves an entire **agent architecture** to boost ARC-AGI accuracy from 32.5% to **89.5%**.
 
 ## If It's Text, You Can Optimize It
 
@@ -566,13 +566,16 @@ Here is the best artifact produced for P31: McCourt20. 250+ lines of solver code
 **Mode: Generalization.** We optimize cloud infrastructure algorithms: **CloudCast** discovers broadcast routing strategies for multi-cloud data transfer (minimizing egress cost), and **Can't Be Late** learns scheduling policies that decide when to use cheap-but-preemptible SPOT instances versus reliable ON_DEMAND instances to complete tasks before deadlines.
 
 <figure markdown="span">
-  ![Optimization trajectory for Can't Be Late showing cost savings (%) vs metric calls. Starting from 0% savings (baseline cost=$96.5), GEPA discovers a strategy achieving 7.8% cost savings (optimized cost=$89.0).](cant_be_late_trajectory.png)
-  <figcaption>GEPA optimization progress on Can't Be Late: from a simple deadline-check heuristic to a sophisticated scheduling strategy with 7.8% cost savings.</figcaption>
+  ![Optimization trajectory for CloudCast showing cost savings (%) vs metric calls. Starting from 0% savings, GEPA rapidly discovers routing strategies reaching 37.9% savings within 100 metric calls, ultimately achieving 40.2% cost savings on the test set.](cloudcast_trajectory.png)
+  <figcaption>GEPA optimization progress on CloudCast: from a baseline Dijkstra routing strategy to a sophisticated provider-aware Steiner tree algorithm with Pareto-frontier candidate selection, achieving 40.2% cost savings.</figcaption>
 </figure>
 
-<!-- @luke: ask Wenjie to update the figures with a unifed format similar to other figures? -->
+<figure markdown="span">
+  ![Optimization trajectory for Can't Be Late showing cost savings (%) vs metric calls. Starting from 0% savings (baseline cost=$96.5), GEPA discovers a strategy achieving 7.8% cost savings (optimized cost=$89.0).](cant_be_late_trajectory.png)
+  <figcaption>GEPA optimization progress on Can't Be Late: from a simple deadline-check heuristic to an adaptive scheduling strategy that tracks spot availability patterns and computes break-even switching costs, achieving 7.8% cost savings.</figcaption>
+</figure>
 
-**Key result:** `optimize_anything` discovers state-of-the-art algorithms for both problems — **37.3% cost savings** on CloudCast and **7.8% cost savings** on Can't Be Late — outperforming hand-designed heuristics. [Full code →](#appendix-d-cloudcast--cant-be-late)
+**Key result:** `optimize_anything` discovers state-of-the-art algorithms for both problems — **40.2% cost savings** on CloudCast and **7.8% cost savings** on Can't Be Late — outperforming hand-designed heuristics. [Full code →](#appendix-d-cloudcast--cant-be-late)
 
 ### 5. Prompt Optimization: AIME Mathematics
 
