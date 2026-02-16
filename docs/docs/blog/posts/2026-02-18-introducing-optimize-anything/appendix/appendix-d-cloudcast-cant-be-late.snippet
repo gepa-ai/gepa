@@ -5,9 +5,11 @@
 
     ---
 
-    **CloudCast** — broadcast routing for multi-cloud data transfer. The algorithm routes data from a single source to multiple destinations across cloud providers (AWS, GCP, Azure), minimizing total cost (egress fees + instance costs) while maintaining good transfer times. The network is a directed graph where nodes are cloud regions and edges carry `cost` ($/GB) and `throughput` (Gbps) attributes.
+    **CloudCast** — broadcast routing for multi-cloud data transfer.
 
-    **Seed Candidate** — A baseline Dijkstra shortest-path router. It finds the single cheapest path to each destination and sends all data partitions along the same route. `BroadCastTopology` is a data structure that stores the routing paths per destination per partition — it is part of the candidate code that GEPA can evolve.
+    **Artifact being evolved:** a Python `search_algorithm` function (the full routing algorithm code) that receives a network graph of cloud regions and must return a `BroadCastTopology` — a set of routing paths from a source to multiple destinations across AWS, GCP, and Azure. The network is a directed graph where nodes are cloud regions and edges carry `cost` ($/GB) and `throughput` (Gbps) attributes. GEPA evolves the entire algorithm, including data structures it uses.
+
+    **Seed Candidate** — A baseline Dijkstra shortest-path router. It finds the single cheapest path to each destination and sends all data partitions along the same route:
 
     ```python
     SEED_PROGRAM = """
@@ -50,7 +52,9 @@
     """
     ```
 
-    **Evaluator** — The evaluator runs the candidate's `search_algorithm` through a broadcast simulator that models real cloud egress costs and bandwidth constraints. `simulate_broadcast` handles writing the candidate code to a temp file, loading it as a module, executing it on the network graph, and running the simulator to compute cost and transfer time. The side information returned to the LLM proposer includes per-destination route breakdowns and bottleneck identification.
+    **Evaluator** — The evaluator runs the candidate's `search_algorithm` through a broadcast simulator that models real cloud egress costs and bandwidth constraints. `simulate_broadcast` handles writing the candidate code to a temp file, loading it as a module, executing it on the network graph, and running the simulator to compute cost and transfer time.
+
+    **ASI (Actionable Side Information):** The side information includes (1) per-destination route breakdowns with egress cost and transfer time, (2) cost decomposition into egress vs. instance components, and (3) bottleneck destination identification. This tells the LLM proposer *where* the algorithm is wasting money (e.g., expensive cross-provider hops) and *which* destinations are slowest, guiding targeted improvements.
 
     ```python
     from examples.adrs.cloudcast.helpers import simulate_broadcast
@@ -496,7 +500,9 @@
 
     ---
 
-    **Can't Be Late** — cloud scheduling with SPOT vs ON_DEMAND instances. The strategy decides at each time step whether to use cheap but preemptible SPOT instances (~0.30/hr), reliable ON_DEMAND instances (~1.00/hr), or wait (no cost, no progress). The goal is to minimize total cost while guaranteeing task completion before a hard deadline. Each evaluation runs the strategy on a real spot-availability trace.
+    **Can't Be Late** — cloud scheduling with SPOT vs ON_DEMAND instances.
+
+    **Artifact being evolved:** a Python scheduling policy (the `_step` method of a `Strategy` class) that is called at each time step and must return one of three actions: `ClusterType.SPOT` (~0.30/hr, cheap but preemptible), `ClusterType.ON_DEMAND` (~1.00/hr, reliable), or `ClusterType.NONE` (wait, no cost). The policy has access to remaining task time, deadline, restart overhead, and spot availability. GEPA evolves the entire strategy class, including any state variables it tracks.
 
     **Seed Candidate** — A simple greedy heuristic: use ON_DEMAND only when the deadline is imminent, otherwise prefer SPOT when available, and wait when it's not:
 
@@ -543,7 +549,9 @@
     """
     ```
 
-    **Evaluator** — The evaluator runs the candidate strategy through a scheduling simulator driven by real spot-availability traces. `simulate_scheduling` handles syntax validation, subprocess execution of the simulator, and cost extraction. Each trace is tested across multiple job configurations (varying task duration, deadline tightness, and restart overhead). The side information includes a compact timeline of instance usage and spot availability patterns.
+    **Evaluator** — The evaluator runs the candidate strategy through a scheduling simulator driven by real spot-availability traces. `simulate_scheduling` handles syntax validation, subprocess execution of the simulator, and cost extraction. Each trace is tested across multiple job configurations (varying task duration, deadline tightness, and restart overhead).
+
+    **ASI (Actionable Side Information):** The side information includes (1) the full spot-availability pattern for the trace (e.g., `"0.0-10.0:S | 10.0-15.0:X"` — spot available for 10h then unavailable), (2) a timeline of the strategy's instance usage decisions (e.g., `"0.0-5.0:S@R0[50%] | 5.0-8.0:OD@R0[100%]"`), and (3) segment counts (SPOT vs ON_DEMAND vs restarts). This lets the LLM proposer see *exactly when* the strategy made suboptimal decisions — for instance, switching to expensive ON_DEMAND too early when spot was about to become available again.
 
     ```python
     from examples.adrs.can_be_late.helpers import simulate_scheduling
