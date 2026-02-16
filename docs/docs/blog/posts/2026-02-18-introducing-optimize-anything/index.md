@@ -22,12 +22,12 @@ equal_contribution:
 slug: introducing-optimize-anything
 readtime: 12
 title: "optimize_anything: A Universal API for Text Optimization"
-description: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more — if you can measure it, you can optimize it."
+description: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more: if you can measure it, you can optimize it."
 ---
 
 # `optimize_anything`: A Universal API for Text Optimization
 
-Many real-world problems — designing accurate-but-cheap AI agents, writing fast CUDA kernels, finding cost-minimizing cloud-scheduling policies, crafting effective prompts, learning agent skills for coding agents (claude-code) — share a common structure: maximize an objective **f(x) → score**, where **x** is a text artifact like code, a prompt, a policy, or even numeric hyperparameters serialized as a string. Today, we are introducing **`optimize_anything`**, a simple, declarative API that optimizes any artifact representable as text. You bring a **starting artifact** and an **evaluator**; `optimize_anything` uses LLMs as intelligent proposers to iteratively refine it. If you can measure it, you can optimize it.
+Many real-world problems, such as designing accurate-but-cheap AI agents, writing fast CUDA kernels, finding cost-minimizing cloud-scheduling policies, crafting effective prompts, and learning agent skills for coding agents (claude-code), share a common structure: maximize an objective **f(x) → score**, where **x** is a text artifact like code, a prompt, a policy, or even numeric hyperparameters serialized as a string. Today, we are introducing **`optimize_anything`**, a simple, declarative API that optimizes any artifact representable as text. You bring a **starting artifact** and an **evaluator**; `optimize_anything` uses LLMs as intelligent proposers to iteratively refine it. If you can measure it, you can optimize it.
 
 <!-- more -->
 
@@ -36,28 +36,28 @@ Many real-world problems — designing accurate-but-cheap AI agents, writing fas
   <figcaption>The optimize_anything loop: evaluate a text artifact, capture diagnostic feedback (ASI), and use an LLM to propose targeted improvements.</figcaption>
 </figure>
 
-While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode — optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** — single-task search, multi-task search, and generalization — under one declarative API.
+While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode, optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** (single-task search, multi-task search, and generalization) under one declarative API.
 
-We demonstrate `optimize_anything` across seven diverse domains: it **matches Optuna** — a mature, purpose-built numerical optimizer — on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms saving 40.2% on egress costs**, achieves **state-of-the-art prompt optimization**, designs an entire **agent architecture** to boost ARC-AGI accuracy from 32.5% to **89.5%**, and **learns agent skills** that boost Claude Code to near-perfect resolve rates while cutting resolution time by 40%.
+We demonstrate `optimize_anything` across seven diverse domains: it **matches Optuna** (a mature, purpose-built numerical optimizer) on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms saving 40.2% on egress costs**, achieves **state-of-the-art prompt optimization**, designs an entire **agent architecture** to boost ARC-AGI accuracy from 32.5% to **89.5%**, and **learns agent skills** that boost Claude Code to near-perfect resolve rates while cutting resolution time by 40%.
 
 ## If It's Text, You Can Optimize It
 
 The key insight behind `optimize_anything` is that a surprisingly wide range of problems can be formulated as optimizing a text artifact. Consider:
 
-- **Code**: CUDA kernels, scheduling algorithms, solver implementations — all are text that can be evaluated by execution.
-- **Prompts**: System prompts, few-shot templates, chain-of-thought instructions — evaluated by running them against a dataset.
-- **Agent architectures**: The entire agent system — its prompts, sub-agents, control flow, and orchestration logic.
+- **Code**: CUDA kernels, scheduling algorithms, and solver implementations, all of which are text that can be evaluated by execution.
+- **Prompts**: System prompts, few-shot templates, and chain-of-thought instructions, evaluated by running them against a dataset.
+- **Agent architectures**: The entire agent system, including its prompts, sub-agents, control flow, and orchestration logic.
 - **Configurations**: Hyperparameters, policies, and decision rules can be serialized as JSON strings and evaluated by simulation.
-- **Agent Skills**: Repository-specific instructions and best practices for coding agents — evaluated by running the agent on real tasks from the codebase.
+- **Agent Skills**: Repository-specific instructions and best practices for coding agents, evaluated by running the agent on real tasks from the codebase.
 
 If an artifact can be serialized to text and evaluated programmatically, an LLM can reason about it and propose improvements. `optimize_anything` provides the interface to make this loop trivial to set up.
 
 
 ## From Evolution to Intelligent Design
 
-Traditional optimization methods — gradient descent, evolutionary strategies, Bayesian optimization — operate on purely numerical feedback. They know *that* a candidate failed, but not *why*. You can't pass Optuna a stack trace. You can't show a Bayesian optimizer the compiler error that explains exactly which line crashed. All that diagnostic context — compiler errors, profiling traces, agent reasoning logs, constraint violation details — is reduced to a single scalar and the rest is discarded.
+Traditional optimization methods like gradient descent, evolutionary strategies, and Bayesian optimization operate on purely numerical feedback. They know *that* a candidate failed, but not *why*. You can't pass Optuna a stack trace. You can't show a Bayesian optimizer the compiler error that explains exactly which line crashed. All that diagnostic context (compiler errors, profiling traces, agent reasoning logs, and constraint violation details) is reduced to a single scalar and the rest is discarded.
 
-`optimize_anything` captures this diagnostic context as **Actionable Side Information (ASI)** — a first-class part of the evaluator contract that *you* design. ASI can be anything that would help an expert diagnose the problem: error messages, profiling data, rendered images, constraint violations, tool outputs. Because the proposer is an LLM, it can actually *read* this feedback. During a **dedicated reflection step**, it reasons about *why* specific candidates succeeded or failed — then proposes targeted improvements.
+`optimize_anything` captures this diagnostic context as **Actionable Side Information (ASI)**: a first-class part of the evaluator contract that *you* design. ASI can be anything that would help an expert diagnose the problem: error messages, profiling data, rendered images, constraint violations, tool outputs. Because the proposer is an LLM, it can actually *read* this feedback. During a **dedicated reflection step**, it reasons about *why* specific candidates succeeded or failed, then proposes targeted improvements.
 
 <figure>
   <div style="width:100%; max-width:800px; margin:0 auto; position:relative; padding-bottom:61.25%; height:0; overflow:hidden;">
@@ -66,7 +66,7 @@ Traditional optimization methods — gradient descent, evolutionary strategies, 
   <figcaption>ASI is the text-optimization analogue of the gradient. Where gradients tell a numerical optimizer which direction to move, ASI tells an LLM proposer why a candidate failed and how to fix it.</figcaption>
 </figure>
 
-Because ASI is user-defined, it can be tailored to the domain: a dictionary of constraint violations for circle packing, a profiler trace for CUDA kernels, or a rendered image of a malformed SVG (via `gepa.image.Image`) so a vision-capable LLM (VLM) can literally *see* what it's improving. This marks a fundamental shift. Traditional evolutionary algorithms act like nature's "blind watchmaker" — applying random mutations and keeping whatever scores higher. An LLM with ASI acts as a **designer**: it reads the feedback, diagnoses the problem, and proposes a targeted fix. We are moving from *evolution* to **Intelligent Design**.
+Because ASI is user-defined, it can be tailored to the domain: a dictionary of constraint violations for circle packing, a profiler trace for CUDA kernels, or a rendered image of a malformed SVG (via `gepa.image.Image`) so a vision-capable LLM (VLM) can literally *see* what it's improving. This marks a fundamental shift. Traditional evolutionary algorithms act like nature's "blind watchmaker," applying random mutations and keeping whatever scores higher. An LLM with ASI acts as a **designer**: it reads the feedback, diagnoses the problem, and proposes a targeted fix. We are moving from *evolution* to **Intelligent Design**.
 
 **Evolution (blind):** "Change a parameter and hope the score goes up."
 
@@ -117,19 +117,19 @@ The side information can be anything: text, structured data, or even **images** 
   <figcaption>The three optimization modes: single-task search, multi-task search, and generalization.</figcaption>
 </figure>
 
-**1. Single-Task Search** — "Solve one hard problem." No dataset needed — the candidate *is* the solution, and the evaluator scores it directly (no `example` argument). Examples: finding an optimal circle packing arrangement, discovering a blackbox optimization algorithm. This is the mode that AlphaEvolve, ShinkaEvolve, and OpenEvolve operate in.
+**1. Single-Task Search**: "Solve one hard problem." No dataset needed. The candidate *is* the solution, and the evaluator scores it directly (no `example` argument). Examples: finding an optimal circle packing arrangement, discovering a blackbox optimization algorithm. This is the mode that AlphaEvolve, ShinkaEvolve, and OpenEvolve operate in.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=...)
 ```
 
-**2. Multi-Task Search** — "Solve a batch of related problems with cross-transfer." You provide a `dataset` of related tasks. Insights from solving one task help solve the others. Example: optimizing CUDA kernels for multiple algorithms on the same hardware.
+**2. Multi-Task Search**: "Solve a batch of related problems with cross-transfer." You provide a `dataset` of related tasks. Insights from solving one task help solve the others. Example: optimizing CUDA kernels for multiple algorithms on the same hardware.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=..., dataset=tasks)
 ```
 
-**3. Generalization** — "Build a skill that transfers to unseen problems." You provide both a training `dataset` and a held-out `valset`. The optimizer must learn a general artifact — a prompt, an agent, a policy — that generalizes. This abstracts over traditional machine learning and program synthesis. Examples: prompt optimization, agent architecture discovery, cloud scheduling policy learning.
+**3. Generalization**: "Build a skill that transfers to unseen problems." You provide both a training `dataset` and a held-out `valset`. The optimizer must learn a general artifact (a prompt, an agent, a policy, etc.) that generalizes. This abstracts over traditional machine learning and program synthesis. Examples: prompt optimization, agent architecture discovery, cloud scheduling policy learning.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=..., dataset=train, valset=val)
@@ -149,11 +149,11 @@ def optimize_anything(
 ) -> GEPAResult
 ```
 
-Notice what's *absent*: no mutation prompts, no task-specific instruction templates, no island configurations, no EVOLVE-BLOCK markers (all common in prior LLM-evolution frameworks). You declare the **what** — your artifact, your evaluator, and any domain knowledge as `background` — and `optimize_anything` handles the **how**: prompt construction, reflection, candidate selection, and search strategy. This declarative design, inspired by [DSPy](https://github.com/stanfordnlp/dspy)'s principle of *programming not prompting*, means the same API call works whether you're optimizing a CUDA kernel, a cloud scheduling policy, or an agent architecture.
+Notice what's *absent*: no mutation prompts, no task-specific instruction templates, no island configurations, no EVOLVE-BLOCK markers (all common in prior LLM-evolution frameworks). You declare the **what** (your artifact, your evaluator, and any domain knowledge as `background`) and `optimize_anything` handles the **how**: prompt construction, reflection, candidate selection, and search strategy. This declarative design, inspired by [DSPy](https://github.com/stanfordnlp/dspy)'s principle of *programming not prompting*, means the same API call works whether you're optimizing a CUDA kernel, a cloud scheduling policy, or an agent architecture.
 
 ### The Pareto Insight
 
-In multi-task and generalization modes, `optimize_anything` leverages GEPA's core algorithmic insight: **Pareto-efficient search**. Rather than asking the LLM to improve *all* metrics simultaneously, each reflection step focuses on improving a specific subset of metrics or examples. Over multiple iterations, different subsets are selected — a minibatch of 2-3 examples or objectives at a time — and the proposer can focus its effort. This cycling through subsets, combined with Pareto-efficient selection that preserves candidates that excel on different axes, consistently outperforms naive all-at-once optimization.
+In multi-task and generalization modes, `optimize_anything` leverages GEPA's core algorithmic insight: **Pareto-efficient search**. Rather than asking the LLM to improve *all* metrics simultaneously, each reflection step focuses on improving a specific subset of metrics or examples. Over multiple iterations, different subsets are selected (a minibatch of 2-3 examples or objectives at a time), allowing the proposer to focus its effort. This cycling through subsets, combined with Pareto-efficient selection that preserves candidates that excel on different axes, consistently outperforms naive all-at-once optimization.
 
 ## Let's Take It for a Spin
 
@@ -212,8 +212,8 @@ A few things to note:
 
 - The **`dataset`** contains 6 evaluation aspects. GEPA calls the evaluator once per aspect per candidate, tracking scores individually. This enables Pareto-efficient selection: a candidate that excels at bicycle structure but struggles with pelican anatomy is preserved on the frontier, not discarded behind a mediocre average.
 - Our desired visual aspects are defined in concise natural language. We avoid the need for detailed rubrics and simply rely on the VLM's judgment for scoring.
-- **`reflection_minibatch_size=2`** means each reflection step shows the LLM feedback from just 2 aspects. Over multiple iterations, all 6 aspects get attention — but each reflection is focused and targeted.
-- The **rendered image** is passed in `side_info` via `Image(base64_data=...)`, so the VLM proposer can literally *see* what needs improvement. The VLM evaluator **never** sees the SVG code — only the rendered image.
+- **`reflection_minibatch_size=2`** means each reflection step shows the LLM feedback from just 2 aspects. Over multiple iterations, all 6 aspects get attention, but each reflection is focused and targeted.
+- The **rendered image** is passed in `side_info` via `Image(base64_data=...)`, so the VLM proposer can literally *see* what needs improvement. The VLM evaluator **never** sees the SVG code, only the rendered image.
 - The reflection model see the feedback (both positive and negative) along with the optimization artifact (source code), and directly optimizes it.
 - Starting from a plain white canvas, the optimizer produces a detailed illustration scoring an average of **0.825** across all six aspects in 12 candidates:
 
@@ -234,7 +234,7 @@ A few things to note:
 </div>
 </div>
 
-*With only 12 candidates, the optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition — all through LLM reflection on rendered image feedback. Similar results were also observed with Claude Opus 4.6 which produced 20 candidates.*
+*With only 12 candidates, the optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition, all through LLM reflection on rendered image feedback. Similar results were also observed with Claude Opus 4.6 which produced 20 candidates.*
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
@@ -360,23 +360,23 @@ A few things to note:
 
 ## Results
 
-We apply `optimize_anything` to seven diverse domains spanning search, batch optimization, and generalization. Each result below links to the corresponding [appendix section](#appendix-case-study-code) with the full code.
+We apply `optimize_anything` to seven diverse domains spanning search, batch optimization, and generalization. Each result below links to the corresponding [appendix section](#appendix-case-study-code) with the full code and optimized artifacts.
 
 ### 1. Blackbox Mathematical Optimization: Matching Optuna
 
-**Mode: Single-Task Search.** Given a blackbox objective function, `optimize_anything` discovers an optimization algorithm tailored to it — and matches [Optuna](https://optuna.org/) across the 56-problem [EvalSet](https://github.com/sigopt/evalset) benchmark.
+**Mode: Single-Task Search.** Given a blackbox objective function, `optimize_anything` discovers an optimization algorithm tailored to it and matches [Optuna](https://optuna.org/) across the 56-problem [EvalSet](https://github.com/sigopt/evalset) benchmark.
 
 <figure markdown="span" style="margin: 0 auto;">
-  ![Bar chart showing GEPA vs Optuna on 56 EvalSet problems with 1% tolerance and 8000 trials. GEPA wins on 7 problems, Optuna wins on 9, and they tie on 40.](optuna_combined2.png)
-  <figcaption>GEPA's optimize_anything matches Optuna, the industry-standard blackbox optimizer, on the EvalSet benchmark. (a) Over all 56 EvalSet problems (1 seed, 8 000 trials), GEPA ties Optuna on 40, wins 7, and loses 9. (b) On 10 selected problems where Optuna struggles (2 000 trials, 10 seeds), GEPA finds better solutions on 7 out of 10.</figcaption>
+  ![Bar chart showing GEPA vs Optuna on 56 EvalSet problems with 1% tolerance and 8000 evaluations. GEPA wins on 7 problems, Optuna wins on 9, and they tie on 40.](optuna_combined2.png)
+  <figcaption>GEPA's optimize_anything matches Optuna (the industry-standard blackbox optimizer) on the EvalSet benchmark. (a) Over all 56 EvalSet problems (1 independent run, 8,000 evaluations), GEPA ties Optuna on 40, wins 7, and loses 9. (b) On 10 selected problems where Optuna struggles (2,000 evaluations, 10 independent runs), GEPA finds better solutions on 7 out of 10.</figcaption>
 </figure>
 
-On the 56-problem evalset benchmark with large budgets, GEPA and Optuna tie on most problems. But on the hardest problems with lower budgets where Optuna struggles, a striking pattern emerges: Optuna's fixed TPE→CMA-ES pipeline fails in predictable, structural ways. On McCourt13, all 10 Optuna seeds converge to the same local minimum because TPE's independent per-dimension sampling always falls into the dominant trap basin. On Tripod, CMA-ES assumes a smooth, unimodal landscape, but the objective is piecewise-linear with hard discontinuities — so it converges to the wrong basin and cannot escape.
+On the 56-problem evalset benchmark with large budgets, GEPA and Optuna tie on most problems. But on the hardest problems with lower budgets where Optuna struggles, a striking pattern emerges: Optuna's fixed TPE→CMA-ES pipeline fails in predictable, structural ways. On McCourt13, all 10 Optuna runs converge to the same local minimum because TPE's independent per-dimension sampling always falls into the dominant trap basin. On Tripod, CMA-ES assumes a smooth, unimodal landscape, but the objective is piecewise-linear with hard discontinuities, so it converges to the wrong basin and cannot escape.
 
 GEPA tailors the solver to each problem by learning from accumulated evaluation history. For boundary optima, it discovers L-BFGS-B, a box-constrained optimizer that naturally sticks to boundaries. For deceptive traps, it designs multi-start search from diverse starting points, escaping basins that trap single-trajectory methods. While Optuna tunes parameters within a fixed algorithm, GEPA learns to optimize the algorithm itself on the fly.
 
-**Key result:** `optimize_anything` matches the performance of Optuna, a mature numerical optimizer, by evolving solver code from a random-search seed. [Full code →](#appendix-a-blackbox-mathematical-optimization)
-
+**Key result:** `optimize_anything` matches the performance of Optuna, a mature numerical optimizer, by optimizing a solver program tailored to each target problem. 
+[Full code →](#appendix-a-blackbox-mathematical-optimization)
 
 ### 2. Circle Packing: Outperforming AlphaEvolve
 
@@ -399,8 +399,8 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
 **Mode: Multi-Task Search.** Optimize a prompt that instructs an LLM to generate fast CUDA kernels for multiple algorithms from [KernelBench](https://github.com/ScalingIntelligence/KernelBench) on V1000 32GB. Insights from optimizing one kernel transfer to others via shared prompt improvements.
 
 <figure markdown="span">
-  ![Line chart showing KernelBench performance vs budget. Fast_p(0) — any correct kernel — reaches 100%. Fast_p(1.0) — matching baseline speed — reaches 87%. Fast_p(1.1) — 10% faster — reaches 48%. Fast_p(1.2) — 20% faster — reaches 25%.](kernelbench_results.png)
-  <figcaption>KernelBench results with GEPA (gpt-5 as proposer). 87% of generated kernels match or beat baseline performance; 25% are 20%+ faster.</figcaption>
+  ![Line chart showing KernelBench performance vs budget. Fast_p(0) (any correct kernel) reaches 100%. Fast_p(1.0) (matching baseline speed) reaches 87%. Fast_p(1.1) (10% faster) reaches 48%. Fast_p(1.2) (20% faster) reaches 25%.](kernelbench_results.png)
+  <figcaption>KernelBench results with GEPA (gpt-5 as proposer). 87% of generated kernels match or beat baseline performance; 25% are 20%+ faster. We use 31 of the 35 hand-curated problems from the KernelBench authors.<a href="#fn-kernelbench" class="fn-ref" id="fn-ref-kernelbench"><sup>1</sup></a></figcaption>
 </figure>
 
 **Key result:** 87% of GEPA-generated kernels match or beat the baseline, with 25% achieving 20%+ speedups. [Full code →](#appendix-c-cuda-kernel-generation)
@@ -426,7 +426,7 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
 </div>
 </div>
 
-**Key result:** `optimize_anything` discovers state-of-the-art algorithms for both problems — **40.2% cost savings** on CloudCast and **7.8% cost savings** on Can't Be Late — outperforming hand-designed heuristics. [Full code →](#appendix-d-cloudcast--cant-be-late)
+**Key result:** `optimize_anything` discovers state-of-the-art algorithms for both problems (**40.2% cost savings** on CloudCast and **7.8% cost savings** on Can't Be Late), outperforming hand-designed heuristics. [Full code →](#appendix-d-cloudcast--cant-be-late)
 
 ### 5. Prompt Optimization: AIME Mathematics
 
@@ -437,33 +437,33 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
   <figcaption>AIME 2025 prompt optimization: gpt-4.1-mini accuracy improves from 46.67% to 60.00% through prompt refinement alone.</figcaption>
 </figure>
 
-**Key result:** Pure prompt optimization improves gpt-4.1-mini from 46.67% to **60.00%** on AIME 2025 — a 13.3 percentage point gain from changing only the system prompt. [Full code →](#appendix-e-aime-prompt-optimization)
+**Key result:** Pure prompt optimization improves gpt-4.1-mini from 46.67% to **60.00%** on AIME 2025, a 13.3 percentage point gain from changing only the system prompt. [Full code →](#appendix-e-aime-prompt-optimization)
 
 ### 6. Agent Architecture Discovery: ARC-AGI
 
-**Mode: Generalization.** This is the most ambitious application. Rather than optimizing a prompt, we optimize the **entire agent**: its code, sub-agent architecture, control flow, helper functions, and prompts — all treated as a single text artifact. The seed is a 10-line naive agent; GEPA evolves it into a 300+ line system with rule induction, code verification, iterative refinement, and structured fallbacks.
+**Mode: Generalization.** This is the most ambitious application. Rather than optimizing a prompt, we optimize the **entire agent**: its code, sub-agent architecture, control flow, helper functions, and prompts, all treated as a single text artifact. The seed is a 10-line naive agent; GEPA evolves it into a 300+ line system with rule induction, code verification, iterative refinement, and structured fallbacks.
 
 <figure markdown="span">
   ![Optimization trajectory for ARC-AGI with Gemini 3 Flash. Validation accuracy improves from 56.5% to 93.5%. Base test score is 32.5%, best test score reaches 89.5%.](arc_agi_trajectory.png)
   <figcaption>ARC-AGI agent evolution: from a naive 10-line agent (32.5% test) to a sophisticated 300+ line system (89.5% test) with Gemini 3 Flash.</figcaption>
 </figure>
 
-**Key result:** Using the same underlying model (Gemini 3 Flash), `optimize_anything` improves ARC-AGI test accuracy from 32.5% to **89.5%** by evolving the entire agent architecture — gains that typically require weeks of manual iteration. [Full code →](#appendix-f-arc-agi-agent-architecture-discovery)
+**Key result:** Using the same underlying model (Gemini 3 Flash), `optimize_anything` improves ARC-AGI test accuracy from 32.5% to **89.5%** by evolving the entire agent architecture, achieving gains that typically require weeks of manual iteration. [Full code →](#appendix-f-arc-agi-agent-architecture-discovery)
 
 ### 7. Coding Agent Skills: Learning Skills for Any Repository
 
-**Mode: Generalization.** Skills — natural-language instructions and best practices for working with a specific codebase — are text artifacts too. `optimize_anything` can optimize them: the evaluator runs a coding agent on real tasks from the repository and scores whether it resolves them; the optimized skills must generalize to unseen tasks.
+**Mode: Generalization.** Skills (natural-language instructions and best practices for working with a specific codebase) are text artifacts too. `optimize_anything` can optimize them: the evaluator runs a coding agent on real tasks from the repository and scores whether it resolves them; the optimized skills must generalize to unseen tasks.
 
-The results are striking: GEPA-optimized skills boost resolve rates from 24% to **93%** on one repository and from 55% to **82%** on another — and transfer directly to Claude Code, pushing it to near-perfect pass rates while also reducing task duration.
+The results are striking: GEPA-optimized skills boost resolve rates from 24% to **93%** on one repository and from 55% to **82%** on another, and transfer directly to Claude Code, pushing it to near-perfect pass rates while also reducing task duration.
 
 **Key result:** `optimize_anything` learns repository-specific skills that dramatically improve coding agent performance and transfer across models. [Read the full post →](../learning-skills-for-any-repository/)
 
 
 ## Conclusion & Getting Started
 
-`optimize_anything` makes a simple bet: if your artifact is text and your evaluator is programmatic, you can optimize it. The API is minimal — a seed, an evaluator, and optionally a dataset. The results span blackbox optimization, algorithmic discovery, kernel generation, systems research, prompt tuning, agent architecture search, and coding agent skill learning.
+`optimize_anything` makes a simple bet: if your artifact is text and your evaluator is programmatic, you can optimize it. The API is minimal: a seed, an evaluator, and optionally a dataset. The results span blackbox optimization, algorithmic discovery, kernel generation, systems research, prompt tuning, agent architecture search, and coding agent skill learning.
 
-The key ideas: (1) **three unified modes** — single-task search, multi-task search, and generalization — under one declarative API; (2) **Actionable Side Information (ASI)** as a first-class API concept that turns the optimizer from a blind mutator into an intelligent designer; (3) **Pareto-efficient search** across metrics and examples that outperforms naive all-at-once optimization.
+The key ideas: (1) **three unified modes** (single-task search, multi-task search, and generalization) under one declarative API; (2) **Actionable Side Information (ASI)** as a first-class API concept that turns the optimizer from a blind mutator into an intelligent designer; (3) **Pareto-efficient search** across metrics and examples that outperforms naive all-at-once optimization.
 
 Get started:
 
@@ -484,6 +484,12 @@ result = oa.optimize_anything(
 - [GitHub](https://github.com/gepa-ai/gepa)
 - [Discord](https://discord.gg/A7dABbtmFw) 
 <!-- (@luke: the discord link leads to a dspy channle. is this correct? ) -->
+
+<div class="blog-footnotes">
+<ol>
+<li id="fn-kernelbench">4 of the 35 problems were excluded due to out-of-memory errors on V100 32GB. <a href="#fn-ref-kernelbench" class="fn-backref">↩</a></li>
+</ol>
+</div>
 
 ---
 
