@@ -1,12 +1,11 @@
 <span id="appendix-f-arc-agi-agent-architecture-discovery"></span>
 ??? example "ARC-AGI Agent Architecture Discovery"
 
-    Generalization mode where the **entire agent code** is the artifact being optimized. The seed is a 10-line naive agent; GEPA evolves it into a multi-stage system with rule induction, code verification, iterative refinement, and structured fallbacks.
+    Here, we tackle ARC-AGI1. This is a Generalization mode where the entire agent architecture is the artifact being optimized. The seed is a 10-line naive agent that makes a single LLM call; GEPA evolves it into a 170+ line multi-stage system with rule induction, code verification, iterative refinement, and structured fallbacks. Test accuracy improves from 32.5% to 89.5% on a public v1 test set.
+
+    **Candidate** — The seed candidate is a minimal 10-line agent that concatenates training examples into a single prompt and asks the LLM to predict outputs directly. It provides a starting template showing the `solve()` API.
 
     ```python
-    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
-    from examples.arc_agi.utils import load_arc_dataset
-
     SEED_AGENT = '''
     import json, re
     def solve(train_inputs, train_outputs, test_inputs, llm):
@@ -19,26 +18,46 @@
         return {"train": grids[:len(train_inputs)],
                 "test": [[g] for g in grids[len(train_inputs):]]}
     '''
+    ```
 
+    **Evaluator** — The evaluator sandboxes the agent code, runs it on an ARC-AGI puzzle (providing training input/output pairs and test inputs), and returns rich ASI — training and test scores, execution errors, the actual grid examples, and `llm.get_side_info()` which captures LLM costs, number of calls made, and all model outputs produced inside the agentic architecture. This lets the proposer see not just *what* the agent got wrong, but *how* it reasoned internally.
+
+    ```python
     def evaluate(candidate, **kwargs):
         ex = kwargs["example"]
+        agent_code = candidate["agent_code"]
+        
         result = run_agent(
-            agent_code=candidate["agent_code"],
-            train_in=ex.train_in, train_out=ex.train_out,
-            test_in=ex.test_in, test_out=ex.test_out,
-            model_id="openrouter/google/gemini-3-flash-preview",
-            max_llm_calls=10,
+            agent_code=agent_code,
+            train_in=ex.train_in,
+            train_out=ex.train_out,
+            test_in=ex.test_in,
+            test_out=ex.test_out or None,
+            model_id=LLM_MODEL,
+            max_llm_calls=MAX_LLM_CALLS,
         )
+        llm = result["llm"]
         score = result["test_score"]
 
         return score, {
+            "score": score,
             "problem_id": ex.problem_id,
+            "agent_code": agent_code,
             "training_score": result["training_score"],
             "test_score": result["test_score"],
+            "cost": llm.total_cost,
             "error": result["error"],
             "train_examples": result["train_examples"],
             "test_examples": result["test_examples"],
+            **llm.get_side_info(),
         }
+    ```
+
+    **Optimizer** — This is **Generalization** mode with `dataset` (training puzzles) and `valset` (validation puzzles) — the agent must generalize to unseen puzzles, so just memorizing patterns from the training set won't help. `parallel=True` with `max_workers=64` enables massive concurrent evaluation across puzzles. `max_metric_calls=1200` gives GEPA ample budget to evolve the agent architecture. `background` provides domain knowledge about ARC puzzle structure. Gemini 3 Flash is used as both the reflection model and the agent's internal LLM. Note that using a stronger reflection model can find a even more effective artifact in general. 
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+    from examples.arc_agi.utils import load_arc_dataset
 
     train_set, val_set, test_set = load_arc_dataset()
 
@@ -48,7 +67,7 @@
         dataset=train_set,
         valset=val_set,
         config=GEPAConfig(
-            engine=EngineConfig(max_metric_calls=4000, parallel=True,
+            engine=EngineConfig(max_metric_calls=1200, parallel=True,
                                 max_workers=64, cache_evaluation=True),
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/google/gemini-3-flash-preview",
@@ -62,4 +81,181 @@
     )
     ```
 
-    The optimized agent grew from 10 lines to 300+ lines, developing its own helper library for grid analysis, a multi-stage rule induction pipeline, iterative code refinement with verification, and a structured fallback to direct LLM prediction — all discovered automatically by `optimize_anything`.
+    **Optimized artifact** — Starting from a 10-line single-call agent, GEPA discovered a 4-stage pipeline on its own: Analyst (infer the rule), Developer (write a `transform()` function), Validator (run it on all training examples and iteratively debug), and Optimizer (assemble attempts with fallbacks). What's interesting is that the agent learned to generate code, execute it, check the output, and fix bugs in a loop. It also learned a dual-attempt strategy: try the code path first, fall back to direct LLM prediction if that fails.
+
+    <section class="scrollable-code" markdown>
+
+    ````python
+    import json
+    import re
+    import numpy as np
+
+    def solve(train_inputs, train_outputs, test_inputs, llm):
+        """
+        ARC-AGI solver using a multi-stage reasoning and execution pipeline:
+        1. Analyst: Infers transformation logic and describes it.
+        2. Developer: Writes a Python function to implement the logic.
+        3. Validator: Tests the code against ALL training examples and iterates if it fails.
+        4. Optimizer: Uses the best-performing code or falls back to direct prediction via LLM.
+        """
+
+        def format_grid(grid):
+            return json.dumps(grid)
+
+        training_exs = ""
+        for idx, (i, o) in enumerate(zip(train_inputs, train_outputs)):
+            training_exs += f"Example {idx}:\nInput: {format_grid(i)}\nOutput: {format_grid(o)}\n\n"
+
+        # Stage 1: Initial Programming Attempt
+        programmer_prompt = f"""You are an absolute expert programmer and ARC-AGI solver.
+    Analyze these training examples and identify the transformation rule.
+    Consider: object properties (color, shape, position), grid symmetry, relative movement, and color mapping.
+
+    {training_exs}
+
+    Task:
+    Write a Python function `transform(grid)` using numpy. 
+    The function should return the transformed grid as a list of lists.
+    Ensure your code is robust and handles grid boundaries.
+
+    ```python
+    import numpy as np
+
+    def transform(grid):
+        grid = np.array(grid)
+        # logic here
+        return grid.tolist()
+    ```
+    """
+
+        response = llm(programmer_prompt)
+        
+        def extract_code(text):
+            code_match = re.search(r"```python\s*(.*?)\s*```", text, re.DOTALL)
+            return code_match.group(1) if code_match else ""
+
+        code = extract_code(response)
+        
+        # Stage 2: Code Validation and Auto-Correction
+        max_fix_attempts = 2
+        best_code = code
+
+        for _ in range(max_fix_attempts):
+            success_count = 0
+            execution_feedback = ""
+            
+            if not best_code:
+                break
+
+            try:
+                # Create a namespace for the function
+                namespace = {}
+                exec("import numpy as np", namespace)
+                exec(best_code, namespace)
+                transform_fn = namespace.get('transform')
+                
+                if not transform_fn:
+                    raise Exception("Function 'transform' not found in code.")
+
+                for i, (in_grid, out_grid) in enumerate(zip(train_inputs, train_outputs)):
+                    pred = transform_fn(in_grid)
+                    if pred == out_grid:
+                        success_count += 1
+                    else:
+                        execution_feedback += f"Example {i} failed. Expected {format_grid(out_grid)}, but got {format_grid(pred)}.\n"
+            except Exception as e:
+                execution_feedback = f"Error during execution: {str(e)}"
+
+            if success_count == len(train_inputs):
+                break
+            else:
+                # Code failed training; ask the LLM to fix it using feedback
+                fixer_prompt = f"""The previous code failed validation.
+    Rule Analysis: {response}
+
+    Current Code:
+    ```python
+    {best_code}
+    ```
+
+    Validation Feedback:
+    {execution_feedback}
+
+    Correct the logic based on the feedback. Ensure it passes ALL training examples.
+    {training_exs}
+    Only provide the corrected ```python block.
+    """
+                response = llm(fixer_prompt)
+                best_code = extract_code(response)
+
+        # Stage 3: Execution and Fallback Generation
+        final_test_results = []
+        code_functional = False
+        
+        # Attempt to execute best_code on test inputs
+        try:
+            namespace = {}
+            exec("import numpy as np", namespace)
+            exec(best_code, namespace)
+            transform_fn = namespace['transform']
+            
+            code_test_outputs = []
+            for t_in in test_inputs:
+                code_test_outputs.append(transform_fn(t_in))
+            code_functional = True
+        except:
+            code_functional = False
+
+        # Stage 4: Logical Reasoning Fallback (for the 2nd attempt or if code fails)
+        fallback_prompt = f"""The pattern is based on these examples:
+    {training_exs}
+
+    Predict the output for these test inputs:
+    {[format_grid(t) for t in test_inputs]}
+
+    Respond ONLY with a JSON list of grids:
+    ```json
+    [[grid1], [grid2], ...]
+    ```
+    """
+        fallback_response = llm(fallback_prompt)
+
+        def extract_json_grids(text):
+            json_match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+            if json_match:
+                try:
+                    data = json.loads(json_match.group(1))
+                    return data if isinstance(data, list) else []
+                except: pass
+            return []
+
+        fallback_grids = extract_json_grids(fallback_response)
+
+        # Assemble 2 attempts for each test input
+        for idx, t_in in enumerate(test_inputs):
+            attempts = []
+            
+            # 1st Attempt: Code output (if functional) or first fallback
+            if code_functional and idx < len(code_test_outputs):
+                attempts.append(code_test_outputs[idx])
+            elif idx < len(fallback_grids):
+                attempts.append(fallback_grids[idx])
+            else:
+                attempts.append(t_in) # Safety
+                
+            # 2nd Attempt: Top fallback or a modified version of the first
+            if idx < len(fallback_grids) and fallback_grids[idx] not in attempts:
+                attempts.append(fallback_grids[idx])
+            
+            # Padding to 2 attempts
+            while len(attempts) < 2:
+                attempts.append(attempts[0])
+                
+            final_test_results.append(attempts[:2])
+
+        return {
+            "train": [t for t in train_outputs],
+            "test": final_test_results
+        }
+    ````
+    </section>

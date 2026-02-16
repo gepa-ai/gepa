@@ -1,0 +1,55 @@
+<span id="appendix-b-circle-packing"></span>
+??? example "Circle Packing"
+
+    Optimize code that packs n=26 circles within a unit square, maximizing the sum of radii. The evaluator executes the packing code, validates circle positions, and returns geometric diagnostics.
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
+
+    def evaluate(candidate, opt_state):
+        code = candidate["code"]
+        warm_start = extract_best_circles(opt_state)
+        result = execute_code(code, 600, warm_start)
+
+        if result["success"]:
+            circles = result["result"]["circles"]
+            score = result["result"]["validation_details"]["sum_radii"]
+            metrics = compute_multiple_metrics(result["result"]["all_scores"])
+        else:
+            circles = None
+            score = 0.0
+            metrics = {"sum_radii": 0.0}
+
+        side_info = {
+            "scores": {"sum_radii": score},
+            "metrics": metrics,
+            "code": code,
+            "circles": circles,
+            "stdout": result.get("stdout", ""),
+            "error": result.get("error"),
+            "traceback": result.get("traceback"),
+            "validation_details": result.get("validation_details"),
+        }
+
+        return score, side_info
+
+    optimize_anything(
+        seed_candidate={"code": SEED_CODE},
+        evaluator=evaluate,
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=150, cache_evaluation=True, frontier_type="objective"),
+            reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
+            refiner=RefinerConfig()
+        ),
+        objective="Optimize circle packing code to maximize sum of circle radii "
+                  "within a unit square for N=26 circles.",
+    )
+    ```
+
+    Notes:
+
+    - Also a **Single-Task Search** with no `dataset`, just an `objective`.
+    - `frontier_type="objective"` tracks the Pareto frontier per objective metric (e.g., `sum_radii`) rather than per dataset example. This is the right choice when there's no dataset and the evaluator returns named objective scores.
+    - `RefinerConfig()` adds an inner-loop refinement step: after each evaluation, a Refiner LLM reads the feedback and proposes an improved candidate. GEPA keeps whichever is better. The refiner's own prompt is co-evolved alongside the candidate, so refinement quality improves over time.
+    - The ASI includes circle positions, validation details, and execution diagnostics so the LLM understands geometric constraints.
+
