@@ -550,20 +550,8 @@ Traditional optimizers (RL, evolutionary strategies) collapse rich execution tra
   </div>
 </div>
 
-## :material-compare: Why Choose GEPA?
-
-| Feature | GEPA | Reinforcement Learning | Manual Prompting |
-|---------|------|----------------------|------------------|
-| **Cost** | :material-check-circle:{ .check } Low | :material-close-circle:{ .cross } Very High | :material-check-circle:{ .check } Low |
-| **Sample Efficiency** | :material-check-circle:{ .check } High (150 calls) | :material-close-circle:{ .cross } Low (10K+ calls) | :material-minus-circle:{ .neutral } N/A |
-| **Performance** | :material-check-circle:{ .check } SOTA | :material-check-circle:{ .check } SOTA | :material-close-circle:{ .cross } Suboptimal |
-| **Interpretability** | :material-check-circle:{ .check } Natural Language | :material-close-circle:{ .cross } Black Box | :material-check-circle:{ .check } Clear |
-| **Setup Time** | :material-check-circle:{ .check } Minutes | :material-close-circle:{ .cross } Days/Weeks | :material-check-circle:{ .check } Minutes |
-| **Framework Support** | :material-check-circle:{ .check } Any System | :material-minus-circle:{ .neutral } Framework Specific | :material-check-circle:{ .check } Any System |
-| **Multi-Objective** | :material-check-circle:{ .check } Native | :material-minus-circle:{ .neutral } Complex | :material-close-circle:{ .cross } Manual |
-
 !!! note "GEPA complements RL and fine-tuning"
-    These approaches are not mutually exclusive. Use GEPA for rapid initial optimization (minutes to hours, API-only access), then apply RL or fine-tuning for additional gains. For scenarios with abundant data and 100,000+ cheap rollouts, gradient-based methods remain effective — GEPA works best when rollouts are expensive, data is scarce, or you need interpretable optimization traces.
+    These approaches are not mutually exclusive. Use GEPA for rapid initial optimization (minutes to hours, API-only access), then apply RL or fine-tuning for additional gains as demonstrated in [BetterTogether](https://arxiv.org/abs/2407.10930) / [mmGRPO](https://arxiv.org/abs/2508.04660) recipe. For scenarios with abundant data and 100,000+ cheap rollouts, gradient-based methods remain effective — GEPA works best when rollouts are expensive, data is scarce, or you need interpretable optimization traces.
 
 ## :material-account-group: Community & Resources
 
