@@ -38,7 +38,7 @@ Many real-world problems — designing accurate-but-cheap AI agents, writing fas
 
 While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode — optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** — single-task search, multi-task search, and generalization — under one declarative API.
 
-We demonstrate `optimize_anything` across seven diverse domains: it **matches Optuna** — a mature, purpose-built numerical optimizer — on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms saving 40.2% on egress costs**, achieves **state-of-the-art prompt optimization**, evolves an entire **agent architecture** to boost ARC-AGI accuracy from 32.5% to **89.5%**, and **learns agent skills** that boost Claude Code to near-perfect resolve rates while cutting resolution time by 40%.
+We demonstrate `optimize_anything` across seven diverse domains: it **matches Optuna** — a mature, purpose-built numerical optimizer — on blackbox mathematical optimization, **outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve** on circle packing, **generates fast CUDA kernels** on KernelBench, discovers **state-of-the-art cloud scheduling algorithms saving 40.2% on egress costs**, achieves **state-of-the-art prompt optimization**, designs an entire **agent architecture** to boost ARC-AGI accuracy from 32.5% to **89.5%**, and **learns agent skills** that boost Claude Code to near-perfect resolve rates while cutting resolution time by 40%.
 
 ## If It's Text, You Can Optimize It
 
@@ -373,14 +373,14 @@ We apply `optimize_anything` to seven diverse domains spanning search, batch opt
 
 On the 56-problem evalset benchmark with large budgets, GEPA and Optuna tie on most problems. But on the hardest problems with lower budgets where Optuna struggles, a striking pattern emerges: Optuna's fixed TPE→CMA-ES pipeline fails in predictable, structural ways. On McCourt13, all 10 Optuna seeds converge to the same local minimum because TPE's independent per-dimension sampling always falls into the dominant trap basin. On Tripod, CMA-ES assumes a smooth, unimodal landscape, but the objective is piecewise-linear with hard discontinuities — so it converges to the wrong basin and cannot escape.
 
-GEPA tailors the solver to each problem by learning from accumulated evaluation history. For boundary optima, it discovers L-BFGS-B, a box-constrained optimizer that naturally sticks to boundaries. For deceptive traps, it evolves multi-start search from diverse starting points, escaping basins that trap single-trajectory methods. While Optuna tunes parameters within a fixed algorithm, GEPA learns to optimize the algorithm itself on the fly.
+GEPA tailors the solver to each problem by learning from accumulated evaluation history. For boundary optima, it discovers L-BFGS-B, a box-constrained optimizer that naturally sticks to boundaries. For deceptive traps, it designs multi-start search from diverse starting points, escaping basins that trap single-trajectory methods. While Optuna tunes parameters within a fixed algorithm, GEPA learns to optimize the algorithm itself on the fly.
 
 **Key result:** `optimize_anything` matches the performance of Optuna, a mature numerical optimizer, by evolving solver code from a random-search seed. [Full code →](#appendix-a-blackbox-mathematical-optimization)
 
 
 ### 2. Circle Packing: Outperforming AlphaEvolve
 
-**Mode: Single-Task Search.** Pack n=26 circles to maximize the sum of their radii within a unit square. GEPA evolves the packing algorithm code, using execution results and geometric diagnostics as ASI.
+**Mode: Single-Task Search.** Pack n=26 circles to maximize the sum of their radii within a unit square. GEPA optimizes the packing algorithm code, using execution results and geometric diagnostics as ASI.
 
 <figure markdown="span">
   ![Left: line chart comparing GEPA, ShinkaEvolve, OpenEvolve, and AlphaEvolve on circle packing (n=26). GEPA reaches the highest score (~2.63598+) with fewer metric calls. Right: magnified view showing GEPA slightly above AlphaEvolve's best.](circle_packing_comparison.png)
@@ -454,7 +454,7 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
 
 **Mode: Generalization.** Skills — natural-language instructions and best practices for working with a specific codebase — are text artifacts too. `optimize_anything` can optimize them: the evaluator runs a coding agent on real tasks from the repository and scores whether it resolves them; the optimized skills must generalize to unseen tasks.
 
-The results are striking: evolved skills boost resolve rates from 24% to **93%** on one repository and from 55% to **82%** on another — and transfer directly to Claude Code, pushing it to near-perfect pass rates while also reducing task duration.
+The results are striking: GEPA-optimized skills boost resolve rates from 24% to **93%** on one repository and from 55% to **82%** on another — and transfer directly to Claude Code, pushing it to near-perfect pass rates while also reducing task duration.
 
 **Key result:** `optimize_anything` learns repository-specific skills that dramatically improve coding agent performance and transfer across models. [Read the full post →](../learning-skills-for-any-repository/)
 
