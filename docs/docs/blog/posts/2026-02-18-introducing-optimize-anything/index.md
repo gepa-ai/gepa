@@ -375,7 +375,7 @@ On the 56-problem evalset benchmark with large budgets, GEPA and Optuna tie on m
 
 GEPA tailors the solver to each problem by learning from accumulated evaluation history. For boundary optima, it discovers L-BFGS-B, a box-constrained optimizer that naturally sticks to boundaries. For deceptive traps, it designs multi-start search from diverse starting points, escaping basins that trap single-trajectory methods. While Optuna tunes parameters within a fixed algorithm, GEPA learns to optimize the algorithm itself on the fly.
 
-**Key result:** `optimize_anything` matches the performance of Optuna, a mature numerical optimizer, by evolving solver code from a random-search seed. [Full code →](#appendix-a-blackbox-mathematical-optimization)
+**Key result:** `optimize_anything` matches the performance of Optuna, a mature numerical optimizer, by optimizing a solver program tailored to a target problem. [Full code →](#appendix-a-blackbox-mathematical-optimization)
 
 
 ### 2. Circle Packing: Outperforming AlphaEvolve
