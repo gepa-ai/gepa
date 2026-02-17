@@ -27,14 +27,14 @@ description: "A new API setting state-of-the-art results on optimizing code, pro
 
 # `optimize_anything`: A Universal API for Text Optimization
 
-Today we are introducing **`optimize_anything`**, a declarative API that optimizes any artifact representable as text — code, prompts, agent architectures, vector graphics, configurations — using just two inputs: a **starting artifact** and an **evaluator**. You declare what to optimize and how to measure it; the system handles the search. Where prior LLM-evolution frameworks require configuring island topologies, prompt samplers, and multi-component pipelines, `optimize_anything` strips the interface down to its essence. We've tested it across [several domains](#results) — from code optimization to agent architecture discovery — and it consistently matches or outperforms domain-specific tools, including some purpose-built for each task. As models and search techniques advance, the search improves without changing your code. If you can measure it, you can optimize it.
+Today we are introducing **`optimize_anything`**, a declarative API that optimizes any artifact representable as text (code, prompts, agent architectures, vector graphics, configurations) using just two inputs: a **starting artifact** and an **evaluator**. You declare what to optimize and how to measure it; the system handles the search. Where prior LLM-evolution frameworks require configuring island topologies, prompt samplers, and multi-component pipelines, `optimize_anything` strips the interface down to its essence. We've tested it across [several domains](#results) from code optimization to agent architecture discovery and it consistently matches or outperforms domain-specific tools, including some purpose-built for each task. As models and search techniques advance, the search improves without changing your code. If you can measure it, you can optimize it.
 
 <!-- more -->
 
 While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode, optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** (single-task search, multi-task search, and generalization) under one declarative API, enabling optimization tasks that prior frameworks cannot directly express: learning prompts that generalize to unseen examples, discovering agent architectures from scratch, and optimizing coding agent skills that transfer across models.
 
 <figure markdown="span">
-  ![optimize_anything diagram showing the core loop: a string x is passed to an evaluator f(x) which returns a score plus Actionable Side Information, which is then consumed by an LLM intelligent proposer to produce an improved string. Example instantiations shown below: Code Optimization, Numeric Optimization, Prompt/Agent Harness, Policy Optimization.](header_image.png)
+  ![optimize_anything diagram showing the core loop: a string x is passed to an evaluator f(x) which returns a score plus diagnostic feedback, which is then consumed by an LLM proposer to produce an improved string. Example instantiations shown below: Code Optimization, Numeric Optimization, Prompt/Agent Harness, Policy Optimization.](header_image.png)
   <figcaption>The optimize_anything loop: evaluate a text artifact, capture diagnostic feedback (ASI), and use an LLM to propose targeted improvements.</figcaption>
 </figure>
 
@@ -43,32 +43,12 @@ While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonst
 The key insight behind `optimize_anything` is that a surprisingly wide range of problems can be formulated as optimizing a text artifact. Consider:
 
 - **Code**: CUDA kernels, scheduling algorithms, solver implementations, all of which are text that can be evaluated by execution.
-- **Prompts**: System prompts, few-shot templates, chain-of-thought instructions, evaluated by running them against a dataset.
+- **Prompts**: System prompts, prompt templates, multi-step prompts, all evaluated by running them against a dataset.
 - **Agent architectures**: The entire agent system, including its prompts, sub-agents, control flow, and orchestration logic.
 - **Configurations**: Hyperparameters, policies, and decision rules can be serialized as JSON strings and evaluated by simulation.
 - **Agent Skills**: Repository-specific instructions and best practices for coding agents, evaluated by running the agent on real tasks from the codebase.
 
-If an artifact can be serialized to text and its performance can be measured, an LLM can reason about it and propose improvements. `optimize_anything` provides the interface to make this loop easier to set up.
-
-
-## From Evolution to Intelligent Design
-
-Traditional optimization methods (gradient descent, evolutionary strategies, Bayesian optimization) operate on purely numerical feedback. They know *that* a candidate failed, but not *why*. You can't pass Optuna a stack trace. You can't show a Bayesian optimizer the compiler error that explains exactly which line crashed. All that diagnostic context (compiler errors, profiling traces, agent reasoning logs, constraint violation details) is reduced to a single scalar and the rest is discarded.
-
-`optimize_anything` captures this diagnostic context as **Actionable Side Information (ASI)**: a first-class part of the evaluator contract that *you* design. ASI can be anything that would help an expert diagnose the problem: error messages, profiling data, rendered images, constraint violations, tool outputs. Because the proposer is an LLM, it can actually *read* this feedback. During a **dedicated reflection step**, it reasons about *why* specific candidates succeeded or failed, then proposes targeted improvements.
-
-<figure>
-  <div style="width:100%; max-width:800px; margin:0 auto; position:relative; padding-bottom:61.25%; height:0; overflow:hidden;">
-    <iframe src="/static/diagrams/side_info_diagram.html" scrolling="no" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none;"></iframe>
-  </div>
-  <figcaption>ASI is the text-optimization analogue of the gradient. Where gradients tell a numerical optimizer which direction to move, ASI tells an LLM proposer why a candidate failed and how to fix it.</figcaption>
-</figure>
-
-Because ASI is user-defined, it can be tailored to the domain: a dictionary of constraint violations for circle packing, a profiler trace for CUDA kernels, or a rendered image of a malformed SVG (via `gepa.Image`) so a vision-capable LLM (VLM) can literally *see* what it's improving. This marks a fundamental shift. Traditional evolutionary algorithms act like nature's "blind watchmaker," applying random mutations and keeping whatever scores higher. An LLM with ASI acts as a **designer**: it reads the feedback, diagnoses the problem, and proposes a targeted fix. We are moving from *evolution* to **Intelligent Design**.
-
-**Evolution (blind):** "Change a parameter and hope the score goes up."
-
-**Intelligent Design (ASI):** "The agent failed because it called `search_api()` which doesn't exist. I will rewrite the system prompt to restrict tools to the provided schema."
+If an artifact can be serialized to text and its performance can be measured, an LLM can reason about it and propose improvements. `optimize_anything` provides a unified API to make this loop easier to set up.
 
 
 ## The `optimize_anything` API
@@ -92,7 +72,7 @@ result = oa.optimize_anything(
 print(result.best_candidate)
 ```
 
-That's it. The evaluator takes a candidate string and returns a score (higher is better). Any `print()` statements inside the evaluator are automatically captured as ASI and shown to the LLM proposer during reflection. You can also use `oa.log()` for explicit logging, or return structured diagnostic information as a dictionary:
+That's it. The evaluator takes a candidate string and returns a score (higher is better). Any `print()` statements inside the evaluator are automatically captured as **Actionable Side Information (ASI)** to be used as diagnostic feedback that the LLM proposer reads during reflection. You can also use `oa.log()` for explicit logging, or return structured diagnostic information as a dictionary:
 
 ```python
 def evaluate(candidate: str) -> tuple[float, dict]:
@@ -104,7 +84,7 @@ def evaluate(candidate: str) -> tuple[float, dict]:
     }
 ```
 
-The side information can be anything: text, structured data, or even **images** (via `gepa.Image`) for vision-capable LLMs. The principle is simple: include anything that would help a human expert understand why the candidate succeeded or failed. The LLM will use it to make targeted improvements.
+ASI can be text, structured data, or even **images** (via `gepa.Image`) for vision-capable LLMs; anything that would help an expert diagnose a failure. [More on why this matters below.](#from-evolution-to-intelligent-design)
 
 ### One Interface, Three Optimization Modes
 
@@ -115,7 +95,7 @@ The side information can be anything: text, structured data, or even **images** 
   <figcaption>The three optimization modes: single-task search, multi-task search, and generalization.</figcaption>
 </figure>
 
-**1. Single-Task Search**: "Solve one hard problem." No dataset needed; the candidate *is* the solution, and the evaluator scores it directly (no `example` argument). Examples: finding an optimal circle packing arrangement, discovering a blackbox optimization algorithm. This is the mode that AlphaEvolve, ShinkaEvolve, and OpenEvolve operate in.
+**1. Single-Task Search**: "Solve one hard problem." No dataset needed; the candidate *is* the solution, and the evaluator scores it directly (no `example` argument). Examples: finding an optimal circle packing arrangement, discovering a blackbox optimization algorithm. This is the mode that prior LLM-evolution frameworks operate in.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=...)
@@ -151,11 +131,36 @@ Notice what's *absent*: no mutation prompts, no task-specific instruction templa
 
 ### The Pareto Insight
 
-In multi-task and generalization modes, `optimize_anything` leverages GEPA's core algorithmic insight: **Pareto-efficient search**. Rather than asking the LLM to improve *all* metrics simultaneously, each reflection step focuses on improving a specific subset of metrics or examples. Over multiple iterations, different subsets are selected (a minibatch of 2-3 examples or objectives at a time) and the proposer can focus its effort. This cycling through subsets, combined with Pareto-efficient selection that preserves candidates that excel on different axes, consistently outperforms naive all-at-once optimization.
+In multi-task and generalization modes, `optimize_anything` leverages GEPA's core algorithmic insight: **Pareto-efficient search**. Rather than asking the LLM to improve *all* metrics simultaneously, each reflection step focuses on improving a specific subset of metrics or examples. Over multiple iterations, different subsets are selected (a minibatch of 2-3 examples or objectives at a time) and the proposer can focus its effort. This cycling through subsets, combined with Pareto-efficient selection that preserves candidates that excel on different axes, consistently outperforms naive all-at-once optimization. We'll see this concretely in the [SVG demo below](#lets-take-it-for-a-spin), where the optimization focuses each step on improving just 2 of 6 visual aspects.
+
+But Pareto search is only half the story. It determines *which* feedback to show the proposer; the other half is making that feedback rich enough to act on.
+
+## From Evolution to Intelligent Design
+
+Classical optimization methods (gradient descent, evolutionary strategies, Bayesian optimization) reduce all diagnostic context to a single scalar. They know *that* a candidate failed, but not *why*. You can't show a Bayesian optimizer the compiler error that explains exactly which line crashed. All domain-specific diagnostic context (compiler errors, profiling traces, constraint violation details) is discarded.
+
+Prior LLM-evolution frameworks including AlphaEvolve, ShinkaEvolve, and OpenEvolve innovate on the evolutionary algorithm itself: how to select parents, how to partition populations into islands, how to balance exploration and exploitation. They also use LLMs as proposers and feed execution results back into the loop: ShinkaEvolve stores textual feedback from the environment and passes it to the LLM during mutation; AlphaEvolve feeds evaluation metrics and code context back into its pipeline. These systems have achieved impressive results.
+
+But in each of them, the feedback mechanism is an **internal implementation detail** baked into the framework. The user doesn't design the diagnostic signal, instead the framework decides what to show the proposer. In AlphaEvolve, for instance, the framework automatically extracts code context and evaluation metrics; the user cannot inject a custom profiler trace or a rendered image into the proposer's feedback loop. The interface between evaluator and proposer is still a score, plus whatever context the framework happens to extract.
+
+`optimize_anything` takes a different approach: ASI is a **first-class part of the evaluator contract** that *you* design. Because you understand your domain, you can surface exactly the diagnostics that matter: a stack trace for a crashing program, a profiler breakdown for a slow kernel, a dictionary of constraint violations for circle packing, or the rendered image of a malformed SVG so a VLM can visually inspect its own output. During a **dedicated reflection step**, the proposer reasons about *why* specific candidates succeeded or failed, then proposes targeted improvements grounded in that explanation.
+
+<figure>
+  <div style="width:100%; max-width:800px; margin:0 auto; position:relative; padding-bottom:61.25%; height:0; overflow:hidden;">
+    <iframe src="/static/diagrams/side_info_diagram.html" scrolling="no" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none;"></iframe>
+  </div>
+  <figcaption>ASI is the text-optimization analogue of the gradient. Where gradients tell a numerical optimizer which direction to move, ASI tells an LLM proposer why a candidate failed and how to fix it.</figcaption>
+</figure>
+
+Prior frameworks frame the process as *evolution*: mutate, evaluate, select, repeat. The LLM is a smarter mutation operator, but the loop is fundamentally Darwinian. With rich, user-designed diagnostics, the proposer becomes a **designer**: it reads the feedback, diagnoses the problem, and proposes targeted fixes. That's not evolution, it's **Intelligent Design**.
+
+**Evolution (blind):** "Change a parameter and hope the score goes up."
+
+**Intelligent Design (ASI):** "The agent failed because it called `search_api()` which doesn't exist. I will rewrite the system prompt to restrict tools to the provided schema."
 
 ## Let's Take It for a Spin
 
-Here is a complete, working example that optimizes SVG code to depict "a pelican riding a bicycle." Noteably, we use `optimize_anything` to directly optimize the SVG code itself, rather than, optimizing prompts for an LLM to produce the SVG code. Our evaluator renders the SVG code as a PNG image, asks a VLM to score it on a set of visual aspects, and passes the rendered image back as ASI so the LLM proposer can *see* what it's improving.
+Here is a complete, working example that optimizes SVG source code to depict "a pelican riding a bicycle." Notably, we use `optimize_anything` to directly optimize the SVG code itself, rather than optimizing prompts for an LLM to produce the SVG code. Our evaluator renders the SVG code as a PNG image, asks a VLM to score it on a set of visual aspects, and passes the rendered image back as ASI so the proposer can literally *see* what it's improving.
 
 First, we import a few things and define our goal in simple natural language:
 ```python title="Importing dependencies"
@@ -171,7 +176,7 @@ GOAL = "a pelican riding a bicycle"
 Next, we define our evaluator as well as the aspects we'd like it to grade for:
 
 ```python title="Defining the evaluator"
-    def evaluate(candidate, example, *, model):
+def evaluate(candidate, example, *, model):
     """Render SVG → image, score with a VLM, return (score, side_info)."""
     image = render_image(candidate["svg_code"]) # via cairosvg
     score, feedback = get_vlm_score_feedback(model, image, example["criteria"]) # simple regex parser
@@ -181,21 +186,21 @@ Next, we define our evaluator as well as the aspects we'd like it to grade for:
         "Feedback": feedback,
     }
 
-    VISUAL_ASPECTS = [
-        # 6 visual aspects → Pareto-efficient selection
-        {"id": "overall",     "criteria": f"Rate overall quality of this SVG ({GOAL}). SCORE: X/10"},
-        {"id": "anatomy",     "criteria": "Rate pelican accuracy: beak, pouch, plumage. SCORE: X/10"},
-        {"id": "bicycle",     "criteria": "Rate bicycle: wheels, frame, handlebars, pedals. SCORE: X/10"},
-        {"id": "composition", "criteria": "Rate how convincingly the pelican rides the bicycle. SCORE: X/10"},
-        {"id": "visual",      "criteria": "Rate visual appeal, scenery, and color usage. SCORE: X/10"},
-        {"id": "craft",       "criteria": "Rate SVG technical quality: shapes, layering. SCORE: X/10"},
-    ]
+VISUAL_ASPECTS = [
+    # 6 visual aspects → Pareto-efficient selection
+    {"id": "overall",     "criteria": f"Rate overall quality of this SVG ({GOAL}). SCORE: X/10"},
+    {"id": "anatomy",     "criteria": "Rate pelican accuracy: beak, pouch, plumage. SCORE: X/10"},
+    {"id": "bicycle",     "criteria": "Rate bicycle: wheels, frame, handlebars, pedals. SCORE: X/10"},
+    {"id": "composition", "criteria": "Rate how convincingly the pelican rides the bicycle. SCORE: X/10"},
+    {"id": "visual",      "criteria": "Rate visual appeal, scenery, and color usage. SCORE: X/10"},
+    {"id": "craft",       "criteria": "Rate SVG technical quality: shapes, layering. SCORE: X/10"},
+]
 ```
 
 Finally, we can put it all together and run `optimize_anything` to directly optimize our SVG code:
 ```python title="Running optimize_anything"
-    model = "vertex_ai/gemini-3-flash-preview"
-    result = optimize_anything(
+model = "vertex_ai/gemini-3-flash-preview"
+result = optimize_anything(
     seed_candidate={"svg_code": open("seed.svg").read()}, # a plain white canvas
     evaluator=partial(evaluate, model=model),
     dataset=VISUAL_ASPECTS,
@@ -218,9 +223,8 @@ A few things to note:
 - The **`dataset`** contains 6 evaluation aspects. GEPA calls the evaluator once per aspect per candidate, tracking scores individually. This enables Pareto-efficient selection: a candidate that excels at bicycle structure but struggles with pelican anatomy is preserved on the frontier, not discarded behind a mediocre average.
 - Our desired visual aspects are defined in concise natural language. We avoid the need for detailed rubrics and simply rely on the VLM's judgment for scoring.
 - **`reflection_minibatch_size=2`** means each reflection step shows the LLM feedback from just 2 aspects. Over multiple iterations, all 6 aspects get attention, but each reflection is focused and targeted.
-- The **rendered image** is passed in `side_info` via `Image(base64_data=...)`, so the VLM proposer can literally *see* what it's improving. The VLM evaluator **never** sees the SVG code: only the rendered image.
-- The reflection model see the feedback (both positive and negative) along with the optimization artifact (source code), and directly optimizes it.
-- Starting from a plain white canvas, the optimizer produces a detailed illustration scoring an average of **0.825** across all six aspects in 12 candidates:
+- The **rendered image** is passed as ASI via `Image(base64_data=...)`, so the VLM proposer can literally *see* what it's improving. The VLM evaluator never sees the SVG code, only the rendered image. The proposer sees both the feedback and the source SVG, and proposes targeted improvements.
+- Starting from a plain white canvas, the optimizer produces a detailed illustration scoring an average of **0.825** across all six aspects after generating only 12 candidates:
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
@@ -239,7 +243,7 @@ A few things to note:
 </div>
 </div>
 
-*With only 12 candidates, the optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition, all through LLM reflection on rendered image feedback. Similar results were also observed with Claude Opus 4.6 which produced 20 candidates.*
+*With only 12 candidates, the optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition, all through LLM reflection on rendered image feedback. Similar results were observed when using Claude Opus 4.6 as the proposer, where the optimizer explored 20 candidates.*
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
@@ -365,7 +369,7 @@ A few things to note:
 
 ## Results
 
-The punchline: `optimize_anything` beats AlphaEvolve at circle packing, evolves a 10-line agent stub into a 300+ line system that nearly triples its test accuracy on ARC-AGI, discovers novel cloud scheduling algorithms, and matches Optuna — a mature numerical optimizer — by generating solver code from scratch. We test across seven domains spanning search, batch optimization, and generalization. Each section below walks through the setup and links to [full, runnable code](#appendix-case-study-code).
+`optimize_anything` beats AlphaEvolve at circle packing, evolves a 10-line agent stub into a 300+ line system that nearly triples its test accuracy on ARC-AGI, discovers novel cloud scheduling algorithms, and matches Optuna (a mature numerical optimizer) by generating solver code from scratch. We test across seven domains spanning search, batch optimization, and generalization. Each section below walks through the setup and links to [full, runnable code](#appendix-case-study-code).
 
 ### 1. Circle Packing: Outperforming AlphaEvolve
 
