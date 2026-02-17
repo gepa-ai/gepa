@@ -82,10 +82,11 @@
     **Evaluator** — The evaluator sandboxes the proposed code, runs it with a 600-second timeout, validates circles against geometric constraints (no overlaps, all within the unit square), and returns rich ASI with circle positions, multiple metrics derived from evaluation trajectory, validation details, stdout/stderr so the LLM understands which geometric constraints are binding. The `extract_best_circles(opt_state)` helper warm-starts each new proposal with the best circles discovered so far.
 
     ```python
+    from examples.circle_packing.utils import extract_best_circles, execute_code
+
     def evaluate(candidate, opt_state):
-        code = candidate["code"]
         warm_start = extract_best_circles(opt_state)
-        result = execute_code(code, 600, warm_start)
+        result = execute_code(candidate, 600, warm_start)
 
         circles = result["circles"]
         score = result["validation_details"]["sum_radii"]
@@ -94,7 +95,7 @@
         side_info = {
             "scores": {"sum_radii": score},
             "metrics": metrics,  # mean, min, max, EMA1, EMA2 of the circles explored by this candidate
-            "code": code,
+            "code": candidate,
             "circles": circles,
             "stdout": result.get("stdout", ""),
             "error": result.get("error"),
@@ -116,7 +117,7 @@
     from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
 
     optimize_anything(
-        seed_candidate={"code": SEED_CODE},
+        seed_candidate=SEED_CODE,
         evaluator=evaluate,
         config=GEPAConfig(
             engine=EngineConfig(max_metric_calls=150, cache_evaluation=True, frontier_type="objective"),
