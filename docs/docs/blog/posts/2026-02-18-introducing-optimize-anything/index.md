@@ -160,71 +160,7 @@ Prior frameworks frame the process as *evolution*: mutate, evaluate, select, rep
 
 ## Let's Take It for a Spin
 
-Here is a complete, working example that optimizes SVG source code to depict "a pelican riding a bicycle." Notably, we use `optimize_anything` to directly optimize the SVG code itself, rather than optimizing prompts for an LLM to produce the SVG code. Our evaluator renders the SVG code as a PNG image, asks a VLM to score it on a set of visual aspects, and passes the rendered image back as ASI so the proposer can literally *see* what it's improving.
-
-First, we import a few things and define our goal in simple natural language:
-```python title="Importing dependencies"
-from gepa import Image
-from gepa.optimize_anything import (
-    optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig,
-)
-from demo_utils import render_image, get_vlm_score_feedback
-
-GOAL = "a pelican riding a bicycle"
-```
-
-Next, we define our evaluator as well as the aspects we'd like it to grade for:
-
-```python title="Defining the evaluator"
-def evaluate(candidate, example, *, model):
-    """Render SVG → image, score with a VLM, return (score, side_info)."""
-    image = render_image(candidate["svg_code"]) # via cairosvg
-    score, feedback = get_vlm_score_feedback(model, image, example["criteria"]) # simple regex parser
-
-    return score, {
-        "RenderedSVG": Image(base64_data=image, media_type="image/png"),
-        "Feedback": feedback,
-    }
-
-VISUAL_ASPECTS = [
-    # 6 visual aspects → Pareto-efficient selection
-    {"id": "overall",     "criteria": f"Rate overall quality of this SVG ({GOAL}). SCORE: X/10"},
-    {"id": "anatomy",     "criteria": "Rate pelican accuracy: beak, pouch, plumage. SCORE: X/10"},
-    {"id": "bicycle",     "criteria": "Rate bicycle: wheels, frame, handlebars, pedals. SCORE: X/10"},
-    {"id": "composition", "criteria": "Rate how convincingly the pelican rides the bicycle. SCORE: X/10"},
-    {"id": "visual",      "criteria": "Rate visual appeal, scenery, and color usage. SCORE: X/10"},
-    {"id": "craft",       "criteria": "Rate SVG technical quality: shapes, layering. SCORE: X/10"},
-]
-```
-
-Finally, we can put it all together and run `optimize_anything` to directly optimize our SVG code:
-```python title="Running optimize_anything"
-model = "vertex_ai/gemini-3-flash-preview"
-result = optimize_anything(
-    seed_candidate={"svg_code": open("seed.svg").read()}, # a plain white canvas
-    evaluator=partial(evaluate, model=model),
-    dataset=VISUAL_ASPECTS,
-    objective=f"Optimize SVG code to illustrate '{GOAL}'. Output ONLY valid SVG.",
-    config=GEPAConfig(
-        engine=EngineConfig(max_metric_calls=150),
-        reflection=ReflectionConfig(
-            reflection_lm=model,
-            reflection_minibatch_size=2,  # focus on 2 aspects per iteration
-        ),
-    ),
-)
-print(result.best_candidate)
-```
-
-
-
-A few things to note:
-
-- The **`dataset`** contains 6 evaluation aspects. GEPA calls the evaluator once per aspect per candidate, tracking scores individually. This enables Pareto-efficient selection: a candidate that excels at bicycle structure but struggles with pelican anatomy is preserved on the frontier, not discarded behind a mediocre average.
-- Our desired visual aspects are defined in concise natural language. We avoid the need for detailed rubrics and simply rely on the VLM's judgment for scoring.
-- **`reflection_minibatch_size=2`** means each reflection step shows the LLM feedback from just 2 aspects. Over multiple iterations, all 6 aspects get attention, but each reflection is focused and targeted.
-- The **rendered image** is passed as ASI via `Image(base64_data=...)`, so the VLM proposer can literally *see* what it's improving. The VLM evaluator never sees the SVG code, only the rendered image. The proposer sees both the feedback and the source SVG, and proposes targeted improvements.
-- Starting from a plain white canvas, the optimizer produces a detailed illustration scoring an average of **0.825** across all six aspects after generating only 12 candidates:
+Let's use `optimize_anything` to optimize SVG source code depicting "a pelican riding a bicycle" starting from a blank white canvas. The evaluator renders the SVG as a PNG, asks a VLM to score it against visual criteria, and passes the rendered image back as ASI so the proposer can literally *see* what it's improving. After exploring just 12 candidates, here's the zero-shot baseline versus the best optimized result:
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
@@ -243,7 +179,7 @@ A few things to note:
 </div>
 </div>
 
-*With only 12 candidates, the optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition, all through LLM reflection on rendered image feedback. Similar results were observed when using Claude Opus 4.6 as the proposer, where the optimizer explored 20 candidates.*
+*The optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition — all through LLM reflection on rendered image feedback. Claude Opus 4.6 as the proposer produces similar results after exploring 20 candidates:*
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
@@ -261,6 +197,64 @@ A few things to note:
 
 </div>
 </div>
+
+Notably, we optimize the SVG code itself, not a prompt that generates SVG. Here's the code.
+
+First, we define our evaluator and the visual aspects we'd like it to grade for:
+
+```python title="Defining the evaluator"
+from gepa import Image
+from demo_utils import render_image, get_vlm_score_feedback
+
+GOAL = "a pelican riding a bicycle"
+VLM = "vertex_ai/gemini-3-flash-preview"
+
+def evaluate(candidate, example):
+    """Render SVG → image, score with a VLM, return (score, side_info)."""
+    image = render_image(candidate["svg_code"]) # via cairosvg
+    score, feedback = get_vlm_score_feedback(VLM, image, example["criteria"]) # simple regex parser
+
+    return score, {
+        "RenderedSVG": Image(base64_data=image, media_type="image/png"),
+        "Feedback": feedback,
+    }
+
+VISUAL_ASPECTS = [
+    # 6 visual aspects → Pareto-efficient selection
+    {"id": "overall",     "criteria": f"Rate overall quality of this SVG ({GOAL}). SCORE: X/10"},
+    {"id": "anatomy",     "criteria": "Rate pelican accuracy: beak, pouch, plumage. SCORE: X/10"},
+    {"id": "bicycle",     "criteria": "Rate bicycle: wheels, frame, handlebars, pedals. SCORE: X/10"},
+    {"id": "composition", "criteria": "Rate how convincingly the pelican rides the bicycle. SCORE: X/10"},
+    {"id": "visual",      "criteria": "Rate visual appeal, scenery, and color usage. SCORE: X/10"},
+    {"id": "craft",       "criteria": "Rate SVG technical quality: shapes, layering. SCORE: X/10"},
+]
+```
+
+Then, we put it all together and run `optimize_anything`:
+```python title="Running optimize_anything"
+from gepa.optimize_anything import (
+    optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig,
+)
+
+result = optimize_anything(
+    seed_candidate={"svg_code": open("seed.svg").read()}, # a plain white canvas
+    evaluator=evaluate,
+    dataset=VISUAL_ASPECTS,
+    objective=f"Optimize SVG code to illustrate '{GOAL}'. Output ONLY valid SVG.",
+    config=GEPAConfig(
+        engine=EngineConfig(max_metric_calls=150),
+        reflection=ReflectionConfig(reflection_lm=VLM),
+    ),
+)
+print(result.best_candidate)
+```
+
+A few things to note:
+
+- The **`dataset`** contains 6 evaluation aspects. GEPA calls the evaluator once per aspect per candidate, tracking scores individually. This enables Pareto-efficient selection: a candidate that excels at bicycle structure but struggles with pelican anatomy is preserved on the frontier, not discarded behind a mediocre average.
+- Our desired visual aspects are defined in concise natural language. We avoid the need for detailed rubrics and simply rely on the VLM's judgment for scoring.
+- **`reflection_minibatch_size=2`** (the default) means each reflection step shows the LLM feedback from just 2 of the 6 aspects. Over multiple iterations, all aspects get attention, but each reflection is focused and targeted.
+- The **rendered image** is passed as ASI via `Image(base64_data=...)`, giving the VLM proposer visual feedback on its own output. The VLM evaluator never sees the SVG code, only the rendered image. The proposer sees both the feedback and the source SVG, and proposes targeted improvements.
 
 ??? example "Final optimized candidate by Gemini 3 Flash"
     ```xml
