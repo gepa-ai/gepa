@@ -88,12 +88,12 @@ ASI can be open-ended text, structured data, multi-objectives (through `scores`)
 
 ### One Interface, Three Optimization Modes
 
-`optimize_anything` unifies three distinct optimization paradigms under one API, determined by whether you provide a `dataset` and `valset`:
-
 <figure markdown="span">
   ![Decision tree showing three optimization modes. "What is the Goal?" branches into "I want answers" (Search Mode) and "I want a system" (Generalization Mode). Search Mode further splits into "One Problem (Single-Task Search)" for tasks like blackbox optimization, and "Many Related Problems (Multi-Task Search)" for tasks like writing CUDA kernels for multiple algorithms.](optimization_problem_types.svg)
-  <figcaption>The three optimization modes: single-task search, multi-task search, and generalization.</figcaption>
+  <figcaption>The three optimization modes supported in <code>optimize_anything</code>: single-task search, multi-task search, and generalization.</figcaption>
 </figure>
+
+`optimize_anything` unifies three distinct optimization paradigms under one API, determined by whether you provide a `dataset` and `valset`:
 
 **1. Single-Task Search**: "Solve one hard problem." No dataset needed; the candidate *is* the solution, and the evaluator scores it directly (no `example` argument). For example, in [circle packing](#1-circle-packing-outperforming-alphaevolve), the artifact is the packing algorithm code and the evaluator returns the score plus geometric diagnostics as ASI. This is the mode that prior LLM-evolution frameworks operate in.
 
