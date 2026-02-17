@@ -158,7 +158,7 @@ In multi-task and generalization modes, `optimize_anything` leverages GEPA's cor
 Here is a complete, working example that optimizes SVG code to depict "a pelican riding a bicycle." Noteably, we use `optimize_anything` to directly optimize the SVG code itself, rather than, optimizing prompts for an LLM to produce the SVG code. Our evaluator renders the SVG code as a PNG image, asks a VLM to score it on a set of visual aspects, and passes the rendered image back as ASI so the LLM proposer can *see* what it's improving.
 
 First, we import a few things and define our goal in simple natural language:
-```python
+```python title="Importing dependencies"
 from gepa import Image
 from gepa.optimize_anything import (
     optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig,
@@ -170,7 +170,7 @@ GOAL = "a pelican riding a bicycle"
 
 Next, we define our evaluator as well as the aspects we'd like it to grade for:
 
-```python
+```python title="Defining the evaluator"
     def evaluate(candidate, example, *, model):
     """Render SVG → image, score with a VLM, return (score, side_info)."""
     image = render_image(candidate["svg_code"]) # via cairosvg
@@ -193,7 +193,7 @@ Next, we define our evaluator as well as the aspects we'd like it to grade for:
 ```
 
 Finally, we can put it all together and run `optimize_anything` to directly optimize our SVG code:
-```python title="Running the optimization"
+```python title="Running optimize_anything"
     model = "vertex_ai/gemini-3-flash-preview"
     result = optimize_anything(
     seed_candidate={"svg_code": open("seed.svg").read()}, # a plain white canvas
