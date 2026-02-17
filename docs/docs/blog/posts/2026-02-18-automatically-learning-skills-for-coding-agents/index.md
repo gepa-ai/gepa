@@ -12,14 +12,16 @@ authors:
 equal_contribution:
   - "Shangyin Tan"
   - "Lakshya A Agrawal"
-slug: learning-skills-for-any-repository
-title: "Learning Skills for Any Repository"
+slug: automatically-learning-skills-for-coding-agents
+title: "Automatically Learning Skills for Coding Agents"
 description: "Introducing gskill, a fully automated pipeline that uses GEPA and SWE-smith to learn repository-specific skills for coding agents."
 ---
 
-# Learning Skills for Any Repository
+# Automatically Learning Skills for Coding Agents
 
 Today, we are introducing **gskill**, a fully automated pipeline to learn skills for any repository. Given any GitHub repository, gskill learns important skills for coding agents to better work with the repository.
+
+Using gskill, we learn repository-specific skills for [jinja](https://github.com/pallets/jinja) and [bleve](https://github.com/blevesearch/bleve) with a simple agent (Mini-SWE-Agent, gpt-5-mini), boosting its resolve rate from **55% to 82%** on Jinja and from **24% to 93%** on Bleve. These skills also transfer directly to Claude Code: on Bleve, Claude Haiku 4.5 jumps from 79.3% to 100% pass rate while running faster; on Jinja, Claude Haiku 4.5 improves from 93.9% to 98.5%. For Claude Sonnet 4.5, although the pass rate saturated, we still observe significant task duration reduction with the learned skills.
 
 <!-- more -->
 
@@ -97,6 +99,9 @@ A few key takeaways from our experiments:
 With `optimize_anything`, we are excited to see more applications and expansions of evolutionary search for learning skills.
 
 Several areas we are excited to explore:
+
 1. **Scaling dataset beyond SWE-smith.** SWE-smith is great, but the tasks generated are on the simpler side. We would like to obtain more complex tasks that are more representative of real-world SWE tasks.
+
 2. **Evolve more than a `SKILL.md` file.** Many skills have executable scripts. Generating and evolving may further improve the skills.
+
 3. **Skills for non-SWE tasks.** The gskill pipeline is designed to work with evolving any text (thanks to `optimize_anything`). We are excited to see how skills can be learned for non-SWE tasks (e.g., computer use).
