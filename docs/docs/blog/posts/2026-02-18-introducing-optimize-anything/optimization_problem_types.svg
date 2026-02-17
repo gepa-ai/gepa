@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="645pt" height="346pt" viewBox="0.00 0.00 645.00 346.00">
+<defs>
+  <style>
+    /* Example text nodes (no background) and edge labels */
+    #node6 text, #node7 text, #node8 text { fill: #6b7280; }
+    .edge text { fill: #4b5563; }
+    .edge path { stroke: #9ca3af; }
+    .edge polygon { fill: #9ca3af; stroke: #9ca3af; }
+    #node1 path { stroke: #1f2937; }
+    #node2 path { stroke: #4f46e5; }
+    #node3 path { stroke: #0f766e; }
+    #node4 path, #node5 path { stroke: #a5b4fc; }
+
+    @media (prefers-color-scheme: dark) {
+      #node6 text, #node7 text, #node8 text { fill: #9ca3af; }
+      .edge text { fill: #9ca3af; }
+      .edge path { stroke: #6b7280; }
+      .edge polygon { fill: #6b7280; stroke: #6b7280; }
+      #node1 path { stroke: #4b5563; }
+      #node2 path { stroke: #818cf8; }
+      #node3 path { stroke: #5eead4; }
+      #node4 path, #node5 path { stroke: #6366f1; }
+    }
+  </style>
+</defs>
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 342)">
+<title>OptimizeAnythingSimple</title>
+<polygon fill="none" stroke="none" points="-4,4 -4,-342 640.56,-342 640.56,4 -4,4"/>
+<!-- root -->
+<g id="node1" class="node">
+<title>root</title>
+<path fill="#374151" stroke="black" d="M483.54,-338C483.54,-338 383.36,-338 383.36,-338 377.36,-338 371.36,-332 371.36,-326 371.36,-326 371.36,-306.8 371.36,-306.8 371.36,-300.8 377.36,-294.8 383.36,-294.8 383.36,-294.8 483.54,-294.8 483.54,-294.8 489.54,-294.8 495.54,-300.8 495.54,-306.8 495.54,-306.8 495.54,-326 495.54,-326 495.54,-332 489.54,-338 483.54,-338"/>
+<text xml:space="preserve" text-anchor="middle" x="433.45" y="-312.8" font-family="Arial" font-size="12.00" fill="white">What is the Goal?</text>
+</g>
+<!-- solve -->
+<g id="node2" class="node">
+<title>solve</title>
+<path fill="#6366f1" stroke="black" d="M404.54,-246.8C404.54,-246.8 262.36,-246.8 262.36,-246.8 256.36,-246.8 250.36,-240.8 250.36,-234.8 250.36,-234.8 250.36,-201.2 250.36,-201.2 250.36,-195.2 256.36,-189.2 262.36,-189.2 262.36,-189.2 404.54,-189.2 404.54,-189.2 410.54,-189.2 416.54,-195.2 416.54,-201.2 416.54,-201.2 416.54,-234.8 416.54,-234.8 416.54,-240.8 410.54,-246.8 404.54,-246.8"/>
+<text xml:space="preserve" text-anchor="middle" x="333.45" y="-221.6" font-family="Arial" font-size="12.00" fill="white">Solve Specific Problem(s)</text>
+<text xml:space="preserve" text-anchor="middle" x="333.45" y="-207.2" font-family="Arial" font-size="12.00" fill="white">(Search Mode)</text>
+</g>
+<!-- root&#45;&gt;solve -->
+<g id="edge1" class="edge">
+<title>root-&gt;solve</title>
+<path fill="none" stroke="black" d="M411.75,-294.48C399.75,-282.91 384.5,-268.21 370.65,-254.86"/>
+<polygon fill="black" stroke="black" points="373.42,-252.66 363.79,-248.24 368.56,-257.7 373.42,-252.66"/>
+<text xml:space="preserve" text-anchor="middle" x="425.76" y="-267.8" font-family="Arial" font-size="10.00">I want answers</text>
+</g>
+<!-- learn -->
+<g id="node3" class="node">
+<title>learn</title>
+<path fill="#0d9488" stroke="black" d="M583.21,-246.8C583.21,-246.8 459.69,-246.8 459.69,-246.8 453.69,-246.8 447.69,-240.8 447.69,-234.8 447.69,-234.8 447.69,-201.2 447.69,-201.2 447.69,-195.2 453.69,-189.2 459.69,-189.2 459.69,-189.2 583.21,-189.2 583.21,-189.2 589.21,-189.2 595.21,-195.2 595.21,-201.2 595.21,-201.2 595.21,-234.8 595.21,-234.8 595.21,-240.8 589.21,-246.8 583.21,-246.8"/>
+<text xml:space="preserve" text-anchor="middle" x="521.45" y="-221.6" font-family="Arial" font-size="12.00" fill="white">Build a Skill</text>
+<text xml:space="preserve" text-anchor="middle" x="521.45" y="-207.2" font-family="Arial" font-size="12.00" fill="white">(Generalization Mode)</text>
+</g>
+<!-- root&#45;&gt;learn -->
+<g id="edge2" class="edge">
+<title>root-&gt;learn</title>
+<path fill="none" stroke="black" d="M452.55,-294.48C462.91,-283.13 476.03,-268.76 488.03,-255.61"/>
+<polygon fill="black" stroke="black" points="490.54,-258.06 494.7,-248.31 485.37,-253.34 490.54,-258.06"/>
+<text xml:space="preserve" text-anchor="middle" x="512.19" y="-267.8" font-family="Arial" font-size="10.00">I want a system</text>
+</g>
+<!-- one -->
+<g id="node4" class="node">
+<title>one</title>
+<path fill="#e0e7ff" stroke="black" d="M187.2,-152.2C187.2,-152.2 69.7,-152.2 69.7,-152.2 63.7,-152.2 57.7,-146.2 57.7,-140.2 57.7,-140.2 57.7,-106.6 57.7,-106.6 57.7,-100.6 63.7,-94.6 69.7,-94.6 69.7,-94.6 187.2,-94.6 187.2,-94.6 193.2,-94.6 199.2,-100.6 199.2,-106.6 199.2,-106.6 199.2,-140.2 199.2,-140.2 199.2,-146.2 193.2,-152.2 187.2,-152.2"/>
+<text xml:space="preserve" text-anchor="middle" x="128.45" y="-127" font-family="Arial" font-size="12.00" fill="#312e81">One Problem</text>
+<text xml:space="preserve" text-anchor="middle" x="128.45" y="-112.6" font-family="Arial" font-size="12.00" fill="#312e81">(Single-Task Search)</text>
+</g>
+<!-- solve&#45;&gt;one -->
+<g id="edge3" class="edge">
+<title>solve-&gt;one</title>
+<path fill="none" stroke="black" d="M270.83,-188.71C248.88,-178.8 224.03,-167.57 201.31,-157.31"/>
+<polygon fill="black" stroke="black" points="202.98,-154.22 192.42,-153.3 200.09,-160.6 202.98,-154.22"/>
+</g>
+<!-- many -->
+<g id="node5" class="node">
+<title>many</title>
+<path fill="#e0e7ff" stroke="black" d="M399.88,-152.2C399.88,-152.2 267.02,-152.2 267.02,-152.2 261.02,-152.2 255.02,-146.2 255.02,-140.2 255.02,-140.2 255.02,-106.6 255.02,-106.6 255.02,-100.6 261.02,-94.6 267.02,-94.6 267.02,-94.6 399.88,-94.6 399.88,-94.6 405.88,-94.6 411.88,-100.6 411.88,-106.6 411.88,-106.6 411.88,-140.2 411.88,-140.2 411.88,-146.2 405.88,-152.2 399.88,-152.2"/>
+<text xml:space="preserve" text-anchor="middle" x="333.45" y="-127" font-family="Arial" font-size="12.00" fill="#312e81">Many Related Problems</text>
+<text xml:space="preserve" text-anchor="middle" x="333.45" y="-112.6" font-family="Arial" font-size="12.00" fill="#312e81">(Multi-Task Search)</text>
+</g>
+<!-- solve&#45;&gt;many -->
+<g id="edge4" class="edge">
+<title>solve-&gt;many</title>
+<path fill="none" stroke="black" d="M333.45,-188.71C333.45,-180.91 333.45,-172.29 333.45,-163.96"/>
+<polygon fill="black" stroke="black" points="336.95,-164.03 333.45,-154.03 329.95,-164.03 336.95,-164.03"/>
+</g>
+<!-- ex3 -->
+<g id="node8" class="node">
+<title>ex3</title>
+<text xml:space="preserve" text-anchor="middle" x="533.45" y="-127" font-family="Arial" font-size="12.00">e.g., Prompt Optimization,</text>
+<text xml:space="preserve" text-anchor="middle" x="533.45" y="-112.6" font-family="Arial" font-size="12.00">Agentic Architecture Optimization</text>
+</g>
+<!-- learn&#45;&gt;ex3 -->
+<g id="edge7" class="edge">
+<title>learn-&gt;ex3</title>
+<path fill="none" stroke="black" stroke-dasharray="1,5" d="M525.12,-188.71C526.15,-180.74 527.29,-171.93 528.39,-163.44"/>
+<polygon fill="black" stroke="black" points="531.84,-164.06 529.66,-153.7 524.9,-163.16 531.84,-164.06"/>
+</g>
+<!-- ex1 -->
+<g id="node6" class="node">
+<title>ex1</title>
+<text xml:space="preserve" text-anchor="middle" x="108.45" y="-25.2" font-family="Arial" font-size="12.00">e.g., Blackbox function optimization</text>
+</g>
+<!-- one&#45;&gt;ex1 -->
+<g id="edge5" class="edge">
+<title>one-&gt;ex1</title>
+<path fill="none" stroke="black" stroke-dasharray="1,5" d="M122.34,-94.11C120.1,-83.72 117.54,-71.9 115.24,-61.25"/>
+<polygon fill="black" stroke="black" points="118.73,-60.79 113.19,-51.75 111.88,-62.27 118.73,-60.79"/>
+</g>
+<!-- ex2 -->
+<g id="node7" class="node">
+<title>ex2</title>
+<text xml:space="preserve" text-anchor="middle" x="352.45" y="-32.4" font-family="Arial" font-size="12.00">e.g., Writing CUDA Kernels for</text>
+<text xml:space="preserve" text-anchor="middle" x="352.45" y="-18" font-family="Arial" font-size="12.00">multiple algorithms but same hardware</text>
+</g>
+<!-- many&#45;&gt;ex2 -->
+<g id="edge6" class="edge">
+<title>many-&gt;ex2</title>
+<path fill="none" stroke="black" stroke-dasharray="1,5" d="M339.26,-94.11C340.89,-86.14 342.7,-77.33 344.44,-68.84"/>
+<polygon fill="black" stroke="black" points="347.86,-69.58 346.44,-59.08 341.01,-68.17 347.86,-69.58"/>
+</g>
+</g>
+</svg>

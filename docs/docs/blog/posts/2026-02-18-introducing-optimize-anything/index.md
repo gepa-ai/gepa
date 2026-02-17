@@ -84,14 +84,14 @@ def evaluate(candidate: str) -> tuple[float, dict]:
     }
 ```
 
-ASI can be text, structured data, or even **images** (via `gepa.Image`) for vision-capable LLMs; anything that would help an expert diagnose a failure. [More on why this matters below.](#from-evolution-to-intelligent-design)
+ASI can be open-ended text, structured data, multi-objectives (through `scores`), or even **images** (via `gepa.Image`) for vision-capable LLMs; anything that would help an expert understand the artifact and diagnose failures. We'll see ASI in action in the [SVG demo](#lets-take-it-for-a-spin), then unpack [why it matters](#from-evolution-to-intelligent-design).
 
 ### One Interface, Three Optimization Modes
 
 `optimize_anything` unifies three distinct optimization paradigms under one API, determined by whether you provide a `dataset` and `valset`:
 
 <figure markdown="span">
-  ![Decision tree showing three optimization modes. "What is the Goal?" branches into "I want answers" (Search Mode) and "I want a system" (Generalization Mode). Search Mode further splits into "One Problem (Single-Task)" for tasks like blackbox optimization, and "Many Related Problems (Multi-Task)" for tasks like writing CUDA kernels for multiple algorithms.](optimization_problem_types.png)
+  ![Decision tree showing three optimization modes. "What is the Goal?" branches into "I want answers" (Search Mode) and "I want a system" (Generalization Mode). Search Mode further splits into "One Problem (Single-Task Search)" for tasks like blackbox optimization, and "Many Related Problems (Multi-Task Search)" for tasks like writing CUDA kernels for multiple algorithms.](optimization_problem_types.svg)
   <figcaption>The three optimization modes: single-task search, multi-task search, and generalization.</figcaption>
 </figure>
 
@@ -132,31 +132,6 @@ Notice what's *absent*: no mutation prompts, no task-specific instruction templa
 ### The Pareto Insight
 
 In multi-task and generalization modes, `optimize_anything` leverages GEPA's core algorithmic insight: **Pareto-efficient search**. Rather than asking the LLM to improve *all* metrics simultaneously, each reflection step focuses on improving a specific subset of metrics or examples. Over multiple iterations, different subsets are selected (a minibatch of 2-3 examples or objectives at a time) and the proposer can focus its effort. This cycling through subsets, combined with Pareto-efficient selection that preserves candidates that excel on different axes, consistently outperforms naive all-at-once optimization. We'll see this concretely in the [SVG demo below](#lets-take-it-for-a-spin), where the optimization focuses each step on improving just 2 of 6 visual aspects.
-
-But Pareto search is only half the story. It determines *which* feedback to show the proposer; the other half is making that feedback rich enough to act on.
-
-## From Evolution to Intelligent Design
-
-Classical optimization methods (gradient descent, evolutionary strategies, Bayesian optimization) reduce all diagnostic context to a single scalar. They know *that* a candidate failed, but not *why*. You can't show a Bayesian optimizer the compiler error that explains exactly which line crashed. All domain-specific diagnostic context (compiler errors, profiling traces, constraint violation details) is discarded.
-
-Prior LLM-evolution frameworks including AlphaEvolve, ShinkaEvolve, and OpenEvolve innovate on the evolutionary algorithm itself: how to select parents, how to partition populations into islands, how to balance exploration and exploitation. They also use LLMs as proposers and feed execution results back into the loop: ShinkaEvolve stores textual feedback from the environment and passes it to the LLM during mutation; AlphaEvolve feeds evaluation metrics and code context back into its pipeline. These systems have achieved impressive results.
-
-But in each of them, the feedback mechanism is an **internal implementation detail** baked into the framework. The user doesn't design the diagnostic signal, instead the framework decides what to show the proposer. In AlphaEvolve, for instance, the framework automatically extracts code context and evaluation metrics; the user cannot inject a custom profiler trace or a rendered image into the proposer's feedback loop. The interface between evaluator and proposer is still a score, plus whatever context the framework happens to extract.
-
-`optimize_anything` takes a different approach: ASI is a **first-class part of the evaluator contract** that *you* design. Because you understand your domain, you can surface exactly the diagnostics that matter: a stack trace for a crashing program, a profiler breakdown for a slow kernel, a dictionary of constraint violations for circle packing, or the rendered image of a malformed SVG so a VLM can visually inspect its own output. During a **dedicated reflection step**, the proposer reasons about *why* specific candidates succeeded or failed, then proposes targeted improvements grounded in that explanation.
-
-<figure>
-  <div style="width:100%; max-width:800px; margin:0 auto; position:relative; padding-bottom:61.25%; height:0; overflow:hidden;">
-    <iframe src="/static/diagrams/side_info_diagram.html" scrolling="no" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none;"></iframe>
-  </div>
-  <figcaption>ASI is the text-optimization analogue of the gradient. Where gradients tell a numerical optimizer which direction to move, ASI tells an LLM proposer why a candidate failed and how to fix it.</figcaption>
-</figure>
-
-Prior frameworks frame the process as *evolution*: mutate, evaluate, select, repeat. The LLM is a smarter mutation operator, but the loop is fundamentally Darwinian. With rich, user-designed diagnostics, the proposer becomes a **designer**: it reads the feedback, diagnoses the problem, and proposes targeted fixes. That's not evolution, it's **Intelligent Design**.
-
-**Evolution (blind):** "Change a parameter and hope the score goes up."
-
-**Intelligent Design (ASI):** "The agent failed because it called `search_api()` which doesn't exist. I will rewrite the system prompt to restrict tools to the provided schema."
 
 ## Let's Take It for a Spin
 
@@ -360,6 +335,31 @@ A few things to note:
         </svg>
     ```
 
+
+## From Evolution to Intelligent Design
+
+Pareto search is only half the story. It determines *which* feedback to show the proposer; the other half is making that feedback rich enough to act on. In the demo above, the evaluator passed a rendered image and VLM feedback as ASI, giving the proposer rich diagnostic context. This is a departure from how prior frameworks handle feedback.
+
+Classical optimization methods (gradient descent, evolutionary strategies, Bayesian optimization) reduce all diagnostic context to a single scalar. They know *that* a candidate failed, but not *why*. You can't show a Bayesian optimizer the compiler error that explains exactly which line crashed. All domain-specific diagnostic context (compiler errors, profiling traces, constraint violation details) is discarded.
+
+Prior LLM-evolution frameworks including AlphaEvolve, ShinkaEvolve, and OpenEvolve innovate on the evolutionary algorithm itself: how to select parents, how to partition populations into islands, how to balance exploration and exploitation. They also use LLMs as proposers and feed execution results back into the loop: ShinkaEvolve stores textual feedback from the environment and passes it to the LLM during mutation; AlphaEvolve feeds evaluation metrics and code context back into its pipeline. These systems have achieved impressive results.
+
+But in each of them, the feedback mechanism is an **internal implementation detail** baked into the framework. The user doesn't design the diagnostic signal, instead the framework decides what to show the proposer. In AlphaEvolve, for instance, the framework automatically extracts code context and evaluation metrics; the user cannot inject a custom profiler trace or a rendered image into the proposer's feedback loop. The interface between evaluator and proposer is still a score, plus whatever context the framework happens to extract.
+
+`optimize_anything` takes a different approach: ASI is a **first-class part of the evaluator contract** that *you* design. Because you understand your domain, you can surface exactly the diagnostics that matter: a stack trace for a crashing program, a profiler breakdown for a slow kernel, a dictionary of constraint violations for circle packing, or the rendered image of a malformed SVG so a VLM can visually inspect its own output. During a **dedicated reflection step**, the proposer reasons about *why* specific candidates succeeded or failed, then proposes targeted improvements grounded in that explanation.
+
+<figure>
+  <div style="width:100%; max-width:800px; margin:0 auto; position:relative; padding-bottom:61.25%; height:0; overflow:hidden;">
+    <iframe src="/static/diagrams/side_info_diagram.html" scrolling="no" style="position:absolute; top:0; left:0; width:100%; height:100%; border:none;"></iframe>
+  </div>
+  <figcaption>ASI is the text-optimization analogue of the gradient. Where gradients tell a numerical optimizer which direction to move, ASI tells an LLM proposer why a candidate failed and how to fix it.</figcaption>
+</figure>
+
+Prior frameworks frame the process as *evolution*: mutate, evaluate, select, repeat. The LLM is a smarter mutation operator, but the loop is fundamentally Darwinian. With rich, user-designed diagnostics, the proposer becomes a **designer**: it reads the feedback, diagnoses the problem, and proposes targeted fixes. That's not evolution, it's **Intelligent Design**.
+
+**Evolution (blind):** "Change a parameter and hope the score goes up."
+
+**Intelligent Design (ASI):** "The agent failed because it called `search_api()` which doesn't exist. I will rewrite the system prompt to restrict tools to the provided schema."
 
 ## Results
 
