@@ -554,6 +554,79 @@ Do not include explanations, commentary, or markdown outside the ``` blocks.""")
     return "\n".join(sections)
 
 
+def _build_seed_generation_prompt(
+    objective: str,
+    background: str | None = None,
+    dataset: list[DataInst] | None = None,
+) -> str:
+    """Build a prompt for the reflection LM to generate an initial seed candidate.
+
+    Used when ``seed_candidate=None`` — the LLM bootstraps the first candidate
+    from the objective, optional background, and optional dataset examples.
+    """
+    sections = []
+
+    sections.append(
+        "You are an expert assistant. Your task is to generate an initial candidate "
+        "that will be iteratively refined by an optimization system."
+    )
+
+    sections.append(f"\n## Goal\n\n{objective}")
+
+    if background:
+        sections.append(f"\n## Domain Context & Constraints\n\n{background}")
+
+    if dataset is not None:
+        examples = dataset[:3]
+        example_lines = [f"- Example {i}: {ex}" for i, ex in enumerate(examples, 1)]
+        sections.append(
+            "\n## Sample Inputs\n\n"
+            "The candidate will be evaluated on inputs like these:\n\n"
+            + "\n".join(example_lines)
+        )
+
+    sections.append(
+        "\n## Output Format\n\n"
+        "Generate a strong initial candidate based on the goal above.\n"
+        "Provide ONLY the candidate within ``` blocks. "
+        "Do not include explanations or commentary outside the ``` blocks."
+    )
+
+    return "\n".join(sections)
+
+
+def _generate_seed_candidate(
+    lm: LanguageModel,
+    objective: str,
+    background: str | None = None,
+    dataset: list[DataInst] | None = None,
+    logger: LoggerProtocol | None = None,
+) -> Candidate:
+    """Call the reflection LM to generate an initial seed candidate.
+
+    Returns a single-key candidate dict ``{_STR_CANDIDATE_KEY: generated_text}``.
+    """
+    from gepa.strategies.instruction_proposal import InstructionProposalSignature
+
+    prompt = _build_seed_generation_prompt(
+        objective=objective,
+        background=background,
+        dataset=dataset,
+    )
+
+    if logger:
+        logger.log("Generating initial seed candidate via LLM...")
+
+    lm_output = lm(prompt)
+    extracted = InstructionProposalSignature.output_extractor(lm_output)
+    generated_text = extracted["new_instruction"]
+
+    if logger:
+        logger.log(f"Generated seed candidate ({len(generated_text)} chars)")
+
+    return {_STR_CANDIDATE_KEY: generated_text}
+
+
 optimize_anything_reflection_prompt_template: str = """I am optimizing a parameter in my system. The current parameter value is:
 ```
 <curr_param>
@@ -878,7 +951,7 @@ class EvaluatorWrapper:
 
 
 def optimize_anything(
-    seed_candidate: str | Candidate,
+    seed_candidate: str | Candidate | None,
     evaluator: Evaluator,
     dataset: list[DataInst] | None = None,
     valset: list[DataInst] | None = None,
@@ -913,7 +986,9 @@ def optimize_anything(
 
             - ``str`` — single text parameter (evaluator receives ``str``).
             - ``dict[str, str]`` — named parameters (evaluator receives the dict).
-            - ``list[dict]`` — multiple seeds for population initialization.
+            - ``None`` — the reflection LLM generates the initial candidate
+              from ``objective`` (and optionally ``background`` / ``dataset``).
+              Requires ``objective`` to be provided.
 
         evaluator: Scoring function.  Returns ``(score, side_info)`` or ``score``.
             See :class:`Evaluator`.  Print diagnostics via ``oa.log()`` for ASI.
@@ -974,10 +1049,23 @@ def optimize_anything(
     if config is None:
         config = GEPAConfig()
 
-    # Normalize seed_candidate: str -> {_STR_CANDIDATE_KEY: str}
-    str_candidate_mode = isinstance(seed_candidate, str)
-    if str_candidate_mode:
-        seed_candidate = {_STR_CANDIDATE_KEY: seed_candidate}
+    # Detect seed generation mode: when seed_candidate is None, the LLM
+    # will generate the initial candidate from the objective.
+    needs_seed_generation = False
+    if seed_candidate is None:
+        needs_seed_generation = True
+        str_candidate_mode = True
+        if not objective or not objective.strip():
+            raise ValueError(
+                "'objective' is required when seed_candidate is None. "
+                "The reflection LLM needs the objective to generate an initial candidate."
+            )
+        seed_candidate = {_STR_CANDIDATE_KEY: ""}  # placeholder until LLM generates it
+    else:
+        # Normalize seed_candidate: str -> {_STR_CANDIDATE_KEY: str}
+        str_candidate_mode = isinstance(seed_candidate, str)
+        if str_candidate_mode:
+            seed_candidate = {_STR_CANDIDATE_KEY: seed_candidate}
 
     # Detect single-instance mode: when both dataset=None and valset=None
     single_instance_mode = dataset is None and valset is None
@@ -1089,6 +1177,11 @@ def optimize_anything(
         stop_callback = CompositeStopper(*stop_callbacks_list)
 
     # --- 2. Validate and setup reflection LM ---
+    if needs_seed_generation and config.reflection.reflection_lm is None:
+        raise ValueError(
+            "reflection_lm is required when seed_candidate is None. "
+            "Set config.reflection.reflection_lm to a model name or callable."
+        )
     if not hasattr(active_adapter, "propose_new_texts"):
         assert config.reflection.reflection_lm is not None, (
             f"reflection_lm was not provided. The adapter '{active_adapter!s}' does not provide a propose_new_texts method, "
@@ -1107,6 +1200,16 @@ def optimize_anything(
     if config.refiner is not None:
         if isinstance(config.refiner.refiner_lm, str):
             config.refiner.refiner_lm = make_litellm_lm(config.refiner.refiner_lm)
+
+    # Generate seed candidate via LLM if seed_candidate was None
+    if needs_seed_generation:
+        seed_candidate = _generate_seed_candidate(
+            lm=config.reflection.reflection_lm,
+            objective=objective,
+            background=background,
+            dataset=dataset,
+            logger=config.tracking.logger or StdOutLogger(),
+        )
 
     # Auto-inject refiner_prompt into seed_candidate if refiner is enabled
     if config.refiner is not None:
