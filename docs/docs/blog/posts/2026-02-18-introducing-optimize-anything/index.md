@@ -155,12 +155,10 @@ In multi-task and generalization modes, `optimize_anything` leverages GEPA's cor
 
 ## Let's Take It for a Spin
 
-Here is a complete, working example that optimizes SVG code to depict "a pelican riding a bicycle." Noteably, we use `optimize_anything` to directly optimize the SVG code itself, rather than, optimizing prompts for an LLM to produce the SVG code. Our evaluator renders the SVG code as a PNG image, asks a VLM to score it on a set of visual aspects, and passes the rendered image back as ASI so the LLM proposer can *see* what it's improving:
+Here is a complete, working example that optimizes SVG code to depict "a pelican riding a bicycle." Noteably, we use `optimize_anything` to directly optimize the SVG code itself, rather than, optimizing prompts for an LLM to produce the SVG code. Our evaluator renders the SVG code as a PNG image, asks a VLM to score it on a set of visual aspects, and passes the rendered image back as ASI so the LLM proposer can *see* what it's improving.
 
+First, we import a few things and define our goal in simple natural language:
 ```python
-import base64, re
-from functools import partial
-import cairosvg, litellm
 from gepa import Image
 from gepa.optimize_anything import (
     optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig,
@@ -168,22 +166,22 @@ from gepa.optimize_anything import (
 from demo_utils import render_image, get_vlm_score_feedback
 
 GOAL = "a pelican riding a bicycle"
+```
 
-def evaluate(candidate, example, *, model):
+Next, we define our evaluator as well as the aspects we'd like it to grade for:
+
+```python
+    def evaluate(candidate, example, *, model):
     """Render SVG → image, score with a VLM, return (score, side_info)."""
-    image = render_image(candidate["svg_code"])
-    score, feedback = get_vlm_score_feedback(model, image, example["criteria"])
+    image = render_image(candidate["svg_code"]) # via cairosvg
+    score, feedback = get_vlm_score_feedback(model, image, example["criteria"]) # simple regex parser
 
     return score, {
         "RenderedSVG": Image(base64_data=image, media_type="image/png"),
         "Feedback": feedback,
     }
 
-model = "vertex_ai/gemini-3-flash-preview"
-result = optimize_anything(
-    seed_candidate={"svg_code": open("seed.svg").read()},
-    evaluator=partial(evaluate, model=model),
-    dataset=[
+    VISUAL_ASPECTS = [
         # 6 visual aspects → Pareto-efficient selection
         {"id": "overall",     "criteria": f"Rate overall quality of this SVG ({GOAL}). SCORE: X/10"},
         {"id": "anatomy",     "criteria": "Rate pelican accuracy: beak, pouch, plumage. SCORE: X/10"},
@@ -191,7 +189,16 @@ result = optimize_anything(
         {"id": "composition", "criteria": "Rate how convincingly the pelican rides the bicycle. SCORE: X/10"},
         {"id": "visual",      "criteria": "Rate visual appeal, scenery, and color usage. SCORE: X/10"},
         {"id": "craft",       "criteria": "Rate SVG technical quality: shapes, layering. SCORE: X/10"},
-    ],
+    ]
+```
+
+Finally, we can put it all together and run `optimize_anything` to directly optimize our SVG code:
+```python title="Running the optimization"
+    model = "vertex_ai/gemini-3-flash-preview"
+    result = optimize_anything(
+    seed_candidate={"svg_code": open("seed.svg").read()}, # a plain white canvas
+    evaluator=partial(evaluate, model=model),
+    dataset=VISUAL_ASPECTS,
     objective=f"Optimize SVG code to illustrate '{GOAL}'. Output ONLY valid SVG.",
     config=GEPAConfig(
         engine=EngineConfig(max_metric_calls=150),
