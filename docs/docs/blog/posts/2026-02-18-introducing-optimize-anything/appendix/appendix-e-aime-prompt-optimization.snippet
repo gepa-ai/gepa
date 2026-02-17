@@ -1,9 +1,9 @@
 <span id="appendix-e-aime-prompt-optimization"></span>
 ??? example "AIME Prompt Optimization"
 
-    This is Generalization mode for prompt optimization on AIME 2025 math competition problems. The evaluator runs gpt-4.1-mini with the candidate prompt and scores whether the answer is correct. GEPA improves accuracy from 46.67% to 60.00% through prompt refinement alone.
+    This is Generalization mode for prompt optimization on AIME 2025 math competition problems. GEPA improves accuracy from 46.67% to 60.00% through prompt refinement alone.
 
-    **Candidate** — The seed is a minimal, generic math instruction — a single sentence telling the model to solve carefully and show its steps. GEPA will evolve this into a detailed problem-solving strategy with specific heuristics for competition-level mathematics.
+    **Candidate** — The seed is a minimal, generic math instruction. GEPA will evolve this into a detailed problem-solving strategy with specific heuristics for competition-level mathematics.
 
     ```
     SEED_PROMPT = "Solve the math problem carefully. Break down the steps and provide the final answer as a single number."
