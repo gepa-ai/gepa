@@ -12,21 +12,20 @@
     **Evaluator** — The evaluator runs the LLM with the candidate prompt on an AIME problem, checks whether the predicted answer matches the ground truth, and returns ASI including the problem statement, written solutions, the model's reasoning chain, and its final answer, helping the LLM generate a more systematic prompt.
 
     ```python
-    from examples.aime_math.dataset import load_math_dataset
+    from examples.aime_math.eval import run_llm, math_metric
 
-    def evaluate(candidate: dict[str, str], example) -> tuple[float, dict]:
-        prediction = run_llm(example, candidate["prompt"])
-        metric_result = math_metric(example, prediction)
-        score = metric_result.score
-        feedback = metric_result.feedback
+    def evaluate(candidate: str, example) -> tuple[float, SideInfo]:
+        """Evaluate a candidate on a single example."""
+        prediction = run_llm(example, candidate)
+        score, feedback = math_metric(example, prediction)
 
         side_info = {
             "score": score,
             "input": example.input,
-            "prompt": candidate["prompt"],
+            "prompt": candidate,
             "output": prediction.answer,
             "reasoning": getattr(prediction, "reasoning", ""),
-            "feedback": feedback,
+            "execution_feedback": feedback,
         }
 
         return score, side_info
@@ -36,11 +35,12 @@
 
     ```python
     from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig
+    from examples.aime_math.dataset import load_math_dataset()
 
     trainset, valset, testset = load_math_dataset()
 
     result = optimize_anything(
-        seed_candidate={"prompt": SEED_PROMPT},
+        seed_candidate=SEED_PROMPT,
         evaluator=evaluate,
         dataset=trainset,
         valset=valset,
