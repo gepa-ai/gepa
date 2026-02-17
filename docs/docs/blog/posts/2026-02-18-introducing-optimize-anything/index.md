@@ -416,7 +416,7 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 </div>
 </div>
 
-**Key result:** `optimize_anything` discovers state-of-the-art algorithms for both problems (40.2% cost savings on CloudCast and 7.8% cost savings on Can't Be Late), outperforming hand-designed heuristics. [Full code →](#appendix-d-cloudcast--cant-be-late)
+**Key result:** `optimize_anything` discovers state-of-the-art algorithms for both problems (40.2% cost savings on CloudCast and 7.8% cost savings on Can't Be Late), outperforming hand-designed heuristics. [CloudCast code →](#appendix-d-cloudcast) | [Can't Be Late code →](#appendix-d2-cant-be-late)
 
 ### 4. Prompt Optimization: AIME Mathematics
 
@@ -504,7 +504,9 @@ result = oa.optimize_anything(
 
 --8<-- "docs/blog/posts/2026-02-18-introducing-optimize-anything/appendix/appendix-c-cuda-kernel-generation.snippet"
 
---8<-- "docs/blog/posts/2026-02-18-introducing-optimize-anything/appendix/appendix-d-cloudcast-cant-be-late.snippet"
+--8<-- "docs/blog/posts/2026-02-18-introducing-optimize-anything/appendix/appendix-d-cloudcast.snippet"
+
+--8<-- "docs/blog/posts/2026-02-18-introducing-optimize-anything/appendix/appendix-d2-cant-be-late.snippet"
 
 --8<-- "docs/blog/posts/2026-02-18-introducing-optimize-anything/appendix/appendix-e-aime-prompt-optimization.snippet"
 
