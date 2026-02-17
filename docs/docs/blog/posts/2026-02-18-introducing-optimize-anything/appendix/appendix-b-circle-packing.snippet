@@ -87,13 +87,13 @@
         warm_start = extract_best_circles(opt_state)
         result = execute_code(code, 600, warm_start)
 
-        circles = result["result"]["circles"]
-        score = result["result"]["validation_details"]["sum_radii"]
-        metrics = compute_multiple_metrics(result["result"]["all_scores"])
+        circles = result["circles"]
+        score = result["validation_details"]["sum_radii"]
+        metrics = compute_multiple_metrics(result["all_scores"])
 
         side_info = {
             "scores": {"sum_radii": score},
-            "metrics": metrics,  # mean, min, max, EMA1, EMA2 of the circles proposed
+            "metrics": metrics,  # mean, min, max, EMA1, EMA2 of the circles explored by this candidate
             "code": code,
             "circles": circles,
             "stdout": result.get("stdout", ""),
