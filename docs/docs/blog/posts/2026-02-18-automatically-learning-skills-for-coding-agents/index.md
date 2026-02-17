@@ -19,7 +19,7 @@ description: "Introducing gskill, a fully automated pipeline that uses GEPA and 
 
 # Automatically Learning Skills for Coding Agents
 
-Today, we are introducing **gskill**, a fully automated pipeline to learn skills for any repository. Given any GitHub repository, gskill learns important skills for coding agents to better work with the repository.
+Today, we are introducing **gskill**, a fully automated pipeline to learn skills for any repository. Given any GitHub repository, gskill creates important agent [skill files](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) for coding agents. These skills help the coding agent understand the repository and complete the tasks more efficiently.
 
 Using gskill, we learn repository-specific skills for [jinja](https://github.com/pallets/jinja) and [bleve](https://github.com/blevesearch/bleve) with a simple agent (Mini-SWE-Agent, gpt-5-mini), boosting its resolve rate from **55% to 82%** on Jinja and from **24% to 93%** on Bleve. These skills also transfer directly to Claude Code: on Bleve, Claude Haiku 4.5 jumps from 79.3% to 100% pass rate while running faster; on Jinja, Claude Haiku 4.5 improves from 93.9% to 98.5%. For Claude Sonnet 4.5, although the pass rate saturated, we still observe significant task duration reduction with the learned skills.
 
@@ -43,14 +43,15 @@ Once we have tasks, we can optimize with `optimize_anything`. We build gskill ba
 
 [^gepa-docs]: For readers who are not familiar with how `optimize_anything` and GEPA works, we highly recommend checking out the [official documentation](https://gepa-ai.github.io/gepa/).
 
-In a nutshell, the `optimize_anything` loop starts with a (possibly empty) set of skills, evaluates the agent with a chosen skill, and then updates the skill by employing another more powerful LLM to reflect on the evaluation results and feedback. This process is repeated until certain budget is exhausted.
+In a nutshell, the `optimize_anything` loop starts with a (possibly empty) set of skills, evaluates the agent with a chosen skill, and then updates the skill by employing another more powerful LLM to reflect on the evaluation results and feedback. This process is repeated until convergence.
 
 ## Experiments
 
 To evaluate gskill, we chose two popular repositories: [jinja](https://github.com/pallets/jinja) and [bleve](https://github.com/blevesearch/bleve). Our evaluation setup:
 
-- Start with an empty **mini-swe-agent** powered by gpt-5-mini
-- Generate ~250 SWE-smith tasks per repository
+- Start with default **mini-swe-agent** powered by gpt-5-mini
+- Generate ~300 SWE-smith tasks per repository
+- Create train (~200), validation (~50), and test (~60) splits from the tasks
 - Use gskill to learn skills for the agent
 - Evaluate performance on a holdout test set
 - Transfer the **learned skills** to Claude Code and evaluate with both claude-haiku-4-5 and claude-sonnet-4-5
@@ -72,12 +73,12 @@ To measure whether the learned skills are beneficial for other agents as well, w
 
 <figure markdown="span">
   ![Bar chart showing Claude Code evaluation on Bleve. Pass rates: Claude Haiku 4.5 at 79.3% (173s), Claude Haiku 4.5 + Skills at 98.3% (142s), Claude Sonnet 4.5 at 94.8% (285s), Claude Sonnet 4.5 + Skills at 100.0% (169s).](bleve_comparison_plot.png)
-  <figcaption>Claude Code evaluation on Bleve. Adding learned skills boosts pass rates while also reducing average task duration.</figcaption>
+  <figcaption>Claude Code evaluation on Bleve. Skills learned on Mini-SWE-Agent (gpt-5-mini) transfer to Claude Code, boosting pass rates while also reducing average task duration. Please note that the Bleve repository is primarily in Go, so this shows our framework can create skills useful in languages beyond Python.</figcaption>
 </figure>
 
 <figure markdown="span">
   ![Bar chart showing Claude Code evaluation on Jinja. Pass rates: Claude Haiku 4.5 at 93.9% (177s), Claude Haiku 4.5 + Skills at 100.0% (148s), Claude Sonnet 4.5 at 100.0% (254s), Claude Sonnet 4.5 + Skills at 98.5% (225s).](jinja_comparison_plot.png)
-  <figcaption>Claude Code evaluation on Jinja. Skills learned on a weaker model (gpt-5-mini) transfer effectively to Claude Code, achieving near-perfect pass rates.</figcaption>
+  <figcaption>Claude Code evaluation on Jinja. Skills learned on Mini-SWE-Agent (gpt-5-mini) transfer effectively to Claude Code, achieving near-perfect pass rates.</figcaption>
 </figure>
 
 
