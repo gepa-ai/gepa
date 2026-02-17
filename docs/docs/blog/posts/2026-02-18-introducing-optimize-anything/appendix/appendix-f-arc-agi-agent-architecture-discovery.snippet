@@ -20,40 +20,37 @@
     '''
     ```
 
-    **Evaluator** — The evaluator sandboxes the agent code, runs it on an ARC-AGI puzzle (providing training input/output pairs and test inputs), and returns rich ASI — training and test scores, execution errors, the actual grid examples, and `llm.get_side_info()` which captures LLM costs, number of calls made, and all model outputs produced inside the agentic architecture. This lets the proposer see not just *what* the agent got wrong, but *how* it reasoned internally.
+    **Evaluator** — The evaluator sandboxes the agent code, runs it on an ARC-AGI puzzle (providing training input/output pairs and test inputs), and returns rich ASI: training and test scores, execution errors, the actual grid examples, LLM costs, number of calls made, and all model outputs produced inside the agentic architecture. This lets the proposer see not just *what* the agent got wrong, but *how* it reasoned internally.
 
     ```python
-    def evaluate(candidate, **kwargs):
-        ex = kwargs["example"]
-        agent_code = candidate["agent_code"]
-        
+    def evaluate(candidate, example):
         result = run_agent(
-            agent_code=agent_code,
-            train_in=ex.train_in,
-            train_out=ex.train_out,
-            test_in=ex.test_in,
-            test_out=ex.test_out or None,
+            agent_code=candidate,
+            train_in=example.train_in,
+            train_out=example.train_out,
+            test_in=example.test_in,
+            test_out=example.test_out or None,
             model_id=LLM_MODEL,
             max_llm_calls=MAX_LLM_CALLS,
         )
-        llm = result["llm"]
+        llms = result["llms"]
         score = result["test_score"]
 
         return score, {
             "score": score,
-            "problem_id": ex.problem_id,
-            "agent_code": agent_code,
+            "problem_id": example.problem_id,
+            "agent_code": candidate,
             "training_score": result["training_score"],
             "test_score": result["test_score"],
             "cost": llm.total_cost,
             "error": result["error"],
             "train_examples": result["train_examples"],
             "test_examples": result["test_examples"],
-            **llm.get_side_info(),
+            **llms.get_traces(),  # number of calls made, LLM costs, model outputs, etc.
         }
     ```
 
-    **Optimizer** — This is **Generalization** mode with `dataset` (training puzzles) and `valset` (validation puzzles) — the agent must generalize to unseen puzzles, so just memorizing patterns from the training set won't help. `parallel=True` with `max_workers=64` enables massive concurrent evaluation across puzzles. `max_metric_calls=1200` gives GEPA ample budget to evolve the agent architecture. `background` provides domain knowledge about ARC puzzle structure. Gemini 3 Flash is used as both the reflection model and the agent's internal LLM. Note that using a stronger reflection model can find a even more effective artifact in general. 
+    **Optimizer** — This is **Generalization** mode with `dataset` (training puzzles) and `valset` (validation puzzles). The agent must generalize to unseen `testset` puzzles, so just memorizing patterns from the training set won't help. `parallel=True` with `max_workers=64` enables massive concurrent evaluation across puzzles. `max_metric_calls=2000` gives GEPA ample budget to evolve the agent architecture. `background` provides domain knowledge about ARC puzzle structure. Gemini 3 Flash is used as both the reflection model and the agent's internal LLM. Note that using a stronger reflection model can find a even more effective artifact in general. 
 
     ```python
     from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
@@ -67,7 +64,7 @@
         dataset=train_set,
         valset=val_set,
         config=GEPAConfig(
-            engine=EngineConfig(max_metric_calls=1200, parallel=True,
+            engine=EngineConfig(max_metric_calls=2000, parallel=True,
                                 max_workers=64, cache_evaluation=True),
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/google/gemini-3-flash-preview",
@@ -75,9 +72,7 @@
         ),
         objective="Evolve agent code to solve ARC-AGI puzzles. The agent receives "
                  "training input/output pairs and must predict test outputs.",
-        background="ARC puzzles require discovering a transformation rule from "
-                   "examples and applying it to unseen inputs. The agent has access "
-                   "to an LLM via the llm() callable.",
+        background="You are allowed to build an agent system with up to 10 LLM calls and total of $0.8~1.0 LLM cost per problem.",
     )
     ```
 

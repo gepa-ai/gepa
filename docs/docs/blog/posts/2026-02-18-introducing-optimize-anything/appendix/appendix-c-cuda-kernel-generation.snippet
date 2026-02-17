@@ -1,22 +1,22 @@
 <span id="appendix-c-cuda-kernel-generation"></span>
 ??? example "CUDA Kernel Generation"
 
-    We tackle [KernelBench](https://github.com/ScalingIntelligence/KernelBench), a benchmark of PyTorch neural-network operations where the goal is to generate a custom CUDA kernel (via Triton / C++ extensions) that is both correct and faster than the reference PyTorch implementation. A single shared prompt is optimized across multiple problems so that insights from one kernel transfer to others.
+    We tackle [KernelBench](https://github.com/ScalingIntelligence/KernelBench), a benchmark of PyTorch neural-network operations where the goal is to generate a custom CUDA kernel with C++ extensions that is both correct and faster than the reference PyTorch implementation. A single shared prompt is optimized across multiple problems so that insights from one kernel transfer to others.
 
-    **Candidate** — The seed candidate is a minimal one-line instruction prompt that tells the LLM to generate a CUDA kernel replacement. It provides just enough structure to define the expected output format (a complete Python file using `load_inline`). GEPA will evolve this terse instruction into a detailed prompt packed with CUDA optimization strategies, memory access patterns, and kernel design heuristics.
+    **Candidate** — The seed candidate is a minimal one-line instruction prompt that tells the LLM to generate a CUDA kernel replacement. It provides just enough structure to define the expected output format (a complete Python file using `load_inline`).
 
     ```python
-    KERNEL_GEN_PROMPT = """Write a CUDA kernel to replace the given PyTorch model for better performance.
+    SEED_PROMPT = """Write a CUDA kernel to replace the given PyTorch model for better performance.
     Output a complete Python file with ModelNew using load_inline. Include all imports."""
     ```
 
-    **Evaluator** — The evaluator compiles the LLM-generated kernel, benchmarks it against a baseline PyTorch implementation for the given problem, and returns rich **Actionable Side Information (ASI)** — the generated code, CUDA documentation consulted during generation, runtime measurements, speedup ratios, correctness status, and detailed error feedback when compilation or validation fails.
+    **Evaluator** — The evaluator compiles the LLM-generated kernel, benchmarks it against a baseline PyTorch implementation for the given problem, and returns rich Actionable Side Information (ASI) with the generated code, CUDA documentation consulted during generation, runtime measurements, speedup ratios, correctness status, and detailed error feedback when compilation or validation fails.
 
     ```python
     def evaluate(candidate, example):
         baseline = baselines[example.problem_id]
         code, cuda_docs, eval_result = run_kernel(
-            candidate["kernel_gen_prompt"], example.ref_arch, lm, predictor
+            candidate, example.ref_arch, lm, predictor
         )
         score = compute_score(eval_result, baseline)
 
@@ -45,9 +45,9 @@
     from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, RefinerConfig
 
     optimize_anything(
-        seed_candidate={"kernel_gen_prompt": KERNEL_GEN_PROMPT},
+        seed_candidate=SEED_PROMPT,
         evaluator=evaluate,
-        dataset=dataset,  # multiple KernelBench problems
+        dataset=dataset,  # KernelBench problems
         config=GEPAConfig(
             engine=EngineConfig(max_metric_calls=2000, cache_evaluation=True),
             refiner=RefinerConfig(),  # auto-refine after each evaluation
