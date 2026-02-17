@@ -156,6 +156,8 @@ theme:
     favicon: static/img/gepa_logo.svg
 
 plugins:
+    - social:
+        enabled: !ENV [CI, false]
     - search:
         lang: en
         separator: '[\s\-\.]+'
