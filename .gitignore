@@ -1,4 +1,10 @@
 #######################
+# Example data — extracted from tarballs, not committed
+#######################
+# Can't Be Late: extract with `tar -xzf utils/simulator/real_traces.tar.gz -C utils/simulator/`
+examples/adrs/can_be_late/utils/simulator/real/
+
+#######################
 # Copied from default python .gitignore
 #######################
 # Byte-compiled / optimized / DLL files

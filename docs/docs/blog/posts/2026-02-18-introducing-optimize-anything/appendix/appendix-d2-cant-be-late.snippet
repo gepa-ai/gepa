@@ -54,46 +54,36 @@
     """
     ```
 
-    **Evaluator** — The evaluator runs the candidate strategy through a scheduling simulator driven by real spot-availability traces. `simulate_scheduling` handles syntax validation, subprocess execution of the simulator, and cost extraction. Each trace is tested across multiple job configurations (varying task duration, deadline tightness, and restart overhead).
+    **Evaluator** — The evaluator runs the candidate strategy through a scheduling simulator driven by real spot-availability traces. `get_program_path` caches the candidate to a temp file (keyed by content, so repeated calls are free). `run_simulation` handles subprocess execution of the simulator and cost extraction. Each trace is tested across multiple job configurations (varying task duration, deadline tightness, and restart overhead).
 
     **ASI (Actionable Side Information):** The side information includes (1) the full spot-availability pattern for the trace (e.g., `"0.0-10.0:S | 10.0-15.0:X"` — spot available for 10h then unavailable), (2) a timeline of the strategy's instance usage decisions (e.g., `"0.0-5.0:S@R0[50%] | 5.0-8.0:OD@R0[100%]"`), and (3) segment counts (SPOT vs ON_DEMAND vs restarts). This lets the LLM proposer see *exactly when* the strategy made suboptimal decisions — for instance, switching to expensive ON_DEMAND too early when spot was about to become available again.
 
     ```python
-    from examples.adrs.can_be_late.helpers import simulate_scheduling
+    from utils.simulation import (
+        FAILED_SCORE,
+        get_program_path, syntax_is_valid, syntax_failure_info,
+        run_simulation, simulation_failure_info, simulation_success_info,
+    )
 
-    def evaluate(candidate, example):
-        # Run the candidate's scheduling strategy on a spot-availability trace
-        result = simulate_scheduling(
-            candidate["program"], example["trace_file"], example["config"]
+    def evaluate(candidate: dict, example: dict, **kwargs):
+        program_path = get_program_path(candidate["program"])
+        if not syntax_is_valid(program_path):
+            return FAILED_SCORE, syntax_failure_info(example)
+        success, cost, error, details = run_simulation(
+            program_path, example["trace_file"], example["config"]
         )
-
-        if result.error:
-            return -100000.0, {"Error": result.error}
-
-        # Score: negative cost (higher is better, i.e. lower cost)
-        score = -result.cost
-
-        return score, {
-            "Input": {
-                "trace": result.trace_name,
-                "duration": f"{result.config['duration']}h",
-                "deadline": f"{result.config['deadline']}h",
-                "overhead": f"{result.config['overhead']}h",
-                "spot_availability": result.spot_pattern,
-            },
-            "Output": {
-                "cost": f"${result.cost:.2f}",
-                "timeline": result.timeline,
-                "segments": f"SPOT={result.spot_count}, ON_DEMAND={result.od_count}",
-            },
-        }
+        if not success:
+            return FAILED_SCORE, simulation_failure_info(error, example)
+        score = -cost
+        return score, simulation_success_info(score, example, details)
     ```
 
     **Optimizer** — Generalization mode with spot-availability traces split into training and validation sets. Each trace is evaluated across multiple deadline/overhead configurations, so the evolved strategy must handle both tight and relaxed deadlines. `parallel=True` with 128 workers enables fast evaluation across the large trace dataset.
 
     ```python
     from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
-    from examples.adrs.can_be_late.trace_dataset import load_trace_dataset
+    from utils.dataset import load_trace_dataset
+    from utils.lm import make_reflection_lm
 
     # Load spot-availability traces split into train/val/test
     splits = load_trace_dataset()
@@ -101,7 +91,7 @@
 
     result = optimize_anything(
         seed_candidate={"program": SEED_PROGRAM},
-        evaluator=evaluate,
+        fitness_fn=evaluate,
         dataset=train_set,
         valset=val_set,
         objective="Optimize a cloud scheduling strategy for the 'Can't Be Late' problem. "
@@ -113,7 +103,7 @@
                    "ensure deadline completion (hard constraint).",
         config=GEPAConfig(
             engine=EngineConfig(max_metric_calls=100, parallel=True, max_workers=128),
-            reflection=ReflectionConfig(reflection_lm=llm_model),
+            reflection=ReflectionConfig(reflection_lm=make_reflection_lm("anthropic/claude-opus-4-5-20251101")),
         ),
     )
     ```

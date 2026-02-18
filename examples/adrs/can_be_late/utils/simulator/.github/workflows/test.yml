@@ -1,0 +1,37 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # Install project dependencies
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        # Install test dependencies
+        pip install pytest pytest-cov
+    
+    - name: Run unit tests
+      run: |
+        # Run all tests in the tests directory
+        python -m unittest discover -s tests -p "test_*.py" -v
+    
+    - name: Run specific env bug tests
+      run: |
+        # Specifically run the env bug tests we created
+        python -m unittest tests.test_env_bugs -v

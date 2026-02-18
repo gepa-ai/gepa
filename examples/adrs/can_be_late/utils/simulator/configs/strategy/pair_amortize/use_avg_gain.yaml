@@ -1,0 +1,5 @@
+strategy: pair_amortize
+
+pair-interval-hours: 8
+
+use-avg-gain: true
