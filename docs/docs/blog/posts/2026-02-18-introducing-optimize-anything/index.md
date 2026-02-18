@@ -38,7 +38,7 @@ Today we are introducing **`optimize_anything`**, a declarative API that optimiz
 
 <!-- more -->
 
-While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode, optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** (single-task search, multi-task search, and generalization) under one declarative API, enabling optimization tasks that prior frameworks cannot directly express: [discovering agent architectures from scratch](#5-agent-architecture-discovery-arc-agi), [learning prompts that generalize to unseen examples](#4-prompt-optimization-aime-mathematics), and [optimizing coding agent skills that transfer across models](#7-coding-agent-skills-learning-skills-for-any-repository).
+While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode, optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** (single-task search, multi-task search, and generalization) under one declarative API, enabling optimization tasks that prior frameworks cannot directly express: [discovering agent architectures from scratch](#5-agent-architecture-discovery), [learning prompts that generalize to unseen examples](#4-prompt-optimization), and [optimizing coding agent skills that transfer across models](#7-coding-agent-skills).
 
 <figure markdown="span">
   ![optimize_anything diagram showing the core loop: a string x is passed to an evaluator f(x) which returns a score plus diagnostic feedback, which is then consumed by an LLM proposer to produce an improved string. Example instantiations shown below: Code Optimization, Numeric Optimization, Prompt/Agent Harness, Policy Optimization.](header_image.png)
@@ -102,19 +102,19 @@ ASI can be open-ended text, structured data, multi-objectives (through `scores`)
 
 `optimize_anything` unifies three distinct optimization paradigms under one API, determined by whether you provide a `dataset` and `valset`:
 
-**1. Single-Task Search**: "Solve one hard problem." No dataset needed; the candidate *is* the solution, and the evaluator scores it directly (no `example` argument). For example, in [circle packing](#1-circle-packing-outperforming-alphaevolve), the artifact is the packing algorithm code and the evaluator returns the score plus geometric diagnostics as ASI. This is the mode that prior LLM-evolution frameworks like [AlphaEvolve](https://deepmind.google/discover/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/) and [OpenEvolve](https://github.com/codelion/openevolve) operate in.
+**1. Single-Task Search**: "Solve one hard problem." No dataset needed; the candidate *is* the solution, and the evaluator scores it directly (no `example` argument). For example, in [circle packing](#1-circle-packing), the artifact is the packing algorithm code and the evaluator returns the score plus geometric diagnostics as ASI. This is the mode that prior LLM-evolution frameworks like [AlphaEvolve](https://deepmind.google/discover/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/) and [OpenEvolve](https://github.com/codelion/openevolve) operate in.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=...)
 ```
 
-**2. Multi-Task Search**: "Solve a batch of related problems with cross-transfer." You provide a `dataset` of related tasks; insights from solving one help solve the others. For example, in [CUDA kernel generation](#2-cuda-kernel-generation-kernelbench), each task is a PyTorch operation to accelerate on the same hardware, and the evaluator compiles and benchmarks the kernel returning compiler errors and profiler traces as ASI. Even though the kernels perform different computations, multi-task mode converges faster and solves more problems across all speedup thresholds than dedicated single-task optimization, thanks to cross-transfer of optimization patterns. No prior LLM-evolution framework supports this mode.
+**2. Multi-Task Search**: "Solve a batch of related problems with cross-transfer." You provide a `dataset` of related tasks; insights from solving one help solve the others. For example, in [CUDA kernel generation](#2-cuda-kernel-generation), each task is a PyTorch operation to accelerate on the same hardware, and the evaluator compiles and benchmarks the kernel returning compiler errors and profiler traces as ASI. Even though the kernels perform different computations, multi-task mode converges faster and solves more problems across all speedup thresholds than dedicated single-task optimization, thanks to cross-transfer of optimization patterns. No prior LLM-evolution framework supports this mode.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=..., dataset=tasks)
 ```
 
-**3. Generalization**: "Build a skill that transfers to unseen problems." You provide both a training `dataset` and a held-out `valset`; the optimized artifact (a prompt, an agent, a policy) must generalize to unseen examples. This is the mode that GEPA's prompt optimization operates in. `optimize_anything` generalizes the pattern to any text artifact, not just prompts, abstracting over traditional machine learning and program synthesis. For example, in [agent architecture discovery](#5-agent-architecture-discovery-arc-agi), the artifact is the entire agent, the dataset and valset are ARC-AGI puzzles, and the evaluator runs the agent and returns its errors as ASI. The optimized agent improves from 32.5% to 89.5% on test-set (+57 percentage points). The same mode also powers [cloud scheduling policy discovery](#3-ai-driven-systems-research-cloudcast--cant-be-late), where the artifact is an algorithm that must generalize across unseen infrastructure scenarios.
+**3. Generalization**: "Build a skill that transfers to unseen problems." You provide both a training `dataset` and a held-out `valset`; the optimized artifact (a prompt, an agent, a policy) must generalize to unseen examples. This is the mode that GEPA's prompt optimization operates in. `optimize_anything` generalizes the pattern to any text artifact, not just prompts, abstracting over traditional machine learning and program synthesis. For example, in [agent architecture discovery](#5-agent-architecture-discovery), the artifact is the entire agent, the dataset and valset are ARC-AGI puzzles, and the evaluator runs the agent and returns its errors as ASI. The optimized agent improves from 32.5% to 89.5% on test-set (+57 percentage points). The same mode also powers [cloud scheduling policy discovery](#3-systems-research), where the artifact is an algorithm that must generalize across unseen infrastructure scenarios.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=..., dataset=train, valset=val)
@@ -362,7 +362,7 @@ The evolutionary framing these frameworks inherit — mutate, evaluate, select, 
 
 `optimize_anything` beats AlphaEvolve at circle packing, evolves a 10-line agent stub into a 300+ line system that nearly triples its test accuracy on ARC-AGI, discovers novel cloud scheduling algorithms, and matches Optuna (a mature numerical optimizer) by generating solver code from scratch. We test across seven domains spanning search, batch optimization, and generalization. Each section below walks through the setup and links to [full, runnable code](#appendix-case-study-code).
 
-### 1. Circle Packing: Outperforming AlphaEvolve
+### 1. Outperform AlphaEvolve at Circle Packing {#1-circle-packing}
 
 **Mode: Single-Task Search.** Pack n=26 circles to maximize the sum of their radii within a unit square. GEPA optimizes the packing algorithm code, using execution results and geometric diagnostics as ASI.
 
@@ -378,7 +378,7 @@ The evolutionary framing these frameworks inherit — mutate, evaluate, select, 
 
 **Key result:** GEPA outperforms prior LLM-evolution frameworks (AlphaEvolve/ShinkaEvolve/OpenEvolve), reaching a score of 2.63598+. [Full code →](#appendix-b-circle-packing)
 
-### 2. CUDA Kernel Generation (KernelBench)
+### 2. Accelerate PyTorch with Custom CUDA Kernels {#2-cuda-kernel-generation}
 
 **Mode: Multi-Task Search.** We generate fast CUDA kernels for multiple reference PyTorch operations from [KernelBench](https://github.com/ScalingIntelligence/KernelBench), evaluated on a V100 32 GB GPU. Under the hood, GEPA evolves the prompt that drives kernel generation, so improvements discovered for one problem transfer to others automatically.
 
@@ -397,7 +397,7 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 **Key result:** 87% of GEPA-generated kernels match or beat the baseline, with 25% achieving 20%+ speedups. Multi-task mode outperforms dedicated single-task search modes, suggesting the efficiency of cross-task learning. [Full code →](#appendix-c-cuda-kernel-generation)
 
 
-### 3. AI-Driven Systems Research: CloudCast & Can't Be Late
+### 3. Discover Cloud Algorithms That Cut Costs up to 40% {#3-systems-research}
 
 **Mode: Generalization.** We optimize cloud infrastructure algorithms: **CloudCast** discovers broadcast routing strategies for multi-cloud data transfer (minimizing egress cost), and **Can't Be Late** learns scheduling policies that decide when to use cheap-but-preemptible SPOT instances versus reliable ON_DEMAND instances to complete tasks before deadlines.
 
@@ -418,11 +418,11 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 </div>
 </div>
 
-**Key result:** `optimize_anything` discovers state-of-the-art algorithms for both problems (40.2% cost savings on CloudCast and 7.8% cost savings on Can't Be Late), outperforming hand-designed heuristics. [CloudCast code →](#appendix-d-cloudcast) | [Can't Be Late code →](#appendix-d2-cant-be-late)
+**Key result:** `optimize_anything` discovers state-of-the-art algorithms for both problems (40.2% cost savings on CloudCast and 7.8% cost savings on Can’t Be Late), topping the ADRS leaderboard (outperforming OpenEvolve, ShinkaEvolve, and expert-designed heuristics). [CloudCast code →](#appendix-d-cloudcast) | [Can’t Be Late code →](#appendix-d2-cant-be-late)
 
-### 4. Prompt Optimization: AIME Mathematics
+### 4. Improve GPT's Math Accuracy via Prompt Optimization (AIME) {#4-prompt-optimization}
 
-**Mode: Generalization.** We optimize a system prompt for gpt-4.1-mini by *training* on [AIME](https://en.wikipedia.org/wiki/American_Invitational_Mathematics_Examination) 2022–2024 math competition problems and *testing* on AIME 2025. GEPA is the [state-of-the-art prompt optimization algorithm](https://gepa-ai.github.io/gepa/).
+**Mode: Generalization.** We optimize a system prompt for gpt-4.1-mini by *training* on [AIME](https://en.wikipedia.org/wiki/American_Invitational_Mathematics_Examination) 2022–2024 math competition problems and *testing* on AIME 2025. GEPA sets the [state-of-the-art for prompt optimization](https://arxiv.org/abs/2507.19457).
 
 <figure markdown="span">
   ![Optimization trajectory for AIME 2025 with gpt-4.1-mini. Validation score improves from 46.67% to 57.78% over 350 metric calls. Best test score reaches 60.00%, up from a 46.67% baseline.](aime_results.png)
@@ -431,7 +431,7 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 
 **Key result:** Pure prompt optimization improves gpt-4.1-mini from 46.67% to **60.00%** on AIME 2025, a 13.3 percentage point gain from changing only the system prompt. [Full code →](#appendix-e-aime-prompt-optimization)
 
-### 5. Agent Architecture Discovery: ARC-AGI
+### 5. Nearly Triple ARC-AGI Accuracy via Agent Evolution {#5-agent-architecture-discovery}
 
 **Mode: Generalization.** This is the most ambitious application. Rather than optimizing a prompt, we optimize the **entire agent**: its code, sub-agent architecture, control flow, helper functions, and prompts, all treated as a single text artifact. The seed is a 10-line naive agent; GEPA evolves it into a 300+ line system with rule induction, code verification, iterative refinement, and structured fallbacks.
 
@@ -446,7 +446,7 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 </figure>
 
 **Key result:** Using the same underlying model (Gemini 3 Flash), `optimize_anything` improves ARC-AGI v1 public test accuracy from 32.5% to **89.5%** by evolving the entire agent architecture, achieving gains that typically require significant manual iteration. [Full code →](#appendix-f-arc-agi-agent-architecture-discovery)
-### 6. Blackbox Mathematical Optimization: Matching Optuna
+### 6. Match or Outperform Optuna at Blackbox Mathematical Optimization {#6-blackbox-optimization}
 
 **Mode: Single-Task Search.** Given a blackbox objective function, `optimize_anything` discovers an optimization algorithm tailored to it and matches [Optuna](https://optuna.org/), the industry-standard blackbox optimizer, across the 56-problem [EvalSet](https://github.com/sigopt/evalset) benchmark.
 
@@ -461,11 +461,11 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
 
 **Key result:** `optimize_anything` matches the performance of Optuna, a mature numerical optimizer, by optimizing a blackbox search program tailored to each problem. [Full code →](#appendix-a-blackbox-mathematical-optimization)
 
-### 7. Coding Agent Skills: Learning Skills for Any Repository
+### 7. Optimize Agent Skills: Near-Perfect Claude Code Accuracy, 47% Faster {#7-coding-agent-skills}
 
 **Mode: Generalization.** Skills (natural-language instructions and best practices for working with a specific codebase) are text artifacts too. `optimize_anything` can optimize them: the evaluator runs a coding agent on real tasks from the repository and scores whether it resolves them; the optimized skills must generalize to unseen tasks.
 
-The results are striking: GEPA-optimized skills boost resolve rates from 24% to **93%** on one repository and from 55% to **82%** on another, and transfer directly to Claude Code, pushing it to near-perfect pass rates while also reducing task duration.
+The results are striking: GEPA-optimized skills boost resolve rates from 24% to **93%** on one repository and from 55% to **82%** on another, and transfer directly to Claude Code, pushing it to near-perfect pass rates while cutting resolution time by **47%**.
 
 **Key result:** `optimize_anything` learns repository-specific skills that dramatically improve coding agent performance and transfer across models. [Read the full post →](../learning-skills-for-any-repository/)
 
