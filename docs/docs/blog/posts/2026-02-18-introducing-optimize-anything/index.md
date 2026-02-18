@@ -69,7 +69,7 @@ import gepa.optimize_anything as oa
 
 def evaluate(candidate: str) -> float:
     score, diagnostic = run_my_system(candidate)
-    print(f"Error: {diagnostic}")  # captured automatically as ASI
+    oa.log(f"Error: {diagnostic}")  # captured as ASI
     return score
 
 result = oa.optimize_anything(
@@ -79,7 +79,7 @@ result = oa.optimize_anything(
 print(result.best_candidate)
 ```
 
-That's it. The evaluator takes a candidate string and returns a score (higher is better). Any `print()` statements inside the evaluator are automatically captured as **Actionable Side Information (ASI)** to be used as diagnostic feedback that the LLM proposer reads during reflection. You can also use `oa.log()` for explicit logging, or return structured diagnostic information as a dictionary:
+That's it. The evaluator takes a candidate string and returns a score (higher is better). `oa.log()` works just like `print()`, but routes output to the LLM proposer as **Actionable Side Information (ASI)** — diagnostic feedback the proposer reads during reflection. For richer diagnostics, return a structured dictionary alongside the score:
 
 ```python
 def evaluate(candidate: str) -> tuple[float, dict]:
@@ -92,6 +92,15 @@ def evaluate(candidate: str) -> tuple[float, dict]:
 ```
 
 ASI can be open-ended text, structured data, multi-objectives (through `scores`), or even **images** (via `gepa.Image`) for vision-capable LLMs; anything that would help an expert understand the artifact and diagnose failures. We'll see ASI in action in the [SVG demo](#lets-take-it-for-a-spin), then unpack [why it matters](#the-key-ingredients).
+
+If you don't have a starting artifact, a natural-language `objective` is enough, `optimize_anything` generates the initial candidate for you:
+
+```python
+result = oa.optimize_anything(
+    evaluator=evaluate,
+    objective="Generate a Python function `reverse()` that reverses a string.",
+)
+```
 
 ### One Interface, Three Optimization Modes
 
@@ -474,7 +483,7 @@ The results are striking: GEPA-optimized skills boost resolve rates from 24% to 
 
 ## Conclusion & Getting Started
 
-`optimize_anything` makes a simple bet: if your artifact is text and its performance can be measured, you can optimize it. The API is minimal, requiring only a seed, an evaluator, and optionally a dataset. The results span algorithmic discovery, kernel generation, systems research, prompt tuning, agent architecture search, blackbox optimization, and coding agent skill learning.
+`optimize_anything` makes a simple bet: if your artifact is text and its performance can be measured, you can optimize it. The API is minimal, requiring only a seed (or task description), an evaluator, and optionally a dataset. The results span algorithmic discovery, kernel generation, systems research, prompt tuning, agent architecture search, blackbox optimization, and coding agent skill learning.
 
 The key ideas: (1) **three unified modes** (single-task search, multi-task search, and generalization) under one declarative API; (2) **Actionable Side Information (ASI)** as a first-class API concept that turns blind mutation into targeted, diagnostic-driven engineering; (3) **Pareto-efficient search** across metrics and examples that outperforms naive all-at-once optimization.
 
@@ -519,3 +528,19 @@ result = oa.optimize_anything(
 --8<-- "docs/blog/posts/2026-02-18-introducing-optimize-anything/appendix/appendix-a-blackbox-mathematical-optimization.snippet"
 
 </div>
+
+## Appendix: Make `printf()` Debugging Cool Again
+
+If you already have `print()` statements scattered through your evaluation code for debugging (or perhaps call a library that logs to std streams), you can turn them into ASI with a single flag, no code changes needed:
+
+```python
+from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig
+
+result = optimize_anything(
+    seed_candidate=...,
+    evaluator=evaluate,  # existing print() calls become ASI
+    config=GEPAConfig(engine=EngineConfig(capture_stdio=True)),
+)
+```
+
+With `capture_stdio=True`, any `print()` output inside your evaluator is automatically captured and included in `side_info` as `"stdout"` and `"stderr"`, while still printing to your terminal as usual. Your debugging workflow stays the same, but now the optimizer can read the same diagnostics you can. This is handy for quick prototyping or wrapping existing evaluation scripts. For production use, we recommend `oa.log()` or structured `side_info` dicts for cleaner separation between debugging output and optimization feedback.
