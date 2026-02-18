@@ -11,52 +11,47 @@ Usage is identical to evaluate_claude_code.py:
   python -m src.evaluate.claude_code_skills --config gepa_results/logs/run_xxx/config.json --use-skills
 """
 
+import argparse
+import json
 import os
 import sys
-import json
-import argparse
 import uuid
-import time
-from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 import docker
-
-from swebench.harness.constants import (
-    KEY_INSTANCE_ID,
-    DOCKER_USER,
-    DOCKER_WORKDIR,
-)
 
 # Import all shared utilities from the original evaluate_claude_code module.
 # This avoids duplicating data loading, image management, verification, etc.
 from gskill.evaluate.claude_code import (
-    # Data loading (identical splits)
-    load_and_split_data,
-    load_testset_from_config,
-    save_test_ids,
-    load_test_ids,
-    load_testset_by_ids,
-    # Docker image management
-    get_base_image_name,
-    get_claude_code_image_name,
-    check_image_exists,
-    install_claude_code_in_image,
-    ensure_claude_code_image,
     # Result types
     ClaudeCodeResult,
+    ensure_claude_code_image,
+    # Docker image management
+    get_base_image_name,
+    load_test_ids,
+    load_testset_by_ids,
+    load_testset_from_config,
+    save_test_ids,
     # Verification
     verify_patch_with_harness,
+)
+from gskill.evaluate.claude_code import (
     # Original Claude Code runner (imported as private; we wrap it)
     run_claude_code_in_container as _run_claude_code_in_container,
 )
-
+from swebench.harness.constants import (
+    DOCKER_USER,
+    DOCKER_WORKDIR,
+    KEY_INSTANCE_ID,
+)
 
 # ============================================================================
 # Skill Installation (the key difference from evaluate_claude_code.py)
 # ============================================================================
+
 
 def format_skill_md(skills_content: str, repo_name: str) -> str:
     """
@@ -85,13 +80,7 @@ def format_skill_md(skills_content: str, repo_name: str) -> str:
         f"or resolving reported bugs."
     )
 
-    return (
-        f"---\n"
-        f"name: {skill_name}-bugfix\n"
-        f"description: {description}\n"
-        f"---\n\n"
-        f"{skills_content}"
-    )
+    return f"---\nname: {skill_name}-bugfix\ndescription: {description}\n---\n\n{skills_content}"
 
 
 def install_skill_in_container(
@@ -128,13 +117,8 @@ def install_skill_in_container(
         copy_to_container(container, skill_file_local, skill_file_container)
         container.exec_run("sync", user="root")
         # Make the whole .claude tree readable
-        container.exec_run(
-            f"chmod -R 755 {DOCKER_WORKDIR}/.claude", user="root"
-        )
-        print(
-            f"  Installed skill at .claude/skills/{repo_name}/SKILL.md "
-            f"({len(skill_md)} chars)"
-        )
+        container.exec_run(f"chmod -R 755 {DOCKER_WORKDIR}/.claude", user="root")
+        print(f"  Installed skill at .claude/skills/{repo_name}/SKILL.md ({len(skill_md)} chars)")
     finally:
         skill_file_local.unlink(missing_ok=True)
 
@@ -143,13 +127,14 @@ def install_skill_in_container(
 # Wrapped Claude Code Runner
 # ============================================================================
 
+
 def run_claude_code_in_container(
-    task: Dict,
+    task: dict,
     container,
     timeout: int = 1800,
     poll_interval: int = 10,
-    skills: str = None,
-    repo_name: str = None,
+    skills: str | None = None,
+    repo_name: str | None = None,
 ) -> ClaudeCodeResult:
     """
     Run Claude Code with skills installed as a proper SKILL.md.
@@ -175,23 +160,22 @@ def run_claude_code_in_container(
         install_skill_in_container(container, skills, effective_repo)
 
     # Delegate to original runner with skills=None (skill already installed)
-    return _run_claude_code_in_container(
-        task, container, timeout=timeout, poll_interval=poll_interval, skills=None
-    )
+    return _run_claude_code_in_container(task, container, timeout=timeout, poll_interval=poll_interval, skills=None)
 
 
 # ============================================================================
 # Evaluation Functions (thin overrides that thread repo_name through)
 # ============================================================================
 
+
 def evaluate_single_task(
-    task: Dict,
+    task: dict,
     claude_image: str,
     timeout: int = 1800,
     verify_timeout: int = 300,
-    skills: str = None,
-    repo_name: str = None,
-) -> Dict[str, Any]:
+    skills: str | None = None,
+    repo_name: str | None = None,
+) -> dict[str, Any]:
     """
     Evaluate a single task with Claude Code (skill-aware version).
 
@@ -213,7 +197,7 @@ def evaluate_single_task(
             "claude_output": "",
             "test_output": "",
             "duration_seconds": 0,
-            "error": f"Docker connection failed: {str(e)}",
+            "error": f"Docker connection failed: {e!s}",
         }
 
     try:
@@ -235,21 +219,15 @@ def evaluate_single_task(
             user=DOCKER_USER,
         )
         if val.exit_code != 0:
-            raise RuntimeError(
-                f"Failed to checkout {instance_id}: {val.output.decode()}"
-            )
+            raise RuntimeError(f"Failed to checkout {instance_id}: {val.output.decode()}")
 
         # Uses our skill-aware run_claude_code_in_container
-        result = run_claude_code_in_container(
-            task, container, timeout=timeout, skills=skills, repo_name=repo_name
-        )
+        result = run_claude_code_in_container(task, container, timeout=timeout, skills=skills, repo_name=repo_name)
 
         passed = False
         test_output = ""
         if result.patch.strip():
-            passed, test_output = verify_patch_with_harness(
-                task, result.patch, timeout=verify_timeout
-            )
+            passed, test_output = verify_patch_with_harness(task, result.patch, timeout=verify_timeout)
         else:
             test_output = "No patch generated"
 
@@ -266,6 +244,7 @@ def evaluate_single_task(
 
     except Exception as e:
         import traceback
+
         return {
             "instance_id": instance_id,
             "claude_success": False,
@@ -274,7 +253,7 @@ def evaluate_single_task(
             "claude_output": "",
             "test_output": "",
             "duration_seconds": 0,
-            "error": f"{str(e)}\n{traceback.format_exc()}",
+            "error": f"{e!s}\n{traceback.format_exc()}",
         }
 
     finally:
@@ -287,15 +266,15 @@ def evaluate_single_task(
 
 
 def evaluate_testset(
-    test_data: List[Dict],
+    test_data: list[dict],
     output_dir: Path,
     n_workers: int = 4,
     timeout: int = 1800,
     verify_timeout: int = 300,
-    skills: str = None,
-    run_config: Dict[str, Any] = None,
-    repo_name: str = None,
-) -> Dict[str, Any]:
+    skills: str | None = None,
+    run_config: dict[str, Any] | None = None,
+    repo_name: str | None = None,
+) -> dict[str, Any]:
     """
     Evaluate all tasks in testset (skill-aware version).
 
@@ -309,7 +288,7 @@ def evaluate_testset(
     print("Preparing Claude Code Docker images...")
     print("=" * 70)
 
-    image_cache: Dict[str, str] = {}
+    image_cache: dict[str, str] = {}
     for task in test_data:
         base_image = get_base_image_name(task)
         if base_image not in image_cache:
@@ -326,14 +305,18 @@ def evaluate_testset(
         print(f"Skills: installed as .claude/skills/{repo_name or '<auto>'}/SKILL.md")
     print("=" * 70 + "\n")
 
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
 
     def process_task(task):
         base_image = get_base_image_name(task)
         claude_image = image_cache[base_image]
         return evaluate_single_task(
-            task, claude_image, timeout, verify_timeout,
-            skills=skills, repo_name=repo_name,
+            task,
+            claude_image,
+            timeout,
+            verify_timeout,
+            skills=skills,
+            repo_name=repo_name,
         )
 
     if n_workers <= 1:
@@ -349,9 +332,7 @@ def evaluate_testset(
                 f.write(json.dumps(result) + "\n")
     else:
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
-            futures = {
-                executor.submit(process_task, task): task for task in test_data
-            }
+            futures = {executor.submit(process_task, task): task for task in test_data}
 
             for i, future in enumerate(as_completed(futures)):
                 task = futures[future]
@@ -368,10 +349,7 @@ def evaluate_testset(
                 results.append(result)
 
                 status = "✓ PASS" if result.get("test_passed") else "✗ FAIL"
-                print(
-                    f"[{i + 1}/{len(test_data)}] "
-                    f"{result['instance_id'][:50]}: {status}"
-                )
+                print(f"[{i + 1}/{len(test_data)}] {result['instance_id'][:50]}: {status}")
 
                 with open(output_dir / "results.jsonl", "a") as f:
                     f.write(json.dumps(result) + "\n")
@@ -388,11 +366,7 @@ def evaluate_testset(
         "pass_rate": passed / total if total > 0 else 0,
         "claude_generated_patches": claude_success,
         "claude_patch_rate": claude_success / total if total > 0 else 0,
-        "avg_duration": (
-            sum(r.get("duration_seconds", 0) for r in results) / total
-            if total > 0
-            else 0
-        ),
+        "avg_duration": (sum(r.get("duration_seconds", 0) for r in results) / total if total > 0 else 0),
         "results": results,
     }
 
@@ -403,10 +377,7 @@ def evaluate_testset(
     print("EVALUATION COMPLETE")
     print("=" * 70)
     print(f"Total tasks: {total}")
-    print(
-        f"Claude generated patches: {claude_success}/{total} "
-        f"({summary['claude_patch_rate']:.1%})"
-    )
+    print(f"Claude generated patches: {claude_success}/{total} ({summary['claude_patch_rate']:.1%})")
     print(f"Tests passed: {passed}/{total} ({summary['pass_rate']:.1%})")
     print(f"Average duration: {summary['avg_duration']:.1f}s")
     print(f"Results saved to: {output_dir}")
@@ -417,6 +388,7 @@ def evaluate_testset(
 # ============================================================================
 # CLI (same arguments as evaluate_claude_code.py)
 # ============================================================================
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -439,51 +411,69 @@ Examples:
     )
 
     parser.add_argument(
-        "--config", type=str, required=True,
+        "--config",
+        type=str,
+        required=True,
         help="Path to config.json from a GEPA run",
     )
     parser.add_argument(
-        "--extract-ids", type=str, default=None,
+        "--extract-ids",
+        type=str,
+        default=None,
         help="Extract test IDs to this file and exit",
     )
     parser.add_argument(
-        "--output", type=str, default=None,
-        help="Output directory for results "
-             "(default: gepa_results/claude_code/<run_id>)",
+        "--output",
+        type=str,
+        default=None,
+        help="Output directory for results (default: gepa_results/claude_code/<run_id>)",
     )
     parser.add_argument(
-        "--workers", type=int, default=4,
+        "--workers",
+        type=int,
+        default=4,
         help="Number of parallel workers (default: 4)",
     )
     parser.add_argument(
-        "--timeout", type=int, default=1800,
+        "--timeout",
+        type=int,
+        default=1800,
         help="Timeout for Claude Code in seconds (default: 1800)",
     )
     parser.add_argument(
-        "--verify-timeout", type=int, default=300,
+        "--verify-timeout",
+        type=int,
+        default=300,
         help="Timeout for test verification in seconds (default: 300)",
     )
     parser.add_argument(
-        "--ids-file", type=str, default=None,
+        "--ids-file",
+        type=str,
+        default=None,
         help="Load test IDs from file instead of reconstructing from config",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Only prepare images and show what would be run, don't execute",
     )
     parser.add_argument(
-        "--limit", type=int, default=None,
+        "--limit",
+        type=int,
+        default=None,
         help="Limit number of tasks to evaluate (for testing)",
     )
     parser.add_argument(
-        "--model", type=str, default="sonnet",
+        "--model",
+        type=str,
+        default="sonnet",
         choices=["sonnet", "opus", "haiku", "default"],
         help="Claude Code model to use (default: sonnet = Claude Sonnet 4.5)",
     )
     parser.add_argument(
-        "--use-skills", action="store_true",
-        help="Load best_skills.txt and install as "
-             ".claude/skills/<repo>/SKILL.md in the repo",
+        "--use-skills",
+        action="store_true",
+        help="Load best_skills.txt and install as .claude/skills/<repo>/SKILL.md in the repo",
     )
 
     args = parser.parse_args()
@@ -492,10 +482,7 @@ Examples:
     try:
         client = docker.from_env()
         client.ping()
-        print(
-            f"Docker connection OK "
-            f"(DOCKER_HOST={os.environ.get('DOCKER_HOST', 'default')})"
-        )
+        print(f"Docker connection OK (DOCKER_HOST={os.environ.get('DOCKER_HOST', 'default')})")
     except Exception as e:
         print(f"ERROR: Cannot connect to Docker: {e}")
         print("Please ensure Docker is running:")
@@ -532,10 +519,7 @@ Examples:
     if args.output:
         output_dir = Path(args.output)
     else:
-        output_dir = (
-            Path("gepa_results/claude_code")
-            / f"{run_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        )
+        output_dir = Path("gepa_results/claude_code") / f"{run_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     # Apply limit
     if args.limit and args.limit < len(test_data):
@@ -559,10 +543,7 @@ Examples:
         if skills_path.exists():
             skills = skills_path.read_text()
             print(f"Loaded skills from {skills_path} ({len(skills)} chars)")
-            print(
-                f"Will install as .claude/skills/{repo_name}/SKILL.md "
-                f"(proper Claude Code skill)"
-            )
+            print(f"Will install as .claude/skills/{repo_name}/SKILL.md (proper Claude Code skill)")
             # Save copy of raw skills
             with open(output_dir / "skills_raw.txt", "w") as f:
                 f.write(skills)
@@ -602,11 +583,7 @@ Examples:
         "model": args.model,
         "use_skills": args.use_skills,
         "skills_format": "claude_code_skill" if args.use_skills else None,
-        "skills_path": (
-            str(config_dir / "prompts" / "best_skills.txt")
-            if args.use_skills
-            else None
-        ),
+        "skills_path": (str(config_dir / "prompts" / "best_skills.txt") if args.use_skills else None),
         "config_path": str(Path(args.config).resolve()),
         "source_run_id": run_id,
         "repo": repo,

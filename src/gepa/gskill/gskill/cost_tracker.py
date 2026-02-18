@@ -4,11 +4,10 @@ Uses LiteLLM's built-in cost tracking for accuracy.
 Thread-safe for parallel execution.
 """
 
-import threading
 import json
-from pathlib import Path
+import threading
 from datetime import datetime
-from typing import Optional
+from pathlib import Path
 
 import litellm
 
@@ -18,14 +17,14 @@ class UnifiedCostTracker:
     Thread-safe cost tracker that uses LiteLLM's built-in cost calculation.
     Tracks agent and reflection costs separately.
     """
-    
+
     def __init__(self, log_dir: str = "gepa_results/logs"):
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.session_start = datetime.now()
         self._lock = threading.Lock()
-        
+
         # Counters
         self.total_cost = 0.0
         self.agent_cost = 0.0
@@ -34,44 +33,44 @@ class UnifiedCostTracker:
         self.agent_calls = 0
         self.reflection_calls = 0
         self.total_tokens = 0
-        
+
         # Log files
-        timestamp = self.session_start.strftime('%Y%m%d_%H%M%S')
+        timestamp = self.session_start.strftime("%Y%m%d_%H%M%S")
         self.log_file = self.log_dir / f"cost_log_{timestamp}.jsonl"
         self.summary_file = self.log_dir / "cost_summary.txt"
-        
+
         # Register LiteLLM callback
         self._register_callback()
-    
+
     def _register_callback(self):
         """Register ourselves as a LiteLLM success callback."""
         # Remove any existing callback to avoid duplicates
         litellm.success_callback = [self._on_completion]
-    
+
     def _on_completion(self, kwargs, completion_response, start_time, end_time):
         """Called by LiteLLM after each successful completion."""
         with self._lock:
             self.call_count += 1
             call_num = self.call_count
-            
+
             # Get model name
-            model = kwargs.get('model', 'unknown')
-            
+            model = kwargs.get("model", "unknown")
+
             # Calculate cost using LiteLLM's built-in function
             try:
                 cost = litellm.completion_cost(completion_response=completion_response)
             except Exception:
                 cost = 0.0
-            
+
             # Get token usage
             tokens = 0
-            if hasattr(completion_response, 'usage') and completion_response.usage:
-                tokens = getattr(completion_response.usage, 'total_tokens', 0)
+            if hasattr(completion_response, "usage") and completion_response.usage:
+                tokens = getattr(completion_response.usage, "total_tokens", 0)
             self.total_tokens += tokens
-            
+
             # Categorize: reflection models typically have "pro" in name
-            is_reflection = 'pro' in model.lower() or 'reflection' in kwargs.get('metadata', {}).get('type', '')
-            
+            is_reflection = "pro" in model.lower() or "reflection" in kwargs.get("metadata", {}).get("type", "")
+
             if is_reflection:
                 self.reflection_cost += cost
                 self.reflection_calls += 1
@@ -80,9 +79,9 @@ class UnifiedCostTracker:
                 self.agent_cost += cost
                 self.agent_calls += 1
                 call_type = "AGENT"
-            
+
             self.total_cost += cost
-            
+
             # Log entry
             entry = {
                 "timestamp": datetime.now().isoformat(),
@@ -93,30 +92,30 @@ class UnifiedCostTracker:
                 "cost": cost,
                 "cumulative_cost": self.total_cost,
                 "agent_cost": self.agent_cost,
-                "reflection_cost": self.reflection_cost
+                "reflection_cost": self.reflection_cost,
             }
-            
+
             # Write to log file
             try:
-                with open(self.log_file, 'a') as f:
-                    f.write(json.dumps(entry) + '\n')
+                with open(self.log_file, "a") as f:
+                    f.write(json.dumps(entry) + "\n")
             except Exception:
                 pass
-            
+
             # Cost tracking is silent - check log file or call print_summary() for details
-    
+
     def write_summary(self) -> str:
         """Write human-readable summary to file and return it."""
         with self._lock:
             elapsed = (datetime.now() - self.session_start).total_seconds()
             elapsed_min = elapsed / 60
-            
+
             summary = f"""
 ================================================================================
 GEPA COST TRACKER - Experiment Summary
 ================================================================================
 
-Session Start: {self.session_start.strftime('%Y-%m-%d %H:%M:%S')}
+Session Start: {self.session_start.strftime("%Y-%m-%d %H:%M:%S")}
 Elapsed Time:  {elapsed_min:.1f} minutes
 
 COST BREAKDOWN
@@ -140,11 +139,11 @@ Per Reflection Call: ${self.reflection_cost / max(self.reflection_calls, 1):.4f}
 Log file: {self.log_file}
 ================================================================================
 """
-            with open(self.summary_file, 'w') as f:
+            with open(self.summary_file, "w") as f:
                 f.write(summary)
-            
+
             return summary
-    
+
     def get_stats(self) -> dict:
         """Get current stats as a dictionary."""
         with self._lock:
@@ -158,9 +157,9 @@ Log file: {self.log_file}
                 "reflection_calls": self.reflection_calls,
                 "total_tokens": self.total_tokens,
                 "elapsed_seconds": elapsed,
-                "cost_per_minute": self.total_cost / (elapsed / 60) if elapsed > 0 else 0
+                "cost_per_minute": self.total_cost / (elapsed / 60) if elapsed > 0 else 0,
             }
-    
+
     def print_summary(self):
         """Print and save final summary."""
         summary = self.write_summary()
@@ -168,7 +167,7 @@ Log file: {self.log_file}
 
 
 # Global tracker instance
-_tracker: Optional[UnifiedCostTracker] = None
+_tracker: UnifiedCostTracker | None = None
 _tracker_lock = threading.Lock()
 
 
