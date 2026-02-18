@@ -360,6 +360,49 @@ The results are striking: GEPA-optimized skills boost resolve rates from 24% to 
 **Key result:** `optimize_anything` learns repository-specific skills that dramatically improve coding agent performance and transfer across models. [Read the full post →](../learning-skills-for-any-repository/)
 
 
+### 8. From Vague Idea to 3D Unicorn — No Seed Required {#8-3d-unicorn}
+
+**Mode: Multi-Task Search (seedless).** Every example so far starts from a hand-written seed: a blank SVG, a naive agent stub, a baseline algorithm. But what if you don't even know where to begin? You know *what* you want — a 3D unicorn — and you can articulate *what good looks like* (anatomical accuracy, mesh quality, visual appeal), but you have no idea how to wire up build123d geometry, STL export, and pyrender camera orbits into a working script.
+
+This is exactly what seedless mode (`seed_candidate=None`) is for. Instead of providing a starting artifact, you describe the objective and the technical context as natural language, and GEPA's reflection LM bootstraps the first candidate itself:
+
+```python
+result = optimize_anything(
+    seed_candidate=None,  # no starting code — the LM writes the first draft
+    evaluator=evaluate_3d_render,
+    dataset=VISUAL_ASPECTS,   # 4 aspects: quality, anatomy, mesh, appeal
+    objective="Optimize a Python program (build123d + pyrender) to generate a 3D unicorn.",
+    background=(
+        "The candidate is a complete Python script that produces multi-view PNG renderings. "
+        "Use build123d for CSG geometry, export to STL, render with pyrender. "
+        "Known working imports: numpy, pyrender, trimesh, build123d (Box, Cylinder, Cone, ...)."
+    ),
+)
+```
+
+The evaluator runs each candidate as a subprocess, collects the rendered PNGs, and asks a VLM to score them — passing the images back as ASI so the proposer can *see* what its code produces. Here's Claude Opus 4.6's zero-shot attempt versus the GEPA-optimized result:
+
+<div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
+<div style="flex: 1; text-align: center; min-width: 0;" markdown>
+
+![Zero-shot 3D unicorn](unicorn_zero_shot.png){ style="width: 100%;" }
+
+<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Zero-shot from Claude Opus 4.6</em></div>
+
+</div>
+<div style="flex: 1; text-align: center; min-width: 0;" markdown>
+
+![Optimized 3D unicorn](unicorn_optimized.png){ style="width: 100%;" }
+
+<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>GEPA-optimized (seedless)</em></div>
+
+</div>
+</div>
+
+The zero-shot model produces a recognizable but crude unicorn — blocky torso, piston-like legs, a horn on a box head. GEPA iteratively refines the geometry, improving proportions, adding anatomical detail, and adjusting camera framing, all without any human-written seed code to start from.
+
+The seedless mode is particularly useful for tasks where the solution space is large and unfamiliar such as creative or exploratory tasks. You bring the evaluation criteria (your *taste*) and the optimizer handles everything else.
+
 ## Conclusion & Getting Started
 
 `optimize_anything` makes a simple bet: if your artifact is text and its performance can be measured, you can optimize it. The API is minimal, requiring only a seed (or task description), an evaluator, and optionally a dataset. The results span algorithmic discovery, kernel generation, systems research, prompt tuning, agent architecture search, blackbox optimization, and coding agent skill learning.
