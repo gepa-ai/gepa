@@ -86,7 +86,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: gepa-docs-staging
           directory: docs/site
-          branch: blogpost
+          branch: ${{ github.ref_name }}
 
       - name: Output deployment URL
         run: echo "Deployed to ${{ steps.deploy.outputs.url }}"
