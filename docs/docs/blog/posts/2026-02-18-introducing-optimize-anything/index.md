@@ -147,26 +147,7 @@ Notice what's *absent*: no mutation prompts, no task-specific instruction templa
 
 ## Let's Take It for a Spin
 
-Let's use `optimize_anything` to optimize SVG source code depicting "a pelican riding a bicycle" starting from a blank white canvas. The evaluator renders the SVG as a PNG, asks a VLM to score it against visual criteria, and passes the rendered image back as ASI so the proposer can literally *see* what it's improving. After exploring just 12 candidates, here's the zero-shot baseline versus the best optimized result:
-
-<div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
-<div style="flex: 1; text-align: center; min-width: 0;" markdown>
-
-![Initial SVG: a basic pelican sketch on a red-framed bicycle against a white background.](gemini_3_flash_zero_shot.svg){ style="width: 100%;" }
-
-<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Zero-shot attempt from Gemini 3 Flash</em></div>
-
-</div>
-<div style="flex: 1; text-align: center; min-width: 0;" markdown>
-
-![Optimized SVG: a polished pelican riding a bicycle with sky, clouds, sun, road, and grass.](optimized_pelican_gemini_3_flash.svg){ style="width: 100%;" }
-
-<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Best candidate (score: 0.825)</em></div>
-
-</div>
-</div>
-
-*The optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition — all through LLM reflection on rendered image feedback. Claude Opus 4.6 as the proposer produces similar results after exploring 20 candidates:*
+Let's use `optimize_anything` to optimize SVG source code depicting "a pelican riding a bicycle" starting from a blank white canvas. The evaluator renders the SVG as a PNG, asks a VLM to score it against visual criteria, and passes the rendered image back as ASI so the proposer can literally *see* what it's improving. Here's the zero-shot baseline from Claude Opus 4.6 versus the best optimized result after exploring just 20 candidates:
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
@@ -184,6 +165,8 @@ Let's use `optimize_anything` to optimize SVG source code depicting "a pelican r
 
 </div>
 </div>
+
+*The optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition — all through LLM reflection on rendered image feedback.*
 
 Notably, we optimize the SVG code itself, not a prompt that generates SVG. Here's the code.
 
@@ -242,110 +225,6 @@ A few things to note:
 - Our desired visual aspects are defined in concise natural language. We avoid the need for detailed rubrics and simply rely on the VLM's judgment for scoring.
 - **`reflection_minibatch_size=2`** (the default) means each reflection step shows the LLM feedback from just 2 of the 6 aspects. Over multiple iterations, all aspects get attention, but each reflection is focused and targeted.
 - The **rendered image** is passed as ASI via `Image(base64_data=...)`, giving the VLM proposer visual feedback on its own output. The VLM evaluator never sees the SVG code, only the rendered image. The proposer sees both the feedback and the source SVG, and proposes targeted improvements.
-
-??? example "Final optimized candidate by Gemini 3 Flash"
-    ```xml
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1280">
-        <!-- Background: Sky and distant scenery -->
-        <rect width="1280" height="1280" fill="#bbdefb"/>
-        
-        <!-- Stylized Sun -->
-        <circle cx="1100" cy="180" r="80" fill="#fff9c4" opacity="0.8"/>
-        
-        <!-- Stylized Mountains/Hills for depth -->
-        <path d="M0 900 L300 700 L600 850 L900 650 L1280 900 Z" fill="#90caf9" opacity="0.5"/>
-        
-        <!-- Road and Ground -->
-        <rect x="0" y="900" width="1280" height="380" fill="#455a64"/>
-        <rect x="0" y="900" width="1280" height="30" fill="#37474f"/>
-        <line x1="0" y1="1120" x2="1280" y2="1120" stroke="white" stroke-width="12" stroke-dasharray="100,50" opacity="0.6"/>
-
-        <!-- Bicycle Components -->
-        <!-- Rear Wheel -->
-        <g transform="translate(400, 950)">
-            <circle r="170" fill="#212121"/>
-            <circle r="145" fill="#f5f5f5"/>
-            <g stroke="#bdbdbd" stroke-width="3">
-            <line x1="-145" y1="0" x2="145" y2="0" transform="rotate(0)"/>
-            <line x1="-145" y1="0" x2="145" y2="0" transform="rotate(30)"/>
-            <line x1="-145" y1="0" x2="145" y2="0" transform="rotate(60)"/>
-            <line x1="-145" y1="0" x2="145" y2="0" transform="rotate(90)"/>
-            <line x1="-145" y1="0" x2="145" y2="0" transform="rotate(120)"/>
-            <line x1="-145" y1="0" x2="145" y2="0" transform="rotate(150)"/>
-            </g>
-            <circle r="30" fill="#757575"/>
-        </g>
-
-        <!-- Front Wheel -->
-        <g transform="translate(880, 950)">
-            <circle r="170" fill="#212121"/>
-            <circle r="145" fill="#f5f5f5"/>
-            <g stroke="#bdbdbd" stroke-width="3">
-            <line x1="-145" y1="0" x2="145" y2="0" transform="rotate(15)"/>
-            <line x1="-145" y1="0" x2="145" y2="0" transform="rotate(45)"/>
-            <line x1="-145" y1="0" x2="145" y2="0" transform="rotate(75)"/>
-            <line x1="-145" y1="0" x2="145" y2="0" transform="rotate(105)"/>
-            <line x1="-145" y1="0" x2="145" y2="0" transform="rotate(135)"/>
-            <line x1="-145" y1="0" x2="145" y2="0" transform="rotate(165)"/>
-            </g>
-            <circle r="30" fill="#757575"/>
-        </g>
-
-        <!-- Chain and Gear -->
-        <circle cx="620" cy="950" r="50" fill="#263238"/>
-        <path d="M400 930 L620 910 L620 990 L400 970 Z" fill="#37474f" opacity="0.9"/>
-
-        <!-- Bicycle Frame (Red) -->
-        <g stroke="#c62828" stroke-width="28" fill="none" stroke-linejoin="round" stroke-linecap="round">
-            <line x1="400" y1="950" x2="620" y2="950"/> <!-- Chainstay -->
-            <line x1="620" y1="950" x2="550" y2="620"/> <!-- Seat Tube -->
-            <line x1="620" y1="950" x2="820" y2="660"/> <!-- Down Tube -->
-            <line x1="560" y1="660" x2="820" y2="660"/> <!-- Top Tube -->
-            <line x1="400" y1="950" x2="560" y2="660"/> <!-- Seat Stay -->
-            <line x1="880" y1="950" x2="820" y2="660"/> <!-- Fork -->
-        </g>
-
-        <!-- Handlebars and Seat -->
-        <path d="M820 660 L840 570 M780 580 L890 580" fill="none" stroke="#212121" stroke-width="22" stroke-linecap="round"/>
-        <path d="M510 620 L600 620" stroke="#212121" stroke-width="35" stroke-linecap="round"/>
-
-        <!-- Pelican (The Rider) -->
-        <!-- Far Leg (hidden/subtle) -->
-        <path d="M560 600 L660 880 L690 950" fill="none" stroke="#ef6c00" stroke-width="12" stroke-linecap="round" opacity="0.4"/>
-        
-        <!-- Pelican Body -->
-        <ellipse cx="560" cy="480" rx="220" ry="140" fill="white" stroke="#eceff1" stroke-width="2"/>
-        
-        <!-- Neck and Head -->
-        <path d="M730 460 Q850 460 830 250" fill="none" stroke="white" stroke-width="75" stroke-linecap="round"/>
-        <circle cx="830" cy="250" r="60" fill="white"/>
-        <circle cx="855" cy="230" r="8" fill="#212121"/>
-        
-        <!-- Beak (Characteristic pouch) -->
-        <path d="M865 220 L1150 270 Q1100 500 865 380 Z" fill="#ffa726"/>
-        <path d="M865 220 L1130 275" fill="none" stroke="#f57c00" stroke-width="5"/>
-        
-        <!-- Wing (Arm reaching for handlebars) -->
-        <path d="M620 480 Q760 480 830 580" fill="none" stroke="white" stroke-width="50" stroke-linecap="round" stroke-linejoin="round"/>
-
-        <!-- Near Leg (Pedaling) -->
-        <g>
-            <path d="M560 600 L620 950" fill="none" stroke="#fb8c00" stroke-width="24" stroke-linecap="round"/>
-            <rect x="570" y="935" width="110" height="30" rx="10" fill="#212121"/>
-        </g>
-
-        <!-- Motion and Polish -->
-        <g stroke="white" stroke-width="6" stroke-linecap="round" opacity="0.4">
-            <line x1="200" y1="350" x2="50" y2="350"/>
-            <line x1="250" y1="420" x2="80" y2="420"/>
-            <line x1="180" y1="500" x2="40" y2="500"/>
-        </g>
-        <g stroke="#90a4ae" stroke-width="5" stroke-linecap="round" opacity="0.5">
-            <line x1="1050" y1="980" x2="1180" y2="980"/>
-            <line x1="1080" y1="1040" x2="1220" y2="1040"/>
-        </g>
-        </svg>
-    ```
 
 
 ## Why It Works {#the-key-ingredients}
