@@ -59,6 +59,13 @@ dev = [
     "build>=1.0.3",
     "ruff>=0.3.0"
 ]
+gskill = [
+    "gepa[full]",
+    "swesmith",
+    "docker",
+    "python-dotenv",
+    "pyyaml",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/gepa-ai/gepa"
