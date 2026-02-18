@@ -1,0 +1,17 @@
+{
+    "include": [
+        "sky_spot"
+    ],
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "**/.git",
+        "**/.venv",
+        "**/build",
+        "**/dist",
+        "**/.cache",
+        "**/tests"
+    ],
+    "typeCheckingMode": "standard",
+    "pythonVersion": "3.9"
+}

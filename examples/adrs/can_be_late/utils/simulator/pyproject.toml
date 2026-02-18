@@ -1,0 +1,43 @@
+[project]
+name = "cant-be-late"
+version = "0.1.0"
+description = "SkyPilot Spot Simulator - Cloud computing simulation framework for spot instance strategies"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.20.0",
+    "pandas>=1.3.0",
+    "matplotlib>=3.3.0",
+    "pyyaml>=5.4.0",
+    "tqdm>=4.62.0",
+    "scipy>=1.7.0",
+    "plotly>=5.0.0",
+    "configargparse>=1.5.0",
+    "filelock>=3.0.0",
+    "ray>=2.0.0",
+    "pulp>=2.0",
+    "wandb>=0.21.1",
+    "colorama>=0.4.6",
+    "openai>=1.100.2",
+    "configparse>=0.1.5",
+]
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[project.scripts]
+cant-be-late = "main:main"
+
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+  "sky_spot*",
+]
+exclude = [
+  "analysis*", "configs*", "data*", "results*", "results-*",
+  "experiments*", "scripts*", "scripts_multi*", "tests*", "test_*",
+  "real-cases*", "exp-for-plot*", "download*", "format*", "run_tests*",
+]

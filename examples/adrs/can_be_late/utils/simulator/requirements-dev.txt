@@ -1,0 +1,3 @@
+yapf==0.32.0
+pylint==2.8.2
+pylint-quotes==0.2.3

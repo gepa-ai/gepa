@@ -1,0 +1,7 @@
+{
+  "ImageId": "ami-0c09c7eb16d3e8e70",
+  "InstanceType": "p3.2xlarge",
+  "Placement": {
+    "AvailabilityZone": "us-west-2a"
+  }
+}

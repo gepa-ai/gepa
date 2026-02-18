@@ -1,0 +1,26 @@
+*.egg-info
+__pycache__
+wandb
+*.out
+**/.ipynb_checkpoints
+data/
+exp/
+exp-*/
+@temp/
+# !exp-for-plot/
+# exp-for-plot/real/ddl=60+task=48+overhead=0.20
+# exp-for-plot/real/2023-04-22-29
+# exp-for-plot/real/2023-04-19-29
+# exp-for-plot/real/2023-02-15
+.git
+outputs/
+*.png
+*.log
+.env
+openevolve_multi_region_strategy/openevolve_output*/
+openevolve_single_region_strategy/baseline_cache.json
+
+.evaluator_cache/
+*.tmp
+results-*/
+*.pdf

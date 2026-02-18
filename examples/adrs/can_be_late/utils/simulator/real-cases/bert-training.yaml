@@ -1,0 +1,37 @@
+name: roberta
+
+resources:
+    accelerators: V100:1
+    cloud: aws
+    zone: us-west-2a
+    image_id: ami-0bc105b3c0344551b
+
+num_nodes: 1
+
+file_mounts:
+    /checkpoint:
+        name: roberta-spot-nsdi
+        mode: MOUNT
+
+    /data: s3://roberta-demo-data
+
+setup: |
+    pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
+    pip install wandb tensorboardX
+    pip "numpy>=1.22.0"
+    pip install -U numpy
+    git clone https://github.com/facebookresearch/fairseq.git
+    cd fairseq
+    git checkout eb2d7862c29990e5be35ee227a6952ae21d621a1
+    pip install --editable .
+
+run: |
+  cd fairseq
+  DATA_DIR=/data
+  OMP_NUM_THREADS=48 fairseq-hydra-train -m --config-dir examples/roberta/config/pretraining \
+  --config-name base task.data=$DATA_DIR \
+  common.wandb_project=fairseq \
+  checkpoint.save_dir=/checkpoint \
+  checkpoint.save_interval_updates=500 \
+  checkpoint.keep_interval_updates=3 \
+  common.log_format=tqdm
