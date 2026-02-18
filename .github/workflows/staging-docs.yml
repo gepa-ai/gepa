@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - blogpost
+      - blogpost-aesthetic
 
 jobs:
   build-and-deploy:
