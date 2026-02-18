@@ -4,11 +4,18 @@
 <div class="md-content md-content--post" data-md-component="content">
     <article class="md-content__inner md-typeset">
 
-        {# Academic-style header: title, then authors + date #}
         <header class="blog-post-header">
             <h1 class="blog-post-title">{{ page.title }}</h1>
 
             <div class="blog-post-byline">
+                {% if page.meta.date and page.meta.date.created %}
+                    <span class="blog-post-date">
+                        <time datetime="{{ page.meta.date.created.isoformat() }}">
+                            {{ page.meta.date.created.strftime('%B %d, %Y') }}
+                        </time>
+                    </span>
+                {% endif %}
+
                 {% if page.authors %}
                     <span class="blog-post-authors">
                         {%- for author in page.authors %}
@@ -24,16 +31,8 @@
                         {%- endfor %}
                     </span>
                     {%- if page.meta.equal_contribution %}
-                    <span class="blog-post-equal-contrib">(<sup>*</sup> Equal Contribution)</span>
+                    <br><span class="blog-post-equal-contrib"><sup>*</sup> Equal Contribution</span>
                     {%- endif %}
-                {% endif %}
-
-                {% if page.meta.date and page.meta.date.created %}
-                    <span class="blog-post-date">
-                        <time datetime="{{ page.meta.date.created.isoformat() }}">
-                            {{ page.meta.date.created.strftime('%B %d, %Y') }}
-                        </time>
-                    </span>
                 {% endif %}
             </div>
         </header>

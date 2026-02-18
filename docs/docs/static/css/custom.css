@@ -4,19 +4,19 @@
    Deep Research Theme – Color Overrides
    ============================================ */
 [data-md-color-scheme="default"] {
-  --md-primary-fg-color: #2563EB;
-  --md-primary-fg-color--light: #3B82F6;
-  --md-primary-fg-color--dark: #1D4ED8;
-  --md-accent-fg-color: #2563EB;
-  --md-accent-fg-color--transparent: rgba(37, 99, 235, 0.1);
+  --md-primary-fg-color: #212C4D;
+  --md-primary-fg-color--light: #0096C7;
+  --md-primary-fg-color--dark: #023E8A;
+  --md-accent-fg-color: #212C4D;
+  --md-accent-fg-color--transparent: rgba(33, 44, 77, 0.1);
 }
 
 [data-md-color-scheme="slate"] {
-  --md-primary-fg-color: #2563EB;
-  --md-primary-fg-color--light: #3B82F6;
-  --md-primary-fg-color--dark: #1D4ED8;
-  --md-accent-fg-color: #38BDF8;
-  --md-accent-fg-color--transparent: rgba(56, 189, 248, 0.1);
+  --md-primary-fg-color: #212C4D;
+  --md-primary-fg-color--light: #0096C7;
+  --md-primary-fg-color--dark: #023E8A;
+  --md-accent-fg-color: #90E0EF;
+  --md-accent-fg-color--transparent: rgba(144, 224, 239, 0.1);
 }
 
 /* Slightly increase base body text size from Material default of 0.8rem */
@@ -370,10 +370,10 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     display: none;
 }
 
-/* Blog post listing: cleaner spacing */
+/* Blog post listing: compact spacing */
 .md-post {
-    margin-bottom: 2rem;
-    padding-bottom: 2rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
     border-bottom: 1px solid var(--md-default-fg-color--lightest);
 }
 
@@ -385,30 +385,33 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 .md-post__meta {
     font-size: 0.85rem;
     color: var(--md-default-fg-color--light);
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.25rem;
 }
 
-/* Blog post content: let Material defaults handle font-size */
-.md-post .md-post__content {
-    line-height: 1.7;
+/* Tighten heading margin inside listing cards */
+.md-post--excerpt .md-post__content h1,
+.md-post--excerpt .md-post__content h2 {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+/* Blog listing: show only the title, hide excerpt text and "Continue reading" */
+.md-post--excerpt .md-post__content > :not(h1):not(h2) {
+    display: none !important;
 }
 
 /* Blog post title links (listing page) */
-.md-post .md-post__title a {
+.md-post .md-post__content h1 a,
+.md-post .md-post__content h2 a {
     text-decoration: none;
     color: var(--md-default-fg-color);
     font-weight: 600;
     transition: color 0.2s;
 }
 
-.md-post .md-post__title a:hover {
+.md-post .md-post__content h1 a:hover,
+.md-post .md-post__content h2 a:hover {
     color: var(--md-primary-fg-color);
-}
-
-/* Blog excerpt on listing page */
-.md-post__excerpt {
-    color: var(--md-default-fg-color--light);
-    line-height: 1.7;
 }
 
 /* Blog categories/tags: subtle pills */
@@ -416,26 +419,22 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     font-size: 0.85rem;
     padding: 0.15rem 0.6rem;
     border-radius: 12px;
-    background: rgba(37, 99, 235, 0.1);
+    background: rgba(33, 44, 77, 0.1);
     color: var(--md-primary-fg-color);
     text-decoration: none;
-    border: 1px solid rgba(37, 99, 235, 0.2);
+    border: 1px solid rgba(33, 44, 77, 0.2);
     transition: all 0.2s;
 }
 
 .md-post .md-categories a:hover {
-    background: rgba(37, 99, 235, 0.2);
-    border-color: rgba(37, 99, 235, 0.4);
+    background: rgba(33, 44, 77, 0.2);
+    border-color: rgba(33, 44, 77, 0.4);
 }
 
-/* "Continue reading" link */
-.md-post .md-post__action {
-    font-size: 0.85rem;
-}
 
 /* Dark mode adjustments for blog listing */
 [data-md-color-scheme="slate"] .md-post .md-categories a {
-    background: rgba(37, 99, 235, 0.08);
+    background: rgba(33, 44, 77, 0.08);
 }
 
 /* Figure captions: allow full width and remove gap above caption */
@@ -470,9 +469,9 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     overflow-x: auto;
 }
 
-/* Academic header block */
+/* Blog post header – flush-left, vLLM-inspired */
 .blog-post-header {
-    text-align: center;
+    text-align: left;
     margin-bottom: 2.5rem;
     padding-bottom: 1.5rem;
     border-bottom: 1px solid var(--md-default-fg-color--lightest);
@@ -482,22 +481,29 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     font-size: 2rem;
     font-weight: 700;
     line-height: 1.3;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
+    color: var(--md-accent-fg-color);
 }
 
-/* Byline: "Author1, Author2 · Date" */
 .blog-post-byline {
-    font-size: 0.95rem;
+    font-size: 0.8rem;
     color: var(--md-default-fg-color--light);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 0.25rem;
+    line-height: 1.6;
+}
+
+.blog-post-date {
+    color: var(--md-default-fg-color--light);
+}
+
+/* Bullet separator between date and authors */
+.blog-post-date + .blog-post-authors::before {
+    content: "\2022";
+    margin: 0 0.4rem;
+    color: var(--md-default-fg-color--lighter);
 }
 
 .blog-post-authors a {
-    color: var(--md-primary-fg-color);
+    color: var(--md-accent-fg-color);
     text-decoration: none;
     font-weight: 500;
 }
@@ -507,19 +513,8 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 }
 
 .blog-post-equal-contrib {
-    font-size: 0.85rem;
+    font-size: 0.78rem;
     color: var(--md-default-fg-color--lighter);
-}
-
-/* Separator dot between authors and date */
-.blog-post-authors + .blog-post-date::before {
-    content: "\00b7";
-    margin: 0 0.4rem;
-    color: var(--md-default-fg-color--lighter);
-}
-
-.blog-post-date {
-    color: var(--md-default-fg-color--light);
 }
 
 /* Hide the duplicate h1 rendered from page.content */
@@ -532,18 +527,9 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     line-height: 1.8;
 }
 
-/* Mobile: left-align header like vLLM, scale down title */
 @media screen and (max-width: 76.25em) {
-    .blog-post-header {
-        text-align: left;
-    }
-
     .blog-post-header .blog-post-title {
         font-size: 1.6rem;
-    }
-
-    .blog-post-byline {
-        justify-content: flex-start;
     }
 }
 
