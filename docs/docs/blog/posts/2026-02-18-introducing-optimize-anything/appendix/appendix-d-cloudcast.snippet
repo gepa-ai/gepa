@@ -52,51 +52,43 @@
     """
     ```
 
-    **Evaluator** — The evaluator runs the candidate's `search_algorithm` through a broadcast simulator that models real cloud egress costs and bandwidth constraints. `simulate_broadcast` handles writing the candidate code to a temp file, loading it as a module, executing it on the network graph, and running the simulator to compute cost and transfer time.
+    **Evaluator** — The evaluator runs the candidate's `search_algorithm` through a broadcast simulator that models real cloud egress costs and bandwidth constraints. `get_program_path` caches the candidate to a temp file (keyed by content, so repeated calls are free). `run_evaluation` loads it as a Python module, executes it on the network graph, and runs the simulator to compute cost and transfer time.
 
     **ASI (Actionable Side Information):** The side information includes (1) per-destination route breakdowns with egress cost and transfer time, (2) cost decomposition into egress vs. instance components, and (3) bottleneck destination identification. This tells the LLM proposer *where* the algorithm is wasting money (e.g., expensive cross-provider hops) and *which* destinations are slowest, guiding targeted improvements.
 
     ```python
-    from examples.adrs.cloudcast.helpers import simulate_broadcast
+    from utils.simulation import (
+        FAILED_SCORE,
+        get_program_path, syntax_is_valid, syntax_failure_info,
+        run_evaluation, evaluation_failure_info, evaluation_success_info,
+    )
 
-    def evaluate(candidate, example):
-        # Run the candidate's search algorithm on this cloud network configuration
-        result = simulate_broadcast(candidate["program"], example["config_file"])
-
-        if result.error:
-            return -100000.0, {"Error": result.error}
-
-        # Score: inverse of cost (lower cost = higher score)
-        score = 1.0 / (1.0 + result.total_cost)
-
-        return score, {
-            "Input": {
-                "config": result.config_name,
-                "source": result.source,
-                "destinations": result.destinations,
-            },
-            "Output": {
-                "total_cost": f"${result.total_cost:.4f}",
-                "cost_breakdown": f"egress=${result.egress_cost:.2f} + instance=${result.instance_cost:.2f}",
-                "transfer_time": f"{result.transfer_time:.2f}s",
-                "bottleneck_destination": result.bottleneck,
-            },
-            "Per-Destination Breakdown": result.per_dest_summary,
-        }
+    def evaluate(candidate: dict, example: dict, **kwargs):
+        program_path = get_program_path(candidate["program"])
+        if not syntax_is_valid(program_path):
+            return FAILED_SCORE, syntax_failure_info(example)
+        success, cost, transfer_time, error, details = run_evaluation(
+            program_path, example["config_file"], example["num_vms"]
+        )
+        if not success:
+            return FAILED_SCORE, evaluation_failure_info(error, example)
+        score = 1.0 / (1.0 + cost)
+        return score, evaluation_success_info(score, cost, transfer_time, example, details)
     ```
 
     **Optimizer** — Generalization mode with 5 multi-cloud broadcast configurations as both the training and validation set (intra-AWS, intra-Azure, intra-GCP, and two cross-cloud scenarios). The evolved algorithm must generalize across intra- and inter-provider network topologies.
 
     ```python
     from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
-    from examples.adrs.cloudcast.evaluator import load_config_dataset
+    from utils.dataset import load_config_dataset
+    from utils.lm import make_reflection_lm
 
-    # Load 5 multi-cloud broadcast configs: intra_aws, intra_azure, intra_gcp, inter_agz, inter_gaz2
+    # 5 multi-cloud broadcast configs: intra_aws, intra_azure, intra_gcp, inter_agz, inter_gaz2
     dataset = load_config_dataset()
 
     result = optimize_anything(
         seed_candidate={"program": SEED_PROGRAM},
-        evaluator=evaluate,
+        fitness_fn=evaluate,
         dataset=dataset,
         valset=dataset,
         objective="Optimize a broadcast routing algorithm for multi-cloud data transfer. "
@@ -108,7 +100,7 @@
                    "cost + instance runtime cost. Intra-provider links are typically cheaper.",
         config=GEPAConfig(
             engine=EngineConfig(max_metric_calls=100),
-            reflection=ReflectionConfig(reflection_lm=llm_model),
+            reflection=ReflectionConfig(reflection_lm=make_reflection_lm("gemini-3-pro-preview")),
         ),
     )
     ```
