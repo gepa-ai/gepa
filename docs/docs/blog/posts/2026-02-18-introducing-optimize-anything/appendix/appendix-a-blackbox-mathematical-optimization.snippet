@@ -58,7 +58,7 @@
         seed_candidate={"code": SEED_CODE},
         evaluator=evaluate,
         config=GEPAConfig(
-            engine=EngineConfig(max_candidate_proposals=20, cache_evaluation=True),
+            engine=EngineConfig(max_candidate_proposals=10, cache_evaluation=True),
             reflection=ReflectionConfig(reflection_lm="openai/gpt-5"),
         ),
         objective="Evolve Python code that minimizes a blackbox objective function "
