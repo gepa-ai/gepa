@@ -1,6 +1,6 @@
 # About
 
-GEPA is developed at the [UC Berkeley Sky Computing Lab](https://sky.cs.berkeley.edu/) through a research collaboration between UC Berkeley, MIT, Stanford, and Databricks. GEPA is a recipient of the [Laude Slingshot](https://www.laude.org/updates/slingshots-one), supported by the [Laude Institute](https://www.laude.org/).
+GEPA is developed at the [UC Berkeley Sky Computing Lab](https://sky.cs.berkeley.edu/) through a research collaboration between UC Berkeley, MIT, Stanford, and Databricks. GEPA is a recipient of the [Laude Slingshot](https://www.laude.org/updates/slingshots-one), supported by [Laude Institute](https://www.laude.org/).
 
 ## Contributors
 

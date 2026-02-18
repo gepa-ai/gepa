@@ -34,7 +34,7 @@ meta:
 
 # `optimize_anything`: A Universal API for Text Optimization
 
-Today we are introducing **`optimize_anything`**, a declarative API that optimizes any artifact representable as text (code, prompts, agent architectures, vector graphics, configurations) using just two inputs: a **starting artifact** and an **evaluator**. You declare what to optimize and how to measure it; the system handles the search. Where prior LLM-evolution frameworks require configuring island topologies, prompt samplers, and multi-component pipelines, `optimize_anything` strips the interface down to its essence. We've tested it across [several domains](#results) from code optimization to agent architecture discovery and it consistently matches or outperforms domain-specific tools, including some purpose-built for each task. As models and search techniques advance, the search improves without changing your code. If you can measure it, you can optimize it.
+Today we are introducing **`optimize_anything`**, a declarative API that optimizes any artifact representable as text (code, prompts, agent architectures, vector graphics, configurations) using just two inputs: a **starting artifact** and an **evaluator**. You declare what to optimize and how to measure it; the system handles the search. Where prior LLM-evolution frameworks require configuring island topologies, prompt samplers, and multi-component pipelines, `optimize_anything` strips the interface down to its essence. **We've tested it across [several domains](#results) from code optimization to agent architecture discovery and it consistently matches or outperforms domain-specific tools, including some purpose-built for each task.** As models and search techniques advance, the search improves without changing your code. If you can measure it, you can optimize it.
 
 <!-- more -->
 
@@ -45,7 +45,7 @@ While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonst
   <figcaption>The optimize_anything loop: evaluate a text artifact, capture diagnostic feedback (ASI), and use an LLM to propose targeted improvements.</figcaption>
 </figure>
 
-## If You Can Write It, You Can Optimize It
+## If You Can Write It Down, You Can Optimize It
 
 The key insight behind `optimize_anything` is that a surprisingly wide range of problems can be formulated as optimizing a text artifact. Consider:
 
@@ -102,19 +102,19 @@ ASI can be open-ended text, structured data, multi-objectives (through `scores`)
 
 `optimize_anything` unifies three distinct optimization paradigms under one API, determined by whether you provide a `dataset` and `valset`:
 
-**1. Single-Task Search**: "Solve one hard problem." No dataset needed; the candidate *is* the solution, and the evaluator scores it directly (no `example` argument). For example, in [circle packing](#1-circle-packing-outperforming-alphaevolve), the artifact is the packing algorithm code and the evaluator returns the score plus geometric diagnostics as ASI. This is the mode that prior LLM-evolution frameworks operate in.
+**1. Single-Task Search**: "Solve one hard problem." No dataset needed; the candidate *is* the solution, and the evaluator scores it directly (no `example` argument). For example, in [circle packing](#1-circle-packing-outperforming-alphaevolve), the artifact is the packing algorithm code and the evaluator returns the score plus geometric diagnostics as ASI. This is the mode that prior LLM-evolution frameworks like [AlphaEvolve](https://deepmind.google/discover/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/) and [OpenEvolve](https://github.com/codelion/openevolve) operate in.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=...)
 ```
 
-**2. Multi-Task Search**: "Solve a batch of related problems with cross-transfer." You provide a `dataset` of related tasks; insights from solving one help solve the others. For example, in [CUDA kernel generation](#2-cuda-kernel-generation-kernelbench), each task is a PyTorch operation to accelerate on the same hardware, and the evaluator compiles and benchmarks the kernel returning compiler errors and profiler traces as ASI. On KernelBench, multi-task mode converges faster and solves more problems across all speedup thresholds than dedicated single-task optimization of each problem.
+**2. Multi-Task Search**: "Solve a batch of related problems with cross-transfer." You provide a `dataset` of related tasks; insights from solving one help solve the others. For example, in [CUDA kernel generation](#2-cuda-kernel-generation-kernelbench), each task is a PyTorch operation to accelerate on the same hardware, and the evaluator compiles and benchmarks the kernel returning compiler errors and profiler traces as ASI. Even though the kernels perform different computations, multi-task mode converges faster and solves more problems across all speedup thresholds than dedicated single-task optimization, thanks to cross-transfer of optimization patterns. No prior LLM-evolution framework supports this mode.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=..., dataset=tasks)
 ```
 
-**3. Generalization**: "Build a skill that transfers to unseen problems." You provide both a training `dataset` and a held-out `valset`; the optimized artifact (a prompt, an agent, a policy) must generalize to unseen examples. This abstracts over traditional machine learning and program synthesis. For example, in [agent architecture discovery](#5-agent-architecture-discovery-arc-agi), the artifact is the entire agent, the dataset and valset are ARC-AGI puzzles, and the evaluator runs the agent and returns its errors as ASI. The optimized agent improves from 32.5% to 89.5% on test-set (+57 percentage points).
+**3. Generalization**: "Build a skill that transfers to unseen problems." You provide both a training `dataset` and a held-out `valset`; the optimized artifact (a prompt, an agent, a policy) must generalize to unseen examples. This is the mode that GEPA's prompt optimization operates in. `optimize_anything` generalizes the pattern to any text artifact, not just prompts, abstracting over traditional machine learning and program synthesis. For example, in [agent architecture discovery](#5-agent-architecture-discovery-arc-agi), the artifact is the entire agent, the dataset and valset are ARC-AGI puzzles, and the evaluator runs the agent and returns its errors as ASI. The optimized agent improves from 32.5% to 89.5% on test-set (+57 percentage points). The same mode also powers [cloud scheduling policy discovery](#3-ai-driven-systems-research-cloudcast--cant-be-late), where the artifact is an algorithm that must generalize across unseen infrastructure scenarios.
 
 ```python
 oa.optimize_anything(seed_candidate=..., evaluator=..., dataset=train, valset=val)
@@ -376,7 +376,7 @@ The evolutionary framing these frameworks inherit — mutate, evaluate, select, 
   <figcaption>Visual progression of the circle packing optimization: from an initial naive arrangement to a near-optimal packing.</figcaption>
 </figure>
 
-**Key result:** GEPA outperforms all three open-source LLM-evolution frameworks, reaching a score of 2.63598+. [Full code →](#appendix-b-circle-packing)
+**Key result:** GEPA outperforms prior LLM-evolution frameworks (AlphaEvolve/ShinkaEvolve/OpenEvolve), reaching a score of 2.63598+. [Full code →](#appendix-b-circle-packing)
 
 ### 2. CUDA Kernel Generation (KernelBench)
 
