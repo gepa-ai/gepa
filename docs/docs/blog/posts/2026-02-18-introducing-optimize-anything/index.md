@@ -333,8 +333,8 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 </figure>
 
 <figure markdown="span">
-  ![The evolved ARC-AGI agent architecture: a multi-stage pipeline with code generation, iterative validation, and dual-path prediction.](arc_agi_architecture.svg)
-  <figcaption>The optimized ARC-AGI agent architecture with a multi-stage pipeline with code generation, iterative validation, and dual-path prediction</figcaption>
+  ![The evolved ARC-AGI agent architecture: a multi-stage pipeline with code generation, iterative validation, and two-attempt prediction (code + direct LLM).](arc_agi_architecture.svg)
+  <figcaption>The optimized ARC-AGI agent architecture: code generation, iterative validation, and two-attempt prediction (code + direct LLM)</figcaption>
 </figure>
 
 **Key result:** Using the same underlying model (Gemini 3 Flash), `optimize_anything` improves ARC-AGI v1 public test accuracy from 32.5% to **89.5%** by evolving the entire agent architecture, achieving gains that typically require significant manual iteration. [Full code →](#appendix-f-arc-agi-agent-architecture-discovery)
