@@ -62,7 +62,7 @@ If an artifact can be serialized to text and its performance can be measured, an
 
 ### The Simplest Form
 
-At its core, the API requires just two things: a starting artifact and an evaluator.
+At its core, the API requires just two things: an artifact (or a description of what you want) and an evaluator.
 
 ```python
 import gepa.optimize_anything as oa
@@ -72,10 +72,18 @@ def evaluate(candidate: str) -> float:
     oa.log(f"Error: {diagnostic}")  # captured as ASI
     return score
 
+# Start from an existing artifact…
 result = oa.optimize_anything(
     seed_candidate="<your initial artifact>",
     evaluator=evaluate,
 )
+
+# …or just describe what you need.
+result = oa.optimize_anything(
+    evaluator=evaluate,
+    objective="Generate a Python function `reverse()` that reverses a string.",
+)
+
 print(result.best_candidate)
 ```
 
@@ -92,15 +100,6 @@ def evaluate(candidate: str) -> tuple[float, dict]:
 ```
 
 ASI can be open-ended text, structured data, multi-objectives (through `scores`), or even **images** (via `gepa.Image`) for vision-capable LLMs; anything that would help an expert understand the artifact and diagnose failures. We'll see ASI in action in the [SVG demo](#lets-take-it-for-a-spin), then unpack [why it matters](#the-key-ingredients).
-
-If you don't have a starting artifact, a natural-language `objective` is enough, `optimize_anything` generates the initial candidate for you:
-
-```python
-result = oa.optimize_anything(
-    evaluator=evaluate,
-    objective="Generate a Python function `reverse()` that reverses a string.",
-)
-```
 
 ### One Interface, Three Optimization Modes
 
@@ -133,14 +132,17 @@ The full API signature:
 
 ```python
 def optimize_anything(
-    seed_candidate: str | dict[str, str],   # Starting artifact
+    seed_candidate: str | dict[str, str] | None = None,  # Starting artifact (or None for seedless)
     evaluator: Callable,                    # Score + ASI
     dataset: list | None = None,            # Training examples (modes 2 & 3)
     valset: list | None = None,             # Validation set (mode 3)
     objective: str | None = None,           # What to optimize for (natural language)
     background: str | None = None,          # Domain knowledge and constraints
     config: GEPAConfig | None = None,       # Engine, reflection, tracking settings
-) -> GEPAResult
+) -> GEPAResult:
+    """
+    Call with either (seed_candidate+evaluator) or (evaluator+objective)
+    """
 ```
 
 Notice what's *absent*: no mutation prompts, no task-specific instruction templates, no island configurations, no EVOLVE-BLOCK markers (all common in prior LLM-evolution frameworks). You declare the **what** (your artifact, your evaluator, and any domain knowledge as `background`) and `optimize_anything` handles the **how**: prompt construction, reflection, candidate selection, and search strategy. This declarative design, inspired by [DSPy](https://github.com/stanfordnlp/dspy)'s principle of *programming not prompting*, means the same API call works whether you're optimizing a CUDA kernel, a cloud scheduling policy, or an agent architecture.
@@ -405,7 +407,7 @@ The seedless mode is particularly useful for tasks where the solution space is l
 
 ## Conclusion & Getting Started
 
-`optimize_anything` makes a simple bet: if your artifact is text and its performance can be measured, you can optimize it. The API is minimal, requiring only a seed (or task description), an evaluator, and optionally a dataset. The results span algorithmic discovery, kernel generation, systems research, prompt tuning, agent architecture search, blackbox optimization, and coding agent skill learning.
+`optimize_anything` has a simple premise: if your artifact is text and its performance can be measured, you can optimize it. The API is minimal, requiring only a seed (or task description), an evaluator, and optionally a dataset. The results span algorithmic discovery, kernel generation, systems research, prompt tuning, agent architecture search, blackbox optimization, and coding agent skill learning.
 
 The key ideas: (1) **three unified modes** (single-task search, multi-task search, and generalization) under one declarative API; (2) **Actionable Side Information (ASI)** as a first-class API concept that turns blind mutation into targeted, diagnostic-driven engineering; (3) **Pareto-efficient search** across metrics and examples that outperforms naive all-at-once optimization.
 
@@ -459,7 +461,7 @@ If you already have `print()` statements scattered through your evaluation code 
 from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig
 
 result = optimize_anything(
-    seed_candidate=...,
+    ...,
     evaluator=evaluate,  # existing print() calls become ASI
     config=GEPAConfig(engine=EngineConfig(capture_stdio=True)),
 )
