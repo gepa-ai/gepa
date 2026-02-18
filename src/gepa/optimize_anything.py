@@ -951,8 +951,9 @@ class EvaluatorWrapper:
 
 
 def optimize_anything(
-    seed_candidate: str | Candidate | None,
-    evaluator: Evaluator,
+    evaluator: Callable[..., Any],
+    seed_candidate: str | Candidate | None = None,
+    *,  # everything below must be passed as keyword args
     dataset: list[DataInst] | None = None,
     valset: list[DataInst] | None = None,
     objective: str | None = None,
