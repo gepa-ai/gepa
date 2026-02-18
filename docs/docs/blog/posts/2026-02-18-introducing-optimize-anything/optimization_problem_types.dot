@@ -1,0 +1,35 @@
+digraph OptimizeAnythingSimple {
+
+    rankdir=TB;
+
+    node [shape=box, style="rounded,filled", fontname="Arial", fontsize=12, margin=0.2];
+    edge [fontname="Arial", fontsize=10];
+
+    # Root
+    root [label="What is the Goal?", fillcolor="#374151", fontcolor="white", color="#1f2937"];
+
+    # Level 1
+    solve [label="Solve Specific Problem(s)\n(Search Mode)", fillcolor="#6366f1", fontcolor="white", color="#4f46e5"];
+    learn [label="Build a Skill\n(Generalization Mode)", fillcolor="#0d9488", fontcolor="white", color="#0f766e"];
+
+    # Level 2
+    one [label="One Problem\n(Single-Task Search)", fillcolor="#e0e7ff", fontcolor="#312e81", color="#a5b4fc"];
+    many [label="Many Related Problems\n(Multi-Task Search)", fillcolor="#e0e7ff", fontcolor="#312e81", color="#a5b4fc"];
+
+    # Examples
+    ex1 [label="e.g., Blackbox function optimization", shape=plaintext, style="", fontcolor="#6b7280"];
+    ex2 [label="e.g., Writing CUDA Kernels for\nmultiple algorithms but same hardware", shape=plaintext, style="", fontcolor="#6b7280"];
+    ex3 [label="e.g., Prompt Optimization,\nAgentic Architecture Optimization", shape=plaintext, style="", fontcolor="#6b7280"];
+
+    # Connections
+    root -> solve [label="I want answers", fontcolor="#4b5563", color="#9ca3af"];
+    root -> learn [label="I want a system", fontcolor="#4b5563", color="#9ca3af"];
+
+    solve -> one [color="#9ca3af"];
+    solve -> many [color="#9ca3af"];
+
+    one -> ex1 [style=dotted, color="#9ca3af"];
+    many -> ex2 [style=dotted, color="#9ca3af"];
+    learn -> ex3 [style=dotted, color="#9ca3af"];
+
+}

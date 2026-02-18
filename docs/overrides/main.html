@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block extrahead %}
+{{ super() }}
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-HGHHSE0CDS"></script>
 <script>
@@ -26,10 +27,11 @@
     </label>
     <div class="landing-nav">
       <a href="{{ 'guides/use-cases/' | url }}" class="landing-nav__link{% if page and page.url and 'use-cases' in page.url %} landing-nav__link--active{% endif %}">Showcase</a>
-      <a href="{{ 'blog/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('blog') %} landing-nav__link--active{% endif %}">Blog</a>
+      <a href="{{ 'blog/' | url }}" class="landing-nav__link landing-nav__link--highlight{% if page and page.url and page.url.startswith('blog') %} landing-nav__link--active{% endif %}">Blog<span class="landing-nav__badge">New</span></a>
       <a href="{{ 'guides/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('guides') and 'use-cases' not in page.url %} landing-nav__link--active{% endif %}">Docs</a>
       <a href="{{ 'tutorials/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('tutorials') %} landing-nav__link--active{% endif %}">Tutorials</a>
       <a href="{{ 'api/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('api') %} landing-nav__link--active{% endif %}">API</a>
+      <a href="{{ 'about/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('about') %} landing-nav__link--active{% endif %}">About</a>
     </div>
     {% if config.theme.palette %}
       {% if not config.theme.palette is mapping %}

@@ -8,8 +8,12 @@ repo_name: gepa-ai/gepa
 edit_uri: blob/main/docs/docs/
 docs_dir: "docs/"
 
+watch:
+    - docs/blog/posts
+
 nav:
     - Showcase: guides/use-cases.md
+    - About: about.md
     - Blog:
         - blog/index.md
     - Guides:
@@ -152,6 +156,8 @@ theme:
     favicon: static/img/gepa_logo.svg
 
 plugins:
+    - social:
+        enabled: !ENV [CI, false]
     - search:
         lang: en
         separator: '[\s\-\.]+'
@@ -214,6 +220,7 @@ extra_css:
 extra_javascript:
     - javascripts/mathjax.js
     - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+    - javascripts/details-anchor.js
 
 extra:
     social:
