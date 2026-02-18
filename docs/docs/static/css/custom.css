@@ -370,10 +370,10 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     display: none;
 }
 
-/* Blog post listing: cleaner spacing */
+/* Blog post listing: compact spacing */
 .md-post {
-    margin-bottom: 2rem;
-    padding-bottom: 2rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
     border-bottom: 1px solid var(--md-default-fg-color--lightest);
 }
 
@@ -385,30 +385,33 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 .md-post__meta {
     font-size: 0.85rem;
     color: var(--md-default-fg-color--light);
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.25rem;
 }
 
-/* Blog post content: let Material defaults handle font-size */
-.md-post .md-post__content {
-    line-height: 1.7;
+/* Tighten heading margin inside listing cards */
+.md-post--excerpt .md-post__content h1,
+.md-post--excerpt .md-post__content h2 {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+/* Blog listing: show only the title, hide excerpt text and "Continue reading" */
+.md-post--excerpt .md-post__content > :not(h1):not(h2) {
+    display: none !important;
 }
 
 /* Blog post title links (listing page) */
-.md-post .md-post__title a {
+.md-post .md-post__content h1 a,
+.md-post .md-post__content h2 a {
     text-decoration: none;
     color: var(--md-default-fg-color);
     font-weight: 600;
     transition: color 0.2s;
 }
 
-.md-post .md-post__title a:hover {
+.md-post .md-post__content h1 a:hover,
+.md-post .md-post__content h2 a:hover {
     color: var(--md-primary-fg-color);
-}
-
-/* Blog excerpt on listing page */
-.md-post__excerpt {
-    color: var(--md-default-fg-color--light);
-    line-height: 1.7;
 }
 
 /* Blog categories/tags: subtle pills */
@@ -428,10 +431,6 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     border-color: rgba(33, 44, 77, 0.4);
 }
 
-/* "Continue reading" link */
-.md-post .md-post__action {
-    font-size: 0.85rem;
-}
 
 /* Dark mode adjustments for blog listing */
 [data-md-color-scheme="slate"] .md-post .md-categories a {
@@ -483,10 +482,11 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     font-weight: 700;
     line-height: 1.3;
     margin-bottom: 0.5rem;
+    color: var(--md-accent-fg-color);
 }
 
 .blog-post-byline {
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     color: var(--md-default-fg-color--light);
     line-height: 1.6;
 }
@@ -502,12 +502,8 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     color: var(--md-default-fg-color--lighter);
 }
 
-.blog-post-authors {
-    font-size: 0.82rem;
-}
-
 .blog-post-authors a {
-    color: var(--md-primary-fg-color);
+    color: var(--md-accent-fg-color);
     text-decoration: none;
     font-weight: 500;
 }
