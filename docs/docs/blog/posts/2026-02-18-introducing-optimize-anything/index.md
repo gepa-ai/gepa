@@ -422,7 +422,7 @@ The evaluator runs each candidate as a subprocess, collects the rendered PNGs, a
 </div>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
-![Optimized 3D unicorn](unicorn_optimized.png){ style="width: 100%;" }
+![Optimized 3D unicorn](images/unicorn_optimized.png){ style="width: 100%;" }
 
 <div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>GEPA-optimized (seedless using Claude Opus 4.6)</em></div>
 
