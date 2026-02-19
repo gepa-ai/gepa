@@ -158,9 +158,12 @@ theme:
 plugins:
     - social:
         enabled: !ENV [CI, false]
+        cards_layout_dir: layouts
+        cards_layout: custom
         cards_layout_options:
           background_color: "#212C4D"
           color: "#90E0EF"
+          logo: docs/static/img/gepa_logo_with_text_white.png
     - search:
         lang: en
         separator: '[\s\-\.]+'

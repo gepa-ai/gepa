@@ -8,7 +8,6 @@ Replaces auto-generated social cards with real page screenshots.
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 try:
     from playwright.sync_api import sync_playwright
@@ -18,15 +17,19 @@ except ImportError:
 
 
 def get_pages_to_screenshot() -> list[tuple[str, str]]:
-    """Return list of (html_file, output_path) tuples for key pages."""
+    """Return list of (html_file, output_path) tuples for key pages.
+
+    Paths are relative to site_dir (no site/ prefix — generate_screenshots
+    prepends site_dir automatically).
+    """
     return [
-        ("site/index.html", "site/assets/social/home.png"),
-        ("site/guides/use-cases/index.html", "site/assets/social/showcase.png"),
-        ("site/about/index.html", "site/assets/social/about.png"),
-        ("site/blog/index.html", "site/assets/social/blog.png"),
-        ("site/guides/index.html", "site/assets/social/guides.png"),
-        ("site/api/index.html", "site/assets/social/api.png"),
-        ("site/tutorials/index.html", "site/assets/social/tutorials.png"),
+        ("index.html", "assets/social/home.png"),
+        ("guides/use-cases/index.html", "assets/social/showcase.png"),
+        ("about/index.html", "assets/social/about.png"),
+        ("blog/index.html", "assets/social/blog.png"),
+        ("guides/index.html", "assets/social/guides.png"),
+        ("api/index.html", "assets/social/api.png"),
+        ("tutorials/index.html", "assets/social/tutorials.png"),
     ]
 
 
@@ -73,10 +76,12 @@ def generate_screenshots(site_dir: str = "site") -> None:
 
 
 def update_og_tags(site_dir: str = "site") -> None:
-    """Update OG image tags in HTML files to point to generated screenshots."""
+    """Update OG and Twitter image tags in HTML files to point to generated screenshots."""
+    import re
+
     print("🔗 Updating OG image tags...")
 
-    # Map of HTML file to OG image URL
+    # Map of HTML file to OG image path (relative to site root)
     og_updates = {
         "index.html": "/assets/social/home.png",
         "guides/use-cases/index.html": "/assets/social/showcase.png",
@@ -87,26 +92,45 @@ def update_og_tags(site_dir: str = "site") -> None:
         "tutorials/index.html": "/assets/social/tutorials.png",
     }
 
-    for html_file, og_image_url in og_updates.items():
+    for html_file, og_image_path in og_updates.items():
         full_path = Path(site_dir) / html_file
+        screenshot_path = Path(site_dir) / og_image_path.lstrip("/")
 
         if not full_path.exists():
+            continue
+
+        # Only update if the screenshot was actually generated
+        if not screenshot_path.exists():
+            print(f"  ⊘ Skipping {html_file} (screenshot not found)")
             continue
 
         try:
             content = full_path.read_text(encoding="utf-8")
 
-            # Replace or add og:image tag
+            # Replace og:image
             if 'property="og:image"' in content:
-                # Replace existing og:image tag with new URL
-                import re
-                pattern = r'<meta property="og:image" content="[^"]*"'
-                replacement = f'<meta property="og:image" content="{og_image_url}"'
-                content = re.sub(pattern, replacement, content)
+                content = re.sub(
+                    r'<meta property="og:image" content="[^"]*"',
+                    f'<meta property="og:image" content="{og_image_path}"',
+                    content,
+                )
             else:
-                # Add og:image tag after og:title
-                og_image_tag = f'\n    <meta property="og:image" content="{og_image_url}">'
-                content = content.replace("</title>", f"</title>{og_image_tag}", 1)
+                og_tag = f'\n    <meta property="og:image" content="{og_image_path}">'
+                content = content.replace("</title>", f"</title>{og_tag}", 1)
+
+            # Replace twitter:image
+            if 'property="twitter:image"' in content:
+                content = re.sub(
+                    r'<meta property="twitter:image" content="[^"]*"',
+                    f'<meta property="twitter:image" content="{og_image_path}"',
+                    content,
+                )
+            elif 'name="twitter:image"' in content:
+                content = re.sub(
+                    r'<meta name="twitter:image" content="[^"]*"',
+                    f'<meta name="twitter:image" content="{og_image_path}"',
+                    content,
+                )
 
             full_path.write_text(content, encoding="utf-8")
             print(f"  ✓ Updated: {html_file}")
