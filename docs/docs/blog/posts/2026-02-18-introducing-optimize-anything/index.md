@@ -346,9 +346,9 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 
 **Key result:** Pure prompt optimization improves gpt-4.1-mini from 46.67% to **60.00%** on AIME 2025, a 13.3 percentage point gain from changing only the system prompt. [Full code →](#appendix-e-aime-prompt-optimization)
 
-### 5. Nearly Triple Gemini-Flash's ARC-AGI Accuracy via Agent Evolution {#5-agent-architecture-discovery}
+### 5. Nearly Triple Gemini-Flash's ARC-AGI Accuracy via Agent Architecture Evolution {#5-agent-architecture-discovery}
 
-**Mode: Generalization.** This is the most ambitious application. Rather than optimizing a prompt, we optimize the **entire agent**: its code, sub-agent architecture, control flow, helper functions, and prompts, all treated as a single text artifact. The seed is a 10-line naive agent; GEPA evolves it into a 300+ line system with rule induction, code verification, iterative refinement, and structured fallbacks.
+**Mode: Generalization.** This is the most ambitious application. Rather than optimizing a prompt, we optimize the **entire agent system**: code, sub-agent architecture, control flow, helper functions, and prompts are all treated as a single text artifact. The seed is a 10-line naive agent; GEPA evolves it into a 300+ line system with rule induction, code verification, iterative refinement, and structured fallbacks. It nearly triples Gemini Flash's ARC-AGI accuracy at just twice the cost per task.
 
 <figure markdown="span">
   ![Optimization trajectory for ARC-AGI with Gemini 3 Flash. Validation accuracy improves from 56.5% to 93.5%. Base test score is 32.5%, best test score reaches 89.5%.](images/arc_agi_trajectory.png)
@@ -359,6 +359,8 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
   ![The evolved ARC-AGI agent architecture: a multi-stage pipeline with code generation, iterative validation, and two-attempt prediction (code + direct LLM).](images/arc_agi_architecture.svg)
   <figcaption>The optimized ARC-AGI agent architecture: code generation, iterative validation, and two-attempt prediction (code + direct LLM)</figcaption>
 </figure>
+
+$0.0666/task -> $0.1445 = 2.16x cost. But with tripple cost. 
 
 **Key result:** Using the same underlying model (Gemini 3 Flash), `optimize_anything` improves ARC-AGI v1 public test accuracy from 32.5% to **89.5%** by evolving the entire agent architecture, achieving gains that typically require significant manual iteration. [Full code →](#appendix-f-arc-agi-agent-architecture-discovery)
 ### 6. Match or Outperform Optuna at Blackbox Mathematical Optimization {#6-blackbox-optimization}
