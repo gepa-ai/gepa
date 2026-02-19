@@ -894,3 +894,125 @@ div.person-avatar {
 [data-md-color-scheme="slate"] .md-typeset .appendix-tiles details[class][open] {
     box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3);
 }
+
+/* ============================================
+   TOC Drawer – mobile table of contents
+   ============================================ */
+
+/* Toggle button: hidden on wide screens where the TOC sidebar is visible.
+   Use .md-header to beat Material's .md-header__button { display: inline-block }. */
+.md-header button.toc-toggle {
+    display: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: currentColor;
+}
+
+.toc-toggle svg {
+    width: 1.2rem;
+    height: 1.2rem;
+    fill: currentColor;
+}
+
+/* Show on screens narrower than Material's right-sidebar breakpoint */
+@media screen and (max-width: 60em) {
+    .md-header button.toc-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+}
+
+/* Hide on landing page (no TOC there) */
+.md-header--landing .toc-toggle {
+    display: none !important;
+}
+
+/* --- Overlay --- */
+.toc-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 3;
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+[data-md-toc-open] .toc-overlay {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* --- Drawer panel --- */
+.toc-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    width: 280px;
+    max-width: 85vw;
+    background: var(--md-default-bg-color);
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 1rem 0;
+}
+
+[data-md-toc-open] .toc-drawer {
+    transform: translateX(0);
+}
+
+/* Title */
+.toc-drawer__title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--md-default-fg-color--light);
+    padding: 0.5rem 1.2rem 0.75rem;
+    border-bottom: 1px solid var(--md-default-fg-color--lightest);
+    margin-bottom: 0.5rem;
+}
+
+/* Nav links inside drawer */
+.toc-drawer .md-nav__list {
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+.toc-drawer .md-nav__item {
+    padding: 0;
+}
+
+.toc-drawer .md-nav__link {
+    display: block;
+    padding: 0.45rem 1.2rem;
+    font-size: 0.8rem;
+    color: var(--md-default-fg-color--light);
+    text-decoration: none;
+    transition: color 0.15s, background 0.15s;
+    line-height: 1.4;
+}
+
+.toc-drawer .md-nav__link:hover {
+    color: var(--md-accent-fg-color);
+    background: var(--md-accent-fg-color--transparent);
+}
+
+/* Indent h3-level items */
+.toc-drawer .toc-drawer__indent .md-nav__link,
+.toc-drawer .md-nav .md-nav .md-nav__link {
+    padding-left: 2rem;
+    font-size: 0.78rem;
+}
+
+/* Dark mode */
+[data-md-color-scheme="slate"] .toc-drawer {
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.35);
+}
