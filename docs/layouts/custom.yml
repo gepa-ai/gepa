@@ -34,7 +34,12 @@ tags:
   og:type: website
   og:title: *page_title
   og:description: *page_description
-  og:image: "{{ image.url }}"
+  og:image: >-
+    {%- if page.meta.get("social_image") -%}
+      {{ config.site_url }}{{ page.meta.social_image }}
+    {%- else -%}
+      {{ image.url }}
+    {%- endif -%}
   og:image:type: "{{ image.type }}"
   og:image:width: "{{ image.width }}"
   og:image:height: "{{ image.height }}"
@@ -42,7 +47,12 @@ tags:
   twitter:card: summary_large_image
   twitter:title: *page_title
   twitter:description: *page_description
-  twitter:image: "{{ image.url }}"
+  twitter:image: >-
+    {%- if page.meta.get("social_image") -%}
+      {{ config.site_url }}{{ page.meta.social_image }}
+    {%- else -%}
+      {{ image.url }}
+    {%- endif -%}
 
 size: { width: 1200, height: 630 }
 
