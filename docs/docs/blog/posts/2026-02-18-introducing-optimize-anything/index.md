@@ -53,7 +53,6 @@ Today we are introducing `optimize_anything`, a declarative API that optimizes a
 - [find detailed system prompts to boost GPT's math reasoning accuracy](#4-prompt-optimization),
 - [discover bespoke agent harnesses that nearly triple ARC-AGI accuracy](#5-agent-architecture-discovery),
 - [write custom solvers to match and exceed Optuna in blackbox mathematical optimization](#6-blackbox-optimization),
-<!-- - [discover better circle packing than Google's AlphaEvolve](#1-circle-packing), -->
 - and... [model a 3D unicorn](#8-3d-unicorn).
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
