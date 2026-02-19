@@ -266,7 +266,7 @@ Even when optimizing a single objective, evaluating candidates across multiple a
 
 `optimize_anything` beats AlphaEvolve's solution at circle packing, evolves a 10-line agent stub into a 300+ line system that nearly triples its test accuracy on ARC-AGI, discovers novel cloud scheduling algorithms, and matches Optuna (a mature numerical optimizer) by generating solver code from scratch. We test across seven domains spanning search, batch optimization, and generalization. Each section below walks through the setup and links to [full, runnable code](#appendix-case-study-code).
 
-### 1. Outperform Google's AlphaEvolve's solution at Circle Packing {#1-circle-packing}
+### 1. Outperform AlphaEvolve's solution at Circle Packing {#1-circle-packing}
 
 **Mode: Single-Task Search.** Pack n=26 circles to maximize the sum of their radii within a unit square. GEPA optimizes the packing algorithm code, using execution results and geometric diagnostics as ASI.
 
