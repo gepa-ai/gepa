@@ -50,7 +50,7 @@
         }
     ```
 
-    **Optimizer** — This is **Generalization** mode with `dataset` (training puzzles) and `valset` (validation puzzles). The agent must generalize to unseen `testset` puzzles, so just memorizing patterns from the training set won't help. `parallel=True` with `max_workers=64` enables massive concurrent evaluation across puzzles. `max_metric_calls=2000` gives GEPA ample budget to evolve the agent architecture. `background` provides domain knowledge about ARC puzzle structure. Gemini 3 Flash is used as both the reflection model and the agent's internal LLM. Note that using a stronger reflection model can find a even more effective artifact in general. 
+    **Optimizer** — This is **Generalization** mode with `dataset` for training and `valset` for validation. The agent must generalize to unseen `testset` puzzles, so just memorizing patterns from the training set won't help. `parallel=True` with `max_workers=64` enables massive concurrent evaluation across puzzles. `background` provides domain knowledge about ARC puzzle structure. Gemini 3 Flash is used as both the reflection model and the agent's internal LLM. Note that using a stronger reflection model can find a even more effective artifact in general. 
 
     ```python
     from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig, ReflectionConfig
@@ -64,7 +64,7 @@
         dataset=train_set,
         valset=val_set,
         config=GEPAConfig(
-            engine=EngineConfig(max_metric_calls=2000, parallel=True,
+            engine=EngineConfig(max_candidate_proposals=40, parallel=True,
                                 max_workers=64, cache_evaluation=True),
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/google/gemini-3-flash-preview",

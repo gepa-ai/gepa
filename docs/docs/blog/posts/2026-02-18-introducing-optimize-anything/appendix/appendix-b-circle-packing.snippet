@@ -1,7 +1,7 @@
 <span id="appendix-b-circle-packing"></span>
 ??? example "Circle Packing (n=26)"
 
-    We tackle circle packing, a classic combinatorial optimization problem benchmarked by LLM-based evolution algorithms including ShinkaEvolve, OpenEvolve, and AlphaEvolve.
+    We tackle circle packing, a classic combinatorial optimization problem benchmarked by many LLM-based evolution algorithms including ShinkaEvolve, OpenEvolve, and AlphaEvolve.
     The goal is to pack n=26 circles within a unit square, maximizing the sum of radii.
 
     **Candidate** — We adopt a seed candidate from ShinkaEvolve's code. It places circles in concentric rings: one at the center, a ring of 8 around it, and an outer ring for the remaining circles. It clips positions into the unit square and greedily shrinks radii until no circle overlaps another or breaches a boundary.
@@ -106,8 +106,7 @@
         return score, side_info
     ```
 
-    **Optimizer** — This is a Single-Task Search with no `dataset`, just an `objective`. 
-    `frontier_type="objective"` tracks the Pareto frontier per objective metric (e.g., `sum_radii`) rather than per dataset example. 
+    **Optimizer** — This is a Single-Task Search with no `dataset`. `frontier_type="objective"` tracks the Pareto frontier per objective metric (e.g., `sum_radii`) rather than per dataset example. 
     `RefinerConfig()` injects a `refiner_prompt` into a candidate dictionary to add an inner-loop refinement step after each evaluation.
     A Refiner LLM reads the feedback and proposes an improved candidate.
     GEPA keeps whichever is better, and the refiner's own prompt is co-evolved alongside the candidate so refinement quality improves over time.
