@@ -53,13 +53,12 @@ meta:
 
 Today we are introducing `optimize_anything`, a declarative API that optimizes any artifact representable as text (e.g., code, prompts, agent architectures, vector graphics, configurations). It extends [GEPA](https://arxiv.org/abs/2507.19457) (Genetic-Pareto, our state-of-the-art LLM prompt optimizer) far beyond prompts. You declare what to optimize and how to measure it; the system handles the search. Testing it across [several domains](#results), we find `optimize_anything` consistently matches or outperforms domain-specific tools, including some purpose-built for each task. With one API, you can:
 
-- [discover bespoke agent harnesses that nearly triple ARC-AGI accuracy](#5-agent-architecture-discovery)
-- [discover better circle packing than Google's AlphaEvolve](#1-circle-packing)
-<!-- more -->
-- [optimize cloud scheduling policies that cut cloud infrastructure costs by 40%, beating expert heuristics](#3-systems-research)
-- [create agent skills to achieve near-perfect Claude Code resolve rates at 47% faster resolution times](#7-coding-agent-skills)
-- [improve GPT's math reasoning accuracy by changing only the system prompt](#4-prompt-optimization)
-- [match and exceed Optuna, a mature numerical optimizer, by writing solver code from scratch](#6-blackbox-optimization)
+- [discover bespoke agent harnesses that nearly triple ARC-AGI accuracy](#5-agent-architecture-discovery),
+- [discover better circle packing than Google's AlphaEvolve](#1-circle-packing),
+- [optimize cloud scheduling policies that cut cloud infrastructure costs by 40%, beating expert heuristics](#3-systems-research),
+- [create agent skills to achieve near-perfect Claude Code resolve rates at 47% faster resolution times](#7-coding-agent-skills),
+- [find detailed system prompts to boost GPT's math reasoning accuracy](#4-prompt-optimization),
+- [write custom solvers to match and exceed Optuna in blackbox mathematical optimization](#6-blackbox-optimization),
 - and... [optimize a pelican ... riding a bicycle](#lets-take-it-for-a-spin)
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>

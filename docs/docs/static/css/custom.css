@@ -65,7 +65,8 @@
 .md-content .md-typeset .blog-post-authors a,
 .md-content .md-typeset .people-grid-note a,
 .md-content .md-typeset .fn-ref,
-.md-content .md-typeset .fn-backref {
+.md-content .md-typeset .fn-backref,
+.md-content .md-typeset .marquee-track a {
     text-decoration: none;
 }
 
