@@ -48,7 +48,7 @@ meta:
 
 <figure markdown="span">
   ![optimize_anything diagram showing the core loop: a string x is passed to an evaluator f(x) which returns a score plus diagnostic feedback, which is then consumed by an LLM proposer to produce an improved string. Example instantiations shown below: Code Optimization, Numeric Optimization, Prompt/Agent Harness, Policy Optimization.](images/header_image.png)
-  <figcaption>Evaluate a text artifact, capture diagnostic feedback (ASI), and let an LLM propose targeted improvements. Code, prompts, configs, agent architectures — if you can measure it, `optimize_anything` can optimize it.</figcaption>
+  <figcaption>Evaluate a text artifact, capture diagnostic feedback (ASI), and let an LLM propose targeted improvements. Code, prompts, configs, agent architectures — if you can measure it, <span class="gradient-code">optimize_anything</span> can optimize it.</figcaption>
 </figure>
 
 Today we are introducing `optimize_anything`, a declarative API that optimizes any artifact representable as text (e.g., code, prompts, agent architectures, vector graphics, configurations). It extends [GEPA](https://arxiv.org/abs/2507.19457) (Genetic-Pareto, our state-of-the-art LLM prompt optimizer) far beyond prompts. You declare what to optimize and how to measure it; the system handles the search. Testing it across [several domains](#results), we find `optimize_anything` consistently matches or outperforms domain-specific tools, including some purpose-built for each task. With one API, you can:
@@ -83,7 +83,7 @@ The key insight is that a surprisingly wide range of problems can be formulated 
 
 Where prior LLM-evolution frameworks like AlphaEvolve, OpenEvolve, and ShinkaEvolve expose concepts like island topologies[^islands], prompt samplers[^samplers], and cascade evaluation stages[^cascade], `optimize_anything` strips the interface down to its essence — and goes further by unifying **three optimization modes** (single-task search, multi-task search, and generalization) under one declarative API. While prior systems operate exclusively in single-task mode, `optimize_anything` enables optimization tasks they cannot directly express like [discovering agent architectures from scratch](#5-agent-architecture-discovery), [learning prompts that generalize to unseen examples](#4-prompt-optimization), and [optimizing coding agent skills that transfer across models](#7-coding-agent-skills).
 
-## The `optimize_anything` API
+## The <span class="gradient-code">optimize_anything</span> API
 
 ### The Simplest Form
 
@@ -130,7 +130,7 @@ ASI can be open-ended text, structured data, multi-objectives (through `scores`)
 
 <figure markdown="span">
   ![Decision tree showing three optimization modes. "What is the Goal?" branches into "I want answers" (Search Mode) and "I want a system" (Generalization Mode). Search Mode further splits into "One Problem (Single-Task Search)" for tasks like blackbox optimization, and "Many Related Problems (Multi-Task Search)" for tasks like writing CUDA kernels for multiple algorithms.](images/optimization_problem_types.svg)
-  <figcaption>The three optimization modes supported in <code>optimize_anything</code>: single-task search, multi-task search, and generalization.</figcaption>
+  <figcaption>The three optimization modes supported in <span class="gradient-code">optimize_anything</span>: single-task search, multi-task search, and generalization.</figcaption>
 </figure>
 
 `optimize_anything` unifies three distinct optimization paradigms under one API, determined by whether you provide a `dataset` and `valset`:
@@ -369,7 +369,7 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 
 <figure markdown="span" style="margin: 0 auto;">
   ![Bar chart showing GEPA vs Optuna on 56 EvalSet problems with 1% tolerance and 8000 trials. GEPA wins on 7 problems, Optuna wins on 9, and they tie on 40.](images/optuna_combined2.png)
-  <figcaption>GEPA's optimize_anything matches Optuna, the industry-standard blackbox optimizer, on the EvalSet benchmark. (a) Across all 56 EvalSet problems (budget of 8,000 evaluations each), GEPA ties Optuna on 40, wins 7, and loses 9. (b) On 10 selected problems where Optuna struggles (budget of 2,000 evaluations each), GEPA finds better solutions on 7 out of 10.</figcaption>
+  <figcaption>GEPA's <span class="gradient-code">optimize_anything</span> matches Optuna, the industry-standard blackbox optimizer, on the EvalSet benchmark. (a) Across all 56 EvalSet problems (budget of 8,000 evaluations each), GEPA ties Optuna on 40, wins 7, and loses 9. (b) On 10 selected problems where Optuna struggles (budget of 2,000 evaluations each), GEPA finds better solutions on 7 out of 10.</figcaption>
 </figure>
 
 On the 56-problem evalset benchmark with large budgets, GEPA and Optuna tie on most problems. But on the hardest problems with lower budgets where Optuna struggles, an interesting pattern emerges: Optuna's fixed TPE-CMA-ES pipeline fails in predictable, structural ways. On McCourt13, all 10 independent Optuna runs converge to the same local minimum because TPE's independent per-dimension sampling always falls into the dominant trap basin. On Tripod, CMA-ES assumes a smooth, unimodal landscape, but the objective is piecewise-linear with hard discontinuities, so it converges to the wrong basin and cannot escape.
