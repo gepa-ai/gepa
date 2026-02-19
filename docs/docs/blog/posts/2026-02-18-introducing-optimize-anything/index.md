@@ -348,7 +348,7 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 
 ### 5. Nearly Triple Gemini-Flash's ARC-AGI Accuracy via Agent Architecture Evolution {#5-agent-architecture-discovery}
 
-**Mode: Generalization.** This is the most ambitious application. Rather than optimizing a prompt, we optimize the **entire agent system**: code, sub-agent architecture, control flow, helper functions, and prompts are all treated as a single text artifact. The seed is a 10-line naive agent; GEPA evolves it into a 300+ line system with rule induction, code verification, iterative refinement, and structured fallbacks. It triples Gemini Flash's ARC-AGI accuracy at just twice the cost per task.
+**Mode: Generalization.** This is the most ambitious application. Rather than optimizing a prompt, we optimize the **entire agent system**: code, sub-agent architecture, control flow, helper functions, and prompts are all treated as a single text artifact. The seed is a 10-line naive agent; GEPA evolves it into a 300+ line system with rule induction, code verification, iterative refinement, and structured fallbacks. It nearly triples Gemini Flash's ARC-AGI accuracy at just twice the cost per task.
 
 <figure markdown="span">
   ![Optimization trajectory for ARC-AGI with Gemini 3 Flash. Validation accuracy improves from 56.5% to 93.5%. Base test score is 32.5%, best test score reaches 89.5%.](images/arc_agi_trajectory.png)
