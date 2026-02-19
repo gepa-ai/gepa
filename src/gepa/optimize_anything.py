@@ -1,38 +1,52 @@
 """
-``optimize_anything`` — optimize any text artifact with LLM-guided evolution.
+``optimize_anything`` — a universal API for optimizing any text parameter.
 
-This is the primary public API for GEPA.  You bring a **text-representable
-artifact** (prompt, code, config, policy, agent harness, or numeric
-parameters) and an **evaluator** that scores candidates;
-``optimize_anything`` uses LLMs as intelligent proposers to iteratively
-refine that artifact, leveraging rich evaluation feedback called
-**Actionable Side Information (ASI)**.
+This is the primary public API for GEPA.  You declare **what** to optimize
+(a text-representable artifact — code, prompts, agent architectures,
+configurations, policies, SVG graphics) and **how** to measure it (an
+evaluator); ``optimize_anything`` handles the **how**: prompt construction,
+LLM reflection, candidate selection, and Pareto-efficient search.
+
+The key insight is that a wide range of problems can be formulated as
+optimizing a text artifact: speeding up a CUDA kernel, tuning a scheduling
+policy, refining a prompt template, or redesigning an agent architecture.
+If it can be serialized to a string and its quality measured, an LLM can
+reason about it and propose improvements.
 
 Core workflow::
 
-    seed_candidate  →  evaluate  →  reflect on ASI  →  mutate  →  repeat
+    seed_candidate  →  evaluate  →  reflect on ASI  →  propose  →  repeat
                           ↑                                  |
                           └──────────────────────────────────┘
 
 Three optimization modes
 ------------------------
-``optimize_anything`` unifies three optimization paradigms via the
-``dataset`` and ``valset`` arguments:
+``optimize_anything`` unifies three optimization paradigms under one
+declarative API, determined by whether you provide ``dataset`` and ``valset``:
 
 1. **Single-Task Search** (``dataset=None, valset=None``):
-   Solve one hard problem instance.  The candidate *is* the solution.
+   Solve one hard problem.  The candidate *is* the solution.
    Evaluator is called without ``example``.
-   *Examples: circle packing, rocket trajectory, mathematical optimization.*
+   *E.g. circle packing, blackbox mathematical optimization.*
 
 2. **Multi-Task Search** (``dataset=<list>, valset=None``):
-   Solve a batch of related problems with cross-task transfer.
-   Evaluator is called per-example; ``valset`` defaults to ``dataset``.
-   *Examples: CUDA kernel optimization across multiple models.*
+   Solve a batch of related problems with cross-task transfer.  Insights
+   from solving one help solve the others.  Evaluator is called per-example.
+   *E.g. CUDA kernel generation for multiple PyTorch operations,
+   multi-aspect SVG optimization.*
 
 3. **Generalization** (``dataset=<list>, valset=<list>``):
-   Learn a general skill that transfers to unseen examples.
-   Evaluator is called per-example; candidates must generalize to ``valset``.
-   *Examples: prompt optimization for AIME math, agent evolution for ARC-AGI.*
+   Build a skill that transfers to unseen problems.  Evaluator is called
+   per-example; candidates must generalize to ``valset``.
+   *E.g. prompt optimization for AIME math, agent architecture evolution
+   for ARC-AGI, cloud scheduling policy discovery.*
+
+Seedless mode
+-------------
+When you don't have a starting artifact, pass ``seed_candidate=None`` and
+provide ``objective`` (and optionally ``background``).  The reflection LM
+bootstraps the first candidate from the description, then iterates as usual.
+Useful for creative or exploratory tasks where the solution space is large.
 
 Quick example::
 
@@ -44,23 +58,38 @@ Quick example::
         oa.log("Diagnostic:", diagnostic)   # captured as ASI
         return score
 
+    # Start from an existing artifact…
     result = optimize_anything(
         seed_candidate="<initial code>",
         evaluator=evaluate,
         objective="Maximize throughput.",
         config=GEPAConfig(engine=EngineConfig(max_metric_calls=300)),
     )
+
+    # … or just describe what you need (seedless mode).
+    result = optimize_anything(
+        evaluator=evaluate,
+        objective="Generate a Python function that reverses a string.",
+    )
+
     print(result.best_candidate)
 
 Key concepts:
     - **Candidate**: ``dict[str, str]`` or plain ``str`` of optimizable text
-      parameters — prompts, code, configs, numeric params, etc.
+      parameters — prompts, code, configs, agent architectures, etc.
     - **Evaluator**: Your scoring function.  Returns ``(score, side_info)`` or
       just ``score``.  Higher scores are better.
-    - **ASI / SideInfo**: Diagnostic dict returned by the evaluator (or
-      captured via ``oa.log()``).  This is the *actionable side information*
-      that powers the LLM reflection — error messages, expected vs actual
-      output, profiling data, etc.
+    - **ASI / SideInfo**: Actionable Side Information — diagnostic feedback
+      returned by the evaluator (or captured via ``oa.log()``).  ASI is the
+      text-optimization analogue of the gradient: where gradients tell a
+      numerical optimizer which direction to move, ASI tells the LLM proposer
+      *why* a candidate failed and *how* to fix it.  Can include error
+      messages, profiling traces, rendered images (via :class:`Image`), or
+      any structured data that would help an expert diagnose failures.
+    - **Pareto-efficient search**: Scores are tracked per-task and per-metric
+      individually; any candidate that is the best at *something* survives on
+      the frontier, enabling focused improvements that are preserved rather
+      than averaged away.
     - **Objective / Background**: Natural-language strings that guide the
       reflection LLM (what to optimize for, domain constraints).
 
@@ -141,10 +170,14 @@ _STR_CANDIDATE_KEY = "current_candidate"
 SideInfo: TypeAlias = dict[str, Any]
 """Actionable Side Information (ASI) returned by the evaluator alongside each score.
 
+ASI is the text-optimization analogue of the gradient.  Where gradients tell
+a numerical optimizer which direction to move, ASI tells an LLM proposer
+*why* a candidate failed and *how* to fix it.
+
 Traditional optimizers know *that* a candidate failed but not *why*.  SideInfo
 provides the *why* — error messages, expected vs actual output, profiling
-traces, compiler diagnostics — enabling the reflection LLM to take targeted
-corrective action rather than random mutation.
+traces, compiler diagnostics, rendered images — enabling the reflection LLM
+to take targeted corrective action rather than random mutation.
 
 **More informative SideInfo → better optimization.**
 
@@ -412,6 +445,11 @@ class EngineConfig:
 
     Most users only need to set ``max_metric_calls`` (evaluation budget) and
     optionally ``parallel``/``max_workers`` for concurrent evaluation.
+
+    Set ``capture_stdio=True`` to automatically route any ``print()`` output
+    inside your evaluator into ASI (under ``"stdout"``/``"stderr"`` keys),
+    with no code changes needed.  Useful for quick prototyping or wrapping
+    existing evaluation scripts that already have print statements.
     """
 
     run_dir: str | None = None
@@ -657,8 +695,15 @@ class ReflectionConfig:
     """Controls how the LLM proposes improved candidates each iteration.
 
     The reflection LM sees evaluation feedback (side_info) for a minibatch of
-    examples and proposes a mutated candidate.  ``reflection_lm`` is the model
-    used for this step (defaults to ``openai/gpt-5.1``).
+    examples and proposes an improved candidate.  ``reflection_lm`` is the
+    model used for this step (defaults to ``openai/gpt-5.1``).
+
+    ``reflection_minibatch_size`` controls how many examples are shown per
+    reflection step (default: 1 for single-task, 3 otherwise).  Showing a
+    small minibatch rather than all examples at once produces focused,
+    targeted improvements on that subset.  Over iterations, all examples get
+    attention, and the Pareto frontier preserves specialized gains across
+    iterations rather than averaging them away.
     """
 
     skip_perfect_score: bool = False
@@ -960,39 +1005,48 @@ def optimize_anything(
     background: str | None = None,
     config: GEPAConfig | None = None,
 ) -> GEPAResult:
-    """Optimize any text artifact using LLM-guided evolutionary search.
+    """Optimize any text artifact using LLM-guided search.
 
-    This is the main entry point for GEPA.  You provide a starting candidate,
-    a scoring function, and GEPA handles the evolutionary loop: selecting
-    parents from a Pareto frontier, reflecting on evaluation feedback (ASI)
-    with an LLM, and proposing improved mutations.
+    This is the main entry point for GEPA.  You declare the **what** — your
+    artifact, your evaluator, and any domain knowledge — and
+    ``optimize_anything`` handles the **how**: prompt construction, reflection,
+    candidate selection, and Pareto-efficient search.
 
     **Three optimization modes** (determined by ``dataset`` / ``valset``):
 
     1. **Single-Task Search** (``dataset=None, valset=None``):
-       Solve one hard problem.  Evaluator called without ``example``.
-       *E.g. circle packing, mathematical optimization, rocket trajectories.*
+       Solve one hard problem.  The candidate *is* the solution.
+       Evaluator called without ``example``.
+       *E.g. circle packing, blackbox mathematical optimization.*
 
     2. **Multi-Task Search** (``dataset=<list>, valset=None``):
-       Solve a batch of related problems with cross-transfer.
+       Solve a batch of related problems with cross-task transfer.
+       Insights from solving one help solve the others.
        ``valset`` defaults to ``dataset``.
-       *E.g. CUDA kernel optimization for multiple models.*
+       *E.g. CUDA kernel generation, multi-aspect SVG optimization.*
 
     3. **Generalization** (``dataset=<list>, valset=<list>``):
-       Build a general skill that transfers to unseen examples.
-       *E.g. prompt optimization for AIME math, agent evolution for ARC-AGI.*
+       Build a skill that transfers to unseen problems.
+       *E.g. prompt optimization for AIME math, agent architecture evolution
+       for ARC-AGI, cloud scheduling policy discovery.*
 
     Args:
         seed_candidate: Starting point for optimization.
 
             - ``str`` — single text parameter (evaluator receives ``str``).
             - ``dict[str, str]`` — named parameters (evaluator receives the dict).
-            - ``None`` — the reflection LLM generates the initial candidate
-              from ``objective`` (and optionally ``background`` / ``dataset``).
-              Requires ``objective`` to be provided.
+            - ``None`` — **seedless mode**: the reflection LLM generates the
+              initial candidate from ``objective`` (and optionally ``background``
+              / ``dataset``).  Requires ``objective``.  Useful for creative or
+              exploratory tasks where you know *what good looks like* but not
+              where to begin.
 
         evaluator: Scoring function.  Returns ``(score, side_info)`` or ``score``.
-            See :class:`Evaluator`.  Print diagnostics via ``oa.log()`` for ASI.
+            See :class:`Evaluator`.  Diagnostic output via ``oa.log()`` is
+            automatically captured as Actionable Side Information (ASI).
+            For richer diagnostics, return a ``(score, dict)`` tuple with
+            structured feedback, error messages, or even rendered images
+            (via :class:`~gepa.Image`).
         dataset: Examples for multi-task or generalization modes.
             ``None`` = single-task search mode.
         valset: Held-out validation set for generalization mode.
@@ -1009,19 +1063,19 @@ def optimize_anything(
 
     Examples:
 
-        Single-task search (code evolution)::
+        Single-task search (circle packing)::
 
             import gepa.optimize_anything as oa
 
             def evaluate(candidate: str) -> float:
                 result = run_code(candidate)
-                oa.log(f"Output: {result}")
-                return compute_score(result)
+                oa.log(f"Score: {result.score}, Overlaps: {result.overlaps}")
+                return result.score
 
             result = optimize_anything(
-                seed_candidate="def solve(): return 0",
+                seed_candidate="def pack_circles(): ...",
                 evaluator=evaluate,
-                objective="Evolve code that maximizes the objective.",
+                objective="Maximize the sum of radii for n circles in a unit square.",
                 config=GEPAConfig(engine=EngineConfig(max_metric_calls=500)),
             )
 
@@ -1035,15 +1089,25 @@ def optimize_anything(
                 config=GEPAConfig(engine=EngineConfig(max_metric_calls=300)),
             )
 
-        Generalization (prompt optimization)::
+        Generalization (prompt optimization for math)::
 
             result = optimize_anything(
-                seed_candidate={"prompt": "Solve this math problem:"},
+                seed_candidate={"prompt": "Solve this math problem step by step:"},
                 evaluator=math_evaluator,
                 dataset=train_problems,        # train on these
                 valset=val_problems,           # must generalize to these
-                objective="Generate prompts that solve math word problems.",
+                objective="Generate system prompts that improve math reasoning.",
                 config=GEPAConfig(engine=EngineConfig(max_metric_calls=200)),
+            )
+
+        Seedless mode (no starting artifact)::
+
+            result = optimize_anything(
+                seed_candidate=None,           # LLM writes the first draft
+                evaluator=evaluate_3d_render,
+                dataset=visual_aspects,
+                objective="Optimize a Python program to generate a 3D unicorn.",
+                background="Use build123d for CSG geometry, export to STL, render with pyrender.",
             )
     """
     # Use default config if not provided

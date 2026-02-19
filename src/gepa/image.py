@@ -36,6 +36,11 @@ class Image:
     converted to the OpenAI vision content-part format and passed to the
     reflection LM as inline images.
 
+    This enables a powerful visual feedback loop: your evaluator renders an
+    artifact (SVG, 3D model, chart, etc.), passes the rendered image back as
+    ASI, and a vision-capable proposer can literally *see* what it's improving.
+    Requires a VLM as the ``reflection_lm`` (e.g. ``"vertex_ai/gemini-3-flash-preview"``).
+
     Provide **exactly one** of ``url``, ``path``, or ``base64_data``.
 
     Args:
@@ -47,8 +52,16 @@ class Image:
         media_type: MIME type (e.g. ``"image/png"``).  Inferred from ``path``
             extension when using *path*; **required** when using *base64_data*.
 
-    Example::
+    Examples::
 
+        # Rendered SVG feedback for visual optimization
+        image_b64 = render_svg_to_png(candidate["svg_code"])
+        side_info = {
+            "RenderedSVG": Image(base64_data=image_b64, media_type="image/png"),
+            "Feedback": vlm_feedback,
+        }
+
+        # File-based image feedback
         side_info = {
             "Input": "design a logo",
             "RenderedOutput": Image(path="/tmp/logo_v3.png"),
