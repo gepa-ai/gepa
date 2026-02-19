@@ -53,20 +53,20 @@ Today we are introducing `optimize_anything`, a declarative API that optimizes a
 - [find detailed system prompts to boost GPT's math reasoning accuracy](#4-prompt-optimization),
 - [discover bespoke agent harnesses that nearly triple ARC-AGI accuracy](#5-agent-architecture-discovery),
 - [write custom solvers to match and exceed Optuna in blackbox mathematical optimization](#6-blackbox-optimization),
-- [discover better circle packing than Google's AlphaEvolve](#1-circle-packing),
-- and... [optimize a pelican ... riding a bicycle](#lets-take-it-for-a-spin).
+<!-- - [discover better circle packing than Google's AlphaEvolve](#1-circle-packing), -->
+- and... [model a 3D unicorn](#8-3d-unicorn).
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
-![Initial SVG: a basic pelican sketch on a red-framed bicycle against a white background.](images/claude-opus-initial-pelican.png){ style="width: 100%;" }
+![Initial SVG: a basic 3D unicorn sketch.](images/unicorn_zero_shot.png){ style="width: 100%;" }
 
 <div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Zero-shot attempt from Claude Opus 4.6</em></div>
 
 </div>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
-![Optimized SVG: a polished pelican riding a bicycle with sky, clouds, sun, road, and grass.](images/claude-opus-best-pelican.png){ style="width: 100%;" }
+![Optimized SVG: a detailed 3D unicorn with refined shading and features.](images/unicorn_optimized.png){ style="width: 100%;" }
 
 <div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Optimized by <span class="gradient-code">optimize_anything</span></em></div>
 
