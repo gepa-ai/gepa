@@ -83,6 +83,16 @@ jobs:
           cd docs
           uv run -p ../.venv mkdocs build
 
+      - name: Install Playwright browsers
+        run: |
+          cd docs
+          uv run -p ../.venv playwright install chromium --with-deps
+
+      - name: Generate social preview screenshots
+        run: |
+          cd docs
+          uv run -p ../.venv python scripts/generate_social_screenshots.py
+
       - name: Upload artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3

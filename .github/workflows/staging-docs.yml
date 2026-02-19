@@ -65,6 +65,16 @@ jobs:
           cd docs
           uv run -p ../.venv mkdocs build
 
+      - name: Install Playwright browsers
+        run: |
+          cd docs
+          uv run -p ../.venv playwright install chromium --with-deps
+
+      - name: Generate social preview screenshots
+        run: |
+          cd docs
+          uv run -p ../.venv python scripts/generate_social_screenshots.py
+
       - name: Add noindex directives
         run: |
           # robots.txt — tells crawlers not to index anything
