@@ -15,6 +15,7 @@ equal_contribution:
 slug: automatically-learning-skills-for-coding-agents
 title: "Automatically Learning Skills for Coding Agents"
 description: "Introducing gskill, a fully automated pipeline that uses GEPA and SWE-smith to learn repository-specific skills for coding agents."
+social_image: blog/2026/02/18/automatically-learning-skills-for-coding-agents/bleve_comparison_plot.png
 ---
 
 # Automatically Learning Skills for Coding Agents
