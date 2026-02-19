@@ -15,22 +15,22 @@ except ImportError:
     print("Warning: playwright not installed, skipping social screenshots")
     sys.exit(0)
 
-try:
-    import yaml
-except ImportError:
-    yaml = None  # type: ignore[assignment]
+import re
 
 
 def get_site_url(docs_dir: str = ".") -> str:
     """Read site_url from mkdocs.yml and return it (with trailing slash)."""
     mkdocs_path = Path(docs_dir) / "mkdocs.yml"
-    if yaml and mkdocs_path.exists():
-        with open(mkdocs_path, encoding="utf-8") as f:
-            config = yaml.safe_load(f)
-        site_url = config.get("site_url", "").rstrip("/")
-        if site_url:
-            return site_url + "/"
-    # Fallback: try to derive from environment or use a sensible default
+    if mkdocs_path.exists():
+        text = mkdocs_path.read_text(encoding="utf-8")
+        # Extract site_url without full YAML parsing (mkdocs.yml uses !ENV tags
+        # that yaml.safe_load cannot handle).
+        match = re.search(r"^site_url:\s*(.+)", text, re.MULTILINE)
+        if match:
+            site_url = match.group(1).strip().rstrip("/")
+            if site_url:
+                return site_url + "/"
+    # Fallback
     return "https://gepa-ai.github.io/gepa/"
 
 
@@ -95,8 +95,6 @@ def generate_screenshots(site_dir: str = "site") -> None:
 
 def update_og_tags(site_dir: str = "site", docs_dir: str = ".") -> None:
     """Update OG and Twitter image tags in HTML files to point to generated screenshots."""
-    import re
-
     print("🔗 Updating OG image tags...")
 
     site_url = get_site_url(docs_dir)
