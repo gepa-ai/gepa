@@ -3,7 +3,7 @@
 Discover how organizations and researchers are using GEPA to optimize AI systems across diverse domains. These examples showcase the versatility and impact of reflective prompt evolution.
 
 !!! tip "Living Document"
-    This page is continuously updated with new use cases from the community. Have a GEPA success story? Share it on [Discord](https://discord.gg/A7dABbtmFw) or [Twitter/X](https://x.com/LakshyAAAgrawal)!
+    This page is continuously updated with new use cases from the community. Have a GEPA success story? Share it on [Discord](https://discord.gg/WXFSeVGdbW), [Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w), or [Twitter/X](https://x.com/LakshyAAAgrawal)!
 
 **Quick Navigation:**
 
@@ -980,6 +980,6 @@ Ready to optimize your own AI systems with GEPA?
 
     Connect with other GEPA users and contributors.
 
-    [:material-arrow-right: Discord](https://discord.gg/A7dABbtmFw) [:material-arrow-right: Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
+    [:material-arrow-right: Discord](https://discord.gg/WXFSeVGdbW) [:material-arrow-right: Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
 
 </div>

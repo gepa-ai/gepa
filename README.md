@@ -10,7 +10,7 @@
 
 [![PyPI - Version](https://img.shields.io/pypi/v/gepa)](https://pypi.org/project/gepa/) [![PyPI Downloads](https://static.pepy.tech/badge/gepa)](https://pepy.tech/projects/gepa)
 
-[![GEPA](https://badgen.net/badge/icon/GEPA?icon=slack&label&color=4A154B)](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/WXFSeVGdbW?style=flat)](https://discord.gg/WXFSeVGdbW) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/A7dABbtmFw?style=flat)](https://discord.gg/A7dABbtmFw)
+[![GEPA](https://badgen.net/badge/icon/GEPA?icon=slack&label&color=4A154B)](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w) [![Join our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/WXFSeVGdbW?style=flat)](https://discord.gg/WXFSeVGdbW)
 
 ## Overview
 
@@ -287,7 +287,8 @@ We encourage the community and users to help us develop adapters to allow GEPA t
     - [@LakshyAAAgrawal on X (Twitter)](https://x.com/LakshyAAAgrawal)  
     - [@lateinteraction on X (Twitter)](https://twitter.com/lateinteraction)
   - Questions, Discussions?
-    - [Join our Discord for active discussion](https://discord.gg/A7dABbtmFw)
+    - [Join our Discord for active discussion](https://discord.gg/WXFSeVGdbW)
+    - [Join our Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
     - [Open a GitHub issue](https://github.com/gepa-ai/gepa/issues)
 - **GEPA Integrations:**  
   Want to use GEPA in other frameworks?  

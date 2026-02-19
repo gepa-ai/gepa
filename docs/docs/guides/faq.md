@@ -509,7 +509,7 @@ All values in `"scores"` must follow **higher is better**.  GEPA maintains a Par
 
 ## Still have questions?
 
-- **Discord**: [Join our community](https://discord.gg/A7dABbtmFw)
+- **Discord**: [Join our community](https://discord.gg/WXFSeVGdbW)
 - **Slack**: [GEPA Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
 - **GitHub Issues**: [gepa-ai/gepa](https://github.com/gepa-ai/gepa/issues)
 - **Twitter/X**: Follow [@LakshyAAAgrawal](https://x.com/LakshyAAAgrawal) for updates and to ask questions
