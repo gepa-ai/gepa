@@ -21,30 +21,30 @@ equal_contribution:
   - "Donghyun Lee"
 slug: introducing-optimize-anything
 readtime: 12
-title: "optimize_anything: A Universal API for Text Optimization"
+title: "optimize_anything: A Universal API for Optimizing any Text Parameter"
 description: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more: if you can measure it, you can optimize it."
 meta:
   - property: og:type
     content: article
   - property: og:title
-    content: "optimize_anything: A Universal API for Text Optimization"
+    content: "optimize_anything: A Universal API for Optimizing any Text Parameter"
   - property: og:description
-    content: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more: if you can measure it, you can optimize it."
+    content: "A new API by GEPA, setting state-of-the-art results on optimizing code, prompts, agent architectures, and more: if you can measure it, you can optimize it."
   - property: og:image
     content: /blog/2026/02/18/introducing-optimize-anything/images/header_image.png
   - property: og:image:alt
-    content: "optimize_anything: A Universal API for Text Optimization"
+    content: "optimize_anything: A Universal API for Optimizing any Text Parameter"
   - name: twitter:card
     content: summary_large_image
   - name: twitter:title
-    content: "optimize_anything: A Universal API for Text Optimization"
+    content: "optimize_anything: A Universal API for Optimizing any Text Parameter"
   - name: twitter:description
-    content: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more: if you can measure it, you can optimize it."
+    content: "A new API by GEPA, setting state-of-the-art results on optimizing code, prompts, agent architectures, and more: if you can measure it, you can optimize it."
   - name: twitter:image
     content: /blog/2026/02/18/introducing-optimize-anything/images/header_image.png
 ---
 
-# <span class="gradient-code">optimize_anything</span>: A Universal API for Text Optimization
+# <span class="gradient-code">optimize_anything</span>: A Universal API for Optimizing any Text Parameter
 
 Today we are introducing `optimize_anything`, a declarative API that optimizes any artifact representable as text (e.g., code, prompts, agent architectures, vector graphics, configurations). It extends [GEPA](https://arxiv.org/abs/2507.19457) (Genetic-Pareto, our state-of-the-art LLM prompt optimizer) far beyond prompts. You declare what to optimize and how to measure it; the system handles the search. Testing it across [several domains](#results), we find `optimize_anything` consistently matches or outperforms domain-specific tools, including some purpose-built for each task. With one API, you can:
 
