@@ -266,7 +266,7 @@ Even when optimizing a single objective, evaluating candidates across multiple a
 
 `optimize_anything` beats AlphaEvolve's solution at circle packing, evolves a 10-line agent stub into a 300+ line system that nearly triples its test accuracy on ARC-AGI, discovers novel cloud scheduling algorithms, and matches Optuna (a mature numerical optimizer) by generating solver code from scratch. We test across seven domains spanning search, batch optimization, and generalization. Each section below walks through the setup and links to [full, runnable code](#appendix-case-study-code).
 
-### 1. Outperform Google's AlphaEvolve's solution at Circle Packing {#1-circle-packing}
+### 1. Outperform AlphaEvolve's solution at Circle Packing {#1-circle-packing}
 
 **Mode: Single-Task Search.** Pack n=26 circles to maximize the sum of their radii within a unit square. GEPA optimizes the packing algorithm code, using execution results and geometric diagnostics as ASI.
 
@@ -370,7 +370,7 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
 **Mode: Generalization.** Skills (natural-language instructions and best practices for working with a specific codebase) are text artifacts too. `optimize_anything` can optimize them: the evaluator runs a coding agent on real tasks from the repository and scores whether it resolves them; the optimized skills must generalize to unseen tasks.
 
 <figure markdown="span">
-  ![Scatter plot of Claude Code evaluation on Jinja: Pass Rate (%) vs Average Duration (seconds). Optimized skills push both Haiku 4.5 (93.9%→98.5%, 177s→118s) and Sonnet 4.5 (100%→100%, 254s→198s) toward the ideal bottom-right corner.](claude_code_ksills_jinja.png)
+  ![Scatter plot of Claude Code evaluation on Jinja: Pass Rate (%) vs Average Duration (seconds). Optimized skills push both Haiku 4.5 (93.9%→98.5%, 177s→118s) and Sonnet 4.5 (100%→100%, 254s→198s) toward the ideal bottom-right corner.](claude_code_skills_jinja.png)
   <figcaption>Claude Code on Jinja: optimized skills improve pass rate while reducing duration.</figcaption>
 </figure>
 
@@ -413,12 +413,12 @@ The evaluator runs each candidate as a subprocess, collects the rendered PNGs, a
 
 ![Optimized 3D unicorn](images/unicorn_optimized.png){ style="width: 100%;" }
 
-<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>GEPA-optimized (seedless)</em></div>
+<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>GEPA-optimized (seedless using Claude Opus 4.6)</em></div>
 
 </div>
 </div>
 
-The zero-shot model produces a recognizable but crude unicorn — blocky torso, piston-like legs, a horn on a box head. GEPA iteratively refines the geometry, improving proportions, adding anatomical detail, and adjusting camera framing, all without any human-written seed code to start from.
+The zero-shot model produces a recognizable but crude unicorn — blocky torso, piston-like legs, a horn on a box head. GEPA iteratively refines the geometry, improving proportions, adding anatomical detail, and even adds a swirl around the horn, all without any human-written seed code to start from.
 
 The seedless mode is particularly useful for tasks where the solution space is large and unfamiliar such as creative or exploratory tasks. You bring the evaluation criteria (your *taste*) and the optimizer handles everything else.
 
