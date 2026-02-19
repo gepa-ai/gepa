@@ -1,5 +1,7 @@
 ---
 template: landing.html
+title: "Optimize Anything with LLMs"
+description: "Optimize any text — prompts, code, agent architectures, configurations — using LLM-based reflection and Pareto-efficient evolutionary search. If you can measure it, you can optimize it."
 hide:
   - navigation
   - toc
