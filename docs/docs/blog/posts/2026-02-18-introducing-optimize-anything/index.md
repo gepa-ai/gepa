@@ -23,7 +23,7 @@ slug: introducing-optimize-anything
 readtime: 12
 title: "optimize_anything: A Universal API for Optimizing any Text Parameter"
 description: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more: if you can measure it, you can optimize it."
-social_image: blog/2026/02/18/introducing-optimize-anything/images/header_image.png
+social_image: blog/2026-02-18-introducing-optimize-anything/images/header_image.png
 meta:
   - property: og:type
     content: article
