@@ -51,7 +51,7 @@ Today we are introducing `optimize_anything`, a declarative API that optimizes a
 - [create agent skills achieving near-perfect Claude Code task completion 47% faster](#7-coding-agent-skills),
 - [optimize cloud scheduling policies that cut costs by 40%, beating expert heuristics](#3-systems-research),
 - [find detailed system prompts to boost GPT's math reasoning accuracy](#4-prompt-optimization),
-- [discover bespoke agent harnesses that nearly triple ARC-AGI accuracy](#5-agent-architecture-discovery),
+- [discover bespoke agent harnesses that nearly triple Gemini Flash's ARC-AGI accuracy](#5-agent-architecture-discovery),
 - [write custom solvers to match and exceed Optuna in blackbox mathematical optimization](#6-blackbox-optimization),
 - and... [model a 3D unicorn](#8-3d-unicorn).
 
@@ -346,7 +346,7 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 
 **Key result:** Pure prompt optimization improves gpt-4.1-mini from 46.67% to **60.00%** on AIME 2025, a 13.3 percentage point gain from changing only the system prompt. [Full code →](#appendix-e-aime-prompt-optimization)
 
-### 5. Nearly Triple ARC-AGI Accuracy via Agent Evolution {#5-agent-architecture-discovery}
+### 5. Nearly Triple Gemini-Flash's ARC-AGI Accuracy via Agent Evolution {#5-agent-architecture-discovery}
 
 **Mode: Generalization.** This is the most ambitious application. Rather than optimizing a prompt, we optimize the **entire agent**: its code, sub-agent architecture, control flow, helper functions, and prompts, all treated as a single text artifact. The seed is a 10-line naive agent; GEPA evolves it into a 300+ line system with rule induction, code verification, iterative refinement, and structured fallbacks.
 
