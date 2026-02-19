@@ -252,7 +252,7 @@ A few things to note:
 - The **rendered image** is passed as ASI via `Image(base64_data=...)`, giving the VLM proposer visual feedback on its own output. The VLM evaluator never sees the SVG code, only the rendered image. The proposer sees both the feedback and the source SVG, and proposes targeted improvements.
 
 
-## Why It Works {#the-key-ingredients}
+## How It Works {#the-key-ingredients}
 
 Classical optimization methods reduce all diagnostic context to a single scalar. They know *that* a candidate failed, but not *why*. You can't show a Bayesian optimizer the stack trace that pinpoints the bug. Recent LLM-evolution frameworks changed this by feeding execution results and textual feedback into LLM proposers. However, the "evolutionary" framing these frameworks inherit suggests a blind process — mutate, evaluate, select, repeat. But when an LLM reads a compiler error, diagnoses a logic bug, and proposes a targeted fix, that's not natural selection, it's an engineer iterating on a prototype. `optimize_anything` leans into this with two key ingredients: **diagnostic feedback as a first-class API concept** and **Pareto-efficient search**.
 
