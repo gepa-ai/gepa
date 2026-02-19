@@ -586,6 +586,9 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     .blog-post-header .blog-post-title {
         font-size: 1.6rem;
     }
+    .md-content--post article.md-content__inner {
+        padding-top: 0.25rem;
+    }
 }
 
 /* ============================================
