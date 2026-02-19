@@ -381,8 +381,8 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
 **Mode: Generalization.** Skills (natural-language instructions and best practices for working with a specific codebase) are text artifacts too. `optimize_anything` can optimize them: the evaluator runs a coding agent on real tasks from the repository and scores whether it resolves them; the optimized skills must generalize to unseen tasks.
 
 <figure markdown="span">
-  ![Scatter plot of Claude Code evaluation on Jinja: Pass Rate (%) vs Average Duration (seconds). Optimized skills push both Haiku 4.5 (93.9%→98.5%, 177s→118s) and Sonnet 4.5 (100%→100%, 254s→198s) toward the ideal bottom-right corner.](claude_code_skills_jinja.png)
-  <figcaption>Claude Code on Jinja: optimized skills improve pass rate while reducing duration.</figcaption>
+  ![Bar chart showing Claude Code evaluation on Bleve. Pass rates: Claude Haiku 4.5 at 79.3% (173s), Claude Haiku 4.5 + Skills at 98.3% (142s), Claude Sonnet 4.5 at 94.8% (285s), Claude Sonnet 4.5 + Skills at 100.0% (169s).](images/bleve_comparison_plot.png)
+  <figcaption>Claude Code on Bleve: optimized skills boost Haiku 4.5 pass rate from 79.3% to 100% and Sonnet 4.5 from 94.8% to 100%, while reducing resolve duration by 47%.</figcaption>
 </figure>
 
 The results are striking: GEPA-optimized skills boost resolve rates from 24% to **93%** on one repository and from 55% to **82%** on another, and transfer directly to Claude Code, pushing it to near-perfect pass rates while cutting resolution time by **47%**.
