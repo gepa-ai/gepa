@@ -33,9 +33,9 @@ From the repository root:
 pip install -e .
 ```
 
-Install simulator dependencies:
+Install example dependencies:
 ```bash
-pip install -r examples/adrs/can_be_late/utils/simulator/requirements.txt
+pip install -r examples/adrs/can_be_late/requirements.txt
 ```
 
 For Gemini models, also install:
