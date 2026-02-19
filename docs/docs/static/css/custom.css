@@ -19,6 +19,22 @@
   --md-accent-fg-color--transparent: rgba(144, 224, 239, 0.1);
 }
 
+/* Gradient-styled code text (e.g. "optimize_anything" in blog titles) */
+.gradient-code {
+    background: linear-gradient(135deg, #0077B6, #0096C7, #00B4D8, #48CAE4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-family: var(--md-code-font-family, SFMono-Regular, Consolas, Menlo, monospace);
+}
+
+[data-md-color-scheme="slate"] .gradient-code {
+    background: linear-gradient(135deg, #60A5FA, #818CF8, #A78BFA);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
 /* Slightly increase base body text size from Material default of 0.8rem */
 .md-typeset {
     font-size: 0.875rem;
@@ -483,6 +499,10 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     line-height: 1.3;
     margin-bottom: 0.5rem;
     color: var(--md-accent-fg-color);
+}
+
+[data-md-color-scheme="slate"] .blog-post-header .blog-post-title {
+    color: var(--md-default-fg-color);
 }
 
 .blog-post-byline {

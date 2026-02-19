@@ -44,9 +44,9 @@ meta:
     content: /blog/2026/02/18/introducing-optimize-anything/images/header_image.png
 ---
 
-# `optimize_anything`: A Universal API for Text Optimization
+# <span class="gradient-code">optimize_anything</span>: A Universal API for Text Optimization
 
-Today we are introducing **`optimize_anything`**, a declarative API that optimizes any artifact representable as text (code, prompts, agent architectures, vector graphics, configurations) using just two inputs: a **starting artifact** and an **evaluator**. You declare what to optimize and how to measure it; the system handles the search. Where prior LLM-evolution frameworks expose concepts like island topologies[^islands], prompt samplers[^samplers], and cascade evaluation stages[^cascade], `optimize_anything` strips the interface down to its essence. **We've tested it across [several domains](#results) from code optimization to agent architecture discovery and it consistently matches or outperforms domain-specific tools, including some purpose-built for each task.** As models and search techniques advance, the search improves without changing your code. If you can measure it, you can optimize it.
+Today we are introducing `optimize_anything`, a declarative API that optimizes any artifact representable as text (code, prompts, agent architectures, vector graphics, configurations) using just two inputs: a **starting artifact** and an **evaluator**. You declare what to optimize and how to measure it; the system handles the search. Where prior LLM-evolution frameworks expose concepts like island topologies[^islands], prompt samplers[^samplers], and cascade evaluation stages[^cascade], `optimize_anything` strips the interface down to its essence. **We've tested it across [several domains](#results) from code optimization to agent architecture discovery and it consistently matches or outperforms domain-specific tools, including some purpose-built for each task.** As models and search techniques advance, the search improves without changing your code. If you can measure it, you can optimize it.
 
 <!-- more -->
 
@@ -90,7 +90,7 @@ result = oa.optimize_anything(
     evaluator=evaluate,
 )
 
-# …or just describe what you need.
+# … or just describe what you need.
 result = oa.optimize_anything(
     evaluator=evaluate,
     objective="Generate a Python function `reverse()` that reverses a string.",
