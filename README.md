@@ -361,8 +361,8 @@ Finally:
 - **Experiment reproduction artifact:** [GEPA Artifact Repository](https://github.com/gepa-ai/gepa-artifact)
 - **Talk Slides**: [GEPA Talk Slides](https://docs.google.com/presentation/d/1vIauqn55WfdgJjwU0IDjvaqpv1QHhvhPaLAKdrCFAEg/edit?usp=sharing)
 - **Blog Posts:**
-  - [optimize_anything: A Universal API for Optimizing any Text Parameter](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/)
-  - [Automatically Learning Skills for Coding Agents](https://gepa-ai.github.io/gepa/blog/automatically-learning-skills-for-coding-agents/)
+  - [optimize_anything: A Universal API for Optimizing any Text Parameter](https://gepa-ai.github.io/gepa/blog/2026/02/18/introducing-optimize-anything/)
+  - [Automatically Learning Skills for Coding Agents](https://gepa-ai.github.io/gepa/blog/2026/02/18/automatically-learning-skills-for-coding-agents/)
 - **Tutorials & Examples:**
   - [dspy.GEPA Tutorials, with executable notebooks](https://dspy.ai/tutorials/gepa_ai_program/)
     Step-by-step notebooks showing how to use GEPA for practical optimization tasks via DSPy, including math, structured data extraction for enterprise tasks and privacy conscious delegation task.
