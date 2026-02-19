@@ -41,7 +41,7 @@ Today we are introducing **`optimize_anything`**, a declarative API that optimiz
 While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode, optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** (single-task search, multi-task search, and generalization) under one declarative API, enabling optimization tasks that prior frameworks cannot directly express: [discovering agent architectures from scratch](#5-agent-architecture-discovery), [learning prompts that generalize to unseen examples](#4-prompt-optimization), and [optimizing coding agent skills that transfer across models](#7-coding-agent-skills).
 
 <figure markdown="span">
-  ![optimize_anything diagram showing the core loop: a string x is passed to an evaluator f(x) which returns a score plus diagnostic feedback, which is then consumed by an LLM proposer to produce an improved string. Example instantiations shown below: Code Optimization, Numeric Optimization, Prompt/Agent Harness, Policy Optimization.](header_image.png)
+  ![optimize_anything diagram showing the core loop: a string x is passed to an evaluator f(x) which returns a score plus diagnostic feedback, which is then consumed by an LLM proposer to produce an improved string. Example instantiations shown below: Code Optimization, Numeric Optimization, Prompt/Agent Harness, Policy Optimization.](images/header_image.png)
   <figcaption>The optimize_anything loop: evaluate a text artifact, capture diagnostic feedback (ASI), and use an LLM to propose targeted improvements.</figcaption>
 </figure>
 
@@ -104,7 +104,7 @@ ASI can be open-ended text, structured data, multi-objectives (through `scores`)
 ### One Interface, Three Optimization Modes
 
 <figure markdown="span">
-  ![Decision tree showing three optimization modes. "What is the Goal?" branches into "I want answers" (Search Mode) and "I want a system" (Generalization Mode). Search Mode further splits into "One Problem (Single-Task Search)" for tasks like blackbox optimization, and "Many Related Problems (Multi-Task Search)" for tasks like writing CUDA kernels for multiple algorithms.](optimization_problem_types.svg)
+  ![Decision tree showing three optimization modes. "What is the Goal?" branches into "I want answers" (Search Mode) and "I want a system" (Generalization Mode). Search Mode further splits into "One Problem (Single-Task Search)" for tasks like blackbox optimization, and "Many Related Problems (Multi-Task Search)" for tasks like writing CUDA kernels for multiple algorithms.](images/optimization_problem_types.svg)
   <figcaption>The three optimization modes supported in <code>optimize_anything</code>: single-task search, multi-task search, and generalization.</figcaption>
 </figure>
 
@@ -154,14 +154,14 @@ Let's use `optimize_anything` to optimize SVG source code depicting "a pelican r
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
-![Initial SVG: a basic pelican sketch on a red-framed bicycle against a white background.](claude-opus-initial-pelican.png){ style="width: 100%;" }
+![Initial SVG: a basic pelican sketch on a red-framed bicycle against a white background.](images/claude-opus-initial-pelican.png){ style="width: 100%;" }
 
 <div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Zero-shot attempt from Claude Opus 4.6</em></div>
 
 </div>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
-![Optimized SVG: a polished pelican riding a bicycle with sky, clouds, sun, road, and grass.](claude-opus-best-pelican.png){ style="width: 100%;" }
+![Optimized SVG: a polished pelican riding a bicycle with sky, clouds, sun, road, and grass.](images/claude-opus-best-pelican.png){ style="width: 100%;" }
 
 <div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Best candidate (score: 0.817)</em></div>
 
@@ -259,12 +259,12 @@ Even when optimizing a single objective, evaluating candidates across multiple a
 **Mode: Single-Task Search.** Pack n=26 circles to maximize the sum of their radii within a unit square. GEPA optimizes the packing algorithm code, using execution results and geometric diagnostics as ASI.
 
 <figure markdown="span">
-  ![Left: line chart comparing GEPA, ShinkaEvolve, OpenEvolve, and AlphaEvolve on circle packing (n=26). GEPA reaches the highest score (~2.63598+) with fewer metric calls. Right: magnified view showing GEPA slightly above AlphaEvolve's best.](circle_packing_comparison.png)
+  ![Left: line chart comparing GEPA, ShinkaEvolve, OpenEvolve, and AlphaEvolve on circle packing (n=26). GEPA reaches the highest score (~2.63598+) with fewer metric calls. Right: magnified view showing GEPA slightly above AlphaEvolve's best.](images/circle_packing_comparison.png)
   <figcaption>GEPA outperforms AlphaEvolve, ShinkaEvolve, and OpenEvolve's solutions on circle packing (n=26), reaching a higher score with fewer evaluations.</figcaption>
 </figure>
 
 <figure markdown="span">
-  ![Three snapshots of circle packing optimization: Metric Call 0 (score=0.98, sparse circles), Metric Call 50 (score=2.61, tightly packed), Metric Call 89 (score=2.64, near-optimal packing).](circle_packing_trajectory.png)
+  ![Three snapshots of circle packing optimization: Metric Call 0 (score=0.98, sparse circles), Metric Call 50 (score=2.61, tightly packed), Metric Call 89 (score=2.64, near-optimal packing).](images/circle_packing_trajectory.png)
   <figcaption>Visual progression of the circle packing optimization: from an initial naive arrangement to a near-optimal packing.</figcaption>
 </figure>
 
@@ -275,14 +275,14 @@ Even when optimizing a single objective, evaluating candidates across multiple a
 **Mode: Multi-Task Search.** We generate fast CUDA kernels for multiple reference PyTorch operations from [KernelBench](https://github.com/ScalingIntelligence/KernelBench), evaluated on a V100 32 GB GPU. Under the hood, GEPA evolves the prompt that drives kernel generation, so improvements discovered for one problem transfer to others automatically.
 
 <figure markdown="span">
-  ![Line chart showing KernelBench performance vs budget. Fast_p(0) (any correct kernel) reaches 100%. Fast_p(1.0) (matching baseline speed) reaches 87%. Fast_p(1.1) (10% faster) reaches 48%. Fast_p(1.2) (20% faster) reaches 25%.](kernelbench_results.png)
+  ![Line chart showing KernelBench performance vs budget. Fast_p(0) (any correct kernel) reaches 100%. Fast_p(1.0) (matching baseline speed) reaches 87%. Fast_p(1.1) (10% faster) reaches 48%. Fast_p(1.2) (20% faster) reaches 25%.](images/kernelbench_results.png)
   <figcaption>KernelBench results with GEPA (gpt-5 as proposer). 87% of generated kernels match or beat baseline performance; 25% are 20%+ faster. We use 31 of the 35 hand-curated problems from the KernelBench authors.<a href="#fn-kernelbench" class="fn-ref" id="fn-ref-kernelbench"><sup>1</sup></a></figcaption>
 </figure>
 
 To gauge the effectiveness of cross-task learning, we take the 10 problems where multi-task mode performed best and re-optimize each from scratch in single-task mode to see whether a dedicated single-task run can beat the multi-task result. The graph below shows that a multi-task mode converges faster and solves more problems across all speedup thresholds.
 
 <figure markdown="span">
-  ![Line charts comparing Single vs Batch mode on 10 KernelBench problems across F(1.0), F(1.1), and F(1.2) metrics. Batch mode (solid lines) consistently outperforms Single mode (dashed lines), reaching higher fractions of solved problems with fewer metric calls.](kernelbench_single_vs_batch.png)
+  ![Line charts comparing Single vs Batch mode on 10 KernelBench problems across F(1.0), F(1.1), and F(1.2) metrics. Batch mode (solid lines) consistently outperforms Single mode (dashed lines), reaching higher fractions of solved problems with fewer metric calls.](images/kernelbench_single_vs_batch.png)
   <figcaption>Single-task vs multi-task mode on 10 KernelBench problems. </figcaption>
 </figure>
 
@@ -296,14 +296,14 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 <div style="display: flex; align-items: flex-start; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
-![Optimization trajectory for CloudCast showing cost savings (%) vs metric calls, achieving 40.2% test savings.](cloudcast_trajectory.png){ style="width: 100%;" }
+![Optimization trajectory for CloudCast showing cost savings (%) vs metric calls, achieving 40.2% test savings.](images/cloudcast_trajectory.png){ style="width: 100%;" }
 
 <div style="margin: 0.5rem 0 0;"><em><strong>CloudCast (40.2% cost savings):</strong> Optimizes from baseline Dijkstra routing to a provider-aware Steiner tree algorithm with Pareto-frontier candidate selection.</em></div>
 
 </div>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
-![Optimization trajectory for Can't Be Late showing cost savings (%) vs metric calls, achieving 7.8% test savings.](cant_be_late_trajectory.png){ style="width: 100%;" }
+![Optimization trajectory for Can't Be Late showing cost savings (%) vs metric calls, achieving 7.8% test savings.](images/cant_be_late_trajectory.png){ style="width: 100%;" }
 
 <div style="margin: 0.5rem 0 0;"><em><strong>Can't Be Late (7.8% cost savings):</strong> Optimizes from a simple deadline-check heuristic to an adaptive scheduling strategy that tracks spot availability patterns and computes break-even switching costs.</em></div>
 
@@ -317,7 +317,7 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 **Mode: Generalization.** We optimize a system prompt for gpt-4.1-mini by *training* on [AIME](https://en.wikipedia.org/wiki/American_Invitational_Mathematics_Examination) 2022–2024 math competition problems and *testing* on AIME 2025. GEPA sets the [state-of-the-art for prompt optimization](https://arxiv.org/abs/2507.19457).
 
 <figure markdown="span">
-  ![Optimization trajectory for AIME 2025 with gpt-4.1-mini. Validation score improves from 46.67% to 57.78% over 350 metric calls. Best test score reaches 60.00%, up from a 46.67% baseline.](aime_results.png)
+  ![Optimization trajectory for AIME 2025 with gpt-4.1-mini. Validation score improves from 46.67% to 57.78% over 350 metric calls. Best test score reaches 60.00%, up from a 46.67% baseline.](images/aime_results.png)
   <figcaption>AIME 2025 prompt optimization: gpt-4.1-mini accuracy improves from 46.67% to 60.00% through prompt refinement alone.</figcaption>
 </figure>
 
@@ -328,12 +328,12 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 **Mode: Generalization.** This is the most ambitious application. Rather than optimizing a prompt, we optimize the **entire agent**: its code, sub-agent architecture, control flow, helper functions, and prompts, all treated as a single text artifact. The seed is a 10-line naive agent; GEPA evolves it into a 300+ line system with rule induction, code verification, iterative refinement, and structured fallbacks.
 
 <figure markdown="span">
-  ![Optimization trajectory for ARC-AGI with Gemini 3 Flash. Validation accuracy improves from 56.5% to 93.5%. Base test score is 32.5%, best test score reaches 89.5%.](arc_agi_trajectory.png)
+  ![Optimization trajectory for ARC-AGI with Gemini 3 Flash. Validation accuracy improves from 56.5% to 93.5%. Base test score is 32.5%, best test score reaches 89.5%.](images/arc_agi_trajectory.png)
   <figcaption>ARC-AGI agent evolution: from a naive agent (32.5% test) to a sophisticated 300+ line system (89.5% test) with Gemini 3 Flash.</figcaption>
 </figure>
 
 <figure markdown="span">
-  ![The evolved ARC-AGI agent architecture: a multi-stage pipeline with code generation, iterative validation, and two-attempt prediction (code + direct LLM).](arc_agi_architecture.svg)
+  ![The evolved ARC-AGI agent architecture: a multi-stage pipeline with code generation, iterative validation, and two-attempt prediction (code + direct LLM).](images/arc_agi_architecture.svg)
   <figcaption>The optimized ARC-AGI agent architecture: code generation, iterative validation, and two-attempt prediction (code + direct LLM)</figcaption>
 </figure>
 
@@ -343,7 +343,7 @@ To gauge the effectiveness of cross-task learning, we take the 10 problems where
 **Mode: Single-Task Search.** Given a blackbox objective function, `optimize_anything` discovers an optimization algorithm tailored to it and matches [Optuna](https://optuna.org/), the industry-standard blackbox optimizer, across the 56-problem [EvalSet](https://github.com/sigopt/evalset) benchmark.
 
 <figure markdown="span" style="margin: 0 auto;">
-  ![Bar chart showing GEPA vs Optuna on 56 EvalSet problems with 1% tolerance and 8000 trials. GEPA wins on 7 problems, Optuna wins on 9, and they tie on 40.](optuna_combined2.png)
+  ![Bar chart showing GEPA vs Optuna on 56 EvalSet problems with 1% tolerance and 8000 trials. GEPA wins on 7 problems, Optuna wins on 9, and they tie on 40.](images/optuna_combined2.png)
   <figcaption>GEPA's optimize_anything matches Optuna, the industry-standard blackbox optimizer, on the EvalSet benchmark. (a) Across all 56 EvalSet problems (budget of 8,000 evaluations each), GEPA ties Optuna on 40, wins 7, and loses 9. (b) On 10 selected problems where Optuna struggles (budget of 2,000 evaluations each), GEPA finds better solutions on 7 out of 10.</figcaption>
 </figure>
 
@@ -387,14 +387,14 @@ The evaluator runs each candidate as a subprocess, collects the rendered PNGs, a
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
-![Zero-shot 3D unicorn](unicorn_zero_shot.png){ style="width: 100%;" }
+![Zero-shot 3D unicorn](images/unicorn_zero_shot.png){ style="width: 100%;" }
 
 <div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Zero-shot from Claude Opus 4.6</em></div>
 
 </div>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
-![Optimized 3D unicorn](unicorn_optimized.png){ style="width: 100%;" }
+![Optimized 3D unicorn](images/unicorn_optimized.png){ style="width: 100%;" }
 
 <div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>GEPA-optimized (seedless)</em></div>
 
