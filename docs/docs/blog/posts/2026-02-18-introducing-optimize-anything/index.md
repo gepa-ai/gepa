@@ -401,7 +401,7 @@ result = optimize_anything(
 
 The evaluator runs each candidate as a subprocess, collects the rendered PNGs, and asks a VLM to score them — passing the images back as ASI so the proposer can *see* what its code produces. Here's Claude Opus 4.6's zero-shot attempt versus the GEPA-optimized result:
 
-<div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
+<div style="display: flex; align-items: flex-start; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
 ![Zero-shot 3D unicorn](images/unicorn_zero_shot.png){ style="width: 100%;" }
