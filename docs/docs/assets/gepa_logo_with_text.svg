@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="6026px"
+     height="1800px"
+     viewBox="-0.5 -0.5 6026 1800"
+     overflow="visible">
+
+  <!-- ===== TRIANGLES (unchanged) ===== -->
+
+  <path d="M 393.31 553.31 L 393.31 253.31 Q 393.31 153.31 476.51 208.78
+           L 910.1 497.84 Q 993.31 553.31 910.1 608.78
+           L 476.51 897.84 Q 393.31 953.31 393.31 853.31 Z"
+        fill="#82b366" stroke="#82b366" stroke-width="30"
+        transform="rotate(75,693.31,553.31)" />
+
+  <path d="M 823.31 793.31 L 823.31 493.31 Q 823.31 393.31 906.51 448.78
+           L 1340.1 737.84 Q 1423.31 793.31 1340.1 848.78
+           L 906.51 1137.84 Q 823.31 1193.31 823.31 1093.31 Z"
+        fill="#82b366" stroke="#82b366" stroke-width="40"
+        transform="rotate(165,1123.31,793.31)" />
+
+  <path d="M 583.31 1233.31 L 583.31 933.31 Q 583.31 833.31 666.51 888.78
+           L 1100.1 1177.84 Q 1183.31 1233.31 1100.1 1288.78
+           L 666.51 1577.84 Q 583.31 1633.31 583.31 1533.31 Z"
+        fill="#6c8ebf" stroke="#6c8ebf" stroke-width="30"
+        transform="rotate(-105,883.31,1233.31)" />
+
+  <path d="M 163.31 983.31 L 163.31 683.31 Q 163.31 583.31 246.51 638.78
+           L 680.1 927.84 Q 763.31 983.31 680.1 1038.78
+           L 246.51 1327.84 Q 163.31 1383.31 163.31 1283.31 Z"
+        fill="#6c8ebf" stroke="#6c8ebf" stroke-width="30"
+        transform="rotate(-15,463.31,983.31)" />
+
+  <!-- ===== TEXT (same style; moved right for more gap; not clipped) ===== -->
+
+  <text x="3950"
+        y="1080"
+        font-family="Inter, Helvetica, Arial, sans-serif"
+        font-size="1500"
+        font-weight="600"
+        fill="#2e4464"
+        text-anchor="middle"
+        dominant-baseline="middle">
+    GEPA
+  </text>
+
+</svg>

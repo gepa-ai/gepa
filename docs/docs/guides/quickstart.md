@@ -58,7 +58,45 @@ print("Best prompt:", result.best_candidate['system_prompt'])
 print("Best score:", result.best_score)
 ```
 
-### Option 2: Using DSPy (Recommended)
+### Option 2: Using optimize_anything
+
+The `optimize_anything` API can optimize any text artifact — code, prompts, agent architectures, configurations, SVG graphics — not just prompts. You provide an evaluator that scores candidates and returns diagnostic feedback (Actionable Side Information), and the system handles the search.
+
+```python
+import gepa.optimize_anything as oa
+from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig
+
+def evaluate(candidate: str) -> float:
+    """Score a candidate and log diagnostics as ASI."""
+    result = run_my_system(candidate)
+    oa.log(f"Output: {result.output}")
+    oa.log(f"Error: {result.error}")
+    return result.score
+
+result = optimize_anything(
+    seed_candidate="<your initial artifact>",
+    evaluator=evaluate,
+    objective="Describe what you want to optimize for.",
+    config=GEPAConfig(engine=EngineConfig(max_metric_calls=100)),
+)
+
+print("Best candidate:", result.best_candidate)
+```
+
+For richer feedback, return a `(score, side_info_dict)` tuple from your evaluator:
+
+```python
+def evaluate(candidate: str) -> tuple[float, dict]:
+    result = run_my_system(candidate)
+    return result.score, {
+        "Error": result.stderr,
+        "Output": result.stdout,
+    }
+```
+
+See the [optimize_anything blog post](../blog/posts/2026-02-18-introducing-optimize-anything/index.md) for examples across seven domains.
+
+### Option 3: Using DSPy (Recommended for prompt optimization)
 
 For more complex programs, use GEPA through DSPy. GEPA works best with **feedback metrics** that provide textual explanations, not just scores:
 

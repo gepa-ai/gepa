@@ -6,12 +6,10 @@ hide:
   - title
 ---
 
-<link rel="stylesheet" href="assets/index-styles.css">
-
 <div class="hero-section">
-  <div style="text-align: center; margin-bottom: 1rem;">
-    <img src="assets/gepa_logo_with_text_gradient.svg" alt="GEPA Logo" class="hero-logo hero-logo--light" style="max-width: 400px; width: 100%;">
-    <img src="static/img/gepa_logo_with_text_white.svg" alt="GEPA Logo" class="hero-logo hero-logo--dark" style="max-width: 400px; width: 100%;">
+  <div style="text-align: center; margin-bottom: 1rem; padding-top: 1.5rem; margin-right: 2rem;">
+    <img src="assets/gepa_logo_with_text.svg" alt="GEPA Logo" class="hero-logo hero-logo--light" style="max-width: 440px; width: 100%;">
+    <img src="static/img/gepa_logo_with_text_white.svg" alt="GEPA Logo" class="hero-logo hero-logo--dark" style="max-width: 440px; width: 100%;">
   </div>
   <p class="hero-subtitle">Automatically optimize prompts for any AI system</p>
   <p class="hero-stats-line">
@@ -35,7 +33,7 @@ hide:
     </a>
   </div>
   <div class="hero-badges">
-    <a href="https://pypistats.org/packages/gepa" target="_blank"><img src="https://img.shields.io/pypi/dm/gepa?style=for-the-badge&logo=python&logoColor=white&label=Downloads/month&labelColor=2563EB&color=38BDF8" alt="Downloads" style="height: 28px;" loading="lazy"></a>
+    <a href="https://pypistats.org/packages/gepa" target="_blank"><img src="https://img.shields.io/pypi/dm/gepa?style=for-the-badge&logo=python&logoColor=white&label=Downloads/month&labelColor=212C4D&color=90E0EF" alt="Downloads" style="height: 28px;" loading="lazy"></a>
   </div>
 </div>
 
@@ -400,16 +398,16 @@ pip install gepa
     <span class="stat-label">Cost Reduction</span>
     <span class="stat-desc">Open-source models beat Claude Opus 4.1 at Databricks</span>
   </a>
-  <a href="https://arxiv.org/abs/2507.19457" target="_blank" class="stat-card">
-    <span class="stat-number">35x</span>
-    <span class="stat-label">More Efficient</span>
-    <span class="stat-desc">vs. Reinforcement Learning methods</span>
+  <a href="blog/introducing-optimize-anything/#6-agent-architecture-discovery-arc-agi" class="stat-card">
+    <span class="stat-number">32→89</span>
+    <span class="stat-label">Gains on ARC-AGI</span>
+    <span class="stat-desc">Agent architecture evolved from 10 lines to 300+</span>
   </a>
-  <div class="stat-card">
-    <span class="stat-number">+10%</span>
-    <span class="stat-label">On AIME 2025</span>
-    <span class="stat-desc">46.6% &rarr; 56.6% with GPT-4.1 Mini</span>
-  </div>
+  <a href="blog/introducing-optimize-anything/#4-ai-driven-systems-research-cloudcast-cant-be-late" class="stat-card">
+    <span class="stat-number">40.2%</span>
+    <span class="stat-label">Cost Savings</span>
+    <span class="stat-desc">Cloud scheduling policy discovered by GEPA</span>
+  </a>
   <a href="guides/use-cases/" class="stat-card">
     <span class="stat-number">50+</span>
     <span class="stat-label">Production Use Cases</span>
@@ -419,10 +417,12 @@ pip install gepa
 
 ## :material-cog: How It Works
 
+Traditional optimizers (RL, evolutionary strategies) collapse rich execution traces into a single scalar reward — they know *that* a candidate failed, but not *why*. GEPA takes a different approach: evaluators return **Actionable Side Information (ASI)** — error messages, profiling data, reasoning logs — and an LLM reads this feedback to diagnose failures and propose targeted fixes. Each mutation inherits accumulated lessons from all ancestors in the search tree. GEPA also supports <em>system-aware merge</em> — combining strengths of two pareto-optimal candidates excelling on different tasks.
+
 <div class="how-it-works-flow">
   <div class="flow-step">
     <div class="flow-step-num">1</div>
-    <div class="flow-step-icon" style="color: #2563EB;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg></div>
+    <div class="flow-step-icon" style="color: #212C4D;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg></div>
     <div class="flow-step-label">Select from<br>Pareto Front</div>
     <div class="flow-step-desc">Pick candidate excelling on <em>some</em> examples</div>
   </div>
@@ -461,10 +461,10 @@ pip install gepa
 </div>
 
 <div class="how-it-works-insight">
-  Uses <strong>natural language reasoning</strong> instead of gradients to diagnose failures and improve prompts. Each mutation inherits lessons from all ancestors.<br>Based on research from UC Berkeley, Stanford, MIT & Databricks.<br><a href="https://arxiv.org/abs/2507.19457" target="_blank">Read the paper &rarr;</a>
+  <span class="insight-links">Based on research from UC Berkeley, Stanford, MIT & Databricks. <a href="guides/">Learn how it works &rarr;</a> | <a href="https://arxiv.org/abs/2507.19457" target="_blank">Read the paper &rarr;</a></span>
 </div>
 
-## :material-application: When to Use GEPA
+## :material-application: GEPA Case Studies
 
 <div class="use-cases-grid">
   <a href="guides/use-cases/#enterprise-production" class="use-case-card">
@@ -509,17 +509,49 @@ pip install gepa
   <a href="guides/use-cases/" class="cta-secondary" style="font-size: 0.95rem;">View all 50+ use cases &rarr;</a>
 </div>
 
-## :material-compare: Why Choose GEPA?
+## :material-target: GEPA Shines When
 
-| Feature | GEPA | Reinforcement Learning | Manual Prompting |
-|---------|------|----------------------|------------------|
-| **Cost** | :material-check-circle:{ .check } Low | :material-close-circle:{ .cross } Very High | :material-check-circle:{ .check } Low |
-| **Sample Efficiency** | :material-check-circle:{ .check } High (150 calls) | :material-close-circle:{ .cross } Low (10K+ calls) | :material-minus-circle:{ .neutral } N/A |
-| **Performance** | :material-check-circle:{ .check } SOTA | :material-check-circle:{ .check } SOTA | :material-close-circle:{ .cross } Suboptimal |
-| **Interpretability** | :material-check-circle:{ .check } Natural Language | :material-close-circle:{ .cross } Black Box | :material-check-circle:{ .check } Clear |
-| **Setup Time** | :material-check-circle:{ .check } Minutes | :material-close-circle:{ .cross } Days/Weeks | :material-check-circle:{ .check } Minutes |
-| **Framework Support** | :material-check-circle:{ .check } Any System | :material-minus-circle:{ .neutral } Framework Specific | :material-check-circle:{ .check } Any System |
-| **Multi-Objective** | :material-check-circle:{ .check } Native | :material-minus-circle:{ .neutral } Complex | :material-close-circle:{ .cross } Manual |
+<div class="use-cases-grid">
+  <div class="use-case-card">
+    <div class="use-case-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg></div>
+    <div class="use-case-title">Rollouts Are Expensive</div>
+    <ul class="use-case-list">
+      <li>Scientific simulations, slow compilation</li>
+      <li>Complex agents with long tool calls</li>
+      <li>100&ndash;500 evals vs. 10K+ for RL</li>
+    </ul>
+  </div>
+  <div class="use-case-card">
+    <div class="use-case-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 10H6v-2h8v2zm4-4H6v-2h12v2z"/></svg></div>
+    <div class="use-case-title">Data Is Scarce</div>
+    <ul class="use-case-list">
+      <li>New hardware with zero training data</li>
+      <li>Works with as few as 3 examples</li>
+      <li>Rapid prototyping on novel domains</li>
+    </ul>
+  </div>
+  <div class="use-case-card">
+    <div class="use-case-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg></div>
+    <div class="use-case-title">API-Only Models</div>
+    <ul class="use-case-list">
+      <li>No weights access needed</li>
+      <li>Optimize GPT-5, Claude, Gemini directly</li>
+      <li>No custom infra or fine-tuning pipeline</li>
+    </ul>
+  </div>
+  <div class="use-case-card">
+    <div class="use-case-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></div>
+    <div class="use-case-title">You Need Interpretability</div>
+    <ul class="use-case-list">
+      <li>Human-readable optimization traces</li>
+      <li>See <em>why</em> each prompt changed</li>
+      <li>Debug complex agent behaviors</li>
+    </ul>
+  </div>
+</div>
+
+!!! note "GEPA complements RL and fine-tuning"
+    These approaches are not mutually exclusive. Use GEPA for rapid initial optimization (minutes to hours, API-only access), then apply RL or fine-tuning for additional gains as demonstrated in [BetterTogether](https://arxiv.org/abs/2407.10930) / [mmGRPO](https://arxiv.org/abs/2508.04660) recipe. For scenarios with abundant data and 100,000+ cheap rollouts, gradient-based methods remain effective — GEPA works best when rollouts are expensive, data is scarce, or you need interpretable optimization traces.
 
 ## :material-account-group: Community & Resources
 
@@ -539,7 +571,7 @@ pip install gepa
     <div class="community-title">API Reference</div>
     <div class="community-desc">Full documentation</div>
   </a>
-  <a href="https://discord.gg/A7dABbtmFw" target="_blank" class="community-card">
+  <a href="https://discord.gg/WXFSeVGdbW" target="_blank" class="community-card">
     <div class="community-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg></div>
     <div class="community-title">Discord</div>
     <div class="community-desc">Join 1,000+ developers</div>

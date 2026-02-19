@@ -14,6 +14,12 @@ Learn how to use GEPA to evolve entire DSPy programs, including custom signature
 
 - **[ARC AGI Example](arc_agi.ipynb)** - Apply GEPA to the ARC (Abstraction and Reasoning Corpus) challenge, demonstrating how to optimize programs for complex reasoning tasks.
 
+### 3D Unicorn Optimization (Seedless)
+
+Use GEPA's `seed_candidate=None` mode to evolve a complete Python program (build123d + pyrender) that generates a 3D unicorn — starting from no code at all. This tutorial demonstrates how to optimize when you know *what good looks like* (evaluation aspects) but don't know *how to get started* (no seed). GEPA bootstraps the first candidate from a natural-language objective, then iteratively refines it using VLM feedback on rendered multi-view images.
+
+- **[3D Unicorn Optimization](3d_unicorn_optimization.ipynb)** - From no code to a 600+ line 3D modeling program through seedless optimization with visual feedback.
+
 ## External Tutorials
 
 For more tutorials, especially those focused on the DSPy integration, see:
