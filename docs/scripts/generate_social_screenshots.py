@@ -15,6 +15,24 @@ except ImportError:
     print("Warning: playwright not installed, skipping social screenshots")
     sys.exit(0)
 
+try:
+    import yaml
+except ImportError:
+    yaml = None  # type: ignore[assignment]
+
+
+def get_site_url(docs_dir: str = ".") -> str:
+    """Read site_url from mkdocs.yml and return it (with trailing slash)."""
+    mkdocs_path = Path(docs_dir) / "mkdocs.yml"
+    if yaml and mkdocs_path.exists():
+        with open(mkdocs_path, encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+        site_url = config.get("site_url", "").rstrip("/")
+        if site_url:
+            return site_url + "/"
+    # Fallback: try to derive from environment or use a sensible default
+    return "https://gepa-ai.github.io/gepa/"
+
 
 def get_pages_to_screenshot() -> list[tuple[str, str]]:
     """Return list of (html_file, output_path) tuples for key pages.
@@ -75,26 +93,29 @@ def generate_screenshots(site_dir: str = "site") -> None:
         sys.exit(1)
 
 
-def update_og_tags(site_dir: str = "site") -> None:
+def update_og_tags(site_dir: str = "site", docs_dir: str = ".") -> None:
     """Update OG and Twitter image tags in HTML files to point to generated screenshots."""
     import re
 
     print("🔗 Updating OG image tags...")
 
+    site_url = get_site_url(docs_dir)
+
     # Map of HTML file to OG image path (relative to site root)
     og_updates = {
-        "index.html": "/assets/social/home.png",
-        "guides/use-cases/index.html": "/assets/social/showcase.png",
-        "about/index.html": "/assets/social/about.png",
-        "blog/index.html": "/assets/social/blog.png",
-        "guides/index.html": "/assets/social/guides.png",
-        "api/index.html": "/assets/social/api.png",
-        "tutorials/index.html": "/assets/social/tutorials.png",
+        "index.html": "assets/social/home.png",
+        "guides/use-cases/index.html": "assets/social/showcase.png",
+        "about/index.html": "assets/social/about.png",
+        "blog/index.html": "assets/social/blog.png",
+        "guides/index.html": "assets/social/guides.png",
+        "api/index.html": "assets/social/api.png",
+        "tutorials/index.html": "assets/social/tutorials.png",
     }
 
-    for html_file, og_image_path in og_updates.items():
+    for html_file, og_image_rel in og_updates.items():
         full_path = Path(site_dir) / html_file
-        screenshot_path = Path(site_dir) / og_image_path.lstrip("/")
+        og_image_url = site_url + og_image_rel
+        screenshot_path = Path(site_dir) / og_image_rel
 
         if not full_path.exists():
             continue
@@ -111,24 +132,24 @@ def update_og_tags(site_dir: str = "site") -> None:
             if 'property="og:image"' in content:
                 content = re.sub(
                     r'<meta property="og:image" content="[^"]*"',
-                    f'<meta property="og:image" content="{og_image_path}"',
+                    f'<meta property="og:image" content="{og_image_url}"',
                     content,
                 )
             else:
-                og_tag = f'\n    <meta property="og:image" content="{og_image_path}">'
+                og_tag = f'\n    <meta property="og:image" content="{og_image_url}">'
                 content = content.replace("</title>", f"</title>{og_tag}", 1)
 
             # Replace twitter:image
             if 'property="twitter:image"' in content:
                 content = re.sub(
                     r'<meta property="twitter:image" content="[^"]*"',
-                    f'<meta property="twitter:image" content="{og_image_path}"',
+                    f'<meta property="twitter:image" content="{og_image_url}"',
                     content,
                 )
             elif 'name="twitter:image"' in content:
                 content = re.sub(
                     r'<meta name="twitter:image" content="[^"]*"',
-                    f'<meta name="twitter:image" content="{og_image_path}"',
+                    f'<meta name="twitter:image" content="{og_image_url}"',
                     content,
                 )
 
