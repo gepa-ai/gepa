@@ -1065,7 +1065,7 @@ def optimize_anything(
     else:
         # Normalize seed_candidate: str -> {_STR_CANDIDATE_KEY: str}
         str_candidate_mode = isinstance(seed_candidate, str)
-        if str_candidate_mode:
+        if isinstance(seed_candidate, str):
             seed_candidate = {_STR_CANDIDATE_KEY: seed_candidate}
 
     # Detect single-instance mode: when both dataset=None and valset=None
@@ -1204,6 +1204,8 @@ def optimize_anything(
 
     # Generate seed candidate via LLM if seed_candidate was None
     if needs_seed_generation:
+        assert config.reflection.reflection_lm is not None and not isinstance(config.reflection.reflection_lm, str)
+        assert objective is not None  # validated earlier in needs_seed_generation block
         seed_candidate = _generate_seed_candidate(
             lm=config.reflection.reflection_lm,
             objective=objective,
