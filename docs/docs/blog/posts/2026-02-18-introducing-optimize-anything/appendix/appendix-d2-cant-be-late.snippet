@@ -91,7 +91,7 @@
 
     result = optimize_anything(
         seed_candidate={"program": SEED_PROGRAM},
-        fitness_fn=evaluate,
+        evaluator=evaluate,
         dataset=train_set,
         valset=val_set,
         objective="Optimize a cloud scheduling strategy for the 'Can't Be Late' problem. "
