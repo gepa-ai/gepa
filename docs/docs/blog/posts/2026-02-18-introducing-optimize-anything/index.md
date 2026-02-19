@@ -387,7 +387,7 @@ GEPA tailors the solver to each problem by learning from accumulated evaluation 
 
 The results are striking: GEPA-optimized skills boost resolve rates from 24% to **93%** on one repository and from 55% to **82%** on another, and transfer directly to Claude Code, pushing it to near-perfect pass rates while cutting resolution time by **47%**.
 
-**Key result:** `optimize_anything` learns repository-specific skills that dramatically improve coding agent performance and transfer across models. [Read the full post →](../learning-skills-for-any-repository/)
+**Key result:** `optimize_anything` learns repository-specific skills that dramatically improve coding agent performance and transfer across models. [Read the full post →](../automatically-learning-skills-for-coding-agents/)
 
 
 ### 8. From Vague Idea to 3D Unicorn — No Seed Required {#8-3d-unicorn}
