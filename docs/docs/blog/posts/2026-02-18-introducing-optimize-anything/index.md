@@ -172,7 +172,7 @@ Notice what's *absent*: no mutation prompts, no task-specific instruction templa
 
 ## Let's Take It for a Spin
 
-Let's use `optimize_anything` to optimize SVG source code depicting "a pelican riding a bicycle" starting from a blank white canvas. The evaluator renders the SVG as a PNG, asks a VLM to score it against visual criteria, and passes the rendered image back as ASI so the proposer can literally *see* what it's improving. Here's the zero-shot baseline from Claude Opus 4.6 versus the best optimized result after exploring just 20 candidates:
+Let's use `optimize_anything` to optimize SVG source code depicting "a pelican riding a bicycle" starting from a blank white canvas. The evaluator renders the SVG as a PNG, asks a VLM to score it against visual criteria, and passes the rendered image back as ASI so the proposer can literally *see* what it's improving. Here's the zero-shot baseline from Claude Opus 4.6 versus the best optimized result after exploring 20 candidates:
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
 <div style="flex: 1; text-align: center; min-width: 0;" markdown>
@@ -191,7 +191,7 @@ Let's use `optimize_anything` to optimize SVG source code depicting "a pelican r
 </div>
 </div>
 
-*The optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition — all through LLM reflection on rendered image feedback.*
+The optimizer added background elements, improved anatomy, increased the sophistication of all visual elements, and refined the composition — all through LLM reflection on rendered image feedback.
 
 Notably, we optimize the SVG code itself, not a prompt that generates SVG. Here's the code.
 
