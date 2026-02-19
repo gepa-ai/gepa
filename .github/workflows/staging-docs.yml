@@ -55,6 +55,11 @@ jobs:
           cd docs
           sed -i 's/draft_if_future_date: true/draft_if_future_date: false/' mkdocs.yml
 
+      - name: Override site_url for staging
+        run: |
+          cd docs
+          sed -i 's|site_url: https://gepa-ai.github.io/gepa/|site_url: https://blogpost.gepa-docs-staging.pages.dev/|' mkdocs.yml
+
       - name: Build documentation
         run: |
           cd docs

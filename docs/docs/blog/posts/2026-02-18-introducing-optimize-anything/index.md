@@ -24,12 +24,24 @@ readtime: 12
 title: "optimize_anything: A Universal API for Text Optimization"
 description: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more: if you can measure it, you can optimize it."
 meta:
+  - property: og:type
+    content: article
+  - property: og:title
+    content: "optimize_anything: A Universal API for Text Optimization"
+  - property: og:description
+    content: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more: if you can measure it, you can optimize it."
   - property: og:image
-    content: https://gepa.ai/blog/2026-02-18-introducing-optimize-anything/header_image.png
+    content: /blog/2026/02/18/introducing-optimize-anything/images/header_image.png
+  - property: og:image:alt
+    content: "optimize_anything: A Universal API for Text Optimization"
   - name: twitter:card
     content: summary_large_image
+  - name: twitter:title
+    content: "optimize_anything: A Universal API for Text Optimization"
+  - name: twitter:description
+    content: "A new API setting state-of-the-art results on optimizing code, prompts, agent architectures, and more: if you can measure it, you can optimize it."
   - name: twitter:image
-    content: https://gepa.ai/blog/2026-02-18-introducing-optimize-anything/header_image.png
+    content: /blog/2026/02/18/introducing-optimize-anything/images/header_image.png
 ---
 
 # `optimize_anything`: A Universal API for Text Optimization
