@@ -34,7 +34,7 @@ gskill consists of two main components:
 
 <figure markdown="span">
   ![gskill pipeline: Target Repo feeds into SWE-smith for task generation, then enters the GEPA Optimization Loop where Agent Rollouts are evaluated for fitness, a Reflective Proposer generates candidate skills, and the best candidates are selected into a pool, ultimately producing learned skills.](gskill-pipeline.png)
-  <figcaption>The gskill pipeline: SWE-smith generates tasks from a target repository, and the GEPA optimization loop iteratively evolves skills through agent evaluation and reflective proposal.</figcaption>
+  <figcaption>The gskill pipeline: SWE-smith generates tasks from a target repository, and the GEPA optimization loop iteratively evolves skills through agent evaluation and reflective proposal. Then, the learned skills can be used by any coding agent.</figcaption>
 </figure>
 
 Learning skills requires feedback, and feedback requires tasks. This is where **SWE-smith** comes in. Given a GitHub repository, SWE-smith automatically generates a diverse set of verifiable software engineering tasks. These tasks are grounded in the real codebase and come with verifiable tests. Think of SWE-smith as converting a static repository into an active training environment for the optimization process.
@@ -61,11 +61,11 @@ To evaluate gskill, we chose two popular repositories: [jinja](https://github.co
 To start with, we tested a proof-of-concept implementation of gskill on a simple agent [Mini-SWE-Agent](https://github.com/SWE-agent/mini-swe-agent) with a relatively smaller model, gpt-5-mini.
 
 <figure markdown="span">
-  ![Bar chart comparing Mini-SWE-Agent (gpt-5-mini) test set resolve rates. Jinja: baseline 0.55 vs with GEPA skills 0.82. Bleve: baseline 0.24 vs with GEPA skills 0.93.](mini-swe-agent-results.png)
+  ![Bar chart comparing Mini-SWE-Agent (gpt-5-mini) test set resolve rates. Jinja: baseline 55% vs with GEPA skills 82%. Bleve: baseline 24% vs with GEPA skills 93%.](mini-swe-agent-results.png)
   <figcaption>Mini-SWE-Agent performance with GEPA-evolved skills. Skills learned via gskill dramatically improve resolve rates on both repositories.</figcaption>
 </figure>
 
-Under 300 rollouts, the Mini-SWE-Agent with GEPA-evolved skills achieves a resolve rate of 0.82 on Jinja and 0.93 on Bleve, compared to the baseline of 0.55 and 0.24 respectively. While the results are promising, Mini-SWE-Agent is a relatively simple agent, and we are curious to learn if the learned skills are transferable to a production-ready agent.
+Under 300 rollouts, the Mini-SWE-Agent with GEPA-evolved skills achieves a resolve rate of 82% on Jinja and 93% on Bleve, compared to the baseline of 55% and 24% respectively. While the results are promising, Mini-SWE-Agent is a relatively simple agent, and we are curious to learn if the learned skills are transferable to a production-ready agent.
 
 ### Transfer to Claude Code 
 
@@ -82,13 +82,39 @@ To measure whether the learned skills are beneficial for other agents as well, w
 </figure>
 
 
+## Learned Skills
+
+Here, we showcase some of the learned skills for the Bleve repository.
+
+```text
+4) Run tests early and iterate from failures (tests are the bug report)
+- Start broad when feasible: `cd /testbed && go test ./...` (or project equivalent).
+- Narrow quickly:
+  - package: `go test ./path/to/pkg`
+  - single test: `go test ./path/to/pkg -run TestName -count=1` (add -v only if needed)
+- For panics: follow the stack trace top frame in repo code first.
+- For mismatches: use “expected vs got” to locate the producing function and invariants.
+
+...
+
+7) Make minimal, reviewable changes and verify continuously
+- Change one behavior at a time; rerun the smallest reproducing test after each change.
+- Add focused unit tests when coverage is missing; keep them in the same package and table-driven where sensible (include short words + accented/Unicode edge cases).
+- Avoid scratch main.go files in repo root.
+```
+
+These skills are especially helpful for the coding agents to navigate and fix issues in the Bleve repository. In fact, the skills are learned through the coding agent's successes and failures on the exact same repository, and our experiments showed that the skills are transferable across language models and agent harnesses.
+
+Note that some of these skills are more helpful for SWE-smith style tasks (fixing issues) instead of general coding practices. We view this as a future direction of gskill, and believe that the more general skills can be learned with a more diverse set of tasks.
+
+
 ## Conclusion
 
 gskill demonstrates the power of evolutionary search for learning skills. With _fully automated_ learning pipeline for skills, downstream agents benefit from the learned skills for free.
 
 A few key takeaways from our experiments:
 
-1. **Massive improvements on weaker baselines.** The most striking gains come when the baseline agent struggles. On Bleve, Mini-SWE-Agent went from a 0.24 resolve rate to 0.93 — a nearly 4x improvement. This suggests that learned skills are especially valuable when the model lacks prior familiarity with a repository's conventions and patterns.
+1. **Massive improvements on weaker baselines.** The most striking gains come when the baseline agent struggles. On Bleve, Mini-SWE-Agent went from a 24% resolve rate to 93% — a nearly 4x improvement. This suggests that learned skills are especially valuable when the model lacks prior familiarity with a repository's conventions and patterns.
 
 2. **Skills transfer across models and agents.** Perhaps the most exciting finding is that skills learned on gpt-5-mini with a simple agent (Mini-SWE-Agent) transfer effectively to Claude Code with both Haiku 4.5 and Sonnet 4.5. This means you can learn skills cheaply on a smaller model and deploy them with a production-grade agent.
 
