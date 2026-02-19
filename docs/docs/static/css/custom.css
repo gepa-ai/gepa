@@ -7,8 +7,8 @@
   --md-primary-fg-color: #212C4D;
   --md-primary-fg-color--light: #0096C7;
   --md-primary-fg-color--dark: #023E8A;
-  --md-accent-fg-color: #212C4D;
-  --md-accent-fg-color--transparent: rgba(33, 44, 77, 0.1);
+  --md-accent-fg-color: #0077B6;
+  --md-accent-fg-color--transparent: rgba(0, 119, 182, 0.1);
 }
 
 [data-md-color-scheme="slate"] {
@@ -21,7 +21,7 @@
 
 /* Gradient-styled code text (e.g. "optimize_anything" in blog titles) */
 .gradient-code {
-    background: linear-gradient(135deg, #0077B6, #0096C7, #00B4D8, #48CAE4);
+    background: linear-gradient(135deg, #023E8A, #0077B6, #00B4D8, #48CAE4);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -39,6 +39,34 @@
 .md-typeset {
     font-size: 0.875rem;
     line-height: 1.6;
+}
+
+/* Make content links clearly distinguishable from text */
+.md-content .md-typeset a {
+    text-decoration: underline;
+    text-decoration-color: rgba(0, 119, 182, 0.4);
+    text-underline-offset: 2px;
+    transition: text-decoration-color 0.2s;
+}
+
+.md-content .md-typeset a:hover {
+    text-decoration-color: currentColor;
+}
+
+[data-md-color-scheme="slate"] .md-content .md-typeset a {
+    text-decoration-color: rgba(144, 224, 239, 0.4);
+}
+
+/* Exclude underlines from UI-like links within content */
+.md-content .md-typeset .headerlink,
+.md-content .md-typeset .md-nav__link,
+.md-content .md-typeset .md-source,
+.md-content .md-typeset .blog-subscribe a,
+.md-content .md-typeset .blog-post-authors a,
+.md-content .md-typeset .people-grid-note a,
+.md-content .md-typeset .fn-ref,
+.md-content .md-typeset .fn-backref {
+    text-decoration: none;
 }
 
 /* Hide separate "GEPA" title text since it's in the logo,
@@ -488,8 +516,8 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 /* Blog post header – flush-left, vLLM-inspired */
 .blog-post-header {
     text-align: left;
-    margin-bottom: 2.5rem;
-    padding-bottom: 1.5rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
     border-bottom: 1px solid var(--md-default-fg-color--lightest);
 }
 
@@ -498,10 +526,6 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     font-weight: 700;
     line-height: 1.3;
     margin-bottom: 0.5rem;
-    color: var(--md-accent-fg-color);
-}
-
-[data-md-color-scheme="slate"] .blog-post-header .blog-post-title {
     color: var(--md-default-fg-color);
 }
 
@@ -545,6 +569,12 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
 /* Post body typography */
 .blog-post-body {
     line-height: 1.8;
+}
+
+/* Tighter spacing for bulleted / numbered lists */
+.blog-post-body li {
+    margin-bottom: 0;
+    line-height: 1.5;
 }
 
 @media screen and (max-width: 76.25em) {

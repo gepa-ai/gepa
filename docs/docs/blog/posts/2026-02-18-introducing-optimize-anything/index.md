@@ -46,29 +46,42 @@ meta:
 
 # <span class="gradient-code">optimize_anything</span>: A Universal API for Text Optimization
 
-Today we are introducing `optimize_anything`, a declarative API that optimizes any artifact representable as text (code, prompts, agent architectures, vector graphics, configurations) using just two inputs: a **starting artifact** and an **evaluator**. You declare what to optimize and how to measure it; the system handles the search. Where prior LLM-evolution frameworks expose concepts like island topologies[^islands], prompt samplers[^samplers], and cascade evaluation stages[^cascade], `optimize_anything` strips the interface down to its essence. **We've tested it across [several domains](#results) from code optimization to agent architecture discovery and it consistently matches or outperforms domain-specific tools, including some purpose-built for each task.** As models and search techniques advance, the search improves without changing your code. If you can measure it, you can optimize it.
-
-<!-- more -->
-
-While recent systems like AlphaEvolve, OpenEvolve, and ShinkaEvolve have demonstrated the power of LLM-guided search for algorithm discovery, they operate exclusively in single-task mode, optimizing one problem at a time with no built-in support for batch optimization or generalization. `optimize_anything` unifies **three optimization modes** (single-task search, multi-task search, and generalization) under one declarative API, enabling optimization tasks that prior frameworks cannot directly express: [discovering agent architectures from scratch](#5-agent-architecture-discovery), [learning prompts that generalize to unseen examples](#4-prompt-optimization), and [optimizing coding agent skills that transfer across models](#7-coding-agent-skills).
-
 <figure markdown="span">
   ![optimize_anything diagram showing the core loop: a string x is passed to an evaluator f(x) which returns a score plus diagnostic feedback, which is then consumed by an LLM proposer to produce an improved string. Example instantiations shown below: Code Optimization, Numeric Optimization, Prompt/Agent Harness, Policy Optimization.](images/header_image.png)
-  <figcaption>The optimize_anything loop: evaluate a text artifact, capture diagnostic feedback (ASI), and use an LLM to propose targeted improvements.</figcaption>
+  <figcaption>Evaluate a text artifact, capture diagnostic feedback (ASI), and let an LLM propose targeted improvements. Code, prompts, configs, agent architectures — if you can measure it, `optimize_anything` can optimize it.</figcaption>
 </figure>
 
-## If You Can Write It Down, You Can Optimize It
+Today we are introducing `optimize_anything`, a declarative API that optimizes any artifact representable as text (e.g., code, prompts, agent architectures, vector graphics, configurations). It extends [GEPA](https://arxiv.org/abs/2507.19457) (Genetic-Pareto, our state-of-the-art LLM prompt optimizer) far beyond prompts. You declare what to optimize and how to measure it; the system handles the search. Testing it across [several domains](#results), we find `optimize_anything` consistently matches or outperforms domain-specific tools, including some purpose-built for each task. With one API, you can:
 
-The key insight behind `optimize_anything` is that a surprisingly wide range of problems can be formulated as optimizing a text artifact. Consider:
+- [discover bespoke agent harnesses that nearly triple ARC-AGI accuracy](#5-agent-architecture-discovery)
+- [discover better circle packing than Google's AlphaEvolve](#1-circle-packing)
+<!-- more -->
+- [optimize cloud scheduling policies that cut cloud infrastructure costs by 40%, beating expert heuristics](#3-systems-research)
+- [create agent skills to achieve near-perfect Claude Code resolve rates at 47% faster resolution times](#7-coding-agent-skills)
+- [improve GPT's math reasoning accuracy by changing only the system prompt](#4-prompt-optimization)
+- [match and exceed Optuna, a mature numerical optimizer, by writing solver code from scratch](#6-blackbox-optimization)
+- and... [optimize a pelican ... riding a bicycle](#lets-take-it-for-a-spin)
 
-- **Code**: CUDA kernels, scheduling algorithms, solver implementations, all of which are text that can be evaluated by execution.
-- **Prompts**: System prompts, prompt templates, multi-step prompts, all evaluated by running them against a dataset.
-- **Agent architectures**: The entire agent system, including its prompts, sub-agents, control flow, and orchestration logic.
-- **Configurations**: Hyperparameters, policies, and decision rules can be serialized as JSON strings and evaluated by simulation.
-- **Agent Skills**: Repository-specific instructions and best practices for coding agents, evaluated by running the agent on real tasks from the codebase.
+<div style="display: flex; align-items: center; justify-content: center; gap: 1rem;" markdown>
+<div style="flex: 1; text-align: center; min-width: 0;" markdown>
 
-If an artifact can be serialized to text and its performance can be measured, an LLM can reason about it and propose improvements. `optimize_anything` provides a unified API to make this loop easier to set up.
+![Initial SVG: a basic pelican sketch on a red-framed bicycle against a white background.](images/claude-opus-initial-pelican.png){ style="width: 100%;" }
 
+<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Zero-shot attempt from Claude Opus 4.6</em></div>
+
+</div>
+<div style="flex: 1; text-align: center; min-width: 0;" markdown>
+
+![Optimized SVG: a polished pelican riding a bicycle with sky, clouds, sun, road, and grass.](images/claude-opus-best-pelican.png){ style="width: 100%;" }
+
+<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>Optimized by <span class="gradient-code">optimize_anything</span></em></div>
+
+</div>
+</div>
+
+The key insight is that a surprisingly wide range of problems can be formulated as optimizing a text artifact: speeding up a CUDA kernel, tuning a scheduling policy, refining a prompt template, or redesigning an agent architecture. If it can be serialized to a string and its quality measured, an LLM can reason about it and propose improvements.
+
+Where prior LLM-evolution frameworks like AlphaEvolve, OpenEvolve, and ShinkaEvolve expose concepts like island topologies[^islands], prompt samplers[^samplers], and cascade evaluation stages[^cascade], `optimize_anything` strips the interface down to its essence — and goes further by unifying **three optimization modes** (single-task search, multi-task search, and generalization) under one declarative API. While prior systems operate exclusively in single-task mode, `optimize_anything` enables optimization tasks they cannot directly express like [discovering agent architectures from scratch](#5-agent-architecture-discovery), [learning prompts that generalize to unseen examples](#4-prompt-optimization), and [optimizing coding agent skills that transfer across models](#7-coding-agent-skills).
 
 ## The `optimize_anything` API
 
