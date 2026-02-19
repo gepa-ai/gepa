@@ -88,7 +88,7 @@
 
     result = optimize_anything(
         seed_candidate={"program": SEED_PROGRAM},
-        fitness_fn=evaluate,
+        evaluator=evaluate,
         dataset=dataset,
         valset=dataset,
         objective="Optimize a broadcast routing algorithm for multi-cloud data transfer. "

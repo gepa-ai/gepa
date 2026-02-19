@@ -27,6 +27,7 @@ nav:
         - Tutorials Overview: tutorials/index.md
         - DSPy Full Program Evolution: tutorials/dspy_full_program_evolution.ipynb
         - ARC AGI Example: tutorials/arc_agi.ipynb
+        - 3D Unicorn Optimization (Seedless): tutorials/3d_unicorn_optimization.ipynb
     - API Reference:
         - API Overview: api/index.md
         - optimize_anything:

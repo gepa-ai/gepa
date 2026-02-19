@@ -170,7 +170,7 @@ def main():
     logger.info("Starting GEPA optimization for Can't Be Late")
     result = optimize_anything(
         seed_candidate={"program": INITIAL_PROGRAM},
-        fitness_fn=evaluate,
+        evaluator=evaluate,
         dataset=dataset["train"],
         valset=dataset["val"],
         objective=OPTIMIZATION_OBJECTIVE,

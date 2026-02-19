@@ -206,7 +206,7 @@ def main():
     logger.info("Starting GEPA optimization for Cloudcast")
     result = optimize_anything(
         seed_candidate={"program": INITIAL_PROGRAM},
-        fitness_fn=evaluate,
+        evaluator=evaluate,
         dataset=dataset,
         valset=dataset,
         objective=OPTIMIZATION_OBJECTIVE,
