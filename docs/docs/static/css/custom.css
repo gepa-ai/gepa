@@ -209,6 +209,10 @@ label.md-nav__title[for="__drawer"] .md-nav__button {
     .md-header:not(.md-header--landing) .landing-nav {
         display: none;
     }
+    /* When landing-nav is hidden, push palette/search/toc icons to the right */
+    .md-header:not(.md-header--landing) .landing-nav + * {
+        margin-left: auto;
+    }
     .md-header--landing .landing-nav__link--hide-mobile {
         display: none;
     }
