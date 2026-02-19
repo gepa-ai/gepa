@@ -413,12 +413,12 @@ The evaluator runs each candidate as a subprocess, collects the rendered PNGs, a
 
 ![Optimized 3D unicorn](images/unicorn_optimized.png){ style="width: 100%;" }
 
-<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>GEPA-optimized (seedless)</em></div>
+<div style="margin: 0.5rem 0 0; max-width: none; width: 100%;"><em>GEPA-optimized (seedless using Claude Opus 4.6)</em></div>
 
 </div>
 </div>
 
-The zero-shot model produces a recognizable but crude unicorn — blocky torso, piston-like legs, a horn on a box head. GEPA iteratively refines the geometry, improving proportions, adding anatomical detail, and adjusting camera framing, all without any human-written seed code to start from.
+The zero-shot model produces a recognizable but crude unicorn — blocky torso, piston-like legs, a horn on a box head. GEPA iteratively refines the geometry, improving proportions, adding anatomical detail, and even adds a swirl around the horn, all without any human-written seed code to start from.
 
 The seedless mode is particularly useful for tasks where the solution space is large and unfamiliar such as creative or exploratory tasks. You bring the evaluation criteria (your *taste*) and the optimizer handles everything else.
 
