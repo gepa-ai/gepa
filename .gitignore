@@ -1,7 +1,8 @@
 #######################
 # Example data — extracted from tarballs, not committed
 #######################
-# Can't Be Late: extract with `tar -xzf utils/simulator/real_traces.tar.gz -C utils/simulator/`
+# Can't Be Late: download and extract traces (see examples/adrs/can_be_late/README.md)
+examples/adrs/can_be_late/utils/simulator/real_traces.tar.gz
 examples/adrs/can_be_late/utils/simulator/real/
 
 #######################

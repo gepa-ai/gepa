@@ -13,12 +13,13 @@ The strategy decides when to use:
 
 ## Setup
 
-### 1. Extract Trace Data
+### 1. Download and Extract Trace Data
 
-The trace dataset is stored as a tarball and must be extracted before running:
+Download the trace dataset from the ADRS repository and extract it:
 
 ```bash
 cd examples/adrs/can_be_late/utils/simulator
+curl -L -o real_traces.tar.gz https://github.com/UCB-ADRS/ADRS/raw/main/openevolve/examples/ADRS/cant-be-late/simulator/real_traces.tar.gz
 tar -xzf real_traces.tar.gz
 ```
 
