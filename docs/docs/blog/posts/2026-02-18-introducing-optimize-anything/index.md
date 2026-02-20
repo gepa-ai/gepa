@@ -9,7 +9,6 @@ authors:
   - shangyin
   - sanjit
   - koushik
-  - sewon
   - dan
   - ion
   - joey
