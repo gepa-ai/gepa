@@ -24,25 +24,6 @@ readtime: 12
 title: "optimize_anything: A Universal API for Optimizing any Text Parameter"
 description: "GEPA's new API setting state-of-the-art results on optimizing any text parameter: code, prompts, agent architectures, and more. If you can measure it, you can optimize it."
 social_image: blog/2026-02-18-introducing-optimize-anything/images/header_image.png
-meta:
-  - property: og:type
-    content: article
-  - property: og:title
-    content: "optimize_anything: A Universal API for Optimizing any Text Parameter"
-  - property: og:description
-    content: "GEPA's new API setting state-of-the-art results on optimizing any text parameter: code, prompts, agent architectures, and more. If you can measure it, you can optimize it."
-  - property: og:image
-    content: /blog/2026/02/18/introducing-optimize-anything/images/header_image.png
-  - property: og:image:alt
-    content: "optimize_anything: A Universal API for Optimizing any Text Parameter"
-  - name: twitter:card
-    content: summary_large_image
-  - name: twitter:title
-    content: "optimize_anything: A Universal API for Optimizing any Text Parameter"
-  - name: twitter:description
-    content: "GEPA's new API setting state-of-the-art results on optimizing any text parameter: code, prompts, agent architectures, and more. If you can measure it, you can optimize it."
-  - name: twitter:image
-    content: /blog/2026/02/18/introducing-optimize-anything/images/header_image.png
 ---
 
 # <span class="gradient-code">optimize_anything</span>: A Universal API for Optimizing any Text Parameter
