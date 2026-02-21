@@ -51,6 +51,7 @@ For more tutorials, especially those focused on the DSPy integration, see:
 - [Self-Improving AI Agents](https://medium.com/@bindupriya117/building-self-improving-ai-agents-gepa-for-orchestration-trm-for-reasoning-1602e96f3e2b) - GEPA for orchestration, TRM for reasoning
 - [Context Compression Experiments](https://github.com/Laurian/context-compression-experiments-2508) - GEPA for optimizing context compression prompts by @gridinoc
 - [Google ADK Training with GEPA](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/) - Optimizing Google Agent Development Kit agents
+- [Speeding Up a Sudoku Solver with GEPA optimize_anything](https://blog.mariusvach.com/posts/gepa-sudoku-solver) - Use `optimize_anything` to speed up a Python Sudoku solver `optimize_anything`
 
 ### International Tutorials
 
