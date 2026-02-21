@@ -21,6 +21,7 @@ nav:
         - Quick Start: guides/quickstart.md
         - FAQ: guides/faq.md
         - Creating Adapters: guides/adapters.md
+        - Code Mode Adapter: guides/code-mode-adapter.md
         - Using Callbacks: guides/callbacks.md
         - Contributing: guides/contributing.md
     - Tutorials:
@@ -89,6 +90,7 @@ nav:
             - DSPy Full Program Adapter: api/adapters/DSPyFullProgramAdapter.md
             - RAG Adapter: api/adapters/RAGAdapter.md
             - MCP Adapter: api/adapters/MCPAdapter.md
+            - Code Mode Adapter: api/adapters/CodeModeAdapter.md
             - TerminalBench Adapter: api/adapters/TerminalBenchAdapter.md
         - Proposers:
             - Proposers Overview: api/proposers/index.md
