@@ -2,6 +2,14 @@
 
 The Code Mode Adapter enables optimization of Code Mode text components while keeping runtime execution pluggable.
 
+Code Mode here means a code-first MCP orchestration pattern (often discovery +
+execution tools) with generated code driving multi-step work.
+
+References:
+
+- Cloudflare MCP Code Mode blog: `https://blog.cloudflare.com/code-mode-mcp/`
+- UTCP Code Mode implementation: `https://github.com/universal-tool-calling-protocol/code-mode`
+
 ## What it optimizes
 
 - `system_prompt`
