@@ -85,6 +85,7 @@ class CodeModeRunner(Protocol):
         additional_context: dict[str, str] | None = None,
     ) -> CodeModeRunnerResult:
         """Execute one Code Mode request and return structured outputs."""
+        ...
 
 
 class CodeModeAdapter(GEPAAdapter[CodeModeDataInst, CodeModeTrajectory, CodeModeOutput]):

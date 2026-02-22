@@ -68,8 +68,8 @@ class MCPStreamableHTTPCodeModeRunner:
         del system_prompt, codemode_description, tool_description_overrides, additional_context
         try:
             import httpx
-            from mcp.client.session import ClientSession
-            from mcp.client.streamable_http import streamable_http_client
+            from mcp.client.session import ClientSession  # pyright: ignore[reportMissingImports]
+            from mcp.client.streamable_http import streamable_http_client  # pyright: ignore[reportMissingImports]
         except ImportError as exc:  # pragma: no cover - dependency/runtime specific
             raise ImportError(
                 "MCPStreamableHTTPCodeModeRunner requires 'mcp' and 'httpx' packages. "
@@ -140,8 +140,8 @@ class MCPStdioCodeModeRunner:
     ) -> CodeModeRunnerResult:
         del system_prompt, codemode_description, tool_description_overrides, additional_context
         try:
-            from mcp.client.session import ClientSession
-            from mcp.client.stdio import StdioServerParameters, stdio_client
+            from mcp.client.session import ClientSession  # pyright: ignore[reportMissingImports]
+            from mcp.client.stdio import StdioServerParameters, stdio_client  # pyright: ignore[reportMissingImports]
         except ImportError as exc:  # pragma: no cover - dependency/runtime specific
             raise ImportError(
                 "MCPStdioCodeModeRunner requires the 'mcp' package. "
@@ -372,7 +372,8 @@ def _extract_text_result(result: Any) -> str:
 def _summarize_exception(exc: BaseException) -> str:
     exc_group_type = globals().get("BaseExceptionGroup")
     if exc_group_type is not None and isinstance(exc, exc_group_type):  # Python 3.11+
-        parts = [_summarize_exception(e) for e in exc.exceptions]
+        group_exceptions = getattr(exc, "exceptions", ())
+        parts = [_summarize_exception(e) for e in group_exceptions if isinstance(e, BaseException)]
         parts = [p for p in parts if p]
         return "; ".join(parts) if parts else str(exc)
     return f"{type(exc).__name__}: {exc}"
