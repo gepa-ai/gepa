@@ -22,8 +22,6 @@ without changing GEPA adapter logic.
 
 Built-in runner helpers:
 
-- `StaticCodeModeRunner` for deterministic local demos/tests
-- `HTTPCodeModeRunner` for external runtime bridges (Cloudflare/UTCP/local Node)
 - `MCPStreamableHTTPCodeModeRunner` for direct MCP streamable-http endpoints (e.g. Cloudflare MCP)
 - `MCPStdioCodeModeRunner` for local MCP servers over stdio (e.g. UTCP local)
 

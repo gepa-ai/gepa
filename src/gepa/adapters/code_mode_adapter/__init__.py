@@ -13,8 +13,6 @@ Exports:
     CodeModeOutput: Output type
     CodeModeTrajectory: Execution trace type
     CodeModeRunnerResult: Runner output contract
-    StaticCodeModeRunner: In-memory deterministic runner
-    HTTPCodeModeRunner: HTTP bridge runner for external runtimes
     MCPStreamableHTTPCodeModeRunner: Direct MCP streamable-http runner
     MCPStdioCodeModeRunner: Local MCP stdio runner
 """
@@ -29,12 +27,7 @@ if TYPE_CHECKING:
         CodeModeRunnerResult,
         CodeModeTrajectory,
     )
-    from .runners import (
-        HTTPCodeModeRunner,
-        MCPStdioCodeModeRunner,
-        MCPStreamableHTTPCodeModeRunner,
-        StaticCodeModeRunner,
-    )
+    from .runners import MCPStdioCodeModeRunner, MCPStreamableHTTPCodeModeRunner
 
 __all__ = [
     "CodeModeAdapter",
@@ -42,10 +35,8 @@ __all__ = [
     "CodeModeOutput",
     "CodeModeRunnerResult",
     "CodeModeTrajectory",
-    "HTTPCodeModeRunner",
     "MCPStreamableHTTPCodeModeRunner",
     "MCPStdioCodeModeRunner",
-    "StaticCodeModeRunner",
 ]
 
 
@@ -56,10 +47,8 @@ def __getattr__(name: str):
         "CodeModeOutput",
         "CodeModeRunnerResult",
         "CodeModeTrajectory",
-        "HTTPCodeModeRunner",
         "MCPStreamableHTTPCodeModeRunner",
         "MCPStdioCodeModeRunner",
-        "StaticCodeModeRunner",
     }:
         from .code_mode_adapter import (
             CodeModeAdapter,
@@ -68,12 +57,7 @@ def __getattr__(name: str):
             CodeModeRunnerResult,
             CodeModeTrajectory,
         )
-        from .runners import (
-            HTTPCodeModeRunner,
-            MCPStdioCodeModeRunner,
-            MCPStreamableHTTPCodeModeRunner,
-            StaticCodeModeRunner,
-        )
+        from .runners import MCPStdioCodeModeRunner, MCPStreamableHTTPCodeModeRunner
 
         return locals()[name]
 
