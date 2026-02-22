@@ -39,7 +39,7 @@ from gepa.utils import FileStopper, StopperProtocol
 
 
 def optimize(
-    seed_candidate: dict[str, str],
+    seed_candidate: dict[str, str] | list[dict[str, str]],
     trainset: list[DataInst] | DataLoader[DataId, DataInst],
     valset: list[DataInst] | DataLoader[DataId, DataInst] | None = None,
     adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None,
@@ -120,7 +120,7 @@ def optimize(
     work well on a subset of inputs to improve the system's performance on the entire validation set, by evolving from the Pareto frontier.
 
     Parameters:
-    - seed_candidate: The initial candidate to start with.
+    - seed_candidate: The initial candidate(s) to start with. Can be a single dict mapping component names to text, or a list of such dicts to seed the population with multiple starting points.
     - trainset: Training data supplied as an in-memory sequence or a `DataLoader` yielding batches for reflective updates.
     - valset: Validation data source (sequence or `DataLoader`) used for tracking Pareto scores. If not provided, GEPA reuses the trainset.
     - adapter: A `GEPAAdapter` instance that implements the adapter interface. This allows GEPA to plug into your system's environment. If not provided, GEPA will use a default adapter: `gepa.adapters.default_adapter.default_adapter.DefaultAdapter`, with model defined by `task_lm`.
@@ -173,9 +173,15 @@ def optimize(
     - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
     - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
     """
-    # Validate seed_candidate is not None or empty
-    if seed_candidate is None or not seed_candidate:
-        raise ValueError("seed_candidate must contain at least one component text.")
+    # Normalize seed_candidate to list form
+    if isinstance(seed_candidate, dict):
+        if not seed_candidate:
+            raise ValueError("seed_candidate must contain at least one component text.")
+        seed_candidates = [seed_candidate]
+    else:
+        if not seed_candidate:
+            raise ValueError("seed_candidate must contain at least one component text.")
+        seed_candidates = seed_candidate
 
     active_adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None
     if adapter is None:
@@ -384,7 +390,7 @@ def optimize(
         adapter=active_adapter,
         run_dir=run_dir,
         valset=val_loader,
-        seed_candidate=seed_candidate,
+        seed_candidate=seed_candidates,
         perfect_score=perfect_score,
         seed=seed,
         reflective_proposer=reflective_proposer,

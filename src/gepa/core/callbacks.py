@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 class OptimizationStartEvent(TypedDict):
     """Event for on_optimization_start callback."""
 
-    seed_candidate: dict[str, str]
+    seed_candidates: list[dict[str, str]]
     trainset_size: int
     valset_size: int
     config: dict[str, Any]
