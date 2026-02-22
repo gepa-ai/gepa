@@ -21,7 +21,6 @@ nav:
         - Quick Start: guides/quickstart.md
         - FAQ: guides/faq.md
         - Creating Adapters: guides/adapters.md
-        - Code Mode Adapter: guides/code-mode-adapter.md
         - Using Callbacks: guides/callbacks.md
         - Contributing: guides/contributing.md
     - Tutorials:

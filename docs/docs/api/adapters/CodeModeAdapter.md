@@ -1,5 +1,8 @@
 # CodeModeAdapter
 
+For usage examples and implementation notes, see the
+[Code Mode Adapter guide](../../guides/code-mode-adapter.md).
+
 ::: gepa.adapters.code_mode_adapter.code_mode_adapter.CodeModeAdapter
     handler: python
     options:
