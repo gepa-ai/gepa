@@ -10,6 +10,7 @@
     "src/gepa/adapters/generic_rag_adapter",
     "src/gepa/adapters/anymaths_adapter",
     "src/gepa/adapters/terminal_bench_adapter",
+    "src/gepa/gskill",
     "tests"
   ]
 }
