@@ -16,16 +16,17 @@ import hashlib
 import json
 import logging
 import pickle
+import re
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 logger = logging.getLogger(__name__)
 
 from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
-from gepa.proposer.reflective_mutation.base import LanguageModel
+from gepa.proposer.reflective_mutation.base import LanguageModel, Signature
 
 if TYPE_CHECKING:
     from gepa.optimize_anything import Candidate, OptimizationState, RefinerConfig, SideInfo
@@ -58,6 +59,54 @@ _REFINER_JSON_OUTPUT_INSTRUCTION = (
 _REFINER_TEXT_OUTPUT_INSTRUCTION = (
     "Return ONLY the improved candidate text within ``` fences. Do not include explanations outside the fences."
 )
+
+
+class InternalCandidateSignature(Signature):
+    """Signature for generating candidates from evolved prompts in seedless mode.
+
+    Mirrors :class:`InstructionProposalSignature` but for the artifact generation step:
+    takes an evolved prompt (+ optional example) and extracts the generated candidate
+    from the LM output.
+
+    Used by the adapter to run ``artifact_lm`` and parse refiner output in seedless mode.
+    """
+
+    input_keys: ClassVar[list[str]] = ["prompt", "example"]
+    output_keys: ClassVar[list[str]] = ["candidate"]
+
+    @classmethod
+    def prompt_renderer(cls, input_dict: Mapping[str, Any]) -> str:
+        prompt = input_dict["prompt"]
+        example = input_dict.get("example")
+        if example is not None and type(example).__name__ != "_SingleInstanceSentinel":
+            example_text = example if isinstance(example, str) else json.dumps(example, default=str, indent=2)
+            return prompt + "\n\n# Input\n" + example_text
+        return prompt
+
+    @classmethod
+    def output_extractor(cls, lm_out: str) -> dict[str, str]:
+        # Same fence-extraction logic as InstructionProposalSignature.output_extractor
+        start = lm_out.find("```") + 3
+        end = lm_out.rfind("```")
+
+        if start >= end:
+            # Handle incomplete blocks
+            stripped = lm_out.strip()
+            if stripped.startswith("```"):
+                match = re.match(r"^```\S*\n?", lm_out)
+                if match:
+                    return {"candidate": lm_out[match.end() :].strip()}
+            elif stripped.endswith("```"):
+                return {"candidate": stripped[:-3].strip()}
+            return {"candidate": stripped}
+
+        # Skip optional language specifier
+        content = lm_out[start:end]
+        match = re.match(r"^\S*\n", content)
+        if match:
+            content = content[match.end() :]
+
+        return {"candidate": content.strip()}
 
 
 class OptimizeAnythingAdapter(GEPAAdapter):
@@ -197,60 +246,21 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
     # --- Seedless-mode helpers ---
 
-    @staticmethod
-    def _strip_code_fences(text: str) -> str:
-        """Remove surrounding ``` fences and any trailing text outside them."""
-        text = text.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            # Find the closing fence (search backwards from end, skip the opening line)
-            closing_idx = None
-            for i in range(len(lines) - 1, 0, -1):
-                if lines[i].strip() == "```":
-                    closing_idx = i
-                    break
-            if closing_idx is not None:
-                text = "\n".join(lines[1:closing_idx]).strip()
-            else:
-                # No closing fence — just remove opening line
-                text = "\n".join(lines[1:]).strip()
-        return text
-
-    def _format_example_for_prompt(self, example: object) -> str | None:
-        """Format an example for inclusion in a generation prompt.
-
-        Returns None for sentinel/None examples (single-instance mode).
-        """
-        if example is None:
-            return None
-        # Check for SingleInstanceSentinel by class name to avoid importing
-        if type(example).__name__ == "_SingleInstanceSentinel":
-            return None
-        if isinstance(example, str):
-            return example
-        return json.dumps(example, default=str, indent=2)
-
-    def _build_generation_input(self, prompt: str, example: object) -> str:
-        """Build the full input for the artifact LM: prompt + optional example."""
-        example_text = self._format_example_for_prompt(example)
-        if example_text is not None:
-            return prompt + "\n\n# Input\n" + example_text
-        return prompt
-
     def _run_prompt(self, prompt: str, example: object | None = None) -> str:
         """Run the internal_candidate prompt through artifact_lm to produce a candidate.
+
+        Uses :class:`InternalCandidateSignature` for prompt formatting and output parsing.
 
         Args:
             prompt: The internal_candidate prompt text.
             example: Optional example for per-example generation.
 
         Returns:
-            Generated candidate text (fences stripped).
+            Generated candidate text.
         """
         assert self.artifact_lm is not None, "artifact_lm must be set in seedless mode"
-        generation_input = self._build_generation_input(prompt, example)
-        raw_output = self.artifact_lm(generation_input)
-        return self._strip_code_fences(raw_output).strip()
+        result = InternalCandidateSignature.run(self.artifact_lm, {"prompt": prompt, "example": example})
+        return result["candidate"]
 
     def get_best_candidate(self, prompt: str) -> str | None:
         """Look up the best candidate generated from an internal_candidate prompt.
@@ -648,7 +658,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     output_format_instruction=_REFINER_TEXT_OUTPUT_INSTRUCTION,
                 )
                 raw_output = refiner_lm(refine_prompt).strip()
-                refined_text = self._strip_code_fences(raw_output).strip()
+                refined_text = InternalCandidateSignature.output_extractor(raw_output)["candidate"]
 
                 if not refined_text:
                     all_attempts.append(
@@ -851,12 +861,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     evaluation_feedback=current_feedback,
                     output_format_instruction=_REFINER_JSON_OUTPUT_INSTRUCTION,
                 )
-                raw_output = refiner_lm(prompt).strip()
-                # Strip markdown code fences if present
-                if raw_output.startswith("```"):
-                    # Remove first line (```json or ```) and last line (```)
-                    lines = raw_output.split("\n")
-                    raw_output = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:]).strip()
+                raw_output = InternalCandidateSignature.output_extractor(refiner_lm(prompt))["candidate"]
 
                 try:
                     parsed_refined = json.loads(raw_output)
