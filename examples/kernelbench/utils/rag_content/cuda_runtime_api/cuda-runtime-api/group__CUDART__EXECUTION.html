@@ -1,0 +1,1536 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-us" xml:lang="en-us">
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <meta name="copyright" content="(C) Copyright 2005">
+      <meta name="DC.rights.owner" content="(C) Copyright 2005">
+      <meta name="DC.Type" content="cppModule">
+      <meta name="DC.Title" content="Execution Control">
+      <meta name="abstract" content="">
+      <meta name="description" content="">
+      <meta name="DC.Format" content="XHTML">
+      <meta name="DC.Identifier" content="group__CUDART__EXECUTION">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/commonltr.css">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/site.css">
+      <title>CUDA Runtime API :: CUDA Toolkit Documentation</title>
+      <!--[if lt IE 9]>
+      <script src="../common/formatting/html5shiv-printshiv.min.js"></script>
+      <![endif]-->
+      <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-svg.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.ba-hashchange.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.scrollintoview.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/scripts/geoip/geoip.js"></script>
+      <script type="text/javascript" src="../search/htmlFileList.js"></script>
+      <script type="text/javascript" src="../search/htmlFileInfoList.js"></script>
+      <script type="text/javascript" src="../search/nwSearchFnt.min.js"></script>
+      <script type="text/javascript" src="../search/stemmers/en_stemmer.min.js"></script>
+      <script type="text/javascript" src="../search/index-1.js"></script>
+      <script type="text/javascript" src="../search/index-2.js"></script>
+      <script type="text/javascript" src="../search/index-3.js"></script>
+      <link rel="canonical" href="https://docs.nvidia.com/cuda/cuda-runtime-api/index.html">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/qwcode.highlight.css">
+   </head>
+   <body>
+      
+      <header id="header"><span id="company">NVIDIA</span><span id="site-title">CUDA Toolkit Documentation</span><form id="search" method="get" action="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-runtime-api/search">
+            <input type="text" name="search-text"><fieldset id="search-location">
+               <legend>Search In:</legend>
+               <label><input type="radio" name="search-type" value="site">Entire Site</label>
+               <label><input type="radio" name="search-type" value="document">Just This Document</label>
+</fieldset>
+            <button type="reset">clear search</button>
+            <button id="submit" type="submit">search</button>
+</form>
+      </header>
+      <div id="site-content">
+         <nav id="site-nav">
+            <div class="category closed"><a href="https://docs.nvidia.com/cuda/archive/12.4.0/index.html" title="The root of the site.">CUDA Toolkit 
+                  
+                  
+                  v12.4.0</a></div>
+            <div class="category"><a href="index.html" title="CUDA Runtime API">CUDA Runtime API</a></div>
+            <ul>
+               <li>
+                  <div class="section-link"><a href="driver-vs-runtime-api.html#driver-vs-runtime-api">1. Difference between the driver and runtime APIs </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="api-sync-behavior.html#api-sync-behavior">2. API synchronization behavior </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="stream-sync-behavior.html#stream-sync-behavior">3. Stream synchronization behavior</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="graphs-thread-safety.html#graphs-thread-safety">4. Graph object thread safety</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="version-mixing-rules.html#version-mixing-rules">5. Rules for version mixing </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="modules.html#modules">6. Modules</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DEVICE.html#group__CUDART__DEVICE">6.1. Device Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DEVICE__DEPRECATED.html#group__CUDART__DEVICE__DEPRECATED">6.2. Device Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__THREAD__DEPRECATED.html#group__CUDART__THREAD__DEPRECATED">6.3. Thread Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__ERROR.html#group__CUDART__ERROR">6.4. Error Handling</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__STREAM.html#group__CUDART__STREAM">6.5. Stream Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT">6.6. Event Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXTRES__INTEROP.html#group__CUDART__EXTRES__INTEROP">6.7. External Resource Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION">6.8. Execution Control</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXECUTION__DEPRECATED.html#group__CUDART__EXECUTION__DEPRECATED">6.9. Execution Control [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OCCUPANCY.html#group__CUDART__OCCUPANCY">6.10. Occupancy</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY.html#group__CUDART__MEMORY">6.11. Memory Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY__DEPRECATED.html#group__CUDART__MEMORY__DEPRECATED">6.12. Memory Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY__POOLS.html#group__CUDART__MEMORY__POOLS">6.13. Stream Ordered Memory Allocator</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__UNIFIED.html#group__CUDART__UNIFIED">6.14. Unified Addressing</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__PEER.html#group__CUDART__PEER">6.15. Peer Device Memory Access</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OPENGL.html#group__CUDART__OPENGL">6.16. OpenGL Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OPENGL__DEPRECATED.html#group__CUDART__OPENGL__DEPRECATED">6.17. OpenGL Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D9.html#group__CUDART__D3D9">6.18. Direct3D 9 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED">6.19. Direct3D 9 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D10.html#group__CUDART__D3D10">6.20. Direct3D 10 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D10__DEPRECATED.html#group__CUDART__D3D10__DEPRECATED">6.21. Direct3D 10 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D11.html#group__CUDART__D3D11">6.22. Direct3D 11 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D11__DEPRECATED.html#group__CUDART__D3D11__DEPRECATED">6.23. Direct3D 11 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__VDPAU.html#group__CUDART__VDPAU">6.24. VDPAU Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EGL.html#group__CUDART__EGL">6.25. EGL Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__INTEROP.html#group__CUDART__INTEROP">6.26. Graphics Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__TEXTURE__OBJECT.html#group__CUDART__TEXTURE__OBJECT">6.27. Texture Object Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__SURFACE__OBJECT.html#group__CUDART__SURFACE__OBJECT">6.28. Surface Object Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART____VERSION.html#group__CUDART____VERSION">6.29. Version Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__GRAPH.html#group__CUDART__GRAPH">6.30. Graph Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DRIVER__ENTRY__POINT.html#group__CUDART__DRIVER__ENTRY__POINT">6.31. Driver Entry Point Access</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL">6.32. C++ API Routines</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DRIVER.html#group__CUDART__DRIVER">6.33. Interactions with the CUDA Driver API</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__PROFILER.html#group__CUDART__PROFILER">6.34. Profiler Control</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__TYPES.html#group__CUDART__TYPES">6.35. Data types used by CUDA Runtime</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="annotated.html#annotated">7. Data Structures</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="class____cudaOccupancyB2DHelper.html#class____cudaOccupancyB2DHelper">7.1. __cudaOccupancyB2DHelper</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaAccessPolicyWindow.html#structcudaAccessPolicyWindow">7.2. cudaAccessPolicyWindow</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaArrayMemoryRequirements.html#structcudaArrayMemoryRequirements">7.3. cudaArrayMemoryRequirements</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaArraySparseProperties.html#structcudaArraySparseProperties">7.4. cudaArraySparseProperties</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaAsyncNotificationInfo__t.html#structcudaAsyncNotificationInfo__t">7.5. cudaAsyncNotificationInfo_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaChannelFormatDesc.html#structcudaChannelFormatDesc">7.6. cudaChannelFormatDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaChildGraphNodeParams.html#structcudaChildGraphNodeParams">7.7. cudaChildGraphNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaConditionalNodeParams.html#structcudaConditionalNodeParams">7.8. cudaConditionalNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaDeviceProp.html#structcudaDeviceProp">7.9. cudaDeviceProp</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEglFrame.html#structcudaEglFrame">7.10. cudaEglFrame</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEglPlaneDesc.html#structcudaEglPlaneDesc">7.11. cudaEglPlaneDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEventRecordNodeParams.html#structcudaEventRecordNodeParams">7.12. cudaEventRecordNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEventWaitNodeParams.html#structcudaEventWaitNodeParams">7.13. cudaEventWaitNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExtent.html#structcudaExtent">7.14. cudaExtent</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryBufferDesc.html#structcudaExternalMemoryBufferDesc">7.15. cudaExternalMemoryBufferDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryHandleDesc.html#structcudaExternalMemoryHandleDesc">7.16. cudaExternalMemoryHandleDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryMipmappedArrayDesc.html#structcudaExternalMemoryMipmappedArrayDesc">7.17. cudaExternalMemoryMipmappedArrayDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreHandleDesc.html#structcudaExternalSemaphoreHandleDesc">7.18. cudaExternalSemaphoreHandleDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalNodeParams.html#structcudaExternalSemaphoreSignalNodeParams">7.19. cudaExternalSemaphoreSignalNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalNodeParamsV2.html#structcudaExternalSemaphoreSignalNodeParamsV2">7.20. cudaExternalSemaphoreSignalNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalParams.html#structcudaExternalSemaphoreSignalParams">7.21. cudaExternalSemaphoreSignalParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalParams__v1.html#structcudaExternalSemaphoreSignalParams__v1">7.22. cudaExternalSemaphoreSignalParams_v1</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitNodeParams.html#structcudaExternalSemaphoreWaitNodeParams">7.23. cudaExternalSemaphoreWaitNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitNodeParamsV2.html#structcudaExternalSemaphoreWaitNodeParamsV2">7.24. cudaExternalSemaphoreWaitNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitParams.html#structcudaExternalSemaphoreWaitParams">7.25. cudaExternalSemaphoreWaitParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitParams__v1.html#structcudaExternalSemaphoreWaitParams__v1">7.26. cudaExternalSemaphoreWaitParams_v1</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaFuncAttributes.html#structcudaFuncAttributes">7.27. cudaFuncAttributes</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphEdgeData.html#structcudaGraphEdgeData">7.28. cudaGraphEdgeData</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphExecUpdateResultInfo.html#structcudaGraphExecUpdateResultInfo">7.29. cudaGraphExecUpdateResultInfo</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphInstantiateParams.html#structcudaGraphInstantiateParams">7.30. cudaGraphInstantiateParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphKernelNodeUpdate.html#structcudaGraphKernelNodeUpdate">7.31. cudaGraphKernelNodeUpdate</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphNodeParams.html#structcudaGraphNodeParams">7.32. cudaGraphNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaHostNodeParams.html#structcudaHostNodeParams">7.33. cudaHostNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaHostNodeParamsV2.html#structcudaHostNodeParamsV2">7.34. cudaHostNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaIpcEventHandle__t.html#structcudaIpcEventHandle__t">7.35. cudaIpcEventHandle_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaIpcMemHandle__t.html#structcudaIpcMemHandle__t">7.36. cudaIpcMemHandle_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaKernelNodeParams.html#structcudaKernelNodeParams">7.37. cudaKernelNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaKernelNodeParamsV2.html#structcudaKernelNodeParamsV2">7.38. cudaKernelNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchAttribute.html#structcudaLaunchAttribute">7.39. cudaLaunchAttribute</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="unioncudaLaunchAttributeValue.html#unioncudaLaunchAttributeValue">7.40. cudaLaunchAttributeValue</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchConfig__t.html#structcudaLaunchConfig__t">7.41. cudaLaunchConfig_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchMemSyncDomainMap.html#structcudaLaunchMemSyncDomainMap">7.42. cudaLaunchMemSyncDomainMap</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchParams.html#structcudaLaunchParams">7.43. cudaLaunchParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAccessDesc.html#structcudaMemAccessDesc">7.44. cudaMemAccessDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAllocNodeParams.html#structcudaMemAllocNodeParams">7.45. cudaMemAllocNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAllocNodeParamsV2.html#structcudaMemAllocNodeParamsV2">7.46. cudaMemAllocNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpy3DParms.html#structcudaMemcpy3DParms">7.47. cudaMemcpy3DParms</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpy3DPeerParms.html#structcudaMemcpy3DPeerParms">7.48. cudaMemcpy3DPeerParms</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpyNodeParams.html#structcudaMemcpyNodeParams">7.49. cudaMemcpyNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemFreeNodeParams.html#structcudaMemFreeNodeParams">7.50. cudaMemFreeNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemLocation.html#structcudaMemLocation">7.51. cudaMemLocation</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemPoolProps.html#structcudaMemPoolProps">7.52. cudaMemPoolProps</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemPoolPtrExportData.html#structcudaMemPoolPtrExportData">7.53. cudaMemPoolPtrExportData</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemsetParams.html#structcudaMemsetParams">7.54. cudaMemsetParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemsetParamsV2.html#structcudaMemsetParamsV2">7.55. cudaMemsetParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPitchedPtr.html#structcudaPitchedPtr">7.56. cudaPitchedPtr</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPointerAttributes.html#structcudaPointerAttributes">7.57. cudaPointerAttributes</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPos.html#structcudaPos">7.58. cudaPos</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaResourceDesc.html#structcudaResourceDesc">7.59. cudaResourceDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaResourceViewDesc.html#structcudaResourceViewDesc">7.60. cudaResourceViewDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaTextureDesc.html#structcudaTextureDesc">7.61. cudaTextureDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structCUuuid__st.html#structCUuuid__st">7.62. CUuuid_st</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="functions.html#functions">8. Data Fields</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="deprecated.html#deprecated">9. Deprecated List</a></div>
+               </li>
+            </ul>
+         </nav>
+         <div id="resize-nav"></div>
+         <nav id="search-results">
+            <h2>Search Results</h2>
+            <ol></ol>
+         </nav>
+         
+         <div id="contents-container">
+            <div id="breadcrumbs-container">
+               <div id="breadcrumbs">
+<a href="group__CUDART__EXTRES__INTEROP.html" shape="rect">&lt; Previous</a> | <a href="group__CUDART__EXECUTION__DEPRECATED.html" shape="rect">Next &gt;</a>
+</div>
+               <div id="release-info">CUDA Runtime API
+                  (<a href="https://docs.nvidia.com/cuda/archive/12.4.0/pdf/CUDA_Runtime_API.pdf">PDF</a>)
+                  -
+                   
+                  
+                  
+                  v12.4.0
+                  (<a href="https://developer.nvidia.com/cuda-toolkit-archive">older</a>)
+                  -
+                  Last updated March 5, 2024
+                  -
+                  <a href="mailto:CUDAIssues@nvidia.com?subject=CUDA%20Toolkit%20Documentation%20Feedback:%20CUDA%20Runtime%20API">Send Feedback</a>
+</div>
+            </div>
+            <article id="contents">
+               <div class="topic reference apiRef apiPackage cppModule" id="group__CUDART__EXECUTION">
+<a name="group__CUDART__EXECUTION" shape="rect">
+                     <!-- --></a><h2 class="topictitle2 cppModule">6.8. Execution Control</h2>
+                  <div class="section">
+                     <p>This section describes the execution control functions of the CUDA runtime application programming interface.</p>
+                     <p class="p">Some functions have overloaded C++ API template versions documented separately in the <a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL" title="C++-style interface built on top of CUDA runtime API." shape="rect">C++ API Routines</a> module. 
+                     </p>
+                  </div>
+                  <h3 class="fake_sectiontitle member_header">Functions</h3>
+                  <dl class="members">
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name_long_type"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g19b1696533069c03f646e2ce2beacc00" shape="rect">cudaFuncGetAttributes</a> (  <a href="structcudaFuncAttributes.html#structcudaFuncAttributes" title="" shape="rect">cudaFuncAttributes</a>*<span> </span><span class="keyword keyword apiItemName">attr</span>, const void*<span> </span><span class="keyword keyword apiItemName">func</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Find out attributes for a given function. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g77c307d9880ac3637091fd184ada1ef4" shape="rect">cudaFuncGetName</a> (  const char**<span> </span><span class="keyword keyword apiItemName">name</span>, const void*<span> </span><span class="keyword keyword apiItemName">func</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Returns the function name for a device entry function pointer. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1gf4fb650273c73dd369cf4bfce33066d5" shape="rect">cudaFuncGetParamInfo</a> (  const void*<span> </span><span class="keyword keyword apiItemName">func</span>, size_t<span> </span><span class="keyword keyword apiItemName">paramIndex</span>, size_t*<span> </span><span class="keyword keyword apiItemName">paramOffset</span>, size_t*<span> </span><span class="keyword keyword apiItemName">paramSize</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Returns the offset and size of a kernel parameter in the device-side parameter layout. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g317e77d2657abf915fd9ed03e75f3eb0" shape="rect">cudaFuncSetAttribute</a> (  const void*<span> </span><span class="keyword keyword apiItemName">func</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gc6c537b33d22c871a103f0fda8ac8bbe" title="" shape="rect">cudaFuncAttribute</a><span> </span><span class="keyword keyword apiItemName">attr</span>, int <span> </span><span class="keyword keyword apiItemName">value</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Set attributes for a given function. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g6699ca1943ac2655effa0d571b2f4f15" shape="rect">cudaFuncSetCacheConfig</a> (  const void*<span> </span><span class="keyword keyword apiItemName">func</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gb980f35ed69ee7991704de29a13de49b" title="" shape="rect">cudaFuncCache</a><span> </span><span class="keyword keyword apiItemName">cacheConfig</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Sets the preferred cache configuration for a device function. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ void* </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1ge401490a88262d4e8ecd99ee08a88c43" shape="rect">cudaGetParameterBuffer</a> (  size_t<span> </span><span class="keyword keyword apiItemName">alignment</span>, size_t<span> </span><span class="keyword keyword apiItemName">size</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Obtains a parameter buffer. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ void </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g9057f99234a8311c4c5d426cd501d99d" shape="rect">cudaGridDependencySynchronize</a> (  void ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Programmatic grid dependency synchronization. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g504b94170f83285c71031be6d5d15f73" shape="rect">cudaLaunchCooperativeKernel</a> (  const void*<span> </span><span class="keyword keyword apiItemName">func</span>, dim3<span> </span><span class="keyword keyword apiItemName">gridDim</span>, dim3<span> </span><span class="keyword keyword apiItemName">blockDim</span>, void**<span> </span><span class="keyword keyword apiItemName">args</span>, size_t<span> </span><span class="keyword keyword apiItemName">sharedMem</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" title="" shape="rect">cudaStream_t</a><span> </span><span class="keyword keyword apiItemName">stream</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Launches a device function where thread blocks can cooperate and synchronize as they execute. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g63685d849da7565b5774f5321a342f05" shape="rect">cudaLaunchCooperativeKernelMultiDevice</a> (  <a href="structcudaLaunchParams.html#structcudaLaunchParams" title="" shape="rect">cudaLaunchParams</a>*<span> </span><span class="keyword keyword apiItemName">launchParamsList</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">numDevices</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">flags</span> = <span class="ph ph apiData">0</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Launches device functions on multiple devices where thread blocks can cooperate and synchronize as they execute. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g0e7833cfb3751eb2d03424da628e7067" shape="rect">cudaLaunchDevice</a> (  void*<span> </span><span class="keyword keyword apiItemName">func</span>, void*<span> </span><span class="keyword keyword apiItemName">parameterBuffer</span>, dim3<span> </span><span class="keyword keyword apiItemName">gridDimension</span>, dim3<span> </span><span class="keyword keyword apiItemName">blockDimension</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">sharedMemSize</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" title="" shape="rect">cudaStream_t</a><span> </span><span class="keyword keyword apiItemName">stream</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Launches a specified kernel. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g05841eaa5f90f27124241baafb3e856f" shape="rect">cudaLaunchHostFunc</a> (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" title="" shape="rect">cudaStream_t</a><span> </span><span class="keyword keyword apiItemName">stream</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g30104c99d85403b72b7c7ad72a4782fc" title="" shape="rect">cudaHostFn_t</a><span> </span><span class="keyword keyword apiItemName">fn</span>, void*<span> </span><span class="keyword keyword apiItemName">userData</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Enqueues a host function call in a stream. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g5064cdf5d8e6741ace56fd8be951783c" shape="rect">cudaLaunchKernel</a> (  const void*<span> </span><span class="keyword keyword apiItemName">func</span>, dim3<span> </span><span class="keyword keyword apiItemName">gridDim</span>, dim3<span> </span><span class="keyword keyword apiItemName">blockDim</span>, void**<span> </span><span class="keyword keyword apiItemName">args</span>, size_t<span> </span><span class="keyword keyword apiItemName">sharedMem</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" title="" shape="rect">cudaStream_t</a><span> </span><span class="keyword keyword apiItemName">stream</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Launches a device function. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1ge236ecdbbaf7cf47a806bba71c1d03c4" shape="rect">cudaLaunchKernelExC</a> (  const <a href="structcudaLaunchConfig__t.html#structcudaLaunchConfig__t" title="" shape="rect">cudaLaunchConfig_t</a>*<span> </span><span class="keyword keyword apiItemName">config</span>, const void*<span> </span><span class="keyword keyword apiItemName">func</span>, void**<span> </span><span class="keyword keyword apiItemName">args</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Launches a CUDA function with launch-time configuration. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1ga7893ac813a0a901d533852f568f9c8e" shape="rect">cudaSetDoubleForDevice</a> (  double*<span> </span><span class="keyword keyword apiItemName">d</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Converts a double argument to be executed on a device. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g63b08bc08466ff7e53962da9098c216a" shape="rect">cudaSetDoubleForHost</a> (  double*<span> </span><span class="keyword keyword apiItemName">d</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Converts a double argument after execution on a device. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ void </span><span class="member_name"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1ge194af462d927583bed3acf60d450218" shape="rect">cudaTriggerProgrammaticLaunchCompletion</a> (  void ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Programmatic dependency trigger. </span>
+</dd>
+                  </dl>
+                  <div class="description">
+                     <h3 class="sectiontitle">Functions</h3>
+                     <dl class="description">
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1g19b1696533069c03f646e2ce2beacc00" id="group__CUDART__EXECUTION_1g19b1696533069c03f646e2ce2beacc00" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaFuncGetAttributes (  <a href="structcudaFuncAttributes.html#structcudaFuncAttributes" title="" shape="rect">cudaFuncAttributes</a>*<span> </span><span class="keyword keyword apiItemName">attr</span>, const void*<span> </span><span class="keyword keyword apiItemName">func</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Find out attributes for a given function. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">attr</span></tt></dt>
+                                 <dd>- Return pointer to function's attributes </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">func</span></tt></dt>
+                                 <dd>- Device function symbol</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b6af535e7e53d3f21e2437e8977b8c2e" shape="rect">cudaErrorInvalidDeviceFunction</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>This function obtains the attributes of a function specified via <tt class="ph tt code">func</tt>. <tt class="ph tt code">func</tt> is a device function symbol and must be declared as a <tt class="ph tt code">__global__</tt> function. The fetched attributes are placed in <tt class="ph tt code">attr</tt>. If the specified function does not exist, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b6af535e7e53d3f21e2437e8977b8c2e" shape="rect">cudaErrorInvalidDeviceFunction</a> is returned. For templated functions, pass the function symbol as follows: func_name&lt;template_arg_0,...,template_arg_N&gt;
+                              </p>
+                              <p class="p">Note that some function attributes such as <a class="xref" href="structcudaFuncAttributes.html#structcudaFuncAttributes_1b8350f491105f159ff684f5c59167af0" shape="rect">maxThreadsPerBlock</a> may vary based on the device that is currently being used.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Use of a string naming a function as the <tt class="ph tt code">func</tt> parameter was deprecated in CUDA 4.1 and removed in CUDA 5.0. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g6699ca1943ac2655effa0d571b2f4f15" title="Sets the preferred cache configuration for a device function." shape="rect">cudaFuncSetCacheConfig ( C API)</a>, <a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g0e78e02c6d12ebddd4577ac6ebadf494" title="[C++ API] Find out attributes for a given function" shape="rect">cudaFuncGetAttributes ( C++ API)</a>, <a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g5064cdf5d8e6741ace56fd8be951783c" title="Launches a device function." shape="rect">cudaLaunchKernel ( C API)</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EXEC.html#group__CUDA__EXEC_1g5e92a1b0d8d1b82cb00dcfb2de15961b" target="_blank" shape="rect">cuFuncGetAttribute</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1g77c307d9880ac3637091fd184ada1ef4" id="group__CUDART__EXECUTION_1g77c307d9880ac3637091fd184ada1ef4" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaFuncGetName (  const char**<span> </span><span class="keyword keyword apiItemName">name</span>, const void*<span> </span><span class="keyword keyword apiItemName">func</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Returns the function name for a device entry function pointer. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">name</span></tt></dt>
+                                 <dd>- The returned name of the function </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">func</span></tt></dt>
+                                 <dd>- The function pointer to retrieve name for</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b6af535e7e53d3f21e2437e8977b8c2e" shape="rect">cudaErrorInvalidDeviceFunction</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Returns in <tt class="ph tt code">**name</tt> the function name associated with the symbol <tt class="ph tt code">func</tt> . The function name is returned as a null-terminated string. This API may return a mangled name if the function is not declared
+                                 as having C linkage. If <tt class="ph tt code">**name</tt> is NULL, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a> is returned. If <tt class="ph tt code">func</tt> is not a device entry function, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b6af535e7e53d3f21e2437e8977b8c2e" shape="rect">cudaErrorInvalidDeviceFunction</a> is returned.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"><a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g858396abb07a843b7d03c383f31208b5" title="Returns the function name for a device entry function pointer." shape="rect">cudaFuncGetName ( C++ API)</a></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1gf4fb650273c73dd369cf4bfce33066d5" id="group__CUDART__EXECUTION_1gf4fb650273c73dd369cf4bfce33066d5" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaFuncGetParamInfo (  const void*<span> </span><span class="keyword keyword apiItemName">func</span>, size_t<span> </span><span class="keyword keyword apiItemName">paramIndex</span>, size_t*<span> </span><span class="keyword keyword apiItemName">paramOffset</span>, size_t*<span> </span><span class="keyword keyword apiItemName">paramSize</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Returns the offset and size of a kernel parameter in the device-side parameter layout. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">func</span></tt></dt>
+                                 <dd>- The function to query </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">paramIndex</span></tt></dt>
+                                 <dd>- The parameter index to query </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">paramOffset</span></tt></dt>
+                                 <dd>- The offset into the device-side parameter layout at which the parameter resides </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">paramSize</span></tt></dt>
+                                 <dd>- The size of the parameter in the device-side parameter layout</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__TYPES.html#group__CUDA__TYPES_1ggc6c391505e117393cc2558fff6bfc2e9a0eed720f8a87cd1c5fd1c453bc7a03d" target="_blank" shape="rect">CUDA_SUCCESS</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__TYPES.html#group__CUDA__TYPES_1ggc6c391505e117393cc2558fff6bfc2e990696c86fcee1f536a1ec7d25867feeb" target="_blank" shape="rect">CUDA_ERROR_INVALID_VALUE</a>, 
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Queries the kernel parameter at <tt class="ph tt code">paramIndex</tt> in <tt class="ph tt code">func's</tt> list of parameters and returns parameter information via <tt class="ph tt code">paramOffset</tt> and <tt class="ph tt code">paramSize</tt>. <tt class="ph tt code">paramOffset</tt> returns the offset of the parameter in the device-side parameter layout. <tt class="ph tt code">paramSize</tt> returns the size in bytes of the parameter. This information can be used to update kernel node parameters from the device
+                                 via <a class="xref" href="group__CUDART__GRAPH.html#group__CUDART__GRAPH_1g9171bc40a4f9be650b3fe867e8bfb549" title="Updates the kernel parameters of the given kernel node." shape="rect">cudaGraphKernelNodeSetParam()</a> and <a class="xref" href="group__CUDART__GRAPH.html#group__CUDART__GRAPH_1g2d558cf37c9616365c67447e61ac0d6a" title="Batch applies multiple kernel node updates." shape="rect">cudaGraphKernelNodeUpdatesApply()</a>. <tt class="ph tt code">paramIndex</tt> must be less than the number of parameters that <tt class="ph tt code">func</tt> takes.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1g317e77d2657abf915fd9ed03e75f3eb0" id="group__CUDART__EXECUTION_1g317e77d2657abf915fd9ed03e75f3eb0" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaFuncSetAttribute (  const void*<span> </span><span class="keyword keyword apiItemName">func</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gc6c537b33d22c871a103f0fda8ac8bbe" title="" shape="rect">cudaFuncAttribute</a><span> </span><span class="keyword keyword apiItemName">attr</span>, int <span> </span><span class="keyword keyword apiItemName">value</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Set attributes for a given function. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">func</span></tt></dt>
+                                 <dd>- Function to get attributes of </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">attr</span></tt></dt>
+                                 <dd>- Attribute to set </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">value</span></tt></dt>
+                                 <dd>- Value to set</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b6af535e7e53d3f21e2437e8977b8c2e" shape="rect">cudaErrorInvalidDeviceFunction</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>This function sets the attributes of a function specified via <tt class="ph tt code">func</tt>. The parameter <tt class="ph tt code">func</tt> must be a pointer to a function that executes on the device. The parameter specified by <tt class="ph tt code">func</tt> must be declared as a <tt class="ph tt code">__global__</tt> function. The enumeration defined by <tt class="ph tt code">attr</tt> is set to the value defined by <tt class="ph tt code">value</tt>. If the specified function does not exist, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b6af535e7e53d3f21e2437e8977b8c2e" shape="rect">cudaErrorInvalidDeviceFunction</a> is returned. If the specified attribute cannot be written, or if the value is incorrect, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a> is returned.
+                              </p>
+                              <p class="p">Valid values for <tt class="ph tt code">attr</tt> are:
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ggc6c537b33d22c871a103f0fda8ac8bbe9d5a5aea324596d0e686f7c416f71c26" shape="rect">cudaFuncAttributeMaxDynamicSharedMemorySize</a> - The requested maximum size in bytes of dynamically-allocated shared memory. The sum of this value and the function attribute
+                                          sharedSizeBytes cannot exceed the device attribute <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg49e2f8c2c0bd6fe264f2fc970912e5cd024f669ca60d8ff7b3126dbfc61fd925" shape="rect">cudaDevAttrMaxSharedMemoryPerBlockOptin</a>. The maximal size of requestable dynamic shared memory may differ by GPU architecture.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ggc6c537b33d22c871a103f0fda8ac8bbed410365fab79998b26bf68000cac7194" shape="rect">cudaFuncAttributePreferredSharedMemoryCarveout</a> - On devices where the L1 cache and shared memory use the same hardware resources, this sets the shared memory carveout preference,
+                                          in percent of the total shared memory. See <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg49e2f8c2c0bd6fe264f2fc970912e5cdc478150b5ec1689a2944aaf7e25a5685" shape="rect">cudaDevAttrMaxSharedMemoryPerMultiprocessor</a>. This is only a hint, and the driver can choose a different ratio if required to execute the function.
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"><a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g7656391f2e52f569214adbfc19689eb3" title="Launches a device function." shape="rect">cudaLaunchKernel ( C++ API)</a>, <a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g7d9cc996fe45b6260ebb086caff1c685" title="[C++ API] Sets the preferred cache configuration for a device function" shape="rect">cudaFuncSetCacheConfig ( C++ API)</a>, <a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g19b1696533069c03f646e2ce2beacc00" title="Find out attributes for a given function." shape="rect">cudaFuncGetAttributes ( C API)</a>, 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1g6699ca1943ac2655effa0d571b2f4f15" id="group__CUDART__EXECUTION_1g6699ca1943ac2655effa0d571b2f4f15" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaFuncSetCacheConfig (  const void*<span> </span><span class="keyword keyword apiItemName">func</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gb980f35ed69ee7991704de29a13de49b" title="" shape="rect">cudaFuncCache</a><span> </span><span class="keyword keyword apiItemName">cacheConfig</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Sets the preferred cache configuration for a device function. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">func</span></tt></dt>
+                                 <dd>- Device function symbol </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">cacheConfig</span></tt></dt>
+                                 <dd>- Requested cache configuration</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b6af535e7e53d3f21e2437e8977b8c2e" shape="rect">cudaErrorInvalidDeviceFunction</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>On devices where the L1 cache and shared memory use the same hardware resources, this sets through <tt class="ph tt code">cacheConfig</tt> the preferred cache configuration for the function specified via <tt class="ph tt code">func</tt>. This is only a preference. The runtime will use the requested configuration if possible, but it is free to choose a different
+                                 configuration if required to execute <tt class="ph tt code">func</tt>.
+                              </p>
+                              <p class="p"><tt class="ph tt code">func</tt> is a device function symbol and must be declared as a <tt class="ph tt code">__global__</tt> function. If the specified function does not exist, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b6af535e7e53d3f21e2437e8977b8c2e" shape="rect">cudaErrorInvalidDeviceFunction</a> is returned. For templated functions, pass the function symbol as follows: func_name&lt;template_arg_0,...,template_arg_N&gt;
+                              </p>
+                              <p class="p">This setting does nothing on devices where the size of the L1 cache and shared memory are fixed.</p>
+                              <p class="p">Launching a kernel with a different preference than the most recent preference setting may insert a device-side synchronization
+                                 point.
+                              </p>
+                              <p class="p">The supported cache configurations are:
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ggb980f35ed69ee7991704de29a13de49b3b4b8c65376ce1ca107be413e15981bc" shape="rect">cudaFuncCachePreferNone</a>: no preference for shared memory or L1 (default)
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ggb980f35ed69ee7991704de29a13de49b84725d25c531f9bafc61ae329afe5b2b" shape="rect">cudaFuncCachePreferShared</a>: prefer larger shared memory and smaller L1 cache
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ggb980f35ed69ee7991704de29a13de49b8ecb48ccbc2230c81528a2c7c695100e" shape="rect">cudaFuncCachePreferL1</a>: prefer larger L1 cache and smaller shared memory
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ggb980f35ed69ee7991704de29a13de49bd151ac8d667150c601de4b9542887a3b" shape="rect">cudaFuncCachePreferEqual</a>: prefer equal size L1 cache and shared memory
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Use of a string naming a function as the <tt class="ph tt code">func</tt> parameter was deprecated in CUDA 4.1 and removed in CUDA 5.0. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g7d9cc996fe45b6260ebb086caff1c685" title="[C++ API] Sets the preferred cache configuration for a device function" shape="rect">cudaFuncSetCacheConfig ( C++ API)</a>, <a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g19b1696533069c03f646e2ce2beacc00" title="Find out attributes for a given function." shape="rect">cudaFuncGetAttributes ( C API)</a>, <a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g5064cdf5d8e6741ace56fd8be951783c" title="Launches a device function." shape="rect">cudaLaunchKernel ( C API)</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EXEC.html#group__CUDA__EXEC_1g40f8c11e81def95dc0072a375f965681" target="_blank" shape="rect">cuFuncSetCacheConfig</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1ge401490a88262d4e8ecd99ee08a88c43" id="group__CUDART__EXECUTION_1ge401490a88262d4e8ecd99ee08a88c43" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ void* cudaGetParameterBuffer (  size_t<span> </span><span class="keyword keyword apiItemName">alignment</span>, size_t<span> </span><span class="keyword keyword apiItemName">size</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Obtains a parameter buffer. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">alignment</span></tt></dt>
+                                 <dd>- Specifies alignment requirement of the parameter buffer </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">size</span></tt></dt>
+                                 <dd>- Specifies size requirement in bytes</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns pointer to the allocated parameterBuffer </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Obtains a parameter buffer which can be filled with parameters for a kernel launch. Parameters passed to <a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g0e7833cfb3751eb2d03424da628e7067" title="Launches a specified kernel." shape="rect">cudaLaunchDevice</a> must be allocated via this function.
+                              </p>
+                              <p class="p">This is a low level API and can only be accessed from Parallel Thread Execution (PTX). CUDA user code should use &lt;&lt;&lt; &gt;&gt;&gt; to
+                                 launch kernels.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches.</p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g0e7833cfb3751eb2d03424da628e7067" title="Launches a specified kernel." shape="rect">cudaLaunchDevice</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1g9057f99234a8311c4c5d426cd501d99d" id="group__CUDART__EXECUTION_1g9057f99234a8311c4c5d426cd501d99d" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ void cudaGridDependencySynchronize (  void )  [inline] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Programmatic grid dependency synchronization. </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>This device function will block the thread until all direct grid dependencies have completed. This API is intended to use
+                                 in conjuncture with programmatic / launch event / dependency. See <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ggfc5ed48085f05863b1aeebb14934b056ae1805b9ab2fb5ac320737f39617b501" shape="rect">cudaLaunchAttributeID::cudaLaunchAttributeProgrammaticStreamSerialization</a> and <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ggfc5ed48085f05863b1aeebb14934b056690bb55d13016cd9dfd841d467388773" shape="rect">cudaLaunchAttributeID::cudaLaunchAttributeProgrammaticEvent</a> for more information. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1g504b94170f83285c71031be6d5d15f73" id="group__CUDART__EXECUTION_1g504b94170f83285c71031be6d5d15f73" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaLaunchCooperativeKernel (  const void*<span> </span><span class="keyword keyword apiItemName">func</span>, dim3<span> </span><span class="keyword keyword apiItemName">gridDim</span>, dim3<span> </span><span class="keyword keyword apiItemName">blockDim</span>, void**<span> </span><span class="keyword keyword apiItemName">args</span>, size_t<span> </span><span class="keyword keyword apiItemName">sharedMem</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" title="" shape="rect">cudaStream_t</a><span> </span><span class="keyword keyword apiItemName">stream</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Launches a device function where thread blocks can cooperate and synchronize as they execute. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">func</span></tt></dt>
+                                 <dd>- Device function symbol </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">gridDim</span></tt></dt>
+                                 <dd>- Grid dimentions </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">blockDim</span></tt></dt>
+                                 <dd>- Block dimentions </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">args</span></tt></dt>
+                                 <dd>- Arguments </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">sharedMem</span></tt></dt>
+                                 <dd>- Shared memory </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">stream</span></tt></dt>
+                                 <dd>- Stream identifier</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b6af535e7e53d3f21e2437e8977b8c2e" shape="rect">cudaErrorInvalidDeviceFunction</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038d3934977826b2e1488dfeb7e0614e776" shape="rect">cudaErrorInvalidConfiguration</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038099def426efea2b2366d8d7ad09f974a" shape="rect">cudaErrorLaunchFailure</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00384ea7f1214c348f64f565ca860933e5a5" shape="rect">cudaErrorLaunchTimeout</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038dfddff5cba4a975a67b298ee0752f714" shape="rect">cudaErrorLaunchOutOfResources</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003852ad40adc14242c4a10bb60594579f9d" shape="rect">cudaErrorCooperativeLaunchTooLarge</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383be0ba00f56924404620f89b7d405362" shape="rect">cudaErrorSharedObjectInitFailed</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>The function invokes kernel <tt class="ph tt code">func</tt> on <tt class="ph tt code">gridDim</tt> (<tt class="ph tt code">gridDim.x</tt><tt class="ph tt code">gridDim.y</tt><tt class="ph tt code">gridDim.z</tt>) grid of blocks. Each block contains <tt class="ph tt code">blockDim</tt> (<tt class="ph tt code">blockDim.x</tt><tt class="ph tt code">blockDim.y</tt><tt class="ph tt code">blockDim.z</tt>) threads.
+                              </p>
+                              <p class="p">The device on which this kernel is invoked must have a non-zero value for the device attribute <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg49e2f8c2c0bd6fe264f2fc970912e5cd108260813c2eb395a60d4acf08c97595" shape="rect">cudaDevAttrCooperativeLaunch</a>.
+                              </p>
+                              <p class="p">The total number of blocks launched cannot exceed the maximum number of blocks per multiprocessor as returned by <a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g5a5d67a3c907371559ba692195e8a38c" title="Returns occupancy for a device function." shape="rect">cudaOccupancyMaxActiveBlocksPerMultiprocessor</a> (or <a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g603b86b20b37823253ff89fe8688ba83" title="Returns occupancy for a device function with the specified flags." shape="rect">cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags</a>) times the number of multiprocessors as specified by the device attribute <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg49e2f8c2c0bd6fe264f2fc970912e5cd74de9ed281f917c8e4ef272da09f338a" shape="rect">cudaDevAttrMultiProcessorCount</a>.
+                              </p>
+                              <p class="p">The kernel cannot make use of CUDA dynamic parallelism.</p>
+                              <p class="p">If the kernel has N parameters the <tt class="ph tt code">args</tt> should point to array of N pointers. Each pointer, from <tt class="ph tt code">args[0]</tt> to <tt class="ph tt code">args[N - 1]</tt>, point to the region of memory from which the actual parameter will be copied.
+                              </p>
+                              <p class="p">For templated functions, pass the function symbol as follows: func_name&lt;template_arg_0,...,template_arg_N&gt;</p>
+                              <p class="p"><tt class="ph tt code">sharedMem</tt> sets the amount of dynamic shared memory that will be available to each thread block.
+                              </p>
+                              <p class="p"><tt class="ph tt code">stream</tt> specifies a stream the invocation is associated to.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">This function uses standard  <a class="xref xmlonly" href="stream-sync-behavior.html#stream-sync-behavior__default-stream" shape="rect">default stream</a> semantics. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1gc0210b928f9bf4e212af07d35ac11d67" title="Launches a device function." shape="rect">cudaLaunchCooperativeKernel ( C++ API)</a>, <a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g63685d849da7565b5774f5321a342f05" title="Launches device functions on multiple devices where thread blocks can cooperate and synchronize as they execute." shape="rect">cudaLaunchCooperativeKernelMultiDevice</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EXEC.html#group__CUDA__EXEC_1g06d753134145c4584c0c62525c1894cb" target="_blank" shape="rect">cuLaunchCooperativeKernel</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1g63685d849da7565b5774f5321a342f05" id="group__CUDART__EXECUTION_1g63685d849da7565b5774f5321a342f05" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaLaunchCooperativeKernelMultiDevice (  <a href="structcudaLaunchParams.html#structcudaLaunchParams" title="" shape="rect">cudaLaunchParams</a>*<span> </span><span class="keyword keyword apiItemName">launchParamsList</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">numDevices</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">flags</span> = <span class="ph ph apiData">0</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Launches device functions on multiple devices where thread blocks can cooperate and synchronize as they execute. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">launchParamsList</span></tt></dt>
+                                 <dd>- List of launch parameters, one per device </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">numDevices</span></tt></dt>
+                                 <dd>- Size of the <tt class="ph tt code">launchParamsList</tt> array 
+                                 </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">flags</span></tt></dt>
+                                 <dd>- Flags to control launch behavior</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b6af535e7e53d3f21e2437e8977b8c2e" shape="rect">cudaErrorInvalidDeviceFunction</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038d3934977826b2e1488dfeb7e0614e776" shape="rect">cudaErrorInvalidConfiguration</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038099def426efea2b2366d8d7ad09f974a" shape="rect">cudaErrorLaunchFailure</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00384ea7f1214c348f64f565ca860933e5a5" shape="rect">cudaErrorLaunchTimeout</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038dfddff5cba4a975a67b298ee0752f714" shape="rect">cudaErrorLaunchOutOfResources</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003852ad40adc14242c4a10bb60594579f9d" shape="rect">cudaErrorCooperativeLaunchTooLarge</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383be0ba00f56924404620f89b7d405362" shape="rect">cudaErrorSharedObjectInitFailed</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000009" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 11.3.</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>Invokes kernels as specified in the <tt class="ph tt code">launchParamsList</tt> array where each element of the array specifies all the parameters required to perform a single kernel launch. These kernels
+                                 can cooperate and synchronize as they execute. The size of the array is specified by <tt class="ph tt code">numDevices</tt>.
+                              </p>
+                              <p class="p">No two kernels can be launched on the same device. All the devices targeted by this multi-device launch must be identical.
+                                 All devices must have a non-zero value for the device attribute <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg49e2f8c2c0bd6fe264f2fc970912e5cdd23f91b7405936dcbdb32cccf4598ea3" shape="rect">cudaDevAttrCooperativeMultiDeviceLaunch</a>.
+                              </p>
+                              <p class="p">The same kernel must be launched on all devices. Note that any __device__ or __constant__ variables are independently instantiated
+                                 on every device. It is the application's responsiblity to ensure these variables are initialized and used appropriately.
+                              </p>
+                              <p class="p">The size of the grids as specified in blocks, the size of the blocks themselves and the amount of shared memory used by each
+                                 thread block must also match across all launched kernels.
+                              </p>
+                              <p class="p">The streams used to launch these kernels must have been created via either <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g6a3c4b819e6a994c26d0c4824a4c80da" title="Create an asynchronous stream." shape="rect">cudaStreamCreate</a> or <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1ge2be9e9858849bf62ba4a8b66d1c3540" title="Create an asynchronous stream with the specified priority." shape="rect">cudaStreamCreateWithPriority</a> or <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1ge2be9e9858849bf62ba4a8b66d1c3540" title="Create an asynchronous stream with the specified priority." shape="rect">cudaStreamCreateWithPriority</a>. The NULL stream or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g4e62d09dde16ba457b0a97f3a5262246" shape="rect">cudaStreamLegacy</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g7b7129befd6f52708309acafd1c46197" shape="rect">cudaStreamPerThread</a> cannot be used.
+                              </p>
+                              <p class="p">The total number of blocks launched per kernel cannot exceed the maximum number of blocks per multiprocessor as returned by
+                                 <a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g5a5d67a3c907371559ba692195e8a38c" title="Returns occupancy for a device function." shape="rect">cudaOccupancyMaxActiveBlocksPerMultiprocessor</a> (or <a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g603b86b20b37823253ff89fe8688ba83" title="Returns occupancy for a device function with the specified flags." shape="rect">cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags</a>) times the number of multiprocessors as specified by the device attribute <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg49e2f8c2c0bd6fe264f2fc970912e5cd74de9ed281f917c8e4ef272da09f338a" shape="rect">cudaDevAttrMultiProcessorCount</a>. Since the total number of blocks launched per device has to match across all devices, the maximum number of blocks that
+                                 can be launched per device will be limited by the device with the least number of multiprocessors.
+                              </p>
+                              <p class="p">The kernel cannot make use of CUDA dynamic parallelism.</p>
+                              <p class="p">The <a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams" shape="rect">cudaLaunchParams</a> structure is defined as: </p>
+<pre xml:space="preserve">‎        struct <a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams" shape="rect">cudaLaunchParams</a>
+              {
+                  void *<a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_1b83c5ba1757e15e87386300690c9b081" shape="rect">func</a>;
+                  dim3 <a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_1ad6b5e617a8c137476babb2ca1b94570" shape="rect">gridDim</a>;
+                  dim3 <a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_1dd319c6a16b02bdcce0c08fb3e03b87f" shape="rect">blockDim</a>;
+                  void **<a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_15fbd7dbed62b8cd76d00a5396994f03d" shape="rect">args</a>;
+                  size_t <a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_186f6dff594ff6d496509a9f3c6607f17" shape="rect">sharedMem</a>;
+                  <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" shape="rect">cudaStream_t</a> 
+                  <a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_11f780f7a1266c1d820d46b31d025bd0c" shape="rect">stream</a>;
+              };</pre> where:<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_1b83c5ba1757e15e87386300690c9b081" shape="rect">cudaLaunchParams::func</a> specifies the kernel to be launched. This same functions must be launched on all devices. For templated functions, pass the
+                                          function symbol as follows: func_name&lt;template_arg_0,...,template_arg_N&gt;
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_1ad6b5e617a8c137476babb2ca1b94570" shape="rect">cudaLaunchParams::gridDim</a> specifies the width, height and depth of the grid in blocks. This must match across all kernels launched.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_1dd319c6a16b02bdcce0c08fb3e03b87f" shape="rect">cudaLaunchParams::blockDim</a> is the width, height and depth of each thread block. This must match across all kernels launched.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_15fbd7dbed62b8cd76d00a5396994f03d" shape="rect">cudaLaunchParams::args</a> specifies the arguments to the kernel. If the kernel has N parameters then <a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_15fbd7dbed62b8cd76d00a5396994f03d" shape="rect">cudaLaunchParams::args</a> should point to array of N pointers. Each pointer, from <samp class="ph codeph"><a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_15fbd7dbed62b8cd76d00a5396994f03d" shape="rect">cudaLaunchParams::args</a>[0]</samp> to <samp class="ph codeph"><a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_15fbd7dbed62b8cd76d00a5396994f03d" shape="rect">cudaLaunchParams::args</a>[N - 1]</samp>, point to the region of memory from which the actual parameter will be copied.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_186f6dff594ff6d496509a9f3c6607f17" shape="rect">cudaLaunchParams::sharedMem</a> is the dynamic shared-memory size per thread block in bytes. This must match across all kernels launched.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="structcudaLaunchParams.html#structcudaLaunchParams_11f780f7a1266c1d820d46b31d025bd0c" shape="rect">cudaLaunchParams::stream</a> is the handle to the stream to perform the launch in. This cannot be the NULL stream or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g4e62d09dde16ba457b0a97f3a5262246" shape="rect">cudaStreamLegacy</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g7b7129befd6f52708309acafd1c46197" shape="rect">cudaStreamPerThread</a>.
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p">By default, the kernel won't begin execution on any GPU until all prior work in all the specified streams has completed. This
+                                 behavior can be overridden by specifying the flag <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g310f49178bf4b06b546f83124fa191f2" shape="rect">cudaCooperativeLaunchMultiDeviceNoPreSync</a>. When this flag is specified, each kernel will only wait for prior work in the stream corresponding to that GPU to complete
+                                 before it begins execution.
+                              </p>
+                              <p class="p">Similarly, by default, any subsequent work pushed in any of the specified streams will not begin execution until the kernels
+                                 on all GPUs have completed. This behavior can be overridden by specifying the flag <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g4b4ed6dd17d7c0950e5127138279f86a" shape="rect">cudaCooperativeLaunchMultiDeviceNoPostSync</a>. When this flag is specified, any subsequent work pushed in any of the specified streams will only wait for the kernel launched
+                                 on the GPU corresponding to that stream to complete before it begins execution.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">This function uses standard  <a class="xref xmlonly" href="stream-sync-behavior.html#stream-sync-behavior__default-stream" shape="rect">default stream</a> semantics. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1gc0210b928f9bf4e212af07d35ac11d67" title="Launches a device function." shape="rect">cudaLaunchCooperativeKernel ( C++ API)</a>, <a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1gc0210b928f9bf4e212af07d35ac11d67" title="Launches a device function." shape="rect">cudaLaunchCooperativeKernel</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EXEC.html#group__CUDA__EXEC_1g1d34025bc4f8fcec82fbcfc18d07a6e2" target="_blank" shape="rect">cuLaunchCooperativeKernelMultiDevice</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1g0e7833cfb3751eb2d03424da628e7067" id="group__CUDART__EXECUTION_1g0e7833cfb3751eb2d03424da628e7067" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaLaunchDevice (  void*<span> </span><span class="keyword keyword apiItemName">func</span>, void*<span> </span><span class="keyword keyword apiItemName">parameterBuffer</span>, dim3<span> </span><span class="keyword keyword apiItemName">gridDimension</span>, dim3<span> </span><span class="keyword keyword apiItemName">blockDimension</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">sharedMemSize</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" title="" shape="rect">cudaStream_t</a><span> </span><span class="keyword keyword apiItemName">stream</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Launches a specified kernel. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">func</span></tt></dt>
+                                 <dd>- Pointer to the kernel to be launched </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">parameterBuffer</span></tt></dt>
+                                 <dd>- Holds the parameters to the launched kernel. parameterBuffer can be NULL. (Optional) </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">gridDimension</span></tt></dt>
+                                 <dd>- Specifies grid dimensions </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">blockDimension</span></tt></dt>
+                                 <dd>- Specifies block dimensions </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">sharedMemSize</span></tt></dt>
+                                 <dd>- Specifies size of shared memory </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">stream</span></tt></dt>
+                                 <dd>- Specifies the stream to be used</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038938c6e8b96ecde62e3ab5137156f739a" shape="rect">cudaErrorInvalidDevice</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038feac49f0de1cd373ace28caa38dc5d9b" shape="rect">cudaErrorLaunchMaxDepthExceeded</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038d3934977826b2e1488dfeb7e0614e776" shape="rect">cudaErrorInvalidConfiguration</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00381c7fe018f3f2d9ede149e96d7379c9c5" shape="rect">cudaErrorStartupFailure</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382372902b9ffd65825d138e16125b1376" shape="rect">cudaErrorLaunchPendingCountExceeded</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038dfddff5cba4a975a67b298ee0752f714" shape="rect">cudaErrorLaunchOutOfResources</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Launches a specified kernel with the specified parameter buffer. A parameter buffer can be obtained by calling <a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1ge401490a88262d4e8ecd99ee08a88c43" title="Obtains a parameter buffer." shape="rect">cudaGetParameterBuffer()</a>.
+                              </p>
+                              <p class="p">This is a low level API and can only be accessed from Parallel Thread Execution (PTX). CUDA user code should use &lt;&lt;&lt; &gt;&gt;&gt; to
+                                 launch the kernels.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                    <p class="p">
+                                       Please refer to Execution Configuration and Parameter Buffer Layout from the CUDA Programming Guide for the detailed descriptions
+                                       of launch configuration and parameter layout respectively.
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1ge401490a88262d4e8ecd99ee08a88c43" title="Obtains a parameter buffer." shape="rect">cudaGetParameterBuffer</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1g05841eaa5f90f27124241baafb3e856f" id="group__CUDART__EXECUTION_1g05841eaa5f90f27124241baafb3e856f" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaLaunchHostFunc (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" title="" shape="rect">cudaStream_t</a><span> </span><span class="keyword keyword apiItemName">stream</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g30104c99d85403b72b7c7ad72a4782fc" title="" shape="rect">cudaHostFn_t</a><span> </span><span class="keyword keyword apiItemName">fn</span>, void*<span> </span><span class="keyword keyword apiItemName">userData</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Enqueues a host function call in a stream. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">stream</span></tt></dt>
+                                 <dd></dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">fn</span></tt></dt>
+                                 <dd>- The function to call once preceding stream operations are complete </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">userData</span></tt></dt>
+                                 <dd>- User-specified data to be passed to the function</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038d846fd9f2e8ba5e2fb4f1695b7ab6164" shape="rect">cudaErrorNotSupported</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Enqueues a host function to run in a stream. The function will be called after currently enqueued work and will block work
+                                 added after it.
+                              </p>
+                              <p class="p">The host function must not make any CUDA API calls. Attempting to use a CUDA API may result in <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a>, but this is not required. The host function must not perform any synchronization that may depend on outstanding CUDA work
+                                 not mandated to run earlier. Host functions without a mandated order (such as in independent streams) execute in undefined
+                                 order and may be serialized.
+                              </p>
+                              <p class="p">For the purposes of Unified Memory, execution makes a number of guarantees: 
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p">The stream is considered idle for the duration of the function's execution. Thus, for example, the function may always use
+                                          memory attached to the stream it was enqueued in. 
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p">The start of execution of the function has the same effect as synchronizing an event recorded in the same stream immediately
+                                          prior to the function. It thus synchronizes streams which have been "joined" prior to the function. 
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p">Adding device work to any stream does not have the effect of making the stream active until all preceding host functions and
+                                          stream callbacks have executed. Thus, for example, a function might use global attached memory even if work has been added
+                                          to another stream, if the work has been ordered behind the function call with an event. 
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p">Completion of the function does not cause a stream to become active except as described above. The stream will remain idle
+                                          if no device work follows the function, and will remain idle across consecutive host functions or stream callbacks without
+                                          device work in between. Thus, for example, stream synchronization can be done by signaling from a host function at the end
+                                          of the stream. 
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p">Note that, in constrast to <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__STREAM.html#group__CUDA__STREAM_1g613d97a277d7640f4cb1c03bd51c2483" target="_blank" shape="rect">cuStreamAddCallback</a>, the function will not be called in the event of an error in the CUDA context.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">This function uses standard  <a class="xref xmlonly" href="stream-sync-behavior.html#stream-sync-behavior__default-stream" shape="rect">default stream</a> semantics. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g6a3c4b819e6a994c26d0c4824a4c80da" title="Create an asynchronous stream." shape="rect">cudaStreamCreate</a>, <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g2021adeb17905c7ec2a3c1bf125c5435" title="Queries an asynchronous stream for completion status." shape="rect">cudaStreamQuery</a>, <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g82b5784f674c17c6df64affe618bf45e" title="Waits for stream tasks to complete." shape="rect">cudaStreamSynchronize</a>, <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g7840e3984799941a61839de40413d1d9" title="Make a compute stream wait on an event." shape="rect">cudaStreamWaitEvent</a>, <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1gfda584f1788ca983cb21c5f4d2033a62" title="Destroys and cleans up an asynchronous stream." shape="rect">cudaStreamDestroy</a>, <a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1gcf6b9b1019e73c5bc2b39b39fe90816e" title="Allocates memory that will be automatically managed by the Unified Memory system." shape="rect">cudaMallocManaged</a>, <a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g496353d630c29c44a2e33f531a3944d1" title="Attach memory to a stream asynchronously." shape="rect">cudaStreamAttachMemAsync</a>, <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EXEC.html#group__CUDA__EXEC_1gab95a78143bae7f21eebb978f91e7f3f" target="_blank" shape="rect">cuLaunchHostFunc</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1g5064cdf5d8e6741ace56fd8be951783c" id="group__CUDART__EXECUTION_1g5064cdf5d8e6741ace56fd8be951783c" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaLaunchKernel (  const void*<span> </span><span class="keyword keyword apiItemName">func</span>, dim3<span> </span><span class="keyword keyword apiItemName">gridDim</span>, dim3<span> </span><span class="keyword keyword apiItemName">blockDim</span>, void**<span> </span><span class="keyword keyword apiItemName">args</span>, size_t<span> </span><span class="keyword keyword apiItemName">sharedMem</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" title="" shape="rect">cudaStream_t</a><span> </span><span class="keyword keyword apiItemName">stream</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Launches a device function. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">func</span></tt></dt>
+                                 <dd>- Device function symbol </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">gridDim</span></tt></dt>
+                                 <dd>- Grid dimentions </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">blockDim</span></tt></dt>
+                                 <dd>- Block dimentions </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">args</span></tt></dt>
+                                 <dd>- Arguments </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">sharedMem</span></tt></dt>
+                                 <dd>- Shared memory </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">stream</span></tt></dt>
+                                 <dd>- Stream identifier</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b6af535e7e53d3f21e2437e8977b8c2e" shape="rect">cudaErrorInvalidDeviceFunction</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038d3934977826b2e1488dfeb7e0614e776" shape="rect">cudaErrorInvalidConfiguration</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038099def426efea2b2366d8d7ad09f974a" shape="rect">cudaErrorLaunchFailure</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00384ea7f1214c348f64f565ca860933e5a5" shape="rect">cudaErrorLaunchTimeout</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038dfddff5cba4a975a67b298ee0752f714" shape="rect">cudaErrorLaunchOutOfResources</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383be0ba00f56924404620f89b7d405362" shape="rect">cudaErrorSharedObjectInitFailed</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038dc4397268f67af05ed2e218b39149778" shape="rect">cudaErrorInvalidPtx</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003844fd2df23a72a9ee7364d30150ae7e9e" shape="rect">cudaErrorUnsupportedPtxVersion</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00388db0eb1b77feecee97b09d43dd876122" shape="rect">cudaErrorNoKernelImageForDevice</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038aa0fb8f8a0aac43a5d9492f454a7e5fc" shape="rect">cudaErrorJitCompilerNotFound</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b1f959cb68eedda7fbbd28403e67fa33" shape="rect">cudaErrorJitCompilationDisabled</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>The function invokes kernel <tt class="ph tt code">func</tt> on <tt class="ph tt code">gridDim</tt> (<tt class="ph tt code">gridDim.x</tt><tt class="ph tt code">gridDim.y</tt><tt class="ph tt code">gridDim.z</tt>) grid of blocks. Each block contains <tt class="ph tt code">blockDim</tt> (<tt class="ph tt code">blockDim.x</tt><tt class="ph tt code">blockDim.y</tt><tt class="ph tt code">blockDim.z</tt>) threads.
+                              </p>
+                              <p class="p">If the kernel has N parameters the <tt class="ph tt code">args</tt> should point to array of N pointers. Each pointer, from <tt class="ph tt code">args[0]</tt> to <tt class="ph tt code">args[N - 1]</tt>, point to the region of memory from which the actual parameter will be copied.
+                              </p>
+                              <p class="p">For templated functions, pass the function symbol as follows: func_name&lt;template_arg_0,...,template_arg_N&gt;</p>
+                              <p class="p"><tt class="ph tt code">sharedMem</tt> sets the amount of dynamic shared memory that will be available to each thread block.
+                              </p>
+                              <p class="p"><tt class="ph tt code">stream</tt> specifies a stream the invocation is associated to.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">This function uses standard  <a class="xref xmlonly" href="stream-sync-behavior.html#stream-sync-behavior__default-stream" shape="rect">default stream</a> semantics. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g7656391f2e52f569214adbfc19689eb3" title="Launches a device function." shape="rect">cudaLaunchKernel ( C++ API)</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EXEC.html#group__CUDA__EXEC_1gb8f3dc3031b40da29d5f9a7139e52e15" target="_blank" shape="rect">cuLaunchKernel</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1ge236ecdbbaf7cf47a806bba71c1d03c4" id="group__CUDART__EXECUTION_1ge236ecdbbaf7cf47a806bba71c1d03c4" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaLaunchKernelExC (  const <a href="structcudaLaunchConfig__t.html#structcudaLaunchConfig__t" title="" shape="rect">cudaLaunchConfig_t</a>*<span> </span><span class="keyword keyword apiItemName">config</span>, const void*<span> </span><span class="keyword keyword apiItemName">func</span>, void**<span> </span><span class="keyword keyword apiItemName">args</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Launches a CUDA function with launch-time configuration. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">config</span></tt></dt>
+                                 <dd>- Launch configuration </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">func</span></tt></dt>
+                                 <dd>- Kernel to launch </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">args</span></tt></dt>
+                                 <dd>- Array of pointers to kernel parameters</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b6af535e7e53d3f21e2437e8977b8c2e" shape="rect">cudaErrorInvalidDeviceFunction</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038d3934977826b2e1488dfeb7e0614e776" shape="rect">cudaErrorInvalidConfiguration</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038099def426efea2b2366d8d7ad09f974a" shape="rect">cudaErrorLaunchFailure</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00384ea7f1214c348f64f565ca860933e5a5" shape="rect">cudaErrorLaunchTimeout</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038dfddff5cba4a975a67b298ee0752f714" shape="rect">cudaErrorLaunchOutOfResources</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383be0ba00f56924404620f89b7d405362" shape="rect">cudaErrorSharedObjectInitFailed</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038dc4397268f67af05ed2e218b39149778" shape="rect">cudaErrorInvalidPtx</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003844fd2df23a72a9ee7364d30150ae7e9e" shape="rect">cudaErrorUnsupportedPtxVersion</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00388db0eb1b77feecee97b09d43dd876122" shape="rect">cudaErrorNoKernelImageForDevice</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038aa0fb8f8a0aac43a5d9492f454a7e5fc" shape="rect">cudaErrorJitCompilerNotFound</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038b1f959cb68eedda7fbbd28403e67fa33" shape="rect">cudaErrorJitCompilationDisabled</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Note that the functionally equivalent variadic template <a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g98d60efe48c3400a1c17a1edb698e530" title="Launches a CUDA function with launch-time configuration." shape="rect">cudaLaunchKernelEx</a> is available for C++11 and newer.
+                              </p>
+                              <p class="p">Invokes the kernel <tt class="ph tt code">func</tt> on <tt class="ph tt code">config-&gt;gridDim</tt> (<tt class="ph tt code">config-&gt;gridDim.x</tt><tt class="ph tt code">config-&gt;gridDim.y</tt><tt class="ph tt code">config-&gt;gridDim.z</tt>) grid of blocks. Each block contains <tt class="ph tt code">config-&gt;blockDim</tt> (<tt class="ph tt code">config-&gt;blockDim.x</tt><tt class="ph tt code">config-&gt;blockDim.y</tt><tt class="ph tt code">config-&gt;blockDim.z</tt>) threads.
+                              </p>
+                              <p class="p"><tt class="ph tt code">config-&gt;dynamicSmemBytes</tt> sets the amount of dynamic shared memory that will be available to each thread block.
+                              </p>
+                              <p class="p"><tt class="ph tt code">config-&gt;stream</tt> specifies a stream the invocation is associated to.
+                              </p>
+                              <p class="p">Configuration beyond grid and block dimensions, dynamic shared memory size, and stream can be provided with the following
+                                 two fields of <tt class="ph tt code">config:</tt></p>
+                              <p class="p"><tt class="ph tt code">config-&gt;attrs</tt> is an array of <tt class="ph tt code">config-&gt;numAttrs</tt> contiguous <a class="xref" href="structcudaLaunchAttribute.html#structcudaLaunchAttribute" shape="rect">cudaLaunchAttribute</a> elements. The value of this pointer is not considered if <tt class="ph tt code">config-&gt;numAttrs</tt> is zero. However, in that case, it is recommended to set the pointer to NULL. <tt class="ph tt code">config-&gt;numAttrs</tt> is the number of attributes populating the first <tt class="ph tt code">config-&gt;numAttrs</tt> positions of the <tt class="ph tt code">config-&gt;attrs</tt> array.
+                              </p>
+                              <p class="p">If the kernel has N parameters the <tt class="ph tt code">args</tt> should point to array of N pointers. Each pointer, from <tt class="ph tt code">args[0]</tt> to <tt class="ph tt code">args[N - 1]</tt>, point to the region of memory from which the actual parameter will be copied.
+                              </p>
+                              <p class="p">N.B. This function is so named to avoid unintentionally invoking the templated version, <tt class="ph tt code">cudaLaunchKernelEx</tt>, for kernels taking a single void** or void* parameter.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">This function uses standard  <a class="xref xmlonly" href="stream-sync-behavior.html#stream-sync-behavior__default-stream" shape="rect">default stream</a> semantics. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g98d60efe48c3400a1c17a1edb698e530" title="Launches a CUDA function with launch-time configuration." shape="rect">cudaLaunchKernelEx</a>(const <a class="xref" href="structcudaLaunchConfig__t.html#structcudaLaunchConfig__t" shape="rect">cudaLaunchConfig_t</a> *config, void (*kernel)(ExpTypes...), ActTypes &amp;&amp;... args) "cudaLaunchKernelEx (C++ API)", <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EXEC.html#group__CUDA__EXEC_1gb9c891eb6bb8f4089758e64c9c976db9" target="_blank" shape="rect">cuLaunchKernelEx</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1ga7893ac813a0a901d533852f568f9c8e" id="group__CUDART__EXECUTION_1ga7893ac813a0a901d533852f568f9c8e" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaSetDoubleForDevice (  double*<span> </span><span class="keyword keyword apiItemName">d</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Converts a double argument to be executed on a device. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">d</span></tt></dt>
+                                 <dd>- Double to convert</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000010" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 7.5</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>
+                                 Converts the double value of <tt class="ph tt code">d</tt> to an internal float representation if the device does not support double arithmetic. If the device does natively support
+                                 doubles, then this function does nothing.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g6699ca1943ac2655effa0d571b2f4f15" title="Sets the preferred cache configuration for a device function." shape="rect">cudaFuncSetCacheConfig ( C API)</a>, <a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g19b1696533069c03f646e2ce2beacc00" title="Find out attributes for a given function." shape="rect">cudaFuncGetAttributes ( C API)</a>, <a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g63b08bc08466ff7e53962da9098c216a" title="Converts a double argument after execution on a device." shape="rect">cudaSetDoubleForHost</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1g63b08bc08466ff7e53962da9098c216a" id="group__CUDART__EXECUTION_1g63b08bc08466ff7e53962da9098c216a" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaSetDoubleForHost (  double*<span> </span><span class="keyword keyword apiItemName">d</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Converts a double argument after execution on a device. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">d</span></tt></dt>
+                                 <dd>- Double to convert</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="deprecated_header"><a class="xref xrefsect-title" href="deprecated.html#deprecated__deprecated_1_deprecated000011" shape="rect">Deprecated</a></h6>
+                              <p><span class="ph xrefsect-description">This function is deprecated as of CUDA 7.5</span></p>
+                              <h6 class="description_header">Description</h6>
+                              <p>Converts the double value of <tt class="ph tt code">d</tt> from a potentially internal float representation if the device does not support double arithmetic. If the device does natively
+                                 support doubles, then this function does nothing.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g6699ca1943ac2655effa0d571b2f4f15" title="Sets the preferred cache configuration for a device function." shape="rect">cudaFuncSetCacheConfig ( C API)</a>, <a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1g19b1696533069c03f646e2ce2beacc00" title="Find out attributes for a given function." shape="rect">cudaFuncGetAttributes ( C API)</a>, <a class="xref" href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION_1ga7893ac813a0a901d533852f568f9c8e" title="Converts a double argument to be executed on a device." shape="rect">cudaSetDoubleForDevice</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EXECUTION_1ge194af462d927583bed3acf60d450218" id="group__CUDART__EXECUTION_1ge194af462d927583bed3acf60d450218" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ void cudaTriggerProgrammaticLaunchCompletion (  void )  [inline] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Programmatic dependency trigger. </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>This device function ensures the programmatic launch completion edges / events are fulfilled. See <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ggfc5ed48085f05863b1aeebb14934b056ae1805b9ab2fb5ac320737f39617b501" shape="rect">cudaLaunchAttributeID::cudaLaunchAttributeProgrammaticStreamSerialization</a> and <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ggfc5ed48085f05863b1aeebb14934b056690bb55d13016cd9dfd841d467388773" shape="rect">cudaLaunchAttributeID::cudaLaunchAttributeProgrammaticEvent</a> for more information. The event / edge kick off only happens when every CTAs in the grid has either exited or called this
+                                 function at least once, otherwise the kick off happens automatically after all warps finishes execution but before the grid
+                                 completes. The kick off only enables scheduling of the secondary kernel. It provides no memory visibility guarantee itself.
+                                 The user could enforce memory visibility by inserting a memory fence of the correct scope. 
+                              </p>
+                           </div>
+                        </dd>
+                     </dl>
+                  </div>
+               </div>
+               
+               <hr id="contents-end">
+               
+            </article>
+         </div>
+      </div>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/formatting/common.min.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-write.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-tracker.js"></script>
+      <script type="text/javascript">var switchTo5x=true;</script><script type="text/javascript">stLight.options({publisher: "998dc202-a267-4d8e-bce9-14debadb8d92", doNotHash: false, doNotCopy: false, hashAddressBar: false});</script><script type="text/javascript">_satellite.pageBottom();</script>
+</body>
+</html>
