@@ -83,6 +83,7 @@ hide:
       <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank">Prime Intellect</a>
       <span>NuBank</span>
       <span>Infosys</span>
+      <a href="https://sutro.sh/" target="_blank">Sutro</a>
       <span>Invitae</span>
       <span>Bespoke Labs</span>
     </div>
