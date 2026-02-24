@@ -4,6 +4,8 @@
 # Can't Be Late: download and extract traces (see examples/adrs/can_be_late/README.md)
 examples/adrs/can_be_late/utils/simulator/real_traces.tar.gz
 examples/adrs/can_be_late/utils/simulator/real/
+# KernelBench dataset — clone from https://github.com/ScalingIntelligence/KernelBench.git
+examples/kernelbench/utils/KernelBench/
 
 #######################
 # Copied from default python .gitignore

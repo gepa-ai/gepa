@@ -9,7 +9,7 @@ Evolves LLM prompts that produce fast, correct CUDA kernels outperforming PyTorc
   - `eval.py`: Kernel execution, scoring, baseline measurement, dataset loading.
   - `agentic_rag.py`: Targeted CUDA doc retrieval based on eval outcomes.
   - `background.py`: Domain background passed to GEPA.
-  - `KernelBench/`: Cloned [KernelBench](https://github.com/ScalingIntelligence/KernelBench) dataset.
+  - `KernelBench/`: [KernelBench](https://github.com/ScalingIntelligence/KernelBench) dataset (not checked in — see Setup).
   - `rag_content/`: Local CUDA documentation for RAG.
   - `tests/`: Test suite.
 
