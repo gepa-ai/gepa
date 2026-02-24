@@ -6,6 +6,8 @@ examples/adrs/can_be_late/utils/simulator/real_traces.tar.gz
 examples/adrs/can_be_late/utils/simulator/real/
 # KernelBench dataset — clone from https://github.com/ScalingIntelligence/KernelBench.git
 examples/kernelbench/utils/KernelBench/
+# CUDA RAG content — download from https://huggingface.co/datasets/lukeleeai/kernelbench-rag-content
+examples/kernelbench/utils/rag_content/
 
 #######################
 # Copied from default python .gitignore

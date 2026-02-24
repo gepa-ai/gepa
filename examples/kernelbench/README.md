@@ -10,7 +10,7 @@ Evolves LLM prompts that produce fast, correct CUDA kernels outperforming PyTorc
   - `agentic_rag.py`: Targeted CUDA doc retrieval based on eval outcomes.
   - `background.py`: Domain background passed to GEPA.
   - `KernelBench/`: [KernelBench](https://github.com/ScalingIntelligence/KernelBench) dataset (not checked in — see Setup).
-  - `rag_content/`: Local CUDA documentation for RAG.
+  - `rag_content/`: CUDA documentation for RAG (not checked in — see Setup).
   - `tests/`: Test suite.
 
 ## Setup
@@ -20,7 +20,11 @@ Evolves LLM prompts that produce fast, correct CUDA kernels outperforming PyTorc
    cd examples/kernelbench/utils
    git clone https://github.com/ScalingIntelligence/KernelBench.git KernelBench
    ```
-2. Install dependencies:
+2. Download CUDA RAG content:
+   ```bash
+   huggingface-cli download lukeleeai/kernelbench-rag-content --repo-type dataset --local-dir examples/kernelbench/utils/rag_content
+   ```
+3. Install dependencies:
    ```bash
    uv pip install torch --index-url https://download.pytorch.org/whl/cu124
    uv pip install ninja dspy
