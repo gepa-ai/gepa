@@ -11,7 +11,7 @@ Evolves LLM prompts that produce fast, correct CUDA kernels outperforming PyTorc
   - `background.py`: Domain background passed to GEPA.
   - `KernelBench/`: [KernelBench](https://github.com/ScalingIntelligence/KernelBench) dataset (not checked in — see Setup).
   - `rag_content/`: CUDA documentation for RAG (not checked in — see Setup).
-  - `tests/`: Test suite.
+
 
 ## Setup
 
@@ -37,12 +37,6 @@ uv run python -m examples.kernelbench.main
 ```
 
 No CLI arguments — configuration is set directly in `main.py` (3000 metric calls, all 3 levels).
-
-## Tests
-
-```bash
-uv run python -m examples.kernelbench.utils.tests.test_setup
-```
 
 ## How It Works
 
