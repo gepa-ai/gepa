@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=800">
+<title>ASI is the Gradient of Text</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 800px;
+    font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+    background: #ffffff;
+    color: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .container {
+    width: 800px;
+    padding: 32px 24px 24px;
+  }
+  .panels {
+    display: flex;
+    gap: 0;
+    align-items: stretch;
+  }
+  .panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .panel-title {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    color: #3a3a5c;
+  }
+  .divider {
+    width: 1px;
+    background: #d8dbe6;
+    margin: 0 4px;
+    align-self: stretch;
+    margin-top: 34px;
+    margin-bottom: 16px;
+  }
+  .analogy-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 16px;
+    padding: 9px 18px;
+    border-radius: 8px;
+    background: #f6f7fb;
+    border: 1px solid #e2e4ee;
+  }
+  .analogy-item {
+    font-size: 13px;
+    font-weight: 600;
+    color: #5a5a7a;
+  }
+  .analogy-highlight-gradient {
+    color: #e8732a;
+  }
+  .analogy-highlight-asi {
+    color: #0d8a72;
+  }
+  .analogy-eq {
+    font-size: 20px;
+    color: #8888aa;
+    font-weight: 300;
+  }
+  svg text {
+    font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="panels">
+
+    <!-- LEFT PANEL: Numerical Optimization -->
+    <div class="panel">
+      <div class="panel-title">Numerical Optimization</div>
+      <svg width="370" height="340" viewBox="0 0 370 340">
+        <defs>
+          <linearGradient id="surfaceGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#c7cee8" stop-opacity="0.45"/>
+            <stop offset="100%" stop-color="#e8eaf4" stop-opacity="0.1"/>
+          </linearGradient>
+          <linearGradient id="curveGrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#8a93bf"/>
+            <stop offset="100%" stop-color="#6670a0"/>
+          </linearGradient>
+          <marker id="arrowGrad" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+            <path d="M0,0 L10,4 L0,8 Z" fill="#e8732a"/>
+          </marker>
+          <filter id="dotShadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#e8732a" flood-opacity="0.25"/>
+          </filter>
+        </defs>
+
+        <!-- Loss function label — top left, well above curve -->
+        <text x="32" y="38" font-size="13" fill="#6670a0" font-weight="600">Loss f(θ)</text>
+        <!-- Y-axis line -->
+        <line x1="32" y1="48" x2="32" y2="270" stroke="#d8dbe6" stroke-width="1"/>
+        <!-- X-axis line -->
+        <line x1="32" y1="270" x2="340" y2="270" stroke="#d8dbe6" stroke-width="1"/>
+        <!-- X-axis label -->
+        <text x="186" y="296" text-anchor="middle" font-size="11.5" fill="#8888aa" font-style="italic">Parameter space θ</text>
+
+        <!-- Loss surface fill — curve pushed down with more room above -->
+        <path d="M42,240 Q110,100 185,180 Q260,260 335,135 L335,270 L42,270 Z" fill="url(#surfaceGrad)"/>
+
+        <!-- Loss surface curve -->
+        <path d="M42,240 Q110,100 185,180 Q260,260 335,135" fill="none" stroke="url(#curveGrad)" stroke-width="2.5" stroke-linecap="round"/>
+
+        <!-- The point (θ) on the right upslope — at t≈0.73 on second bezier segment -->
+        <circle cx="295" cy="188" r="7.5" fill="#e8732a" filter="url(#dotShadow)"/>
+        <circle cx="295" cy="188" r="3.5" fill="#fff"/>
+
+        <!-- Gradient arrow pointing downhill toward the valley (minimum) -->
+        <line x1="288" y1="191" x2="243" y2="212" stroke="#e8732a" stroke-width="2.5" stroke-linecap="round" marker-end="url(#arrowGrad)"/>
+
+        <!-- Label: θ next to the point -->
+        <text x="310" y="186" font-size="14" fill="#3a3a5c" font-weight="600">θ</text>
+        <text x="314" y="202" font-size="10.5" fill="#8888aa">current</text>
+
+        <!-- Gradient pill label — positioned above arrow, clear of curve -->
+        <rect x="193" y="158" width="84" height="26" rx="13" fill="#e8732a" fill-opacity="0.1" stroke="#e8732a" stroke-opacity="0.35" stroke-width="1.2"/>
+        <text x="235" y="175" text-anchor="middle" font-size="12" fill="#e8732a" font-weight="700">∇ Gradient</text>
+
+        <!-- Annotation: what gradient tells you -->
+        <text x="185" y="320" text-anchor="middle" font-size="10.5" fill="#999" font-style="italic">"Move θ in this direction"</text>
+      </svg>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- RIGHT PANEL: Text Optimization -->
+    <div class="panel">
+      <div class="panel-title">Text Optimization</div>
+      <svg width="370" height="340" viewBox="0 0 370 340">
+        <defs>
+          <marker id="arrowLoop" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+            <path d="M0,0 L9,3.5 L0,7 Z" fill="#8888aa"/>
+          </marker>
+          <marker id="arrowASI" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+            <path d="M0,0 L9,3.5 L0,7 Z" fill="#0d8a72"/>
+          </marker>
+          <filter id="cardShadow" x="-10%" y="-10%" width="130%" height="140%">
+            <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#1a1a2e" flood-opacity="0.07"/>
+          </filter>
+        </defs>
+
+        <!-- Document card: Prompt/Code (x) -->
+        <g transform="translate(30, 30)" filter="url(#cardShadow)">
+          <rect width="108" height="120" rx="7" fill="#fff" stroke="#d0d3e0" stroke-width="1.4"/>
+          <!-- Doc lines -->
+          <rect x="14" y="18" width="56" height="3.5" rx="1.5" fill="#c0c4d8"/>
+          <rect x="14" y="27" width="78" height="3.5" rx="1.5" fill="#c0c4d8"/>
+          <rect x="14" y="36" width="46" height="3.5" rx="1.5" fill="#c0c4d8"/>
+          <rect x="14" y="49" width="70" height="3.5" rx="1.5" fill="#d8dbe8"/>
+          <rect x="14" y="58" width="54" height="3.5" rx="1.5" fill="#d8dbe8"/>
+          <rect x="14" y="67" width="78" height="3.5" rx="1.5" fill="#d8dbe8"/>
+          <rect x="14" y="80" width="40" height="3.5" rx="1.5" fill="#e2e4ee"/>
+          <rect x="14" y="89" width="64" height="3.5" rx="1.5" fill="#e2e4ee"/>
+          <rect x="14" y="98" width="52" height="3.5" rx="1.5" fill="#e2e4ee"/>
+          <!-- Corner fold -->
+          <path d="M84,0 L108,0 L108,22 Z" fill="#f0f1f7" stroke="#d0d3e0" stroke-width="1"/>
+        </g>
+        <text x="84" y="24" text-anchor="middle" font-size="10.5" fill="#6a6a8a">Prompt / Code</text>
+        <text x="84" y="12" text-anchor="middle" font-size="13" fill="#3a3a5c" font-weight="600">x</text>
+
+        <!-- Scorecard: Evaluation f(x) -->
+        <g transform="translate(218, 30)" filter="url(#cardShadow)">
+          <rect width="110" height="92" rx="7" fill="#fff" stroke="#d0d3e0" stroke-width="1.4"/>
+          <!-- Score bars -->
+          <rect x="14" y="16" width="56" height="7" rx="3" fill="#e2e4ee"/>
+          <rect x="14" y="16" width="40" height="7" rx="3" fill="#6670a0"/>
+          <text x="76" y="24" font-size="9" fill="#6a6a8a" font-weight="600">7.2</text>
+
+          <rect x="14" y="31" width="56" height="7" rx="3" fill="#e2e4ee"/>
+          <rect x="14" y="31" width="24" height="7" rx="3" fill="#6670a0"/>
+          <text x="76" y="39" font-size="9" fill="#6a6a8a" font-weight="600">4.1</text>
+
+          <rect x="14" y="46" width="56" height="7" rx="3" fill="#e2e4ee"/>
+          <rect x="14" y="46" width="50" height="7" rx="3" fill="#6670a0"/>
+          <text x="76" y="54" font-size="9" fill="#6a6a8a" font-weight="600">8.5</text>
+
+          <!-- Divider + total -->
+          <line x1="14" y1="62" x2="96" y2="62" stroke="#e2e4ee" stroke-width="1"/>
+          <text x="55" y="80" text-anchor="middle" font-size="12" fill="#3a3a5c" font-weight="700">Score: 6.6</text>
+        </g>
+        <text x="273" y="24" text-anchor="middle" font-size="10.5" fill="#6a6a8a">Evaluator</text>
+        <text x="273" y="12" text-anchor="middle" font-size="13" fill="#3a3a5c" font-weight="600">f(x)</text>
+
+        <!-- Arrow: doc → evaluator -->
+        <path d="M140,82 L215,82" fill="none" stroke="#8888aa" stroke-width="1.6" stroke-linecap="round" marker-end="url(#arrowLoop)"/>
+
+        <!-- Feedback loop: evaluator → bottom → ASI → back to doc -->
+        <path d="M273,125 L273,200 Q273,214 259,214 L112,214 Q98,214 98,200 L98,155" fill="none" stroke="#0d8a72" stroke-width="1.8" stroke-dasharray="6,4" stroke-linecap="round" marker-end="url(#arrowASI)"/>
+
+        <!-- ASI bubble on the feedback path -->
+        <g transform="translate(120, 190)">
+          <!-- Opaque white background to mask the dashed line behind -->
+          <rect x="-1" y="-1" width="132" height="50" rx="8" fill="#ffffff"/>
+          <rect x="0" y="0" width="130" height="48" rx="8" fill="#0d8a72" fill-opacity="0.07" stroke="#0d8a72" stroke-width="1.6"/>
+          <!-- Mini text lines representing logs/feedback -->
+          <rect x="10" y="9" width="46" height="3" rx="1.5" fill="#0d8a72" fill-opacity="0.35"/>
+          <rect x="10" y="15" width="108" height="3" rx="1.5" fill="#0d8a72" fill-opacity="0.2"/>
+          <rect x="10" y="21" width="72" height="3" rx="1.5" fill="#0d8a72" fill-opacity="0.3"/>
+          <rect x="10" y="27" width="92" height="3" rx="1.5" fill="#0d8a72" fill-opacity="0.2"/>
+          <rect x="10" y="33" width="56" height="3" rx="1.5" fill="#0d8a72" fill-opacity="0.28"/>
+          <rect x="10" y="39" width="38" height="3" rx="1.5" fill="#0d8a72" fill-opacity="0.18"/>
+        </g>
+
+        <!-- ASI Label -->
+        <text x="185" y="183" text-anchor="middle" font-size="12" fill="#0d8a72" font-weight="700">ASI</text>
+
+        <!-- ASI examples — concrete tags -->
+        <g transform="translate(18, 256)">
+          <!-- Row 1 -->
+          <rect x="0" y="0" width="92" height="22" rx="11" fill="#0d8a72" fill-opacity="0.08" stroke="#0d8a72" stroke-opacity="0.25" stroke-width="1"/>
+          <text x="46" y="15" text-anchor="middle" font-size="9.5" fill="#0d8a72" font-weight="600">Stack traces</text>
+
+          <rect x="100" y="0" width="108" height="22" rx="11" fill="#0d8a72" fill-opacity="0.08" stroke="#0d8a72" stroke-opacity="0.25" stroke-width="1"/>
+          <text x="154" y="15" text-anchor="middle" font-size="9.5" fill="#0d8a72" font-weight="600">Profiler output</text>
+
+          <rect x="216" y="0" width="118" height="22" rx="11" fill="#0d8a72" fill-opacity="0.08" stroke="#0d8a72" stroke-opacity="0.25" stroke-width="1"/>
+          <text x="275" y="15" text-anchor="middle" font-size="9.5" fill="#0d8a72" font-weight="600">Rendered images</text>
+
+          <!-- Row 2 -->
+          <rect x="22" y="28" width="130" height="22" rx="11" fill="#0d8a72" fill-opacity="0.08" stroke="#0d8a72" stroke-opacity="0.25" stroke-width="1"/>
+          <text x="87" y="43" text-anchor="middle" font-size="9.5" fill="#0d8a72" font-weight="600">Constraint violations</text>
+
+          <rect x="160" y="28" width="100" height="22" rx="11" fill="#0d8a72" fill-opacity="0.08" stroke="#0d8a72" stroke-opacity="0.25" stroke-width="1"/>
+          <text x="210" y="43" text-anchor="middle" font-size="9.5" fill="#0d8a72" font-weight="600">Compiler errors</text>
+
+          <text x="167" y="71" text-anchor="middle" font-size="10.5" fill="#999" font-style="italic">"Here's why it failed and how to fix it"</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Analogy footer -->
+  <div class="analogy-row">
+    <span class="analogy-item analogy-highlight-gradient">∇ Gradient</span>
+    <span class="analogy-eq">≈</span>
+    <span class="analogy-item analogy-highlight-asi">ASI (Actionable Side Information)</span>
+    <span class="analogy-eq" style="margin-left: 6px;">—</span>
+    <span class="analogy-item" style="font-weight: 400; font-size: 12px; color: #6a6a8a;">both provide <em>direction</em> for improvement</span>
+  </div>
+</div>
+</body>
+</html>

@@ -8,35 +8,47 @@ Common questions about GEPA, answered by the community and the GEPA team.
 
 ### What exactly does GEPA output?
 
-GEPA is fundamentally a **text evolution engine**: given a target metric, GEPA can evolve any text component. Since prompts are just text, GEPA works great as a prompt optimizer (including multi-agent systems with multiple text components).
+GEPA is a **text evolution engine** that can optimize any artifact representable as text — prompts, code, configs, agent architectures, policies, numeric parameters, etc.  The `optimize_anything` API is the primary interface: you write an evaluator that returns a score and **Actionable Side Information (ASI)**, and GEPA uses LLMs as intelligent proposers to iteratively refine the artifact.
 
-This broader capability has been applied to real systems, for example:
+`optimize_anything` supports three modes:
 
-- **Enterprise agents**: Databricks reports 90x cheaper inference while maintaining or improving performance
-- **OCR & document understanding**: Intrinsic Labs reduced OCR error rates across Gemini model classes
-- **Agent frameworks**: Google ADK agents optimized with GEPA
-- **Code synthesis & kernels**: OpenACC/CUDA-style code optimization for GPU parallelization
+- **Single-Task Search**: Solve one hard problem (circle packing, math optimization)
+- **Multi-Task Search**: Solve a batch of related problems with cross-transfer (CUDA kernels)
+- **Generalization**: Build a skill that transfers to unseen data (prompt optimization, agent evolution)
+
+This has been applied to:
+
+- **Prompt optimization**: AIME 2025 math (+10%), enterprise agents (Databricks, 90x cheaper)
+- **Code evolution**: circle packing (exceeding AlphaEvolve), CUDA kernels
+- **Agent architecture discovery**: ARC-AGI agent programs, cloud scheduling policies
+- **Parameter search**: rocket trajectory optimization, polynomial fitting
+- **Visual optimization**: SVG generation with VLM feedback
 
 ### Does GEPA only work with DSPy?
 
-No. GEPA just requires visibility into the system it is executing—the same kind of information a human expert would need to improve the system. While DSPy is a recommended integration for prompt optimization, GEPA can work with **any framework** through its `GEPAAdapter` interface.
-
-GEPA has already been integrated into frameworks including **verifiers**, **Comet-ML/Opik**, **Pydantic**, **LangStruct**, **Google ADK**, and DSPy, and it also ships adapters for MCP, RAG systems, and terminal agents.
+No. The `optimize_anything` API works with **any system** — just write a Python function that scores candidates and provides diagnostic feedback (ASI).  No adapter or framework needed.
 
 ```python
-# Example: Using GEPA outside DSPy
-import gepa
+import gepa.optimize_anything as oa
+from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig
 
-result = gepa.optimize(
-    seed_candidate={"system_prompt": "Your initial prompt"},
-    trainset=your_data,
-    adapter=YourCustomAdapter(),  # Implement GEPAAdapter interface
-    task_lm="openai/gpt-4o-mini",
-    reflection_lm="openai/gpt-4o",
+def evaluator(candidate, example):
+    result = my_system(candidate["prompt"], example["input"])
+    score = compute_score(result, example["expected"])
+    oa.log(f"Input: {example['input']}")
+    oa.log(f"Output: {result}, Expected: {example['expected']}")
+    return score
+
+result = optimize_anything(
+    seed_candidate={"prompt": "Initial prompt"},
+    evaluator=evaluator,
+    dataset=my_data,
+    objective="Optimize prompts for accurate answers.",
+    config=GEPAConfig(engine=EngineConfig(max_metric_calls=200)),
 )
 ```
 
-See the [Adapters Guide](adapters.md) for examples including DSPy, Opik, MCP, and Terminal agents.
+For DSPy programs, use `dspy.GEPA()` which wraps the same engine.  For advanced integration, see the [Adapters Guide](adapters.md).
 
 ### Does GEPA aim for brevity in prompts?
 
@@ -63,17 +75,33 @@ Research shows GEPA can help achieve **90x cheaper inference** while maintaining
 
 ### How do I control GEPA's runtime and budget?
 
-Use the `StopperProtocol` and its implementations to define runtime and budget limits. You can pass one or more stoppers to `gepa.optimize()` via `stop_callbacks`, and GEPA will stop when any stopper triggers (or use a `CompositeStopper` for combined logic).
+Set `max_metric_calls` in `EngineConfig`, and/or pass additional stoppers via `GEPAConfig.stop_callbacks`.  GEPA stops when **any** stopper triggers.
 
-Available stoppers include:
+```python
+from gepa.optimize_anything import GEPAConfig, EngineConfig
+from gepa.utils import TimeoutStopCondition, NoImprovementStopper
 
-- `MaxMetricCallsStopper`
-- `TimeoutStopCondition`
-- `NoImprovementStopper`
-- `ScoreThresholdStopper`
-- `SignalStopper`
-- `FileStopper`
-- `CompositeStopper`
+config = GEPAConfig(
+    engine=EngineConfig(max_metric_calls=200),
+    stop_callbacks=[
+        TimeoutStopCondition(seconds=3600),
+        NoImprovementStopper(patience=10),
+    ],
+)
+```
+
+Available stoppers: `MaxMetricCallsStopper`, `TimeoutStopCondition`, `NoImprovementStopper`, `ScoreThresholdStopper`, `SignalStopper`, `FileStopper`, `CompositeStopper`.
+
+### What does a single GEPA iteration cost?
+
+Each iteration involves:
+
+1. **Minibatch evaluation**: Run the candidate on a minibatch of training examples (typically 2–5, set through `reflection_minibatch_size`) using the `task_lm`.
+2. **Reflection**: 1 LLM call to the `reflection_lm` to analyze minibatch traces, diagnose failure modes and propose a new candidate.
+3. **Minibatch validation**: Run the new candidate on same minibatch of training examples using the `task_lm`.
+5. **Full validation** (if improved): If the new candidate improved on the minibatch, proceed to full validation.
+
+We typically recommend calling GEPA with at least 15-30x of len(valset) to allow it to propose and evaluate upto 15 new candidates.
 
 ### What's the recommended train/validation split?
 
@@ -94,6 +122,16 @@ valset = examples[80:]    # 20% for validation
 Yes! GEPA can show improvements with as few as **3 examples**. We've demonstrated +9% improvement on held-out data with just 3 examples in one GEPA iteration.
 
 That said, more data generally leads to better optimization. Aim for **30-300 examples** for best results, using **80/20** when total examples exceed 200 and **50/50** when you have fewer than 200.
+
+### How does GEPA differ from gradient-based RL (e.g., GRPO)?
+
+GRPO and similar RL methods use random perturbations in LLM behavior over 25,000–100,000+ rollouts, collapsing all feedback — compiler errors, reasoning traces, constraint violations — into a single scalar reward. The optimizer never sees *why* a candidate failed, only *that* its score increased / decreased.
+
+GEPA uses LLM self-reflection on full execution traces to generate directional updates in text space. The reflection LM reads the actual diagnostic output (ASI) and proposes targeted fixes: "The agent called `search_api()` which doesn't exist — rewrite the prompt to restrict tools to the provided schema."
+
+Concrete comparison on HotPotQA: GEPA achieves **20% better performance** than GRPO in **35x fewer rollouts** (100–500 vs. 5,000+), **8x faster** wall-clock time (3 hours vs. 24 hours), at **15x lower cost** ($20 vs. $300).
+
+**When to use which:** Use GEPA when rollouts are expensive or slow, data is scarce, or you need API-only optimization. For scenarios with abundant supervised data and capacity for 100,000+ cheap rollouts, gradient-based RL may outperform. The two are complementary — run GEPA first for rapid gains, then apply RL/SFT on top following the [BetterTogether](https://arxiv.org/abs/2407.10930) / [mmGRPO](https://arxiv.org/abs/2508.04660) recipe.
 
 ---
 
@@ -199,14 +237,14 @@ Several options:
 
 ### Can I continue optimization from a previous run?
 
-Yes! GEPA supports continuing from previous runs:
+Yes! Set `run_dir` in `EngineConfig` — GEPA saves state to disk and automatically resumes:
 
 ```python
-# Resume from saved state
-result = gepa.optimize(
-    ...,
-    run_dir="./gepa_runs/my_exp",  # Will resume if state exists
-)
+config = GEPAConfig(engine=EngineConfig(
+    run_dir="./runs/my_exp",      # Will resume if gepa_state.bin exists
+    max_metric_calls=500,
+))
+result = optimize_anything(..., config=config)
 ```
 
 
@@ -337,15 +375,17 @@ Seeding with a good initial prompt leads to better search! However, be careful n
 
 Think of it as: What would you tell a smart human to get them started vs. what should they discover through practice?
 
-### Can GEPA work for program synthesis tasks?
+### Can GEPA work for program synthesis / code evolution tasks?
 
-Yes! GEPA has been explored for:
+Yes!  This is `optimize_anything`'s **single-task search** mode — the candidate *is* the code, and the evaluator executes it.  Examples include:
 
-- **Code kernel optimization**: CUDA and NPU kernels (Section 6 of the paper)
-- **Agent architecture discovery**: Evolving entire agent code and structure
-- **Material science applications**: Users have explored using GEPA for expensive simulation tasks
+- **Circle packing**: Evolving algorithms that exceed AlphaEvolve results
+- **CUDA kernels**: Optimizing GPU code via multi-task search mode
+- **Agent architecture discovery**: Evolving entire agent code (ARC-AGI)
+- **Rocket trajectory**: Optimizing launch parameters via numeric search
+- **Cloud scheduling policies**: Evolving cost-minimizing code policies
 
-For any task with costly rollouts (simulation, long runtime), GEPA's sample efficiency makes it especially valuable.
+Unlike AlphaEvolve/OpenEvolve/ShinkaEvolve (which only support single-task search), `optimize_anything` also supports multi-task search and generalization modes.
 
 ---
 
@@ -353,7 +393,7 @@ For any task with costly rollouts (simulation, long runtime), GEPA's sample effi
 
 ### What's the difference between gepa-ai/gepa and DSPy's GEPA?
 
-They are the **same implementation**. DSPy uses `gepa-ai/gepa` as a dependency. When possible, use GEPA through DSPy. For other frameworks or raw LLM calls, use `GEPAAdapter` from `gepa-ai/gepa` directly.
+They are the **same implementation**. DSPy uses `gepa-ai/gepa` as a dependency.  For DSPy programs, use `dspy.GEPA()`.  For everything else (custom evaluators, code evolution, agent optimization), use `optimize_anything` from `gepa-ai/gepa` directly.
 
 ### Does GEPA have any external dependencies?
 
@@ -376,22 +416,19 @@ See the [Adapters Guide](adapters.md) for implementation examples.
 
 ## Tips from the Community
 
-### How much detail should I include in feedback?
+### How much Actionable Side Information (ASI) should I include?
 
-Provide as much detail as possible:
+As much as possible.  ASI — the `side_info` dict returned by your evaluator, or output captured via `oa.log()` — is what the reflection LLM reads to diagnose failures and propose targeted improvements.  Traditional optimizers know *that* a candidate failed but not *why*; ASI provides the *why*.  Include:
 
-- What went wrong
-- What can be improved
-- What an ideal solution would have
-- Score/grade breakdown across different dimensions
-- Reference solutions (if available)
+- **What went wrong** — error messages, wrong outputs, constraint violations
+- **Expected vs actual** — ground truth comparisons
+- **Hints** — domain knowledge, reference solutions
+- **Multi-dimensional scores** — via `{"scores": {"accuracy": 0.7, "speed": 3.2}}`
 
-Don't hold anything back—the more context GEPA has, the better it can propose improvements.
-
-!!! warning "Scores-Only vs Scores+Feedback"
-    While GEPA accepts both score-only and score+feedback formats, **using score-only can significantly hurt optimization quality**. When you return just a numeric score without textual feedback, the reflection LM has very little information to work with.
-    
-    For some tasks, this means the optimization-necessary information never reaches the LLM, causing suboptimal results. Always prefer returning both a score AND detailed feedback text explaining why that score was given.
+!!! warning "Score-Only Mode"
+    Returning just a `float` score (without side_info) significantly limits optimization quality.
+    The reflection LLM has no context to work with.  Always prefer returning `(score, side_info)`
+    or use `oa.log()` to provide diagnostic output.
 
 ### Should I augment training examples with explanations?
 
@@ -446,43 +483,33 @@ Yes! If your component is well-defined and the reward is well-defined, GEPA can 
 
 ### How do I use multi-objective Pareto tracking?
 
-GEPA supports multi-objective optimization with Pareto tracking by reading `EvaluationBatch.objective_scores` from your `GEPAAdapter.evaluate()` implementation:
+Return a `"scores"` dict inside `side_info` — GEPA uses these for Pareto-optimal candidate selection across multiple objectives:
 
 ```python
-class MyAdapter(GEPAAdapter):
-    def evaluate(self, batch, candidate, capture_traces=False):
-        outputs, scores, objective_scores, trajectories = [], [], [], []
-        for example in batch:
-            pred, trace = run_system(candidate, example)
-            accuracy = calculate_accuracy(pred, example)
-            efficiency = calculate_efficiency(trace)
-            safety_score = calculate_safety(pred)
-            outputs.append(pred)
-            scores.append(accuracy)  # Primary score
-            if capture_traces:
-                trajectories.append(trace)
-            objective_scores.append(
-                {
-                    "accuracy": accuracy,
-                    "efficiency": efficiency,
-                    "safety": safety_score,
-                }
-            )
-        return EvaluationBatch(
-            outputs=outputs,
-            scores=scores,
-            trajectories=trajectories if capture_traces else None,
-            objective_scores=objective_scores,
-        )
+def evaluator(candidate, example):
+    pred = run_system(candidate["prompt"], example)
+    accuracy = calculate_accuracy(pred, example)
+    latency = calculate_latency(pred)
+
+    score = accuracy  # Primary score (higher is better)
+    side_info = {
+        "scores": {
+            "accuracy": accuracy,
+            "speed": 1.0 / (1.0 + latency),  # Inverted: higher = better
+        },
+        "Input": example["input"],
+        "Output": pred,
+    }
+    return score, side_info
 ```
 
-This allows GEPA to maintain a Pareto frontier across multiple objectives, finding prompts that represent different trade-offs between competing goals.
+All values in `"scores"` must follow **higher is better**.  GEPA maintains a Pareto frontier across these objectives, finding candidates that represent different trade-offs.
 
 ---
 
 ## Still have questions?
 
-- **Discord**: [Join our community](https://discord.gg/A7dABbtmFw)
+- **Discord**: [Join our community](https://discord.gg/WXFSeVGdbW)
 - **Slack**: [GEPA Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
 - **GitHub Issues**: [gepa-ai/gepa](https://github.com/gepa-ai/gepa/issues)
 - **Twitter/X**: Follow [@LakshyAAAgrawal](https://x.com/LakshyAAAgrawal) for updates and to ask questions

@@ -1,68 +1,189 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/gepa_logo_with_text.svg" alt="GEPA Logo" width="500">
+  <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/gepa_logo_with_text.svg" alt="GEPA Logo" width="450">
 </p>
-
-<h1 align="center">GEPA: System Optimization through Reflective Text Evolution</h1>
 
 <p align="center">
-  <em>Optimize text components—AI prompts, code, or instructions—of any system using reflective text evolution.</em>
+  <strong>Optimize any text parameter — prompts, code, agent architectures, configurations — using LLM-based reflection and Pareto-efficient evolutionary search.</strong>
 </p>
 
-[![PyPI - Version](https://img.shields.io/pypi/v/gepa)](https://pypi.org/project/gepa/) [![PyPI Downloads](https://static.pepy.tech/badge/gepa)](https://pepy.tech/projects/gepa)
+<p align="center">
+  <a href="https://gepa-ai.github.io/gepa/"><strong>Website</strong></a> &ensp;|&ensp;
+  <a href="https://gepa-ai.github.io/gepa/guides/quickstart/"><strong>Quick Start</strong></a> &ensp;|&ensp;
+  <a href="https://arxiv.org/abs/2507.19457"><strong>Paper</strong></a> &ensp;|&ensp;
+  <a href="https://gepa-ai.github.io/gepa/blog/"><strong>Blog</strong></a> &ensp;|&ensp;
+  <a href="https://discord.gg/WXFSeVGdbW"><strong>Discord</strong></a>
+</p>
 
-[![GEPA](https://badgen.net/badge/icon/GEPA?icon=slack&label&color=4A154B)](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/WXFSeVGdbW?style=flat)](https://discord.gg/WXFSeVGdbW) [![Join the #gepa channel in our Discord](https://dcbadge.limes.pink/api/server/https://discord.gg/A7dABbtmFw?style=flat)](https://discord.gg/A7dABbtmFw)
+<p align="center">
+  <a href="https://pypi.org/project/gepa/"><img src="https://img.shields.io/pypi/v/gepa?logo=python&logoColor=white&color=3776ab" alt="PyPI"></a>
+  <a href="https://pepy.tech/projects/gepa"><img src="https://static.pepy.tech/badge/gepa" alt="Downloads"></a>
+  <a href="https://github.com/gepa-ai/gepa"><img src="https://img.shields.io/github/stars/gepa-ai/gepa?style=flat&logo=github&color=181717" alt="GitHub stars"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-green?style=flat" alt="License"></a>
+</p>
 
-## Overview
+<p align="center">
+  <a href="https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w"><img src="https://badgen.net/badge/icon/Slack?icon=slack&label&color=4A154B" alt="Slack"></a>
+  <a href="https://discord.gg/WXFSeVGdbW"><img src="https://dcbadge.limes.pink/api/server/https://discord.gg/WXFSeVGdbW?style=flat" alt="Discord"></a>
+</p>
 
-**GEPA** (Genetic-Pareto) is a framework for **optimizing arbitrary systems with textual parameters**—like AI prompts, code snippets, or textual specs—against any evaluation metric. It employs LLMs to reflect on system behavior, using feedback from execution and evaluation traces to drive targeted improvements. Through iterative mutation, reflection, and Pareto-aware candidate selection, GEPA evolves robust, high-performing variants with minimal evaluations, co-evolving multiple components in modular systems for domain-specific gains.
+---
 
-This repository provides the official implementation of the GEPA algorithm as proposed in the paper titled "GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning" ([https://arxiv.org/abs/2507.19457](https://arxiv.org/abs/2507.19457)), which we have now extended to optimize arbitrary systems (not just AI pipelines). In order to reproduce experiments from the paper, we provide a separate [reproduction artifact](https://github.com/gepa-ai/gepa-artifact).
+## What is GEPA?
+
+**GEPA** (Genetic-Pareto) is a framework for optimizing any system with textual parameters against any evaluation metric. Unlike RL or gradient-based methods that collapse execution traces into a single scalar reward, GEPA uses LLMs to *read* full execution traces — error messages, profiling data, reasoning logs — to diagnose *why* a candidate failed and propose targeted fixes. Through iterative reflection, mutation, and Pareto-aware selection, GEPA evolves high-performing variants with minimal evaluations.
+
+**If you can measure it, you can optimize it**: prompts, code, agent architectures, scheduling policies, vector graphics, and more.
+
+### Key Results
+
+| | |
+|---|---|
+| **90x cheaper** | Open-source models + GEPA beat Claude Opus 4.1 at [Databricks](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization) |
+| **35x faster than RL** | 100–500 evaluations vs. 5,000–25,000+ for GRPO ([paper](https://arxiv.org/abs/2507.19457)) |
+| **32% → 89%** | ARC-AGI agent accuracy via [architecture discovery](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/#5-agent-architecture-discovery) |
+| **40.2% cost savings** | Cloud scheduling policy [discovered by GEPA](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/#3-systems-research), beating expert heuristics |
+| **55% → 82%** | Coding agent resolve rate on Jinja via [auto-learned skills](https://gepa-ai.github.io/gepa/blog/automatically-learning-skills-for-coding-agents/) |
+| **50+ production uses** | Across Shopify, Databricks, Dropbox, OpenAI, Pydantic, MLflow, Comet ML, and [more](https://gepa-ai.github.io/gepa/guides/use-cases/) |
+
+> *"Both DSPy and (especially) **GEPA are currently severely under hyped** in the AI context engineering world"* — **Tobi Lutke**, CEO, Shopify
+
+---
 
 ## Installation
-
 
 ```bash
 pip install gepa
 ```
 
-To install the very latest from `main`:
+To install the latest from `main`:
 
 ```bash
 pip install git+https://github.com/gepa-ai/gepa.git
 ```
 
-## Using GEPA
+---
 
-### The Easiest Path: DSPy Integration
+## Quick Start
 
-> **The easiest and most powerful way to use GEPA for prompt optimization is within [DSPy](https://dspy.ai/), where the GEPA algorithm is directly available through the `dspy.GEPA` API. Directly executable tutorial notebooks are at [dspy.GEPA Tutorials](https://dspy.ai/tutorials/gepa_ai_program/).**
+### Simple Prompt Optimization
 
-### Simple Prompt Optimization Example
-GEPA can be run in just a few lines of code. In this example, we'll use GEPA to optimize a system prompt for math problems from the AIME benchmark ([full tutorial](https://dspy.ai/tutorials/gepa_aime/)). Run the following in an environment with `OPENAI_API_KEY`:
+Optimize a system prompt for math problems from the AIME benchmark in a few lines of code ([full tutorial](https://dspy.ai/tutorials/gepa_aime/)):
+
 ```python
 import gepa
 
-# Load AIME dataset
 trainset, valset, _ = gepa.examples.aime.init_dataset()
 
 seed_prompt = {
-    "system_prompt": "You are a helpful assistant. You are given a question and you need to answer it. The answer should be given at the end of your response in exactly the format '### <final answer>'"
+    "system_prompt": "You are a helpful assistant. Answer the question. "
+                     "Put your final answer in the format '### <answer>'"
 }
 
-# Let's run GEPA optimization process.
-gepa_result = gepa.optimize(
+result = gepa.optimize(
     seed_candidate=seed_prompt,
     trainset=trainset,
     valset=valset,
-    task_lm="openai/gpt-4.1-mini", # <-- This is the model being optimized
-    max_metric_calls=150, # <-- Set a budget
-    reflection_lm="openai/gpt-5", # <-- Use a strong model to reflect on mistakes and propose better prompts
+    task_lm="openai/gpt-4.1-mini",
+    max_metric_calls=150,
+    reflection_lm="openai/gpt-5",
 )
 
-print("GEPA Optimized Prompt:", gepa_result.best_candidate['system_prompt'])
+print("Optimized prompt:", result.best_candidate['system_prompt'])
 ```
 
-Here, we can see the optimized prompt that GEPA generates for AIME, which achieves **improves GPT-4.1 Mini's performance from 46.6% to 56.6%, an improvement of 10%** on AIME 2025. Note the details captured in the prompts in just 2 iterations of GEPA. GEPA can be thought of as precomputing some reasoning (during optimization) to come up with a good plan for future task instances.
+**Result:** GPT-4.1 Mini goes from 46.6% → 56.6% on AIME 2025 (+10 percentage points).
+
+### With DSPy (Recommended for AI Pipelines)
+
+The most powerful way to use GEPA for prompt optimization is within [DSPy](https://dspy.ai/), where it's available as `dspy.GEPA`. See [dspy.GEPA tutorials](https://dspy.ai/tutorials/gepa_ai_program/) for executable notebooks.
+
+```python
+import dspy
+
+optimizer = dspy.GEPA(
+    metric=your_metric,
+    max_metric_calls=150,
+    reflection_lm="openai/gpt-5",
+)
+optimized_program = optimizer.compile(student=MyProgram(), trainset=trainset, valset=valset)
+```
+
+### optimize_anything: Beyond Prompts
+
+The [`optimize_anything`](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/) API optimizes *any* text artifact — code, agent architectures, configurations, SVGs — not just prompts. You provide an evaluator; the system handles the search.
+
+```python
+import gepa.optimize_anything as oa
+from gepa.optimize_anything import optimize_anything, GEPAConfig, EngineConfig
+
+def evaluate(candidate: str) -> float:
+    result = run_my_system(candidate)
+    oa.log(f"Output: {result.output}")      # Actionable Side Information
+    oa.log(f"Error: {result.error}")         # feeds back into reflection
+    return result.score
+
+result = optimize_anything(
+    seed_candidate="<your initial artifact>",
+    evaluator=evaluate,
+    objective="Describe what you want to optimize for.",
+    config=GEPAConfig(engine=EngineConfig(max_metric_calls=100)),
+)
+```
+
+---
+
+## How It Works
+
+Traditional optimizers know *that* a candidate failed but not *why*. GEPA takes a different approach:
+
+1. **Select** a candidate from the Pareto frontier (candidates excelling on different task subsets)
+2. **Execute** on a minibatch, capturing full execution traces
+3. **Reflect** — an LLM reads the traces (error messages, profiler output, reasoning logs) and diagnoses failures
+4. **Mutate** — generate an improved candidate informed by accumulated lessons from all ancestors
+5. **Accept** — add to the pool if improved, update the Pareto front
+
+GEPA also supports **system-aware merge** — combining strengths of two Pareto-optimal candidates excelling on different tasks. The key concept is **Actionable Side Information (ASI)**: diagnostic feedback returned by evaluators that serves as the text-optimization analogue of a gradient.
+
+For details, see the [paper](https://arxiv.org/abs/2507.19457) and the [documentation](https://gepa-ai.github.io/gepa/guides/).
+
+---
+
+## Adapters: Plug GEPA into Any System
+
+GEPA connects to your system via the [`GEPAAdapter`](src/gepa/core/adapter.py) interface — implement `evaluate` and `make_reflective_dataset`, and GEPA handles the rest.
+
+**Built-in adapters:**
+
+| Adapter | Description |
+|---|---|
+| [DefaultAdapter](src/gepa/adapters/default_adapter/) | System prompt optimization for single-turn LLM tasks |
+| [DSPy Full Program](src/gepa/adapters/dspy_full_program_adapter/) | Evolves entire DSPy programs (signatures, modules, control flow). **67% → 93%** on MATH. |
+| [Generic RAG](src/gepa/adapters/generic_rag_adapter/) | Vector store-agnostic RAG optimization (ChromaDB, Weaviate, Qdrant, Pinecone) |
+| [MCP Adapter](src/gepa/adapters/mcp_adapter/) | Optimize [MCP](https://modelcontextprotocol.io/) tool descriptions and system prompts |
+| [TerminalBench](src/gepa/adapters/terminal_bench_adapter/) | Optimize the [Terminus](https://www.tbench.ai/terminus) terminal-use agent |
+| [AnyMaths](src/gepa/adapters/anymaths_adapter/) | Mathematical problem-solving and reasoning tasks |
+
+See the [adapters guide](https://gepa-ai.github.io/gepa/guides/adapters/) for how to build your own, and [DSPy's adapter](https://github.com/stanfordnlp/dspy/tree/main/dspy/teleprompt/gepa/gepa_utils.py) as a reference.
+
+---
+
+## Integrations
+
+GEPA is integrated into several major frameworks:
+
+- **[DSPy](https://dspy.ai/)** — `dspy.GEPA` for optimizing DSPy programs. [Tutorials](https://dspy.ai/tutorials/gepa_ai_program/).
+- **[MLflow](https://mlflow.org/docs/latest/genai/prompt-registry/optimize-prompts/)** — `mlflow.genai.optimize_prompts()` for automatic prompt improvement.
+- **[Comet ML Opik](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer)** — Core optimization algorithm in Opik Agent Optimizer.
+- **[Pydantic](https://pydantic.dev/articles/prompt-optimization-with-gepa)** — Prompt optimization for Pydantic AI.
+- **[OpenAI Cookbook](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining)** — Self-evolving agents with GEPA.
+- **[HuggingFace Cookbook](https://huggingface.co/learn/cookbook/en/dspy_gepa)** — Prompt optimization guide.
+- **[Google ADK](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/)** — Optimizing Google Agent Development Kit agents.
+
+---
+
+## Example Optimized Prompts
+
+GEPA can be thought of as precomputing reasoning during optimization to produce a plan for future task instances. Here are examples of the detailed prompts GEPA discovers:
 
 <table>
   <tr>
@@ -135,21 +256,21 @@ By following these principles, you will help the multi-hop retrieval system find
 
 <mark>[AIME Prompt Begin]</mark>
 
-You will be given one math problem as plain text under a key like “problem.” Your job is to solve it correctly and return:
+You will be given one math problem as plain text under a key like "problem." Your job is to solve it correctly and return:
 
 - reasoning: a concise, logically ordered solution that uses identities/structure to avoid brute force, ends with a quick verification.
 - answer: the final requested number/expression only (no extra words).
 
 Formatting:
-- Use exactly two top-level fields named “reasoning” and “answer.”
+- Use exactly two top-level fields named "reasoning" and "answer."
 - Keep reasoning succinct but complete. Bullet points are fine.
 - The answer field must contain only the final value requested (e.g., 227, 585, 601).
 
 General problem-solving guidance:
 - Parse the problem type (e.g., base representation, intersecting families of subsets, avoiding arithmetic progressions, symmetric sums with constraints, ordered tuples counting).
-- Always enforce domain constraints (e.g., base-b digits in 0..b−1; no leading zero for base-10 “three-digit”; ordered vs unordered families; strict increase conditions in sequences).
+- Always enforce domain constraints (e.g., base-b digits in 0..b−1; no leading zero for base-10 "three-digit"; ordered vs unordered families; strict increase conditions in sequences).
 - Use algebraic identities and modular arithmetic to reduce the search space; prefer structural arguments over naive enumeration.
-- For “greatest/least” questions, derive tight bounds and give a construction that attains them.
+- For "greatest/least" questions, derive tight bounds and give a construction that attains them.
 
 Domain-specific strategies and pitfalls (learned from typical contest problems and prior feedback):
 
@@ -166,7 +287,7 @@ Domain-specific strategies and pitfalls (learned from typical contest problems a
 - Characterize palindromes:
   • 3-digit octal: (A B A)_8 = 65A + 8B.
   • 4-digit octal: (A B B A)_8 = 513A + 72B (with A ≥ 1).
-- Enumerate small parameter ranges and test the other-base palindrome constraint. For “greatest”, check candidates in descending order with justification.
+- Enumerate small parameter ranges and test the other-base palindrome constraint. For "greatest", check candidates in descending order with justification.
 
 3) Symmetric sums with a + b + c fixed (ordered triples of nonnegative integers):
 - Use identities to compress expressions:
@@ -178,8 +299,8 @@ Domain-specific strategies and pitfalls (learned from typical contest problems a
 4) Intersecting families of subsets (collections from the power set):
 - Intersecting means every pair has nonempty intersection. The empty set cannot be included.
 - Complement pairs: S and S^c cannot both be present. Use this to structure counts.
-- Use size-based pigeonhole facts: In [n], any two subsets of size > n/2 must intersect. For n = 5, any two subsets of size ≥ 3 intersect; thus “all subsets of size ≥ 3” is an intersecting family (size 16).
-- Do not assume that “stars” (all subsets containing a fixed element) are the only intersecting families of maximum size. For odd n, both the star and “all subsets of size > n/2” have size 2^{n−1}.
+- Use size-based pigeonhole facts: In [n], any two subsets of size > n/2 must intersect. For n = 5, any two subsets of size ≥ 3 intersect; thus "all subsets of size ≥ 3" is an intersecting family (size 16).
+- Do not assume that "stars" (all subsets containing a fixed element) are the only intersecting families of maximum size. For odd n, both the star and "all subsets of size > n/2" have size 2^{n−1}.
 - When counting collections of a fixed size:
   • Consider the minimum set size N in the family and do casework on how many 2-element sets are included (for n=5), as these control which 3-sets must be excluded (complements).
   • Ensure completeness of cases and avoid double counting by parameterizing canonical patterns (e.g., how many 2-sets, how they overlap, whether they share a common element).
@@ -211,10 +332,10 @@ Quality checks:
 - For extremal problems, provide both a tight bound and an explicit construction achieving it.
 - For counting, explicitly handle ordered vs unordered, exclude impossible/duplicate cases, and check complements/forbidden pairs.
 - For AP-avoidance, confirm integrality and bounds; ensure no missed endpoint combinations.
-- For “greatest/least” questions, justify optimality structurally (e.g., convexity/majorization/pigeonhole).
+- For "greatest/least" questions, justify optimality structurally (e.g., convexity/majorization/pigeonhole).
 
 Finally:
-- Put the clean final numeric result in the “answer” field only.
+- Put the clean final numeric result in the "answer" field only.
 
 <mark>[AIME Prompt End]</mark>
 </details>
@@ -222,77 +343,52 @@ Finally:
   </tr>
 </table>
 
-<br/>
+---
 
-GEPA is built around a flexible [GEPAAdapter](src/gepa/core/adapter.py) abstraction that lets it plug into any system and optimize different types of text snippets. The above example used a simple [`DefaultAdapter`](src/gepa/adapters/default_adapter/default_adapter.py) that plugs into a single-turn LLM environment and evolves system prompts, where tasks are presented as user messages. GEPA can be easily extended to multi-turn and other agentic settings. For example, the `dspy.GEPA` integration uses a [DSPyAdapter](https://github.com/stanfordnlp/dspy/blob/main/dspy/teleprompt/gepa/gepa_utils.py#L51).
+## When GEPA Shines
 
-Beyond prompt optimization, GEPA can evolve entire programs. The [`DSPy Full Program Adapter`](src/gepa/adapters/dspy_full_program_adapter/) demonstrates this by evolving complete DSPy programs—including custom signatures, modules, and control flow logic. Starting from a basic `dspy.ChainOfThought("question -> answer")` that achieves 67% on the MATH benchmark, GEPA evolves a multi-step reasoning program that reach **93% accuracy**. A [fully executable example notebook](src/gepa/examples/dspy_full_program_evolution/example.ipynb) shows how to use this adapter.
+- **Expensive rollouts** — Scientific simulations, complex agents with tool calls, slow compilation. GEPA needs 100–500 evals vs 10K+ for RL.
+- **Scarce data** — Works with as few as 3 examples. No large training sets required.
+- **API-only models** — No weights access needed. Optimize GPT-5, Claude, Gemini directly through their APIs.
+- **Interpretability** — Human-readable optimization traces show *why* each prompt changed.
+- **Complements RL** — Use GEPA for rapid initial optimization, then apply RL/fine-tuning for additional gains ([BetterTogether](https://arxiv.org/abs/2407.10930)).
 
-### Using GEPA to optimize _your_ system
-
-GEPA can be used to optimize any system consisting of textual components. Follow these steps:
- - Implement [`GEPAAdapter`](src/gepa/core/adapter.py): In order to allow the GEPA optimizer to pair with your system and its environment, users can implement the `GEPAAdapter` interface defined in [src/gepa/core/adapter.py](src/gepa/core/adapter.py). `GEPAAdapter` requires 2 methods:
-    - Evaluate: Given a candidate consisting of proposed text components, and a minibatch of inputs sampled from the train/val sets, evaluate and return execution scores, also capturing the system traces.
-    - Extract Traces for Reflection: Given the execution traces obtained from executing a proposed candidate, and a named component being optimized, return the textual content from the traces relevant to the named component.
-- Prepare trainset and valset: Lists of example inputs and task metadata.
-- Call `gepa.optimize` with your adapter, metric, and system configuration.
-
-> We are actively working on implementing adapters to integrate into many different frameworks. Please open an issue if there's a specific framework you would like to see supported!
-
-#### Example: Optimizing a multi-turn agent in an external environment: terminal-bench's Terminus agent
-
-[Terminal-bench](https://www.tbench.ai/) is a benchmark for evaluating the performance of terminal-use agents. [Terminus](https://www.tbench.ai/terminus) is a leading terminal-use agent. In [this script](src/gepa/examples/terminal-bench/train_terminus.py), we use GEPA to optimize the system prompt/terminal-use instruction for the Terminus agent through a custom `GEPAAdapter` implementation.
-
-Note that the terminus agent as well as terminal-bench run in an external environment and is integrated into GEPA via the [`TerminusAdapter`](src/gepa/examples/terminal-bench/train_terminus.py).
-
-To run this example:
-```bash
-pip install terminal-bench
-python src/gepa/examples/terminal-bench/train_terminus.py --model_name=gpt-5-mini
-```
-
-#### Example: Optimizing RAG systems with any vector store
-
-The [Generic RAG Adapter](src/gepa/adapters/generic_rag_adapter/) enables GEPA to optimize Retrieval-Augmented Generation (RAG) systems using any vector store (ChromaDB, Weaviate, Qdrant, Pinecone) through a pluggable interface. It optimizes query reformulation, context synthesis, answer generation, and document reranking simultaneously.
-
-
-See the [complete RAG adapter examples and documentation](src/gepa/examples/rag_adapter/RAG_GUIDE.md) for usage examples, supported vector stores, and step-by-step guides.
-
-## How does GEPA work?
-
-GEPA optimizes text components of systems using an evolutionary search algorithm that uses LLM-based reflection for mutating candidates. Most importantly, GEPA leverages task-specific textual feedback (for example, compiler error messages, profiler performance reports, documentation, etc.) to guide the search process. For further details, refer to the paper: [GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning](https://arxiv.org/abs/2507.19457).
-
-## Contributions
-
-We encourage the community and users to help us develop adapters to allow GEPA to be used for optimizing all kinds of systems leveraging textual components. Refer to [DSPy/GEPAAdapter](https://github.com/stanfordnlp/dspy/tree/main/dspy/teleprompt/gepa/gepa_utils.py) and [src/gepa/adapters/](src/gepa/adapters/) for example `GEPAAdapter` implementations. Please feel free to flag any problems faced as issues.
-
-**If you'd like to list yourself as a user, or highlight your usecase for GEPA, please reach out to [lakshyaaagrawal@berkeley.edu](mailto:lakshyaaagrawal@berkeley.edu).**
+---
 
 ## Further Reading
 
-- **Paper:** 📄 [GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning (arXiv:2507.19457)](https://arxiv.org/abs/2507.19457)
+- **Paper:** [GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning (arXiv:2507.19457)](https://arxiv.org/abs/2507.19457)
 - **Experiment reproduction artifact:** [GEPA Artifact Repository](https://github.com/gepa-ai/gepa-artifact)
 - **Talk Slides**: [GEPA Talk Slides](https://docs.google.com/presentation/d/1vIauqn55WfdgJjwU0IDjvaqpv1QHhvhPaLAKdrCFAEg/edit?usp=sharing)
-- **Tutorials & Examples:**  
-  - [dspy.GEPA Tutorials, with executable notebooks](https://dspy.ai/tutorials/gepa_ai_program/)  
+- **Blog Posts:**
+  - [optimize_anything: A Universal API for Optimizing any Text Parameter](https://gepa-ai.github.io/gepa/blog/2026/02/18/introducing-optimize-anything/)
+  - [Automatically Learning Skills for Coding Agents](https://gepa-ai.github.io/gepa/blog/2026/02/18/automatically-learning-skills-for-coding-agents/)
+- **Tutorials & Examples:**
+  - [dspy.GEPA Tutorials, with executable notebooks](https://dspy.ai/tutorials/gepa_ai_program/)
     Step-by-step notebooks showing how to use GEPA for practical optimization tasks via DSPy, including math, structured data extraction for enterprise tasks and privacy conscious delegation task.
   - [Video tutorial by @weaviate on using dspy.GEPA to optimize a listwise reranker](https://www.youtube.com/watch?v=H4o7h6ZbA4o)
   - [Matei Zaharia - Reflective Optimization of Agents with GEPA and DSPy](https://www.youtube.com/watch?v=rrtxyZ4Vnv8)
   - [Building and optimizing a multi-agent system for healthcare domain using DSPy+GEPA](https://kargarisaac.medium.com/building-and-optimizing-multi-agent-rag-systems-with-dspy-and-gepa-2b88b5838ce2)
-- **Social and Discussion:**  
+- **Social and Discussion:**
   - [X (formerly Twitter) Announcement Thread (Lakshya A Agrawal)](https://x.com/LakshyAAAgrawal/status/1949867947867984322)
   - [GEPA covered by VentureBeat](https://venturebeat.com/ai/gepa-optimizes-llms-without-costly-reinforcement-learning)
   - [GEPA's use by Databricks covered by VentureBeat](https://venturebeat.com/ai/the-usd100m-openai-partnership-is-nice-but-databricks-real-breakthrough)
-  - Stay up to date:  
-    - [@LakshyAAAgrawal on X (Twitter)](https://x.com/LakshyAAAgrawal)  
+  - Stay up to date:
+    - [@LakshyAAAgrawal on X (Twitter)](https://x.com/LakshyAAAgrawal)
     - [@lateinteraction on X (Twitter)](https://twitter.com/lateinteraction)
   - Questions, Discussions?
-    - [Join our Discord for active discussion](https://discord.gg/A7dABbtmFw)
+    - [Join our Discord for active discussion](https://discord.gg/WXFSeVGdbW)
+    - [Join our Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
     - [Open a GitHub issue](https://github.com/gepa-ai/gepa/issues)
-- **GEPA Integrations:**  
-  Want to use GEPA in other frameworks?  
-  - [DSPy Adapter Code](https://github.com/stanfordnlp/dspy/tree/main/dspy/teleprompt/gepa/gepa_utils.py) (integrates GEPA with [DSPy](https://dspy.ai/)),  
+- **GEPA Integrations:**
+  Want to use GEPA in other frameworks?
+  - [DSPy Adapter Code](https://github.com/stanfordnlp/dspy/tree/main/dspy/teleprompt/gepa/gepa_utils.py) (integrates GEPA with [DSPy](https://dspy.ai/)),
   - [MLflow Prompt Optimization](https://mlflow.org/docs/latest/genai/prompt-registry/optimize-prompts/) - GEPA is integrated into MLflow's `mlflow.genai.optimize_prompts()` API for automatic prompt improvement using evaluation metrics and training data. Works with any agent framework and supports multi-prompt optimization.
+  - [Pydantic AI](https://pydantic.dev/articles/prompt-optimization-with-gepa) - Prompt optimization for Pydantic AI.
+  - [Comet ML Opik](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer) - Core optimization algorithm in Opik Agent Optimizer.
+  - [OpenAI Cookbook](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining) - Self-evolving agents with GEPA.
+  - [HuggingFace Cookbook](https://huggingface.co/learn/cookbook/en/dspy_gepa) - Prompt optimization guide.
+  - [Google ADK](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/) - Optimizing Google Agent Development Kit agents.
   - [Contributed Adapters](src/gepa/adapters/) – see our adapter templates and issue tracker to request new integrations.
     - [DefaultAdapter](src/gepa/adapters/default_adapter/) - System Prompt Optimization for a single-turn task.
     - [DSPy Full Program Adapter](src/gepa/adapters/dspy_full_program_adapter/) - Evolves entire DSPy programs including signatures, modules, and control flow. Achieves **93% accuracy** on MATH benchmark (vs 67% with basic DSPy ChainOfThought).
@@ -323,19 +419,32 @@ We encourage the community and users to help us develop adapters to allow GEPA t
     - [HuggingFace Cookbook on prompt optimization for with DSPy and GEPA](https://huggingface.co/learn/cookbook/en/dspy_gepa)
     - [OpenAI Cookbook showing how to build self-evolving agents using GEPA](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining)
 
-## Reference and Citation
+---
 
-If you use this repository, or the GEPA algorithm, kindly cite:
-```
+## Contributions
+
+We welcome adapters, bug fixes, and new use cases. See [src/gepa/adapters/](src/gepa/adapters/) for adapter examples and the [contributing guide](https://gepa-ai.github.io/gepa/guides/contributing/).
+
+**Want to highlight your use case?** Reach out to [lakshyaaagrawal@berkeley.edu](mailto:lakshyaaagrawal@berkeley.edu) or [submit via GitHub](https://github.com/gepa-ai/gepa/issues/new?title=Project%20Submission&body=Organization:%0A%0AProject%20Description:%0A%0AResults:%0A%0ALink%20to%20paper/blog/code:).
+
+---
+
+## Citation
+
+```bibtex
 @misc{agrawal2025gepareflectivepromptevolution,
-      title={GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning}, 
+      title={GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning},
       author={Lakshya A Agrawal and Shangyin Tan and Dilara Soylu and Noah Ziems and Rishi Khare and Krista Opsahl-Ong and Arnav Singhvi and Herumb Shandilya and Michael J Ryan and Meng Jiang and Christopher Potts and Koushik Sen and Alexandros G. Dimakis and Ion Stoica and Dan Klein and Matei Zaharia and Omar Khattab},
       year={2025},
       eprint={2507.19457},
       archivePrefix={arXiv},
       primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2507.19457}, 
+      url={https://arxiv.org/abs/2507.19457},
 }
 ```
 
-[![Star History Chart](https://api.star-history.com/svg?repos=gepa-ai/gepa&type=Date)](https://www.star-history.com/#gepa-ai/gepa&Date)
+<p align="center">
+  <a href="https://www.star-history.com/#gepa-ai/gepa&Date">
+    <img src="https://api.star-history.com/svg?repos=gepa-ai/gepa&type=Date" alt="Star History Chart" width="600">
+  </a>
+</p>

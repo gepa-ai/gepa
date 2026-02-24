@@ -1,6 +1,6 @@
 site_name: GEPA
 site_description: A framework for optimizing textual system components using LLM-based reflection and Pareto-efficient evolutionary search.
-site_url: https://gepa.ai/
+site_url: https://gepa-ai.github.io/gepa/
 
 repo_url: https://github.com/gepa-ai/gepa
 repo_name: gepa-ai/gepa
@@ -8,8 +8,12 @@ repo_name: gepa-ai/gepa
 edit_uri: blob/main/docs/docs/
 docs_dir: "docs/"
 
+watch:
+    - docs/blog/posts
+
 nav:
     - Showcase: guides/use-cases.md
+    - About: about.md
     - Blog:
         - blog/index.md
     - Guides:
@@ -23,8 +27,24 @@ nav:
         - Tutorials Overview: tutorials/index.md
         - DSPy Full Program Evolution: tutorials/dspy_full_program_evolution.ipynb
         - ARC AGI Example: tutorials/arc_agi.ipynb
+        - 3D Unicorn Optimization (Seedless): tutorials/3d_unicorn_optimization.ipynb
     - API Reference:
         - API Overview: api/index.md
+        - optimize_anything:
+            - optimize_anything: api/optimize_anything/optimize_anything.md
+            - GEPAConfig: api/optimize_anything/GEPAConfig.md
+            - EngineConfig: api/optimize_anything/EngineConfig.md
+            - ReflectionConfig: api/optimize_anything/ReflectionConfig.md
+            - MergeConfig: api/optimize_anything/MergeConfig.md
+            - RefinerConfig: api/optimize_anything/RefinerConfig.md
+            - TrackingConfig: api/optimize_anything/TrackingConfig.md
+            - Evaluator: api/optimize_anything/Evaluator.md
+            - OptimizationState: api/optimize_anything/OptimizationState.md
+            - LogContext: api/optimize_anything/LogContext.md
+            - log: api/optimize_anything/log.md
+            - get_log_context: api/optimize_anything/get_log_context.md
+            - set_log_context: api/optimize_anything/set_log_context.md
+            - make_litellm_lm: api/optimize_anything/make_litellm_lm.md
         - Core:
             - optimize: api/core/optimize.md
             - GEPAAdapter: api/core/GEPAAdapter.md
@@ -137,6 +157,14 @@ theme:
     favicon: static/img/gepa_logo.svg
 
 plugins:
+    - social:
+        enabled: !ENV [CI, false]
+        cards_layout_dir: layouts
+        cards_layout: custom
+        cards_layout_options:
+          background_color: "#212C4D"
+          color: "#90E0EF"
+          logo: docs/static/img/gepa_logo_with_text_white.png
     - search:
         lang: en
         separator: '[\s\-\.]+'
@@ -199,13 +227,15 @@ extra_css:
 extra_javascript:
     - javascripts/mathjax.js
     - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+    - javascripts/details-anchor.js
+    - javascripts/toc-drawer.js
 
 extra:
     social:
         - icon: fontawesome/brands/github
           link: https://github.com/gepa-ai/gepa
         - icon: fontawesome/brands/discord
-          link: https://discord.gg/A7dABbtmFw
+          link: https://discord.gg/WXFSeVGdbW
         - icon: fontawesome/brands/slack
           link: https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w
         - icon: fontawesome/brands/x-twitter

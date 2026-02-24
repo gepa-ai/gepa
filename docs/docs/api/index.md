@@ -2,6 +2,25 @@
 
 Welcome to the GEPA API Reference. This documentation is auto-generated from the source code docstrings.
 
+## optimize_anything
+
+The primary public API for GEPA. Optimize any text artifact with LLM-guided evolution — bring a seed candidate and an evaluator, and GEPA handles the rest.
+
+- [`optimize_anything`](optimize_anything/optimize_anything.md)
+- [`GEPAConfig`](optimize_anything/GEPAConfig.md)
+- [`EngineConfig`](optimize_anything/EngineConfig.md)
+- [`ReflectionConfig`](optimize_anything/ReflectionConfig.md)
+- [`MergeConfig`](optimize_anything/MergeConfig.md)
+- [`RefinerConfig`](optimize_anything/RefinerConfig.md)
+- [`TrackingConfig`](optimize_anything/TrackingConfig.md)
+- [`Evaluator`](optimize_anything/Evaluator.md)
+- [`OptimizationState`](optimize_anything/OptimizationState.md)
+- [`LogContext`](optimize_anything/LogContext.md)
+- [`log`](optimize_anything/log.md)
+- [`get_log_context`](optimize_anything/get_log_context.md)
+- [`set_log_context`](optimize_anything/set_log_context.md)
+- [`make_litellm_lm`](optimize_anything/make_litellm_lm.md)
+
 ## Core
 
 The core module contains the main optimization function and fundamental classes.

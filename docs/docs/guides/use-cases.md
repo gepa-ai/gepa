@@ -3,7 +3,7 @@
 Discover how organizations and researchers are using GEPA to optimize AI systems across diverse domains. These examples showcase the versatility and impact of reflective prompt evolution.
 
 !!! tip "Living Document"
-    This page is continuously updated with new use cases from the community. Have a GEPA success story? Share it on [Discord](https://discord.gg/A7dABbtmFw) or [Twitter/X](https://x.com/LakshyAAAgrawal)!
+    This page is continuously updated with new use cases from the community. Have a GEPA success story? Share it on [Discord](https://discord.gg/WXFSeVGdbW), [Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w), or [Twitter/X](https://x.com/LakshyAAAgrawal)!
 
 **Quick Navigation:**
 
@@ -113,6 +113,18 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     BAML integrates GEPA into `baml-cli optimize` for test-driven prompt optimization with multi-objective support (accuracy, latency, tokens).
 
     [:material-arrow-right: Read the guide](https://docs.boundaryml.com/guide/baml-advanced/prompt-optimization)
+
+-   **Prompt Optimization with Pydantic AI**
+
+    ---
+
+    Tutorial demonstrating GEPA integration with Pydantic AI using `Agent.override()` for instruction injection and Pydantic Evals for parallel evaluation.
+
+    **Results:** Contact extraction improved from 86% → 97% accuracy
+
+    [:material-arrow-right: Read the tutorial](https://pydantic.dev/articles/prompt-optimization-with-gepa)
+
+    [:material-arrow-right: View code examples](https://github.com/pydantic/pydantic-stack-demo/tree/main/pai-gepa-prompt-optimization)
 
 </div>
 
@@ -988,6 +1000,6 @@ Ready to optimize your own AI systems with GEPA?
 
     Connect with other GEPA users and contributors.
 
-    [:material-arrow-right: Discord](https://discord.gg/A7dABbtmFw) [:material-arrow-right: Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
+    [:material-arrow-right: Discord](https://discord.gg/WXFSeVGdbW) [:material-arrow-right: Slack](https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w)
 
 </div>
