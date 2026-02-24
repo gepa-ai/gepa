@@ -61,14 +61,14 @@ _REFINER_TEXT_OUTPUT_INSTRUCTION = (
 )
 
 
-class InternalCandidateSignature(Signature):
+class PromptCandidateSignature(Signature):
     """Signature for generating candidates from evolved prompts in seedless mode.
 
     Mirrors :class:`InstructionProposalSignature` but for the artifact generation step:
     takes an evolved prompt (+ optional example) and extracts the generated candidate
     from the LM output.
 
-    Used by the adapter to run ``artifact_lm`` and parse refiner output in seedless mode.
+    Used by the adapter to run ``prompt_candidate_lm`` and parse refiner output in seedless mode.
     """
 
     input_keys: ClassVar[list[str]] = ["prompt", "example"]
@@ -130,7 +130,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         cache_mode: str = "memory",  # "off", "memory", "disk"
         cache_dir: str | Path | None = None,
         seedless_mode: bool = False,
-        artifact_lm: LanguageModel | None = None,
+        prompt_candidate_lm: LanguageModel | None = None,
         per_example_generation: bool = False,
     ):
         self.evaluator = evaluator
@@ -143,12 +143,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self.cache_mode = cache_mode
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self.seedless_mode = seedless_mode
-        self.artifact_lm = artifact_lm
+        self.prompt_candidate_lm = prompt_candidate_lm
         self.per_example_generation = per_example_generation
 
-        # Maps internal_candidate prompt hash → (best_candidate_text, best_score)
-        self._internal_to_candidate: dict[str, tuple[str, float]] = {}
-        self._internal_to_candidate_lock = threading.Lock()
+        # Maps prompt candidate hash → (best_artifact_text, best_score)
+        self._prompt_to_artifact: dict[str, tuple[str, float]] = {}
+        self._prompt_to_artifact_lock = threading.Lock()
 
         # Track top-K best evaluations per example for warm-start support
         self._best_evals_by_example: dict[str, list[dict]] = {}  # keyed by _example_hash
@@ -247,38 +247,38 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     # --- Seedless-mode helpers ---
 
     def _run_prompt(self, prompt: str, example: object | None = None) -> str:
-        """Run the internal_candidate prompt through artifact_lm to produce a candidate.
+        """Run a prompt candidate through prompt_candidate_lm to produce an artifact.
 
-        Uses :class:`InternalCandidateSignature` for prompt formatting and output parsing.
+        Uses :class:`PromptCandidateSignature` for prompt formatting and output parsing.
 
         Args:
-            prompt: The internal_candidate prompt text.
+            prompt: The prompt candidate text.
             example: Optional example for per-example generation.
 
         Returns:
             Generated candidate text.
         """
-        assert self.artifact_lm is not None, "artifact_lm must be set in seedless mode"
-        result = InternalCandidateSignature.run(self.artifact_lm, {"prompt": prompt, "example": example})
+        assert self.prompt_candidate_lm is not None, "prompt_candidate_lm must be set in seedless mode"
+        result = PromptCandidateSignature.run(self.prompt_candidate_lm, {"prompt": prompt, "example": example})
         return result["candidate"]
 
     def get_best_candidate(self, prompt: str) -> str | None:
-        """Look up the best candidate generated from an internal_candidate prompt.
+        """Look up the best artifact generated from a prompt candidate.
 
         Used by optimize_anything.py for the post-optimization candidate swap.
         """
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
-        with self._internal_to_candidate_lock:
-            entry = self._internal_to_candidate.get(prompt_hash)
+        with self._prompt_to_artifact_lock:
+            entry = self._prompt_to_artifact.get(prompt_hash)
             return entry[0] if entry is not None else None
 
-    def _update_internal_to_candidate(self, prompt: str, candidate_text: str, score: float) -> None:
-        """Update the internal_candidate→candidate mapping if this score is the best so far."""
+    def _update_prompt_to_artifact(self, prompt: str, candidate_text: str, score: float) -> None:
+        """Update the prompt→artifact mapping if this score is the best so far."""
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
-        with self._internal_to_candidate_lock:
-            entry = self._internal_to_candidate.get(prompt_hash)
+        with self._prompt_to_artifact_lock:
+            entry = self._prompt_to_artifact.get(prompt_hash)
             if entry is None or score > entry[1]:
-                self._internal_to_candidate[prompt_hash] = (candidate_text, score)
+                self._prompt_to_artifact[prompt_hash] = (candidate_text, score)
 
     def _call_evaluator(
         self,
@@ -330,8 +330,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         Multi-objective scores from ``side_info["scores"]`` are extracted and
         forwarded as ``objective_scores`` in the returned batch.
 
-        In seedless mode, the candidate contains an internal_candidate (prompt)
-        which is run through ``artifact_lm`` to produce the actual candidate
+        In seedless mode, the candidate is a prompt candidate which is run
+        through ``prompt_candidate_lm`` to produce the actual artifact
         before evaluation.
         """
         if self.seedless_mode:
@@ -501,8 +501,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     ) -> EvaluationBatch:
         """Top-level seedless evaluation dispatcher.
 
-        Extracts the internal_candidate (prompt) from the candidate dict,
-        generates the actual candidate via artifact_lm, then evaluates.
+        Extracts the prompt candidate from the candidate dict,
+        generates the artifact via prompt_candidate_lm, then evaluates.
         Dispatches to per-example or generate-once path based on config.
         """
         prompt = candidate["current_candidate"]
@@ -563,9 +563,9 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         for example, (score, _, side_info) in zip(batch, eval_output, strict=True):
             self._update_best_example_evals(example, score, side_info)
 
-        # Update internal_candidate → candidate mapping (best across all examples)
+        # Update prompt → artifact mapping (best across all examples)
         best_score = max(s for s, _, _ in eval_output) if eval_output else 0.0
-        self._update_internal_to_candidate(prompt, generated_candidate, best_score)
+        self._update_prompt_to_artifact(prompt, generated_candidate, best_score)
 
         return eval_output
 
@@ -608,7 +608,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             if isinstance(best_output, tuple) and len(best_output) >= 2:
                 best_cand = best_output[1]
                 if isinstance(best_cand, dict) and "current_candidate" in best_cand:
-                    self._update_internal_to_candidate(prompt, best_cand["current_candidate"], best_score)
+                    self._update_prompt_to_artifact(prompt, best_cand["current_candidate"], best_score)
 
         return eval_output
 
@@ -658,7 +658,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     output_format_instruction=_REFINER_TEXT_OUTPUT_INSTRUCTION,
                 )
                 raw_output = refiner_lm(refine_prompt).strip()
-                refined_text = InternalCandidateSignature.output_extractor(raw_output)["candidate"]
+                refined_text = PromptCandidateSignature.output_extractor(raw_output)["candidate"]
 
                 if not refined_text:
                     all_attempts.append(
@@ -761,7 +761,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             if isinstance(best_output, tuple) and len(best_output) >= 2:
                 best_cand = best_output[1]
                 if isinstance(best_cand, dict) and "current_candidate" in best_cand:
-                    self._update_internal_to_candidate(prompt, best_cand["current_candidate"], best_score)
+                    self._update_prompt_to_artifact(prompt, best_cand["current_candidate"], best_score)
 
         return eval_output
 
@@ -800,7 +800,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             if isinstance(best_output, tuple) and len(best_output) >= 2:
                 best_cand = best_output[1]
                 if isinstance(best_cand, dict) and "current_candidate" in best_cand:
-                    self._update_internal_to_candidate(prompt, best_cand["current_candidate"], best_score)
+                    self._update_prompt_to_artifact(prompt, best_cand["current_candidate"], best_score)
 
         return eval_output
 
@@ -861,7 +861,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     evaluation_feedback=current_feedback,
                     output_format_instruction=_REFINER_JSON_OUTPUT_INSTRUCTION,
                 )
-                raw_output = InternalCandidateSignature.output_extractor(refiner_lm(prompt))["candidate"]
+                raw_output = PromptCandidateSignature.output_extractor(refiner_lm(prompt))["candidate"]
 
                 try:
                     parsed_refined = json.loads(raw_output)

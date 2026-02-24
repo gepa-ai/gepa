@@ -1125,7 +1125,7 @@ def optimize_anything(
                 "The reflection LLM needs the objective to generate an initial candidate."
             )
         # In seedless mode, the seed is a prompt template (not a placeholder).
-        # The adapter will run this prompt through artifact_lm to generate candidates.
+        # The adapter will run this prompt through prompt_candidate_lm to generate artifacts.
         seed_prompt = _build_seed_generation_prompt(objective=objective, background=background, dataset=dataset)
         seed_candidate = {_STR_CANDIDATE_KEY: seed_prompt}
     else:
@@ -1305,7 +1305,7 @@ def optimize_anything(
         cache_mode=resolved_cache_mode,
         cache_dir=config.engine.run_dir,
         seedless_mode=seedless_mode,
-        artifact_lm=config.reflection.reflection_lm if seedless_mode else None,
+        prompt_candidate_lm=config.reflection.reflection_lm if seedless_mode else None,
         per_example_generation=per_example_generation,
     )
 
@@ -1504,8 +1504,8 @@ def optimize_anything(
     )
 
     # Post-optimization candidate swap (generate-once only):
-    # In generate-once mode, replace internal_candidates (prompts) with actual
-    # candidates (generated things) so the user gets the artifact they care about.
+    # In generate-once mode, replace prompt candidates with actual
+    # artifacts so the user gets the artifact they care about.
     # In per-example mode, the prompt IS the useful output (it generalizes across
     # examples), so we return the prompt as-is.
     if seedless_mode and not per_example_generation and isinstance(active_adapter, OptimizeAnythingAdapter):
