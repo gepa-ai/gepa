@@ -254,6 +254,32 @@ class OptimizationState:
     ``EngineConfig.best_example_evals_k`` (default 30)."""
 
 
+@dataclass(frozen=True)
+class OptimizeAnythingResult:
+    """Result wrapper returned by :func:`optimize_anything`.
+
+    Wraps :class:`~gepa.core.result.GEPAResult` and adds seedless-mode extras
+    like ``best_candidate_per_example``.  All ``GEPAResult`` attributes are
+    accessible directly (e.g., ``result.best_candidate``, ``result.best_idx``).
+
+    Attributes:
+        gepa_result: The underlying :class:`~gepa.core.result.GEPAResult`.
+        best_candidate_per_example: In seedless per-example mode, maps
+            ``example_index → best candidate text`` (the actual generated
+            artifact, not the internal prompt).  ``None`` in other modes.
+    """
+
+    gepa_result: GEPAResult
+    best_candidate_per_example: dict[int, str] | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        # Guard: prevent infinite recursion during pickle/deepcopy
+        # (they call __getattr__ before __init__ sets gepa_result).
+        if name == "gepa_result":
+            raise AttributeError(name)
+        return getattr(self.gepa_result, name)
+
+
 # ---------------------------------------------------------------------------
 # Evaluation log context — captures diagnostic output without polluting stdout
 # ---------------------------------------------------------------------------
@@ -1002,7 +1028,7 @@ def optimize_anything(
     objective: str | None = None,
     background: str | None = None,
     config: GEPAConfig | None = None,
-) -> GEPAResult:
+) -> OptimizeAnythingResult:
     """Optimize any text artifact using LLM-guided search.
 
     This is the main entry point for GEPA.  You declare the **what** — your
@@ -1503,16 +1529,21 @@ def optimize_anything(
         str_candidate_key=_STR_CANDIDATE_KEY if str_candidate_mode else None,
     )
 
-    # Post-optimization candidate swap (generate-once only):
-    # In generate-once mode, replace prompt candidates with actual
-    # artifacts so the user gets the artifact they care about.
-    # In per-example mode, the prompt IS the useful output (it generalizes across
-    # examples), so we return the prompt as-is.
-    if seedless_mode and not per_example_generation and isinstance(active_adapter, OptimizeAnythingAdapter):
-        for cand in result.candidates:
-            prompt_text = cand[_STR_CANDIDATE_KEY]
-            best_candidate = active_adapter.get_best_candidate(prompt_text)
-            if best_candidate is not None:
-                cand[_STR_CANDIDATE_KEY] = best_candidate
+    # Post-optimization: swap internal prompts → user-facing candidates.
+    best_candidate_per_example: dict[int, str] | None = None
+    if seedless_mode and isinstance(active_adapter, OptimizeAnythingAdapter):
+        if per_example_generation:
+            # Per-example mode: collect the best candidate for each example.
+            best_candidate_per_example = active_adapter.get_best_candidate_per_example(effective_dataset)
+        else:
+            # Generate-once mode: replace internal prompts with actual candidates.
+            for cand in result.candidates:
+                prompt_text = cand[_STR_CANDIDATE_KEY]
+                best_candidate = active_adapter.get_best_candidate(prompt_text)
+                if best_candidate is not None:
+                    cand[_STR_CANDIDATE_KEY] = best_candidate
 
-    return result
+    return OptimizeAnythingResult(
+        gepa_result=result,
+        best_candidate_per_example=best_candidate_per_example,
+    )

@@ -146,9 +146,9 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self.prompt_candidate_lm = prompt_candidate_lm
         self.per_example_generation = per_example_generation
 
-        # Maps prompt candidate hash → (best_artifact_text, best_score)
-        self._prompt_to_artifact: dict[str, tuple[str, float]] = {}
-        self._prompt_to_artifact_lock = threading.Lock()
+        # Maps internal prompt hash → (best_candidate_text, best_score)
+        self._internal_prompt_to_candidate: dict[str, tuple[str, float]] = {}
+        self._internal_prompt_to_candidate_lock = threading.Lock()
 
         # Track top-K best evaluations per example for warm-start support
         self._best_evals_by_example: dict[str, list[dict]] = {}  # keyed by _example_hash
@@ -247,12 +247,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     # --- Seedless-mode helpers ---
 
     def _run_prompt(self, prompt: str, example: object | None = None) -> str:
-        """Run a prompt candidate through prompt_candidate_lm to produce an artifact.
+        """Run an internal prompt candidate through prompt_candidate_lm to produce a candidate.
 
         Uses :class:`PromptCandidateSignature` for prompt formatting and output parsing.
 
         Args:
-            prompt: The prompt candidate text.
+            prompt: The internal prompt candidate text.
             example: Optional example for per-example generation.
 
         Returns:
@@ -263,22 +263,64 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         return result["candidate"]
 
     def get_best_candidate(self, prompt: str) -> str | None:
-        """Look up the best artifact generated from a prompt candidate.
+        """Look up the best candidate generated from an internal prompt.
 
         Used by optimize_anything.py for the post-optimization candidate swap.
+        Falls back to re-generating via prompt_candidate_lm if the mapping is
+        missing (e.g., after resume).
         """
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
-        with self._prompt_to_artifact_lock:
-            entry = self._prompt_to_artifact.get(prompt_hash)
-            return entry[0] if entry is not None else None
+        with self._internal_prompt_to_candidate_lock:
+            entry = self._internal_prompt_to_candidate.get(prompt_hash)
+            if entry is not None:
+                return entry[0]
+        # Fallback: re-generate (e.g., after resume when mapping is lost)
+        if self.prompt_candidate_lm is not None:
+            return self._run_prompt(prompt)
+        return None
 
-    def _update_prompt_to_artifact(self, prompt: str, candidate_text: str, score: float) -> None:
-        """Update the prompt→artifact mapping if this score is the best so far."""
+    def get_best_candidate_per_example(self, examples: list[object]) -> dict[int, str]:
+        """Return the best candidate text for each example.
+
+        Extracts ``generated_candidate`` from the top entry in
+        ``_best_evals_by_example`` for each example.
+
+        Returns:
+            Dict mapping example index → best candidate text.
+        """
+        result: dict[int, str] = {}
+        for idx, example in enumerate(examples):
+            evals = self._get_best_example_evals(example)
+            if evals:
+                candidate_text = evals[0].get("side_info", {}).get("generated_candidate")
+                if candidate_text is not None:
+                    result[idx] = candidate_text
+        return result
+
+    def _update_internal_prompt_to_candidate(self, prompt: str, candidate_text: str, score: float) -> None:
+        """Update the internal prompt → candidate mapping if this score is the best so far."""
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
-        with self._prompt_to_artifact_lock:
-            entry = self._prompt_to_artifact.get(prompt_hash)
+        with self._internal_prompt_to_candidate_lock:
+            entry = self._internal_prompt_to_candidate.get(prompt_hash)
             if entry is None or score > entry[1]:
-                self._prompt_to_artifact[prompt_hash] = (candidate_text, score)
+                self._internal_prompt_to_candidate[prompt_hash] = (candidate_text, score)
+
+    def _update_mapping_from_eval_output(
+        self, prompt: str, eval_output: list[tuple[float, Any, "SideInfo"]]
+    ) -> None:
+        """Extract the best candidate from eval output and update the prompt→candidate mapping.
+
+        Finds the highest-scoring entry in eval_output, extracts the candidate text
+        from the output tuple, and updates ``_internal_prompt_to_candidate``.
+        """
+        if not eval_output:
+            return
+        best_idx = max(range(len(eval_output)), key=lambda i: eval_output[i][0])
+        best_score, best_output, _ = eval_output[best_idx]
+        if isinstance(best_output, tuple) and len(best_output) >= 2:
+            best_cand = best_output[1]
+            if isinstance(best_cand, dict) and "current_candidate" in best_cand:
+                self._update_internal_prompt_to_candidate(prompt, best_cand["current_candidate"], best_score)
 
     def _call_evaluator(
         self,
@@ -330,8 +372,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         Multi-objective scores from ``side_info["scores"]`` are extracted and
         forwarded as ``objective_scores`` in the returned batch.
 
-        In seedless mode, the candidate is a prompt candidate which is run
-        through ``prompt_candidate_lm`` to produce the actual artifact
+        In seedless mode, the candidate is an internal prompt candidate which is run
+        through ``prompt_candidate_lm`` to produce the actual candidate
         before evaluation.
         """
         if self.seedless_mode:
@@ -501,8 +543,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     ) -> EvaluationBatch:
         """Top-level seedless evaluation dispatcher.
 
-        Extracts the prompt candidate from the candidate dict,
-        generates the artifact via prompt_candidate_lm, then evaluates.
+        Extracts the internal prompt candidate from the candidate dict,
+        generates the candidate via prompt_candidate_lm, then evaluates.
         Dispatches to per-example or generate-once path based on config.
         """
         prompt = candidate["current_candidate"]
@@ -563,9 +605,9 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         for example, (score, _, side_info) in zip(batch, eval_output, strict=True):
             self._update_best_example_evals(example, score, side_info)
 
-        # Update prompt → artifact mapping (best across all examples)
+        # Update internal prompt → candidate mapping (best across all examples)
         best_score = max(s for s, _, _ in eval_output) if eval_output else 0.0
-        self._update_prompt_to_artifact(prompt, generated_candidate, best_score)
+        self._update_internal_prompt_to_candidate(prompt, generated_candidate, best_score)
 
         return eval_output
 
@@ -602,13 +644,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             eval_output = [eval_single_with_seedless_refinement(candidate, example) for example in batch]
 
         # Update mapping with best candidate across all examples
-        if eval_output:
-            best_idx = max(range(len(eval_output)), key=lambda i: eval_output[i][0])
-            best_score, best_output, _ = eval_output[best_idx]
-            if isinstance(best_output, tuple) and len(best_output) >= 2:
-                best_cand = best_output[1]
-                if isinstance(best_cand, dict) and "current_candidate" in best_cand:
-                    self._update_prompt_to_artifact(prompt, best_cand["current_candidate"], best_score)
+        self._update_mapping_from_eval_output(prompt, eval_output)
 
         return eval_output
 
@@ -755,13 +791,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             eval_output = [generate_and_evaluate(candidate, example) for example in batch]
 
         # Update mapping with highest-scoring candidate
-        if eval_output:
-            best_idx = max(range(len(eval_output)), key=lambda i: eval_output[i][0])
-            best_score, best_output, _ = eval_output[best_idx]
-            if isinstance(best_output, tuple) and len(best_output) >= 2:
-                best_cand = best_output[1]
-                if isinstance(best_cand, dict) and "current_candidate" in best_cand:
-                    self._update_prompt_to_artifact(prompt, best_cand["current_candidate"], best_score)
+        self._update_mapping_from_eval_output(prompt, eval_output)
 
         return eval_output
 
@@ -794,13 +824,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             eval_output = [generate_refine_evaluate(candidate, example) for example in batch]
 
         # Update mapping with highest-scoring candidate
-        if eval_output:
-            best_idx = max(range(len(eval_output)), key=lambda i: eval_output[i][0])
-            best_score, best_output, _ = eval_output[best_idx]
-            if isinstance(best_output, tuple) and len(best_output) >= 2:
-                best_cand = best_output[1]
-                if isinstance(best_cand, dict) and "current_candidate" in best_cand:
-                    self._update_prompt_to_artifact(prompt, best_cand["current_candidate"], best_score)
+        self._update_mapping_from_eval_output(prompt, eval_output)
 
         return eval_output
 
