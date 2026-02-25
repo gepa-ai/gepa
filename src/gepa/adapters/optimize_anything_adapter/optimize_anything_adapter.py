@@ -178,7 +178,10 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         Called by the engine before each checkpoint save.
         """
         with self._opt_state_lock:
-            return {"opt_state": self._opt_state}
+            state: dict[str, Any] = {"opt_state": self._opt_state}
+        with self._internal_prompt_to_candidate_lock:
+            state["internal_prompt_to_candidate"] = dict(self._internal_prompt_to_candidate)
+        return state
 
     def set_adapter_state(self, state: dict[str, Any]) -> None:
         """Restore adapter state from a previously persisted snapshot.
@@ -191,6 +194,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         stored = state.get("opt_state")
         with self._opt_state_lock:
             self._opt_state = stored if isinstance(stored, OptimizationState) else OptimizationState()
+        with self._internal_prompt_to_candidate_lock:
+            self._internal_prompt_to_candidate = state.get("internal_prompt_to_candidate", {})
 
     # --- Best-evals tracking ---
 
@@ -605,8 +610,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         except Exception as e:
             logger.warning("Seedless generation failed: %s", e)
             error_side_info: SideInfo = {"error": f"Generation failed: {e}"}
-            zero_output = (0.0, candidate, error_side_info)
-            return [(0.0, zero_output, error_side_info)] * len(batch)
+            fail_output = (-1e9, {}, error_side_info)
+            return [(-1e9, fail_output, error_side_info)] * len(batch)
 
         # Wrap generated candidate for evaluator (EvaluatorWrapper unwraps via str_candidate_mode)
         candidate_for_eval: Candidate = {"current_candidate": generated_candidate}
@@ -655,8 +660,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         except Exception as e:
             logger.warning("Seedless generation failed: %s", e)
             error_side_info: SideInfo = {"error": f"Generation failed: {e}"}
-            zero_output = (0.0, candidate, error_side_info)
-            return [(0.0, zero_output, error_side_info)] * len(batch)
+            fail_output = (-1e9, {}, error_side_info)
+            return [(-1e9, fail_output, error_side_info)] * len(batch)
 
         refiner_prompt = candidate.get("refiner_prompt", "")
 
@@ -803,7 +808,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             except Exception as e:
                 logger.warning("Seedless per-example generation failed: %s", e)
                 error_si: SideInfo = {"error": f"Generation failed: {e}"}
-                return 0.0, (0.0, _candidate, error_si), error_si
+                return -1e9, (-1e9, {}, error_si), error_si
 
             cand_for_eval: Candidate = {"current_candidate": generated}
             score, _, side_info = self._call_evaluator(cand_for_eval, example)
@@ -841,7 +846,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             except Exception as e:
                 logger.warning("Seedless per-example generation failed: %s", e)
                 error_si: SideInfo = {"error": f"Generation failed: {e}"}
-                return 0.0, (0.0, _candidate, error_si), error_si
+                return -1e9, (-1e9, {}, error_si), error_si
 
             return self._evaluate_single_seedless_with_refinement(draft, refiner_prompt, example)
 

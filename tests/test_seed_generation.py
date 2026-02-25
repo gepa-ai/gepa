@@ -1,4 +1,4 @@
-"""Tests for LLM-based seed candidate generation (seed_candidate=None)."""
+"""Tests for seedless prompt-evolution mode (seed_candidate=None)."""
 
 from unittest.mock import MagicMock
 
@@ -179,7 +179,7 @@ class TestOptimizeAnythingSeedNoneValidation:
 
 class TestOptimizeAnythingSeedNoneIntegration:
     def test_full_flow_single_instance(self):
-        """Full flow: seed_candidate=None → LLM generates seed → optimization runs."""
+        """Full flow: seed_candidate=None → prompt-evolution mode runs end-to-end."""
         calls = []
 
         def mock_reflection_lm(prompt):
@@ -203,16 +203,17 @@ class TestOptimizeAnythingSeedNoneIntegration:
             ),
         )
 
-        # The LLM was called at least once (for seed generation)
+        # The LLM should be called at least once to materialize candidate text
+        # from the evolved internal prompt.
         assert len(calls) >= 1
-        # First call should be the seed generation prompt
-        assert "## Goal" in calls[0]
-        assert "Generate a long candidate string." in calls[0]
+        # At least one call should include the seed-generation prompt scaffold.
+        assert any("## Goal" in call for call in calls)
+        assert any("Generate a long candidate string." in call for call in calls)
         # Result should have a best_candidate (str because str_candidate_mode)
         assert isinstance(result.best_candidate, str)
 
     def test_full_flow_with_dataset(self):
-        """seed_candidate=None with dataset includes examples in prompt."""
+        """seed_candidate=None with dataset includes examples in prompt context."""
         calls = []
 
         def mock_reflection_lm(prompt):
@@ -241,6 +242,6 @@ class TestOptimizeAnythingSeedNoneIntegration:
             ),
         )
 
-        # Seed generation prompt should include dataset examples
-        assert "2+2" in calls[0]
+        # Prompt-generation calls should include dataset/example context.
+        assert any("2+2" in call for call in calls)
         assert isinstance(result.best_candidate, str)
