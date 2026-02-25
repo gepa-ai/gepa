@@ -105,6 +105,7 @@ Public API:
     - :class:`Image` — wrapper for including images in side_info (VLM reflection)
 """
 
+import dataclasses
 import inspect
 import io
 import os
@@ -237,6 +238,11 @@ class OptimizationState:
     from previous best solutions (e.g., pass the best-known circle packing to
     a new optimization attempt).
 
+    This dataclass also serves as the persistent state container for the
+    ``optimize_anything`` adapter.  The engine saves it in
+    ``GEPAState.adapter_state`` at each checkpoint and restores it on resume,
+    so all fields survive across runs.
+
     To receive this, simply add ``opt_state: OptimizationState`` to your
     evaluator signature — GEPA injects it automatically.
 
@@ -247,11 +253,26 @@ class OptimizationState:
             # ... use prev_best to warm-start ...
     """
 
-    best_example_evals: list[dict]
+    best_evals_by_example: dict[str, list[dict]] = field(default_factory=dict, repr=False)
+    """All examples' top-K best evaluations, keyed by example hash.
+
+    Persisted across runs.  The adapter slices this into per-example
+    ``best_example_evals`` before each evaluator call."""
+
+    best_example_evals: list[dict] = field(default_factory=list)
     """Top-K best evaluations for the current example, sorted by score (descending).
 
     Each entry: ``{"score": float, "side_info": dict}``.  K is controlled by
-    ``EngineConfig.best_example_evals_k`` (default 30)."""
+    ``EngineConfig.best_example_evals_k`` (default 30).
+
+    Populated per evaluator call — not persisted directly."""
+
+    def __setstate__(self, state: dict) -> None:
+        """Handle forward-compatibility when new fields are added to this dataclass."""
+        for f in dataclasses.fields(self):
+            if f.name not in state:
+                state[f.name] = f.default_factory() if f.default_factory is not dataclasses.MISSING else f.default  # type: ignore[misc]
+        self.__dict__.update(state)
 
 
 @dataclass(frozen=True)

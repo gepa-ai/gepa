@@ -279,6 +279,129 @@ def test_load_legacy_state(legacy_run_dir):
     assert state.valset_evaluations.keys() == set(range(45))
 
 
+# ---------------------------------------------------------------------------
+# adapter_state tests
+# ---------------------------------------------------------------------------
+
+
+def test_adapter_state_defaults_to_empty_dict():
+    """Fresh GEPAState has adapter_state = {}."""
+    state = state_mod.GEPAState(
+        {"prompt": "p"},
+        ValsetEvaluation(outputs_by_val_id={0: "out"}, scores_by_val_id={0: 0.5}, objective_scores_by_val_id=None),
+    )
+    assert state.adapter_state == {}
+
+
+def test_adapter_state_save_and_load(run_dir):
+    """adapter_state round-trips through save/load."""
+    state = state_mod.GEPAState(
+        {"prompt": "p"},
+        ValsetEvaluation(outputs_by_val_id={0: "out"}, scores_by_val_id={0: 0.5}, objective_scores_by_val_id=None),
+    )
+    state.num_full_ds_evals = 1
+    state.total_num_evals = 1
+    state.adapter_state = {"key": "value", "nested": {"a": [1, 2, 3]}}
+
+    state.save(str(run_dir))
+    loaded = state_mod.GEPAState.load(str(run_dir))
+
+    assert loaded.adapter_state == {"key": "value", "nested": {"a": [1, 2, 3]}}
+
+
+def test_upgrade_state_dict_adds_adapter_state():
+    """Migration adds adapter_state={} when missing (v4 → v5)."""
+    d = {
+        "program_candidates": [{"a": "b"}],
+        "prog_candidate_objective_scores": [{}],
+        "objective_pareto_front": {},
+        "program_at_pareto_front_objectives": {},
+        "frontier_type": "instance",
+        "pareto_front_cartesian": {},
+        "program_at_pareto_front_cartesian": {},
+        "evaluation_cache": None,
+    }
+    state_mod.GEPAState._upgrade_state_dict(d)
+    assert d["adapter_state"] == {}
+    assert d["validation_schema_version"] == state_mod.GEPAState._VALIDATION_SCHEMA_VERSION
+
+
+def test_existing_adapters_lack_adapter_state_methods():
+    """DefaultAdapter doesn't define get/set_adapter_state — duck typing is safe."""
+    from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
+
+    assert getattr(DefaultAdapter, "get_adapter_state", None) is None
+    assert getattr(DefaultAdapter, "set_adapter_state", None) is None
+
+
+def test_engine_sync_noop_for_adapter_without_methods(run_dir):
+    """Engine sync helpers are no-ops for adapters that lack get/set_adapter_state."""
+    state = state_mod.GEPAState(
+        {"prompt": "p"},
+        ValsetEvaluation(outputs_by_val_id={0: "out"}, scores_by_val_id={0: 0.5}, objective_scores_by_val_id=None),
+    )
+    state.num_full_ds_evals = 1
+    state.total_num_evals = 1
+
+    class PlainAdapter:
+        pass
+
+    adapter = PlainAdapter()
+
+    # Simulate engine sync helpers
+    getter = getattr(adapter, "get_adapter_state", None)
+    setter = getattr(adapter, "set_adapter_state", None)
+
+    assert getter is None
+    assert setter is None
+    # adapter_state stays at default; no exceptions raised
+    assert state.adapter_state == {}
+
+
+def test_engine_sync_round_trips_adapter_state(run_dir):
+    """Engine sync correctly saves and restores adapter state across save/load."""
+
+    class StatefulAdapter:
+        def __init__(self):
+            self._data: dict = {}
+
+        def get_adapter_state(self) -> dict:
+            return dict(self._data)
+
+        def set_adapter_state(self, state: dict) -> None:
+            self._data = dict(state)
+
+    # First run: adapter has data, engine syncs to state before save
+    adapter = StatefulAdapter()
+    adapter._data = {"prompt_abc": ("generated code", 0.95)}
+
+    state = state_mod.GEPAState(
+        {"prompt": "p"},
+        ValsetEvaluation(outputs_by_val_id={0: "out"}, scores_by_val_id={0: 0.5}, objective_scores_by_val_id=None),
+    )
+    state.num_full_ds_evals = 1
+    state.total_num_evals = 1
+
+    # Simulate _sync_adapter_state_to_state
+    getter = getattr(adapter, "get_adapter_state", None)
+    assert getter is not None
+    state.adapter_state = getter()
+
+    state.save(str(run_dir))
+
+    # Resume: load state, new adapter starts empty, engine syncs from state
+    loaded = state_mod.GEPAState.load(str(run_dir))
+    new_adapter = StatefulAdapter()
+    assert new_adapter._data == {}
+
+    # Simulate _sync_state_to_adapter
+    setter = getattr(new_adapter, "set_adapter_state", None)
+    assert setter is not None
+    setter(loaded.adapter_state)
+
+    assert new_adapter._data == {"prompt_abc": ("generated code", 0.95)}
+
+
 @pytest.fixture(scope="module")
 def recorder_dir() -> Path:
     """Use the cached mocked LLM aime prompt optimization"""

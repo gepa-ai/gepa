@@ -121,6 +121,24 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             val_evaluation_policy if val_evaluation_policy is not None else FullEvaluationPolicy()
         )
 
+    def _sync_adapter_state_to_state(self, state: GEPAState) -> None:
+        """Snapshot adapter state into GEPAState before saving.
+
+        No-op if the adapter does not implement ``get_adapter_state``.
+        """
+        getter = getattr(self.adapter, "get_adapter_state", None)
+        if getter is not None:
+            state.adapter_state = getter()
+
+    def _sync_state_to_adapter(self, state: GEPAState) -> None:
+        """Restore persisted adapter state into the adapter after loading.
+
+        No-op if the adapter does not implement ``set_adapter_state``.
+        """
+        setter = getattr(self.adapter, "set_adapter_state", None)
+        if setter is not None:
+            setter(state.adapter_state)
+
     def _evaluate_on_valset(
         self,
         program: dict[str, str],
@@ -295,6 +313,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             evaluation_cache=self._initial_evaluation_cache,
         )
 
+        # Restore adapter state from persisted state (only has effect on resume)
+        self._sync_state_to_adapter(state)
+
         # Log base program score
         base_val_avg, base_val_coverage = state.get_program_average_val_subset(0)
         self.experiment_tracker.log_metrics(
@@ -379,6 +400,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             proposal_accepted = False
             iteration_started = False
             try:
+                self._sync_adapter_state_to_state(state)
                 state.save(self.run_dir, use_cloudpickle=self.use_cloudpickle)
                 notify_callbacks(
                     self.callbacks,
@@ -572,6 +594,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if self.display_progress_bar and progress_bar is not None:
             progress_bar.close()
 
+        self._sync_adapter_state_to_state(state)
         state.save(self.run_dir, use_cloudpickle=self.use_cloudpickle)
 
         # Notify optimization end
