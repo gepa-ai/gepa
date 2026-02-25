@@ -244,4 +244,43 @@ class TestOptimizeAnythingSeedNoneIntegration:
 
         # Prompt-generation calls should include dataset/example context.
         assert any("2+2" in call for call in calls)
-        assert isinstance(result.best_candidate, str)
+        # Per-example seedless mode has no single canonical best artifact.
+        assert result.best_candidate is None
+        assert isinstance(result.best_prompt, str)
+        assert "## Goal" in result.best_prompt
+        # May be sparse depending on optimization budget / which examples were evaluated.
+        assert result.best_candidate_per_example is not None
+        assert set(result.best_candidate_per_example).issubset({0, 1})
+
+    def test_per_example_mode_can_return_sparse_map_with_tight_budget(self):
+        calls = []
+
+        def mock_reflection_lm(prompt):
+            calls.append(prompt)
+            return "```\nSolve the math problem step by step.\n```"
+
+        dataset = [
+            {"input": "2+2", "answer": "4"},
+            {"input": "3*5", "answer": "15"},
+        ]
+
+        def evaluator(candidate: str, example) -> float:
+            return 0.5
+
+        result = optimize_anything(
+            seed_candidate=None,
+            evaluator=evaluator,
+            objective="Generate a prompt for math problems.",
+            dataset=dataset,
+            config=GEPAConfig(
+                engine=EngineConfig(max_metric_calls=1),
+                reflection=ReflectionConfig(
+                    reflection_lm=mock_reflection_lm,
+                    reflection_minibatch_size=1,
+                ),
+            ),
+        )
+
+        # Tight budgets may stop before per-example proposals are evaluated.
+        assert result.best_candidate is None
+        assert isinstance(result.best_candidate_per_example, dict)

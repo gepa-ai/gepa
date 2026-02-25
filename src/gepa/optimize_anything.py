@@ -280,19 +280,26 @@ class OptimizeAnythingResult:
     """Result wrapper returned by :func:`optimize_anything`.
 
     Wraps :class:`~gepa.core.result.GEPAResult` and adds seedless-mode extras
-    like ``best_candidate_per_example``.  All ``GEPAResult`` attributes are
-    accessible directly (e.g., ``result.best_candidate``, ``result.best_idx``).
+    like ``best_candidate_per_example`` and ``best_prompt``.  Most
+    ``GEPAResult`` attributes are accessible directly via delegation.
 
     Attributes:
         gepa_result: The underlying :class:`~gepa.core.result.GEPAResult`.
+        best_candidate: User-facing best candidate. In seedless per-example
+            mode this is ``None`` by design because there is no single
+            canonical artifact across all examples.
         best_candidate_per_example: Maps ``example_index → best candidate``.
             In seedless per-example mode, each example maps to its own best
             generated artifact.  In all other modes, every example maps to
             the overall ``best_candidate``.
+        best_prompt: In seedless mode, the evolved internal generation prompt
+            corresponding to the best candidate on the GEPA frontier.
     """
 
     gepa_result: GEPAResult
+    best_candidate: str | dict[str, str] | None = None
     best_candidate_per_example: dict[int, str | dict[str, str]] | None = None
+    best_prompt: str | None = None
 
     def __getattr__(self, name: str) -> Any:
         # Guard: prevent infinite recursion during pickle/deepcopy
@@ -1106,8 +1113,12 @@ def optimize_anything(
     Returns:
         :class:`OptimizeAnythingResult` — wraps
         :class:`~gepa.core.result.GEPAResult` and forwards its attributes
-        (e.g., ``result.best_candidate``), plus
-        ``result.best_candidate_per_example`` for seedless per-example mode.
+        (e.g., ``result.best_idx``), plus:
+        - ``result.best_candidate``: user-facing best artifact; ``None`` in
+          seedless per-example mode.
+        - ``result.best_candidate_per_example``: sparse map of per-example
+          best artifacts in seedless per-example mode.
+        - ``result.best_prompt``: best evolved internal prompt in seedless mode.
 
     Examples:
 
@@ -1538,11 +1549,20 @@ def optimize_anything(
         str_candidate_key=_STR_CANDIDATE_KEY if str_candidate_mode else None,
     )
 
-    # Post-optimization: swap internal prompts → user-facing candidates.
+    # Post-optimization result packaging.
+    # In seedless mode, GEPA optimizes internal generation prompts and we expose
+    # user-facing artifacts via post-processing.
+    best_candidate: str | dict[str, str] | None = result.best_candidate
     best_candidate_per_example: dict[int, str | dict[str, str]] | None = None
+    best_prompt: str | None = None
     if seedless_mode and isinstance(active_adapter, OptimizeAnythingAdapter):
+        best_prompt = result.best_candidate if isinstance(result.best_candidate, str) else None
+
         if per_example_generation:
-            # Per-example mode: collect the best candidate for each example.
+            # Per-example mode has no single canonical best artifact.
+            best_candidate = None
+            # Sparse by design: only examples that have been evaluated and have
+            # a known best generated candidate appear in this map.
             best_candidate_per_example = active_adapter.get_best_candidate_per_example(effective_dataset)  # type: ignore[assignment]
         else:
             # Generate-once mode: replace internal prompts with actual candidates.
@@ -1551,13 +1571,16 @@ def optimize_anything(
                 best_candidate = active_adapter.get_best_candidate(prompt_text)
                 if best_candidate is not None:
                     cand[_STR_CANDIDATE_KEY] = best_candidate
+            best_candidate = result.best_candidate
 
     # For non-per-example modes, populate with the overall best candidate.
     if best_candidate_per_example is None:
-        bc = result.best_candidate
-        best_candidate_per_example = dict.fromkeys(range(len(effective_dataset)), bc)
+        assert best_candidate is not None
+        best_candidate_per_example = dict.fromkeys(range(len(effective_dataset)), best_candidate)
 
     return OptimizeAnythingResult(
         gepa_result=result,
+        best_candidate=best_candidate,
         best_candidate_per_example=best_candidate_per_example,
+        best_prompt=best_prompt,
     )
