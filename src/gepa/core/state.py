@@ -150,7 +150,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     returned by :func:`~gepa.optimize_anything.optimize_anything`.
     """
 
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 4
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 5
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
     _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
 
@@ -183,6 +183,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     # Optional evaluation cache for (candidate, example) pairs
     evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None"
+
+    # Opaque bag for adapter-specific persistent state.
+    # Core GEPA never inspects this; adapters read/write via get_adapter_state()/set_adapter_state().
+    adapter_state: dict[str, Any]
 
     def __init__(
         self,
@@ -247,6 +251,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.full_program_trace = []
         self.validation_schema_version = self._VALIDATION_SCHEMA_VERSION
         self.evaluation_cache = evaluation_cache
+        self.adapter_state: dict[str, Any] = {}
 
     def is_consistent(self) -> bool:
         assert len(self.program_candidates) == len(self.parent_program_for_candidate)
@@ -373,6 +378,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         # evaluation_cache is not persisted across runs by default; initialize to None if missing
         if "evaluation_cache" not in d:
             d["evaluation_cache"] = None
+        if "adapter_state" not in d:
+            d["adapter_state"] = {}
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
