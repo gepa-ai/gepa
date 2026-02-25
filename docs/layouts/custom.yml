@@ -1,0 +1,95 @@
+definitions:
+
+  - &background_color >-
+    {%- if layout.background_color -%}
+      {{ layout.background_color }}
+    {%- else -%}
+      {{ "#212C4D" }}
+    {%- endif -%}
+
+  - &color >-
+    {%- if layout.color -%}
+      {{ layout.color }}
+    {%- else -%}
+      {{ "#90E0EF" }}
+    {%- endif -%}
+
+  - &font_family >-
+    {{ layout.font_family or "Roboto" }}
+
+  - &page_title >-
+    {{ page.meta.get("title", page.title) }}
+
+  - &page_description >-
+    {{ page.meta.get("description", config.site_description) | x }}
+
+  - &logo >-
+    {%- if layout.logo -%}
+      {{ layout.logo }}
+    {%- elif config.theme.logo -%}
+      {{ config.docs_dir }}/{{ config.theme.logo }}
+    {%- endif -%}
+
+tags:
+  og:type: website
+  og:title: *page_title
+  og:description: *page_description
+  og:image: >-
+    {%- if page.meta.get("social_image") -%}
+      {{ config.site_url }}{{ page.meta.social_image }}
+    {%- else -%}
+      {{ image.url }}
+    {%- endif -%}
+  og:image:type: "{{ image.type }}"
+  og:image:width: "{{ image.width }}"
+  og:image:height: "{{ image.height }}"
+  og:url: "{{ page.canonical_url }}"
+  twitter:card: summary_large_image
+  twitter:title: *page_title
+  twitter:description: *page_description
+  twitter:image: >-
+    {%- if page.meta.get("social_image") -%}
+      {{ config.site_url }}{{ page.meta.social_image }}
+    {%- else -%}
+      {{ image.url }}
+    {%- endif -%}
+
+size: { width: 1200, height: 630 }
+
+layers:
+
+  # Background
+  - background:
+      color: *background_color
+
+  # GEPA logo with text — top-left, prominent
+  - size: { width: 360, height: 108 }
+    offset: { x: 64, y: 52 }
+    background:
+      image: *logo
+
+  # Page title
+  - size: { width: 1072, height: 310 }
+    offset: { x: 64, y: 192 }
+    typography:
+      content: *page_title
+      color: *color
+      line:
+        amount: 3
+        height: 1.25
+      font:
+        family: *font_family
+        style: Bold
+
+  # Page description
+  - size: { width: 1072, height: 96 }
+    offset: { x: 64, y: 512 }
+    typography:
+      content: *page_description
+      color: "#ffffffb3"
+      line:
+        amount: 2
+        height: 1.5
+      font:
+        family: *font_family
+        style: Regular

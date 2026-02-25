@@ -1,0 +1,107 @@
+name: Stage Blog Preview
+
+on:
+  push:
+    branches:
+      - blogpost
+      - blogpost-aesthetic
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+            docs/requirements.txt
+
+      - name: Create virtual environment
+        run: |
+          uv venv .venv --python 3.11
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+
+      - name: Install GEPA package
+        run: uv pip install -e ".[full]" -p .venv
+
+      - name: Install system dependencies for social cards
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev libfreetype6-dev libffi-dev libjpeg-dev libpng-dev libz-dev
+
+      - name: Install documentation dependencies
+        run: |
+          cd docs
+          uv pip install -r requirements.txt -p ../.venv
+
+      - name: Generate API documentation
+        run: |
+          cd docs
+          uv run -p ../.venv python scripts/generate_api_docs.py
+
+      - name: Disable draft_if_future_date for staging
+        run: |
+          cd docs
+          sed -i 's/draft_if_future_date: true/draft_if_future_date: false/' mkdocs.yml
+
+      - name: Override site_url for staging
+        run: |
+          cd docs
+          sed -i 's|site_url: https://gepa-ai.github.io/gepa/|site_url: https://blogpost.gepa-docs-staging.pages.dev/|' mkdocs.yml
+
+      - name: Build documentation
+        run: |
+          cd docs
+          uv run -p ../.venv mkdocs build
+
+      - name: Install Playwright browsers
+        run: |
+          cd docs
+          uv run -p ../.venv playwright install chromium --with-deps
+
+      - name: Generate social preview screenshots
+        run: |
+          cd docs
+          uv run -p ../.venv python scripts/generate_social_screenshots.py
+
+      - name: Add noindex directives
+        run: |
+          # robots.txt — tells crawlers not to index anything
+          cat > docs/site/robots.txt << 'EOF'
+          User-agent: *
+          Disallow: /
+          EOF
+
+          # _headers — Cloudflare Pages custom headers file
+          # Sets X-Robots-Tag on every response
+          cat > docs/site/_headers << 'EOF'
+          /*
+            X-Robots-Tag: noindex, nofollow, noarchive
+          EOF
+
+          # Inject <meta name="robots"> into every HTML file
+          find docs/site -name '*.html' -exec sed -i 's|<head>|<head><meta name="robots" content="noindex, nofollow, noarchive">|' {} +
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        id: deploy
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: gepa-docs-staging
+          directory: docs/site
+          branch: ${{ github.ref_name }}
+
+      - name: Output deployment URL
+        run: echo "Deployed to ${{ steps.deploy.outputs.url }}"

@@ -1,6 +1,93 @@
 {% extends "base.html" %}
 
 {% block extrahead %}
+{{ super() }}
+
+{% if page %}
+{% set page_title = page.meta.get('title', page.title) %}
+{% set page_desc = page.meta.description if page.meta.description else config.site_description %}
+{% set page_url = config.site_url ~ page.url %}
+{% set page_image = (config.site_url ~ page.meta.social_image) if page.meta.social_image else "" %}
+{% set is_blog_post = page.url and page.url.startswith('blog/2') %}
+{% set social_title = (config.site_name ~ ": " ~ page_title) if (config.site_name not in page_title) else page_title %}
+
+<!--
+  NOTE on social_image paths: The blog plugin rewrites page URLs
+  (blog/2026/02/18/slug/) but copies image assets at the original source
+  directory path (blog/2026-02-18-slug/images/). The social_image front matter
+  uses the source path — that's where the image actually lives. Both resolve.
+
+  NOTE on JSON-LD: Conditional fields (description, image, datePublished)
+  always have a non-conditional field after them (publisher, mainEntityOfPage),
+  so commas are never trailing. Validated with Python's strict json parser.
+-->
+
+<!-- Open Graph meta tags -->
+<meta property="og:type" content="{% if is_blog_post %}article{% else %}website{% endif %}">
+<meta property="og:title" content="{{ social_title }}">
+<meta property="og:url" content="{{ page_url }}">
+<meta property="og:site_name" content="{{ config.site_name }}">
+{% if page_desc -%}
+<meta property="og:description" content="{{ page_desc }}">
+{%- endif %}
+{% if page_image -%}
+<meta property="og:image" content="{{ page_image }}">
+{%- endif %}
+{% if page.meta.get('date', {}).get('created') -%}
+<meta property="article:published_time" content="{{ page.meta.date.created }}">
+{%- endif %}
+
+<!-- Twitter Card meta tags -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ social_title }}">
+{% if page_desc -%}
+<meta name="twitter:description" content="{{ page_desc }}">
+{%- endif %}
+{% if page_image -%}
+<meta name="twitter:image" content="{{ page_image }}">
+{%- endif %}
+
+<!-- Structured data (JSON-LD) — uses |tojson to avoid autoescape corruption -->
+{% autoescape false %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  {% if is_blog_post -%}
+  "@type": "BlogPosting",
+  "headline": {{ social_title | tojson }},
+  "url": {{ page_url | tojson }},
+  {% if page_desc %}"description": {{ page_desc | tojson }},{% endif %}
+  {% if page_image %}"image": {{ page_image | tojson }},{% endif %}
+  {% if page.meta.get('date', {}).get('created') %}"datePublished": {{ page.meta.date.created | string | tojson }},{% endif %}
+  "publisher": {
+    "@type": "Organization",
+    "name": "GEPA",
+    "url": {{ config.site_url | tojson }},
+    "logo": {
+      "@type": "ImageObject",
+      "url": {{ (config.site_url ~ "static/img/gepa_logo.png") | tojson }}
+    }
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": {{ page_url | tojson }}
+  }
+  {%- else -%}
+  "@type": "WebPage",
+  "name": {{ social_title | tojson }},
+  "url": {{ page_url | tojson }},
+  {% if page_desc %}"description": {{ page_desc | tojson }},{% endif %}
+  "publisher": {
+    "@type": "Organization",
+    "name": "GEPA",
+    "url": {{ config.site_url | tojson }}
+  }
+  {%- endif %}
+}
+</script>
+{% endautoescape %}
+{% endif %}
+
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-HGHHSE0CDS"></script>
 <script>
@@ -26,10 +113,11 @@
     </label>
     <div class="landing-nav">
       <a href="{{ 'guides/use-cases/' | url }}" class="landing-nav__link{% if page and page.url and 'use-cases' in page.url %} landing-nav__link--active{% endif %}">Showcase</a>
-      <a href="{{ 'blog/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('blog') %} landing-nav__link--active{% endif %}">Blog</a>
+      <a href="{{ 'blog/' | url }}" class="landing-nav__link landing-nav__link--highlight{% if page and page.url and page.url.startswith('blog') %} landing-nav__link--active{% endif %}">Blog<span class="landing-nav__badge">New</span></a>
       <a href="{{ 'guides/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('guides') and 'use-cases' not in page.url %} landing-nav__link--active{% endif %}">Docs</a>
       <a href="{{ 'tutorials/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('tutorials') %} landing-nav__link--active{% endif %}">Tutorials</a>
       <a href="{{ 'api/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('api') %} landing-nav__link--active{% endif %}">API</a>
+      <a href="{{ 'about/' | url }}" class="landing-nav__link{% if page and page.url and page.url.startswith('about') %} landing-nav__link--active{% endif %}">About</a>
     </div>
     {% if config.theme.palette %}
       {% if not config.theme.palette is mapping %}
@@ -54,6 +142,9 @@
         {% include "partials/source.html" %}
       </div>
     {% endif %}
+    <button class="toc-toggle md-header__button md-icon" aria-label="Table of contents" title="Table of contents">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 9h14V7H3v2m0 4h14v-2H3v2m0 4h14v-2H3v2m16 0h2v-2h-2v2m0-10v2h2V7h-2m0 6h2v-2h-2v2Z"/></svg>
+    </button>
   </nav>
 </header>
 {% endblock %}

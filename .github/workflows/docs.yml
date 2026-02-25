@@ -58,6 +58,11 @@ jobs:
         run: |
           uv pip install -e ".[full]" -p .venv
 
+      - name: Install system dependencies for social cards
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev libfreetype6-dev libffi-dev libjpeg-dev libpng-dev libz-dev
+
       - name: Install documentation dependencies
         run: |
           cd docs
@@ -77,6 +82,16 @@ jobs:
         run: |
           cd docs
           uv run -p ../.venv mkdocs build
+
+      - name: Install Playwright browsers
+        run: |
+          cd docs
+          uv run -p ../.venv playwright install chromium --with-deps
+
+      - name: Generate social preview screenshots
+        run: |
+          cd docs
+          uv run -p ../.venv python scripts/generate_social_screenshots.py
 
       - name: Upload artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
