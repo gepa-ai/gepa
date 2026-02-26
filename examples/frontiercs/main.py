@@ -2,8 +2,8 @@
 """Frontier-CS optimization using GEPA's optimize_anything() in seedless mode.
 
 Per-problem mode: optimizes a separate prompt for each problem independently.
-GEPA evolves internal prompt templates that generate system prompts, which are
-then used by a task LLM to produce C++ solutions submitted to the judge.
+GEPA evolves internal prompt templates; prompt_candidate_lm generates C++ code
+from those templates; the evaluator submits the code to the judge and scores it.
 
 Multi-objective scoring:
   - correctness: fraction of AC test cases (0.0-1.0)
@@ -22,8 +22,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import litellm
-
 from examples.frontiercs.utils.background import build_background
 from examples.frontiercs.utils.dataset import get_frontiercs_problems_dir, load_all_problems
 from examples.frontiercs.utils.judge import FrontierCSJudgeClient, extract_cpp_code
@@ -35,7 +33,6 @@ from gepa.optimize_anything import (
     optimize_anything,
 )
 
-MODEL: str = "openai/gpt-5"
 JUDGE: FrontierCSJudgeClient | None = None
 VERBOSE: bool = False
 
@@ -62,10 +59,13 @@ def _build_feedback(result: dict[str, Any], overall: float) -> str:
 
 
 def evaluate(candidate: str, example: dict[str, Any], **kwargs: Any) -> tuple[float, SideInfo]:
-    """Evaluate a generated system prompt on a single problem.
+    """Evaluate generated C++ code on a single problem.
+
+    In seedless mode, GEPA's prompt_candidate_lm already generated the C++ code.
+    The evaluator just extracts it, submits to the judge, and scores.
 
     Args:
-        candidate: The generated system prompt (from seedless mode).
+        candidate: LLM-generated C++ code (produced by prompt_candidate_lm).
         example: Problem dict with problem_id, statement, etc.
 
     Returns:
@@ -73,37 +73,15 @@ def evaluate(candidate: str, example: dict[str, Any], **kwargs: Any) -> tuple[fl
     """
     assert JUDGE is not None
     problem_id = example["problem_id"]
+    code = extract_cpp_code(candidate)
 
-    # 1. Call task LLM to generate C++ code
-    try:
-        response = litellm.completion(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": candidate},
-                {"role": "user", "content": example["statement"]},
-            ],
-        )
-        llm_text = response.choices[0].message.content or ""
-    except Exception as e:
-        if VERBOSE:
-            print(f"    [DEBUG] problem_id={problem_id} LLM call failed: {e}", flush=True)
-        return 0.0, {
-            "scores": {"correctness": 0.0, "compilation": 0.0, "time_efficiency": 0.0, "stability": 0.0},
-            "feedback": f"LLM call failed: {e}",
-            "generated_code": "",
-        }
-
-    code = extract_cpp_code(llm_text)
-
-    # 2. Handle no-code failure
     if not code:
         return 0.0, {
             "scores": {"correctness": 0.0, "compilation": 0.0, "time_efficiency": 0.0, "stability": 0.0},
-            "feedback": "No C++ code extracted from LLM response.",
+            "feedback": "No C++ code extracted from candidate.",
             "generated_code": "",
         }
 
-    # 3. Submit to judge
     sid = JUDGE.submit_solution(problem_id, code)
     if not sid:
         return 0.0, {
@@ -114,7 +92,6 @@ def evaluate(candidate: str, example: dict[str, Any], **kwargs: Any) -> tuple[fl
 
     result = JUDGE.get_result(sid) or {"status": "error", "error": "NO_RESULT", "score": 0}
 
-    # 4. Compute 4 objective scores
     cases = result.get("cases", [])
     n = max(len(cases), 1)
     correctness = sum(1 for c in cases if isinstance(c, dict) and c.get("status") == "AC") / n
@@ -165,9 +142,8 @@ def optimize_one(
             ),
             reflection=ReflectionConfig(reflection_lm=args.reflection_lm),
         ),
-        objective="Generate a system prompt that instructs an LLM to produce correct, "
-        "efficient C++ solutions for competitive programming. Maximize accepted "
-        "test cases, avoid TLE and runtime errors.",
+        objective="Generate correct, efficient C++ solutions for competitive programming problems. "
+        "Maximize accepted test cases, avoid TLE and runtime errors.",
         background=build_background(problem),
     )
 
@@ -177,7 +153,7 @@ def optimize_one(
 
 
 def main() -> None:
-    global MODEL, JUDGE, VERBOSE
+    global JUDGE, VERBOSE
 
     parser = argparse.ArgumentParser(description="GEPA per-problem optimization for Frontier-CS (seedless mode)")
     parser.add_argument(
@@ -191,12 +167,6 @@ def main() -> None:
         type=str,
         default="gepa_frontiercs_results",
         help="Directory to save results (prompts and scores)",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="openai/gpt-5",
-        help="Task LLM for C++ code generation",
     )
     parser.add_argument(
         "--reflection_lm",
@@ -249,7 +219,6 @@ def main() -> None:
     args = parser.parse_args()
 
     # Set module-level state for evaluator
-    MODEL = args.model
     JUDGE = FrontierCSJudgeClient(args.judge_url)
     VERBOSE = args.verbose
 
@@ -285,7 +254,7 @@ def main() -> None:
     log("-" * 60)
     log(f"Problems dir: {problems_dir_resolved}")
     log(f"Output dir: {args.output_dir}")
-    log(f"Model: {args.model}, Reflection: {args.reflection_lm}")
+    log(f"Reflection LM: {args.reflection_lm}")
     log(f"Judge: {args.judge_url}, Budget per problem: {args.max_metric_calls}")
     log("Mode: seedless (optimize_anything), frontier_type=objective")
     log(f"Total problems: {len(problems)}, Concurrency: {args.concurrency}")
@@ -330,7 +299,6 @@ def main() -> None:
     # Save final summary
     summary = {
         "config": {
-            "model": args.model,
             "reflection_lm": args.reflection_lm,
             "max_metric_calls_per_problem": args.max_metric_calls,
             "mode": "seedless",
