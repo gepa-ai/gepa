@@ -61,14 +61,14 @@ _REFINER_TEXT_OUTPUT_INSTRUCTION = (
 )
 
 
-class PromptCandidateSignature(Signature):
+class InternalPromptCandidateSignature(Signature):
     """Signature for generating candidates from evolved prompts in seedless mode.
 
     Mirrors :class:`InstructionProposalSignature` but for the artifact generation step:
     takes an evolved prompt (+ optional example) and extracts the generated candidate
     from the LM output.
 
-    Used by the adapter to run ``prompt_candidate_lm`` and parse refiner output in seedless mode.
+    Used by the adapter to run ``internal_prompt_candidate_lm`` and parse refiner output in seedless mode.
     """
 
     input_keys: ClassVar[list[str]] = ["prompt", "example"]
@@ -130,7 +130,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         cache_mode: str = "memory",  # "off", "memory", "disk"
         cache_dir: str | Path | None = None,
         seedless_mode: bool = False,
-        prompt_candidate_lm: LanguageModel | None = None,
+        internal_prompt_candidate_lm: LanguageModel | None = None,
         per_example_generation: bool = False,
     ):
         self.evaluator = evaluator
@@ -143,7 +143,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self.cache_mode = cache_mode
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self.seedless_mode = seedless_mode
-        self.prompt_candidate_lm = prompt_candidate_lm
+        self.internal_prompt_candidate_lm = internal_prompt_candidate_lm
         self.per_example_generation = per_example_generation
 
         # Maps internal prompt hash → (best_candidate_text, best_score)
@@ -279,9 +279,9 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     # --- Seedless-mode helpers ---
 
     def _run_prompt(self, prompt: str, example: object | None = None) -> str:
-        """Run an internal prompt candidate through prompt_candidate_lm to produce a candidate.
+        """Run an internal prompt candidate through internal_prompt_candidate_lm to produce a candidate.
 
-        Uses :class:`PromptCandidateSignature` for prompt formatting and output parsing.
+        Uses :class:`InternalPromptCandidateSignature` for prompt formatting and output parsing.
 
         Args:
             prompt: The internal prompt candidate text.
@@ -290,15 +290,15 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         Returns:
             Generated candidate text.
         """
-        assert self.prompt_candidate_lm is not None, "prompt_candidate_lm must be set in seedless mode"
-        result = PromptCandidateSignature.run(self.prompt_candidate_lm, {"prompt": prompt, "example": example})
+        assert self.internal_prompt_candidate_lm is not None, "internal_prompt_candidate_lm must be set in seedless mode"
+        result = InternalPromptCandidateSignature.run(self.internal_prompt_candidate_lm, {"prompt": prompt, "example": example})
         return result["candidate"]
 
     def get_best_candidate(self, prompt: str) -> str | None:
         """Look up the best candidate generated from an internal prompt.
 
         Used by optimize_anything.py for the post-optimization candidate swap.
-        Falls back to re-generating via prompt_candidate_lm if the mapping is
+        Falls back to re-generating via internal_prompt_candidate_lm if the mapping is
         missing (e.g., after resume).
         """
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
@@ -307,7 +307,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             if entry is not None:
                 return entry[0]
         # Fallback: re-generate (e.g., after resume when mapping is lost)
-        if self.prompt_candidate_lm is not None:
+        if self.internal_prompt_candidate_lm is not None:
             return self._run_prompt(prompt)
         return None
 
@@ -405,7 +405,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         forwarded as ``objective_scores`` in the returned batch.
 
         In seedless mode, the candidate is an internal prompt candidate which is run
-        through ``prompt_candidate_lm`` to produce the actual candidate
+        through ``internal_prompt_candidate_lm`` to produce the actual candidate
         before evaluation.
         """
         if self.seedless_mode:
@@ -576,7 +576,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         """Top-level seedless evaluation dispatcher.
 
         Extracts the internal prompt candidate from the candidate dict,
-        generates the candidate via prompt_candidate_lm, then evaluates.
+        generates the candidate via internal_prompt_candidate_lm, then evaluates.
         Dispatches to per-example or generate-once path based on config.
         """
         prompt = candidate["current_candidate"]
@@ -726,7 +726,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     output_format_instruction=_REFINER_TEXT_OUTPUT_INSTRUCTION,
                 )
                 raw_output = refiner_lm(refine_prompt).strip()
-                refined_text = PromptCandidateSignature.output_extractor(raw_output)["candidate"]
+                refined_text = InternalPromptCandidateSignature.output_extractor(raw_output)["candidate"]
 
                 if not refined_text:
                     all_attempts.append(
@@ -917,7 +917,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     evaluation_feedback=current_feedback,
                     output_format_instruction=_REFINER_JSON_OUTPUT_INSTRUCTION,
                 )
-                raw_output = PromptCandidateSignature.output_extractor(refiner_lm(prompt))["candidate"]
+                raw_output = InternalPromptCandidateSignature.output_extractor(refiner_lm(prompt))["candidate"]
 
                 try:
                     parsed_refined = json.loads(raw_output)

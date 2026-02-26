@@ -655,7 +655,7 @@ def _build_seed_generation_prompt(
     """Build a prompt for the reflection LM to generate an initial seed candidate.
 
     Used when ``seed_candidate=None`` — the LLM bootstraps the first candidate
-    from the objective, optional background, and optional dataset examples.
+    from the objective and optional background.
     """
     sections = []
 
@@ -669,12 +669,10 @@ def _build_seed_generation_prompt(
     if background:
         sections.append(f"\n## Domain Context & Constraints\n\n{background}")
 
-    if dataset is not None:
-        examples = dataset[:3]
-        example_lines = [f"- Example {i}: {ex}" for i, ex in enumerate(examples, 1)]
-        sections.append(
-            "\n## Sample Inputs\n\nThe candidate will be evaluated on inputs like these:\n\n" + "\n".join(example_lines)
-        )
+    # Keep ``dataset`` in the signature for backward compatibility, but do not
+    # include dataset examples in the internal seed prompt. This avoids leaking
+    # sample-specific context into the prompt scaffold itself.
+    _ = dataset
 
     sections.append(
         "\n## Output Format\n\n"
@@ -684,38 +682,6 @@ def _build_seed_generation_prompt(
     )
 
     return "\n".join(sections)
-
-
-def _generate_seed_candidate(
-    lm: LanguageModel,
-    objective: str,
-    background: str | None = None,
-    dataset: list[DataInst] | None = None,
-    logger: LoggerProtocol | None = None,
-) -> Candidate:
-    """Call the reflection LM to generate an initial seed candidate.
-
-    Returns a single-key candidate dict ``{_STR_CANDIDATE_KEY: generated_text}``.
-    """
-    from gepa.strategies.instruction_proposal import InstructionProposalSignature
-
-    prompt = _build_seed_generation_prompt(
-        objective=objective,
-        background=background,
-        dataset=dataset,
-    )
-
-    if logger:
-        logger.log("Generating initial seed candidate via LLM...")
-
-    lm_output = lm(prompt)
-    extracted = InstructionProposalSignature.output_extractor(lm_output)
-    generated_text = extracted["new_instruction"]
-
-    if logger:
-        logger.log(f"Generated seed candidate ({len(generated_text)} chars)")
-
-    return {_STR_CANDIDATE_KEY: generated_text}
 
 
 optimize_anything_reflection_prompt_template: str = """I am optimizing a parameter in my system. The current parameter value is:
@@ -1090,7 +1056,7 @@ def optimize_anything(
             - ``dict[str, str]`` — named parameters (evaluator receives the dict).
             - ``None`` — **seedless prompt-evolution mode**: GEPA builds an
               internal generation prompt from ``objective`` (and optionally
-              ``background`` / ``dataset``), then evolves that prompt directly.
+              ``background``), then evolves that prompt directly.
               During evaluation, the reflection LM turns the current prompt into
               a concrete candidate artifact. Requires ``objective``.
 
@@ -1184,8 +1150,8 @@ def optimize_anything(
                 "The reflection LLM needs the objective to build the seed generation prompt."
             )
         # In seedless mode, the seed is a prompt template.
-        # The adapter runs this prompt through prompt_candidate_lm to generate artifacts.
-        seed_prompt = _build_seed_generation_prompt(objective=objective, background=background, dataset=dataset)
+        # The adapter runs this prompt through internal_prompt_candidate_lm to generate artifacts.
+        seed_prompt = _build_seed_generation_prompt(objective=objective, background=background)
         seed_candidate = {_STR_CANDIDATE_KEY: seed_prompt}
     else:
         # Normalize seed_candidate: str -> {_STR_CANDIDATE_KEY: str}
@@ -1351,7 +1317,7 @@ def optimize_anything(
         cache_mode=resolved_cache_mode,
         cache_dir=config.engine.run_dir,
         seedless_mode=seedless_mode,
-        prompt_candidate_lm=config.reflection.reflection_lm if seedless_mode else None,
+        internal_prompt_candidate_lm=config.reflection.reflection_lm if seedless_mode else None,
         per_example_generation=per_example_generation,
     )
 
