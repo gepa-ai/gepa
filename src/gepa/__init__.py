@@ -8,9 +8,9 @@ from .adapters import default_adapter
 from .api import optimize
 from .core.adapter import EvaluationBatch, GEPAAdapter
 from .core.result import GEPAResult
-from .optimize_anything import OptimizeAnythingResult
 from .examples import aime
 from .image import Image
+from .optimize_anything import OptimizeAnythingResult
 from .utils.stop_condition import (
     CompositeStopper,
     FileStopper,
