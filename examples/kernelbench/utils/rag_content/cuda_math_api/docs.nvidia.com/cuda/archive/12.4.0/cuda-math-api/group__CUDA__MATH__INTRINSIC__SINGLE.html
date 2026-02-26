@@ -1,0 +1,2953 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-us" xml:lang="en-us">
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <meta name="copyright" content="(C) Copyright 2005">
+      <meta name="DC.rights.owner" content="(C) Copyright 2005">
+      <meta name="DC.Type" content="cppModule">
+      <meta name="DC.Title" content="Single Precision Intrinsics">
+      <meta name="abstract" content="">
+      <meta name="description" content="">
+      <meta name="DC.Format" content="XHTML">
+      <meta name="DC.Identifier" content="group__CUDA__MATH__INTRINSIC__SINGLE">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/commonltr.css">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/site.css">
+      <title>CUDA Math API :: CUDA Toolkit Documentation</title>
+      <!--[if lt IE 9]>
+      <script src="../common/formatting/html5shiv-printshiv.min.js"></script>
+      <![endif]-->
+      <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-svg.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.ba-hashchange.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.scrollintoview.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/scripts/geoip/geoip.js"></script>
+      <script type="text/javascript" src="../search/htmlFileList.js"></script>
+      <script type="text/javascript" src="../search/htmlFileInfoList.js"></script>
+      <script type="text/javascript" src="../search/nwSearchFnt.min.js"></script>
+      <script type="text/javascript" src="../search/stemmers/en_stemmer.min.js"></script>
+      <script type="text/javascript" src="../search/index-1.js"></script>
+      <script type="text/javascript" src="../search/index-2.js"></script>
+      <script type="text/javascript" src="../search/index-3.js"></script>
+      <link rel="canonical" href="https://docs.nvidia.com/cuda/cuda-math-api/index.html">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/qwcode.highlight.css">
+   </head>
+   <body>
+      
+      <header id="header"><span id="company">NVIDIA</span><span id="site-title">CUDA Toolkit Documentation</span><form id="search" method="get" action="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-math-api/search">
+            <input type="text" name="search-text"><fieldset id="search-location">
+               <legend>Search In:</legend>
+               <label><input type="radio" name="search-type" value="site">Entire Site</label>
+               <label><input type="radio" name="search-type" value="document">Just This Document</label>
+</fieldset>
+            <button type="reset">clear search</button>
+            <button id="submit" type="submit">search</button>
+</form>
+      </header>
+      <div id="site-content">
+         <nav id="site-nav">
+            <div class="category closed"><a href="https://docs.nvidia.com/cuda/archive/12.4.0/index.html" title="The root of the site.">CUDA Toolkit 
+                  
+                  
+                  v12.4.0</a></div>
+            <div class="category"><a href="index.html" title="CUDA Math API">CUDA Math API</a></div>
+            <ul>
+               <li>
+                  <div class="section-link"><a href="modules.html#modules">1. Modules</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__FP8.html#group__CUDA__MATH__INTRINSIC__FP8">1.1. FP8 Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__MISC.html#group__CUDA__MATH__FP8__MISC">1.1.1. FP8 Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT">1.1.2. C++ struct for handling fp8 data type of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X2__E5M2__STRUCT.html#group__CUDA__MATH__FP8X2__E5M2__STRUCT">1.1.3. C++ struct for handling vector type of two fp8 values of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X4__E5M2__STRUCT.html#group__CUDA__MATH__FP8X4__E5M2__STRUCT">1.1.4. C++ struct for handling vector type of four fp8 values of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT">1.1.5. C++ struct for handling fp8 data type of e4m3 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X2__E4M3__STRUCT.html#group__CUDA__MATH__FP8X2__E4M3__STRUCT">1.1.6. C++ struct for handling vector type of two fp8 values of e4m3 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X4__E4M3__STRUCT.html#group__CUDA__MATH__FP8X4__E4M3__STRUCT">1.1.7. C++ struct for handling vector type of four fp8 values of e4m3 kind.</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__HALF.html#group__CUDA__MATH__INTRINSIC__HALF">1.2. Half Precision Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__HALF__CONSTANTS.html#group__CUDA__MATH__INTRINSIC__HALF__CONSTANTS">1.2.1. Half Arithmetic Constants</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__ARITHMETIC.html#group__CUDA__MATH____HALF__ARITHMETIC">1.2.2. Half Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__ARITHMETIC.html#group__CUDA__MATH____HALF2__ARITHMETIC">1.2.3. Half2 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__COMPARISON.html#group__CUDA__MATH____HALF__COMPARISON">1.2.4. Half Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__COMPARISON.html#group__CUDA__MATH____HALF2__COMPARISON">1.2.5. Half2 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__MISC.html#group__CUDA__MATH____HALF__MISC">1.2.6. Half Precision Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__FUNCTIONS.html#group__CUDA__MATH____HALF__FUNCTIONS">1.2.7. Half Math Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__FUNCTIONS.html#group__CUDA__MATH____HALF2__FUNCTIONS">1.2.8. Half2 Math Functions</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__BFLOAT16.html#group__CUDA__MATH__INTRINSIC__BFLOAT16">1.3. Bfloat16 Precision Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS.html#group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS">1.3.1. Bfloat16 Arithmetic Constants</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__ARITHMETIC.html#group__CUDA__MATH____BFLOAT16__ARITHMETIC">1.3.2. Bfloat16 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__ARITHMETIC.html#group__CUDA__MATH____BFLOAT162__ARITHMETIC">1.3.3. Bfloat162 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__COMPARISON.html#group__CUDA__MATH____BFLOAT16__COMPARISON">1.3.4. Bfloat16 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__COMPARISON.html#group__CUDA__MATH____BFLOAT162__COMPARISON">1.3.5. Bfloat162 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC">1.3.6. Bfloat16 Precision Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__FUNCTIONS.html#group__CUDA__MATH____BFLOAT16__FUNCTIONS">1.3.7. Bfloat16 Math Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__FUNCTIONS.html#group__CUDA__MATH____BFLOAT162__FUNCTIONS">1.3.8. Bfloat162 Math Functions</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH.html#group__CUDA__MATH">1.4. Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__SINGLE.html#group__CUDA__MATH__SINGLE">1.5. Single Precision Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE">1.6. Double Precision Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INT.html#group__CUDA__MATH__INT">1.7. Integer Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE">1.8. Single Precision Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__DOUBLE.html#group__CUDA__MATH__INTRINSIC__DOUBLE">1.9. Double Precision Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT">1.10. Integer Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST">1.11. Type Casting Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__SIMD.html#group__CUDA__MATH__INTRINSIC__SIMD">1.12. SIMD Intrinsics</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="annotated.html#annotated">2. Data Structures</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="struct____half.html#struct____half">2.1. __half</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half2.html#struct____half2">2.2. __half2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half2__raw.html#struct____half2__raw">2.3. __half2_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half__raw.html#struct____half__raw">2.4. __half_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16">2.5. __nv_bfloat16</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat162.html#struct____nv__bfloat162">2.6. __nv_bfloat162</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat162__raw.html#struct____nv__bfloat162__raw">2.7. __nv_bfloat162_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw">2.8. __nv_bfloat16_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8__e4m3.html#struct____nv__fp8__e4m3">2.9. __nv_fp8_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8__e5m2.html#struct____nv__fp8__e5m2">2.10. __nv_fp8_e5m2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x2__e4m3.html#struct____nv__fp8x2__e4m3">2.11. __nv_fp8x2_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x2__e5m2.html#struct____nv__fp8x2__e5m2">2.12. __nv_fp8x2_e5m2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x4__e4m3.html#struct____nv__fp8x4__e4m3">2.13. __nv_fp8x4_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x4__e5m2.html#struct____nv__fp8x4__e5m2">2.14. __nv_fp8x4_e5m2</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="functions.html#functions">3. Data Fields</a></div>
+               </li>
+            </ul>
+         </nav>
+         <div id="resize-nav"></div>
+         <nav id="search-results">
+            <h2>Search Results</h2>
+            <ol></ol>
+         </nav>
+         
+         <div id="contents-container">
+            <div id="breadcrumbs-container">
+               <div id="breadcrumbs">
+<a href="group__CUDA__MATH__INT.html" shape="rect">&lt; Previous</a> | <a href="group__CUDA__MATH__INTRINSIC__DOUBLE.html" shape="rect">Next &gt;</a>
+</div>
+               <div id="release-info">CUDA Math API
+                  (<a href="https://docs.nvidia.com/cuda/archive/12.4.0/pdf/CUDA_Math_API.pdf">PDF</a>)
+                  -
+                   
+                  
+                  
+                  v12.4.0
+                  (<a href="https://developer.nvidia.com/cuda-toolkit-archive">older</a>)
+                  -
+                  Last updated March 5, 2024
+                  -
+                  <a href="mailto:CUDAIssues@nvidia.com?subject=CUDA%20Toolkit%20Documentation%20Feedback:%20CUDA%20Math%20API">Send Feedback</a>
+</div>
+            </div>
+            <article id="contents">
+               <div class="topic reference apiRef apiPackage cppModule" id="group__CUDA__MATH__INTRINSIC__SINGLE">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE" shape="rect">
+                     <!-- --></a><h2 class="topictitle2 cppModule">1.8. Single Precision Intrinsics</h2>
+                  <div class="section">
+                     <p>This section describes single precision intrinsic functions that are only supported in device code. To use these functions
+                        you do not need to include any additional header files in your program. 
+                     </p>
+                  </div>
+                  <h3 class="fake_sectiontitle member_header">Functions</h3>
+                  <dl class="members">
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g129ff4afc615da9a5886c77713094c32" shape="rect">__cosf</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the fast approximate cosine of the input argument. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g35e0d360ac27e6eb9cf1065b847d46af" shape="rect">__exp10f</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the fast approximate base 10 exponential of the input argument. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g1beeb3ae544cfdde4a0a724ace025aed" shape="rect">__expf</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the fast approximate base   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mi>e</mi>
+                           </math>
+                           
+                           exponential of the input argument. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1ga8255ea2b671a8488813d9d3527e661a" shape="rect">__fadd_rd</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Add two floating-point values in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g34f8d82135041b06099d7709ff0bbe4e" shape="rect">__fadd_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Add two floating-point values in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g3ba9e088a1f798c2542fe7d69736ac7e" shape="rect">__fadd_ru</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Add two floating-point values in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g8d108dee04b1aa0681fcdfb8f661dc9e" shape="rect">__fadd_rz</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Add two floating-point values in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1ga548a4045aee3b2dce24bccb26f90f82" shape="rect">__fdiv_rd</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Divide two floating-point values in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g1bd038de4c10eec819e00991fb5acf7e" shape="rect">__fdiv_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Divide two floating-point values in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g8089bb061fd076bdb5b08566b4d0e0c2" shape="rect">__fdiv_ru</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Divide two floating-point values in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gb1465a09b2a88d1c2048d0b0f612fb5c" shape="rect">__fdiv_rz</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Divide two floating-point values in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gc996beec34f94f6376d0674a6860e107" shape="rect">__fdividef</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the fast approximate division of the input arguments. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g5ec4876d85bf5331ac63fa98f3fb57b4" shape="rect">__fmaf_ieee_rd</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute fused multiply-add operation in round-down mode, ignore <tt class="ph tt code">-ftz=true</tt> compiler flag. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g6535eebe86aba96a47c3ff4632640d99" shape="rect">__fmaf_ieee_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute fused multiply-add operation in round-to-nearest-even mode, ignore <tt class="ph tt code">-ftz=true</tt> compiler flag. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g6c50feff625ea8d50ccf7fcfa30383eb" shape="rect">__fmaf_ieee_ru</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute fused multiply-add operation in round-up mode, ignore <tt class="ph tt code">-ftz=true</tt> compiler flag. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gc39a4b9e57049f913213edcb0d855138" shape="rect">__fmaf_ieee_rz</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute fused multiply-add operation in round-towards-zero mode, ignore <tt class="ph tt code">-ftz=true</tt> compiler flag. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g5b12d5103d17eed423f1db706a9c80be" shape="rect">__fmaf_rd</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mi>x</mi>
+                              <mo>×</mo>
+                              <mi>y</mi>
+                              <mo>+</mo>
+                              <mi>z</mi>
+                           </math>
+                           
+                           as a single operation, in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g77b36635a8fbdc96a7e08e201d589316" shape="rect">__fmaf_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mi>x</mi>
+                              <mo>×</mo>
+                              <mi>y</mi>
+                              <mo>+</mo>
+                              <mi>z</mi>
+                           </math>
+                           
+                           as a single operation, in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gfe855a453ea92a580b79ad8a7e72bc49" shape="rect">__fmaf_ru</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mi>x</mi>
+                              <mo>×</mo>
+                              <mi>y</mi>
+                              <mo>+</mo>
+                              <mi>z</mi>
+                           </math>
+                           
+                           as a single operation, in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g42a5f6c99064834ad50b2bfa7aa77731" shape="rect">__fmaf_rz</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mi>x</mi>
+                              <mo>×</mo>
+                              <mi>y</mi>
+                              <mo>+</mo>
+                              <mi>z</mi>
+                           </math>
+                           
+                           as a single operation, in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g28d56d8747ca7960860cd9c67cd3fed6" shape="rect">__fmul_rd</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Multiply two floating-point values in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g4b9d2d5cb295c1442b00e6eff5248b97" shape="rect">__fmul_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Multiply two floating-point values in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gcd2f8b720306266f6e814345d4cf1b93" shape="rect">__fmul_ru</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Multiply two floating-point values in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gff448e40e1e71eb620159a40e5e62705" shape="rect">__fmul_rz</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Multiply two floating-point values in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g4f51ca3e41e5f9369bed0bf0c5f42971" shape="rect">__frcp_rd</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mfrac>
+                                 <mn>1</mn>
+                                 <mi>x</mi>
+                              </mfrac>
+                           </math>
+                           
+                           in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gba455801af8ac9af405a5d37ef2f077b" shape="rect">__frcp_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mfrac>
+                                 <mn>1</mn>
+                                 <mi>x</mi>
+                              </mfrac>
+                           </math>
+                           
+                           in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gd5b3289e40e510c2067c8f7a426aa884" shape="rect">__frcp_ru</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mfrac>
+                                 <mn>1</mn>
+                                 <mi>x</mi>
+                              </mfrac>
+                           </math>
+                           
+                           in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g64032913321c328ae72111161af32268" shape="rect">__frcp_rz</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mfrac>
+                                 <mn>1</mn>
+                                 <mi>x</mi>
+                              </mfrac>
+                           </math>
+                           
+                           in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g71ee45580cbeeea206297f0112aff42c" shape="rect">__frsqrt_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mn>1</mn>
+                              <mrow class="MJX-TeXAtom-ORD">
+                                 <mo>/</mo>
+                              </mrow>
+                              <msqrt>
+                                 <mi>x</mi>
+                              </msqrt>
+                           </math>
+                           
+                           in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g59566bdd0638a5b249dbda757f2bb06b" shape="rect">__fsqrt_rd</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <msqrt>
+                                 <mi>x</mi>
+                              </msqrt>
+                           </math>
+                           
+                           in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gf021e85b5e9de141a0fc2ff6fbe85875" shape="rect">__fsqrt_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <msqrt>
+                                 <mi>x</mi>
+                              </msqrt>
+                           </math>
+                           
+                           in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gb429e39b1790b4dfae0d0c4926f53fe2" shape="rect">__fsqrt_ru</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <msqrt>
+                                 <mi>x</mi>
+                              </msqrt>
+                           </math>
+                           
+                           in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g094bf489bf492287424b1080569189f1" shape="rect">__fsqrt_rz</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Compute   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <msqrt>
+                                 <mi>x</mi>
+                              </msqrt>
+                           </math>
+                           
+                           in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g78502e666a0e6e7690230e118403df54" shape="rect">__fsub_rd</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Subtract two floating-point values in round-down mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1ge75e42e6637c178cd3c86a6e3774f7cb" shape="rect">__fsub_rn</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Subtract two floating-point values in round-to-nearest-even mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g4adc718465695ee57990318d5a650b1c" shape="rect">__fsub_ru</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Subtract two floating-point values in round-up mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gc900725c2921068c2ad4f53039b6bacf" shape="rect">__fsub_rz</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Subtract two floating-point values in round-towards-zero mode. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g2b7358a27b8231b592da81ff3143b9a8" shape="rect">__log10f</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the fast approximate base 10 logarithm of the input argument. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gfcc053f9040d50975aab00e44e7c6093" shape="rect">__log2f</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the fast approximate base 2 logarithm of the input argument. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1ged5cef656578096892f104a27d5287c4" shape="rect">__logf</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the fast approximate base   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <mi>e</mi>
+                           </math>
+                           
+                           logarithm of the input argument. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g2c2b295816185f6ce2423471df529974" shape="rect">__powf</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the fast approximate of   
+                           
+                           
+                           <math xmlns="http://www.w3.org/1998/Math/MathML">
+                              <msup>
+                                 <mi>x</mi>
+                                 <mi>y</mi>
+                              </msup>
+                           </math>
+                           . </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g2c84f08e0db7117a14509d21c3aec04e" shape="rect">__saturatef</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Clamp the input argument to [+0.0, 1.0]. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ void </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g96089d6195f9befde96e14afafd931fb" shape="rect">__sincosf</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float*<span> </span><span class="keyword keyword apiItemName">sptr</span>, float*<span> </span><span class="keyword keyword apiItemName">cptr</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the fast approximate of sine and cosine of the first input argument. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gfa0ea4b2cee94521792ead0deb03addb" shape="rect">__sinf</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the fast approximate sine of the input argument. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__device__</span>
+                           ​ float </span><span class="member_name"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g4fc8b7c67526a0195b9cb47287b5c121" shape="rect">__tanf</a> (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Calculate the fast approximate tangent of the input argument. </span>
+</dd>
+                  </dl>
+                  <div class="description">
+                     <h3 class="sectiontitle">Functions</h3>
+                     <dl class="description">
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g129ff4afc615da9a5886c77713094c32" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g129ff4afc615da9a5886c77713094c32" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __cosf (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the fast approximate cosine of the input argument. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the approximate cosine of <tt class="ph tt code">x</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the fast approximate cosine of the input argument <tt class="ph tt code">x</tt>, measured in radians.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Intrinsic Functions section.
+                                       
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g35e0d360ac27e6eb9cf1065b847d46af" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g35e0d360ac27e6eb9cf1065b847d46af" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __exp10f (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the fast approximate base 10 exponential of the input argument. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns an approximation to   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msup>
+                                       <mn>10</mn>
+                                       <mi>x</mi>
+                                    </msup>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the fast approximate base 10 exponential of the input argument <tt class="ph tt code">x</tt>,   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msup>
+                                       <mn>10</mn>
+                                       <mi>x</mi>
+                                    </msup>
+                                 </math>
+                                 .
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Intrinsic Functions section.
+                                       
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g1beeb3ae544cfdde4a0a724ace025aed" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g1beeb3ae544cfdde4a0a724ace025aed" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __expf (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the fast approximate base   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mi>e</mi>
+                              </math>
+                              
+                              exponential of the input argument. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns an approximation to   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msup>
+                                       <mi>e</mi>
+                                       <mi>x</mi>
+                                    </msup>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the fast approximate base   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mi>e</mi>
+                                 </math>
+                                 
+                                 exponential of the input argument <tt class="ph tt code">x</tt>,   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msup>
+                                       <mi>e</mi>
+                                       <mi>x</mi>
+                                    </msup>
+                                 </math>
+                                 .
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Intrinsic Functions section.
+                                       
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1ga8255ea2b671a8488813d9d3527e661a" id="group__CUDA__MATH__INTRINSIC__SINGLE_1ga8255ea2b671a8488813d9d3527e661a" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fadd_rd (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Add two floating-point values in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> + <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the sum of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> in round-down (to negative infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                             Functions section. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">This operation will never be merged into a single multiply-add instruction. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g34f8d82135041b06099d7709ff0bbe4e" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g34f8d82135041b06099d7709ff0bbe4e" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fadd_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Add two floating-point values in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> + <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the sum of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> in round-to-nearest-even rounding mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                             Functions section. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">This operation will never be merged into a single multiply-add instruction. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g3ba9e088a1f798c2542fe7d69736ac7e" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g3ba9e088a1f798c2542fe7d69736ac7e" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fadd_ru (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Add two floating-point values in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> + <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the sum of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> in round-up (to positive infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                             Functions section. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">This operation will never be merged into a single multiply-add instruction. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g8d108dee04b1aa0681fcdfb8f661dc9e" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g8d108dee04b1aa0681fcdfb8f661dc9e" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fadd_rz (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Add two floating-point values in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> + <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the sum of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> in round-towards-zero mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                             Functions section. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">This operation will never be merged into a single multiply-add instruction. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1ga548a4045aee3b2dce24bccb26f90f82" id="group__CUDA__MATH__INTRINSIC__SINGLE_1ga548a4045aee3b2dce24bccb26f90f82" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fdiv_rd (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Divide two floating-point values in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> / <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Divide two floating-point values <tt class="ph tt code">x</tt> by <tt class="ph tt code">y</tt> in round-down (to negative infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g1bd038de4c10eec819e00991fb5acf7e" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g1bd038de4c10eec819e00991fb5acf7e" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fdiv_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Divide two floating-point values in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> / <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Divide two floating-point values <tt class="ph tt code">x</tt> by <tt class="ph tt code">y</tt> in round-to-nearest-even mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g8089bb061fd076bdb5b08566b4d0e0c2" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g8089bb061fd076bdb5b08566b4d0e0c2" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fdiv_ru (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Divide two floating-point values in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> / <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Divide two floating-point values <tt class="ph tt code">x</tt> by <tt class="ph tt code">y</tt> in round-up (to positive infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gb1465a09b2a88d1c2048d0b0f612fb5c" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gb1465a09b2a88d1c2048d0b0f612fb5c" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fdiv_rz (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Divide two floating-point values in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> / <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Divide two floating-point values <tt class="ph tt code">x</tt> by <tt class="ph tt code">y</tt> in round-towards-zero mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gc996beec34f94f6376d0674a6860e107" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gc996beec34f94f6376d0674a6860e107" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fdividef (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the fast approximate division of the input arguments. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> / <tt class="ph tt code">y</tt>.
+                                 
+                                 </p>
+<ul>
+                                    <li>__fdividef(   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       , <tt class="ph tt code">y</tt>) returns NaN for   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <msup>
+                                             <mn>2</mn>
+                                             <mrow class="MJX-TeXAtom-ORD">
+                                                <mn>126</mn>
+                                             </mrow>
+                                          </msup>
+                                          <mo>&lt;</mo>
+                                          <mi>|y|</mi>
+                                          <mo>&lt;</mo>
+                                          <msup>
+                                             <mn>2</mn>
+                                             <mrow class="MJX-TeXAtom-ORD">
+                                                <mn>128</mn>
+                                             </mrow>
+                                          </msup>
+                                       </math>
+                                       .
+                                    </li>
+                                    <li>__fdividef(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>) returns 0 for   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <msup>
+                                             <mn>2</mn>
+                                             <mrow class="MJX-TeXAtom-ORD">
+                                                <mn>126</mn>
+                                             </mrow>
+                                          </msup>
+                                          <mo>&lt;</mo>
+                                          <mi>|y|</mi>
+                                          <mo>&lt;</mo>
+                                          <msup>
+                                             <mn>2</mn>
+                                             <mrow class="MJX-TeXAtom-ORD">
+                                                <mn>128</mn>
+                                             </mrow>
+                                          </msup>
+                                       </math>
+                                       
+                                       and finite   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mi>x</mi>
+                                       </math>
+                                       .
+                                    </li>
+                                 </ul>
+                              
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the fast approximate division of <tt class="ph tt code">x</tt> by <tt class="ph tt code">y</tt>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Intrinsic Functions section.
+                                       
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g5ec4876d85bf5331ac63fa98f3fb57b4" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g5ec4876d85bf5331ac63fa98f3fb57b4" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fmaf_ieee_rd (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute fused multiply-add operation in round-down mode, ignore <tt class="ph tt code">-ftz=true</tt> compiler flag. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Behavior is the same as <a class="xref" href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g5b12d5103d17eed423f1db706a9c80be" title="Compute as a single operation, in round-down mode." shape="rect">__fmaf_rd</a>(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>, <tt class="ph tt code">z</tt>), the difference is in handling denormalized inputs and outputs: <tt class="ph tt code">-ftz</tt> compiler flag has no effect. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g6535eebe86aba96a47c3ff4632640d99" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g6535eebe86aba96a47c3ff4632640d99" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fmaf_ieee_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute fused multiply-add operation in round-to-nearest-even mode, ignore <tt class="ph tt code">-ftz=true</tt> compiler flag. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Behavior is the same as <a class="xref" href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g77b36635a8fbdc96a7e08e201d589316" title="Compute as a single operation, in round-to-nearest-even mode." shape="rect">__fmaf_rn</a>(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>, <tt class="ph tt code">z</tt>), the difference is in handling denormalized inputs and outputs: <tt class="ph tt code">-ftz</tt> compiler flag has no effect. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g6c50feff625ea8d50ccf7fcfa30383eb" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g6c50feff625ea8d50ccf7fcfa30383eb" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fmaf_ieee_ru (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute fused multiply-add operation in round-up mode, ignore <tt class="ph tt code">-ftz=true</tt> compiler flag. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Behavior is the same as <a class="xref" href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gfe855a453ea92a580b79ad8a7e72bc49" title="Compute as a single operation, in round-up mode." shape="rect">__fmaf_ru</a>(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>, <tt class="ph tt code">z</tt>), the difference is in handling denormalized inputs and outputs: <tt class="ph tt code">-ftz</tt> compiler flag has no effect. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gc39a4b9e57049f913213edcb0d855138" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gc39a4b9e57049f913213edcb0d855138" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fmaf_ieee_rz (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute fused multiply-add operation in round-towards-zero mode, ignore <tt class="ph tt code">-ftz=true</tt> compiler flag. 
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Behavior is the same as <a class="xref" href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g42a5f6c99064834ad50b2bfa7aa77731" title="Compute as a single operation, in round-towards-zero mode." shape="rect">__fmaf_rz</a>(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>, <tt class="ph tt code">z</tt>), the difference is in handling denormalized inputs and outputs: <tt class="ph tt code">-ftz</tt> compiler flag has no effect. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g5b12d5103d17eed423f1db706a9c80be" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g5b12d5103d17eed423f1db706a9c80be" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fmaf_rd (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mi>x</mi>
+                                 <mo>×</mo>
+                                 <mi>y</mi>
+                                 <mo>+</mo>
+                                 <mi>z</mi>
+                              </math>
+                              
+                              as a single operation, in round-down mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the rounded value of   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mi>x</mi>
+                                    <mo>×</mo>
+                                    <mi>y</mi>
+                                    <mo>+</mo>
+                                    <mi>z</mi>
+                                 </math>
+                                 
+                                 as a single operation.
+                                 
+                                 </p>
+<ul>
+                                    <li>fmaf(   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       ,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mn>0</mn>
+                                       </math>
+                                       
+                                       , <tt class="ph tt code">z</tt>) returns NaN.
+                                    </li>
+                                    <li>fmaf(   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mn>0</mn>
+                                       </math>
+                                       
+                                       ,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       , <tt class="ph tt code">z</tt>) returns NaN.
+                                    </li>
+                                    <li>fmaf(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>−</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       ) returns NaN if   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mi>x</mi>
+                                          <mo>×</mo>
+                                          <mi>y</mi>
+                                       </math>
+                                       
+                                       is an exact   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>+</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       .
+                                    </li>
+                                    <li>fmaf(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>+</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       ) returns NaN if   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mi>x</mi>
+                                          <mo>×</mo>
+                                          <mi>y</mi>
+                                       </math>
+                                       
+                                       is an exact   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>−</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       .
+                                    </li>
+                                 </ul>
+                              
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Computes the value of   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mi>x</mi>
+                                    <mo>×</mo>
+                                    <mi>y</mi>
+                                    <mo>+</mo>
+                                    <mi>z</mi>
+                                 </math>
+                                 
+                                 as a single ternary operation, rounding the result once in round-down (to negative infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g77b36635a8fbdc96a7e08e201d589316" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g77b36635a8fbdc96a7e08e201d589316" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fmaf_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mi>x</mi>
+                                 <mo>×</mo>
+                                 <mi>y</mi>
+                                 <mo>+</mo>
+                                 <mi>z</mi>
+                              </math>
+                              
+                              as a single operation, in round-to-nearest-even mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the rounded value of   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mi>x</mi>
+                                    <mo>×</mo>
+                                    <mi>y</mi>
+                                    <mo>+</mo>
+                                    <mi>z</mi>
+                                 </math>
+                                 
+                                 as a single operation.
+                                 
+                                 </p>
+<ul>
+                                    <li>fmaf(   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       ,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mn>0</mn>
+                                       </math>
+                                       
+                                       , <tt class="ph tt code">z</tt>) returns NaN.
+                                    </li>
+                                    <li>fmaf(   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mn>0</mn>
+                                       </math>
+                                       
+                                       ,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       , <tt class="ph tt code">z</tt>) returns NaN.
+                                    </li>
+                                    <li>fmaf(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>−</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       ) returns NaN if   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mi>x</mi>
+                                          <mo>×</mo>
+                                          <mi>y</mi>
+                                       </math>
+                                       
+                                       is an exact   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>+</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       .
+                                    </li>
+                                    <li>fmaf(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>+</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       ) returns NaN if   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mi>x</mi>
+                                          <mo>×</mo>
+                                          <mi>y</mi>
+                                       </math>
+                                       
+                                       is an exact   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>−</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       .
+                                    </li>
+                                 </ul>
+                              
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Computes the value of   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mi>x</mi>
+                                    <mo>×</mo>
+                                    <mi>y</mi>
+                                    <mo>+</mo>
+                                    <mi>z</mi>
+                                 </math>
+                                 
+                                 as a single ternary operation, rounding the result once in round-to-nearest-even mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gfe855a453ea92a580b79ad8a7e72bc49" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gfe855a453ea92a580b79ad8a7e72bc49" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fmaf_ru (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mi>x</mi>
+                                 <mo>×</mo>
+                                 <mi>y</mi>
+                                 <mo>+</mo>
+                                 <mi>z</mi>
+                              </math>
+                              
+                              as a single operation, in round-up mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the rounded value of   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mi>x</mi>
+                                    <mo>×</mo>
+                                    <mi>y</mi>
+                                    <mo>+</mo>
+                                    <mi>z</mi>
+                                 </math>
+                                 
+                                 as a single operation.
+                                 
+                                 </p>
+<ul>
+                                    <li>fmaf(   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       ,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mn>0</mn>
+                                       </math>
+                                       
+                                       , <tt class="ph tt code">z</tt>) returns NaN.
+                                    </li>
+                                    <li>fmaf(   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mn>0</mn>
+                                       </math>
+                                       
+                                       ,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       , <tt class="ph tt code">z</tt>) returns NaN.
+                                    </li>
+                                    <li>fmaf(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>−</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       ) returns NaN if   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mi>x</mi>
+                                          <mo>×</mo>
+                                          <mi>y</mi>
+                                       </math>
+                                       
+                                       is an exact   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>+</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       .
+                                    </li>
+                                    <li>fmaf(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>+</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       ) returns NaN if   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mi>x</mi>
+                                          <mo>×</mo>
+                                          <mi>y</mi>
+                                       </math>
+                                       
+                                       is an exact   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>−</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       .
+                                    </li>
+                                 </ul>
+                              
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Computes the value of   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mi>x</mi>
+                                    <mo>×</mo>
+                                    <mi>y</mi>
+                                    <mo>+</mo>
+                                    <mi>z</mi>
+                                 </math>
+                                 
+                                 as a single ternary operation, rounding the result once in round-up (to positive infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g42a5f6c99064834ad50b2bfa7aa77731" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g42a5f6c99064834ad50b2bfa7aa77731" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fmaf_rz (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span>, float <span> </span><span class="keyword keyword apiItemName">z</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mi>x</mi>
+                                 <mo>×</mo>
+                                 <mi>y</mi>
+                                 <mo>+</mo>
+                                 <mi>z</mi>
+                              </math>
+                              
+                              as a single operation, in round-towards-zero mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the rounded value of   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mi>x</mi>
+                                    <mo>×</mo>
+                                    <mi>y</mi>
+                                    <mo>+</mo>
+                                    <mi>z</mi>
+                                 </math>
+                                 
+                                 as a single operation.
+                                 
+                                 </p>
+<ul>
+                                    <li>fmaf(   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       ,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mn>0</mn>
+                                       </math>
+                                       
+                                       , <tt class="ph tt code">z</tt>) returns NaN.
+                                    </li>
+                                    <li>fmaf(   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mn>0</mn>
+                                       </math>
+                                       
+                                       ,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>±</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       , <tt class="ph tt code">z</tt>) returns NaN.
+                                    </li>
+                                    <li>fmaf(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>−</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       ) returns NaN if   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mi>x</mi>
+                                          <mo>×</mo>
+                                          <mi>y</mi>
+                                       </math>
+                                       
+                                       is an exact   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>+</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       .
+                                    </li>
+                                    <li>fmaf(<tt class="ph tt code">x</tt>, <tt class="ph tt code">y</tt>,   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>+</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       
+                                       ) returns NaN if   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mi>x</mi>
+                                          <mo>×</mo>
+                                          <mi>y</mi>
+                                       </math>
+                                       
+                                       is an exact   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mo>−</mo>
+                                          <mi mathvariant="normal">∞</mi>
+                                       </math>
+                                       .
+                                    </li>
+                                 </ul>
+                              
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Computes the value of   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mi>x</mi>
+                                    <mo>×</mo>
+                                    <mi>y</mi>
+                                    <mo>+</mo>
+                                    <mi>z</mi>
+                                 </math>
+                                 
+                                 as a single ternary operation, rounding the result once in round-towards-zero mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g28d56d8747ca7960860cd9c67cd3fed6" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g28d56d8747ca7960860cd9c67cd3fed6" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fmul_rd (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Multiply two floating-point values in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the product of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> in round-down (to negative infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                             Functions section. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">This operation will never be merged into a single multiply-add instruction. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g4b9d2d5cb295c1442b00e6eff5248b97" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g4b9d2d5cb295c1442b00e6eff5248b97" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fmul_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Multiply two floating-point values in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the product of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> in round-to-nearest-even mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                             Functions section. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">This operation will never be merged into a single multiply-add instruction. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gcd2f8b720306266f6e814345d4cf1b93" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gcd2f8b720306266f6e814345d4cf1b93" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fmul_ru (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Multiply two floating-point values in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the product of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> in round-up (to positive infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                             Functions section. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">This operation will never be merged into a single multiply-add instruction. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gff448e40e1e71eb620159a40e5e62705" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gff448e40e1e71eb620159a40e5e62705" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fmul_rz (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Multiply two floating-point values in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> * <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the product of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> in round-towards-zero mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                             Functions section. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">This operation will never be merged into a single multiply-add instruction. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g4f51ca3e41e5f9369bed0bf0c5f42971" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g4f51ca3e41e5f9369bed0bf0c5f42971" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __frcp_rd (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mfrac>
+                                    <mn>1</mn>
+                                    <mi>x</mi>
+                                 </mfrac>
+                              </math>
+                              
+                              in round-down mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mfrac>
+                                       <mn>1</mn>
+                                       <mi>x</mi>
+                                    </mfrac>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the reciprocal of <tt class="ph tt code">x</tt> in round-down (to negative infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gba455801af8ac9af405a5d37ef2f077b" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gba455801af8ac9af405a5d37ef2f077b" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __frcp_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mfrac>
+                                    <mn>1</mn>
+                                    <mi>x</mi>
+                                 </mfrac>
+                              </math>
+                              
+                              in round-to-nearest-even mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mfrac>
+                                       <mn>1</mn>
+                                       <mi>x</mi>
+                                    </mfrac>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the reciprocal of <tt class="ph tt code">x</tt> in round-to-nearest-even mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gd5b3289e40e510c2067c8f7a426aa884" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gd5b3289e40e510c2067c8f7a426aa884" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __frcp_ru (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mfrac>
+                                    <mn>1</mn>
+                                    <mi>x</mi>
+                                 </mfrac>
+                              </math>
+                              
+                              in round-up mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mfrac>
+                                       <mn>1</mn>
+                                       <mi>x</mi>
+                                    </mfrac>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the reciprocal of <tt class="ph tt code">x</tt> in round-up (to positive infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g64032913321c328ae72111161af32268" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g64032913321c328ae72111161af32268" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __frcp_rz (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mfrac>
+                                    <mn>1</mn>
+                                    <mi>x</mi>
+                                 </mfrac>
+                              </math>
+                              
+                              in round-towards-zero mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mfrac>
+                                       <mn>1</mn>
+                                       <mi>x</mi>
+                                    </mfrac>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the reciprocal of <tt class="ph tt code">x</tt> in round-towards-zero mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g71ee45580cbeeea206297f0112aff42c" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g71ee45580cbeeea206297f0112aff42c" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __frsqrt_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mn>1</mn>
+                                 <mrow class="MJX-TeXAtom-ORD">
+                                    <mo>/</mo>
+                                 </mrow>
+                                 <msqrt>
+                                    <mi>x</mi>
+                                 </msqrt>
+                              </math>
+                              
+                              in round-to-nearest-even mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mn>1</mn>
+                                    <mrow class="MJX-TeXAtom-ORD">
+                                       <mo>/</mo>
+                                    </mrow>
+                                    <msqrt>
+                                       <mi>x</mi>
+                                    </msqrt>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the reciprocal square root of <tt class="ph tt code">x</tt> in round-to-nearest-even mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g59566bdd0638a5b249dbda757f2bb06b" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g59566bdd0638a5b249dbda757f2bb06b" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fsqrt_rd (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <msqrt>
+                                    <mi>x</mi>
+                                 </msqrt>
+                              </math>
+                              
+                              in round-down mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msqrt>
+                                       <mi>x</mi>
+                                    </msqrt>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the square root of <tt class="ph tt code">x</tt> in round-down (to negative infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gf021e85b5e9de141a0fc2ff6fbe85875" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gf021e85b5e9de141a0fc2ff6fbe85875" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fsqrt_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <msqrt>
+                                    <mi>x</mi>
+                                 </msqrt>
+                              </math>
+                              
+                              in round-to-nearest-even mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msqrt>
+                                       <mi>x</mi>
+                                    </msqrt>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the square root of <tt class="ph tt code">x</tt> in round-to-nearest-even mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gb429e39b1790b4dfae0d0c4926f53fe2" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gb429e39b1790b4dfae0d0c4926f53fe2" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fsqrt_ru (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <msqrt>
+                                    <mi>x</mi>
+                                 </msqrt>
+                              </math>
+                              
+                              in round-up mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msqrt>
+                                       <mi>x</mi>
+                                    </msqrt>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the square root of <tt class="ph tt code">x</tt> in round-up (to positive infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g094bf489bf492287424b1080569189f1" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g094bf489bf492287424b1080569189f1" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fsqrt_rz (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Compute   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <msqrt>
+                                    <mi>x</mi>
+                                 </msqrt>
+                              </math>
+                              
+                              in round-towards-zero mode. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msqrt>
+                                       <mi>x</mi>
+                                    </msqrt>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the square root of <tt class="ph tt code">x</tt> in round-towards-zero mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                       Functions section. 
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g78502e666a0e6e7690230e118403df54" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g78502e666a0e6e7690230e118403df54" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fsub_rd (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Subtract two floating-point values in round-down mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> - <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the difference of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> in round-down (to negative infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                             Functions section. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">This operation will never be merged into a single multiply-add instruction. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1ge75e42e6637c178cd3c86a6e3774f7cb" id="group__CUDA__MATH__INTRINSIC__SINGLE_1ge75e42e6637c178cd3c86a6e3774f7cb" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fsub_rn (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Subtract two floating-point values in round-to-nearest-even mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> - <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the difference of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> in round-to-nearest-even rounding mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                             Functions section. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">This operation will never be merged into a single multiply-add instruction. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g4adc718465695ee57990318d5a650b1c" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g4adc718465695ee57990318d5a650b1c" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fsub_ru (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Subtract two floating-point values in round-up mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> - <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the difference of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> in round-up (to positive infinity) mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                             Functions section. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">This operation will never be merged into a single multiply-add instruction. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gc900725c2921068c2ad4f53039b6bacf" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gc900725c2921068c2ad4f53039b6bacf" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __fsub_rz (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Subtract two floating-point values in round-towards-zero mode. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns <tt class="ph tt code">x</tt> - <tt class="ph tt code">y</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Compute the difference of <tt class="ph tt code">x</tt> and <tt class="ph tt code">y</tt> in round-towards-zero mode.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Single-Precision Floating-Point
+                                             Functions section. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">This operation will never be merged into a single multiply-add instruction. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g2b7358a27b8231b592da81ff3143b9a8" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g2b7358a27b8231b592da81ff3143b9a8" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __log10f (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the fast approximate base 10 logarithm of the input argument. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns an approximation to   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msub>
+                                       <mi>log</mi>
+                                       <mrow class="MJX-TeXAtom-ORD">
+                                          <mn>10</mn>
+                                       </mrow>
+                                    </msub>
+                                    <mo>⁡</mo>
+                                    <mo stretchy="false">(</mo>
+                                    <mi>x</mi>
+                                    <mo stretchy="false">)</mo>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the fast approximate base 10 logarithm of the input argument <tt class="ph tt code">x</tt>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Intrinsic Functions section.
+                                       
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gfcc053f9040d50975aab00e44e7c6093" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gfcc053f9040d50975aab00e44e7c6093" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __log2f (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the fast approximate base 2 logarithm of the input argument. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns an approximation to   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msub>
+                                       <mi>log</mi>
+                                       <mn>2</mn>
+                                    </msub>
+                                    <mo>⁡</mo>
+                                    <mo stretchy="false">(</mo>
+                                    <mi>x</mi>
+                                    <mo stretchy="false">)</mo>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the fast approximate base 2 logarithm of the input argument <tt class="ph tt code">x</tt>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Intrinsic Functions section.
+                                       
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1ged5cef656578096892f104a27d5287c4" id="group__CUDA__MATH__INTRINSIC__SINGLE_1ged5cef656578096892f104a27d5287c4" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __logf (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the fast approximate base   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <mi>e</mi>
+                              </math>
+                              
+                              logarithm of the input argument. 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns an approximation to   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msub>
+                                       <mi>log</mi>
+                                       <mi>e</mi>
+                                    </msub>
+                                    <mo>⁡</mo>
+                                    <mo stretchy="false">(</mo>
+                                    <mi>x</mi>
+                                    <mo stretchy="false">)</mo>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the fast approximate base   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <mi>e</mi>
+                                 </math>
+                                 
+                                 logarithm of the input argument <tt class="ph tt code">x</tt>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Intrinsic Functions section.
+                                       
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g2c2b295816185f6ce2423471df529974" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g2c2b295816185f6ce2423471df529974" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __powf (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float <span> </span><span class="keyword keyword apiItemName">y</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the fast approximate of   
+                              
+                              
+                              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                 <msup>
+                                    <mi>x</mi>
+                                    <mi>y</mi>
+                                 </msup>
+                              </math>
+                              . 
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns an approximation to   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msup>
+                                       <mi>x</mi>
+                                       <mi>y</mi>
+                                    </msup>
+                                 </math>
+                                 .
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the fast approximate of <tt class="ph tt code">x</tt>, the first input argument, raised to the power of <tt class="ph tt code">y</tt>, the second input argument,   
+                                 
+                                 
+                                 <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                    <msup>
+                                       <mi>x</mi>
+                                       <mi>y</mi>
+                                    </msup>
+                                 </math>
+                                 .
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Intrinsic Functions section.
+                                       
+                                    </p>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g2c84f08e0db7117a14509d21c3aec04e" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g2c84f08e0db7117a14509d21c3aec04e" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __saturatef (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Clamp the input argument to [+0.0, 1.0]. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">
+                                 </p>
+<ul>
+                                    <li>__saturatef(<tt class="ph tt code">x</tt>) returns 0 if <tt class="ph tt code">x</tt> &lt; 0.
+                                    </li>
+                                    <li>__saturatef(<tt class="ph tt code">x</tt>) returns 1 if <tt class="ph tt code">x</tt> &gt; 1.
+                                    </li>
+                                    <li>__saturatef(<tt class="ph tt code">x</tt>) returns <tt class="ph tt code">x</tt> if   
+                                       
+                                       
+                                       <math xmlns="http://www.w3.org/1998/Math/MathML">
+                                          <mn>0</mn>
+                                          <mo>≤</mo>
+                                          <mi>x</mi>
+                                          <mo>≤</mo>
+                                          <mn>1</mn>
+                                       </math>
+                                       .
+                                    </li>
+                                    <li>__saturatef(NaN) returns 0. </li>
+                                 </ul>
+                              
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Clamp the input argument <tt class="ph tt code">x</tt> to be within the interval [+0.0, 1.0]. 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g96089d6195f9befde96e14afafd931fb" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g96089d6195f9befde96e14afafd931fb" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ void __sincosf (  float <span> </span><span class="keyword keyword apiItemName">x</span>, float*<span> </span><span class="keyword keyword apiItemName">sptr</span>, float*<span> </span><span class="keyword keyword apiItemName">cptr</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the fast approximate of sine and cosine of the first input argument. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">
+                                 </p>
+<ul>
+                                    <li>none</li>
+                                 </ul>
+                              
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the fast approximate of sine and cosine of the first input argument <tt class="ph tt code">x</tt> (measured in radians). The results for sine and cosine are written into the second argument, <tt class="ph tt code">sptr</tt>, and, respectively, third argument, <tt class="ph tt code">cptr</tt>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Intrinsic Functions section.
+                                             
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Denorm input/output is flushed to sign preserving 0.0. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1gfa0ea4b2cee94521792ead0deb03addb" id="group__CUDA__MATH__INTRINSIC__SINGLE_1gfa0ea4b2cee94521792ead0deb03addb" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __sinf (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the fast approximate sine of the input argument. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the approximate sine of <tt class="ph tt code">x</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the fast approximate sine of the input argument <tt class="ph tt code">x</tt>, measured in radians.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Intrinsic Functions section.
+                                             
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Output in the denormal range is flushed to sign preserving 0.0. </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDA__MATH__INTRINSIC__SINGLE_1g4fc8b7c67526a0195b9cb47287b5c121" id="group__CUDA__MATH__INTRINSIC__SINGLE_1g4fc8b7c67526a0195b9cb47287b5c121" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__device__</span>
+                              ​ float __tanf (  float <span> </span><span class="keyword keyword apiItemName">x</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Calculate the fast approximate tangent of the input argument. </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return">Returns the approximate tangent of <tt class="ph tt code">x</tt>.
+                              </p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Calculate the fast approximate tangent of the input argument <tt class="ph tt code">x</tt>, measured in radians.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">For accuracy information see the CUDA C++ Programming Guide, Mathematical Functions Appendix, Intrinsic Functions section.
+                                             
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">The result is computed as the fast divide of <a class="xref" href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1gfa0ea4b2cee94521792ead0deb03addb" title="Calculate the fast approximate sine of the input argument." shape="rect">__sinf()</a> by <a class="xref" href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE_1g129ff4afc615da9a5886c77713094c32" title="Calculate the fast approximate cosine of the input argument." shape="rect">__cosf()</a>. Denormal output is flushed to sign-preserving 0.0. 
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                     </dl>
+                  </div>
+               </div>
+               
+               <hr id="contents-end">
+               
+            </article>
+         </div>
+      </div>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/formatting/common.min.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-write.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-tracker.js"></script>
+      <script type="text/javascript">var switchTo5x=true;</script><script type="text/javascript">stLight.options({publisher: "998dc202-a267-4d8e-bce9-14debadb8d92", doNotHash: false, doNotCopy: false, hashAddressBar: false});</script><script type="text/javascript">_satellite.pageBottom();</script>
+</body>
+</html>

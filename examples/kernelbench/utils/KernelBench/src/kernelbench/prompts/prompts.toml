@@ -1,0 +1,219 @@
+[meta]
+version = "1.0"
+default_backend = "cuda"
+default_precision = "fp32"
+
+# -------------------------------------------------------------------------
+# Shared Templates: Used by all backends with placeholders
+# -------------------------------------------------------------------------
+[shared]
+problem_statement = """
+You write custom {backend_display} to replace the pytorch operators in the given architecture to get speedups.
+
+You have complete freedom to choose the set of operators you want to replace. You may make the decision to replace some operators with custom {backend_display} and leave others unchanged. You may replace multiple operators with custom implementations, consider operator fusion opportunities (combining multiple operators into a single kernel, for example, combining matmul+relu), or algorithmic changes (such as online softmax). You are only limited by your imagination.
+"""
+
+instruction = """
+Optimize the architecture named Model with custom {backend_display}! Name your optimized output architecture ModelNew. Output the new code in codeblocks. Please generate real code, NOT pseudocode, make sure the code compiles and is fully functional. Just output the new model code, no other text, and NO testing code!
+"""
+
+# Shared example architecture (same for all backends)
+few_shot_example_arch = "src/kernelbench/prompts/model_ex_add.py"
+
+# -------------------------------------------------------------------------
+# Backends: Backend-specific configuration (minimal, just what varies)
+# -------------------------------------------------------------------------
+[backends.cuda]
+backend_display = "CUDA operators"
+# One-shot example (baseline, always available)
+one_shot_new_arch = "src/kernelbench/prompts/model_new_ex_add.py"
+# Few-shot examples (optional, multiple example pairs)
+few_shot_examples = [
+    ["src/kernelbench/prompts/few_shot/model_ex_add.py", "src/kernelbench/prompts/few_shot/model_new_ex_add.py"],
+    ["src/kernelbench/prompts/few_shot/model_ex_fuse_gelu.py", "src/kernelbench/prompts/few_shot/model_new_ex_fuse_gelu.py"],
+    ["src/kernelbench/prompts/few_shot/model_ex_flash_attn.py", "src/kernelbench/prompts/few_shot/model_new_ex_flash_attn.py"],
+]
+
+[backends.triton]
+backend_display = "Triton kernels"
+one_shot_new_arch = "src/kernelbench/prompts/model_new_ex_add_triton.py"
+# No few_shot_examples - will use one-shot when few_shot option is selected
+
+[backends.cute]
+backend_display = "CuTe (CUTLASS) kernels"
+one_shot_new_arch = "src/kernelbench/prompts/model_new_ex_add_cute.py"
+# No few_shot_examples - will use one-shot when few_shot option is selected
+
+[backends.tilelang]
+backend_display = "TileLang kernels"
+one_shot_new_arch = "src/kernelbench/prompts/model_new_ex_add_tilelang.py"
+# No few_shot_examples - will use one-shot when few_shot option is selected
+
+[backends.thunderkittens]
+backend_display = "ThunderKittens kernels"
+one_shot_new_arch = "src/kernelbench/prompts/model_new_ex_add_thunderkittens.py"
+# No few_shot_examples - will use one-shot when few_shot option is selected
+
+# -------------------------------------------------------------------------
+# Precision: Precision-specific configuration
+# -------------------------------------------------------------------------
+[precision.fp32]
+precision_display = "FP32 (32-bit floating point)"
+
+[precision.fp16]
+precision_display = "FP16 (16-bit floating point)"
+
+[precision.bf16]
+precision_display = "BF16 (bfloat16)"
+
+# -------------------------------------------------------------------------
+# Templates: Reusable text blocks with placeholders
+# -------------------------------------------------------------------------
+[templates.common]
+
+# --- Architecture Presentation ---
+# Used to present the reference architecture/PyTorch kernel that needs optimization
+arch_block = """
+You are given the following architecture:
+
+
+{ref_arch_src}
+
+"""
+
+# -------------------------------------------------------------------------
+# Examples Block
+# -------------------------------------------------------------------------
+# Shows example(s) of input architecture and optimized versions
+# Dynamically formatted by Python code to handle single or multiple examples
+
+examples_block = """
+{examples_intro}
+
+{examples_entries}
+"""
+
+# Different introductions for code examples depending on if its one shot or few shot
+
+example_intro_one_shot = """
+Here's an example to show you the syntax of inline embedding custom {backend_display} in PyTorch:
+"""
+example_intro_few_shot = """
+Here are examples showing how to embed custom {backend_display} in PyTorch:
+"""
+
+
+# Will inject an input example and output example according to the backend. 
+
+example_entry_template = """
+{example_label}
+
+Input architecture:
+
+{input_code}
+
+Optimized with {backend_display}:
+
+{output_code}
+"""
+
+
+# -------------------------------------------------------------------------
+#  Precision Information 
+# -------------------------------------------------------------------------
+# Specifies the target precision for optimization
+
+precision_note = """
+Note: The kernels should be optimized for {precision_display} precision.
+"""
+
+# -------------------------------------------------------------------------
+# Custom Templates: Optional user-defined building blocks
+# -------------------------------------------------------------------------
+# Add any custom template blocks here and reference them from components lists.
+
+# Example:
+
+custom_problem_statement = """
+Custom prompt intro goes here. You can reference {backend_display} or any
+other placeholder supported in the shared context.
+"""
+
+
+# -------------------------------------------------------------------------
+# Hardware Templates: GPU-specific information blocks
+# -------------------------------------------------------------------------
+[templates.hardware]
+hardware_header = """
+Here is some information about the underlying hardware that you should keep in mind.
+"""
+
+hardware_specs = """
+The GPU that will run the kernel is NVIDIA {gpu_name}, {gpu_architecture} architecture.
+
+{gpu_specs_bullets}
+"""
+
+hardware_definitions = """
+Here are some concepts about the GPU architecture that could be helpful:
+
+{gpu_definitions_bullets}
+"""
+
+hardware_best_practices = """
+Here are some best practices for writing kernels on GPU:
+
+{gpu_best_practices_bullets}
+"""
+
+# -------------------------------------------------------------------------
+# Options: Different prompt construction modes
+# -------------------------------------------------------------------------
+
+[options.zero_shot]
+# Zero-shot: No examples provided—the model must infer everything from the description
+components = ["problem_statement", "arch_block", "precision_note", "instruction"]
+
+[options.one_shot]
+# One-shot: Includes a single example to demonstrate the task
+# This is the default KernelBench will use for model baseline performance 
+components = ["problem_statement", "examples_block", "arch_block", "precision_note", "instruction"]
+requires_example = "one_shot"
+
+[options.few_shot]
+# Few-shot: Multiple examples (falls back to one-shot if backend lacks few-shot entries)
+components = ["problem_statement", "examples_block", "arch_block", "precision_note", "instruction"]
+requires_example = "few_shot"
+
+
+# -------------------------------------------------------------------------
+# Custom Prompts: user-defined prompt compositions
+# -------------------------------------------------------------------------
+
+
+[custom_prompts.custom]
+# Use this name with the CLI: pass custom_prompt_key=custom to
+# generate_samples.py, generate_and_eval_single_sample.py, or the modal variant
+# to load this block structure instead of the standard backend/option combo. 
+# If you want to add another prompt (e.g., [custom_prompts.custom2]), call it with
+# custom_prompt_key=custom2 instead.
+
+# Define prompt composition here (ordering/extra sections).
+# Backend, precision, hardware info, etc. must still be set via CLI flags
+# Backend and precision in particular are required for evaluating your kernels.
+# Hardware_info information must also be defined if you use any of the hardware 
+# templates.
+
+# Order the components for the prompt in whatever way you want and use any
+# created templates you want
+components = [
+    "custom_problem_statement",
+    "problem_statement",
+    "hardware_header",
+    "hardware_specs",
+    "hardware_best_practices",
+    "arch_block",
+    "precision_note",
+    "examples_block",
+    "instruction",
+]

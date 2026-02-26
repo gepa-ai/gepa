@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+# this should be our single source of truth for versioning
+
+[project]
+name = "kernelbench"
+version = "0.2.0.dev0"
+requires-python = "==3.10.*"
+dependencies = [
+    # Frameworks
+    "torch==2.9.0",
+
+    "transformers",
+    "datasets",
+    "modal",
+
+    # helper
+    "tqdm",
+    "packaging",
+    "setuptools",
+    "pydra-config",
+    "ninja",
+    "tomli",
+    "tabulate",
+
+    # Numerics
+    "einops",
+    "python-dotenv",
+    "numpy",
+
+    # LLM providers
+    "openai",
+    "litellm[proxy]",
+]
+
+[project.optional-dependencies]
+gpu = [
+    # GPU-specific dependencies (requires CUDA)
+    "triton",
+    "nvidia-cutlass-dsl",
+    "tilelang",
+    "cupy-cuda12x",
+    "nsight-python",
+]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["kernelbench*"]
+
+[tool.setuptools.package-data]
+kernelbench = ["prompts/**/*"]

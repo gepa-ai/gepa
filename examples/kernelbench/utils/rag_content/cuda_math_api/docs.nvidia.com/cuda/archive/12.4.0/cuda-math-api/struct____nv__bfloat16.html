@@ -1,0 +1,1243 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-us" xml:lang="en-us">
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <meta name="copyright" content="(C) Copyright 2005">
+      <meta name="DC.rights.owner" content="(C) Copyright 2005">
+      <meta name="DC.Type" content="cppGlobalStruct">
+      <meta name="DC.Title" content="__nv_bfloat16">
+      <meta name="abstract" content="nv_bfloat16 datatype">
+      <meta name="description" content="">
+      <meta name="DC.Format" content="XHTML">
+      <meta name="DC.Identifier" content="struct____nv__bfloat16">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/commonltr.css">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/site.css">
+      <title>CUDA Math API :: CUDA Toolkit Documentation</title>
+      <!--[if lt IE 9]>
+      <script src="../common/formatting/html5shiv-printshiv.min.js"></script>
+      <![endif]-->
+      <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-svg.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.ba-hashchange.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.scrollintoview.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/scripts/geoip/geoip.js"></script>
+      <script type="text/javascript" src="../search/htmlFileList.js"></script>
+      <script type="text/javascript" src="../search/htmlFileInfoList.js"></script>
+      <script type="text/javascript" src="../search/nwSearchFnt.min.js"></script>
+      <script type="text/javascript" src="../search/stemmers/en_stemmer.min.js"></script>
+      <script type="text/javascript" src="../search/index-1.js"></script>
+      <script type="text/javascript" src="../search/index-2.js"></script>
+      <script type="text/javascript" src="../search/index-3.js"></script>
+      <link rel="canonical" href="https://docs.nvidia.com/cuda/cuda-math-api/index.html">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/qwcode.highlight.css">
+   </head>
+   <body>
+      
+      <header id="header"><span id="company">NVIDIA</span><span id="site-title">CUDA Toolkit Documentation</span><form id="search" method="get" action="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-math-api/search">
+            <input type="text" name="search-text"><fieldset id="search-location">
+               <legend>Search In:</legend>
+               <label><input type="radio" name="search-type" value="site">Entire Site</label>
+               <label><input type="radio" name="search-type" value="document">Just This Document</label>
+</fieldset>
+            <button type="reset">clear search</button>
+            <button id="submit" type="submit">search</button>
+</form>
+      </header>
+      <div id="site-content">
+         <nav id="site-nav">
+            <div class="category closed"><a href="https://docs.nvidia.com/cuda/archive/12.4.0/index.html" title="The root of the site.">CUDA Toolkit 
+                  
+                  
+                  v12.4.0</a></div>
+            <div class="category"><a href="index.html" title="CUDA Math API">CUDA Math API</a></div>
+            <ul>
+               <li>
+                  <div class="section-link"><a href="modules.html#modules">1. Modules</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__FP8.html#group__CUDA__MATH__INTRINSIC__FP8">1.1. FP8 Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__MISC.html#group__CUDA__MATH__FP8__MISC">1.1.1. FP8 Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__E5M2__STRUCT.html#group__CUDA__MATH__FP8__E5M2__STRUCT">1.1.2. C++ struct for handling fp8 data type of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X2__E5M2__STRUCT.html#group__CUDA__MATH__FP8X2__E5M2__STRUCT">1.1.3. C++ struct for handling vector type of two fp8 values of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X4__E5M2__STRUCT.html#group__CUDA__MATH__FP8X4__E5M2__STRUCT">1.1.4. C++ struct for handling vector type of four fp8 values of e5m2 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8__E4M3__STRUCT.html#group__CUDA__MATH__FP8__E4M3__STRUCT">1.1.5. C++ struct for handling fp8 data type of e4m3 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X2__E4M3__STRUCT.html#group__CUDA__MATH__FP8X2__E4M3__STRUCT">1.1.6. C++ struct for handling vector type of two fp8 values of e4m3 kind.</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__FP8X4__E4M3__STRUCT.html#group__CUDA__MATH__FP8X4__E4M3__STRUCT">1.1.7. C++ struct for handling vector type of four fp8 values of e4m3 kind.</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__HALF.html#group__CUDA__MATH__INTRINSIC__HALF">1.2. Half Precision Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__HALF__CONSTANTS.html#group__CUDA__MATH__INTRINSIC__HALF__CONSTANTS">1.2.1. Half Arithmetic Constants</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__ARITHMETIC.html#group__CUDA__MATH____HALF__ARITHMETIC">1.2.2. Half Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__ARITHMETIC.html#group__CUDA__MATH____HALF2__ARITHMETIC">1.2.3. Half2 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__COMPARISON.html#group__CUDA__MATH____HALF__COMPARISON">1.2.4. Half Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__COMPARISON.html#group__CUDA__MATH____HALF2__COMPARISON">1.2.5. Half2 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__MISC.html#group__CUDA__MATH____HALF__MISC">1.2.6. Half Precision Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF__FUNCTIONS.html#group__CUDA__MATH____HALF__FUNCTIONS">1.2.7. Half Math Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____HALF2__FUNCTIONS.html#group__CUDA__MATH____HALF2__FUNCTIONS">1.2.8. Half2 Math Functions</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__BFLOAT16.html#group__CUDA__MATH__INTRINSIC__BFLOAT16">1.3. Bfloat16 Precision Intrinsics</a></div>
+                        <ul>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS.html#group__CUDA__MATH__INTRINSIC__BFLOAT16__CONSTANTS">1.3.1. Bfloat16 Arithmetic Constants</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__ARITHMETIC.html#group__CUDA__MATH____BFLOAT16__ARITHMETIC">1.3.2. Bfloat16 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__ARITHMETIC.html#group__CUDA__MATH____BFLOAT162__ARITHMETIC">1.3.3. Bfloat162 Arithmetic Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__COMPARISON.html#group__CUDA__MATH____BFLOAT16__COMPARISON">1.3.4. Bfloat16 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__COMPARISON.html#group__CUDA__MATH____BFLOAT162__COMPARISON">1.3.5. Bfloat162 Comparison Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC">1.3.6. Bfloat16 Precision Conversion and Data Movement</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT16__FUNCTIONS.html#group__CUDA__MATH____BFLOAT16__FUNCTIONS">1.3.7. Bfloat16 Math Functions</a></div>
+                           </li>
+                           <li>
+                              <div class="section-link"><a href="group__CUDA__MATH____BFLOAT162__FUNCTIONS.html#group__CUDA__MATH____BFLOAT162__FUNCTIONS">1.3.8. Bfloat162 Math Functions</a></div>
+                           </li>
+                        </ul>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH.html#group__CUDA__MATH">1.4. Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__SINGLE.html#group__CUDA__MATH__SINGLE">1.5. Single Precision Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__DOUBLE.html#group__CUDA__MATH__DOUBLE">1.6. Double Precision Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INT.html#group__CUDA__MATH__INT">1.7. Integer Mathematical Functions</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__SINGLE.html#group__CUDA__MATH__INTRINSIC__SINGLE">1.8. Single Precision Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__DOUBLE.html#group__CUDA__MATH__INTRINSIC__DOUBLE">1.9. Double Precision Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__INT.html#group__CUDA__MATH__INTRINSIC__INT">1.10. Integer Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__CAST.html#group__CUDA__MATH__INTRINSIC__CAST">1.11. Type Casting Intrinsics</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDA__MATH__INTRINSIC__SIMD.html#group__CUDA__MATH__INTRINSIC__SIMD">1.12. SIMD Intrinsics</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="annotated.html#annotated">2. Data Structures</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="struct____half.html#struct____half">2.1. __half</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half2.html#struct____half2">2.2. __half2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half2__raw.html#struct____half2__raw">2.3. __half2_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____half__raw.html#struct____half__raw">2.4. __half_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16">2.5. __nv_bfloat16</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat162.html#struct____nv__bfloat162">2.6. __nv_bfloat162</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat162__raw.html#struct____nv__bfloat162__raw">2.7. __nv_bfloat162_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw">2.8. __nv_bfloat16_raw</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8__e4m3.html#struct____nv__fp8__e4m3">2.9. __nv_fp8_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8__e5m2.html#struct____nv__fp8__e5m2">2.10. __nv_fp8_e5m2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x2__e4m3.html#struct____nv__fp8x2__e4m3">2.11. __nv_fp8x2_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x2__e5m2.html#struct____nv__fp8x2__e5m2">2.12. __nv_fp8x2_e5m2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x4__e4m3.html#struct____nv__fp8x4__e4m3">2.13. __nv_fp8x4_e4m3</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="struct____nv__fp8x4__e5m2.html#struct____nv__fp8x4__e5m2">2.14. __nv_fp8x4_e5m2</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="functions.html#functions">3. Data Fields</a></div>
+               </li>
+            </ul>
+         </nav>
+         <div id="resize-nav"></div>
+         <nav id="search-results">
+            <h2>Search Results</h2>
+            <ol></ol>
+         </nav>
+         
+         <div id="contents-container">
+            <div id="breadcrumbs-container">
+               <div id="breadcrumbs">
+<a href="struct____half__raw.html" shape="rect">&lt; Previous</a> | <a href="struct____nv__bfloat162.html" shape="rect">Next &gt;</a>
+</div>
+               <div id="release-info">CUDA Math API
+                  (<a href="https://docs.nvidia.com/cuda/archive/12.4.0/pdf/CUDA_Math_API.pdf">PDF</a>)
+                  -
+                   
+                  
+                  
+                  v12.4.0
+                  (<a href="https://developer.nvidia.com/cuda-toolkit-archive">older</a>)
+                  -
+                  Last updated March 5, 2024
+                  -
+                  <a href="mailto:CUDAIssues@nvidia.com?subject=CUDA%20Toolkit%20Documentation%20Feedback:%20CUDA%20Math%20API">Send Feedback</a>
+</div>
+            </div>
+            <article id="contents">
+               <div class="topic reference apiRef apiClassifier cppClassifier cppStruct cppGlobalStruct" id="struct____nv__bfloat16">
+<a name="struct____nv__bfloat16" shape="rect">
+                     <!-- --></a><h2 class="
+            topictitle2 cppClass
+          ">2.5. __nv_bfloat16 Struct Reference</h2>
+                  <h2>[<a class="xref xref apiRelation cppClassifierModule" href="group__CUDA__MATH__INTRINSIC__BFLOAT16.html#group__CUDA__MATH__INTRINSIC__BFLOAT16" shape="rect">Bfloat16 Precision Intrinsics</a>]
+                  </h2>
+                  <div class="section">
+                     <p>This structure implements the datatype for storing nv_bfloat16 floating-point numbers. The structure implements assignment
+                        operators and type conversions. 16 bits are being used in total: 1 sign bit, 8 bits for the exponent, and the significand
+                        is being stored in 7 bits. The total precision is 8 bits. 
+                     </p>
+                  </div>
+                  <h3 class="fake_sectiontitle member_header">Public Constructors</h3>
+                  <dl class="members">
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​ </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_17a6e1b949126cead2018a85fdb01c0b7" shape="rect">__nv_bfloat16</a> (  unsigned long long<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​ </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1e47d608e25cd861e8740056f519297ee" shape="rect">__nv_bfloat16</a> (  long long<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​ </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_15f631ef10c26a962c26025cf9901c579" shape="rect">__nv_bfloat16</a> (  const unsignedlong <span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​ </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1a9d0f485127072c7e168eb737b7edd54" shape="rect">__nv_bfloat16</a> (  const long<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​ </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1b6b3572e5282ff4e3e6a7d31528cafa5" shape="rect">__nv_bfloat16</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​ </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1300e140ada0bac1844cad48c841f82c6" shape="rect">__nv_bfloat16</a> (  int <span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​ </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_169c9ee72b23f600dacf43d12f4bd815d" shape="rect">__nv_bfloat16</a> (  unsigned short<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​ </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1a461869afe0c80d892114003ac029081" shape="rect">__nv_bfloat16</a> (  short<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​ </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_18b62005222dd5c6330ee30b18bf79a33" shape="rect">__nv_bfloat16</a> (  const double <span> </span><span class="keyword keyword apiItemName">f</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​ </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_11e5f45816b66cf0cc76dc5d563370c8a" shape="rect">__nv_bfloat16</a> (  const float <span> </span><span class="keyword keyword apiItemName">f</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​ </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1908d9ea750b3d3314b65b14f7945b9fe" shape="rect">__nv_bfloat16</a> (  const <a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type " shape="rect">__nv_bfloat16_raw</a>&amp;<span> </span><span class="keyword keyword apiItemName">hr</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​ </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1abe687827cd759728d58f1b2e3aeff5d" shape="rect">__nv_bfloat16</a> (  ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                  </dl>
+                  <h3 class="fake_sectiontitle member_header">Public Member Functions</h3>
+                  <dl class="members">
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1370511294d353d7badbd52706c899364" shape="rect">operator __nv_bfloat16_raw</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1b867b31ec9afacd1d0f9633905089d52" shape="rect">operator __nv_bfloat16_raw</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  constexpr </span><span class="member_name_long_type"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_128aecf4a03fc570c6098a412e9c53768" shape="rect">operator bool</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1d6ef3005de44ec92963397911df51ae6" shape="rect">operator char</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_138158207f2787e081d283b530c0fc5ab" shape="rect">operator float</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_10d92aa48c01bdc606eddf276083be5bf" shape="rect">operator int</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_119e9515bf92418d6affd60f7ed119ce3" shape="rect">operator long</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1752f298927399bdd37fbbee2821fa932" shape="rect">operator long long</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1f4ac8a2a22a465f4f5f714b4ebbf4030" shape="rect">operator short</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_19b6468c5e4b5403284e6459aeb24a2ab" shape="rect">operator signed char</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1a97cd9dcd1a59d80f8968bf6218e5385" shape="rect">operator unsigned char</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_14ee92c29c3d50f621f7605ffb93df030" shape="rect">operator unsigned int</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1d3c3e7eaf46c2a025b4f6ce7b5ec22d5" shape="rect">operator unsigned long</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_13ab90f30bdbc1785028c7e8c634aa9a5" shape="rect">operator unsigned long long</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1f433ce46eb091e17a8744827143799b6" shape="rect">operator unsigned short</a> (  )  const</span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; </span><span class="member_name_long_type"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1d153755a561ca98c81cc1fffcc471f8c" shape="rect">operator=</a> (  unsigned long long<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; </span><span class="member_name_long_type"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_15514558a93e501cebea7a09a10c02cdc" shape="rect">operator=</a> (  long long<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; </span><span class="member_name_long_type"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_18f80064f3269b6255836983fc6b6affa" shape="rect">operator=</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; </span><span class="member_name_long_type"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_14bc856724f69d80e53004e6664bf1380" shape="rect">operator=</a> (  int <span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; </span><span class="member_name_long_type"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_19738c7614baf2205408c37c625155bf2" shape="rect">operator=</a> (  unsigned short<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; </span><span class="member_name_long_type"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1a1d7af515b7aae99761f78de9b60edea" shape="rect">operator=</a> (  short<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; </span><span class="member_name_long_type"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_14c3b7e733ee23d761e12f03047aee8da" shape="rect">operator=</a> (  const double <span> </span><span class="keyword keyword apiItemName">f</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; </span><span class="member_name_long_type"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_196b7581976214b3774712d05a9951f78" shape="rect">operator=</a> (  const float <span> </span><span class="keyword keyword apiItemName">f</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; </span><span class="member_name_long_type"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_141b4e5bc6bccce8d61e19c04c993582e" shape="rect">operator=</a> (  const <a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type " shape="rect">__nv_bfloat16_raw</a>&amp;<span> </span><span class="keyword keyword apiItemName">hr</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; </span><span class="member_name_long_type"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1340a57f4d07c253345f3601a3e7ba121" shape="rect">operator=</a> (  const <a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type " shape="rect">__nv_bfloat16_raw</a>&amp;<span> </span><span class="keyword keyword apiItemName">hr</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; </span><span class="member_name_long_type"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1c8f7ba3b3a4808bc5000d09daee4c7ce" shape="rect">operator=</a> (  const <a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type " shape="rect">__nv_bfloat16_raw</a>&amp;<span> </span><span class="keyword keyword apiItemName">hr</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                  </dl>
+                  <h3 class="fake_sectiontitle member_header">Protected Variables</h3>
+                  <dl class="members">
+                     <dt>
+<span class="member_type">unsigned short  </span><span class="member_name"><a href="struct____nv__bfloat16.html#struct____nv__bfloat16_147a82a18e5257a4631495e26e946ee1a" shape="rect">__x</a></span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc"></span>
+</dd>
+                  </dl>
+                  <div class="description">
+                     <h3 class="sectiontitle">Constructors</h3>
+                     <dl class="description">
+                        <dt class="description">
+<a name="struct____nv__bfloat16_17a6e1b949126cead2018a85fdb01c0b7" id="struct____nv__bfloat16_17a6e1b949126cead2018a85fdb01c0b7" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::__nv_bfloat16 (  unsigned long long<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Construct <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt> from <tt class="ph tt code">unsigned</tt><tt class="ph tt code">long</tt><tt class="ph tt code">long</tt> input using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1e47d608e25cd861e8740056f519297ee" id="struct____nv__bfloat16_1e47d608e25cd861e8740056f519297ee" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::__nv_bfloat16 (  long long<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Construct <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt> from <tt class="ph tt code">long</tt><tt class="ph tt code">long</tt> input using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_15f631ef10c26a962c26025cf9901c579" id="struct____nv__bfloat16_15f631ef10c26a962c26025cf9901c579" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::__nv_bfloat16 (  const unsignedlong <span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Construct <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt> from <tt class="ph tt code">unsigned</tt><tt class="ph tt code">long</tt> input using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1a9d0f485127072c7e168eb737b7edd54" id="struct____nv__bfloat16_1a9d0f485127072c7e168eb737b7edd54" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::__nv_bfloat16 (  const long<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Construct <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt> from <tt class="ph tt code">long</tt> input using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1b6b3572e5282ff4e3e6a7d31528cafa5" id="struct____nv__bfloat16_1b6b3572e5282ff4e3e6a7d31528cafa5" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::__nv_bfloat16 (  unsigned int <span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Construct <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt> from <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int</tt> input using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1300e140ada0bac1844cad48c841f82c6" id="struct____nv__bfloat16_1300e140ada0bac1844cad48c841f82c6" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::__nv_bfloat16 (  int <span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Construct <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt> from <tt class="ph tt code">int</tt> input using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_169c9ee72b23f600dacf43d12f4bd815d" id="struct____nv__bfloat16_169c9ee72b23f600dacf43d12f4bd815d" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::__nv_bfloat16 (  unsigned short<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Construct <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt> from <tt class="ph tt code">unsigned</tt><tt class="ph tt code">short</tt> integer input using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1a461869afe0c80d892114003ac029081" id="struct____nv__bfloat16_1a461869afe0c80d892114003ac029081" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::__nv_bfloat16 (  short<span> </span><span class="keyword keyword apiItemName">val</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Construct <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt> from <tt class="ph tt code">short</tt> integer input using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_18b62005222dd5c6330ee30b18bf79a33" id="struct____nv__bfloat16_18b62005222dd5c6330ee30b18bf79a33" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::__nv_bfloat16 (  const double <span> </span><span class="keyword keyword apiItemName">f</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Construct <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt> from <tt class="ph tt code">double</tt> input using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_11e5f45816b66cf0cc76dc5d563370c8a" id="struct____nv__bfloat16_11e5f45816b66cf0cc76dc5d563370c8a" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::__nv_bfloat16 (  const float <span> </span><span class="keyword keyword apiItemName">f</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Construct <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt> from <tt class="ph tt code">float</tt> input using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1908d9ea750b3d3314b65b14f7945b9fe" id="struct____nv__bfloat16_1908d9ea750b3d3314b65b14f7945b9fe" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::__nv_bfloat16 (  const <a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type " shape="rect">__nv_bfloat16_raw</a>&amp;<span> </span><span class="keyword keyword apiItemName">hr</span> )  [inline] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Constructor from <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type" shape="rect">__nv_bfloat16_raw</a></tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1abe687827cd759728d58f1b2e3aeff5d" id="struct____nv__bfloat16_1abe687827cd759728d58f1b2e3aeff5d" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::__nv_bfloat16 (  ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Constructor by default. </p>
+                           </div>
+                        </dd>
+                     </dl>
+                  </div>
+                  <div class="description">
+                     <h3 class="sectiontitle">Member Functions</h3>
+                     <dl class="description">
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1370511294d353d7badbd52706c899364" id="struct____nv__bfloat16_1370511294d353d7badbd52706c899364" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1370511294d353d7badbd52706c899364" shape="rect">operator __nv_bfloat16_raw</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Type cast to <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type" shape="rect">__nv_bfloat16_raw</a></tt> operator with <tt class="ph tt code">volatile</tt> input. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1b867b31ec9afacd1d0f9633905089d52" id="struct____nv__bfloat16_1b867b31ec9afacd1d0f9633905089d52" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1b867b31ec9afacd1d0f9633905089d52" shape="rect">operator __nv_bfloat16_raw</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Type cast to <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type" shape="rect">__nv_bfloat16_raw</a></tt> operator. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_128aecf4a03fc570c6098a412e9c53768" id="struct____nv__bfloat16_128aecf4a03fc570c6098a412e9c53768" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  constexpr <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_128aecf4a03fc570c6098a412e9c53768" shape="rect">operator bool</a> (  )  const [inherited, inline] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Conversion operator to <tt class="ph tt code">bool</tt> data type. +0 and -0 inputs convert to <tt class="ph tt code">false</tt>. Non-zero inputs convert to <tt class="ph tt code">true</tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1d6ef3005de44ec92963397911df51ae6" id="struct____nv__bfloat16_1d6ef3005de44ec92963397911df51ae6" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1d6ef3005de44ec92963397911df51ae6" shape="rect">operator char</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Conversion operator to an implementation defined <tt class="ph tt code">char</tt> data type. Using round-toward-zero rounding mode.
+                              </p>
+                              <p class="p">Detects signedness of the <tt class="ph tt code">char</tt> type and proceeds accordingly, see further details in signed and unsigned char operators. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_138158207f2787e081d283b530c0fc5ab" id="struct____nv__bfloat16_138158207f2787e081d283b530c0fc5ab" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_138158207f2787e081d283b530c0fc5ab" shape="rect">operator float</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Type cast to <tt class="ph tt code">float</tt> operator. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_10d92aa48c01bdc606eddf276083be5bf" id="struct____nv__bfloat16_10d92aa48c01bdc606eddf276083be5bf" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_10d92aa48c01bdc606eddf276083be5bf" shape="rect">operator int</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Conversion operator to <tt class="ph tt code">int</tt> data type. Using round-toward-zero rounding mode.
+                              </p>
+                              <p class="p">See <a class="xref" href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC_1g4057e928269827b2d63cc0928a68b4e8" title="Convert a nv_bfloat16 to a signed integer in round-towards-zero mode." shape="rect">__bfloat162int_rz( __nv_bfloat16)</a> for further details 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_119e9515bf92418d6affd60f7ed119ce3" id="struct____nv__bfloat16_119e9515bf92418d6affd60f7ed119ce3" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_119e9515bf92418d6affd60f7ed119ce3" shape="rect">operator long</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Conversion operator to <tt class="ph tt code">long</tt> data type. Using round-toward-zero rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1752f298927399bdd37fbbee2821fa932" id="struct____nv__bfloat16_1752f298927399bdd37fbbee2821fa932" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1752f298927399bdd37fbbee2821fa932" shape="rect">operator long long</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Conversion operator to <tt class="ph tt code">long</tt><tt class="ph tt code">long</tt> data type. Using round-toward-zero rounding mode.
+                              </p>
+                              <p class="p">See <a class="xref" href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC_1g39048c108c5103fdd299ca410fe9eb24" title="Convert a nv_bfloat16 to a signed 64-bit integer in round-towards-zero mode." shape="rect">__bfloat162ll_rz( __nv_bfloat16)</a> for further details 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1f4ac8a2a22a465f4f5f714b4ebbf4030" id="struct____nv__bfloat16_1f4ac8a2a22a465f4f5f714b4ebbf4030" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1f4ac8a2a22a465f4f5f714b4ebbf4030" shape="rect">operator short</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Conversion operator to <tt class="ph tt code">short</tt> data type. Using round-toward-zero rounding mode.
+                              </p>
+                              <p class="p">See <a class="xref" href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC_1gf40444a2674b83108a5ec73bea51cc6e" title="Convert a nv_bfloat16 to a signed short integer in round-towards-zero mode." shape="rect">__bfloat162short_rz( __nv_bfloat16)</a> for further details 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_19b6468c5e4b5403284e6459aeb24a2ab" id="struct____nv__bfloat16_19b6468c5e4b5403284e6459aeb24a2ab" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_19b6468c5e4b5403284e6459aeb24a2ab" shape="rect">operator signed char</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Conversion operator to <tt class="ph tt code">signed</tt><tt class="ph tt code">char</tt> data type. Using round-toward-zero rounding mode.
+                              </p>
+                              <p class="p">See <a class="xref" href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC_1g5f75b6c2deb663c8387d24b89ea33dbc" title="Convert a nv_bfloat16 to a signed char in round-towards-zero mode." shape="rect">__bfloat162char_rz( __nv_bfloat16)</a> for further details 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1a97cd9dcd1a59d80f8968bf6218e5385" id="struct____nv__bfloat16_1a97cd9dcd1a59d80f8968bf6218e5385" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1a97cd9dcd1a59d80f8968bf6218e5385" shape="rect">operator unsigned char</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Conversion operator to <tt class="ph tt code">unsigned</tt><tt class="ph tt code">char</tt> data type. Using round-toward-zero rounding mode.
+                              </p>
+                              <p class="p">See <a class="xref" href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC_1ge430542b504a913a3f17c1277c730b83" title="Convert a nv_bfloat16 to an unsigned char in round-towards-zero mode." shape="rect">__bfloat162uchar_rz( __nv_bfloat16)</a> for further details 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_14ee92c29c3d50f621f7605ffb93df030" id="struct____nv__bfloat16_14ee92c29c3d50f621f7605ffb93df030" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_14ee92c29c3d50f621f7605ffb93df030" shape="rect">operator unsigned int</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Conversion operator to <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int</tt> data type. Using round-toward-zero rounding mode.
+                              </p>
+                              <p class="p">See <a class="xref" href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC_1g778a065af5a7ebe24c9ffb0b391b8d45" title="Convert a nv_bfloat16 to an unsigned integer in round-towards-zero mode." shape="rect">__bfloat162uint_rz( __nv_bfloat16)</a> for further details 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1d3c3e7eaf46c2a025b4f6ce7b5ec22d5" id="struct____nv__bfloat16_1d3c3e7eaf46c2a025b4f6ce7b5ec22d5" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1d3c3e7eaf46c2a025b4f6ce7b5ec22d5" shape="rect">operator unsigned long</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Conversion operator to <tt class="ph tt code">unsigned</tt><tt class="ph tt code">long</tt> data type. Using round-toward-zero rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_13ab90f30bdbc1785028c7e8c634aa9a5" id="struct____nv__bfloat16_13ab90f30bdbc1785028c7e8c634aa9a5" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_13ab90f30bdbc1785028c7e8c634aa9a5" shape="rect">operator unsigned long long</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Conversion operator to <tt class="ph tt code">unsigned</tt><tt class="ph tt code">long</tt><tt class="ph tt code">long</tt> data type. Using round-toward-zero rounding mode.
+                              </p>
+                              <p class="p">See <a class="xref" href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC_1g4d132917c281ca78c3646fe00453d002" title="Convert a nv_bfloat16 to an unsigned 64-bit integer in round-towards-zero mode." shape="rect">__bfloat162ull_rz( __nv_bfloat16)</a> for further details 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1f433ce46eb091e17a8744827143799b6" id="struct____nv__bfloat16_1f433ce46eb091e17a8744827143799b6" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1f433ce46eb091e17a8744827143799b6" shape="rect">operator unsigned short</a> (  )  const [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Conversion operator to <tt class="ph tt code">unsigned</tt><tt class="ph tt code">short</tt> data type. Using round-toward-zero rounding mode.
+                              </p>
+                              <p class="p">See <a class="xref" href="group__CUDA__MATH____BFLOAT16__MISC.html#group__CUDA__MATH____BFLOAT16__MISC_1ga6a414341192fedd91f00a64a9ffec66" title="Convert a nv_bfloat16 to an unsigned short integer in round-towards-zero mode." shape="rect">__bfloat162ushort_rz( __nv_bfloat16)</a> for further details 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1d153755a561ca98c81cc1fffcc471f8c" id="struct____nv__bfloat16_1d153755a561ca98c81cc1fffcc471f8c" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1d153755a561ca98c81cc1fffcc471f8c" shape="rect">operator=</a> (  unsigned long long<span> </span><span class="keyword keyword apiItemName">val</span> )  [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Type cast from <tt class="ph tt code">unsigned</tt><tt class="ph tt code">long</tt><tt class="ph tt code">long</tt> assignment operator, using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_15514558a93e501cebea7a09a10c02cdc" id="struct____nv__bfloat16_15514558a93e501cebea7a09a10c02cdc" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_15514558a93e501cebea7a09a10c02cdc" shape="rect">operator=</a> (  long long<span> </span><span class="keyword keyword apiItemName">val</span> )  [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Type cast from <tt class="ph tt code">long</tt><tt class="ph tt code">long</tt> assignment operator, using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_18f80064f3269b6255836983fc6b6affa" id="struct____nv__bfloat16_18f80064f3269b6255836983fc6b6affa" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_18f80064f3269b6255836983fc6b6affa" shape="rect">operator=</a> (  unsigned int <span> </span><span class="keyword keyword apiItemName">val</span> )  [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Type cast from <tt class="ph tt code">unsigned</tt><tt class="ph tt code">int</tt> assignment operator, using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_14bc856724f69d80e53004e6664bf1380" id="struct____nv__bfloat16_14bc856724f69d80e53004e6664bf1380" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_14bc856724f69d80e53004e6664bf1380" shape="rect">operator=</a> (  int <span> </span><span class="keyword keyword apiItemName">val</span> )  [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Type cast from <tt class="ph tt code">int</tt> assignment operator, using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_19738c7614baf2205408c37c625155bf2" id="struct____nv__bfloat16_19738c7614baf2205408c37c625155bf2" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_19738c7614baf2205408c37c625155bf2" shape="rect">operator=</a> (  unsigned short<span> </span><span class="keyword keyword apiItemName">val</span> )  [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Type cast from <tt class="ph tt code">unsigned</tt><tt class="ph tt code">short</tt> assignment operator, using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1a1d7af515b7aae99761f78de9b60edea" id="struct____nv__bfloat16_1a1d7af515b7aae99761f78de9b60edea" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1a1d7af515b7aae99761f78de9b60edea" shape="rect">operator=</a> (  short<span> </span><span class="keyword keyword apiItemName">val</span> )  [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Type cast from <tt class="ph tt code">short</tt> assignment operator, using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_14c3b7e733ee23d761e12f03047aee8da" id="struct____nv__bfloat16_14c3b7e733ee23d761e12f03047aee8da" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_14c3b7e733ee23d761e12f03047aee8da" shape="rect">operator=</a> (  const double <span> </span><span class="keyword keyword apiItemName">f</span> )  [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Type cast to <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt> assignment operator from <tt class="ph tt code">double</tt> input using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_196b7581976214b3774712d05a9951f78" id="struct____nv__bfloat16_196b7581976214b3774712d05a9951f78" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_196b7581976214b3774712d05a9951f78" shape="rect">operator=</a> (  const float <span> </span><span class="keyword keyword apiItemName">f</span> )  [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Type cast to <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt> assignment operator from <tt class="ph tt code">float</tt> input using default round-to-nearest-even rounding mode. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_141b4e5bc6bccce8d61e19c04c993582e" id="struct____nv__bfloat16_141b4e5bc6bccce8d61e19c04c993582e" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_141b4e5bc6bccce8d61e19c04c993582e" shape="rect">operator=</a> (  const <a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type " shape="rect">__nv_bfloat16_raw</a>&amp;<span> </span><span class="keyword keyword apiItemName">hr</span> )  [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Assignment operator from <tt class="ph tt code">volatile</tt><tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type" shape="rect">__nv_bfloat16_raw</a></tt> to <tt class="ph tt code">volatile</tt><tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1340a57f4d07c253345f3601a3e7ba121" id="struct____nv__bfloat16_1340a57f4d07c253345f3601a3e7ba121" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1340a57f4d07c253345f3601a3e7ba121" shape="rect">operator=</a> (  const <a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type " shape="rect">__nv_bfloat16_raw</a>&amp;<span> </span><span class="keyword keyword apiItemName">hr</span> )  [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Assignment operator from <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type" shape="rect">__nv_bfloat16_raw</a></tt> to <tt class="ph tt code">volatile</tt><tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype" shape="rect">__nv_bfloat16</a></tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="struct____nv__bfloat16_1c8f7ba3b3a4808bc5000d09daee4c7ce" id="struct____nv__bfloat16_1c8f7ba3b3a4808bc5000d09daee4c7ce" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>&amp; <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_1c8f7ba3b3a4808bc5000d09daee4c7ce" shape="rect">operator=</a> (  const <a href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type " shape="rect">__nv_bfloat16_raw</a>&amp;<span> </span><span class="keyword keyword apiItemName">hr</span> )  [inherited] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section"></div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Assignment operator from <tt class="ph tt code"><a class="xref" href="struct____nv__bfloat16__raw.html#struct____nv__bfloat16__raw" title="__nv_bfloat16_raw data type" shape="rect">__nv_bfloat16_raw</a></tt>. 
+                              </p>
+                           </div>
+                        </dd>
+                     </dl>
+                  </div>
+                  <div class="description">
+                     <h3 class="sectiontitle">Variables</h3>
+                     <dl class="description">
+                        <dt class="description">
+<a name="struct____nv__bfloat16_147a82a18e5257a4631495e26e946ee1a" id="struct____nv__bfloat16_147a82a18e5257a4631495e26e946ee1a" shape="rect">
+                              <!-- --></a><span>unsigned short  <a href="struct____nv__bfloat16.html#struct____nv__bfloat16" title="nv_bfloat16 datatype " shape="rect">__nv_bfloat16</a>::<a href="struct____nv__bfloat16.html#struct____nv__bfloat16_147a82a18e5257a4631495e26e946ee1a" shape="rect">__x</a> [inherited, protected] </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">
+                              <p> Protected storage variable contains the bits of floating-point data. </p>
+                           </div>
+                        </dd>
+                     </dl>
+                  </div>
+               </div>
+               
+               <hr id="contents-end">
+               
+            </article>
+         </div>
+      </div>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/formatting/common.min.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-write.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-tracker.js"></script>
+      <script type="text/javascript">var switchTo5x=true;</script><script type="text/javascript">stLight.options({publisher: "998dc202-a267-4d8e-bce9-14debadb8d92", doNotHash: false, doNotCopy: false, hashAddressBar: false});</script><script type="text/javascript">_satellite.pageBottom();</script>
+</body>
+</html>

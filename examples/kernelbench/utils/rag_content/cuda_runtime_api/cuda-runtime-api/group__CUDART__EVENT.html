@@ -1,0 +1,1008 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-us" xml:lang="en-us">
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <meta name="copyright" content="(C) Copyright 2005">
+      <meta name="DC.rights.owner" content="(C) Copyright 2005">
+      <meta name="DC.Type" content="cppModule">
+      <meta name="DC.Title" content="Event Management">
+      <meta name="abstract" content="">
+      <meta name="description" content="">
+      <meta name="DC.Format" content="XHTML">
+      <meta name="DC.Identifier" content="group__CUDART__EVENT">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/commonltr.css">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/site.css">
+      <title>CUDA Runtime API :: CUDA Toolkit Documentation</title>
+      <!--[if lt IE 9]>
+      <script src="../common/formatting/html5shiv-printshiv.min.js"></script>
+      <![endif]-->
+      <script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-svg.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.ba-hashchange.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.scrollintoview.min.js"></script>
+      <script type="text/javascript" charset="utf-8" src="../common/scripts/geoip/geoip.js"></script>
+      <script type="text/javascript" src="../search/htmlFileList.js"></script>
+      <script type="text/javascript" src="../search/htmlFileInfoList.js"></script>
+      <script type="text/javascript" src="../search/nwSearchFnt.min.js"></script>
+      <script type="text/javascript" src="../search/stemmers/en_stemmer.min.js"></script>
+      <script type="text/javascript" src="../search/index-1.js"></script>
+      <script type="text/javascript" src="../search/index-2.js"></script>
+      <script type="text/javascript" src="../search/index-3.js"></script>
+      <link rel="canonical" href="https://docs.nvidia.com/cuda/cuda-runtime-api/index.html">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/qwcode.highlight.css">
+   </head>
+   <body>
+      
+      <header id="header"><span id="company">NVIDIA</span><span id="site-title">CUDA Toolkit Documentation</span><form id="search" method="get" action="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-runtime-api/search">
+            <input type="text" name="search-text"><fieldset id="search-location">
+               <legend>Search In:</legend>
+               <label><input type="radio" name="search-type" value="site">Entire Site</label>
+               <label><input type="radio" name="search-type" value="document">Just This Document</label>
+</fieldset>
+            <button type="reset">clear search</button>
+            <button id="submit" type="submit">search</button>
+</form>
+      </header>
+      <div id="site-content">
+         <nav id="site-nav">
+            <div class="category closed"><a href="https://docs.nvidia.com/cuda/archive/12.4.0/index.html" title="The root of the site.">CUDA Toolkit 
+                  
+                  
+                  v12.4.0</a></div>
+            <div class="category"><a href="index.html" title="CUDA Runtime API">CUDA Runtime API</a></div>
+            <ul>
+               <li>
+                  <div class="section-link"><a href="driver-vs-runtime-api.html#driver-vs-runtime-api">1. Difference between the driver and runtime APIs </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="api-sync-behavior.html#api-sync-behavior">2. API synchronization behavior </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="stream-sync-behavior.html#stream-sync-behavior">3. Stream synchronization behavior</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="graphs-thread-safety.html#graphs-thread-safety">4. Graph object thread safety</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="version-mixing-rules.html#version-mixing-rules">5. Rules for version mixing </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="modules.html#modules">6. Modules</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DEVICE.html#group__CUDART__DEVICE">6.1. Device Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DEVICE__DEPRECATED.html#group__CUDART__DEVICE__DEPRECATED">6.2. Device Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__THREAD__DEPRECATED.html#group__CUDART__THREAD__DEPRECATED">6.3. Thread Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__ERROR.html#group__CUDART__ERROR">6.4. Error Handling</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__STREAM.html#group__CUDART__STREAM">6.5. Stream Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT">6.6. Event Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXTRES__INTEROP.html#group__CUDART__EXTRES__INTEROP">6.7. External Resource Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION">6.8. Execution Control</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXECUTION__DEPRECATED.html#group__CUDART__EXECUTION__DEPRECATED">6.9. Execution Control [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OCCUPANCY.html#group__CUDART__OCCUPANCY">6.10. Occupancy</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY.html#group__CUDART__MEMORY">6.11. Memory Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY__DEPRECATED.html#group__CUDART__MEMORY__DEPRECATED">6.12. Memory Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY__POOLS.html#group__CUDART__MEMORY__POOLS">6.13. Stream Ordered Memory Allocator</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__UNIFIED.html#group__CUDART__UNIFIED">6.14. Unified Addressing</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__PEER.html#group__CUDART__PEER">6.15. Peer Device Memory Access</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OPENGL.html#group__CUDART__OPENGL">6.16. OpenGL Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OPENGL__DEPRECATED.html#group__CUDART__OPENGL__DEPRECATED">6.17. OpenGL Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D9.html#group__CUDART__D3D9">6.18. Direct3D 9 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED">6.19. Direct3D 9 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D10.html#group__CUDART__D3D10">6.20. Direct3D 10 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D10__DEPRECATED.html#group__CUDART__D3D10__DEPRECATED">6.21. Direct3D 10 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D11.html#group__CUDART__D3D11">6.22. Direct3D 11 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D11__DEPRECATED.html#group__CUDART__D3D11__DEPRECATED">6.23. Direct3D 11 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__VDPAU.html#group__CUDART__VDPAU">6.24. VDPAU Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EGL.html#group__CUDART__EGL">6.25. EGL Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__INTEROP.html#group__CUDART__INTEROP">6.26. Graphics Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__TEXTURE__OBJECT.html#group__CUDART__TEXTURE__OBJECT">6.27. Texture Object Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__SURFACE__OBJECT.html#group__CUDART__SURFACE__OBJECT">6.28. Surface Object Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART____VERSION.html#group__CUDART____VERSION">6.29. Version Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__GRAPH.html#group__CUDART__GRAPH">6.30. Graph Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DRIVER__ENTRY__POINT.html#group__CUDART__DRIVER__ENTRY__POINT">6.31. Driver Entry Point Access</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL">6.32. C++ API Routines</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DRIVER.html#group__CUDART__DRIVER">6.33. Interactions with the CUDA Driver API</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__PROFILER.html#group__CUDART__PROFILER">6.34. Profiler Control</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__TYPES.html#group__CUDART__TYPES">6.35. Data types used by CUDA Runtime</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="annotated.html#annotated">7. Data Structures</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="class____cudaOccupancyB2DHelper.html#class____cudaOccupancyB2DHelper">7.1. __cudaOccupancyB2DHelper</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaAccessPolicyWindow.html#structcudaAccessPolicyWindow">7.2. cudaAccessPolicyWindow</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaArrayMemoryRequirements.html#structcudaArrayMemoryRequirements">7.3. cudaArrayMemoryRequirements</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaArraySparseProperties.html#structcudaArraySparseProperties">7.4. cudaArraySparseProperties</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaAsyncNotificationInfo__t.html#structcudaAsyncNotificationInfo__t">7.5. cudaAsyncNotificationInfo_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaChannelFormatDesc.html#structcudaChannelFormatDesc">7.6. cudaChannelFormatDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaChildGraphNodeParams.html#structcudaChildGraphNodeParams">7.7. cudaChildGraphNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaConditionalNodeParams.html#structcudaConditionalNodeParams">7.8. cudaConditionalNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaDeviceProp.html#structcudaDeviceProp">7.9. cudaDeviceProp</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEglFrame.html#structcudaEglFrame">7.10. cudaEglFrame</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEglPlaneDesc.html#structcudaEglPlaneDesc">7.11. cudaEglPlaneDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEventRecordNodeParams.html#structcudaEventRecordNodeParams">7.12. cudaEventRecordNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEventWaitNodeParams.html#structcudaEventWaitNodeParams">7.13. cudaEventWaitNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExtent.html#structcudaExtent">7.14. cudaExtent</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryBufferDesc.html#structcudaExternalMemoryBufferDesc">7.15. cudaExternalMemoryBufferDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryHandleDesc.html#structcudaExternalMemoryHandleDesc">7.16. cudaExternalMemoryHandleDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryMipmappedArrayDesc.html#structcudaExternalMemoryMipmappedArrayDesc">7.17. cudaExternalMemoryMipmappedArrayDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreHandleDesc.html#structcudaExternalSemaphoreHandleDesc">7.18. cudaExternalSemaphoreHandleDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalNodeParams.html#structcudaExternalSemaphoreSignalNodeParams">7.19. cudaExternalSemaphoreSignalNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalNodeParamsV2.html#structcudaExternalSemaphoreSignalNodeParamsV2">7.20. cudaExternalSemaphoreSignalNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalParams.html#structcudaExternalSemaphoreSignalParams">7.21. cudaExternalSemaphoreSignalParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalParams__v1.html#structcudaExternalSemaphoreSignalParams__v1">7.22. cudaExternalSemaphoreSignalParams_v1</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitNodeParams.html#structcudaExternalSemaphoreWaitNodeParams">7.23. cudaExternalSemaphoreWaitNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitNodeParamsV2.html#structcudaExternalSemaphoreWaitNodeParamsV2">7.24. cudaExternalSemaphoreWaitNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitParams.html#structcudaExternalSemaphoreWaitParams">7.25. cudaExternalSemaphoreWaitParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitParams__v1.html#structcudaExternalSemaphoreWaitParams__v1">7.26. cudaExternalSemaphoreWaitParams_v1</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaFuncAttributes.html#structcudaFuncAttributes">7.27. cudaFuncAttributes</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphEdgeData.html#structcudaGraphEdgeData">7.28. cudaGraphEdgeData</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphExecUpdateResultInfo.html#structcudaGraphExecUpdateResultInfo">7.29. cudaGraphExecUpdateResultInfo</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphInstantiateParams.html#structcudaGraphInstantiateParams">7.30. cudaGraphInstantiateParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphKernelNodeUpdate.html#structcudaGraphKernelNodeUpdate">7.31. cudaGraphKernelNodeUpdate</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphNodeParams.html#structcudaGraphNodeParams">7.32. cudaGraphNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaHostNodeParams.html#structcudaHostNodeParams">7.33. cudaHostNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaHostNodeParamsV2.html#structcudaHostNodeParamsV2">7.34. cudaHostNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaIpcEventHandle__t.html#structcudaIpcEventHandle__t">7.35. cudaIpcEventHandle_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaIpcMemHandle__t.html#structcudaIpcMemHandle__t">7.36. cudaIpcMemHandle_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaKernelNodeParams.html#structcudaKernelNodeParams">7.37. cudaKernelNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaKernelNodeParamsV2.html#structcudaKernelNodeParamsV2">7.38. cudaKernelNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchAttribute.html#structcudaLaunchAttribute">7.39. cudaLaunchAttribute</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="unioncudaLaunchAttributeValue.html#unioncudaLaunchAttributeValue">7.40. cudaLaunchAttributeValue</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchConfig__t.html#structcudaLaunchConfig__t">7.41. cudaLaunchConfig_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchMemSyncDomainMap.html#structcudaLaunchMemSyncDomainMap">7.42. cudaLaunchMemSyncDomainMap</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchParams.html#structcudaLaunchParams">7.43. cudaLaunchParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAccessDesc.html#structcudaMemAccessDesc">7.44. cudaMemAccessDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAllocNodeParams.html#structcudaMemAllocNodeParams">7.45. cudaMemAllocNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAllocNodeParamsV2.html#structcudaMemAllocNodeParamsV2">7.46. cudaMemAllocNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpy3DParms.html#structcudaMemcpy3DParms">7.47. cudaMemcpy3DParms</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpy3DPeerParms.html#structcudaMemcpy3DPeerParms">7.48. cudaMemcpy3DPeerParms</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpyNodeParams.html#structcudaMemcpyNodeParams">7.49. cudaMemcpyNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemFreeNodeParams.html#structcudaMemFreeNodeParams">7.50. cudaMemFreeNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemLocation.html#structcudaMemLocation">7.51. cudaMemLocation</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemPoolProps.html#structcudaMemPoolProps">7.52. cudaMemPoolProps</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemPoolPtrExportData.html#structcudaMemPoolPtrExportData">7.53. cudaMemPoolPtrExportData</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemsetParams.html#structcudaMemsetParams">7.54. cudaMemsetParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemsetParamsV2.html#structcudaMemsetParamsV2">7.55. cudaMemsetParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPitchedPtr.html#structcudaPitchedPtr">7.56. cudaPitchedPtr</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPointerAttributes.html#structcudaPointerAttributes">7.57. cudaPointerAttributes</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPos.html#structcudaPos">7.58. cudaPos</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaResourceDesc.html#structcudaResourceDesc">7.59. cudaResourceDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaResourceViewDesc.html#structcudaResourceViewDesc">7.60. cudaResourceViewDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaTextureDesc.html#structcudaTextureDesc">7.61. cudaTextureDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structCUuuid__st.html#structCUuuid__st">7.62. CUuuid_st</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="functions.html#functions">8. Data Fields</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="deprecated.html#deprecated">9. Deprecated List</a></div>
+               </li>
+            </ul>
+         </nav>
+         <div id="resize-nav"></div>
+         <nav id="search-results">
+            <h2>Search Results</h2>
+            <ol></ol>
+         </nav>
+         
+         <div id="contents-container">
+            <div id="breadcrumbs-container">
+               <div id="breadcrumbs">
+<a href="group__CUDART__STREAM.html" shape="rect">&lt; Previous</a> | <a href="group__CUDART__EXTRES__INTEROP.html" shape="rect">Next &gt;</a>
+</div>
+               <div id="release-info">CUDA Runtime API
+                  (<a href="https://docs.nvidia.com/cuda/archive/12.4.0/pdf/CUDA_Runtime_API.pdf">PDF</a>)
+                  -
+                   
+                  
+                  
+                  v12.4.0
+                  (<a href="https://developer.nvidia.com/cuda-toolkit-archive">older</a>)
+                  -
+                  Last updated March 5, 2024
+                  -
+                  <a href="mailto:CUDAIssues@nvidia.com?subject=CUDA%20Toolkit%20Documentation%20Feedback:%20CUDA%20Runtime%20API">Send Feedback</a>
+</div>
+            </div>
+            <article id="contents">
+               <div class="topic reference apiRef apiPackage cppModule" id="group__CUDART__EVENT">
+<a name="group__CUDART__EVENT" shape="rect">
+                     <!-- --></a><h2 class="topictitle2 cppModule">6.6. Event Management</h2>
+                  <div class="section">
+                     <p>This section describes the event management functions of the CUDA runtime application programming interface. </p>
+                  </div>
+                  <h3 class="fake_sectiontitle member_header">Functions</h3>
+                  <dl class="members">
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7c581e3613a2110ba4d4e7fd5c7da418" shape="rect">cudaEventCreate</a> (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a>*<span> </span><span class="keyword keyword apiItemName">event</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Creates an event object. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name_long_type"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7b317e07ff385d85aa656204b971a042" shape="rect">cudaEventCreateWithFlags</a> (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a>*<span> </span><span class="keyword keyword apiItemName">event</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">flags</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Creates an event object with the specified flags. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name_long_type"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2cb6baa0830a1cd0bd957bfd8705045b" shape="rect">cudaEventDestroy</a> (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">event</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Destroys an event object. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g40159125411db92c835edb46a0989cd6" shape="rect">cudaEventElapsedTime</a> (  float*<span> </span><span class="keyword keyword apiItemName">ms</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">start</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">end</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Computes the elapsed time between events. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" shape="rect">cudaEventQuery</a> (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">event</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Queries an event's status. </span>
+</dd>
+                     <dt>
+<span class="member_long_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​
+                           <span class="keyword keyword apiItemName">__device__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name_long_type"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" shape="rect">cudaEventRecord</a> (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">event</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" title="" shape="rect">cudaStream_t</a><span> </span><span class="keyword keyword apiItemName">stream</span> = <span class="ph ph apiData">0</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Records an event. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g186dc8db3fea7d354a0aa708aa04f62f" shape="rect">cudaEventRecordWithFlags</a> (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">event</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" title="" shape="rect">cudaStream_t</a><span> </span><span class="keyword keyword apiItemName">stream</span> = <span class="ph ph apiData">0</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">flags</span> = <span class="ph ph apiData">0</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Records an event. </span>
+</dd>
+                     <dt>
+<span class="member_type"><span class="keyword keyword apiItemName">__host__</span>
+                           ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> </span><span class="member_name"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g949aa42b30ae9e622f6ba0787129ff22" shape="rect">cudaEventSynchronize</a> (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">event</span> ) </span>
+</dt>
+                     <dd class="shortdesc">
+<span></span><span class="desc">Waits for an event to complete. </span>
+</dd>
+                  </dl>
+                  <div class="description">
+                     <h3 class="sectiontitle">Functions</h3>
+                     <dl class="description">
+                        <dt class="description">
+<a name="group__CUDART__EVENT_1g7c581e3613a2110ba4d4e7fd5c7da418" id="group__CUDART__EVENT_1g7c581e3613a2110ba4d4e7fd5c7da418" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaEventCreate (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a>*<span> </span><span class="keyword keyword apiItemName">event</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Creates an event object. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">event</span></tt></dt>
+                                 <dd>- Newly created event</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038099def426efea2b2366d8d7ad09f974a" shape="rect">cudaErrorLaunchFailure</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f210f50ae7f17f655e0504929606add9" shape="rect">cudaErrorMemoryAllocation</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Creates an event object for the current device using <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g6f8811acffcc133b5e4a50de6646d18e" shape="rect">cudaEventDefault</a>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL_1g4b5fdb19d7fb5f6f8862559f9279f6c3" title="[C++ API] Creates an event object with the specified flags" shape="rect">cudaEventCreate ( C++ API)</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7b317e07ff385d85aa656204b971a042" title="Creates an event object with the specified flags." shape="rect">cudaEventCreateWithFlags</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g949aa42b30ae9e622f6ba0787129ff22" title="Waits for an event to complete." shape="rect">cudaEventSynchronize</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2cb6baa0830a1cd0bd957bfd8705045b" title="Destroys an event object." shape="rect">cudaEventDestroy</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g40159125411db92c835edb46a0989cd6" title="Computes the elapsed time between events." shape="rect">cudaEventElapsedTime</a>, <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g7840e3984799941a61839de40413d1d9" title="Make a compute stream wait on an event." shape="rect">cudaStreamWaitEvent</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EVENT.html#group__CUDA__EVENT_1g450687e75f3ff992fe01662a43d9d3db" target="_blank" shape="rect">cuEventCreate</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EVENT_1g7b317e07ff385d85aa656204b971a042" id="group__CUDART__EVENT_1g7b317e07ff385d85aa656204b971a042" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaEventCreateWithFlags (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a>*<span> </span><span class="keyword keyword apiItemName">event</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">flags</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Creates an event object with the specified flags. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">event</span></tt></dt>
+                                 <dd>- Newly created event </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">flags</span></tt></dt>
+                                 <dd>- Flags for new event</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038099def426efea2b2366d8d7ad09f974a" shape="rect">cudaErrorLaunchFailure</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f210f50ae7f17f655e0504929606add9" shape="rect">cudaErrorMemoryAllocation</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Creates an event object for the current device with the specified flags. Valid flags include:
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g6f8811acffcc133b5e4a50de6646d18e" shape="rect">cudaEventDefault</a>: Default event creation flag.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g26509a522be9d449aa7c8c279612452d" shape="rect">cudaEventBlockingSync</a>: Specifies that event should use blocking synchronization. A host thread that uses <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g949aa42b30ae9e622f6ba0787129ff22" title="Waits for an event to complete." shape="rect">cudaEventSynchronize()</a> to wait on an event created with this flag will block until the event actually completes.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ga5d3eff7c3623e2be533968d9cc1ee7e" shape="rect">cudaEventDisableTiming</a>: Specifies that the created event does not need to record timing data. Events created with this flag specified and the <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g26509a522be9d449aa7c8c279612452d" shape="rect">cudaEventBlockingSync</a> flag not specified will provide the best performance when used with <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g7840e3984799941a61839de40413d1d9" title="Make a compute stream wait on an event." shape="rect">cudaStreamWaitEvent()</a> and <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery()</a>.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g49ec9cd742f8a3f6fde4ee72a66326f6" shape="rect">cudaEventInterprocess</a>: Specifies that the created event may be used as an interprocess event by <a class="xref" href="group__CUDART__DEVICE.html#group__CUDART__DEVICE_1g89a3abe1e9a11d08c665176669109784" title="Gets an interprocess handle for a previously allocated event." shape="rect">cudaIpcGetEventHandle()</a>. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g49ec9cd742f8a3f6fde4ee72a66326f6" shape="rect">cudaEventInterprocess</a> must be specified along with <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ga5d3eff7c3623e2be533968d9cc1ee7e" shape="rect">cudaEventDisableTiming</a>.
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7c581e3613a2110ba4d4e7fd5c7da418" title="Creates an event object." shape="rect">cudaEventCreate ( C API)</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g949aa42b30ae9e622f6ba0787129ff22" title="Waits for an event to complete." shape="rect">cudaEventSynchronize</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2cb6baa0830a1cd0bd957bfd8705045b" title="Destroys an event object." shape="rect">cudaEventDestroy</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g40159125411db92c835edb46a0989cd6" title="Computes the elapsed time between events." shape="rect">cudaEventElapsedTime</a>, <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g7840e3984799941a61839de40413d1d9" title="Make a compute stream wait on an event." shape="rect">cudaStreamWaitEvent</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EVENT.html#group__CUDA__EVENT_1g450687e75f3ff992fe01662a43d9d3db" target="_blank" shape="rect">cuEventCreate</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EVENT_1g2cb6baa0830a1cd0bd957bfd8705045b" id="group__CUDART__EVENT_1g2cb6baa0830a1cd0bd957bfd8705045b" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaEventDestroy (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">event</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Destroys an event object. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">event</span></tt></dt>
+                                 <dd>- Event to destroy</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038099def426efea2b2366d8d7ad09f974a" shape="rect">cudaErrorLaunchFailure</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Destroys the event specified by <tt class="ph tt code">event</tt>.
+                              </p>
+                              <p class="p">An event may be destroyed before it is complete (i.e., while <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery()</a> would return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038285d0c852ab65b8925505e1065563f6d" shape="rect">cudaErrorNotReady</a>). In this case, the call does not block on completion of the event, and any associated resources will automatically be released
+                                 asynchronously at completion.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Use of the handle after this call is undefined behavior. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Returns <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> in the event of being passed NULL as the input event.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7c581e3613a2110ba4d4e7fd5c7da418" title="Creates an event object." shape="rect">cudaEventCreate ( C API)</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7b317e07ff385d85aa656204b971a042" title="Creates an event object with the specified flags." shape="rect">cudaEventCreateWithFlags</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g949aa42b30ae9e622f6ba0787129ff22" title="Waits for an event to complete." shape="rect">cudaEventSynchronize</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g40159125411db92c835edb46a0989cd6" title="Computes the elapsed time between events." shape="rect">cudaEventElapsedTime</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EVENT.html#group__CUDA__EVENT_1g593ec73a8ec5a5fc031311d3e4dca1ef" target="_blank" shape="rect">cuEventDestroy</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EVENT_1g40159125411db92c835edb46a0989cd6" id="group__CUDART__EVENT_1g40159125411db92c835edb46a0989cd6" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaEventElapsedTime (  float*<span> </span><span class="keyword keyword apiItemName">ms</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">start</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">end</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Computes the elapsed time between events. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">ms</span></tt></dt>
+                                 <dd>- Time between <tt class="ph tt code">start</tt> and <tt class="ph tt code">end</tt> in ms 
+                                 </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">start</span></tt></dt>
+                                 <dd>- Starting event </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">end</span></tt></dt>
+                                 <dd>- Ending event</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038285d0c852ab65b8925505e1065563f6d" shape="rect">cudaErrorNotReady</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038099def426efea2b2366d8d7ad09f974a" shape="rect">cudaErrorLaunchFailure</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00382e491daacef266c7b3e3c1e140a6133c" shape="rect">cudaErrorUnknown</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Computes the elapsed time between two events (in milliseconds with a resolution of around 0.5 microseconds).</p>
+                              <p class="p">If either event was last recorded in a non-NULL stream, the resulting time may be greater than expected (even if both used
+                                 the same stream handle). This happens because the <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord()</a> operation takes place asynchronously and there is no guarantee that the measured latency is actually just between the two
+                                 events. Any number of other different stream operations could execute in between the two measured events, thus altering the
+                                 timing in a significant way.
+                              </p>
+                              <p class="p">If <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord()</a> has not been called on either event, then <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> is returned. If <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord()</a> has been called on both events but one or both of them has not yet been completed (that is, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery()</a> would return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038285d0c852ab65b8925505e1065563f6d" shape="rect">cudaErrorNotReady</a> on at least one of the events), <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038285d0c852ab65b8925505e1065563f6d" shape="rect">cudaErrorNotReady</a> is returned. If either event was created with the <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ga5d3eff7c3623e2be533968d9cc1ee7e" shape="rect">cudaEventDisableTiming</a> flag, then this function will return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Returns <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> in the event of being passed NULL as the input event.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7c581e3613a2110ba4d4e7fd5c7da418" title="Creates an event object." shape="rect">cudaEventCreate ( C API)</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7b317e07ff385d85aa656204b971a042" title="Creates an event object with the specified flags." shape="rect">cudaEventCreateWithFlags</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g949aa42b30ae9e622f6ba0787129ff22" title="Waits for an event to complete." shape="rect">cudaEventSynchronize</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2cb6baa0830a1cd0bd957bfd8705045b" title="Destroys an event object." shape="rect">cudaEventDestroy</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EVENT.html#group__CUDA__EVENT_1gdfb1178807353bbcaa9e245da497cf97" target="_blank" shape="rect">cuEventElapsedTime</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" id="group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaEventQuery (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">event</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Queries an event's status. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">event</span></tt></dt>
+                                 <dd>- Event to query</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038285d0c852ab65b8925505e1065563f6d" shape="rect">cudaErrorNotReady</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038099def426efea2b2366d8d7ad09f974a" shape="rect">cudaErrorLaunchFailure</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Queries the status of all work currently captured by <tt class="ph tt code">event</tt>. See <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord()</a> for details on what is captured by an event.
+                              </p>
+                              <p class="p">Returns <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a> if all captured work has been completed, or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038285d0c852ab65b8925505e1065563f6d" shape="rect">cudaErrorNotReady</a> if any captured work is incomplete.
+                              </p>
+                              <p class="p">For the purposes of Unified Memory, a return value of <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a> is equivalent to having called <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g949aa42b30ae9e622f6ba0787129ff22" title="Waits for an event to complete." shape="rect">cudaEventSynchronize()</a>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Returns <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> in the event of being passed NULL as the input event.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7c581e3613a2110ba4d4e7fd5c7da418" title="Creates an event object." shape="rect">cudaEventCreate ( C API)</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7b317e07ff385d85aa656204b971a042" title="Creates an event object with the specified flags." shape="rect">cudaEventCreateWithFlags</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g949aa42b30ae9e622f6ba0787129ff22" title="Waits for an event to complete." shape="rect">cudaEventSynchronize</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2cb6baa0830a1cd0bd957bfd8705045b" title="Destroys an event object." shape="rect">cudaEventDestroy</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g40159125411db92c835edb46a0989cd6" title="Computes the elapsed time between events." shape="rect">cudaEventElapsedTime</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EVENT.html#group__CUDA__EVENT_1g6f0704d755066b0ee705749ae911deef" target="_blank" shape="rect">cuEventQuery</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" id="group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​
+                              <span class="keyword keyword apiItemName">__device__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaEventRecord (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">event</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" title="" shape="rect">cudaStream_t</a><span> </span><span class="keyword keyword apiItemName">stream</span> = <span class="ph ph apiData">0</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Records an event. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">event</span></tt></dt>
+                                 <dd>- Event to record </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">stream</span></tt></dt>
+                                 <dd>- Stream in which to record event</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038099def426efea2b2366d8d7ad09f974a" shape="rect">cudaErrorLaunchFailure</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Captures in <tt class="ph tt code">event</tt> the contents of <tt class="ph tt code">stream</tt> at the time of this call. <tt class="ph tt code">event</tt> and <tt class="ph tt code">stream</tt> must be on the same CUDA context. Calls such as <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery()</a> or <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g7840e3984799941a61839de40413d1d9" title="Make a compute stream wait on an event." shape="rect">cudaStreamWaitEvent()</a> will then examine or wait for completion of the work that was captured. Uses of <tt class="ph tt code">stream</tt> after this call do not modify <tt class="ph tt code">event</tt>. See note on default stream behavior for what is captured in the default case.
+                              </p>
+                              <p class="p"><a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord()</a> can be called multiple times on the same event and will overwrite the previously captured state. Other APIs such as <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g7840e3984799941a61839de40413d1d9" title="Make a compute stream wait on an event." shape="rect">cudaStreamWaitEvent()</a> use the most recently captured state at the time of the API call, and are not affected by later calls to <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord()</a>. Before the first call to <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord()</a>, an event represents an empty set of work, so for example <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery()</a> would return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">This function uses standard  <a class="xref xmlonly" href="stream-sync-behavior.html#stream-sync-behavior__default-stream" shape="rect">default stream</a> semantics. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Returns <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> in the event of being passed NULL as the input event.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7c581e3613a2110ba4d4e7fd5c7da418" title="Creates an event object." shape="rect">cudaEventCreate ( C API)</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7b317e07ff385d85aa656204b971a042" title="Creates an event object with the specified flags." shape="rect">cudaEventCreateWithFlags</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g949aa42b30ae9e622f6ba0787129ff22" title="Waits for an event to complete." shape="rect">cudaEventSynchronize</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2cb6baa0830a1cd0bd957bfd8705045b" title="Destroys an event object." shape="rect">cudaEventDestroy</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g40159125411db92c835edb46a0989cd6" title="Computes the elapsed time between events." shape="rect">cudaEventElapsedTime</a>, <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g7840e3984799941a61839de40413d1d9" title="Make a compute stream wait on an event." shape="rect">cudaStreamWaitEvent</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g186dc8db3fea7d354a0aa708aa04f62f" title="Records an event." shape="rect">cudaEventRecordWithFlags</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EVENT.html#group__CUDA__EVENT_1g95424d3be52c4eb95d83861b70fb89d1" target="_blank" shape="rect">cuEventRecord</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EVENT_1g186dc8db3fea7d354a0aa708aa04f62f" id="group__CUDART__EVENT_1g186dc8db3fea7d354a0aa708aa04f62f" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaEventRecordWithFlags (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">event</span>, <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1ge15d9c8b7a240312b533d6122558085a" title="" shape="rect">cudaStream_t</a><span> </span><span class="keyword keyword apiItemName">stream</span> = <span class="ph ph apiData">0</span>, unsigned int <span> </span><span class="keyword keyword apiItemName">flags</span> = <span class="ph ph apiData">0</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Records an event. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">event</span></tt></dt>
+                                 <dd>- Event to record </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">stream</span></tt></dt>
+                                 <dd>- Stream in which to record event </dd>
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">flags</span></tt></dt>
+                                 <dd>- Parameters for the operation(See above)</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038099def426efea2b2366d8d7ad09f974a" shape="rect">cudaErrorLaunchFailure</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Captures in <tt class="ph tt code">event</tt> the contents of <tt class="ph tt code">stream</tt> at the time of this call. <tt class="ph tt code">event</tt> and <tt class="ph tt code">stream</tt> must be on the same CUDA context. Calls such as <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery()</a> or <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g7840e3984799941a61839de40413d1d9" title="Make a compute stream wait on an event." shape="rect">cudaStreamWaitEvent()</a> will then examine or wait for completion of the work that was captured. Uses of <tt class="ph tt code">stream</tt> after this call do not modify <tt class="ph tt code">event</tt>. See note on default stream behavior for what is captured in the default case.
+                              </p>
+                              <p class="p"><a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g186dc8db3fea7d354a0aa708aa04f62f" title="Records an event." shape="rect">cudaEventRecordWithFlags()</a> can be called multiple times on the same event and will overwrite the previously captured state. Other APIs such as <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g7840e3984799941a61839de40413d1d9" title="Make a compute stream wait on an event." shape="rect">cudaStreamWaitEvent()</a> use the most recently captured state at the time of the API call, and are not affected by later calls to <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g186dc8db3fea7d354a0aa708aa04f62f" title="Records an event." shape="rect">cudaEventRecordWithFlags()</a>. Before the first call to <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g186dc8db3fea7d354a0aa708aa04f62f" title="Records an event." shape="rect">cudaEventRecordWithFlags()</a>, an event represents an empty set of work, so for example <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery()</a> would return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>.
+                              </p>
+                              <p class="p">flags include:
+                                 </p>
+<ul class="ul">
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gd25056e7a9182a50aa4bc0ada57ca192" shape="rect">cudaEventRecordDefault</a>: Default event creation flag.
+                                       </p>
+                                    </li>
+                                    <li class="li">
+                                       <p class="p"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g3457b81d1d32c6a00f6132fbc2693d47" shape="rect">cudaEventRecordExternal</a>: Event is captured in the graph as an external event node when performing stream capture.
+                                       </p>
+                                    </li>
+                                 </ul>
+                              
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">This function uses standard  <a class="xref xmlonly" href="stream-sync-behavior.html#stream-sync-behavior__default-stream" shape="rect">default stream</a> semantics. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Returns <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> in the event of being passed NULL as the input event.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7c581e3613a2110ba4d4e7fd5c7da418" title="Creates an event object." shape="rect">cudaEventCreate ( C API)</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7b317e07ff385d85aa656204b971a042" title="Creates an event object with the specified flags." shape="rect">cudaEventCreateWithFlags</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g949aa42b30ae9e622f6ba0787129ff22" title="Waits for an event to complete." shape="rect">cudaEventSynchronize</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2cb6baa0830a1cd0bd957bfd8705045b" title="Destroys an event object." shape="rect">cudaEventDestroy</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g40159125411db92c835edb46a0989cd6" title="Computes the elapsed time between events." shape="rect">cudaEventElapsedTime</a>, <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g7840e3984799941a61839de40413d1d9" title="Make a compute stream wait on an event." shape="rect">cudaStreamWaitEvent</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EVENT.html#group__CUDA__EVENT_1g95424d3be52c4eb95d83861b70fb89d1" target="_blank" shape="rect">cuEventRecord</a>, 
+                              </p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                        <dt class="description">
+<a name="group__CUDART__EVENT_1g949aa42b30ae9e622f6ba0787129ff22" id="group__CUDART__EVENT_1g949aa42b30ae9e622f6ba0787129ff22" shape="rect">
+                              <!-- --></a><span><span class="keyword keyword apiItemName">__host__</span>
+                              ​<a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gf599e5b8b829ce7db0f5216928f6ecb6" title="" shape="rect">cudaError_t</a> cudaEventSynchronize (  <a href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gea2f543a9fc0e52fe4ae712920fd1247" title="" shape="rect">cudaEvent_t</a><span> </span><span class="keyword keyword apiItemName">event</span> ) </span>
+</dt>
+                        <dd class="description">
+                           <div class="section">Waits for an event to complete. </div>
+                           <div class="section">
+                              <h6 class="parameter_header">
+                                 Parameters
+                                 
+                              </h6>
+                              <dl class="table-display-params">
+                                 <dt><tt class="code"><span class="keyword keyword apiItemName">event</span></tt></dt>
+                                 <dd>- Event to wait for</dd>
+                              </dl>
+                           </div>
+                           <div class="section">
+                              <h6 class="return_header">Returns</h6>
+                              <p class="return"><a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e355f04607d824883b4a50662830d591" shape="rect">cudaSuccess</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e00383e8aef5398ee38e28ed41e357b48917c" shape="rect">cudaErrorInvalidValue</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038099def426efea2b2366d8d7ad09f974a" shape="rect">cudaErrorLaunchFailure</a></p>
+                           </div>
+                           <div class="section">
+                              <h6 class="description_header">Description</h6>
+                              <p>Waits until the completion of all work currently captured in <tt class="ph tt code">event</tt>. See <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord()</a> for details on what is captured by an event.
+                              </p>
+                              <p class="p">Waiting for an event that was created with the <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g26509a522be9d449aa7c8c279612452d" shape="rect">cudaEventBlockingSync</a> flag will cause the calling CPU thread to block until the event has been completed by the device. If the <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1g26509a522be9d449aa7c8c279612452d" shape="rect">cudaEventBlockingSync</a> flag has not been set, then the CPU thread will busy-wait until the event has been completed by the device.
+                              </p>
+                              <p class="p"></p>
+                              <p class="p"></p>
+                              <p class="p">
+                                 </p>
+<div class="note note">
+<span class="notetitle">Note:</span><ul class="ul">
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return error codes from previous, asynchronous launches. </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that this function may also return <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038ce7993a88ecf2c57b8102d55d997a18c" shape="rect">cudaErrorInitializationError</a>, <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038f5e52d1774934b77ba55d2aa2c063067" shape="rect">cudaErrorInsufficientDriver</a> or <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038e942e4cbbd2bef6e92e293253f055613" shape="rect">cudaErrorNoDevice</a> if this call tries to initialize internal CUDA RT state. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Note that as specified by <a class="xref" href="group__CUDART__STREAM.html#group__CUDART__STREAM_1g74aa9f4b1c2f12d994bf13876a5a2498" title="Add a callback to a compute stream." shape="rect">cudaStreamAddCallback</a> no CUDA function may be called from callback. <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e003867b6095ab719b21659a400b553963eb3" shape="rect">cudaErrorNotPermitted</a> may, but is not guaranteed to, be returned as a diagnostic in such case. 
+                                          </p>
+                                       </li>
+                                       <li class="li">
+                                          <p class="p">Returns <a class="xref" href="group__CUDART__TYPES.html#group__CUDART__TYPES_1gg3f51e3575c2178246db0a94a430e0038c4673247aee4d1ab8d07871f376e0273" shape="rect">cudaErrorInvalidResourceHandle</a> in the event of being passed NULL as the input event.
+                                          </p>
+                                       </li>
+                                    </ul>
+                                 </div>
+                              
+                              <p class="p"></p>
+                              <p class="p apiDesc_subtitle"><strong class="ph b">See also:</strong></p>
+                              <p class="p see_subsection"><a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7c581e3613a2110ba4d4e7fd5c7da418" title="Creates an event object." shape="rect">cudaEventCreate ( C API)</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g7b317e07ff385d85aa656204b971a042" title="Creates an event object with the specified flags." shape="rect">cudaEventCreateWithFlags</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1gf4fcb74343aa689f4159791967868446" title="Records an event." shape="rect">cudaEventRecord</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2bf738909b4a059023537eaa29d8a5b7" title="Queries an event's status." shape="rect">cudaEventQuery</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g2cb6baa0830a1cd0bd957bfd8705045b" title="Destroys an event object." shape="rect">cudaEventDestroy</a>, <a class="xref" href="group__CUDART__EVENT.html#group__CUDART__EVENT_1g40159125411db92c835edb46a0989cd6" title="Computes the elapsed time between events." shape="rect">cudaEventElapsedTime</a>, <a class="xref" href="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-driver-api/group__CUDA__EVENT.html#group__CUDA__EVENT_1g9e520d34e51af7f5375610bca4add99c" target="_blank" shape="rect">cuEventSynchronize</a></p>
+                              <p class="p"></p>
+                           </div>
+                        </dd>
+                     </dl>
+                  </div>
+               </div>
+               
+               <hr id="contents-end">
+               
+            </article>
+         </div>
+      </div>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/formatting/common.min.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-write.js"></script>
+      <script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-tracker.js"></script>
+      <script type="text/javascript">var switchTo5x=true;</script><script type="text/javascript">stLight.options({publisher: "998dc202-a267-4d8e-bce9-14debadb8d92", doNotHash: false, doNotCopy: false, hashAddressBar: false});</script><script type="text/javascript">_satellite.pageBottom();</script>
+</body>
+</html>

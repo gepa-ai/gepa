@@ -1,0 +1,505 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-us" xml:lang="en-us">
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+      <meta http-equiv="X-UA-Compatible" content="IE=edge">
+      <meta name="copyright" content="(C) Copyright 2005">
+      <meta name="DC.rights.owner" content="(C) Copyright 2005">
+      <meta name="DC.Format" content="XHTML">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/commonltr.css">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/site.css">
+      <title>CUDA Runtime API :: CUDA Toolkit Documentation</title>
+      <!--[if lt IE 9]>
+      <script src="../common/formatting/html5shiv-printshiv.min.js"></script>
+      <![endif]--><script src="https://assets.adobedtm.com/5d4962a43b79/c1061d2c5e7b/launch-191c2462b890.min.js" xml:space="preserve"></script><script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-svg.min.js" xml:space="preserve"></script><script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.min.js" xml:space="preserve"></script><script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.ba-hashchange.min.js" xml:space="preserve"></script><script type="text/javascript" charset="utf-8" src="../common/formatting/jquery.scrollintoview.min.js" xml:space="preserve"></script><script type="text/javascript" charset="utf-8" src="../common/scripts/geoip/geoip.js" xml:space="preserve"></script><script type="text/javascript" src="../search/htmlFileList.js" xml:space="preserve"></script><script type="text/javascript" src="../search/htmlFileInfoList.js" xml:space="preserve"></script><script type="text/javascript" src="../search/nwSearchFnt.min.js" xml:space="preserve"></script><script type="text/javascript" src="../search/stemmers/en_stemmer.min.js" xml:space="preserve"></script><script type="text/javascript" src="../search/index-1.js" xml:space="preserve"></script><script type="text/javascript" src="../search/index-2.js" xml:space="preserve"></script><script type="text/javascript" src="../search/index-3.js" xml:space="preserve"></script><link rel="canonical" href="https://docs.nvidia.com/cuda/cuda-runtime-api/index.html">
+      <link rel="stylesheet" type="text/css" href="../common/formatting/qwcode.highlight.css">
+   </head>
+   <body>
+      <header id="header"><span id="company">NVIDIA</span><span id="site-title">CUDA Toolkit Documentation</span><form id="search" method="get" action="https://docs.nvidia.com/cuda/archive/12.4.0/cuda-runtime-api/search" enctype="application/x-www-form-urlencoded">
+<input type="text" name="search-text"><fieldset id="search-location">
+               <legend>Search In:</legend>
+<label><input type="radio" name="search-type" value="site">Entire Site</label><label><input type="radio" name="search-type" value="document">Just This Document</label>
+</fieldset>
+<button type="reset">clear search</button><button id="submit" type="submit">search</button>
+</form>
+      </header>
+      <div id="site-content">
+         <nav id="site-nav">
+            <div class="category closed"><a href="https://docs.nvidia.com/cuda/archive/12.4.0/index.html" title="The root of the site." shape="rect">CUDA Toolkit 
+                  
+                  
+                  v12.4.0</a></div>
+            <div class="category"><a href="index.html" title="CUDA Runtime API" shape="rect">CUDA Runtime API</a></div>
+            <ul>
+               <li>
+                  <div class="section-link"><a href="driver-vs-runtime-api.html#driver-vs-runtime-api" shape="rect">1. Difference between the driver and runtime APIs </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="api-sync-behavior.html#api-sync-behavior" shape="rect">2. API synchronization behavior </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="stream-sync-behavior.html#stream-sync-behavior" shape="rect">3. Stream synchronization behavior</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="graphs-thread-safety.html#graphs-thread-safety" shape="rect">4. Graph object thread safety</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="version-mixing-rules.html#version-mixing-rules" shape="rect">5. Rules for version mixing </a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="modules.html#modules" shape="rect">6. Modules</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DEVICE.html#group__CUDART__DEVICE" shape="rect">6.1. Device Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DEVICE__DEPRECATED.html#group__CUDART__DEVICE__DEPRECATED" shape="rect">6.2. Device Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__THREAD__DEPRECATED.html#group__CUDART__THREAD__DEPRECATED" shape="rect">6.3. Thread Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__ERROR.html#group__CUDART__ERROR" shape="rect">6.4. Error Handling</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__STREAM.html#group__CUDART__STREAM" shape="rect">6.5. Stream Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EVENT.html#group__CUDART__EVENT" shape="rect">6.6. Event Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXTRES__INTEROP.html#group__CUDART__EXTRES__INTEROP" shape="rect">6.7. External Resource Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION" shape="rect">6.8. Execution Control</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EXECUTION__DEPRECATED.html#group__CUDART__EXECUTION__DEPRECATED" shape="rect">6.9. Execution Control [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OCCUPANCY.html#group__CUDART__OCCUPANCY" shape="rect">6.10. Occupancy</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY.html#group__CUDART__MEMORY" shape="rect">6.11. Memory Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY__DEPRECATED.html#group__CUDART__MEMORY__DEPRECATED" shape="rect">6.12. Memory Management [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__MEMORY__POOLS.html#group__CUDART__MEMORY__POOLS" shape="rect">6.13. Stream Ordered Memory Allocator</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__UNIFIED.html#group__CUDART__UNIFIED" shape="rect">6.14. Unified Addressing</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__PEER.html#group__CUDART__PEER" shape="rect">6.15. Peer Device Memory Access</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OPENGL.html#group__CUDART__OPENGL" shape="rect">6.16. OpenGL Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__OPENGL__DEPRECATED.html#group__CUDART__OPENGL__DEPRECATED" shape="rect">6.17. OpenGL Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D9.html#group__CUDART__D3D9" shape="rect">6.18. Direct3D 9 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED" shape="rect">6.19. Direct3D 9 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D10.html#group__CUDART__D3D10" shape="rect">6.20. Direct3D 10 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D10__DEPRECATED.html#group__CUDART__D3D10__DEPRECATED" shape="rect">6.21. Direct3D 10 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D11.html#group__CUDART__D3D11" shape="rect">6.22. Direct3D 11 Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__D3D11__DEPRECATED.html#group__CUDART__D3D11__DEPRECATED" shape="rect">6.23. Direct3D 11 Interoperability [DEPRECATED]</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__VDPAU.html#group__CUDART__VDPAU" shape="rect">6.24. VDPAU Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__EGL.html#group__CUDART__EGL" shape="rect">6.25. EGL Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__INTEROP.html#group__CUDART__INTEROP" shape="rect">6.26. Graphics Interoperability</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__TEXTURE__OBJECT.html#group__CUDART__TEXTURE__OBJECT" shape="rect">6.27. Texture Object Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__SURFACE__OBJECT.html#group__CUDART__SURFACE__OBJECT" shape="rect">6.28. Surface Object Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART____VERSION.html#group__CUDART____VERSION" shape="rect">6.29. Version Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__GRAPH.html#group__CUDART__GRAPH" shape="rect">6.30. Graph Management</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DRIVER__ENTRY__POINT.html#group__CUDART__DRIVER__ENTRY__POINT" shape="rect">6.31. Driver Entry Point Access</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL" shape="rect">6.32. C++ API Routines</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__DRIVER.html#group__CUDART__DRIVER" shape="rect">6.33. Interactions with the CUDA Driver API</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__PROFILER.html#group__CUDART__PROFILER" shape="rect">6.34. Profiler Control</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="group__CUDART__TYPES.html#group__CUDART__TYPES" shape="rect">6.35. Data types used by CUDA Runtime</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="annotated.html#annotated" shape="rect">7. Data Structures</a></div>
+                  <ul>
+                     <li>
+                        <div class="section-link"><a href="class____cudaOccupancyB2DHelper.html#class____cudaOccupancyB2DHelper" shape="rect">7.1. __cudaOccupancyB2DHelper</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaAccessPolicyWindow.html#structcudaAccessPolicyWindow" shape="rect">7.2. cudaAccessPolicyWindow</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaArrayMemoryRequirements.html#structcudaArrayMemoryRequirements" shape="rect">7.3. cudaArrayMemoryRequirements</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaArraySparseProperties.html#structcudaArraySparseProperties" shape="rect">7.4. cudaArraySparseProperties</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaAsyncNotificationInfo__t.html#structcudaAsyncNotificationInfo__t" shape="rect">7.5. cudaAsyncNotificationInfo_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaChannelFormatDesc.html#structcudaChannelFormatDesc" shape="rect">7.6. cudaChannelFormatDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaChildGraphNodeParams.html#structcudaChildGraphNodeParams" shape="rect">7.7. cudaChildGraphNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaConditionalNodeParams.html#structcudaConditionalNodeParams" shape="rect">7.8. cudaConditionalNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaDeviceProp.html#structcudaDeviceProp" shape="rect">7.9. cudaDeviceProp</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEglFrame.html#structcudaEglFrame" shape="rect">7.10. cudaEglFrame</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEglPlaneDesc.html#structcudaEglPlaneDesc" shape="rect">7.11. cudaEglPlaneDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEventRecordNodeParams.html#structcudaEventRecordNodeParams" shape="rect">7.12. cudaEventRecordNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaEventWaitNodeParams.html#structcudaEventWaitNodeParams" shape="rect">7.13. cudaEventWaitNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExtent.html#structcudaExtent" shape="rect">7.14. cudaExtent</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryBufferDesc.html#structcudaExternalMemoryBufferDesc" shape="rect">7.15. cudaExternalMemoryBufferDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryHandleDesc.html#structcudaExternalMemoryHandleDesc" shape="rect">7.16. cudaExternalMemoryHandleDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalMemoryMipmappedArrayDesc.html#structcudaExternalMemoryMipmappedArrayDesc" shape="rect">7.17. cudaExternalMemoryMipmappedArrayDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreHandleDesc.html#structcudaExternalSemaphoreHandleDesc" shape="rect">7.18. cudaExternalSemaphoreHandleDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalNodeParams.html#structcudaExternalSemaphoreSignalNodeParams" shape="rect">7.19. cudaExternalSemaphoreSignalNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalNodeParamsV2.html#structcudaExternalSemaphoreSignalNodeParamsV2" shape="rect">7.20. cudaExternalSemaphoreSignalNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalParams.html#structcudaExternalSemaphoreSignalParams" shape="rect">7.21. cudaExternalSemaphoreSignalParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreSignalParams__v1.html#structcudaExternalSemaphoreSignalParams__v1" shape="rect">7.22. cudaExternalSemaphoreSignalParams_v1</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitNodeParams.html#structcudaExternalSemaphoreWaitNodeParams" shape="rect">7.23. cudaExternalSemaphoreWaitNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitNodeParamsV2.html#structcudaExternalSemaphoreWaitNodeParamsV2" shape="rect">7.24. cudaExternalSemaphoreWaitNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitParams.html#structcudaExternalSemaphoreWaitParams" shape="rect">7.25. cudaExternalSemaphoreWaitParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaExternalSemaphoreWaitParams__v1.html#structcudaExternalSemaphoreWaitParams__v1" shape="rect">7.26. cudaExternalSemaphoreWaitParams_v1</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaFuncAttributes.html#structcudaFuncAttributes" shape="rect">7.27. cudaFuncAttributes</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphEdgeData.html#structcudaGraphEdgeData" shape="rect">7.28. cudaGraphEdgeData</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphExecUpdateResultInfo.html#structcudaGraphExecUpdateResultInfo" shape="rect">7.29. cudaGraphExecUpdateResultInfo</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphInstantiateParams.html#structcudaGraphInstantiateParams" shape="rect">7.30. cudaGraphInstantiateParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphKernelNodeUpdate.html#structcudaGraphKernelNodeUpdate" shape="rect">7.31. cudaGraphKernelNodeUpdate</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaGraphNodeParams.html#structcudaGraphNodeParams" shape="rect">7.32. cudaGraphNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaHostNodeParams.html#structcudaHostNodeParams" shape="rect">7.33. cudaHostNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaHostNodeParamsV2.html#structcudaHostNodeParamsV2" shape="rect">7.34. cudaHostNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaIpcEventHandle__t.html#structcudaIpcEventHandle__t" shape="rect">7.35. cudaIpcEventHandle_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaIpcMemHandle__t.html#structcudaIpcMemHandle__t" shape="rect">7.36. cudaIpcMemHandle_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaKernelNodeParams.html#structcudaKernelNodeParams" shape="rect">7.37. cudaKernelNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaKernelNodeParamsV2.html#structcudaKernelNodeParamsV2" shape="rect">7.38. cudaKernelNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchAttribute.html#structcudaLaunchAttribute" shape="rect">7.39. cudaLaunchAttribute</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="unioncudaLaunchAttributeValue.html#unioncudaLaunchAttributeValue" shape="rect">7.40. cudaLaunchAttributeValue</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchConfig__t.html#structcudaLaunchConfig__t" shape="rect">7.41. cudaLaunchConfig_t</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchMemSyncDomainMap.html#structcudaLaunchMemSyncDomainMap" shape="rect">7.42. cudaLaunchMemSyncDomainMap</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaLaunchParams.html#structcudaLaunchParams" shape="rect">7.43. cudaLaunchParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAccessDesc.html#structcudaMemAccessDesc" shape="rect">7.44. cudaMemAccessDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAllocNodeParams.html#structcudaMemAllocNodeParams" shape="rect">7.45. cudaMemAllocNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemAllocNodeParamsV2.html#structcudaMemAllocNodeParamsV2" shape="rect">7.46. cudaMemAllocNodeParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpy3DParms.html#structcudaMemcpy3DParms" shape="rect">7.47. cudaMemcpy3DParms</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpy3DPeerParms.html#structcudaMemcpy3DPeerParms" shape="rect">7.48. cudaMemcpy3DPeerParms</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemcpyNodeParams.html#structcudaMemcpyNodeParams" shape="rect">7.49. cudaMemcpyNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemFreeNodeParams.html#structcudaMemFreeNodeParams" shape="rect">7.50. cudaMemFreeNodeParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemLocation.html#structcudaMemLocation" shape="rect">7.51. cudaMemLocation</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemPoolProps.html#structcudaMemPoolProps" shape="rect">7.52. cudaMemPoolProps</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemPoolPtrExportData.html#structcudaMemPoolPtrExportData" shape="rect">7.53. cudaMemPoolPtrExportData</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemsetParams.html#structcudaMemsetParams" shape="rect">7.54. cudaMemsetParams</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaMemsetParamsV2.html#structcudaMemsetParamsV2" shape="rect">7.55. cudaMemsetParamsV2</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPitchedPtr.html#structcudaPitchedPtr" shape="rect">7.56. cudaPitchedPtr</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPointerAttributes.html#structcudaPointerAttributes" shape="rect">7.57. cudaPointerAttributes</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaPos.html#structcudaPos" shape="rect">7.58. cudaPos</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaResourceDesc.html#structcudaResourceDesc" shape="rect">7.59. cudaResourceDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaResourceViewDesc.html#structcudaResourceViewDesc" shape="rect">7.60. cudaResourceViewDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structcudaTextureDesc.html#structcudaTextureDesc" shape="rect">7.61. cudaTextureDesc</a></div>
+                     </li>
+                     <li>
+                        <div class="section-link"><a href="structCUuuid__st.html#structCUuuid__st" shape="rect">7.62. CUuuid_st</a></div>
+                     </li>
+                  </ul>
+               </li>
+               <li>
+                  <div class="section-link"><a href="functions.html#functions" shape="rect">8. Data Fields</a></div>
+               </li>
+               <li>
+                  <div class="section-link"><a href="deprecated.html#deprecated" shape="rect">9. Deprecated List</a></div>
+               </li>
+            </ul>
+         </nav>
+         <div id="resize-nav"></div>
+         <nav id="search-results">
+            <h2>Search Results</h2>
+            <ol></ol>
+         </nav>
+         <div id="contents-container">
+            <div id="breadcrumbs-container">
+               <div id="release-info">CUDA Runtime API
+                  (<a href="https://docs.nvidia.com/cuda/archive/12.4.0/pdf/CUDA_Runtime_API.pdf" shape="rect">PDF</a>)
+                  -
+                  
+                  
+                  
+                  v12.4.0
+                  (<a href="https://developer.nvidia.com/cuda-toolkit-archive" shape="rect">older</a>)
+                  -
+                  Last updated March 5, 2024
+                  -
+                  <a href="mailto:CUDAIssues@nvidia.com?subject=CUDA%20Toolkit%20Documentation%20Feedback:%20CUDA%20Runtime%20API" shape="rect">Send Feedback</a>
+</div>
+            </div>
+            <article id="contents">
+               <div class="topic nested0" id="toc">
+                  <h1 class="title topictitle1">Table of Contents</h1>
+                  <div class="body">
+                     <ul>
+                        <li><a href="driver-vs-runtime-api.html#driver-vs-runtime-api" shape="rect">1. Difference between the driver and runtime APIs </a></li>
+                        <li><a href="api-sync-behavior.html#api-sync-behavior" shape="rect">2. API synchronization behavior </a></li>
+                        <li><a href="stream-sync-behavior.html#stream-sync-behavior" shape="rect">3. Stream synchronization behavior</a></li>
+                        <li><a href="graphs-thread-safety.html#graphs-thread-safety" shape="rect">4. Graph object thread safety</a></li>
+                        <li><a href="version-mixing-rules.html#version-mixing-rules" shape="rect">5. Rules for version mixing </a></li>
+                        <li>
+<a href="modules.html#modules" shape="rect">6. Modules</a><ul>
+                              <li><a href="group__CUDART__DEVICE.html#group__CUDART__DEVICE" shape="rect">6.1. Device Management</a></li>
+                              <li><a href="group__CUDART__DEVICE__DEPRECATED.html#group__CUDART__DEVICE__DEPRECATED" shape="rect">6.2. Device Management [DEPRECATED]</a></li>
+                              <li><a href="group__CUDART__THREAD__DEPRECATED.html#group__CUDART__THREAD__DEPRECATED" shape="rect">6.3. Thread Management [DEPRECATED]</a></li>
+                              <li><a href="group__CUDART__ERROR.html#group__CUDART__ERROR" shape="rect">6.4. Error Handling</a></li>
+                              <li><a href="group__CUDART__STREAM.html#group__CUDART__STREAM" shape="rect">6.5. Stream Management</a></li>
+                              <li><a href="group__CUDART__EVENT.html#group__CUDART__EVENT" shape="rect">6.6. Event Management</a></li>
+                              <li><a href="group__CUDART__EXTRES__INTEROP.html#group__CUDART__EXTRES__INTEROP" shape="rect">6.7. External Resource Interoperability</a></li>
+                              <li><a href="group__CUDART__EXECUTION.html#group__CUDART__EXECUTION" shape="rect">6.8. Execution Control</a></li>
+                              <li><a href="group__CUDART__EXECUTION__DEPRECATED.html#group__CUDART__EXECUTION__DEPRECATED" shape="rect">6.9. Execution Control [DEPRECATED]</a></li>
+                              <li><a href="group__CUDART__OCCUPANCY.html#group__CUDART__OCCUPANCY" shape="rect">6.10. Occupancy</a></li>
+                              <li><a href="group__CUDART__MEMORY.html#group__CUDART__MEMORY" shape="rect">6.11. Memory Management</a></li>
+                              <li><a href="group__CUDART__MEMORY__DEPRECATED.html#group__CUDART__MEMORY__DEPRECATED" shape="rect">6.12. Memory Management [DEPRECATED]</a></li>
+                              <li><a href="group__CUDART__MEMORY__POOLS.html#group__CUDART__MEMORY__POOLS" shape="rect">6.13. Stream Ordered Memory Allocator</a></li>
+                              <li><a href="group__CUDART__UNIFIED.html#group__CUDART__UNIFIED" shape="rect">6.14. Unified Addressing</a></li>
+                              <li><a href="group__CUDART__PEER.html#group__CUDART__PEER" shape="rect">6.15. Peer Device Memory Access</a></li>
+                              <li><a href="group__CUDART__OPENGL.html#group__CUDART__OPENGL" shape="rect">6.16. OpenGL Interoperability</a></li>
+                              <li><a href="group__CUDART__OPENGL__DEPRECATED.html#group__CUDART__OPENGL__DEPRECATED" shape="rect">6.17. OpenGL Interoperability [DEPRECATED]</a></li>
+                              <li><a href="group__CUDART__D3D9.html#group__CUDART__D3D9" shape="rect">6.18. Direct3D 9 Interoperability</a></li>
+                              <li><a href="group__CUDART__D3D9__DEPRECATED.html#group__CUDART__D3D9__DEPRECATED" shape="rect">6.19. Direct3D 9 Interoperability [DEPRECATED]</a></li>
+                              <li><a href="group__CUDART__D3D10.html#group__CUDART__D3D10" shape="rect">6.20. Direct3D 10 Interoperability</a></li>
+                              <li><a href="group__CUDART__D3D10__DEPRECATED.html#group__CUDART__D3D10__DEPRECATED" shape="rect">6.21. Direct3D 10 Interoperability [DEPRECATED]</a></li>
+                              <li><a href="group__CUDART__D3D11.html#group__CUDART__D3D11" shape="rect">6.22. Direct3D 11 Interoperability</a></li>
+                              <li><a href="group__CUDART__D3D11__DEPRECATED.html#group__CUDART__D3D11__DEPRECATED" shape="rect">6.23. Direct3D 11 Interoperability [DEPRECATED]</a></li>
+                              <li><a href="group__CUDART__VDPAU.html#group__CUDART__VDPAU" shape="rect">6.24. VDPAU Interoperability</a></li>
+                              <li><a href="group__CUDART__EGL.html#group__CUDART__EGL" shape="rect">6.25. EGL Interoperability</a></li>
+                              <li><a href="group__CUDART__INTEROP.html#group__CUDART__INTEROP" shape="rect">6.26. Graphics Interoperability</a></li>
+                              <li><a href="group__CUDART__TEXTURE__OBJECT.html#group__CUDART__TEXTURE__OBJECT" shape="rect">6.27. Texture Object Management</a></li>
+                              <li><a href="group__CUDART__SURFACE__OBJECT.html#group__CUDART__SURFACE__OBJECT" shape="rect">6.28. Surface Object Management</a></li>
+                              <li><a href="group__CUDART____VERSION.html#group__CUDART____VERSION" shape="rect">6.29. Version Management</a></li>
+                              <li><a href="group__CUDART__GRAPH.html#group__CUDART__GRAPH" shape="rect">6.30. Graph Management</a></li>
+                              <li><a href="group__CUDART__DRIVER__ENTRY__POINT.html#group__CUDART__DRIVER__ENTRY__POINT" shape="rect">6.31. Driver Entry Point Access</a></li>
+                              <li><a href="group__CUDART__HIGHLEVEL.html#group__CUDART__HIGHLEVEL" shape="rect">6.32. C++ API Routines</a></li>
+                              <li><a href="group__CUDART__DRIVER.html#group__CUDART__DRIVER" shape="rect">6.33. Interactions with the CUDA Driver API</a></li>
+                              <li><a href="group__CUDART__PROFILER.html#group__CUDART__PROFILER" shape="rect">6.34. Profiler Control</a></li>
+                              <li><a href="group__CUDART__TYPES.html#group__CUDART__TYPES" shape="rect">6.35. Data types used by CUDA Runtime</a></li>
+                           </ul>
+                        </li>
+                        <li>
+<a href="annotated.html#annotated" shape="rect">7. Data Structures</a><ul>
+                              <li><a href="class____cudaOccupancyB2DHelper.html#class____cudaOccupancyB2DHelper" shape="rect">7.1. __cudaOccupancyB2DHelper</a></li>
+                              <li><a href="structcudaAccessPolicyWindow.html#structcudaAccessPolicyWindow" shape="rect">7.2. cudaAccessPolicyWindow</a></li>
+                              <li><a href="structcudaArrayMemoryRequirements.html#structcudaArrayMemoryRequirements" shape="rect">7.3. cudaArrayMemoryRequirements</a></li>
+                              <li><a href="structcudaArraySparseProperties.html#structcudaArraySparseProperties" shape="rect">7.4. cudaArraySparseProperties</a></li>
+                              <li><a href="structcudaAsyncNotificationInfo__t.html#structcudaAsyncNotificationInfo__t" shape="rect">7.5. cudaAsyncNotificationInfo_t</a></li>
+                              <li><a href="structcudaChannelFormatDesc.html#structcudaChannelFormatDesc" shape="rect">7.6. cudaChannelFormatDesc</a></li>
+                              <li><a href="structcudaChildGraphNodeParams.html#structcudaChildGraphNodeParams" shape="rect">7.7. cudaChildGraphNodeParams</a></li>
+                              <li><a href="structcudaConditionalNodeParams.html#structcudaConditionalNodeParams" shape="rect">7.8. cudaConditionalNodeParams</a></li>
+                              <li><a href="structcudaDeviceProp.html#structcudaDeviceProp" shape="rect">7.9. cudaDeviceProp</a></li>
+                              <li><a href="structcudaEglFrame.html#structcudaEglFrame" shape="rect">7.10. cudaEglFrame</a></li>
+                              <li><a href="structcudaEglPlaneDesc.html#structcudaEglPlaneDesc" shape="rect">7.11. cudaEglPlaneDesc</a></li>
+                              <li><a href="structcudaEventRecordNodeParams.html#structcudaEventRecordNodeParams" shape="rect">7.12. cudaEventRecordNodeParams</a></li>
+                              <li><a href="structcudaEventWaitNodeParams.html#structcudaEventWaitNodeParams" shape="rect">7.13. cudaEventWaitNodeParams</a></li>
+                              <li><a href="structcudaExtent.html#structcudaExtent" shape="rect">7.14. cudaExtent</a></li>
+                              <li><a href="structcudaExternalMemoryBufferDesc.html#structcudaExternalMemoryBufferDesc" shape="rect">7.15. cudaExternalMemoryBufferDesc</a></li>
+                              <li><a href="structcudaExternalMemoryHandleDesc.html#structcudaExternalMemoryHandleDesc" shape="rect">7.16. cudaExternalMemoryHandleDesc</a></li>
+                              <li><a href="structcudaExternalMemoryMipmappedArrayDesc.html#structcudaExternalMemoryMipmappedArrayDesc" shape="rect">7.17. cudaExternalMemoryMipmappedArrayDesc</a></li>
+                              <li><a href="structcudaExternalSemaphoreHandleDesc.html#structcudaExternalSemaphoreHandleDesc" shape="rect">7.18. cudaExternalSemaphoreHandleDesc</a></li>
+                              <li><a href="structcudaExternalSemaphoreSignalNodeParams.html#structcudaExternalSemaphoreSignalNodeParams" shape="rect">7.19. cudaExternalSemaphoreSignalNodeParams</a></li>
+                              <li><a href="structcudaExternalSemaphoreSignalNodeParamsV2.html#structcudaExternalSemaphoreSignalNodeParamsV2" shape="rect">7.20. cudaExternalSemaphoreSignalNodeParamsV2</a></li>
+                              <li><a href="structcudaExternalSemaphoreSignalParams.html#structcudaExternalSemaphoreSignalParams" shape="rect">7.21. cudaExternalSemaphoreSignalParams</a></li>
+                              <li><a href="structcudaExternalSemaphoreSignalParams__v1.html#structcudaExternalSemaphoreSignalParams__v1" shape="rect">7.22. cudaExternalSemaphoreSignalParams_v1</a></li>
+                              <li><a href="structcudaExternalSemaphoreWaitNodeParams.html#structcudaExternalSemaphoreWaitNodeParams" shape="rect">7.23. cudaExternalSemaphoreWaitNodeParams</a></li>
+                              <li><a href="structcudaExternalSemaphoreWaitNodeParamsV2.html#structcudaExternalSemaphoreWaitNodeParamsV2" shape="rect">7.24. cudaExternalSemaphoreWaitNodeParamsV2</a></li>
+                              <li><a href="structcudaExternalSemaphoreWaitParams.html#structcudaExternalSemaphoreWaitParams" shape="rect">7.25. cudaExternalSemaphoreWaitParams</a></li>
+                              <li><a href="structcudaExternalSemaphoreWaitParams__v1.html#structcudaExternalSemaphoreWaitParams__v1" shape="rect">7.26. cudaExternalSemaphoreWaitParams_v1</a></li>
+                              <li><a href="structcudaFuncAttributes.html#structcudaFuncAttributes" shape="rect">7.27. cudaFuncAttributes</a></li>
+                              <li><a href="structcudaGraphEdgeData.html#structcudaGraphEdgeData" shape="rect">7.28. cudaGraphEdgeData</a></li>
+                              <li><a href="structcudaGraphExecUpdateResultInfo.html#structcudaGraphExecUpdateResultInfo" shape="rect">7.29. cudaGraphExecUpdateResultInfo</a></li>
+                              <li><a href="structcudaGraphInstantiateParams.html#structcudaGraphInstantiateParams" shape="rect">7.30. cudaGraphInstantiateParams</a></li>
+                              <li><a href="structcudaGraphKernelNodeUpdate.html#structcudaGraphKernelNodeUpdate" shape="rect">7.31. cudaGraphKernelNodeUpdate</a></li>
+                              <li><a href="structcudaGraphNodeParams.html#structcudaGraphNodeParams" shape="rect">7.32. cudaGraphNodeParams</a></li>
+                              <li><a href="structcudaHostNodeParams.html#structcudaHostNodeParams" shape="rect">7.33. cudaHostNodeParams</a></li>
+                              <li><a href="structcudaHostNodeParamsV2.html#structcudaHostNodeParamsV2" shape="rect">7.34. cudaHostNodeParamsV2</a></li>
+                              <li><a href="structcudaIpcEventHandle__t.html#structcudaIpcEventHandle__t" shape="rect">7.35. cudaIpcEventHandle_t</a></li>
+                              <li><a href="structcudaIpcMemHandle__t.html#structcudaIpcMemHandle__t" shape="rect">7.36. cudaIpcMemHandle_t</a></li>
+                              <li><a href="structcudaKernelNodeParams.html#structcudaKernelNodeParams" shape="rect">7.37. cudaKernelNodeParams</a></li>
+                              <li><a href="structcudaKernelNodeParamsV2.html#structcudaKernelNodeParamsV2" shape="rect">7.38. cudaKernelNodeParamsV2</a></li>
+                              <li><a href="structcudaLaunchAttribute.html#structcudaLaunchAttribute" shape="rect">7.39. cudaLaunchAttribute</a></li>
+                              <li><a href="unioncudaLaunchAttributeValue.html#unioncudaLaunchAttributeValue" shape="rect">7.40. cudaLaunchAttributeValue</a></li>
+                              <li><a href="structcudaLaunchConfig__t.html#structcudaLaunchConfig__t" shape="rect">7.41. cudaLaunchConfig_t</a></li>
+                              <li><a href="structcudaLaunchMemSyncDomainMap.html#structcudaLaunchMemSyncDomainMap" shape="rect">7.42. cudaLaunchMemSyncDomainMap</a></li>
+                              <li><a href="structcudaLaunchParams.html#structcudaLaunchParams" shape="rect">7.43. cudaLaunchParams</a></li>
+                              <li><a href="structcudaMemAccessDesc.html#structcudaMemAccessDesc" shape="rect">7.44. cudaMemAccessDesc</a></li>
+                              <li><a href="structcudaMemAllocNodeParams.html#structcudaMemAllocNodeParams" shape="rect">7.45. cudaMemAllocNodeParams</a></li>
+                              <li><a href="structcudaMemAllocNodeParamsV2.html#structcudaMemAllocNodeParamsV2" shape="rect">7.46. cudaMemAllocNodeParamsV2</a></li>
+                              <li><a href="structcudaMemcpy3DParms.html#structcudaMemcpy3DParms" shape="rect">7.47. cudaMemcpy3DParms</a></li>
+                              <li><a href="structcudaMemcpy3DPeerParms.html#structcudaMemcpy3DPeerParms" shape="rect">7.48. cudaMemcpy3DPeerParms</a></li>
+                              <li><a href="structcudaMemcpyNodeParams.html#structcudaMemcpyNodeParams" shape="rect">7.49. cudaMemcpyNodeParams</a></li>
+                              <li><a href="structcudaMemFreeNodeParams.html#structcudaMemFreeNodeParams" shape="rect">7.50. cudaMemFreeNodeParams</a></li>
+                              <li><a href="structcudaMemLocation.html#structcudaMemLocation" shape="rect">7.51. cudaMemLocation</a></li>
+                              <li><a href="structcudaMemPoolProps.html#structcudaMemPoolProps" shape="rect">7.52. cudaMemPoolProps</a></li>
+                              <li><a href="structcudaMemPoolPtrExportData.html#structcudaMemPoolPtrExportData" shape="rect">7.53. cudaMemPoolPtrExportData</a></li>
+                              <li><a href="structcudaMemsetParams.html#structcudaMemsetParams" shape="rect">7.54. cudaMemsetParams</a></li>
+                              <li><a href="structcudaMemsetParamsV2.html#structcudaMemsetParamsV2" shape="rect">7.55. cudaMemsetParamsV2</a></li>
+                              <li><a href="structcudaPitchedPtr.html#structcudaPitchedPtr" shape="rect">7.56. cudaPitchedPtr</a></li>
+                              <li><a href="structcudaPointerAttributes.html#structcudaPointerAttributes" shape="rect">7.57. cudaPointerAttributes</a></li>
+                              <li><a href="structcudaPos.html#structcudaPos" shape="rect">7.58. cudaPos</a></li>
+                              <li><a href="structcudaResourceDesc.html#structcudaResourceDesc" shape="rect">7.59. cudaResourceDesc</a></li>
+                              <li><a href="structcudaResourceViewDesc.html#structcudaResourceViewDesc" shape="rect">7.60. cudaResourceViewDesc</a></li>
+                              <li><a href="structcudaTextureDesc.html#structcudaTextureDesc" shape="rect">7.61. cudaTextureDesc</a></li>
+                              <li><a href="structCUuuid__st.html#structCUuuid__st" shape="rect">7.62. CUuuid_st</a></li>
+                           </ul>
+                        </li>
+                        <li><a href="functions.html#functions" shape="rect">8. Data Fields</a></li>
+                        <li><a href="deprecated.html#deprecated" shape="rect">9. Deprecated List</a></li>
+                     </ul>
+                  </div>
+               </div>
+               <hr id="contents-end">
+            </article>
+         </div>
+      </div>
+<script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/formatting/common.min.js" xml:space="preserve"></script><script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-write.js" xml:space="preserve"></script><script language="JavaScript" type="text/javascript" charset="utf-8" src="../common/scripts/google-analytics/google-analytics-tracker.js" xml:space="preserve"></script><script type="text/javascript" xml:space="preserve">var switchTo5x=true;</script><script type="text/javascript" src="http://w.sharethis.com/button/buttons.js" xml:space="preserve"></script><script type="text/javascript" xml:space="preserve">stLight.options({publisher: "998dc202-a267-4d8e-bce9-14debadb8d92", doNotHash: false, doNotCopy: false, hashAddressBar: false});</script><script type="text/javascript" xml:space="preserve">_satellite.pageBottom();</script>
+</body>
+</html>
