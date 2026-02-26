@@ -16,16 +16,17 @@ import hashlib
 import json
 import logging
 import pickle
+import re
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 logger = logging.getLogger(__name__)
 
 from gepa.core.adapter import DataInst, EvaluationBatch, GEPAAdapter
-from gepa.proposer.reflective_mutation.base import LanguageModel
+from gepa.proposer.reflective_mutation.base import LanguageModel, Signature
 
 if TYPE_CHECKING:
     from gepa.optimize_anything import Candidate, OptimizationState, RefinerConfig, SideInfo
@@ -36,21 +37,76 @@ REFINER_PROMPT_TEMPLATE = """You are refining a candidate to improve its perform
 ## Instructions
 {refiner_prompt}
 
-## Current Candidate (JSON)
-```json
+## Current Candidate
+```
 {candidate_to_improve}
 ```
 
 ## Evaluation History
 The following shows all evaluation attempts so far, including scores and feedback:
-```json
+```
 {evaluation_feedback}
 ```
 
 ## Task
 Analyze the evaluation history and propose an improved version of the candidate.
-Return ONLY a valid JSON object with the improved parameters (no explanation, no markdown fences).
+{output_format_instruction}
 """
+
+_REFINER_JSON_OUTPUT_INSTRUCTION = (
+    "Return ONLY a valid JSON object with the improved parameters (no explanation, no markdown fences)."
+)
+_REFINER_TEXT_OUTPUT_INSTRUCTION = (
+    "Return ONLY the improved candidate text within ``` fences. Do not include explanations outside the fences."
+)
+
+
+class InternalPromptCandidateSignature(Signature):
+    """Signature for generating candidates from evolved prompts in seedless mode.
+
+    Mirrors :class:`InstructionProposalSignature` but for the artifact generation step:
+    takes an evolved prompt (+ optional example) and extracts the generated candidate
+    from the LM output.
+
+    Used by the adapter to run ``internal_prompt_candidate_lm`` and parse refiner output in seedless mode.
+    """
+
+    input_keys: ClassVar[list[str]] = ["prompt", "example"]
+    output_keys: ClassVar[list[str]] = ["candidate"]
+
+    @classmethod
+    def prompt_renderer(cls, input_dict: Mapping[str, Any]) -> str:
+        prompt = input_dict["prompt"]
+        example = input_dict.get("example")
+        if example is not None and type(example).__name__ != "_SingleInstanceSentinel":
+            example_text = example if isinstance(example, str) else json.dumps(example, default=str, indent=2)
+            return prompt + "\n\n# Input\n" + example_text
+        return prompt
+
+    @classmethod
+    def output_extractor(cls, lm_out: str) -> dict[str, str]:
+        # Same fence-extraction logic as InstructionProposalSignature.output_extractor
+        start = lm_out.find("```") + 3
+        end = lm_out.rfind("```")
+
+        if start >= end:
+            # Handle incomplete blocks
+            stripped = lm_out.strip()
+            if stripped.startswith("```"):
+                match = re.match(r"^```\S*\n?", lm_out)
+                if match:
+                    return {"candidate": lm_out[match.end() :].strip()}
+            elif stripped.endswith("```"):
+                return {"candidate": stripped[:-3].strip()}
+            return {"candidate": stripped}
+
+        # Skip optional language specifier
+        content = lm_out[start:end]
+        match = re.match(r"^\S*\n", content)
+        if match:
+            content = content[match.end() :]
+
+        return {"candidate": content.strip()}
 
 
 class OptimizeAnythingAdapter(GEPAAdapter):
@@ -73,6 +129,9 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         background: str | None = None,
         cache_mode: str = "memory",  # "off", "memory", "disk"
         cache_dir: str | Path | None = None,
+        seedless_mode: bool = False,
+        internal_prompt_candidate_lm: LanguageModel | None = None,
+        per_example_generation: bool = False,
     ):
         self.evaluator = evaluator
         self.parallel = parallel
@@ -83,6 +142,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self.background = background
         self.cache_mode = cache_mode
         self.cache_dir = Path(cache_dir) if cache_dir else None
+        self.seedless_mode = seedless_mode
+        self.internal_prompt_candidate_lm = internal_prompt_candidate_lm
+        self.per_example_generation = per_example_generation
+
+        # Maps internal prompt hash → (best_candidate_text, best_score)
+        self._internal_prompt_to_candidate: dict[str, tuple[str, float]] = {}
+        self._internal_prompt_to_candidate_lock = threading.Lock()
 
         # Persistent optimization state — survives resume via adapter_state sync.
         from gepa.optimize_anything import OptimizationState
@@ -112,7 +178,10 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         Called by the engine before each checkpoint save.
         """
         with self._opt_state_lock:
-            return {"opt_state": self._opt_state}
+            state: dict[str, Any] = {"opt_state": self._opt_state}
+        with self._internal_prompt_to_candidate_lock:
+            state["internal_prompt_to_candidate"] = dict(self._internal_prompt_to_candidate)
+        return state
 
     def set_adapter_state(self, state: dict[str, Any]) -> None:
         """Restore adapter state from a previously persisted snapshot.
@@ -125,6 +194,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         stored = state.get("opt_state")
         with self._opt_state_lock:
             self._opt_state = stored if isinstance(stored, OptimizationState) else OptimizationState()
+        with self._internal_prompt_to_candidate_lock:
+            self._internal_prompt_to_candidate = state.get("internal_prompt_to_candidate", {})
 
     # --- Best-evals tracking ---
 
@@ -205,6 +276,84 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         return OptimizationState(best_example_evals=self._get_best_example_evals(example))
 
+    # --- Seedless-mode helpers ---
+
+    def _run_prompt(self, prompt: str, example: object | None = None) -> str:
+        """Run an internal prompt candidate through internal_prompt_candidate_lm to produce a candidate.
+
+        Uses :class:`InternalPromptCandidateSignature` for prompt formatting and output parsing.
+
+        Args:
+            prompt: The internal prompt candidate text.
+            example: Optional example for per-example generation.
+
+        Returns:
+            Generated candidate text.
+        """
+        assert self.internal_prompt_candidate_lm is not None, "internal_prompt_candidate_lm must be set in seedless mode"
+        result = InternalPromptCandidateSignature.run(self.internal_prompt_candidate_lm, {"prompt": prompt, "example": example})
+        return result["candidate"]
+
+    def get_best_candidate(self, prompt: str) -> str | None:
+        """Look up the best candidate generated from an internal prompt.
+
+        Used by optimize_anything.py for the post-optimization candidate swap.
+        Falls back to re-generating via internal_prompt_candidate_lm if the mapping is
+        missing (e.g., after resume).
+        """
+        prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+        with self._internal_prompt_to_candidate_lock:
+            entry = self._internal_prompt_to_candidate.get(prompt_hash)
+            if entry is not None:
+                return entry[0]
+        # Fallback: re-generate (e.g., after resume when mapping is lost)
+        if self.internal_prompt_candidate_lm is not None:
+            return self._run_prompt(prompt)
+        return None
+
+    def get_best_candidate_per_example(self, examples: list[object]) -> dict[int, str]:
+        """Return the best candidate text for each example.
+
+        Extracts ``generated_candidate`` from the top entry in
+        ``_best_evals_by_example`` for each example.
+
+        Returns:
+            Dict mapping example index → best candidate text.
+        """
+        result: dict[int, str] = {}
+        for idx, example in enumerate(examples):
+            evals = self._get_best_example_evals(example)
+            if evals:
+                candidate_text = evals[0].get("side_info", {}).get("generated_candidate")
+                if candidate_text is not None:
+                    result[idx] = candidate_text
+        return result
+
+    def _update_internal_prompt_to_candidate(self, prompt: str, candidate_text: str, score: float) -> None:
+        """Update the internal prompt → candidate mapping if this score is the best so far."""
+        prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+        with self._internal_prompt_to_candidate_lock:
+            entry = self._internal_prompt_to_candidate.get(prompt_hash)
+            if entry is None or score > entry[1]:
+                self._internal_prompt_to_candidate[prompt_hash] = (candidate_text, score)
+
+    def _update_mapping_from_eval_output(
+        self, prompt: str, eval_output: list[tuple[float, Any, "SideInfo"]]
+    ) -> None:
+        """Extract the best candidate from eval output and update the prompt→candidate mapping.
+
+        Finds the highest-scoring entry in eval_output, extracts the candidate text
+        from the output tuple, and updates ``_internal_prompt_to_candidate``.
+        """
+        if not eval_output:
+            return
+        best_idx = max(range(len(eval_output)), key=lambda i: eval_output[i][0])
+        best_score, best_output, _ = eval_output[best_idx]
+        if isinstance(best_output, tuple) and len(best_output) >= 2:
+            best_cand = best_output[1]
+            if isinstance(best_cand, dict) and "current_candidate" in best_cand:
+                self._update_internal_prompt_to_candidate(prompt, best_cand["current_candidate"], best_score)
+
     def _call_evaluator(
         self,
         candidate: "Candidate",
@@ -254,39 +403,53 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         evaluate→refine→re-evaluate loop before returning the best result.
         Multi-objective scores from ``side_info["scores"]`` are extracted and
         forwarded as ``objective_scores`` in the returned batch.
+
+        In seedless mode, the candidate is an internal prompt candidate which is run
+        through ``internal_prompt_candidate_lm`` to produce the actual candidate
+        before evaluation.
         """
-        # Backward compatibility: if refiner_config is None, use old behavior
+        if self.seedless_mode:
+            return self._evaluate_seedless(batch, candidate)
+
+        # --- Seeded mode (existing behavior) ---
         if self.refiner_config is None:
-            # Old path: direct evaluation without refinement
+            # Direct evaluation without refinement
             if self.parallel and len(batch) > 1:
                 raw_results = self._evaluate_parallel(batch, candidate)
             else:
                 raw_results = [self._call_evaluator(candidate, example) for example in batch]
             # Package outputs as (score, candidate, side_info) tuples
-            eval_output = []
+            eval_output: list[tuple[float, Any, SideInfo]] = []
             for score, _, side_info in raw_results:
-                output = (score, candidate, side_info)  # Package as tuple
+                output = (score, candidate, side_info)
                 eval_output.append((score, output, side_info))
-        else:
-            # New path: evaluate with refinement
-            # eval_output is list of (score, output, side_info)
-            # where output = (score, best_candidate, side_info)
-            eval_output = self._evaluate_with_refinement(batch, candidate)
 
-        # Update best evals history for each example
-        # (skip when refiner is on — refiner path already records evals internally)
-        if self.refiner_config is None:
+            # Update best evals history
             for example, (score, _, side_info) in zip(batch, eval_output, strict=True):
                 self._update_best_example_evals(example, score, side_info)
+        else:
+            # Evaluate with refinement
+            eval_output = self._evaluate_with_refinement(batch, candidate)
 
+        return self._package_eval_output(eval_output, candidate)
+
+    def _package_eval_output(
+        self,
+        eval_output: list[tuple[float, Any, "SideInfo"]],
+        candidate: "Candidate",
+    ) -> EvaluationBatch:
+        """Package evaluation output into an EvaluationBatch.
+
+        Extracts scores, side_infos, outputs, and objective_scores from the
+        eval_output tuples and constructs the final batch.
+        """
         scores = [score for score, _, _ in eval_output]
         side_infos: list[SideInfo] = [info for _, _, info in eval_output]
-        # outputs = list of (score, best_candidate, side_info) tuples
         outputs = [out for _, out, _ in eval_output]
 
         objective_scores = []
         for side_info in side_infos:
-            objective_score = {}
+            objective_score: dict[str, Any] = {}
             if "scores" in side_info:
                 objective_score.update(side_info["scores"])
 
@@ -403,6 +566,300 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         """Evaluate batch in parallel with refinement."""
         return self._run_parallel(batch, candidate, self._evaluate_single_with_refinement)
 
+    # --- Seedless mode evaluation ---
+
+    def _evaluate_seedless(
+        self,
+        batch: list[DataInst],
+        candidate: "Candidate",
+    ) -> EvaluationBatch:
+        """Top-level seedless evaluation dispatcher.
+
+        Extracts the internal prompt candidate from the candidate dict,
+        generates the candidate via internal_prompt_candidate_lm, then evaluates.
+        Dispatches to per-example or generate-once path based on config.
+        """
+        prompt = candidate["current_candidate"]
+
+        if self.per_example_generation:
+            if self.refiner_config is not None:
+                eval_output = self._evaluate_seedless_per_example_with_refiner(batch, candidate, prompt)
+            else:
+                eval_output = self._evaluate_seedless_per_example(batch, candidate, prompt)
+        else:
+            if self.refiner_config is not None:
+                eval_output = self._evaluate_seedless_generate_once_with_refiner(batch, candidate, prompt)
+            else:
+                eval_output = self._evaluate_seedless_generate_once(batch, candidate, prompt)
+
+        return self._package_eval_output(eval_output, candidate)
+
+    def _evaluate_seedless_generate_once(
+        self,
+        batch: list[DataInst],
+        candidate: "Candidate",
+        prompt: str,
+    ) -> list[tuple[float, Any, "SideInfo"]]:
+        """Seedless generate-once without refiner.
+
+        Generates one candidate from the prompt, then evaluates it on all examples.
+        Used for single-task and generalization modes.
+        """
+        try:
+            generated_candidate = self._run_prompt(prompt)
+        except Exception as e:
+            logger.warning("Seedless generation failed: %s", e)
+            error_side_info: SideInfo = {"error": f"Generation failed: {e}"}
+            fail_output = (-1e9, {}, error_side_info)
+            return [(-1e9, fail_output, error_side_info)] * len(batch)
+
+        # Wrap generated candidate for evaluator (EvaluatorWrapper unwraps via str_candidate_mode)
+        candidate_for_eval: Candidate = {"current_candidate": generated_candidate}
+
+        # Evaluate on all examples
+        if self.parallel and len(batch) > 1:
+            raw_results = self._run_parallel(batch, candidate_for_eval, self._call_evaluator)
+            eval_output: list[tuple[float, Any, SideInfo]] = []
+            for score, _, side_info in raw_results:
+                # Inject generated_candidate into side_info for reflection visibility
+                side_info["generated_candidate"] = generated_candidate
+                output = (score, candidate_for_eval, side_info)
+                eval_output.append((score, output, side_info))
+        else:
+            eval_output = []
+            for example in batch:
+                score, _, side_info = self._call_evaluator(candidate_for_eval, example)
+                side_info["generated_candidate"] = generated_candidate
+                output = (score, candidate_for_eval, side_info)
+                eval_output.append((score, output, side_info))
+
+        # Update best evals history
+        for example, (score, _, side_info) in zip(batch, eval_output, strict=True):
+            self._update_best_example_evals(example, score, side_info)
+
+        # Update internal prompt → candidate mapping (best across all examples)
+        best_score = max(s for s, _, _ in eval_output) if eval_output else 0.0
+        self._update_internal_prompt_to_candidate(prompt, generated_candidate, best_score)
+
+        return eval_output
+
+    def _evaluate_seedless_generate_once_with_refiner(
+        self,
+        batch: list[DataInst],
+        candidate: "Candidate",
+        prompt: str,
+    ) -> list[tuple[float, Any, "SideInfo"]]:
+        """Seedless generate-once with refiner.
+
+        Generates one draft candidate, then per-example: evaluate → refine candidate text → re-evaluate.
+        """
+        assert self.refiner_config is not None
+
+        try:
+            draft_candidate = self._run_prompt(prompt)
+        except Exception as e:
+            logger.warning("Seedless generation failed: %s", e)
+            error_side_info: SideInfo = {"error": f"Generation failed: {e}"}
+            fail_output = (-1e9, {}, error_side_info)
+            return [(-1e9, fail_output, error_side_info)] * len(batch)
+
+        refiner_prompt = candidate.get("refiner_prompt", "")
+
+        def eval_single_with_seedless_refinement(
+            _candidate: "Candidate", example: object
+        ) -> tuple[float, Any, "SideInfo"]:
+            return self._evaluate_single_seedless_with_refinement(draft_candidate, refiner_prompt, example)
+
+        if self.parallel and len(batch) > 1:
+            eval_output = self._run_parallel(batch, candidate, eval_single_with_seedless_refinement)
+        else:
+            eval_output = [eval_single_with_seedless_refinement(candidate, example) for example in batch]
+
+        # Update mapping with best candidate across all examples
+        self._update_mapping_from_eval_output(prompt, eval_output)
+
+        return eval_output
+
+    def _evaluate_single_seedless_with_refinement(
+        self,
+        draft_candidate_text: str,
+        refiner_prompt: str,
+        example: object,
+    ) -> tuple[float, Any, "SideInfo"]:
+        """Evaluate a single example in seedless mode with refinement.
+
+        Evaluates the draft candidate, then iteratively refines the candidate text.
+        """
+        assert self.refiner_config is not None
+
+        candidate_for_eval: Candidate = {"current_candidate": draft_candidate_text}
+
+        # 1. Evaluate original draft
+        original_score, _, original_side_info = self._call_evaluator(candidate_for_eval, example)
+        original_side_info["generated_candidate"] = draft_candidate_text
+        self._update_best_example_evals(example, original_score, original_side_info)
+
+        # 2. Refine and evaluate
+        best_score = original_score
+        best_candidate_text = draft_candidate_text
+
+        all_attempts: list[dict] = [
+            {
+                "iteration": 0,
+                "candidate": draft_candidate_text[:500],
+                "score": original_score,
+                "side_info": original_side_info,
+            }
+        ]
+
+        refiner_lm = self.refiner_config.refiner_lm
+        assert callable(refiner_lm)
+
+        current_candidate_text = draft_candidate_text
+        for refinement_iter in range(self.refiner_config.max_refinements):
+            current_feedback = self._format_all_attempts_feedback(all_attempts)
+            try:
+                refine_prompt = REFINER_PROMPT_TEMPLATE.format(
+                    refiner_prompt=refiner_prompt,
+                    candidate_to_improve=current_candidate_text,
+                    evaluation_feedback=current_feedback,
+                    output_format_instruction=_REFINER_TEXT_OUTPUT_INSTRUCTION,
+                )
+                raw_output = refiner_lm(refine_prompt).strip()
+                refined_text = InternalPromptCandidateSignature.output_extractor(raw_output)["candidate"]
+
+                if not refined_text:
+                    all_attempts.append(
+                        {
+                            "iteration": refinement_iter + 1,
+                            "error": "Empty refined output",
+                            "score": -1e9,
+                        }
+                    )
+                    continue
+
+                refined_candidate_for_eval: Candidate = {"current_candidate": refined_text}
+                refined_score, _, refined_side_info = self._call_evaluator(refined_candidate_for_eval, example)
+                refined_side_info["generated_candidate"] = refined_text
+                self._update_best_example_evals(example, refined_score, refined_side_info)
+
+                all_attempts.append(
+                    {
+                        "iteration": refinement_iter + 1,
+                        "candidate": refined_text[:500],
+                        "score": refined_score,
+                        "side_info": refined_side_info,
+                    }
+                )
+
+                if refined_score > best_score:
+                    best_score = refined_score
+                    best_candidate_text = refined_text
+                    current_candidate_text = refined_text
+                else:
+                    break
+
+            except Exception as e:
+                all_attempts.append(
+                    {
+                        "iteration": refinement_iter + 1,
+                        "error": str(e),
+                        "score": -1e9,
+                    }
+                )
+                break
+
+        # Build aggregated side_info
+        aggregated_side_info = dict(original_side_info)
+        refiner_side_info: dict[str, Any] = {"Attempts": all_attempts}
+
+        if "scores" in original_side_info:
+            evaluated_attempts = [a for a in all_attempts if "side_info" in a]
+            best_refined_scores: dict[str, Any] = {}
+            if evaluated_attempts:
+                best_attempt = max(evaluated_attempts, key=lambda x: x.get("score", float("-inf")))
+                best_attempt_si = best_attempt.get("side_info")
+                if isinstance(best_attempt_si, dict) and "scores" in best_attempt_si:
+                    best_refined_scores = best_attempt_si["scores"]
+            refiner_side_info["scores"] = best_refined_scores
+
+        aggregated_side_info["refiner_prompt_specific_info"] = refiner_side_info
+        aggregated_side_info["generated_candidate"] = best_candidate_text
+
+        best_candidate_for_eval: Candidate = {"current_candidate": best_candidate_text}
+        output = (best_score, best_candidate_for_eval, aggregated_side_info)
+        return best_score, output, aggregated_side_info
+
+    def _evaluate_seedless_per_example(
+        self,
+        batch: list[DataInst],
+        candidate: "Candidate",
+        prompt: str,
+    ) -> list[tuple[float, Any, "SideInfo"]]:
+        """Seedless per-example generation without refiner.
+
+        Generates a unique candidate per example by running the prompt with each example.
+        Used for multi-task search mode.
+        """
+
+        def generate_and_evaluate(_candidate: "Candidate", example: object) -> tuple[float, Any, "SideInfo"]:
+            try:
+                generated = self._run_prompt(prompt, example)
+            except Exception as e:
+                logger.warning("Seedless per-example generation failed: %s", e)
+                error_si: SideInfo = {"error": f"Generation failed: {e}"}
+                return -1e9, (-1e9, {}, error_si), error_si
+
+            cand_for_eval: Candidate = {"current_candidate": generated}
+            score, _, side_info = self._call_evaluator(cand_for_eval, example)
+            side_info["generated_candidate"] = generated
+            self._update_best_example_evals(example, score, side_info)
+            output = (score, cand_for_eval, side_info)
+            return score, output, side_info
+
+        if self.parallel and len(batch) > 1:
+            eval_output = self._run_parallel(batch, candidate, generate_and_evaluate)
+        else:
+            eval_output = [generate_and_evaluate(candidate, example) for example in batch]
+
+        # Update mapping with highest-scoring candidate
+        self._update_mapping_from_eval_output(prompt, eval_output)
+
+        return eval_output
+
+    def _evaluate_seedless_per_example_with_refiner(
+        self,
+        batch: list[DataInst],
+        candidate: "Candidate",
+        prompt: str,
+    ) -> list[tuple[float, Any, "SideInfo"]]:
+        """Seedless per-example generation with refiner.
+
+        Per example: generate candidate → evaluate → refine candidate text → re-evaluate.
+        Used for multi-task search mode with refiner.
+        """
+        refiner_prompt = candidate.get("refiner_prompt", "")
+
+        def generate_refine_evaluate(_candidate: "Candidate", example: object) -> tuple[float, Any, "SideInfo"]:
+            try:
+                draft = self._run_prompt(prompt, example)
+            except Exception as e:
+                logger.warning("Seedless per-example generation failed: %s", e)
+                error_si: SideInfo = {"error": f"Generation failed: {e}"}
+                return -1e9, (-1e9, {}, error_si), error_si
+
+            return self._evaluate_single_seedless_with_refinement(draft, refiner_prompt, example)
+
+        if self.parallel and len(batch) > 1:
+            eval_output = self._run_parallel(batch, candidate, generate_refine_evaluate)
+        else:
+            eval_output = [generate_refine_evaluate(candidate, example) for example in batch]
+
+        # Update mapping with highest-scoring candidate
+        self._update_mapping_from_eval_output(prompt, eval_output)
+
+        return eval_output
+
     def _refine_and_evaluate(
         self,
         candidate: "Candidate",
@@ -458,13 +915,9 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                     refiner_prompt=refiner_prompt,
                     candidate_to_improve=json.dumps(current_params, indent=2),
                     evaluation_feedback=current_feedback,
+                    output_format_instruction=_REFINER_JSON_OUTPUT_INSTRUCTION,
                 )
-                raw_output = refiner_lm(prompt).strip()
-                # Strip markdown code fences if present
-                if raw_output.startswith("```"):
-                    # Remove first line (```json or ```) and last line (```)
-                    lines = raw_output.split("\n")
-                    raw_output = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:]).strip()
+                raw_output = InternalPromptCandidateSignature.output_extractor(refiner_lm(prompt))["candidate"]
 
                 try:
                     parsed_refined = json.loads(raw_output)

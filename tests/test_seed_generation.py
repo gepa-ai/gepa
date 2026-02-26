@@ -1,16 +1,12 @@
-"""Tests for LLM-based seed candidate generation (seed_candidate=None)."""
-
-from unittest.mock import MagicMock
+"""Tests for seedless prompt-evolution mode (seed_candidate=None)."""
 
 import pytest
 
 from gepa.optimize_anything import (
-    _STR_CANDIDATE_KEY,
     EngineConfig,
     GEPAConfig,
     ReflectionConfig,
     _build_seed_generation_prompt,
-    _generate_seed_candidate,
     optimize_anything,
 )
 
@@ -44,13 +40,10 @@ class TestBuildSeedGenerationPrompt:
             objective="Solve problems.",
             dataset=dataset,
         )
-        assert "## Sample Inputs" in prompt
-        # Up to 3 examples
-        assert "Example 1" in prompt
-        assert "Example 2" in prompt
-        assert "Example 3" in prompt
-        # 4th example should NOT appear
-        assert "Example 4" not in prompt
+        assert "## Sample Inputs" not in prompt
+        assert "Example 1" not in prompt
+        assert "Example 2" not in prompt
+        assert "Example 3" not in prompt
 
     def test_with_all_sections(self):
         prompt = _build_seed_generation_prompt(
@@ -60,7 +53,7 @@ class TestBuildSeedGenerationPrompt:
         )
         assert "## Goal" in prompt
         assert "## Domain Context & Constraints" in prompt
-        assert "## Sample Inputs" in prompt
+        assert "## Sample Inputs" not in prompt
         assert "## Output Format" in prompt
 
     def test_empty_dataset(self):
@@ -68,69 +61,7 @@ class TestBuildSeedGenerationPrompt:
             objective="Do stuff.",
             dataset=[],
         )
-        # Empty dataset still shows the section but no examples
-        assert "## Sample Inputs" in prompt
-
-
-# ---------------------------------------------------------------------------
-# _generate_seed_candidate
-# ---------------------------------------------------------------------------
-
-
-class TestGenerateSeedCandidate:
-    def test_extracts_from_backtick_blocks(self):
-        mock_lm = MagicMock(return_value="```\ngenerated candidate text\n```")
-        result = _generate_seed_candidate(
-            lm=mock_lm,
-            objective="Test objective.",
-        )
-        assert result == {_STR_CANDIDATE_KEY: "generated candidate text"}
-        mock_lm.assert_called_once()
-
-    def test_extracts_with_language_specifier(self):
-        mock_lm = MagicMock(return_value="```python\ndef solve():\n    return 42\n```")
-        result = _generate_seed_candidate(
-            lm=mock_lm,
-            objective="Write code.",
-        )
-        assert result[_STR_CANDIDATE_KEY] == "def solve():\n    return 42"
-
-    def test_passes_objective_and_background_to_prompt(self):
-        mock_lm = MagicMock(return_value="```\nresult\n```")
-        _generate_seed_candidate(
-            lm=mock_lm,
-            objective="My objective.",
-            background="My background.",
-        )
-        prompt = mock_lm.call_args[0][0]
-        assert "My objective." in prompt
-        assert "My background." in prompt
-
-    def test_passes_dataset_examples_to_prompt(self):
-        mock_lm = MagicMock(return_value="```\nresult\n```")
-        dataset = [{"input": "example1"}, {"input": "example2"}]
-        _generate_seed_candidate(
-            lm=mock_lm,
-            objective="Solve.",
-            dataset=dataset,
-        )
-        prompt = mock_lm.call_args[0][0]
-        assert "example1" in prompt
-        assert "example2" in prompt
-
-    def test_logs_when_logger_provided(self):
-        mock_lm = MagicMock(return_value="```\ncandidate\n```")
-        mock_logger = MagicMock()
-        _generate_seed_candidate(
-            lm=mock_lm,
-            objective="Goal.",
-            logger=mock_logger,
-        )
-        assert mock_logger.log.call_count == 2
-        # First call: "Generating initial seed candidate via LLM..."
-        assert "Generating" in mock_logger.log.call_args_list[0][0][0]
-        # Second call: "Generated seed candidate (N chars)"
-        assert "Generated" in mock_logger.log.call_args_list[1][0][0]
+        assert "## Sample Inputs" not in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +110,7 @@ class TestOptimizeAnythingSeedNoneValidation:
 
 class TestOptimizeAnythingSeedNoneIntegration:
     def test_full_flow_single_instance(self):
-        """Full flow: seed_candidate=None → LLM generates seed → optimization runs."""
+        """Full flow: seed_candidate=None → prompt-evolution mode runs end-to-end."""
         calls = []
 
         def mock_reflection_lm(prompt):
@@ -203,16 +134,17 @@ class TestOptimizeAnythingSeedNoneIntegration:
             ),
         )
 
-        # The LLM was called at least once (for seed generation)
+        # The LLM should be called at least once to materialize candidate text
+        # from the evolved internal prompt.
         assert len(calls) >= 1
-        # First call should be the seed generation prompt
-        assert "## Goal" in calls[0]
-        assert "Generate a long candidate string." in calls[0]
+        # At least one call should include the seed-generation prompt scaffold.
+        assert any("## Goal" in call for call in calls)
+        assert any("Generate a long candidate string." in call for call in calls)
         # Result should have a best_candidate (str because str_candidate_mode)
         assert isinstance(result.best_candidate, str)
 
     def test_full_flow_with_dataset(self):
-        """seed_candidate=None with dataset includes examples in prompt."""
+        """seed_candidate=None with dataset does not inject sample inputs into seed prompt."""
         calls = []
 
         def mock_reflection_lm(prompt):
@@ -241,6 +173,47 @@ class TestOptimizeAnythingSeedNoneIntegration:
             ),
         )
 
-        # Seed generation prompt should include dataset examples
-        assert "2+2" in calls[0]
-        assert isinstance(result.best_candidate, str)
+        # Seed-generation prompt scaffold should not include sample-input section.
+        seed_prompt_calls = [call for call in calls if isinstance(call, str) and "## Goal" in call]
+        assert seed_prompt_calls
+        assert all("## Sample Inputs" not in call for call in seed_prompt_calls)
+        # Per-example seedless mode has no single canonical best artifact.
+        assert result.best_candidate is None
+        assert isinstance(result.best_prompt, str)
+        assert "## Goal" in result.best_prompt
+        # May be sparse depending on optimization budget / which examples were evaluated.
+        assert result.best_candidate_per_example is not None
+        assert set(result.best_candidate_per_example).issubset({0, 1})
+
+    def test_per_example_mode_can_return_sparse_map_with_tight_budget(self):
+        calls = []
+
+        def mock_reflection_lm(prompt):
+            calls.append(prompt)
+            return "```\nSolve the math problem step by step.\n```"
+
+        dataset = [
+            {"input": "2+2", "answer": "4"},
+            {"input": "3*5", "answer": "15"},
+        ]
+
+        def evaluator(candidate: str, example) -> float:
+            return 0.5
+
+        result = optimize_anything(
+            seed_candidate=None,
+            evaluator=evaluator,
+            objective="Generate a prompt for math problems.",
+            dataset=dataset,
+            config=GEPAConfig(
+                engine=EngineConfig(max_metric_calls=1),
+                reflection=ReflectionConfig(
+                    reflection_lm=mock_reflection_lm,
+                    reflection_minibatch_size=1,
+                ),
+            ),
+        )
+
+        # Tight budgets may stop before per-example proposals are evaluated.
+        assert result.best_candidate is None
+        assert isinstance(result.best_candidate_per_example, dict)

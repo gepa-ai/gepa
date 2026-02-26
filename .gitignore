@@ -4,7 +4,6 @@
 # Can't Be Late: download and extract traces (see examples/adrs/can_be_late/README.md)
 examples/adrs/can_be_late/utils/simulator/real_traces.tar.gz
 examples/adrs/can_be_late/utils/simulator/real/
-
 #######################
 # Copied from default python .gitignore
 #######################

@@ -275,6 +275,40 @@ class OptimizationState:
         self.__dict__.update(state)
 
 
+@dataclass(frozen=True)
+class OptimizeAnythingResult:
+    """Result wrapper returned by :func:`optimize_anything`.
+
+    Wraps :class:`~gepa.core.result.GEPAResult` and adds seedless-mode extras
+    like ``best_candidate_per_example`` and ``best_prompt``.  Most
+    ``GEPAResult`` attributes are accessible directly via delegation.
+
+    Attributes:
+        gepa_result: The underlying :class:`~gepa.core.result.GEPAResult`.
+        best_candidate: User-facing best candidate. In seedless per-example
+            mode this is ``None`` by design because there is no single
+            canonical artifact across all examples.
+        best_candidate_per_example: Maps ``example_index → best candidate``.
+            In seedless per-example mode, each example maps to its own best
+            generated artifact.  In all other modes, every example maps to
+            the overall ``best_candidate``.
+        best_prompt: In seedless mode, the evolved internal generation prompt
+            corresponding to the best candidate on the GEPA frontier.
+    """
+
+    gepa_result: GEPAResult
+    best_candidate: str | dict[str, str] | None = None
+    best_candidate_per_example: dict[int, str | dict[str, str]] | None = None
+    best_prompt: str | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        # Guard: prevent infinite recursion during pickle/deepcopy
+        # (they call __getattr__ before __init__ sets gepa_result).
+        if name == "gepa_result":
+            raise AttributeError(name)
+        return getattr(self.gepa_result, name)
+
+
 # ---------------------------------------------------------------------------
 # Evaluation log context — captures diagnostic output without polluting stdout
 # ---------------------------------------------------------------------------
@@ -605,8 +639,8 @@ Based on your analysis, propose an improved version that:
     sections.append("""
 ## Output Format
 
-Provide ONLY the improved version within ``` blocks. The output must be a complete, 
-drop-in replacement for the current component (whether it's a prompt, configuration, 
+Provide ONLY the improved version within ``` blocks. The output must be a complete,
+drop-in replacement for the current component (whether it's a prompt, configuration,
 code, or any other parameter type).
 Do not include explanations, commentary, or markdown outside the ``` blocks.""")
 
@@ -621,7 +655,7 @@ def _build_seed_generation_prompt(
     """Build a prompt for the reflection LM to generate an initial seed candidate.
 
     Used when ``seed_candidate=None`` — the LLM bootstraps the first candidate
-    from the objective, optional background, and optional dataset examples.
+    from the objective and optional background.
     """
     sections = []
 
@@ -635,14 +669,10 @@ def _build_seed_generation_prompt(
     if background:
         sections.append(f"\n## Domain Context & Constraints\n\n{background}")
 
-    if dataset is not None:
-        examples = dataset[:3]
-        example_lines = [f"- Example {i}: {ex}" for i, ex in enumerate(examples, 1)]
-        sections.append(
-            "\n## Sample Inputs\n\n"
-            "The candidate will be evaluated on inputs like these:\n\n"
-            + "\n".join(example_lines)
-        )
+    # Keep ``dataset`` in the signature for backward compatibility, but do not
+    # include dataset examples in the internal seed prompt. This avoids leaking
+    # sample-specific context into the prompt scaffold itself.
+    _ = dataset
 
     sections.append(
         "\n## Output Format\n\n"
@@ -652,38 +682,6 @@ def _build_seed_generation_prompt(
     )
 
     return "\n".join(sections)
-
-
-def _generate_seed_candidate(
-    lm: LanguageModel,
-    objective: str,
-    background: str | None = None,
-    dataset: list[DataInst] | None = None,
-    logger: LoggerProtocol | None = None,
-) -> Candidate:
-    """Call the reflection LM to generate an initial seed candidate.
-
-    Returns a single-key candidate dict ``{_STR_CANDIDATE_KEY: generated_text}``.
-    """
-    from gepa.strategies.instruction_proposal import InstructionProposalSignature
-
-    prompt = _build_seed_generation_prompt(
-        objective=objective,
-        background=background,
-        dataset=dataset,
-    )
-
-    if logger:
-        logger.log("Generating initial seed candidate via LLM...")
-
-    lm_output = lm(prompt)
-    extracted = InstructionProposalSignature.output_extractor(lm_output)
-    generated_text = extracted["new_instruction"]
-
-    if logger:
-        logger.log(f"Generated seed candidate ({len(generated_text)} chars)")
-
-    return {_STR_CANDIDATE_KEY: generated_text}
 
 
 optimize_anything_reflection_prompt_template: str = """I am optimizing a parameter in my system. The current parameter value is:
@@ -1025,7 +1023,7 @@ def optimize_anything(
     objective: str | None = None,
     background: str | None = None,
     config: GEPAConfig | None = None,
-) -> GEPAResult:
+) -> OptimizeAnythingResult:
     """Optimize any text artifact using LLM-guided search.
 
     This is the main entry point for GEPA.  You declare the **what** — your
@@ -1056,11 +1054,11 @@ def optimize_anything(
 
             - ``str`` — single text parameter (evaluator receives ``str``).
             - ``dict[str, str]`` — named parameters (evaluator receives the dict).
-            - ``None`` — **seedless mode**: the reflection LLM generates the
-              initial candidate from ``objective`` (and optionally ``background``
-              / ``dataset``).  Requires ``objective``.  Useful for creative or
-              exploratory tasks where you know *what good looks like* but not
-              where to begin.
+            - ``None`` — **seedless prompt-evolution mode**: GEPA builds an
+              internal generation prompt from ``objective`` (and optionally
+              ``background``), then evolves that prompt directly.
+              During evaluation, the reflection LM turns the current prompt into
+              a concrete candidate artifact. Requires ``objective``.
 
         evaluator: Scoring function.  Returns ``(score, side_info)`` or ``score``.
             See :class:`Evaluator`.  Diagnostic output via ``oa.log()`` is
@@ -1079,8 +1077,14 @@ def optimize_anything(
         config: Full configuration.  See :class:`GEPAConfig`.
 
     Returns:
-        :class:`~gepa.core.result.GEPAResult` — access ``result.best_candidate``
-        for the optimized parameter(s) and the full optimization history.
+        :class:`OptimizeAnythingResult` — wraps
+        :class:`~gepa.core.result.GEPAResult` and forwards its attributes
+        (e.g., ``result.best_idx``), plus:
+        - ``result.best_candidate``: user-facing best artifact; ``None`` in
+          seedless per-example mode.
+        - ``result.best_candidate_per_example``: sparse map of per-example
+          best artifacts in seedless per-example mode.
+        - ``result.best_prompt``: best evolved internal prompt in seedless mode.
 
     Examples:
 
@@ -1124,7 +1128,7 @@ def optimize_anything(
         Seedless mode (no starting artifact)::
 
             result = optimize_anything(
-                seed_candidate=None,           # LLM writes the first draft
+                seed_candidate=None,           # GEPA evolves a generation prompt
                 evaluator=evaluate_3d_render,
                 dataset=visual_aspects,
                 objective="Optimize a Python program to generate a 3D unicorn.",
@@ -1135,18 +1139,20 @@ def optimize_anything(
     if config is None:
         config = GEPAConfig()
 
-    # Detect seed generation mode: when seed_candidate is None, the LLM
-    # will generate the initial candidate from the objective.
-    needs_seed_generation = False
-    if seed_candidate is None:
-        needs_seed_generation = True
+    # Seedless prompt-evolution mode: when seed_candidate is None, GEPA uses
+    # a generated prompt template as the optimizable artifact.
+    seedless_mode = seed_candidate is None
+    if seedless_mode:
         str_candidate_mode = True
         if not objective or not objective.strip():
             raise ValueError(
                 "'objective' is required when seed_candidate is None. "
-                "The reflection LLM needs the objective to generate an initial candidate."
+                "The reflection LLM needs the objective to build the seed generation prompt."
             )
-        seed_candidate = {_STR_CANDIDATE_KEY: ""}  # placeholder until LLM generates it
+        # In seedless mode, the seed is a prompt template.
+        # The adapter runs this prompt through internal_prompt_candidate_lm to generate artifacts.
+        seed_prompt = _build_seed_generation_prompt(objective=objective, background=background)
+        seed_candidate = {_STR_CANDIDATE_KEY: seed_prompt}
     else:
         # Normalize seed_candidate: str -> {_STR_CANDIDATE_KEY: str}
         str_candidate_mode = isinstance(seed_candidate, str)
@@ -1155,6 +1161,26 @@ def optimize_anything(
 
     # Detect single-instance mode: when both dataset=None and valset=None
     single_instance_mode = dataset is None and valset is None
+
+    # In seedless mode, determine generation strategy:
+    # - per_example_generation: each example gets its own generated candidate (multi-task search)
+    # - generate-once: one candidate evaluated on all examples (single-task, generalization)
+    per_example_generation = seedless_mode and not single_instance_mode and (valset is None)
+
+    # Seedless generalization + refiner is not supported.
+    # In generalization mode, one candidate should work across all examples.
+    # Per-example refinement contradicts that — it optimizes for individual
+    # examples rather than generalizing. The reflection LM already evolves the
+    # prompt across iterations, which is the real optimization loop.
+    seedless_generalization = seedless_mode and not single_instance_mode and (valset is not None)
+    if seedless_generalization and config.refiner is not None:
+        raise ValueError(
+            "RefinerConfig is not supported in seedless generalization mode "
+            "(seed_candidate=None with both dataset and valset). "
+            "In generalization mode, one candidate must work across all examples — "
+            "per-example refinement would optimize for individual examples rather than generalizing. "
+            "Remove RefinerConfig, or provide a seed_candidate to use seeded mode with refinement."
+        )
 
     # Set reflection_minibatch_size default based on mode (if not explicitly set)
     if config.reflection.reflection_minibatch_size is None:
@@ -1200,18 +1226,6 @@ def optimize_anything(
     from gepa.utils.code_execution import set_use_cloudpickle
 
     set_use_cloudpickle(config.engine.use_cloudpickle)
-
-    active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
-        evaluator=wrapped_evaluator,
-        parallel=config.engine.parallel,
-        max_workers=config.engine.max_workers,
-        refiner_config=config.refiner,
-        best_example_evals_k=config.engine.best_example_evals_k,
-        objective=objective,
-        background=background,
-        cache_mode=resolved_cache_mode,
-        cache_dir=config.engine.run_dir,
-    )
 
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(effective_dataset)
@@ -1263,17 +1277,11 @@ def optimize_anything(
         stop_callback = CompositeStopper(*stop_callbacks_list)
 
     # --- 2. Validate and setup reflection LM ---
-    if needs_seed_generation and config.reflection.reflection_lm is None:
+    if seedless_mode and config.reflection.reflection_lm is None:
         raise ValueError(
             "reflection_lm is required when seed_candidate is None. "
             "Set config.reflection.reflection_lm to a model name or callable."
         )
-    if not hasattr(active_adapter, "propose_new_texts"):
-        assert config.reflection.reflection_lm is not None, (
-            f"reflection_lm was not provided. The adapter '{active_adapter!s}' does not provide a propose_new_texts method, "
-            + "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
-        )
-
     # Default refiner_lm to reflection_lm name BEFORE converting reflection_lm to callable
     if config.refiner is not None and config.refiner.refiner_lm is None:
         config.refiner.refiner_lm = config.reflection.reflection_lm
@@ -1287,18 +1295,6 @@ def optimize_anything(
         if isinstance(config.refiner.refiner_lm, str):
             config.refiner.refiner_lm = make_litellm_lm(config.refiner.refiner_lm)
 
-    # Generate seed candidate via LLM if seed_candidate was None
-    if needs_seed_generation:
-        assert config.reflection.reflection_lm is not None and not isinstance(config.reflection.reflection_lm, str)
-        assert objective is not None  # validated earlier in needs_seed_generation block
-        seed_candidate = _generate_seed_candidate(
-            lm=config.reflection.reflection_lm,
-            objective=objective,
-            background=background,
-            dataset=dataset,
-            logger=config.tracking.logger or StdOutLogger(),
-        )
-
     # Auto-inject refiner_prompt into seed_candidate if refiner is enabled
     if config.refiner is not None:
         formatted_refiner_prompt = DEFAULT_REFINER_PROMPT.format(
@@ -1308,6 +1304,28 @@ def optimize_anything(
         if "refiner_prompt" not in seed_candidate:
             seed_candidate["refiner_prompt"] = formatted_refiner_prompt
         # If user provides their own refiner_prompt, use it (allows custom refiner prompts)
+
+    # --- Construct adapter (after LM conversion so we can pass callables) ---
+    active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
+        evaluator=wrapped_evaluator,
+        parallel=config.engine.parallel,
+        max_workers=config.engine.max_workers,
+        refiner_config=config.refiner,
+        best_example_evals_k=config.engine.best_example_evals_k,
+        objective=objective,
+        background=background,
+        cache_mode=resolved_cache_mode,
+        cache_dir=config.engine.run_dir,
+        seedless_mode=seedless_mode,
+        internal_prompt_candidate_lm=config.reflection.reflection_lm if seedless_mode else None,
+        per_example_generation=per_example_generation,
+    )
+
+    if not hasattr(active_adapter, "propose_new_texts"):
+        assert config.reflection.reflection_lm is not None, (
+            f"reflection_lm was not provided. The adapter '{active_adapter!s}' does not provide a propose_new_texts method, "
+            + "and hence, GEPA will use the default proposer, which requires a reflection_lm to be specified."
+        )
 
     # Setup default logger if not provided
     if config.tracking.logger is None:
@@ -1490,9 +1508,45 @@ def optimize_anything(
     with experiment_tracker:
         state = engine.run()
 
-    return GEPAResult.from_state(
+    result = GEPAResult.from_state(
         state,
         run_dir=config.engine.run_dir,
         seed=config.engine.seed,
         str_candidate_key=_STR_CANDIDATE_KEY if str_candidate_mode else None,
+    )
+
+    # Post-optimization result packaging.
+    # In seedless mode, GEPA optimizes internal generation prompts and we expose
+    # user-facing artifacts via post-processing.
+    best_candidate: str | dict[str, str] | None = result.best_candidate
+    best_candidate_per_example: dict[int, str | dict[str, str]] | None = None
+    best_prompt: str | None = None
+    if seedless_mode and isinstance(active_adapter, OptimizeAnythingAdapter):
+        best_prompt = result.best_candidate if isinstance(result.best_candidate, str) else None
+
+        if per_example_generation:
+            # Per-example mode has no single canonical best artifact.
+            best_candidate = None
+            # Sparse by design: only examples that have been evaluated and have
+            # a known best generated candidate appear in this map.
+            best_candidate_per_example = active_adapter.get_best_candidate_per_example(effective_dataset)  # type: ignore[assignment]
+        else:
+            # Generate-once mode: replace internal prompts with actual candidates.
+            for cand in result.candidates:
+                prompt_text = cand[_STR_CANDIDATE_KEY]
+                best_candidate = active_adapter.get_best_candidate(prompt_text)
+                if best_candidate is not None:
+                    cand[_STR_CANDIDATE_KEY] = best_candidate
+            best_candidate = result.best_candidate
+
+    # For non-per-example modes, populate with the overall best candidate.
+    if best_candidate_per_example is None:
+        assert best_candidate is not None
+        best_candidate_per_example = dict.fromkeys(range(len(effective_dataset)), best_candidate)
+
+    return OptimizeAnythingResult(
+        gepa_result=result,
+        best_candidate=best_candidate,
+        best_candidate_per_example=best_candidate_per_example,
+        best_prompt=best_prompt,
     )
