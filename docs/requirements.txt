@@ -14,6 +14,9 @@ mkdocs-jupyter>=0.24.0
 # RSS feed for blog
 mkdocs-rss-plugin>=1.12.0
 
+# Redirects
+mkdocs-redirects>=1.2.0
+
 # Social preview screenshots (CI only)
 playwright>=1.40.0
 pillow>=10.0.0
