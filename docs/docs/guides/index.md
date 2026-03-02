@@ -8,6 +8,7 @@ Welcome to the GEPA guides! These guides will help you understand and use GEPA e
 - [Use Cases](use-cases.md) - Real-world applications of GEPA across industries
 - [FAQ](faq.md) - Frequently asked questions about GEPA
 - [Creating Adapters](adapters.md) - Learn how to integrate GEPA with your system
+- [Code Mode Adapter](code-mode-adapter.md) - Optimize Code Mode text surfaces with pluggable runtimes
 - [Using Callbacks](callbacks.md) - Monitor and instrument optimization runs
 - [Contributing](contributing.md) - How to contribute to GEPA development
 

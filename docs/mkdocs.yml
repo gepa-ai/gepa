@@ -92,6 +92,7 @@ nav:
             - DSPy Full Program Adapter: api/adapters/DSPyFullProgramAdapter.md
             - RAG Adapter: api/adapters/RAGAdapter.md
             - MCP Adapter: api/adapters/MCPAdapter.md
+            - Code Mode Adapter: api/adapters/CodeModeAdapter.md
             - TerminalBench Adapter: api/adapters/TerminalBenchAdapter.md
         - Proposers:
             - Proposers Overview: api/proposers/index.md

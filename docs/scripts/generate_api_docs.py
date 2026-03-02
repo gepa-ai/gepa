@@ -81,6 +81,7 @@ API_MAPPING = {
         ("gepa.adapters.dspy_full_program_adapter.full_program_adapter", "DspyAdapter", "DSPyFullProgramAdapter"),
         ("gepa.adapters.generic_rag_adapter.generic_rag_adapter", "GenericRAGAdapter", "RAGAdapter"),
         ("gepa.adapters.mcp_adapter.mcp_adapter", "MCPAdapter", "MCPAdapter"),
+        ("gepa.adapters.code_mode_adapter.code_mode_adapter", "CodeModeAdapter", "CodeModeAdapter"),
         ("gepa.adapters.terminal_bench_adapter.terminal_bench_adapter", "TerminusAdapter", "TerminalBenchAdapter"),
     ],
     "proposers": [

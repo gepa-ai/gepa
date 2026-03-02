@@ -345,6 +345,7 @@ GEPA provides several ready-to-use adapters for common use cases:
 | [DSPy Full Program Adapter](../api/adapters/DSPyFullProgramAdapter.md) | Evolves entire DSPy programs including structure | Full program evolution, architecture search |
 | [RAG Adapter](../api/adapters/RAGAdapter.md) | Optimizes RAG pipeline components | Retrieval-augmented generation systems |
 | [MCP Adapter](../api/adapters/MCPAdapter.md) | Optimizes MCP tool descriptions and system prompts | Tool-using agents, MCP servers |
+| [Code Mode Adapter](../api/adapters/CodeModeAdapter.md) ([guide](code-mode-adapter.md)) | Optimizes Code Mode text components with MCP runners | Code-first MCP orchestration (Cloudflare MCP, local MCP stdio) |
 | [TerminalBench Adapter](../api/adapters/TerminalBenchAdapter.md) | Optimizes agents for terminal-based tasks | CLI agents, shell automation |
 
 ### When to Use Each Adapter
@@ -358,6 +359,8 @@ GEPA provides several ready-to-use adapters for common use cases:
 - **RAG Adapter**: Use for optimizing retrieval-augmented generation systems. Supports multiple vector stores (ChromaDB, Weaviate, Qdrant, Milvus, etc.) and optimizes query reformulation, context synthesis, and answer generation prompts.
 
 - **MCP Adapter**: Use for optimizing Model Context Protocol tool usage. Supports both local (stdio) and remote (SSE/StreamableHTTP) MCP servers.
+
+- **Code Mode Adapter**: Use for code-first MCP orchestration patterns where you want structured traces (generated code, selected tool, tool calls, logs, errors) and optimization of Code Mode text components.
 
 - **TerminalBench Adapter**: Use for optimizing agents that interact with terminal/shell environments.
 
