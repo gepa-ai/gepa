@@ -25,6 +25,7 @@ citation_authors:
   - "Alexandros G. Dimakis"
   - "Matei Zaharia"
 citation_technical_report_institution: "UC Berkeley"
+citation_keywords: "coding agents, skill learning, agent optimization, SWE-bench, repository-specific skills, LLM agents"
 ---
 
 # Automatically Learning Skills for Coding Agents
