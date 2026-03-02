@@ -38,6 +38,7 @@ citation_authors:
   - "Alexandros G. Dimakis"
   - "Matei Zaharia"
 citation_technical_report_institution: "UC Berkeley"
+citation_keywords: "prompt optimization, evolutionary search, LLM agents, Pareto optimization, text optimization, code optimization, agent architecture"
 ---
 
 # <span class="gradient-code">optimize_anything</span>: A Universal API for Optimizing any Text Parameter

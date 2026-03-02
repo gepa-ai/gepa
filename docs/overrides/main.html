@@ -57,11 +57,15 @@
 <meta name="citation_publication_date" content="{{ page.meta.date.created.strftime('%Y/%m/%d') }}">
 <meta name="citation_online_date" content="{{ page.meta.date.created.strftime('%Y/%m/%d') }}">
 {%- endif %}
+{% if page_desc -%}
+<meta name="citation_abstract" content="{{ page_desc }}">
+{%- endif %}
 <meta name="citation_abstract_html_url" content="{{ page_url }}">
 <meta name="citation_fulltext_html_url" content="{{ page_url }}">
+<meta name="citation_pdf_url" content="{{ page_url }}paper.pdf">
 <meta name="citation_language" content="en">
-{% if page.meta.citation_pdf_url -%}
-<meta name="citation_pdf_url" content="{{ config.site_url ~ page.meta.citation_pdf_url }}">
+{% if page.meta.citation_keywords -%}
+<meta name="citation_keywords" content="{{ page.meta.citation_keywords }}">
 {%- endif %}
 {% if page.meta.citation_technical_report_institution -%}
 <meta name="citation_technical_report_institution" content="{{ page.meta.citation_technical_report_institution }}">
@@ -74,12 +78,13 @@
 {
   "@context": "https://schema.org",
   {% if is_blog_post -%}
-  "@type": "BlogPosting",
+  "@type": "{% if page.meta.citation_authors %}ScholarlyArticle{% else %}BlogPosting{% endif %}",
   "headline": {{ social_title | tojson }},
   "url": {{ page_url | tojson }},
   {% if page_desc %}"description": {{ page_desc | tojson }},{% endif %}
   {% if page_image %}"image": {{ page_image | tojson }},{% endif %}
-  {% if page.meta.get('date', {}).get('created') %}"datePublished": {{ page.meta.date.created | string | tojson }},{% endif %}
+  {% if page.meta.get('date', {}).get('created') %}"datePublished": {{ page.meta.date.created.isoformat() | tojson }},{% endif %}
+  {% if page.meta.citation_authors %}"author": [{% for author in page.meta.citation_authors %}{"@type": "Person", "name": {{ author | tojson }}}{% if not loop.last %}, {% endif %}{% endfor %}],{% endif %}
   "publisher": {
     "@type": "Organization",
     "name": "GEPA",
