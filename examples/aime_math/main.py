@@ -43,7 +43,7 @@ def main():
     gepa_config = GEPAConfig(
         engine=EngineConfig(
             run_dir="outputs/aime_math",
-            max_metric_calls=600,
+            max_metric_calls=500,
             track_best_outputs=True,
             parallel=True,
             max_workers=32,
