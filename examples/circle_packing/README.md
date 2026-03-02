@@ -11,19 +11,21 @@ Uses GEPA to evolve Python code that packs 26 non-overlapping circles inside a u
 
 ## Setup
 
+From the repo root (`gepa/`):
+
 Our `requirements.txt` contains diverse libraries to support optimization for the circle packing problem.
 Although LLMs only use a handful of them, we provide diverse options regardless for the optimization engine.
 ```bash
-uv pip install -r requirements.txt
+uv venv
+uv pip install -r examples/circle_packing/requirements.txt
+uv pip install -e .
 ```
 
 ## Run
 
-From the repo root (`gepa-optimize-anything/`):
-
 ```bash
 export OPENAI_API_KEY=...
-python -m examples.circle_packing.main
+uv run python -m examples.circle_packing.main
 ```
 
 Results are saved to `outputs/circle_packing/`.

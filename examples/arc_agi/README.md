@@ -11,17 +11,19 @@ Uses GEPA to evolve agent code that solves ARC-AGI puzzles. The agent gets train
 
 ## Setup
 
+From the repo root (`gepa/`):
+
 ```bash
+uv venv
 uv pip install datasets dspy litellm
+uv pip install -e .  # must come after dspy to avoid PyPI overwrite
 ```
 
 ## Run
 
-From the repo root (`gepa-optimize-anything/`):
-
 ```bash
 export OPENAI_API_KEY=...
-python -m examples.arc_agi.main
+uv run python -m examples.arc_agi.main
 ```
 
 The evolved agent is saved to `outputs/arc_agi/best_agent.py`. After optimization, the script evaluates both the baseline and best agent on the held-out test set.

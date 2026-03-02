@@ -10,17 +10,19 @@ Optimize Python code that minimizes a blackbox objective function within a fixed
 
 ## Setup
 
+From the repo root (`gepa/`):
+
 ```bash
+uv venv
 uv pip install numpy scipy optuna scikit-learn
+uv pip install -e .
 ```
 
 ## Run
 
-From the repo root (`gepa-optimize-anything/`):
-
 ```bash
 export OPENAI_API_KEY=...
-python -m examples.blackbox.main
+uv run python -m examples.blackbox.main
 ```
 
 Results are saved to `outputs/blackbox/<problem_index>/`.

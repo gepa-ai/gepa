@@ -9,17 +9,19 @@ Optimize a math-solving prompt for AIME competition problems. The solver LLM (GP
 
 ## Setup
 
+From the repo root (`gepa/`):
+
 ```bash
+uv venv
 uv pip install datasets dspy litellm
+uv pip install -e .  # must come after dspy to avoid PyPI overwrite
 ```
 
 ## Run
 
-From the repo root (`gepa-optimize-anything/`):
-
 ```bash
 export OPENAI_API_KEY=...
-python -m examples.aime_math.main
+uv run python -m examples.aime_math.main
 ```
 
 After optimization, the script evaluates both the baseline and best-found prompt on the AIME 2025 test set and prints the improvement.
