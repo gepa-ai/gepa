@@ -78,15 +78,17 @@ jobs:
           cd docs
           uv run -p ../.venv python scripts/generate_api_docs.py
 
-      - name: Build documentation
-        run: |
-          cd docs
-          uv run -p ../.venv mkdocs build
-
       - name: Install Playwright browsers
         run: |
           cd docs
           uv run -p ../.venv playwright install chromium --with-deps
+
+      - name: Build documentation
+        run: |
+          cd docs
+          uv run -p ../.venv mkdocs build
+        env:
+          SCHOLARLY_PDF: "1"
 
       - name: Generate social preview screenshots
         run: |
