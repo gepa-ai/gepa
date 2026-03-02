@@ -157,6 +157,10 @@ theme:
     favicon: static/img/gepa_logo.svg
 
 plugins:
+    - redirects:
+        redirect_maps:
+            'blog/introducing-optimize-anything.md': 'blog/posts/2026-02-18-introducing-optimize-anything/index.md'
+            'blog/automatically-learning-skills-for-coding-agents.md': 'blog/posts/2026-02-18-automatically-learning-skills-for-coding-agents/index.md'
     - social:
         enabled: !ENV [CI, false]
         cards_layout_dir: layouts
