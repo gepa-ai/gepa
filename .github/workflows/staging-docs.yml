@@ -60,15 +60,17 @@ jobs:
           cd docs
           sed -i 's|site_url: https://gepa-ai.github.io/gepa/|site_url: https://blogpost.gepa-docs-staging.pages.dev/|' mkdocs.yml
 
-      - name: Build documentation
-        run: |
-          cd docs
-          uv run -p ../.venv mkdocs build
-
       - name: Install Playwright browsers
         run: |
           cd docs
           uv run -p ../.venv playwright install chromium --with-deps
+
+      - name: Build documentation
+        run: |
+          cd docs
+          uv run -p ../.venv mkdocs build
+        env:
+          SCHOLARLY_PDF: "1"
 
       - name: Generate social preview screenshots
         run: |
