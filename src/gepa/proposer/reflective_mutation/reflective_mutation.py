@@ -180,7 +180,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         # 1) Evaluate current program with traces
         # Note: We don't use cache for capture_traces=True evaluations since we need fresh traces for reflection
         curr_parent_ids = [p for p in state.parent_program_for_candidate[curr_prog_id] if p is not None]
-        is_seed_candidate = curr_prog_id == 0
+        is_seed_candidate = all(p is None for p in state.parent_program_for_candidate[curr_prog_id])
         notify_callbacks(
             self.callbacks,
             "on_evaluation_start",

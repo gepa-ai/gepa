@@ -51,7 +51,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput],
         run_dir: str | None,
         valset: list[DataInst] | DataLoader[DataId, DataInst] | None,
-        seed_candidate: dict[str, str],
+        seed_candidate: list[dict[str, str]],
         # Controls
         perfect_score: float | None,
         seed: int,
@@ -317,7 +317,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.callbacks,
             "on_optimization_start",
             OptimizationStartEvent(
-                seed_candidate=self.seed_candidate,
+                seed_candidates=state.program_candidates[: state.num_seed_candidates],
                 trainset_size=len(self.reflective_proposer.trainset),
                 valset_size=len(valset),
                 config={
@@ -328,25 +328,32 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ),
         )
 
-        # Notify callbacks of seed candidate's initial valset evaluation (iteration 0)
+        # Notify callbacks of seed candidates' initial valset evaluations (iteration 0)
         # This provides the baseline performance before any optimization
-        seed_scores = state.prog_candidate_val_subscores[0]
-        notify_callbacks(
-            self.callbacks,
-            "on_valset_evaluated",
-            ValsetEvaluatedEvent(
-                iteration=0,
-                candidate_idx=0,
-                candidate=self.seed_candidate,
-                scores_by_val_id=dict(seed_scores),
-                average_score=base_val_avg,
-                num_examples_evaluated=len(seed_scores),
-                total_valset_size=len(valset),
-                parent_ids=[],
-                is_best_program=True,  # Seed is always best at iteration 0
-                outputs_by_val_id=None,  # Outputs not tracked at initialization unless track_best_outputs=True
-            ),
-        )
+        # Use state.num_seed_candidates (not self.seed_candidate) so that on resume
+        # we correctly reference the seeds that were actually used to initialize the state.
+        best_seed_idx = self.val_evaluation_policy.get_best_program(state)
+        for seed_idx in range(state.num_seed_candidates):
+            if seed_idx >= len(state.program_candidates):
+                break
+            seed_scores_i = state.prog_candidate_val_subscores[seed_idx]
+            seed_avg_i = state.get_program_average_val_subset(seed_idx)[0]
+            notify_callbacks(
+                self.callbacks,
+                "on_valset_evaluated",
+                ValsetEvaluatedEvent(
+                    iteration=0,
+                    candidate_idx=seed_idx,
+                    candidate=state.program_candidates[seed_idx],
+                    scores_by_val_id=dict(seed_scores_i),
+                    average_score=seed_avg_i,
+                    num_examples_evaluated=len(seed_scores_i),
+                    total_valset_size=len(valset),
+                    parent_ids=[],
+                    is_best_program=(seed_idx == best_seed_idx),
+                    outputs_by_val_id=None,  # Outputs not tracked at initialization unless track_best_outputs=True
+                ),
+            )
 
         # Register budget hook to fire on_budget_updated callback in real-time
         def budget_hook(new_total: int, delta: int) -> None:

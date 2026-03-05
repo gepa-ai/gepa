@@ -34,7 +34,7 @@ def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
     result = state_mod.initialize_gepa_state(
         run_dir=str(run_dir),
         logger=fake_logger,
-        seed_candidate=seed,
+        seed_candidate=[seed],
         valset_evaluator=valset_evaluator,
         track_best_outputs=False,
     )
@@ -68,7 +68,7 @@ def test_initialize_gepa_state_no_run_dir():
     result = state_mod.initialize_gepa_state(
         run_dir=None,
         logger=fake_logger,
-        seed_candidate=seed,
+        seed_candidate=[seed],
         valset_evaluator=valset_evaluator,
         track_best_outputs=False,
     )
@@ -101,7 +101,7 @@ def test_gepa_state_save_and_initialize(run_dir):
     result = state_mod.initialize_gepa_state(
         run_dir=str(run_dir),
         logger=fake_logger,
-        seed_candidate=seed,
+        seed_candidate=[seed],
         valset_evaluator=valset_evaluator,
         track_best_outputs=False,
     )
@@ -112,7 +112,7 @@ def test_gepa_state_save_and_initialize(run_dir):
     result = state_mod.initialize_gepa_state(
         run_dir=str(run_dir),
         logger=fake_logger,
-        seed_candidate=seed,
+        seed_candidate=[seed],
         valset_evaluator=valset_evaluator,
         track_best_outputs=False,
     )
@@ -326,3 +326,214 @@ def test_e2e_resume_run(mocked_lms, run_dir):
         run_dir=run_dir,
     )
     assert second_run.total_metric_calls == first_run.total_metric_calls
+
+
+# =============================================================================
+# Multi-seed tests
+# =============================================================================
+
+
+def test_initialize_gepa_state_multi_seed_fresh(run_dir):
+    """Multiple seed candidates are evaluated and added to state correctly."""
+    seed_a = {"model": "a"}
+    seed_b = {"model": "b"}
+
+    valset_out_a = ValsetEvaluation(
+        outputs_by_val_id={0: "out_a0", 1: "out_a1"},
+        scores_by_val_id={0: 0.1, 1: 0.2},
+        objective_scores_by_val_id=None,
+    )
+    valset_out_b = ValsetEvaluation(
+        outputs_by_val_id={0: "out_b0", 1: "out_b1"},
+        scores_by_val_id={0: 0.5, 1: 0.6},
+        objective_scores_by_val_id=None,
+    )
+
+    fake_logger = MagicMock()
+    valset_evaluator = MagicMock(side_effect=[valset_out_a, valset_out_b])
+
+    result = state_mod.initialize_gepa_state(
+        run_dir=str(run_dir),
+        logger=fake_logger,
+        seed_candidate=[seed_a, seed_b],
+        valset_evaluator=valset_evaluator,
+        track_best_outputs=False,
+    )
+
+    assert isinstance(result, state_mod.GEPAState)
+    assert result.num_seed_candidates == 2
+    assert len(result.program_candidates) == 2
+    assert result.program_candidates[0] == seed_a
+    assert result.program_candidates[1] == seed_b
+
+    # Both seeds evaluated
+    assert result.num_full_ds_evals == 2
+    expected_total = len(valset_out_a.scores_by_val_id) + len(valset_out_b.scores_by_val_id)
+    assert result.total_num_evals == expected_total
+
+    # Both seeds have val subscores
+    assert result.prog_candidate_val_subscores[0] == {0: 0.1, 1: 0.2}
+    assert result.prog_candidate_val_subscores[1] == {0: 0.5, 1: 0.6}
+
+    # Pareto front updated to reflect better seed b
+    assert result.pareto_front_valset[0] == 0.5
+    assert result.pareto_front_valset[1] == 0.6
+
+    # Parent tracking: both seeds have [None]
+    assert result.parent_program_for_candidate[0] == [None]
+    assert result.parent_program_for_candidate[1] == [None]
+
+    assert result.is_consistent()
+
+    # Evaluator called twice (once per seed)
+    assert valset_evaluator.call_count == 2
+    valset_evaluator.assert_any_call(seed_a)
+    valset_evaluator.assert_any_call(seed_b)
+
+    # Seed outputs written to appropriate directories
+    base = run_dir / "generated_best_outputs_valset"
+    assert (base / "task_0" / "iter_0_prog_0.json").exists()
+    seed_out = run_dir / "generated_seed_outputs" / "seed_1"
+    assert (seed_out / "task_0" / "iter_0_prog_0.json").exists()
+    assert (seed_out / "task_1" / "iter_0_prog_0.json").exists()
+
+
+def test_initialize_gepa_state_multi_seed_no_run_dir():
+    """Multiple seeds work without a run directory."""
+    seed_a = {"model": "a"}
+    seed_b = {"model": "b"}
+
+    valset_out_a = ValsetEvaluation(
+        outputs_by_val_id={0: "out_a"},
+        scores_by_val_id={0: 0.3},
+        objective_scores_by_val_id=None,
+    )
+    valset_out_b = ValsetEvaluation(
+        outputs_by_val_id={0: "out_b"},
+        scores_by_val_id={0: 0.7},
+        objective_scores_by_val_id=None,
+    )
+
+    fake_logger = MagicMock()
+    valset_evaluator = MagicMock(side_effect=[valset_out_a, valset_out_b])
+
+    result = state_mod.initialize_gepa_state(
+        run_dir=None,
+        logger=fake_logger,
+        seed_candidate=[seed_a, seed_b],
+        valset_evaluator=valset_evaluator,
+        track_best_outputs=False,
+    )
+
+    assert result.num_seed_candidates == 2
+    assert len(result.program_candidates) == 2
+    assert result.total_num_evals == 2
+    assert result.is_consistent()
+
+
+def test_initialize_gepa_state_multi_seed_save_and_load(run_dir):
+    """Multi-seed state serializes and deserializes correctly, preserving num_seed_candidates."""
+    seed_a = {"model": "a"}
+    seed_b = {"model": "b"}
+
+    valset_out_a = ValsetEvaluation(
+        outputs_by_val_id={0: "a0"},
+        scores_by_val_id={0: 0.2},
+        objective_scores_by_val_id=None,
+    )
+    valset_out_b = ValsetEvaluation(
+        outputs_by_val_id={0: "b0"},
+        scores_by_val_id={0: 0.8},
+        objective_scores_by_val_id=None,
+    )
+
+    fake_logger = MagicMock()
+    valset_evaluator = MagicMock(side_effect=[valset_out_a, valset_out_b])
+
+    state = state_mod.initialize_gepa_state(
+        run_dir=str(run_dir),
+        logger=fake_logger,
+        seed_candidate=[seed_a, seed_b],
+        valset_evaluator=valset_evaluator,
+        track_best_outputs=False,
+    )
+    state.save(str(run_dir))
+
+    loaded = state_mod.GEPAState.load(str(run_dir))
+    assert loaded.num_seed_candidates == 2
+    assert len(loaded.program_candidates) == 2
+    assert loaded.program_candidates[0] == seed_a
+    assert loaded.program_candidates[1] == seed_b
+    assert loaded.is_consistent()
+
+
+def test_initialize_gepa_state_multi_seed_mismatched_keys_raises():
+    """Seed candidates with different component keys raise a clear error."""
+    seed_a = {"model": "a"}
+    seed_b = {"instructions": "b"}  # different key
+
+    fake_logger = MagicMock()
+    valset_evaluator = MagicMock()
+
+    with pytest.raises(ValueError, match="same component keys"):
+        state_mod.initialize_gepa_state(
+            run_dir=None,
+            logger=fake_logger,
+            seed_candidate=[seed_a, seed_b],
+            valset_evaluator=valset_evaluator,
+            track_best_outputs=False,
+        )
+
+    # Evaluator should not have been called at all
+    valset_evaluator.assert_not_called()
+
+
+def test_initialize_gepa_state_empty_seed_list_raises():
+    """An empty seed candidate list raises a clear error."""
+    fake_logger = MagicMock()
+    valset_evaluator = MagicMock()
+
+    with pytest.raises(ValueError, match="non-empty list"):
+        state_mod.initialize_gepa_state(
+            run_dir=None,
+            logger=fake_logger,
+            seed_candidate=[],
+            valset_evaluator=valset_evaluator,
+            track_best_outputs=False,
+        )
+
+
+def test_multi_seed_budget_tracking():
+    """Budget (total_num_evals) correctly accounts for all seed evaluations."""
+    seeds = [{"model": f"s{i}"} for i in range(3)]
+
+    def make_eval(score):
+        return ValsetEvaluation(
+            outputs_by_val_id={0: "o", 1: "o", 2: "o"},
+            scores_by_val_id={0: score, 1: score, 2: score},
+            objective_scores_by_val_id=None,
+        )
+
+    valset_evaluator = MagicMock(side_effect=[make_eval(0.1), make_eval(0.5), make_eval(0.9)])
+    fake_logger = MagicMock()
+
+    result = state_mod.initialize_gepa_state(
+        run_dir=None,
+        logger=fake_logger,
+        seed_candidate=seeds,
+        valset_evaluator=valset_evaluator,
+        track_best_outputs=False,
+    )
+
+    # 3 seeds x 3 val examples each = 9 total evals
+    assert result.total_num_evals == 9
+    assert result.num_full_ds_evals == 3
+    assert result.num_seed_candidates == 3
+    assert len(result.program_candidates) == 3
+
+    # num_metric_calls_by_discovery tracks when each seed was discovered
+    assert result.num_metric_calls_by_discovery[0] == 0  # first seed: 0 calls before
+    assert result.num_metric_calls_by_discovery[1] == 3  # second seed: 3 calls before
+    assert result.num_metric_calls_by_discovery[2] == 6  # third seed: 6 calls before
+
+    assert result.is_consistent()
