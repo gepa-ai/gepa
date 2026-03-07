@@ -1051,7 +1051,9 @@ def make_claude_code_lm(
 
         env["RLM_DEPTH"] = "0"
         env["RLM_BUDGET_FILE"] = _budget_file
-        env["PYTHONPATH"] = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        existing = env.get("PYTHONPATH", "")
+        new_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        env["PYTHONPATH"] = f"{new_path}:{existing}" if existing else new_path
 
         cmd = ["claude", "-p", "--output-format", "stream-json", "--dangerously-skip-permissions"]
         if model:
