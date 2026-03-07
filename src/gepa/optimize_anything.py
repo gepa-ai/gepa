@@ -584,8 +584,8 @@ Based on your analysis, propose an improved version that:
     sections.append("""
 ## Output Format
 
-Provide ONLY the improved version within ``` blocks. The output must be a complete, 
-drop-in replacement for the current component (whether it's a prompt, configuration, 
+Provide ONLY the improved version within ``` blocks. The output must be a complete,
+drop-in replacement for the current component (whether it's a prompt, configuration,
 code, or any other parameter type).
 Do not include explanations, commentary, or markdown outside the ``` blocks.""")
 
@@ -858,6 +858,227 @@ def make_litellm_lm(model_name: str) -> LanguageModel:
     return _lm
 
 
+def _parse_stream_json(raw_output: str) -> tuple[str, list[dict[str, Any]]]:
+    """Parse ``claude --output-format stream-json`` JSONL output.
+
+    Returns ``(result_text, events)`` where *result_text* is the final text
+    from the ``result`` event and *events* is the full list of parsed JSONL
+    objects (the trajectory).
+
+    The stream contains lines like::
+
+        {"type": "system", "subtype": "init", ...}
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": "..."}]}, ...}
+        {"type": "result", "result": "...", ...}
+    """
+    import json as _json
+
+    events: list[dict[str, Any]] = []
+    result_text = ""
+    for line in raw_output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = _json.loads(line)
+        except _json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        events.append(obj)
+        if obj.get("type") == "result":
+            result_text = obj.get("result", "")
+    return result_text, events
+
+
+def _extract_text_from_stream_json(raw_output: str) -> str:
+    """Extract the full assistant text from ``claude --output-format stream-json`` JSONL.
+
+    Concatenates all assistant text blocks from the stream, not just the final
+    ``result`` summary.  This ensures that content produced in intermediate
+    messages (e.g. fenced code blocks) is captured even when the ``result``
+    event only contains a short summary.
+
+    Falls back to the ``result`` text if no assistant text blocks are found.
+    """
+    result_text, events = _parse_stream_json(raw_output)
+
+    assistant_texts: list[str] = []
+    for event in events:
+        if event.get("type") == "assistant":
+            message = event.get("message", {})
+            content = message.get("content", [])
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text", "")
+                        if text:
+                            assistant_texts.append(text)
+
+    if assistant_texts:
+        return "\n".join(assistant_texts)
+    return result_text
+
+
+_CC_RLM_SYSTEM_PROMPT = """\
+## Sub-Agent Spawning (RLM)
+
+You have access to `python -m rlm.cli` to spawn sub-agents. Each sub-agent is a \
+separate `claude -p` call with its own context window. Use this to divide expensive \
+work across cheap and expensive models.
+
+IMPORTANT: stdout is not captured when running inside Claude Code. \
+Always use `-o /tmp/rlm_result.txt` to write output to a file, then read the file.
+
+### Usage
+
+```bash
+# Single sub-agent — always use -o to capture output
+python -m rlm.cli --model haiku -o /tmp/rlm_out.txt "Your focused sub-query here"
+cat /tmp/rlm_out.txt
+
+# JSON output (structured, easier to parse)
+python -m rlm.cli --json --model haiku -o /tmp/rlm_out.txt "Summarize eval results"
+cat /tmp/rlm_out.txt
+
+# Parallel sub-agents (run concurrently, share budget)
+python -m rlm.cli --parallel --model haiku -o /tmp/rlm_parallel.txt \
+  "Read engine.py and summarize" "Read state.py and summarize"
+cat /tmp/rlm_parallel.txt
+
+# Multiple independent sub-agents — use different output files
+python -m rlm.cli --model haiku -o /tmp/rlm_1.txt "Read and summarize core/" &
+python -m rlm.cli --model haiku -o /tmp/rlm_2.txt "Read and summarize proposer/" &
+wait
+cat /tmp/rlm_1.txt
+cat /tmp/rlm_2.txt
+```
+
+### Model Cascade Strategy
+
+Use **haiku** for bulk reading, extraction, and summarization (cheap, fast). \
+Use **sonnet** for analysis, reasoning, and synthesis (more capable).
+
+Example cascade:
+1. Spawn haiku sub-agents to read and summarize raw data
+2. Use the summaries yourself for the final reasoning
+
+### Cost Guidelines
+
+- haiku: ~$0.001/call for short tasks, ~$0.01-0.05 for reading many files
+- sonnet: ~$0.02-0.10 per call depending on context size
+- A haiku-read → sonnet-synthesize cascade is typically 3x cheaper than sonnet-does-everything
+
+### Rules
+
+- ALWAYS use `-o <file>` then `cat <file>` — stdout does not work inside Claude Code
+- Keep sub-queries focused and specific — one clear task per spawn
+- Prefer haiku for any task that is mostly reading/extracting/summarizing
+- Use parallel mode or background `&` + `wait` when sub-tasks are independent
+- Sub-agents have depth limits and shared budget — they will error if limits are hit"""
+
+_CC_AGENTIC_MUTATION_SYSTEM_PROMPT = """\
+You are an optimization agent. Your job is to study an optimization problem, \
+read relevant eval history, and propose an improved candidate solution.
+
+## Sub-Agent Spawning (RLM — Recursive Language Model)
+
+You can spawn cheaper Haiku sub-agents to read eval files without consuming your \
+own context window. Use `python -m rlm.cli` via your Bash tool.
+
+IMPORTANT: stdout is NOT captured when running inside Claude Code. \
+Always write output to a file with -o, then read it:
+
+  # Read a single file
+  python -m rlm.cli --model haiku -o /tmp/rlm_out.txt \\
+    "Read evals/c00003/tasks/task_00007_eval_00000.json and return its full contents"
+  cat /tmp/rlm_out.txt
+
+  # Read multiple files in parallel
+  python -m rlm.cli --model haiku --parallel -o /tmp/rlm_out.txt \\
+    "Read evals/c00003/tasks/task_00007_eval_00000.json" \\
+    "Read evals/c00003/tasks/task_00012_eval_00000.json"
+  cat /tmp/rlm_out.txt
+
+## Model strategy
+
+- haiku (~20x cheaper): reading files, extracting outputs, summarizing
+- you (sonnet): reasoning, synthesizing insights, writing the improved candidate
+
+## Output format
+
+Write your improved candidate in a single fenced code block at the end of your \
+response. Do not write anything after the closing fence.
+"""
+
+
+def make_claude_code_lm(
+    model: str | None = None,
+    max_budget_usd: float | None = None,
+    timeout: int = 300,
+    add_dirs: list[str] | None = None,
+    system_prompt: str | None = None,
+) -> LanguageModel:
+    """Create a :class:`LanguageModel` callable backed by ``claude -p`` (Claude Code CLI).
+
+    The subprocess is invoked with ``--output-format stream-json`` so that we
+    can reliably extract the assistant's text reply from the JSONL stream.
+
+    RLM sub-agent spawning is always enabled — CC can call ``python -m rlm.cli``
+    to spawn cheaper Haiku sub-agents for reading files without consuming its context.
+
+    Args:
+        model: Model to use (e.g. ``"opus"``, ``"sonnet"``). Defaults to CC's default.
+        max_budget_usd: Per-call cost cap in USD.
+        timeout: Subprocess timeout in seconds (default 300).
+        add_dirs: Extra directories to grant CC filesystem access to
+            (passed as ``--add-dir``).
+        system_prompt: Override the system prompt injected via ``--append-system-prompt``.
+            Defaults to ``_CC_RLM_SYSTEM_PROMPT``.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    _budget_file = os.path.join(tempfile.gettempdir(), f"rlm_budget_{os.getpid()}.txt")
+
+    def _lm(prompt: str | list[dict[str, Any]]) -> str:
+        if isinstance(prompt, list):
+            prompt = "\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in prompt)
+        # Strip Claude Code env vars so subprocess doesn't reject nested invocation
+        _cc_vars = {"CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT"}
+        env = {k: v for k, v in os.environ.items() if k not in _cc_vars}
+
+        env["RLM_DEPTH"] = "0"
+        env["RLM_BUDGET_FILE"] = _budget_file
+        env["PYTHONPATH"] = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+        cmd = ["claude", "-p", "--output-format", "stream-json", "--dangerously-skip-permissions"]
+        if model:
+            cmd += ["--model", model]
+        if max_budget_usd is not None:
+            cmd += ["--max-budget-usd", str(max_budget_usd)]
+        prompt_to_inject = system_prompt if system_prompt is not None else _CC_RLM_SYSTEM_PROMPT
+        cmd += ["--append-system-prompt", prompt_to_inject]
+        if add_dirs:
+            for d in add_dirs:
+                cmd += ["--add-dir", d]
+
+        result = subprocess.run(
+            cmd,
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"Claude Code failed (exit {result.returncode}): {result.stderr}")
+        return _extract_text_from_stream_json(result.stdout)
+
+    return _lm
+
+
 class EvaluatorWrapper:
     """Internal wrapper that adapts a user's evaluator to GEPA's internal interface.
 
@@ -1114,6 +1335,11 @@ def optimize_anything(
     if config is None:
         config = GEPAConfig()
 
+    # In CC agentic mode, default run_dir early so all downstream paths
+    # (cache mode, adapter, eval recorder, AgenticProposer) see the real value.
+    if config.reflection.reflection_lm == "claude_code" and not config.engine.run_dir:
+        config.engine.run_dir = "outputs"
+
     # Detect seed generation mode: when seed_candidate is None, the LLM
     # will generate the initial candidate from the objective.
     needs_seed_generation = False
@@ -1257,14 +1483,33 @@ def optimize_anything(
     if config.refiner is not None and config.refiner.refiner_lm is None:
         config.refiner.refiner_lm = config.reflection.reflection_lm
 
+    # Capture before string-to-callable conversion
+    is_claude_code_reflection = config.reflection.reflection_lm == "claude_code"
+
     # Convert reflection_lm string to callable
     if isinstance(config.reflection.reflection_lm, str):
-        config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
+        if config.reflection.reflection_lm == "claude_code":
+            cc_add_dirs: list[str] = [d for d in [config.engine.run_dir] if d is not None]
+            config.reflection.reflection_lm = make_claude_code_lm(
+                model="sonnet",
+                timeout=1200,
+                add_dirs=cc_add_dirs,
+            )
+        else:
+            config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
 
-    # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
+    # Convert refiner_lm string to callable (if refiner is enabled)
     if config.refiner is not None:
         if isinstance(config.refiner.refiner_lm, str):
-            config.refiner.refiner_lm = make_litellm_lm(config.refiner.refiner_lm)
+            if config.refiner.refiner_lm == "claude_code":
+                cc_add_dirs: list[str] = [d for d in [config.engine.run_dir] if d is not None]
+                config.refiner.refiner_lm = make_claude_code_lm(
+                    model="sonnet",
+                    timeout=1200,
+                    add_dirs=cc_add_dirs,
+                )
+            else:
+                config.refiner.refiner_lm = make_litellm_lm(config.refiner.refiner_lm)
 
     # Generate seed candidate via LLM if seed_candidate was None
     if needs_seed_generation:
@@ -1402,21 +1647,80 @@ def optimize_anything(
         else:
             InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
 
-    # --- 11. Build reflective proposer from ReflectionConfig ---
-    reflective_proposer = ReflectiveMutationProposer(
-        logger=config.tracking.logger,
-        trainset=train_loader,
-        adapter=active_adapter,
-        candidate_selector=candidate_selector,
-        module_selector=module_selector_instance,
-        batch_sampler=config.reflection.batch_sampler,
-        perfect_score=config.reflection.perfect_score,
-        skip_perfect_score=config.reflection.skip_perfect_score,
-        experiment_tracker=experiment_tracker,
-        reflection_lm=config.reflection.reflection_lm,
-        reflection_prompt_template=config.reflection.reflection_prompt_template,
-        custom_candidate_proposer=config.reflection.custom_candidate_proposer,
-    )
+    # --- 11. Build callbacks ---
+    gepa_callbacks: list[Any] = []
+    if config.engine.run_dir:
+        from gepa.adapters.optimize_anything_adapter.eval_recorder import EvalRecorderCallback
+
+        gepa_callbacks.append(EvalRecorderCallback(config.engine.run_dir))
+
+    # --- 12. Build reflective proposer from ReflectionConfig ---
+    if is_claude_code_reflection:
+        if config.refiner is not None:
+            raise ValueError("RefinerConfig is not supported in CC agentic mode.")
+        if config.merge is not None:
+            raise ValueError("MergeConfig is not supported in CC agentic mode.")
+
+        from pathlib import Path
+
+        from gepa.adapters.optimize_anything_adapter.agentic_proposer import AgenticProposer
+        from gepa.adapters.optimize_anything_adapter.global_note import GlobalNote, NoteUpdater
+
+        assert config.engine.run_dir is not None  # guaranteed by early-default block above
+        agentic_run_dir: str = config.engine.run_dir
+        task_aligned = not single_instance_mode and valset is None
+
+        agentic_cc_lm = make_claude_code_lm(
+            model="sonnet",
+            timeout=1200,
+            add_dirs=[agentic_run_dir],
+            system_prompt=_CC_AGENTIC_MUTATION_SYSTEM_PROMPT,
+        )
+        # Separate LM for note updates — no mutation system prompt so CC writes
+        # plain journal text rather than a fenced candidate block.
+        note_cc_lm = make_claude_code_lm(
+            model="sonnet",
+            timeout=120,
+            add_dirs=[agentic_run_dir],
+        )
+        global_note = GlobalNote(Path(agentic_run_dir) / "note.md")
+        note_updater = NoteUpdater(global_note, note_cc_lm)
+
+        reflective_proposer = AgenticProposer(
+            trainset=train_loader,
+            adapter=active_adapter,
+            cc_lm=agentic_cc_lm,
+            global_note=global_note,
+            note_updater=note_updater,
+            objective=objective,
+            background=background,
+            run_dir=agentic_run_dir,
+            task_aligned=task_aligned,
+            candidate_selector=candidate_selector,
+            batch_sampler=config.reflection.batch_sampler,
+            num_reference_tasks=2,
+            perfect_score=config.reflection.perfect_score,
+            skip_perfect_score=config.reflection.skip_perfect_score,
+            callbacks=gepa_callbacks or None,
+            logger=config.tracking.logger,
+            experiment_tracker=experiment_tracker,
+            rng=rng,
+        )
+    else:
+        reflective_proposer = ReflectiveMutationProposer(
+            logger=config.tracking.logger,
+            trainset=train_loader,
+            adapter=active_adapter,
+            candidate_selector=candidate_selector,
+            module_selector=module_selector_instance,
+            batch_sampler=config.reflection.batch_sampler,
+            perfect_score=config.reflection.perfect_score,
+            skip_perfect_score=config.reflection.skip_perfect_score,
+            experiment_tracker=experiment_tracker,
+            reflection_lm=config.reflection.reflection_lm,
+            reflection_prompt_template=config.reflection.reflection_prompt_template,
+            custom_candidate_proposer=config.reflection.custom_candidate_proposer,
+        )
 
     # Define evaluator function for merge proposer
     def merge_evaluator(
@@ -1425,7 +1729,7 @@ def optimize_anything(
         eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
         return eval_out.outputs, eval_out.scores, eval_out.objective_scores
 
-    # --- 12. Build merge proposer from MergeConfig (if provided) ---
+    # --- 13. Build merge proposer from MergeConfig (if provided) ---
     merge_proposer: MergeProposer | None = None
     if config.merge is not None:
         merge_proposer = MergeProposer(
@@ -1438,12 +1742,12 @@ def optimize_anything(
             val_overlap_floor=config.merge.merge_val_overlap_floor,
         )
 
-    # --- 13. Create evaluation cache if enabled ---
+    # --- 14. Create evaluation cache if enabled ---
     evaluation_cache: EvaluationCache[Any, Any] | None = None
     if config.engine.cache_evaluation:
         evaluation_cache = EvaluationCache[Any, Any]()
 
-    # --- 14. Build the main engine from EngineConfig ---
+    # --- 15. Build the main engine from EngineConfig ---
     engine = GEPAEngine(
         adapter=active_adapter,
         run_dir=config.engine.run_dir,
@@ -1465,7 +1769,7 @@ def optimize_anything(
         evaluation_cache=evaluation_cache,
     )
 
-    # --- 15. Run optimization ---
+    # --- 16. Run optimization ---
     with experiment_tracker:
         state = engine.run()
 
