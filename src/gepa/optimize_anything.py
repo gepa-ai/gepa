@@ -1655,7 +1655,7 @@ def optimize_anything(
     # --- 11. Build callbacks ---
     gepa_callbacks: list[Any] = []
     if config.engine.run_dir:
-        from gepa.adapters.optimize_anything_adapter.eval_recorder import EvalRecorderCallback
+        from gepa.adapters.optimize_anything_adapter.agent_mode.eval_recorder import EvalRecorderCallback
 
         gepa_callbacks.append(EvalRecorderCallback(config.engine.run_dir))
 
@@ -1668,8 +1668,8 @@ def optimize_anything(
 
         from pathlib import Path
 
-        from gepa.adapters.optimize_anything_adapter.agentic_proposer import AgenticProposer
-        from gepa.adapters.optimize_anything_adapter.global_note import GlobalNote, NoteUpdater
+        from gepa.adapters.optimize_anything_adapter.agent_mode.agentic_proposer import AgenticProposer
+        from gepa.adapters.optimize_anything_adapter.agent_mode.global_note import GlobalNote, NoteUpdater
 
         assert config.engine.run_dir is not None  # guaranteed by early-default block above
         agentic_run_dir: str = config.engine.run_dir
