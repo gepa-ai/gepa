@@ -105,6 +105,7 @@ Public API:
     - :class:`Image` — wrapper for including images in side_info (VLM reflection)
 """
 
+import copy
 import inspect
 import io
 import os
@@ -1333,9 +1334,11 @@ def optimize_anything(
                 background="Use build123d for CSG geometry, export to STL, render with pyrender.",
             )
     """
-    # Use default config if not provided
+    # Use default config if not provided; deep-copy so we never mutate the caller's object
     if config is None:
         config = GEPAConfig()
+    else:
+        config = copy.deepcopy(config)
 
     # In CC agentic mode, default run_dir early so all downstream paths
     # (cache mode, adapter, eval recorder, AgenticProposer) see the real value.
