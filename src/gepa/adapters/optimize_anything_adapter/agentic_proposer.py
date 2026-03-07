@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import re
 from typing import Any
 
 from gepa.adapters.optimize_anything_adapter.global_note import GlobalNote, NoteUpdater
@@ -23,7 +24,37 @@ from gepa.optimize_anything import _STR_CANDIDATE_KEY
 from gepa.proposer.base import CandidateProposal
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel
 from gepa.strategies.batch_sampler import BatchSampler
-from gepa.strategies.instruction_proposal import _extract_last_fenced_block
+
+
+def _extract_last_fenced_block(lm_out: str) -> str:
+    """Extract content from the last ``` fenced block in LM output.
+
+    Only considers ``` fences that appear at the start of a line (after
+    optional whitespace), ignoring inline backtick references like
+    "output within the ``` blocks".
+    """
+    positions: list[int] = []
+    for m in re.finditer(r"(?:^|\n)[ \t]*(```)", lm_out):
+        positions.append(m.start(1))
+
+    if len(positions) >= 2:
+        start = positions[-2] + 3  # after the opening ```
+        end = positions[-1]  # the closing ```
+        content = lm_out[start:end]
+        match = re.match(r"^\S*\n", content)
+        if match:
+            content = content[match.end():]
+        return content.strip()
+
+    # Fallback: single or no fences
+    stripped = lm_out.strip()
+    if stripped.startswith("```"):
+        match = re.match(r"^```\S*\n?", lm_out)
+        if match:
+            return lm_out[match.end():].strip()
+    elif stripped.endswith("```"):
+        return stripped[:-3].strip()
+    return stripped
 
 
 class AgenticProposer:
