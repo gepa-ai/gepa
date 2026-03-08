@@ -215,3 +215,12 @@ __marimo__/
 # Experiments
 runs/
 gepa_terminus/
+
+# WIP examples not ready for commit
+examples/circle_packing_cc_fast/
+examples/claude_code/
+examples/autoresearch/
+
+# Example run outputs
+examples/**/run_output/
+outputs/

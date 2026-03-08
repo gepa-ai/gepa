@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10, <3.15"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'linux'",
@@ -711,9 +711,9 @@ name = "docker"
 version = "7.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pywin32", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
-    { name = "requests", marker = "python_full_version < '3.14'" },
-    { name = "urllib3", marker = "python_full_version < '3.14'" },
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "requests" },
+    { name = "urllib3" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/91/9b/4a2ea29aeba62471211598dac5d96825bb49348fa07e906ea930394a83ce/docker-7.1.0.tar.gz", hash = "sha256:ad8c70e6e3f8926cb8a92619b832b4ea5299e2831c14284663184e200546fa6c", size = 117834, upload-time = "2024-05-23T11:13:57.216Z" }
 wheels = [
@@ -1012,7 +1012,7 @@ http = [
 
 [[package]]
 name = "gepa"
-version = "0.0.27"
+version = "0.1.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
@@ -1064,6 +1064,24 @@ full = [
     { name = "wandb", version = "0.21.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
     { name = "wandb", version = "0.24.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
 ]
+gskill = [
+    { name = "datasets", version = "4.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "datasets", version = "4.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "docker" },
+    { name = "litellm", version = "1.75.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "litellm", version = "1.81.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "mlflow", marker = "python_full_version < '3.14'" },
+    { name = "mlflow-skinny", version = "3.8.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "pyarrow", version = "23.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "pydantic", version = "2.12.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "swesmith" },
+    { name = "tiktoken", version = "0.12.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+    { name = "tqdm" },
+    { name = "wandb", version = "0.21.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "wandb", version = "0.24.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+]
 test = [
     { name = "datasets", version = "4.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
     { name = "datasets", version = "4.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
@@ -1087,7 +1105,9 @@ requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.0.3" },
     { name = "datasets", marker = "python_full_version >= '3.14' and extra == 'full'", specifier = ">=4.5.0" },
     { name = "datasets", marker = "python_full_version < '3.14' and extra == 'full'", specifier = ">=2.14.6" },
+    { name = "docker", marker = "extra == 'gskill'" },
     { name = "gepa", extras = ["build"], marker = "extra == 'dev'" },
+    { name = "gepa", extras = ["full"], marker = "extra == 'gskill'" },
     { name = "gepa", extras = ["full"], marker = "extra == 'test'" },
     { name = "gepa", extras = ["test"], marker = "extra == 'dev'" },
     { name = "litellm", marker = "python_full_version >= '3.14' and extra == 'full'", specifier = ">=1.81.0" },
@@ -1100,10 +1120,13 @@ requires-dist = [
     { name = "pydantic", marker = "python_full_version >= '3.14' and extra == 'full'", specifier = ">=2.12.0" },
     { name = "pyright", marker = "extra == 'test'" },
     { name = "pytest", marker = "extra == 'test'" },
+    { name = "python-dotenv", marker = "extra == 'gskill'" },
+    { name = "pyyaml", marker = "extra == 'gskill'" },
     { name = "requests", marker = "extra == 'build'" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
     { name = "semver", marker = "extra == 'build'" },
     { name = "setuptools", marker = "extra == 'build'", specifier = ">=77.0.1" },
+    { name = "swesmith", marker = "extra == 'gskill'" },
     { name = "tiktoken", marker = "python_full_version >= '3.14' and extra == 'full'", specifier = ">=0.12.0" },
     { name = "tqdm", marker = "extra == 'full'", specifier = ">=4.66.1" },
     { name = "twine", marker = "extra == 'build'" },
@@ -1111,7 +1134,7 @@ requires-dist = [
     { name = "wandb", marker = "python_full_version < '3.14' and extra == 'full'" },
     { name = "wheel", marker = "extra == 'build'" },
 ]
-provides-extras = ["full", "dspy", "test", "build", "dev"]
+provides-extras = ["full", "dspy", "test", "build", "dev", "gskill"]
 
 [[package]]
 name = "gitdb"
@@ -4010,6 +4033,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/15/b9/cc3017f9a9c9b6e27c5106cc10cc7904653c3eec0729793aec10479dd669/starlette-0.47.3.tar.gz", hash = "sha256:6bc94f839cc176c4858894f1f8908f0ab79dfec1a6b8402f6da9be26ebea52e9", size = 2584144, upload-time = "2025-08-24T13:36:42.122Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ce/fd/901cfa59aaa5b30a99e16876f11abe38b59a1a2c51ffb3d7142bb6089069/starlette-0.47.3-py3-none-any.whl", hash = "sha256:89c0778ca62a76b826101e7c709e70680a1699ca7da6b44d38eb0a7e61fe4b51", size = 72991, upload-time = "2025-08-24T13:36:40.887Z" },
+]
+
+[[package]]
+name = "swesmith"
+version = "0.0.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/07/97/e506b20fa59debc66e4660a86b0e98b45d32c87f23b994ad739e9c5d542a/swesmith-0.0.9.tar.gz", hash = "sha256:1726124ea43577853c6efb0a5a0db5fa3ce5c340e1bed479afa5bab85d8a69da", size = 214830, upload-time = "2026-02-27T01:06:13.455Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/80/2d/71b6ac5dadbe7199085de3815624775744d51b6c554efeeddfb12dc45ce1/swesmith-0.0.9-py3-none-any.whl", hash = "sha256:cbb98a52fc573b38032cde1179b6ce5f5862ce7c31d6931cfd5b8ad4969ce900", size = 275800, upload-time = "2026-02-27T01:06:11.864Z" },
 ]
 
 [[package]]

@@ -5,6 +5,8 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
+from gepa.adapters.optimize_anything_adapter.claude_code.prompts import build_note_update_prompt
+from gepa.adapters.optimize_anything_adapter.claude_code.runtime import build_claude_code_env
 from gepa.optimize_anything import (
     EngineConfig,
     GEPAConfig,
@@ -63,6 +65,41 @@ def test_extract_text_skips_blank_and_malformed_lines():
 
 def test_extract_text_empty_input():
     assert _extract_text_from_stream_json("") == ""
+
+
+def test_build_claude_code_env_preserves_pythonpath_and_strips_parent_cc_vars():
+    env = build_claude_code_env(
+        {
+            "PYTHONPATH": "/tmp/existing",
+            "CLAUDECODE": "1",
+            "CLAUDE_CODE_SSE_PORT": "9999",
+            "KEEP_ME": "yes",
+        }
+    )
+    assert env["KEEP_ME"] == "yes"
+    assert "CLAUDECODE" not in env
+    assert "CLAUDE_CODE_SSE_PORT" not in env
+    assert env["PYTHONPATH"].endswith(":/tmp/existing")
+    assert "/src" in env["PYTHONPATH"]
+    assert env["RLM_DEPTH"] == "0"
+
+
+def test_build_note_update_prompt_renders_iteration_and_delta():
+    prompt = build_note_update_prompt(
+        current_note="## Iteration 1\nPrevious insight",
+        iteration=2,
+        parent_candidate="old",
+        child_candidate="new",
+        parent_scores=[0.2, 0.4],
+        child_scores=[0.6, 0.8],
+        parent_outputs=[{"result": "bad"}],
+        child_outputs=[{"result": "better"}],
+        objective="Improve accuracy",
+    )
+    assert "## Iteration 2" in prompt
+    assert "Delta: +0.4000 (improvement)" in prompt
+    assert "Improve accuracy" in prompt
+    assert "Previous insight" in prompt
 
 
 @patch("subprocess.run")
