@@ -10,6 +10,21 @@ from .core.adapter import EvaluationBatch, GEPAAdapter
 from .core.result import GEPAResult
 from .examples import aime
 from .image import Image
+from .proposer.parallel import (
+    AllImprovements,
+    BestAbsolute,
+    BestImprovement,
+    IndependentSampling,
+    MinibatchPolicy,
+    MutationTask,
+    ParallelMutationOrchestrator,
+    ParallelSamplingStrategy,
+    ProposalSelectionStrategy,
+    PxNSampling,
+    SameParentSampling,
+    SingleMutationSampling,
+    TopKImprovements,
+)
 from .utils.stop_condition import (
     CompositeStopper,
     FileStopper,

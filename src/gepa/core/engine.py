@@ -3,7 +3,7 @@
 
 import traceback
 from collections.abc import Sequence
-from typing import Generic
+from typing import TYPE_CHECKING, Generic
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.callbacks import (
@@ -35,6 +35,9 @@ from gepa.proposer.reflective_mutation.reflective_mutation import (
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import StopperProtocol
+
+if TYPE_CHECKING:
+    from gepa.proposer.parallel import ParallelMutationOrchestrator
 
 # Import tqdm for progress bar functionality
 try:
@@ -74,6 +77,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
+        # Parallel mutation orchestrator (optional)
+        orchestrator: "ParallelMutationOrchestrator | None" = None,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -117,6 +122,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.use_cloudpickle = use_cloudpickle
 
         self.raise_on_exception = raise_on_exception
+        self.orchestrator = orchestrator
         self.val_evaluation_policy: EvaluationPolicy[DataId, DataInst] = (
             val_evaluation_policy if val_evaluation_policy is not None else FullEvaluationPolicy()
         )
@@ -481,61 +487,100 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     # Old behavior: regardless of whether we attempted, clear the flag before reflective
                     self.merge_proposer.last_iter_found_new_program = False
 
-                # 2) Reflective mutation proposer
-                proposal = self.reflective_proposer.propose(state)
-                if proposal is None:
-                    self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
-                    continue
+                # 2) Reflective mutation proposer (or parallel orchestrator)
+                if self.orchestrator is not None:
+                    # Parallel mutation path
+                    proposals = self.orchestrator.propose_batch(state)
+                    for accepted_proposal in proposals:
+                        new_idx, _ = self._run_full_eval_and_add(
+                            new_program=accepted_proposal.candidate,
+                            state=state,
+                            parent_program_idx=accepted_proposal.parent_program_ids,
+                        )
+                        proposal_accepted = True
+                        new_sum = sum(accepted_proposal.subsample_scores_after or [])
+                        notify_callbacks(
+                            self.callbacks,
+                            method_name="on_candidate_accepted",
+                            event=CandidateAcceptedEvent(
+                                iteration=state.i + 1,
+                                new_candidate_idx=new_idx,
+                                new_score=new_sum,
+                                parent_ids=accepted_proposal.parent_program_ids,
+                            ),
+                        )
+                    if not proposals:
+                        notify_callbacks(
+                            self.callbacks,
+                            method_name="on_candidate_rejected",
+                            event=CandidateRejectedEvent(
+                                iteration=state.i + 1,
+                                old_score=0.0,
+                                new_score=0.0,
+                                reason="No proposals accepted from parallel mutation batch",
+                            ),
+                        )
+                    # Schedule merge attempts if any proposal was accepted
+                    if proposal_accepted and self.merge_proposer is not None:
+                        self.merge_proposer.last_iter_found_new_program = True
+                        if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
+                            self.merge_proposer.merges_due += 1
+                else:
+                    # Sequential mutation path (existing behavior, UNCHANGED)
+                    proposal = self.reflective_proposer.propose(state)
+                    if proposal is None:
+                        self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
+                        continue
 
-                # Acceptance: require strict improvement on subsample
-                old_sum = sum(proposal.subsample_scores_before or [])
-                new_sum = sum(proposal.subsample_scores_after or [])
-                if new_sum <= old_sum:
-                    self.logger.log(
-                        f"Iteration {state.i + 1}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
+                    # Acceptance: require strict improvement on subsample
+                    old_sum = sum(proposal.subsample_scores_before or [])
+                    new_sum = sum(proposal.subsample_scores_after or [])
+                    if new_sum <= old_sum:
+                        self.logger.log(
+                            f"Iteration {state.i + 1}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
+                        )
+                        # Notify candidate rejected
+                        notify_callbacks(
+                            self.callbacks,
+                            method_name="on_candidate_rejected",
+                            event=CandidateRejectedEvent(
+                                iteration=state.i + 1,
+                                old_score=old_sum,
+                                new_score=new_sum,
+                                reason=f"New subsample score {new_sum} not better than old score {old_sum}",
+                            ),
+                        )
+                        continue
+                    else:
+                        self.logger.log(
+                            f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
+                        )
+
+                    # Accept: full eval + add
+                    new_idx, _ = self._run_full_eval_and_add(
+                        new_program=proposal.candidate,
+                        state=state,
+                        parent_program_idx=proposal.parent_program_ids,
                     )
-                    # Notify candidate rejected
+                    proposal_accepted = True
+
+                    # Notify candidate accepted
                     notify_callbacks(
                         self.callbacks,
-                        "on_candidate_rejected",
-                        CandidateRejectedEvent(
+                        method_name="on_candidate_accepted",
+                        event=CandidateAcceptedEvent(
                             iteration=state.i + 1,
-                            old_score=old_sum,
+                            new_candidate_idx=new_idx,
                             new_score=new_sum,
-                            reason=f"New subsample score {new_sum} not better than old score {old_sum}",
+                            parent_ids=proposal.parent_program_ids,
                         ),
                     )
-                    continue
-                else:
-                    self.logger.log(
-                        f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
-                    )
 
-                # Accept: full eval + add
-                new_idx, _ = self._run_full_eval_and_add(
-                    new_program=proposal.candidate,
-                    state=state,
-                    parent_program_idx=proposal.parent_program_ids,
-                )
-                proposal_accepted = True
-
-                # Notify candidate accepted
-                notify_callbacks(
-                    self.callbacks,
-                    "on_candidate_accepted",
-                    CandidateAcceptedEvent(
-                        iteration=state.i + 1,
-                        new_candidate_idx=new_idx,
-                        new_score=new_sum,
-                        parent_ids=proposal.parent_program_ids,
-                    ),
-                )
-
-                # Schedule merge attempts like original behavior
-                if self.merge_proposer is not None:
-                    self.merge_proposer.last_iter_found_new_program = True
-                    if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
-                        self.merge_proposer.merges_due += 1
+                    # Schedule merge attempts like original behavior
+                    if self.merge_proposer is not None:
+                        self.merge_proposer.last_iter_found_new_program = True
+                        if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
+                            self.merge_proposer.merges_due += 1
 
             except Exception as e:
                 self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")

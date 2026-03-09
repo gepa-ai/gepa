@@ -6,6 +6,8 @@ import random
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from gepa.proposer.parallel import AllImprovements, SingleMutationSampling
+
 if TYPE_CHECKING:
     from gepa.core.callbacks import GEPACallback
 
@@ -22,6 +24,7 @@ from gepa.core.state import EvaluationCache, FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
+from gepa.proposer.parallel import ParallelMutationOrchestrator, ParallelSamplingStrategy, ProposalSelectionStrategy
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
@@ -83,6 +86,10 @@ def optimize(
     seed: int = 0,
     raise_on_exception: bool = True,
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
+    # Parallel mutation (optional)
+    parallel_sampling_strategy: ParallelSamplingStrategy | None = None,
+    parallel_selection_strategy: ProposalSelectionStrategy | None = None,
+    parallel_max_workers: int | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -250,7 +257,6 @@ def optimize(
             + "GEPA will use the default proposer, which requires a reflection_lm to be specified."
         )
 
-
     reflection_lm_callable: LanguageModel | None = None
     if isinstance(reflection_lm, str):
         import litellm
@@ -380,6 +386,16 @@ def optimize(
             callbacks=callbacks,
         )
 
+    # Construct parallel mutation orchestrator if any parallel params are provided
+    orchestrator: ParallelMutationOrchestrator | None = None
+    if parallel_sampling_strategy is not None or parallel_selection_strategy is not None:
+        orchestrator = ParallelMutationOrchestrator(
+            proposer=reflective_proposer,
+            sampling_strategy=parallel_sampling_strategy or SingleMutationSampling(),
+            selection_strategy=parallel_selection_strategy or AllImprovements(),
+            max_workers=parallel_max_workers,
+        )
+
     engine = GEPAEngine(
         adapter=active_adapter,
         run_dir=run_dir,
@@ -400,6 +416,7 @@ def optimize(
         val_evaluation_policy=val_evaluation_policy,
         use_cloudpickle=use_cloudpickle,
         evaluation_cache=evaluation_cache,
+        orchestrator=orchestrator,
     )
 
     with experiment_tracker:
