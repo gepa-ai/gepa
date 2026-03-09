@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 from typing import Any, Generic, Protocol
 
 from gepa.core.adapter import DataInst, RolloutOutput, Trajectory
@@ -29,7 +29,7 @@ class MutationTask(Generic[DataId]):
     worker_id: int  # Ordinal for logging/tracing
 
 
-class MinibatchPolicy(StrEnum):
+class MinibatchPolicy(str, Enum):
     """How minibatches are assigned across tasks."""
 
     SHARED_PER_PARENT = "shared_per_parent"
