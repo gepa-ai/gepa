@@ -443,8 +443,9 @@ class Evaluator(Protocol):
 class EngineConfig:
     """Controls the optimization run loop: budget, parallelism, caching, and stopping.
 
-    Most users only need to set ``max_metric_calls`` (evaluation budget) and
-    optionally ``parallel``/``max_workers`` for concurrent evaluation.
+    Most users only need to set ``max_metric_calls`` (evaluation budget).
+    Parallel evaluation is enabled by default with ``max_workers`` set to
+    the number of available CPUs (``os.cpu_count()``).
 
     Set ``capture_stdio=True`` to automatically route any ``print()`` output
     inside your evaluator into ASI (under ``"stdout"``/``"stderr"`` keys),
@@ -469,8 +470,8 @@ class EngineConfig:
     frontier_type: FrontierType = "hybrid"
 
     # Parallelization settings for evaluation
-    parallel: bool = False
-    max_workers: int | None = None
+    parallel: bool = True
+    max_workers: int | None = field(default_factory=lambda: os.cpu_count())
 
     # Evaluation caching
     cache_evaluation: bool = False
@@ -797,7 +798,7 @@ class GEPAConfig:
     Example::
 
         config = GEPAConfig(
-            engine=EngineConfig(max_metric_calls=200, parallel=True, max_workers=16),
+            engine=EngineConfig(max_metric_calls=200),
             reflection=ReflectionConfig(reflection_lm="openai/gpt-5.1"),
             refiner=RefinerConfig(max_refinements=2),
         )
