@@ -298,11 +298,14 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             try:
                 import cloudpickle as pickle  # type: ignore[import-not-found]
             except ModuleNotFoundError:
-                raise ModuleNotFoundError(
-                    "cloudpickle is required when use_cloudpickle=True. "
-                    "Install it with: pip install gepa[full]  or  pip install cloudpickle"
-                    " OR set use_cloudpickle=False to disable cloudpickle."
-                ) from None
+                import pickle
+                import warnings
+
+                warnings.warn(
+                    "cloudpickle is not installed; falling back to standard pickle. "
+                    "Install it with: pip install gepa[full]  or  pip install cloudpickle",
+                    stacklevel=2,
+                )
         else:
             import pickle
         # Exclude runtime-only attributes that can't be serialized (e.g., callback hooks)
