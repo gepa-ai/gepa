@@ -284,6 +284,22 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 objective_scores_by_val_id=objective_scores_dict,
             )
 
+        # Notify callbacks of optimization start (before seed valset eval)
+        notify_callbacks(
+            self.callbacks,
+            "on_optimization_start",
+            OptimizationStartEvent(
+                seed_candidate=self.seed_candidate,
+                trainset_size=len(self.reflective_proposer.trainset),
+                valset_size=len(valset),
+                config={
+                    "perfect_score": self.perfect_score,
+                    "seed": self.seed,
+                    "track_best_outputs": self.track_best_outputs,
+                },
+            ),
+        )
+
         # Initialize state
         state = initialize_gepa_state(
             run_dir=self.run_dir,
@@ -310,22 +326,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.logger.log(
             f"Iteration {state.i + 1}: Base program full valset score: {base_val_avg} "
             f"over {base_val_coverage} / {len(valset)} examples"
-        )
-
-        # Notify callbacks of optimization start
-        notify_callbacks(
-            self.callbacks,
-            "on_optimization_start",
-            OptimizationStartEvent(
-                seed_candidate=self.seed_candidate,
-                trainset_size=len(self.reflective_proposer.trainset),
-                valset_size=len(valset),
-                config={
-                    "perfect_score": self.perfect_score,
-                    "seed": self.seed,
-                    "track_best_outputs": self.track_best_outputs,
-                },
-            ),
         )
 
         # Notify callbacks of seed candidate's initial valset evaluation (iteration 0)
