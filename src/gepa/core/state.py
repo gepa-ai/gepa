@@ -294,15 +294,24 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     def save(self, run_dir: str | None, *, use_cloudpickle: bool = False) -> None:
         if run_dir is None:
             return
-        with open(os.path.join(run_dir, "gepa_state.bin"), "wb") as f:
-            if use_cloudpickle:
+        if use_cloudpickle:
+            try:
                 import cloudpickle as pickle  # type: ignore[import-not-found]
-            else:
-                import pickle
-            # Exclude runtime-only attributes that can't be serialized (e.g., callback hooks)
-            serialized = {k: v for k, v in self.__dict__.items() if k not in self._EXCLUDED_FROM_SERIALIZATION}
-            serialized["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
+            except ModuleNotFoundError:
+                raise ModuleNotFoundError(
+                    "cloudpickle is required when use_cloudpickle=True. "
+                    "Install it with: pip install gepa[full]  or  pip install cloudpickle"
+                ) from None
+        else:
+            import pickle
+        # Exclude runtime-only attributes that can't be serialized (e.g., callback hooks)
+        serialized = {k: v for k, v in self.__dict__.items() if k not in self._EXCLUDED_FROM_SERIALIZATION}
+        serialized["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
+        target_path = os.path.join(run_dir, "gepa_state.bin")
+        tmp_path = target_path + ".tmp"
+        with open(tmp_path, "wb") as f:
             pickle.dump(serialized, f)
+        os.replace(tmp_path, target_path)
 
     @staticmethod
     def load(run_dir: str) -> "GEPAState[RolloutOutput, DataId]":
