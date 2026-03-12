@@ -158,7 +158,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         )
 
         self.experiment_tracker.log_metrics(
-            {"selected_program_candidate": curr_prog_id, "total_metric_calls": state.total_num_evals},
+            {"iteration": i, "selected_program_candidate": curr_prog_id, "total_metric_calls": state.total_num_evals},
             step=i,
         )
 

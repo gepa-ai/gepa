@@ -68,9 +68,9 @@ def log_detailed_metrics_after_discovering_new_program(
     logger.log(f"Iteration {gepa_state.i + 1}: Linear pareto front program index: {linear_pareto_front_program_idx}")
     logger.log(f"Iteration {gepa_state.i + 1}: New program candidate index: {new_program_idx}")
 
-    # Only log numeric scalar metrics to experiment tracker (wandb/mlflow).
-    # Non-numeric/dict metrics are already logged via logger.log() above.
+    # Scalar metrics go to log_metrics (creates wandb/mlflow line charts)
     metrics = {
+        "iteration": gepa_state.i + 1,
         "new_program_idx": new_program_idx,
         "valset_pareto_front_agg": pareto_avg,
         "best_score_on_valset": best_score_on_valset,
@@ -81,23 +81,53 @@ def log_detailed_metrics_after_discovering_new_program(
         "val_program_average": valset_score,
         "total_metric_calls": gepa_state.total_num_evals,
     }
-    if log_individual_valset_scores_and_programs:
-        metrics.update(
-            {
-                "valset_pareto_front_scores": dict(gepa_state.pareto_front_valset),
-                "individual_valset_score_new_program": dict(valset_scores),
-            }
+    experiment_tracker.log_metrics(metrics, step=gepa_state.i + 1)
+
+    # Structured data goes to log_table (creates wandb Tables / mlflow artifacts)
+    # instead of log_metrics, which would flatten nested dicts into hundreds of charts.
+    iteration = gepa_state.i + 1
+
+    # Valset pareto front: which programs are best for which val examples
+    pareto_front_rows = [
+        [iteration, str(val_id), score, str(sorted(gepa_state.program_at_pareto_front_valset[val_id]))]
+        for val_id, score in gepa_state.pareto_front_valset.items()
+    ]
+    if pareto_front_rows:
+        experiment_tracker.log_table(
+            "valset_pareto_front",
+            columns=["iteration", "val_id", "score", "program_ids"],
+            data=pareto_front_rows,
         )
-        if objective_scores:
-            metrics["objective_scores_new_program"] = dict(objective_scores)
+
+    # Objective scores for the new program
+    if objective_scores:
+        obj_rows = [[iteration, new_program_idx, str(obj), float(score)] for obj, score in objective_scores.items()]
+        experiment_tracker.log_table(
+            "objective_scores",
+            columns=["iteration", "candidate_idx", "objective", "score"],
+            data=obj_rows,
+        )
+
+    # Objective pareto front
+    if gepa_state.objective_pareto_front:
+        obj_pareto_rows = [
+            [iteration, str(obj), float(score), str(sorted(gepa_state.program_at_pareto_front_objectives[obj]))]
+            for obj, score in gepa_state.objective_pareto_front.items()
+        ]
+        experiment_tracker.log_table(
+            "objective_pareto_front",
+            columns=["iteration", "objective", "score", "program_ids"],
+            data=obj_pareto_rows,
+        )
+
+    # Per-example verbose metrics (only when flag is enabled)
+    if log_individual_valset_scores_and_programs:
+        verbose_metrics = {
+            "valset_pareto_front_scores": dict(gepa_state.pareto_front_valset),
+            "individual_valset_score_new_program": dict(valset_scores),
+        }
         if valset_evaluation.objective_scores_by_val_id:
-            metrics["objective_scores_by_val_new_program"] = {
+            verbose_metrics["objective_scores_by_val_new_program"] = {
                 val_id: dict(scores) for val_id, scores in valset_evaluation.objective_scores_by_val_id.items()
             }
-        if gepa_state.objective_pareto_front:
-            metrics["objective_pareto_front_scores"] = dict(gepa_state.objective_pareto_front)
-            metrics["objective_pareto_front_programs"] = {
-                k: list(v) for k, v in gepa_state.program_at_pareto_front_objectives.items()
-            }
-
-    experiment_tracker.log_metrics(metrics, step=gepa_state.i + 1)
+        experiment_tracker.log_metrics(verbose_metrics, step=gepa_state.i + 1)
