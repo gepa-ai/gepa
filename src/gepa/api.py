@@ -55,6 +55,7 @@ def optimize(
     perfect_score: float = 1.0,
     reflection_prompt_template: str | dict[str, str] | None = None,
     custom_candidate_proposer: ProposalFn | None = None,
+    proposal_mode: Literal["rewrite", "edit"] = "rewrite",
     # Component selection configuration
     module_selector: ReflectionComponentSelector | str = "round_robin",
     # Merge-based configuration
@@ -250,7 +251,6 @@ def optimize(
             + "GEPA will use the default proposer, which requires a reflection_lm to be specified."
         )
 
-
     reflection_lm_callable: LanguageModel | None = None
     if isinstance(reflection_lm, str):
         import litellm
@@ -359,6 +359,7 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
+        proposal_mode=proposal_mode,
     )
 
     def evaluator_fn(

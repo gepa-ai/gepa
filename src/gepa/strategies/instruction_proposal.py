@@ -151,3 +151,25 @@ Provide the new instructions within ``` blocks."""
             return content.strip()
 
         return {"new_instruction": extract_instruction_text()}
+
+
+class InstructionEditSignature(InstructionProposalSignature):
+    """Like InstructionProposalSignature but asks the LLM to make targeted edits
+    instead of rewriting the entire instruction from scratch. This preserves
+    working parts of long prompts and uses fewer tokens."""
+
+    default_prompt_template = """I provided an assistant with the following instructions to perform a task for me:
+```
+<curr_param>
+```
+
+The following are examples of different task inputs provided to the assistant along with the assistant's response for each of them, and some feedback on how the assistant's response could be better:
+```
+<side_info>
+```
+
+Your task is to improve the existing instruction by making targeted edits. Do NOT rewrite the instruction from scratch. Instead, keep the parts that are working well and only modify the specific sections that need improvement based on the feedback.
+
+Read all the assistant responses and the corresponding feedback. Identify what needs to change and make minimal, targeted edits to address the issues while preserving the overall structure and any parts that are working correctly.
+
+Provide the complete updated instruction (with your edits applied) within ``` blocks."""
