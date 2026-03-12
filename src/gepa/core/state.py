@@ -301,6 +301,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 raise ModuleNotFoundError(
                     "cloudpickle is required when use_cloudpickle=True. "
                     "Install it with: pip install gepa[full]  or  pip install cloudpickle"
+                    " OR set use_cloudpickle=False to disable cloudpickle."
                 ) from None
         else:
             import pickle
