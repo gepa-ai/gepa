@@ -313,8 +313,18 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         serialized["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
         target_path = os.path.join(run_dir, "gepa_state.bin")
         tmp_path = target_path + ".tmp"
-        with open(tmp_path, "wb") as f:
-            pickle.dump(serialized, f)
+        try:
+            with open(tmp_path, "wb") as f:
+                pickle.dump(serialized, f)
+        except Exception as e:
+            if not use_cloudpickle:
+                raise type(e)(
+                    f"{e}\n\nHint: standard pickle failed to serialize the GEPA state. "
+                    "Try setting use_cloudpickle=True in EngineConfig, which can serialize "
+                    "more object types (lambdas, closures, etc.). "
+                    "Install it with: pip install gepa[full]  or  pip install cloudpickle"
+                ) from e
+            raise
         os.replace(tmp_path, target_path)
 
     @staticmethod
