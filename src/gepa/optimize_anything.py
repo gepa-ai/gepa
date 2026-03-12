@@ -445,7 +445,7 @@ class EngineConfig:
 
     Most users only need to set ``max_metric_calls`` (evaluation budget).
     Parallel evaluation is enabled by default with ``max_workers`` set to
-    the number of available CPUs (``os.cpu_count()``).
+    ``os.cpu_count() or 32`` (CPU count when available, otherwise 32).
 
     Set ``capture_stdio=True`` to automatically route any ``print()`` output
     inside your evaluator into ASI (under ``"stdout"``/``"stderr"`` keys),
@@ -471,7 +471,7 @@ class EngineConfig:
 
     # Parallelization settings for evaluation
     parallel: bool = True
-    max_workers: int | None = field(default_factory=lambda: os.cpu_count())
+    max_workers: int | None = field(default_factory=lambda: os.cpu_count() or 32)
 
     # Evaluation caching
     cache_evaluation: bool = False
