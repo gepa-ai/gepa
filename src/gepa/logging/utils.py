@@ -91,7 +91,7 @@ def log_detailed_metrics_after_discovering_new_program(
         )
     if objective_scores:
         metrics["objective_scores_new_program"] = dict(objective_scores)
-    if valset_evaluation.objective_scores_by_val_id:
+    if log_individual_valset_scores_and_programs and valset_evaluation.objective_scores_by_val_id:
         metrics["objective_scores_by_val_new_program"] = {
             val_id: dict(scores) for val_id, scores in valset_evaluation.objective_scores_by_val_id.items()
         }
