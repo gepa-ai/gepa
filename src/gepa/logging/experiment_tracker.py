@@ -96,7 +96,11 @@ class ExperimentTracker:
             try:
                 import wandb  # type: ignore
 
-                wandb.log(metrics, step=step)
+                # Filter to numeric values only — non-numeric data (dicts, strings)
+                # is logged via log_table() instead to avoid noisy flat charts
+                numeric_metrics = {k: v for k, v in metrics.items() if isinstance(v, int | float)}
+                if numeric_metrics:
+                    wandb.log(numeric_metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log to wandb: {e}")
 
