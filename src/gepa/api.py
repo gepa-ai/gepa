@@ -20,7 +20,7 @@ from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
-from gepa.logging.logger import LoggerProtocol, StdOutLogger
+from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
@@ -250,7 +250,6 @@ def optimize(
             + "GEPA will use the default proposer, which requires a reflection_lm to be specified."
         )
 
-
     reflection_lm_callable: LanguageModel | None = None
     if isinstance(reflection_lm, str):
         import litellm
@@ -271,7 +270,11 @@ def optimize(
         reflection_lm_callable = reflection_lm
 
     if logger is None:
-        logger = StdOutLogger()
+        if run_dir is not None:
+            os.makedirs(run_dir, exist_ok=True)
+            logger = Logger(os.path.join(run_dir, "run_log.txt"))
+        else:
+            logger = StdOutLogger()
 
     rng = random.Random(seed)
 
@@ -403,6 +406,10 @@ def optimize(
     )
 
     with experiment_tracker:
-        state = engine.run()
+        if isinstance(logger, Logger):
+            with logger:
+                state = engine.run()
+        else:
+            state = engine.run()
 
     return GEPAResult.from_state(state, run_dir=run_dir, seed=seed)
