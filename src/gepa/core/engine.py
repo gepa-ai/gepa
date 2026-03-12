@@ -230,6 +230,21 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             valset_size=len(valset),
             val_evaluation_policy=self.val_evaluation_policy,
         )
+
+        # Log candidate table row with instructions and metadata
+        component_names = sorted(new_program.keys())
+        columns = ["iteration", "candidate_idx", "parent_ids", "valset_score", "is_best"] + [
+            f"text:{name}" for name in component_names
+        ]
+        row = [
+            state.i + 1,
+            new_program_idx,
+            str(parent_program_idx),
+            valset_score,
+            is_best_program,
+        ] + [new_program[name] for name in component_names]
+        self.experiment_tracker.log_table("candidates", columns=columns, data=[row])
+
         return new_program_idx, linear_pareto_front_program_idx
 
     def run(self) -> GEPAState[RolloutOutput, DataId]:

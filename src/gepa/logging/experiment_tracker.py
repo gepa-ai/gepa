@@ -111,6 +111,33 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to log to mlflow: {e}")
 
+    def log_table(self, table_name: str, columns: list[str], data: list[list[Any]]) -> None:
+        """Log a table to the active backends.
+
+        Args:
+            table_name: Name/key for the table.
+            columns: Column headers.
+            data: Rows of data (each row is a list matching columns).
+        """
+        if self.use_wandb:
+            try:
+                import wandb  # type: ignore
+
+                table = wandb.Table(columns=columns, data=data)
+                wandb.log({table_name: table})
+            except Exception as e:
+                print(f"Warning: Failed to log table to wandb: {e}")
+
+        if self.use_mlflow:
+            try:
+                import mlflow  # type: ignore
+
+                # mlflow.log_table expects a dict of column -> list of values
+                table_dict = {col: [row[i] for row in data] for i, col in enumerate(columns)}
+                mlflow.log_table(data=table_dict, artifact_file=f"{table_name}.json")
+            except Exception as e:
+                print(f"Warning: Failed to log table to mlflow: {e}")
+
     def end_run(self):
         """End the current run."""
         if self.use_wandb:
