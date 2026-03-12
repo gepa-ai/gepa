@@ -68,15 +68,14 @@ def log_detailed_metrics_after_discovering_new_program(
     logger.log(f"Iteration {gepa_state.i + 1}: Linear pareto front program index: {linear_pareto_front_program_idx}")
     logger.log(f"Iteration {gepa_state.i + 1}: New program candidate index: {new_program_idx}")
 
+    # Only log numeric scalar metrics to experiment tracker (wandb/mlflow).
+    # Non-numeric/dict metrics are already logged via logger.log() above.
     metrics = {
-        "iteration": gepa_state.i + 1,
         "new_program_idx": new_program_idx,
         "valset_pareto_front_agg": pareto_avg,
-        "valset_pareto_front_programs": {k: list(v) for k, v in gepa_state.program_at_pareto_front_valset.items()},
-        "best_valset_agg_score": best_score_on_valset,
+        "best_score_on_valset": best_score_on_valset,
         "linear_pareto_front_program_idx": linear_pareto_front_program_idx,
         "best_program_as_per_agg_score_valset": best_prog_per_agg_val_score,
-        "best_score_on_valset": best_score_on_valset,
         "val_evaluated_count_new_program": coverage,
         "val_total_count": valset_size,
         "val_program_average": valset_score,
@@ -89,16 +88,16 @@ def log_detailed_metrics_after_discovering_new_program(
                 "individual_valset_score_new_program": dict(valset_scores),
             }
         )
-    if objective_scores:
-        metrics["objective_scores_new_program"] = dict(objective_scores)
-    if log_individual_valset_scores_and_programs and valset_evaluation.objective_scores_by_val_id:
-        metrics["objective_scores_by_val_new_program"] = {
-            val_id: dict(scores) for val_id, scores in valset_evaluation.objective_scores_by_val_id.items()
-        }
-    if gepa_state.objective_pareto_front:
-        metrics["objective_pareto_front_scores"] = dict(gepa_state.objective_pareto_front)
-        metrics["objective_pareto_front_programs"] = {
-            k: list(v) for k, v in gepa_state.program_at_pareto_front_objectives.items()
-        }
+        if objective_scores:
+            metrics["objective_scores_new_program"] = dict(objective_scores)
+        if valset_evaluation.objective_scores_by_val_id:
+            metrics["objective_scores_by_val_new_program"] = {
+                val_id: dict(scores) for val_id, scores in valset_evaluation.objective_scores_by_val_id.items()
+            }
+        if gepa_state.objective_pareto_front:
+            metrics["objective_pareto_front_scores"] = dict(gepa_state.objective_pareto_front)
+            metrics["objective_pareto_front_programs"] = {
+                k: list(v) for k, v in gepa_state.program_at_pareto_front_objectives.items()
+            }
 
     experiment_tracker.log_metrics(metrics, step=gepa_state.i + 1)

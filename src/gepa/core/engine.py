@@ -310,16 +310,18 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             evaluation_cache=self._initial_evaluation_cache,
         )
 
-        # Log base program score
+        # Log base program score using the same metric names as subsequent iterations
+        # so they appear on the same charts in wandb/mlflow
         base_val_avg, base_val_coverage = state.get_program_average_val_subset(0)
         self.experiment_tracker.log_metrics(
             {
-                "base_program_full_valset_score": base_val_avg,
-                "base_program_val_coverage": base_val_coverage,
-                "iteration": state.i + 1,
+                "val_program_average": base_val_avg,
+                "best_score_on_valset": base_val_avg,
+                "val_evaluated_count_new_program": base_val_coverage,
+                "val_total_count": len(valset),
                 "total_metric_calls": state.total_num_evals,
             },
-            step=state.i + 1,
+            step=0,
         )
 
         self.logger.log(
