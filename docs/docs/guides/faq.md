@@ -507,6 +507,22 @@ All values in `"scores"` must follow **higher is better**.  GEPA maintains a Par
 
 ---
 
+### Why am I getting errors with Amazon Bedrock models?
+
+If you see errors like `BedrockException - Invocation of model ID ... with on-demand throughput isn't supported`, ensure you're using the correct model ID format with the `us.` prefix. GEPA uses [LiteLLM](https://docs.litellm.ai/docs/providers/bedrock) for model routing, and Bedrock requires cross-region inference profile IDs:
+
+```python
+# This will fail:
+reflection_lm = "bedrock/anthropic.claude-sonnet-4-20250514-v1:0"
+
+# Use the us. prefix instead:
+reflection_lm = "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0"
+```
+
+The `us.` prefix enables cross-region inference, which is required for on-demand Bedrock access. See the [LiteLLM Bedrock docs](https://docs.litellm.ai/docs/providers/bedrock) for the full list of supported model IDs.
+
+---
+
 ## Still have questions?
 
 - **Discord**: [Join our community](https://discord.gg/WXFSeVGdbW)
