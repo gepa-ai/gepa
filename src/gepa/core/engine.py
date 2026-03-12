@@ -300,12 +300,15 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ),
         )
 
-        # Initialize state
+        # Evaluate seed candidate on valset (after on_optimization_start callback)
+        seed_valset_evaluation = valset_evaluator(self.seed_candidate)
+
+        # Initialize state with pre-computed seed evaluation
         state = initialize_gepa_state(
             run_dir=self.run_dir,
             logger=self.logger,
             seed_candidate=self.seed_candidate,
-            valset_evaluator=valset_evaluator,
+            seed_valset_evaluation=seed_valset_evaluation,
             track_best_outputs=self.track_best_outputs,
             frontier_type=self.frontier_type,
             evaluation_cache=self._initial_evaluation_cache,

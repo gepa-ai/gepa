@@ -617,10 +617,7 @@ def initialize_gepa_state(
     run_dir: str | None,
     logger: LoggerProtocol,
     seed_candidate: dict[str, str],
-    valset_evaluator: Callable[
-        [dict[str, str]],
-        ValsetEvaluation[RolloutOutput, DataId],
-    ],
+    seed_valset_evaluation: ValsetEvaluation[RolloutOutput, DataId],
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
     evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None" = None,
@@ -645,25 +642,21 @@ def initialize_gepa_state(
             gepa_state.evaluation_cache = evaluation_cache
         # else: keep the loaded cache (gepa_state.evaluation_cache is already set)
     else:
-        num_evals_run = 0
-
-        eval_result = valset_evaluator(seed_candidate)
         if run_dir is not None:
             write_eval_outputs_to_directory(
-                eval_result.outputs_by_val_id, os.path.join(run_dir, "generated_best_outputs_valset")
+                seed_valset_evaluation.outputs_by_val_id,
+                os.path.join(run_dir, "generated_best_outputs_valset"),
             )
-
-        num_evals_run += len(eval_result.scores_by_val_id)
 
         gepa_state = GEPAState(
             seed_candidate,
-            eval_result,
+            seed_valset_evaluation,
             track_best_outputs=track_best_outputs,
             frontier_type=frontier_type,
             evaluation_cache=evaluation_cache,
         )
 
         gepa_state.num_full_ds_evals = 1
-        gepa_state.total_num_evals = num_evals_run
+        gepa_state.total_num_evals = len(seed_valset_evaluation.scores_by_val_id)
 
     return gepa_state
