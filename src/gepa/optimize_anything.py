@@ -715,6 +715,7 @@ class ReflectionConfig:
     reflection_lm: LanguageModel | str | None = "openai/gpt-5.1"
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
+    proposal_mode: Literal["rewrite", "edit", "crossover"] = "rewrite"
 
 
 @dataclass
@@ -1421,6 +1422,7 @@ def optimize_anything(
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
+        proposal_mode=config.reflection.proposal_mode,
     )
 
     # Define evaluator function for merge proposer

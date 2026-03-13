@@ -3,7 +3,7 @@
 
 import pytest
 
-from gepa.strategies.instruction_proposal import InstructionProposalSignature
+from gepa.strategies.instruction_proposal import InstructionCrossoverSignature, InstructionProposalSignature
 
 
 class TestInstructionProposalSignature:
@@ -100,3 +100,53 @@ I hope you didn't get confused.
         """Test extraction of instructions from various code block formats."""
         result = InstructionProposalSignature.output_extractor(lm_output)
         assert result["new_instruction"] == expected_instruction
+
+
+class TestInstructionCrossoverSignature:
+    """Test InstructionCrossoverSignature."""
+
+    def test_prompt_includes_both_candidates(self):
+        """Test that the prompt renderer includes both primary and donor candidates."""
+        input_dict = {
+            "current_instruction_doc": "Primary instruction text",
+            "donor_instruction_doc": "Donor instruction text",
+            "dataset_with_feedback": [{"input": "test", "output": "result", "feedback": "good"}],
+            "prompt_template": None,
+        }
+        prompt = InstructionCrossoverSignature.prompt_renderer(input_dict)
+        assert isinstance(prompt, str)
+        assert "Primary instruction text" in prompt
+        assert "Donor instruction text" in prompt
+
+    def test_run_produces_merged_output(self):
+        """Test full run() with a mock LM."""
+        calls = []
+
+        def mock_lm(prompt):
+            calls.append(prompt)
+            return "```\nMerged instruction combining the best of both.\n```"
+
+        result = InstructionCrossoverSignature.run(
+            lm=mock_lm,
+            input_dict={
+                "current_instruction_doc": "Candidate A text",
+                "donor_instruction_doc": "Candidate B text",
+                "dataset_with_feedback": [{"input": "x", "output": "y", "feedback": "combine"}],
+                "prompt_template": None,
+            },
+        )
+        assert result["new_instruction"] == "Merged instruction combining the best of both."
+        assert len(calls) == 1
+        assert "Candidate A" in calls[0]
+        assert "Candidate B" in calls[0]
+
+    def test_validate_prompt_template_requires_donor(self):
+        """Test that custom templates must include <donor_param>."""
+        with pytest.raises(ValueError, match="donor_param"):
+            InstructionCrossoverSignature.validate_prompt_template(
+                "Only has <curr_param> and <side_info>"
+            )
+
+    def test_validate_prompt_template_none_is_ok(self):
+        """Test that None template (use default) passes validation."""
+        InstructionCrossoverSignature.validate_prompt_template(None)

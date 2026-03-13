@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar
 
 from gepa.image import Image
-from gepa.proposer.reflective_mutation.base import Signature
+from gepa.proposer.reflective_mutation.base import LanguageModel, Signature
 
 
 class InstructionProposalSignature(Signature):
@@ -151,3 +151,86 @@ Provide the new instructions within ``` blocks."""
             return content.strip()
 
         return {"new_instruction": extract_instruction_text()}
+
+
+class InstructionCrossoverSignature(InstructionProposalSignature):
+    """Combines two parent candidates into a new one by asking the LLM to
+    take the best parts of both.
+
+    Requires an additional ``donor_instruction_doc`` key in the input dict
+    containing the text of the second parent candidate.  Uses the same
+    ``<curr_param>`` / ``<side_info>`` placeholders as the base class, plus
+    ``<donor_param>`` for the second parent.
+    """
+
+    default_prompt_template = """I provided an assistant with the following instructions to perform a task for me:
+
+## Candidate A (primary)
+```
+<curr_param>
+```
+
+## Candidate B (donor)
+```
+<donor_param>
+```
+
+The following are examples of different task inputs provided to the assistant along with the assistant's response for each of them, and some feedback on how the assistant's response could be better:
+```
+<side_info>
+```
+
+Your task is to combine the best parts of Candidate A and Candidate B into a single, improved instruction for the assistant.
+
+Identify what each candidate does well and where each falls short based on the feedback. Merge the strengths of both candidates while avoiding their weaknesses. Preserve any domain-specific factual information or effective strategies from either candidate.
+
+Provide the new combined instruction within ``` blocks."""
+
+    input_keys: ClassVar[list[str]] = [
+        "current_instruction_doc",
+        "donor_instruction_doc",
+        "dataset_with_feedback",
+        "prompt_template",
+    ]
+
+    @classmethod
+    def validate_prompt_template(cls, prompt_template: str | None) -> None:
+        if prompt_template is None:
+            return
+        missing_placeholders = [
+            placeholder
+            for placeholder in ("<curr_param>", "<donor_param>", "<side_info>")
+            if placeholder not in prompt_template
+        ]
+        if missing_placeholders:
+            raise ValueError(f"Missing placeholder(s) in prompt template: {', '.join(missing_placeholders)}")
+
+    @classmethod
+    def prompt_renderer(cls, input_dict: Mapping[str, Any]) -> str | list[dict[str, Any]]:
+        donor_instruction = input_dict.get("donor_instruction_doc")
+        if not isinstance(donor_instruction, str):
+            raise TypeError("donor_instruction_doc must be a string")
+
+        # Build the base prompt (handles curr_param, side_info, images)
+        base_result = super().prompt_renderer(input_dict)
+
+        # Substitute the donor placeholder
+        if isinstance(base_result, str):
+            return base_result.replace("<donor_param>", donor_instruction)
+        else:
+            # Multimodal messages list — replace in the text content part
+            for msg in base_result:
+                if isinstance(msg.get("content"), list):
+                    for part in msg["content"]:
+                        if part.get("type") == "text":
+                            part["text"] = part["text"].replace("<donor_param>", donor_instruction)
+                elif isinstance(msg.get("content"), str):
+                    msg["content"] = msg["content"].replace("<donor_param>", donor_instruction)
+            return base_result
+
+    @classmethod
+    def run(cls, lm: LanguageModel, input_dict: Mapping[str, Any]) -> dict[str, str]:
+        full_prompt = cls.prompt_renderer(input_dict)
+        lm_res = lm(full_prompt)
+        lm_out = lm_res.strip()
+        return cls.output_extractor(lm_out)

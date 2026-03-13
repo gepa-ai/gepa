@@ -55,6 +55,7 @@ def optimize(
     perfect_score: float = 1.0,
     reflection_prompt_template: str | dict[str, str] | None = None,
     custom_candidate_proposer: ProposalFn | None = None,
+    proposal_mode: Literal["rewrite", "edit", "crossover"] = "rewrite",
     # Component selection configuration
     module_selector: ReflectionComponentSelector | str = "round_robin",
     # Merge-based configuration
@@ -362,6 +363,7 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
+        proposal_mode=proposal_mode,
     )
 
     def evaluator_fn(
