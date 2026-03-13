@@ -22,6 +22,7 @@ class TestLogTable:
         mock_wandb.log.assert_called_once()
         logged = mock_wandb.log.call_args[0][0]
         assert "test_table" in logged
+        assert mock_wandb.log.call_args[1]["commit"] is False
 
     def test_log_table_mlflow(self):
         tracker = ExperimentTracker(use_mlflow=True)
