@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import random
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -26,7 +27,7 @@ from gepa.proposer.reflective_mutation.base import (
     ReflectionComponentSelector,
 )
 from gepa.strategies.batch_sampler import BatchSampler
-from gepa.strategies.instruction_proposal import InstructionProposalSignature
+from gepa.strategies.instruction_proposal import InstructionCrossoverSignature, InstructionProposalSignature
 
 
 class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
@@ -56,6 +57,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
+        proposal_mode: str = "rewrite",
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -69,6 +71,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.reflection_lm = reflection_lm
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
+        self.proposal_mode = proposal_mode
 
         self.reflection_prompt_template = reflection_prompt_template
         # Track parameters for which we've already logged missing template warnings
@@ -91,6 +94,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         candidate: dict[str, str],
         reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
         components_to_update: list[str],
+        donor_candidate: dict[str, str] | None = None,
     ) -> dict[str, str]:
         if self.adapter.propose_new_texts is not None:
             return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update)
@@ -125,14 +129,26 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 # Use the single template for all parameters
                 prompt_template = self.reflection_prompt_template
 
-            new_texts[name] = InstructionProposalSignature.run(
-                lm=self.reflection_lm,
-                input_dict={
+            if self.proposal_mode == "crossover" and donor_candidate is not None:
+                input_dict: dict[str, Any] = {
                     "current_instruction_doc": base_instruction,
+                    "donor_instruction_doc": donor_candidate.get(name, ""),
                     "dataset_with_feedback": dataset_with_feedback,
                     "prompt_template": prompt_template,
-                },
-            )["new_instruction"]
+                }
+                new_texts[name] = InstructionCrossoverSignature.run(
+                    lm=self.reflection_lm,
+                    input_dict=input_dict,
+                )["new_instruction"]
+            else:
+                new_texts[name] = InstructionProposalSignature.run(
+                    lm=self.reflection_lm,
+                    input_dict={
+                        "current_instruction_doc": base_instruction,
+                        "dataset_with_feedback": dataset_with_feedback,
+                        "prompt_template": prompt_template,
+                    },
+                )["new_instruction"]
         return new_texts
 
     def propose(self, state: GEPAState) -> CandidateProposal | None:
@@ -296,7 +312,17 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 ),
             )
 
-            new_texts = self.propose_new_texts(curr_prog, reflective_dataset, predictor_names_to_update)
+            # For crossover, select a donor candidate different from the current one
+            donor_candidate: dict[str, str] | None = None
+            if self.proposal_mode == "crossover" and len(state.program_candidates) > 1:
+                other_ids = [j for j in range(len(state.program_candidates)) if j != curr_prog_id]
+                donor_id = random.choice(other_ids)
+                donor_candidate = state.program_candidates[donor_id]
+                self.logger.log(f"Iteration {i}: Crossover donor candidate: {donor_id}")
+
+            new_texts = self.propose_new_texts(
+                curr_prog, reflective_dataset, predictor_names_to_update, donor_candidate=donor_candidate
+            )
 
             # Notify proposal end
             notify_callbacks(
@@ -307,7 +333,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                     new_instructions=new_texts,
                 ),
             )
-
 
             for pname, text in new_texts.items():
                 self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
