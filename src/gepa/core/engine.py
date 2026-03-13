@@ -133,10 +133,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     def _sync_state_to_adapter(self, state: GEPAState) -> None:
         """Restore persisted adapter state into the adapter after loading.
 
-        No-op if the adapter does not implement ``set_adapter_state``.
+        No-op if the adapter does not implement ``set_adapter_state`` or if
+        no adapter state was previously persisted.
         """
         setter = getattr(self.adapter, "set_adapter_state", None)
-        if setter is not None:
+        if setter is not None and state.adapter_state:
             setter(state.adapter_state)
 
     def _evaluate_on_valset(
