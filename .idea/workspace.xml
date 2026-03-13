@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="18f5bd8f-bf56-4f78-98d8-bfa1ff3eb4c9" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/copilot.data.migration.agent.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/copilot.data.migration.ask.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/copilot.data.migration.ask2agent.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/copilot.data.migration.edit.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/gepa.iml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/GLEAN_ADAPTER_USAGE.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/data/claude_evals.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/data/gpt_evals.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/data/prod_promt.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/data/seed_candidate.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gepa_runs/generated_best_outputs_valset/task_0/iter_0_prog_0.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gepa_runs/generated_best_outputs_valset/task_1/iter_0_prog_0.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gepa_runs/generated_best_outputs_valset/task_2/iter_0_prog_0.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gepa_runs/generated_best_outputs_valset/task_3/iter_0_prog_0.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gepa_runs/generated_best_outputs_valset/task_4/iter_0_prog_0.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gepa_runs/generated_best_outputs_valset/task_5/iter_0_prog_0.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gepa_runs/generated_best_outputs_valset/task_6/iter_0_prog_0.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gepa_runs/generated_best_outputs_valset/task_7/iter_0_prog_0.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gepa_runs/generated_best_outputs_valset/task_8/iter_0_prog_0.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gepa_runs/generated_best_outputs_valset/task_9/iter_0_prog_0.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/gepa_runs/gepa_state.bin" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/gepa/adapters/glean_adapter/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/gepa/adapters/glean_adapter/al_adapter.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/gepa/adapters/glean_adapter/prompt.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/gepa/adapters/glean_adapter/utils.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/gepa/proposer/evolutionary_proposer.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/test_glean_adapter.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/gepa/adapters/default_adapter/default_adapter.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/gepa/adapters/default_adapter/default_adapter.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/gepa/api.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/gepa/api.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/gepa/core/engine.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/gepa/core/engine.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/uv.lock" beforeDir="false" afterPath="$PROJECT_DIR$/uv.lock" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 6
+}</component>
+  <component name="ProjectId" id="39e3oPUaqEYPH1eYNPxav1Lrp9P" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.GoLinterPluginOnboardingV2&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.GoLinterPluginStorageMigration&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/cathy.chen/workspace/gepa/src/gepa/adapters/glean_adapter&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.lookFeel&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src/gepa/adapters/glean_adapter" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/data" />
+    </key>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-gosdk-72a9cf600ed8-448e06e64ec5-org.jetbrains.plugins.go.sharedIndexes.bundled-GO-253.28294.337" />
+        <option value="bundled-js-predefined-d6986cc7102b-c7e53b3be11b-JavaScript-GO-253.28294.337" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="18f5bd8f-bf56-4f78-98d8-bfa1ff3eb4c9" name="Changes" comment="" />
+      <created>1771042884807</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1771042884807</updated>
+      <workItem from="1771042888805" duration="22034000" />
+      <workItem from="1771545298545" duration="5065000" />
+      <workItem from="1772046748975" duration="9945000" />
+      <workItem from="1772236478355" duration="26047000" />
+      <workItem from="1772487264296" duration="8952000" />
+      <workItem from="1772840528793" duration="2056000" />
+      <workItem from="1772842612244" duration="4772000" />
+      <workItem from="1773100384206" duration="23523000" />
+      <workItem from="1773275901564" duration="23491000" />
+      <workItem from="1773354910434" duration="17161000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/gepa/adapters/glean_adapter/al_adapter.py</url>
+          <line>680</line>
+          <option name="timeStamp" value="3" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+</project>
