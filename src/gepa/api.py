@@ -39,7 +39,7 @@ from gepa.strategies.component_selector import (
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
-
+from gepa.adapters.glean_adapter import ALDataInst
 
 def optimize(
     seed_candidate: dict[str, str],
@@ -287,16 +287,6 @@ def optimize(
                 + "GEPA will use the default proposer, which requires a reflection_lm to be specified."
             )
 
-    reflection_lm_callable: LanguageModel | None = None
-    if isinstance(reflection_lm, str):
-        import litellm
-        if batch_sampler == "epoch_shuffled":
-            batch_sampler = EpochShuffledBatchSampler(minibatch_size=reflection_minibatch_size or 3, rng=rng)
-        else:
-            assert reflection_minibatch_size is None, (
-                "reflection_minibatch_size only accepted if batch_sampler is 'epoch_shuffled'"
-            )
-
         reflection_lm_callable: LanguageModel | None = None
         if isinstance(reflection_lm, str):
             import litellm
@@ -316,12 +306,22 @@ def optimize(
         else:
             reflection_lm_callable = reflection_lm
 
+        if logger is None:
+            if run_dir is not None:
+                os.makedirs(run_dir, exist_ok=True)
+                logger = Logger(os.path.join(run_dir, "run_log.txt"))
+            else:
+                logger = StdOutLogger()
+
+        rng = random.Random(seed)
+
         candidate_selector: CandidateSelector
         if isinstance(candidate_selection_strategy, str):
             factories = {
                 "pareto": lambda: ParetoCandidateSelector(rng=rng),
                 "current_best": lambda: CurrentBestCandidateSelector(),
                 "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
+                "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
             }
 
             try:
@@ -416,7 +416,11 @@ def optimize(
     )
 
     with experiment_tracker:
-        state = engine.run()
+        if isinstance(logger, Logger):
+            with logger:
+                state = engine.run()
+        else:
+            state = engine.run()
 
     return GEPAResult.from_state(state, run_dir=run_dir, seed=seed)
 
@@ -497,75 +501,38 @@ def main() -> None:
 
     # Create a single placeholder item representing the entire eval set for screening
     # The API call will run the entire eval set and return all results
-    screen_evalset: list[dict[str, Any]] = [
+    screen_evalset: list[ALDataInst] = [
         {
-            "input": f"RUN_EVAL_SET:{SCREEN_EVAL_SET_NAME}:{args.eval_set_version}",
-            "additional_context": {
-                "eval_set_name": SCREEN_EVAL_SET_NAME,
-                "eval_set_version": args.eval_set_version,
-            }
+            "eval_set_name": SCREEN_EVAL_SET_NAME,
+            "eval_set_version": args.eval_set_version,
+            "deployment_ids": ['scio-prod'],
+            "status": "pending"
         }
     ]
 
-    full_evalset: list[dict[str, Any]] = [
+    full_evalset: list[ALDataInst] = [
         {
-            "input": f"RUN_EVAL_SET:{FULL_EVAL_SET_NAME}:{args.eval_set_version}",
-            "additional_context": {
-                "eval_set_name": FULL_EVAL_SET_NAME,
-                "eval_set_version": args.eval_set_version,
-            }
+            "eval_set_name": FULL_EVAL_SET_NAME,
+            "eval_set_version": args.eval_set_version,
+            "deployment_ids": ['scio-prod'],
+            "status": "pending"
         }
     ]
+
+    al_adapter = AssistantALAdapter(
+        runner=ALRunner(
+            api_url=args.api_url,
+            cookie=args.cookie,
+            eval_set_version=args.eval_set_version
+        )
+    )
+
 
     # Create AL Example objects (one per eval set)
     # Module specs with default token budgets
     module_specs = {mid: ModuleSpec(module_id=mid, kind="free_text", token_budget=1024) for mid in MODULES}
 
     baseline_prompt_hash = hashlib.md5(json.dumps(seed_candidate_flat, sort_keys=True).encode()).hexdigest()
-
-    # Set up AssistantALAdapter for screening
-    screen_adapter = AssistantALAdapter(
-        runner=ALRunner(
-            api_url=args.api_url,
-            cookie=args.cookie,
-            eval_set_name=SCREEN_EVAL_SET_NAME,
-            eval_set_version=args.eval_set_version,
-        ),
-        judge=Judge(cookie=args.cookie),
-        teacher_cache=TeacherCache(),
-        teacher_model=args.teacher_model,
-        thresholds=Thresholds(quality_min=0.6, tools_min=0.5, max_student_tokens=8000),
-        eval_set_name=SCREEN_EVAL_SET_NAME,
-        eval_set_version=args.eval_set_version,
-        student_model=args.model,
-    )
-
-    # Set up AssistantALAdapter for full evaluation
-    full_adapter = AssistantALAdapter(
-        runner=ALRunner(
-            api_url=args.api_url,
-            cookie=args.cookie,
-            eval_set_name=FULL_EVAL_SET_NAME,
-            eval_set_version=args.eval_set_version,
-        ),
-        judge=Judge(cookie=args.cookie),
-        teacher_cache=TeacherCache(),
-        teacher_model=args.teacher_model,
-        thresholds=Thresholds(quality_min=0.6, tools_min=0.5, max_student_tokens=8000),
-        eval_set_name=FULL_EVAL_SET_NAME,
-        eval_set_version=args.eval_set_version,
-        student_model=args.model,
-    )
-
-    # Create GEPA adapter that bridges to AssistantALAdapter
-    # This is needed for valset evaluation in the GEPA engine
-    gepa_adapter = GleanGEPAAdapter(
-        al_adapter=full_adapter,
-        model=args.model,
-        module_specs=module_specs,
-        global_token_cap=args.global_token_cap,
-        baseline_prompt_hash=baseline_prompt_hash,
-    )
 
     # Set up shared components for the proposer
     logger = StdOutLogger()
@@ -587,7 +554,7 @@ def main() -> None:
     proposer = EvolutionaryProposer(
         logger=logger,
         trainset=screen_evalset,
-        al_adapter=screen_adapter,
+        al_adapter=al_adapter,
         reflection_llm=reflection_llm,
         experiment_tracker=experiment_tracker,
         model=args.model,
@@ -600,7 +567,7 @@ def main() -> None:
         seed_candidate=seed_candidate_flat,
         trainset=screen_evalset,
         valset=full_evalset,
-        adapter=gepa_adapter,
+        adapter=al_adapter,
         proposer=proposer,
         max_metric_calls=args.max_metric_calls,
         run_dir=str(args.run_dir) if args.run_dir else None,
