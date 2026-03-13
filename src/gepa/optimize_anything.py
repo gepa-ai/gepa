@@ -129,7 +129,7 @@ from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
 from gepa.image import Image  # noqa: F401 — re-exported for user convenience
 from gepa.logging.experiment_tracker import create_experiment_tracker
-from gepa.logging.logger import LoggerProtocol, StdOutLogger
+from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
@@ -1291,7 +1291,11 @@ def optimize_anything(
 
     # Setup default logger if not provided
     if config.tracking.logger is None:
-        config.tracking.logger = StdOutLogger()
+        if config.engine.run_dir is not None:
+            os.makedirs(config.engine.run_dir, exist_ok=True)
+            config.tracking.logger = Logger(os.path.join(config.engine.run_dir, "run_log.txt"))
+        else:
+            config.tracking.logger = StdOutLogger()
 
     # --- 3. Setup random number generator ---
     rng = random.Random(config.engine.seed)
@@ -1467,8 +1471,13 @@ def optimize_anything(
     )
 
     # --- 15. Run optimization ---
+    logger = config.tracking.logger
     with experiment_tracker:
-        state = engine.run()
+        if isinstance(logger, Logger):
+            with logger:
+                state = engine.run()
+        else:
+            state = engine.run()
 
     return GEPAResult.from_state(
         state,

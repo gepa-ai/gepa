@@ -291,6 +291,13 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             for hook in hooks:
                 hook(self.total_num_evals, count)
 
+    def _atomic_write_json(self, run_dir: str, filename: str, data: Any) -> None:
+        target_path = os.path.join(run_dir, filename)
+        tmp_path = target_path + ".tmp"
+        with open(tmp_path, "w") as f:
+            json.dump(data, f, indent=2, default=json_default)
+        os.replace(tmp_path, target_path)
+
     def save(self, run_dir: str | None, *, use_cloudpickle: bool = False) -> None:
         if run_dir is None:
             return
@@ -326,6 +333,12 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 ) from e
             raise
         os.replace(tmp_path, target_path)
+
+        # Save run log and candidates as human-readable JSON
+        if self.full_program_trace:
+            self._atomic_write_json(run_dir, "run_log.json", self.full_program_trace)
+        if self.program_candidates:
+            self._atomic_write_json(run_dir, "candidates.json", self.program_candidates)
 
     @staticmethod
     def load(run_dir: str) -> "GEPAState[RolloutOutput, DataId]":
