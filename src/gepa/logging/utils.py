@@ -84,17 +84,14 @@ def log_detailed_metrics_after_discovering_new_program(
 
     # Structured data goes to log_table (creates wandb Tables / mlflow artifacts)
     # instead of log_metrics, which would flatten nested dicts into hundreds of charts.
+    # Only log the new candidate's row to avoid O(candidates * valset) repeated uploads.
 
-    # Valset scores matrix: rows = all candidates, columns = val examples.
-    # Grows with each accepted candidate, giving a full picture of the search.
     all_val_ids = sorted(gepa_state.pareto_front_valset.keys(), key=str)
     val_columns = ["candidate_idx", "parent_ids"] + [str(vid) for vid in all_val_ids]
-    val_rows = []
-    for cidx, scores_dict in enumerate(gepa_state.prog_candidate_val_subscores):
-        parent = gepa_state.parent_program_for_candidate[cidx]
-        row = [cidx, str(parent)] + [scores_dict.get(vid) for vid in all_val_ids]
-        val_rows.append(row)
-    experiment_tracker.log_table("valset_scores", columns=val_columns, data=val_rows)
+    new_scores_dict = gepa_state.prog_candidate_val_subscores[new_program_idx]
+    new_parent = gepa_state.parent_program_for_candidate[new_program_idx]
+    val_row = [new_program_idx, str(new_parent)] + [new_scores_dict.get(vid) for vid in all_val_ids]
+    experiment_tracker.log_table("valset_scores", columns=val_columns, data=[val_row])
 
     # Valset pareto front: which programs are best for which val examples
     pareto_front_rows = [
@@ -108,18 +105,13 @@ def log_detailed_metrics_after_discovering_new_program(
             data=pareto_front_rows,
         )
 
-    # Objective scores matrix: rows = all candidates, columns = objectives
-    if any(gepa_state.prog_candidate_objective_scores):
-        all_objectives = sorted(
-            {obj for scores in gepa_state.prog_candidate_objective_scores for obj in scores}, key=str
-        )
+    # Objective scores for the new candidate only
+    new_obj_scores = gepa_state.prog_candidate_objective_scores[new_program_idx]
+    if new_obj_scores:
+        all_objectives = sorted(new_obj_scores.keys(), key=str)
         obj_columns = ["candidate_idx", "parent_ids"] + [str(obj) for obj in all_objectives]
-        obj_rows = []
-        for cidx, scores_dict in enumerate(gepa_state.prog_candidate_objective_scores):
-            parent = gepa_state.parent_program_for_candidate[cidx]
-            row = [cidx, str(parent)] + [scores_dict.get(obj) for obj in all_objectives]
-            obj_rows.append(row)
-        experiment_tracker.log_table("objective_scores", columns=obj_columns, data=obj_rows)
+        obj_row = [new_program_idx, str(new_parent)] + [new_obj_scores.get(obj) for obj in all_objectives]
+        experiment_tracker.log_table("objective_scores", columns=obj_columns, data=[obj_row])
 
     # Objective pareto front
     if gepa_state.objective_pareto_front:
