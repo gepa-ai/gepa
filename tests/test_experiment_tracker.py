@@ -91,3 +91,105 @@ class TestLogMetricsNumericFilter:
         assert "score" in logged
         assert "count" in logged
         assert "label" not in logged
+
+
+class TestLogConfig:
+    """Test ExperimentTracker.log_config() for wandb and mlflow backends."""
+
+    def test_wandb_config_update(self):
+        tracker = ExperimentTracker(use_wandb=True)
+        config = {"seed": 42, "lr": 0.01, "name": "test"}
+
+        mock_wandb = MagicMock()
+        with patch.dict("sys.modules", {"wandb": mock_wandb}):
+            tracker.log_config(config)
+
+        mock_wandb.config.update.assert_called_once()
+        logged = mock_wandb.config.update.call_args[0][0]
+        assert logged == {"seed": 42, "lr": 0.01, "name": "test"}
+        assert mock_wandb.config.update.call_args[1]["allow_val_change"] is True
+
+    def test_non_serializable_values_stringified(self):
+        tracker = ExperimentTracker(use_wandb=True)
+        config = {"seed": 42, "components": ["a", "b"], "obj": object()}
+
+        mock_wandb = MagicMock()
+        with patch.dict("sys.modules", {"wandb": mock_wandb}):
+            tracker.log_config(config)
+
+        logged = mock_wandb.config.update.call_args[0][0]
+        assert logged["seed"] == 42
+        assert isinstance(logged["components"], str)
+        assert isinstance(logged["obj"], str)
+
+    def test_mlflow_params_as_strings(self):
+        tracker = ExperimentTracker(use_mlflow=True)
+        config = {"seed": 42, "lr": 0.01, "name": "test"}
+
+        mock_mlflow = MagicMock()
+        with patch.dict("sys.modules", {"mlflow": mock_mlflow}):
+            tracker.log_config(config)
+
+        mock_mlflow.log_params.assert_called_once()
+        logged = mock_mlflow.log_params.call_args[0][0]
+        assert all(isinstance(v, str) for v in logged.values())
+        assert logged["seed"] == "42"
+
+    def test_no_backends_no_error(self):
+        tracker = ExperimentTracker(use_wandb=False, use_mlflow=False)
+        tracker.log_config({"key": "value"})
+
+    def test_wandb_error_handled(self):
+        tracker = ExperimentTracker(use_wandb=True)
+
+        mock_wandb = MagicMock()
+        mock_wandb.config.update.side_effect = RuntimeError("wandb error")
+        with patch.dict("sys.modules", {"wandb": mock_wandb}):
+            tracker.log_config({"key": "value"})
+
+
+class TestLogSummary:
+    """Test ExperimentTracker.log_summary() for wandb and mlflow backends."""
+
+    def test_wandb_summary_set(self):
+        tracker = ExperimentTracker(use_wandb=True)
+        summary = {"best_score": 0.95, "best_idx": 3, "best_prompt": "Do X"}
+
+        mock_wandb = MagicMock()
+        with patch.dict("sys.modules", {"wandb": mock_wandb}):
+            tracker.log_summary(summary)
+
+        mock_wandb.run.summary.__setitem__.assert_any_call("best_score", 0.95)
+        mock_wandb.run.summary.__setitem__.assert_any_call("best_idx", 3)
+        mock_wandb.run.summary.__setitem__.assert_any_call("best_prompt", "Do X")
+
+    def test_mlflow_splits_numeric_and_text(self):
+        tracker = ExperimentTracker(use_mlflow=True)
+        summary = {"best_score": 0.95, "best_prompt": "Do X", "count": 10}
+
+        mock_mlflow = MagicMock()
+        with patch.dict("sys.modules", {"mlflow": mock_mlflow}):
+            tracker.log_summary(summary)
+
+        # Numeric values logged as metrics
+        metrics_call = mock_mlflow.log_metrics.call_args[0][0]
+        assert "best_score" in metrics_call
+        assert "count" in metrics_call
+        assert "best_prompt" not in metrics_call
+
+        # String values logged as params with summary/ prefix
+        params_call = mock_mlflow.log_params.call_args[0][0]
+        assert "summary/best_prompt" in params_call
+        assert params_call["summary/best_prompt"] == "Do X"
+
+    def test_no_backends_no_error(self):
+        tracker = ExperimentTracker(use_wandb=False, use_mlflow=False)
+        tracker.log_summary({"key": "value"})
+
+    def test_wandb_error_handled(self):
+        tracker = ExperimentTracker(use_wandb=True)
+
+        mock_wandb = MagicMock()
+        mock_wandb.run.summary.__setitem__.side_effect = RuntimeError("wandb error")
+        with patch.dict("sys.modules", {"wandb": mock_wandb}):
+            tracker.log_summary({"key": "value"})
