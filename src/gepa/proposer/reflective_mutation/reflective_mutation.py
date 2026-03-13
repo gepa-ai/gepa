@@ -254,9 +254,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             )
             return None
 
-        self.experiment_tracker.log_metrics(
-            {"subsample_score": sum(eval_curr.scores), "total_metric_calls": state.total_num_evals}, step=i
-        )
+        subsample_before = sum(eval_curr.scores)
 
         # 2) Decide which predictors to update
         predictor_names_to_update = self.module_selector(
@@ -308,12 +306,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 ),
             )
 
-
             for pname, text in new_texts.items():
                 self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
-            self.experiment_tracker.log_metrics(
-                {f"new_instruction_{pname}": text for pname, text in new_texts.items()}, step=i
-            )
         except Exception as e:
             self.logger.log(f"Iteration {i}: Exception during reflection/proposal: {e}")
             import traceback
@@ -373,7 +367,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
         new_sum = sum(new_scores)
         self.experiment_tracker.log_metrics(
-            {"new_subsample_score": new_sum, "total_metric_calls": state.total_num_evals}, step=i
+            {
+                "subsample/before": subsample_before,
+                "subsample/after": new_sum,
+                "total_metric_calls": state.total_num_evals,
+            },
+            step=i,
         )
 
         return CandidateProposal(
