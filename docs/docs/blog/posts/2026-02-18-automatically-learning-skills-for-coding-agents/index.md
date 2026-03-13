@@ -16,6 +16,16 @@ slug: automatically-learning-skills-for-coding-agents
 title: "Automatically Learning Skills for Coding Agents"
 description: "Introducing gskill, a fully automated pipeline that uses GEPA and SWE-smith to learn repository-specific skills for coding agents."
 social_image: blog/2026-02-18-automatically-learning-skills-for-coding-agents/bleve_comparison_plot.png
+citation_authors:
+  - "Shangyin Tan"
+  - "Lakshya A Agrawal"
+  - "Rohit Sandadi"
+  - "Dan Klein"
+  - "Koushik Sen"
+  - "Alexandros G. Dimakis"
+  - "Matei Zaharia"
+citation_technical_report_institution: "UC Berkeley"
+citation_keywords: "coding agents, skill learning, agent optimization, SWE-bench, repository-specific skills, LLM agents"
 ---
 
 # Automatically Learning Skills for Coding Agents

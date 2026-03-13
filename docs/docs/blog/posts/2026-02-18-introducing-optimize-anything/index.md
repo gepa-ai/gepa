@@ -23,6 +23,22 @@ readtime: 12
 title: "optimize_anything: A Universal API for Optimizing any Text Parameter"
 description: "GEPA's new API setting state-of-the-art results on optimizing any text parameter: code, prompts, agent architectures, and more. If you can measure it, you can optimize it."
 social_image: blog/2026-02-18-introducing-optimize-anything/images/header_image.png
+citation_authors:
+  - "Lakshya A Agrawal"
+  - "Donghyun Lee"
+  - "Wenjie Ma"
+  - "Karim Elmaaroufi"
+  - "Shangyin Tan"
+  - "Sanjit A. Seshia"
+  - "Koushik Sen"
+  - "Dan Klein"
+  - "Ion Stoica"
+  - "Joseph E. Gonzalez"
+  - "Omar Khattab"
+  - "Alexandros G. Dimakis"
+  - "Matei Zaharia"
+citation_technical_report_institution: "UC Berkeley"
+citation_keywords: "prompt optimization, evolutionary search, LLM agents, Pareto optimization, text optimization, code optimization, agent architecture"
 ---
 
 # <span class="gradient-code">optimize_anything</span>: A Universal API for Optimizing any Text Parameter

@@ -9,6 +9,7 @@ Welcome to the GEPA guides! These guides will help you understand and use GEPA e
 - [FAQ](faq.md) - Frequently asked questions about GEPA
 - [Creating Adapters](adapters.md) - Learn how to integrate GEPA with your system
 - [Using Callbacks](callbacks.md) - Monitor and instrument optimization runs
+- [gskill](gskill.md) - Learn repository-specific skills for coding agents
 - [Contributing](contributing.md) - How to contribute to GEPA development
 
 ## Key Concepts

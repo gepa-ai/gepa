@@ -129,7 +129,7 @@ from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
 from gepa.image import Image  # noqa: F401 — re-exported for user convenience
 from gepa.logging.experiment_tracker import create_experiment_tracker
-from gepa.logging.logger import LoggerProtocol, StdOutLogger
+from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
@@ -138,6 +138,7 @@ from gepa.strategies.candidate_selector import (
     CurrentBestCandidateSelector,
     EpsilonGreedyCandidateSelector,
     ParetoCandidateSelector,
+    TopKParetoCandidateSelector,
 )
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
@@ -443,8 +444,9 @@ class Evaluator(Protocol):
 class EngineConfig:
     """Controls the optimization run loop: budget, parallelism, caching, and stopping.
 
-    Most users only need to set ``max_metric_calls`` (evaluation budget) and
-    optionally ``parallel``/``max_workers`` for concurrent evaluation.
+    Most users only need to set ``max_metric_calls`` (evaluation budget).
+    Parallel evaluation is enabled by default with ``max_workers`` set to
+    ``os.cpu_count() or 32`` (CPU count when available, otherwise 32).
 
     Set ``capture_stdio=True`` to automatically route any ``print()`` output
     inside your evaluator into ASI (under ``"stdout"``/``"stderr"`` keys),
@@ -465,12 +467,14 @@ class EngineConfig:
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
-    candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto"
+    candidate_selection_strategy: CandidateSelector | Literal[
+        "pareto", "current_best", "epsilon_greedy", "top_k_pareto"
+    ] = "pareto"
     frontier_type: FrontierType = "hybrid"
 
     # Parallelization settings for evaluation
-    parallel: bool = False
-    max_workers: int | None = None
+    parallel: bool = True
+    max_workers: int | None = field(default_factory=lambda: os.cpu_count() or 32)
 
     # Evaluation caching
     cache_evaluation: bool = False
@@ -797,7 +801,7 @@ class GEPAConfig:
     Example::
 
         config = GEPAConfig(
-            engine=EngineConfig(max_metric_calls=200, parallel=True, max_workers=16),
+            engine=EngineConfig(max_metric_calls=200),
             reflection=ReflectionConfig(reflection_lm="openai/gpt-5.1"),
             refiner=RefinerConfig(max_refinements=2),
         )
@@ -1290,7 +1294,11 @@ def optimize_anything(
 
     # Setup default logger if not provided
     if config.tracking.logger is None:
-        config.tracking.logger = StdOutLogger()
+        if config.engine.run_dir is not None:
+            os.makedirs(config.engine.run_dir, exist_ok=True)
+            config.tracking.logger = Logger(os.path.join(config.engine.run_dir, "run_log.txt"))
+        else:
+            config.tracking.logger = StdOutLogger()
 
     # --- 3. Setup random number generator ---
     rng = random.Random(config.engine.seed)
@@ -1302,6 +1310,7 @@ def optimize_anything(
             "pareto": lambda: ParetoCandidateSelector(rng=rng),
             "current_best": lambda: CurrentBestCandidateSelector(),
             "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
+            "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
         }
 
         try:
@@ -1309,7 +1318,7 @@ def optimize_anything(
         except KeyError as exc:
             raise ValueError(
                 f"Unknown candidate_selector strategy: {config.engine.candidate_selection_strategy}. "
-                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto'"
             ) from exc
     elif isinstance(config.engine.candidate_selection_strategy, CandidateSelector):
         candidate_selector = config.engine.candidate_selection_strategy
@@ -1466,8 +1475,13 @@ def optimize_anything(
     )
 
     # --- 15. Run optimization ---
+    logger = config.tracking.logger
     with experiment_tracker:
-        state = engine.run()
+        if isinstance(logger, Logger):
+            with logger:
+                state = engine.run()
+        else:
+            state = engine.run()
 
     return GEPAResult.from_state(
         state,

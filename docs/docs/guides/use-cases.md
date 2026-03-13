@@ -453,6 +453,8 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Watch the event](https://www.linkedin.com/events/automaticpromptoptimization-ait7404883890873618433/theater/)
 
+    [:material-arrow-right: BAML Prompt Optimization Guide](https://docs.boundaryml.com/guide/baml-advanced/prompt-optimization)
+
 </div>
 
 ---

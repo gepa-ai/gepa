@@ -48,3 +48,35 @@ class EpsilonGreedyCandidateSelector(CandidateSelector):
             return self.rng.randint(0, len(state.program_candidates) - 1)
         else:
             return idxmax(state.program_full_scores_val_set)
+
+
+class TopKParetoCandidateSelector(CandidateSelector):
+    """Pareto selection restricted to the top K programs by aggregate score."""
+
+    def __init__(self, k: int, rng: random.Random | None):
+        assert k > 0
+        self.k = k
+        if rng is None:
+            self.rng = random.Random(0)
+        else:
+            self.rng = rng
+
+    def select_candidate_idx(self, state: GEPAState) -> int:
+        assert len(state.program_full_scores_val_set) == len(state.program_candidates)
+        # Get top K program indices by aggregate score
+        scores = state.per_program_tracked_scores
+        top_k_indices = set(sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[: self.k])
+
+        # Filter pareto front mapping to only include top K programs
+        pareto_mapping = state.get_pareto_front_mapping()
+        filtered_mapping = {}
+        for key, prog_set in pareto_mapping.items():
+            filtered = prog_set & top_k_indices
+            if filtered:
+                filtered_mapping[key] = filtered
+
+        if not filtered_mapping:
+            # Fallback: pick the best program overall
+            return idxmax(scores)
+
+        return select_program_candidate_from_pareto_front(filtered_mapping, scores, self.rng)

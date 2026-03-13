@@ -29,13 +29,12 @@ def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
     )
 
     fake_logger = MagicMock()
-    valset_evaluator = MagicMock(return_value=valset_out)
 
     result = state_mod.initialize_gepa_state(
         run_dir=str(run_dir),
         logger=fake_logger,
         seed_candidate=seed,
-        valset_evaluator=valset_evaluator,
+        seed_valset_evaluation=valset_out,
         track_best_outputs=False,
     )
 
@@ -43,7 +42,6 @@ def test_initialize_gepa_state_fresh_init_writes_and_counts(run_dir):
     assert result.num_full_ds_evals == 1
     assert result.total_num_evals == len(valset_out.scores_by_val_id)
     fake_logger.log.assert_not_called()
-    valset_evaluator.assert_called_once_with(seed)
 
     # Files written for each task with outputs (not scores)
     base = run_dir / "generated_best_outputs_valset"
@@ -63,13 +61,12 @@ def test_initialize_gepa_state_no_run_dir():
         objective_scores_by_val_id=None,
     )
     fake_logger = MagicMock()
-    valset_evaluator = MagicMock(return_value=valset_out)
 
     result = state_mod.initialize_gepa_state(
         run_dir=None,
         logger=fake_logger,
         seed_candidate=seed,
-        valset_evaluator=valset_evaluator,
+        seed_valset_evaluation=valset_out,
         track_best_outputs=False,
     )
 
@@ -77,7 +74,6 @@ def test_initialize_gepa_state_no_run_dir():
     assert result.num_full_ds_evals == 1
     assert result.total_num_evals == len(valset_out.scores_by_val_id)
     fake_logger.log.assert_not_called()
-    valset_evaluator.assert_called_once_with(seed)
 
 
 def test_gepa_state_save_and_initialize(run_dir):
@@ -89,7 +85,6 @@ def test_gepa_state_save_and_initialize(run_dir):
         objective_scores_by_val_id=None,
     )
     fake_logger = MagicMock()
-    valset_evaluator = MagicMock(return_value=valset_out)
 
     state = state_mod.GEPAState(seed, valset_out)
     state.num_full_ds_evals = 3
@@ -102,7 +97,7 @@ def test_gepa_state_save_and_initialize(run_dir):
         run_dir=str(run_dir),
         logger=fake_logger,
         seed_candidate=seed,
-        valset_evaluator=valset_evaluator,
+        seed_valset_evaluation=valset_out,
         track_best_outputs=False,
     )
 
@@ -113,7 +108,7 @@ def test_gepa_state_save_and_initialize(run_dir):
         run_dir=str(run_dir),
         logger=fake_logger,
         seed_candidate=seed,
-        valset_evaluator=valset_evaluator,
+        seed_valset_evaluation=valset_out,
         track_best_outputs=False,
     )
 

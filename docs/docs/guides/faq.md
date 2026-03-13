@@ -145,6 +145,8 @@ We recommend using a **leading frontier model** for `reflection_lm`:
 - **Minimum recommended tier**: post‑GPT‑5 or Gemini‑2.5‑Pro class models
 - **Also works**: Models as small as Qwen3‑4B have been shown to work, but use the most capable model available for the reflection LM
 
+When passing a **string** as `reflection_lm`, GEPA uses [LiteLLM](https://docs.litellm.ai/docs/) by default, so use LiteLLM model IDs (e.g., `"openai/gpt-5.2"`, `"anthropic/claude-opus-4-5-20250514"`, `"bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0"`). You can also pass a **callable** instead to use any custom model provider — see the [Bedrock FAQ entry](#why-am-i-getting-errors-with-amazon-bedrock-models) for an example.
+
 !!! tip "Recommendation"
     Use a large `reflection_lm` for proposing improved prompts, but use the same LM for `task_lm` that you'll deploy in production.
 
@@ -504,6 +506,39 @@ def evaluator(candidate, example):
 ```
 
 All values in `"scores"` must follow **higher is better**.  GEPA maintains a Pareto frontier across these objectives, finding candidates that represent different trade-offs.
+
+---
+
+### Why am I getting errors with Amazon Bedrock models?
+
+By default, GEPA uses [LiteLLM](https://docs.litellm.ai/docs/) to call the `reflection_lm`, so model IDs should follow **LiteLLM's naming conventions**. For Bedrock, this means using the `us.` prefix for cross-region inference:
+
+```python
+# This will fail:
+reflection_lm = "bedrock/anthropic.claude-sonnet-4-20250514-v1:0"
+
+# Use the us. prefix instead:
+reflection_lm = "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0"
+```
+
+See the [LiteLLM Bedrock docs](https://docs.litellm.ai/docs/providers/bedrock) for the full list of supported model IDs.
+
+!!! tip "Using a custom model provider instead of LiteLLM"
+    GEPA is a **zero-dependency** package — LiteLLM is only the default. If you want to use any other model provider, SDK, or calling convention, pass a **callable** as `reflection_lm` instead of a string:
+
+    ```python
+    def my_reflection_lm(messages, **kwargs):
+        # Call any model service: your own API, vLLM, Ollama, a custom SDK, etc.
+        response = my_client.chat(messages=messages)
+        return response.text
+
+    result = optimize_anything(
+        ...,
+        config=GEPAConfig(reflection_lm=my_reflection_lm),
+    )
+    ```
+
+    This works with any Python library or model service — GEPA just needs a function that takes messages and returns text.
 
 ---
 
