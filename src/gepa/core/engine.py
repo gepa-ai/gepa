@@ -29,6 +29,7 @@ from gepa.core.state import EvaluationCache, FrontierType, GEPAState, ValsetEval
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
+from gepa.proposer.base import ProposeNewCandidate
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import (
     ReflectiveMutationProposer,
@@ -56,7 +57,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         perfect_score: float | None,
         seed: int,
         # Strategies and helpers
-        reflective_proposer: ReflectiveMutationProposer,
+        reflective_proposer: ReflectiveMutationProposer | ProposeNewCandidate,  # type: ignore[type-arg]
         merge_proposer: MergeProposer | None,
         frontier_type: FrontierType,
         # Logging
