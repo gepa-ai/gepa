@@ -80,6 +80,10 @@ def log_detailed_metrics_after_discovering_new_program(
         "val_program_average": valset_score,
         "total_metric_calls": gepa_state.total_num_evals,
     }
+    if objective_scores:
+        for obj_name, obj_val in objective_scores.items():
+            if isinstance(obj_val, int | float):
+                metrics[f"objective/{obj_name}"] = obj_val
     experiment_tracker.log_metrics(metrics, step=gepa_state.i + 1)
 
     # Structured data goes to log_table (creates wandb Tables / mlflow artifacts)
