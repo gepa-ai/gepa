@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar
 
 from gepa.image import Image
-from gepa.proposer.reflective_mutation.base import Signature
+from gepa.proposer.reflective_mutation.base import LanguageModel, Signature
 
 
 class InstructionProposalSignature(Signature):
@@ -154,9 +154,22 @@ Provide the new instructions within ``` blocks."""
 
 
 class InstructionEditSignature(InstructionProposalSignature):
-    """Like InstructionProposalSignature but asks the LLM to make targeted edits
-    instead of rewriting the entire instruction from scratch. This preserves
-    working parts of long prompts and uses fewer tokens."""
+    """Asks the LLM to output search/replace edit blocks instead of rewriting
+    the entire instruction. This saves output tokens for long candidates and
+    preserves parts of the instruction that are already working well.
+
+    The LLM outputs one or more edit blocks in this format::
+
+        <<<<<<< SEARCH
+        exact text to find
+        =======
+        replacement text
+        >>>>>>> REPLACE
+
+    The output_extractor applies each block sequentially to the original text.
+    If no valid edit blocks are found, falls back to extracting a full rewrite
+    from ``` blocks (same as InstructionProposalSignature).
+    """
 
     default_prompt_template = """I provided an assistant with the following instructions to perform a task for me:
 ```
@@ -168,8 +181,57 @@ The following are examples of different task inputs provided to the assistant al
 <side_info>
 ```
 
-Your task is to improve the existing instruction by making targeted edits. Do NOT rewrite the instruction from scratch. Instead, keep the parts that are working well and only modify the specific sections that need improvement based on the feedback.
+Your task is to improve the existing instruction by making targeted edits. Do NOT rewrite the instruction from scratch.
 
-Read all the assistant responses and the corresponding feedback. Identify what needs to change and make minimal, targeted edits to address the issues while preserving the overall structure and any parts that are working correctly.
+Read all the assistant responses and the corresponding feedback. Identify what needs to change and make minimal, targeted edits.
 
-Provide the complete updated instruction (with your edits applied) within ``` blocks."""
+Express your edits as one or more SEARCH/REPLACE blocks. Each block finds an exact passage in the current instruction and replaces it:
+
+<<<<<<< SEARCH
+exact text from the current instruction to find
+=======
+replacement text
+>>>>>>> REPLACE
+
+Rules:
+- The SEARCH section must match the current instruction EXACTLY (including whitespace and newlines).
+- You can use multiple SEARCH/REPLACE blocks to make several edits.
+- To insert new text, use a SEARCH block that matches the text just before where you want to insert, and include that text plus the new content in REPLACE.
+- To delete text, use an empty REPLACE section."""
+
+    @classmethod
+    def _apply_edits(cls, original: str, lm_out: str) -> str | None:
+        """Parse SEARCH/REPLACE blocks from lm_out and apply them to original.
+
+        Returns the edited text, or None if no valid edit blocks were found.
+        """
+        pattern = re.compile(
+            r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE",
+            re.DOTALL,
+        )
+        matches = list(pattern.finditer(lm_out))
+        if not matches:
+            return None
+
+        result = original
+        for match in matches:
+            search_text = match.group(1)
+            replace_text = match.group(2)
+            if search_text in result:
+                result = result.replace(search_text, replace_text, 1)
+        return result
+
+    @classmethod
+    def run(cls, lm: "LanguageModel", input_dict: Mapping[str, Any]) -> dict[str, str]:
+        original_instruction = input_dict.get("current_instruction_doc", "")
+        full_prompt = cls.prompt_renderer(input_dict)
+        lm_res = lm(full_prompt)
+        lm_out = lm_res.strip()
+
+        # Try to apply search/replace edits
+        edited = cls._apply_edits(str(original_instruction), lm_out)
+        if edited is not None:
+            return {"new_instruction": edited}
+
+        # Fallback: extract full rewrite from ``` blocks (same as parent)
+        return cls.output_extractor(lm_out)
