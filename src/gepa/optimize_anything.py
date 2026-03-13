@@ -138,6 +138,7 @@ from gepa.strategies.candidate_selector import (
     CurrentBestCandidateSelector,
     EpsilonGreedyCandidateSelector,
     ParetoCandidateSelector,
+    TopKParetoCandidateSelector,
 )
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
@@ -466,7 +467,9 @@ class EngineConfig:
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
-    candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto"
+    candidate_selection_strategy: CandidateSelector | Literal[
+        "pareto", "current_best", "epsilon_greedy", "top_k_pareto"
+    ] = "pareto"
     frontier_type: FrontierType = "hybrid"
 
     # Parallelization settings for evaluation
@@ -1307,6 +1310,7 @@ def optimize_anything(
             "pareto": lambda: ParetoCandidateSelector(rng=rng),
             "current_best": lambda: CurrentBestCandidateSelector(),
             "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
+            "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
         }
 
         try:
@@ -1314,7 +1318,7 @@ def optimize_anything(
         except KeyError as exc:
             raise ValueError(
                 f"Unknown candidate_selector strategy: {config.engine.candidate_selection_strategy}. "
-                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto'"
             ) from exc
     elif isinstance(config.engine.candidate_selection_strategy, CandidateSelector):
         candidate_selector = config.engine.candidate_selection_strategy

@@ -29,6 +29,7 @@ from gepa.strategies.candidate_selector import (
     CurrentBestCandidateSelector,
     EpsilonGreedyCandidateSelector,
     ParetoCandidateSelector,
+    TopKParetoCandidateSelector,
 )
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
@@ -47,7 +48,8 @@ def optimize(
     evaluator: Evaluator | None = None,
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
-    candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto",
+    candidate_selection_strategy: CandidateSelector
+    | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"] = "pareto",
     frontier_type: FrontierType = "instance",
     skip_perfect_score: bool = True,
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
@@ -284,6 +286,7 @@ def optimize(
             "pareto": lambda: ParetoCandidateSelector(rng=rng),
             "current_best": lambda: CurrentBestCandidateSelector(),
             "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
+            "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
         }
 
         try:
@@ -291,7 +294,7 @@ def optimize(
         except KeyError as exc:
             raise ValueError(
                 f"Unknown candidate_selector strategy: {candidate_selection_strategy}. "
-                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto'"
             ) from exc
     elif isinstance(candidate_selection_strategy, CandidateSelector):
         candidate_selector = candidate_selection_strategy
