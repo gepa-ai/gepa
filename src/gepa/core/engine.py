@@ -321,7 +321,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 "val_total_count": len(valset),
                 "total_metric_calls": state.total_num_evals,
             },
-            step=0,
+            step=state.i + 1,
         )
 
         self.logger.log(
