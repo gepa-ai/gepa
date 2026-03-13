@@ -36,8 +36,7 @@ full = [
     "tiktoken>=0.12.0; python_version >= '3.14'",
     # Common dependencies
     "tqdm>=4.66.1",
-    "cloudpickle>=3.0.0",
-    "requests>=2.31.0"
+    "cloudpickle>=3.0.0"
 ]
 dspy = []
 test = [
