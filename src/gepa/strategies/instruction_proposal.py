@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import difflib
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar
@@ -153,9 +154,88 @@ Provide the new instructions within ``` blocks."""
         return {"new_instruction": extract_instruction_text()}
 
 
+_EDIT_BLOCK_PATTERN = re.compile(
+    r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE",
+    re.DOTALL,
+)
+
+
+def _fuzzy_find_and_replace(text: str, search: str, replace: str) -> tuple[str, bool]:
+    """Try to find *search* in *text* with progressively looser matching.
+
+    Returns (new_text, matched).  If no match is found at any level the
+    original text is returned with matched=False.
+
+    Matching levels tried in order:
+    1. Exact match (fastest)
+    2. Whitespace-normalized match — collapse runs of whitespace on both
+       sides before comparing, then replace the original span.
+    3. Line-level fuzzy match — use difflib.SequenceMatcher to find the
+       best-matching contiguous block of lines (ratio >= 0.6).
+    """
+    if not search:
+        return text, False
+
+    # --- Level 1: exact ---
+    if search in text:
+        return text.replace(search, replace, 1), True
+
+    # --- Level 2: whitespace-normalized ---
+    def _ws_normalize(s: str) -> str:
+        return re.sub(r"\s+", " ", s).strip()
+
+    norm_search = _ws_normalize(search)
+    if not norm_search:
+        return text, False
+
+    # Slide a window over the text to find a span whose normalized form
+    # matches.  We use a line-based approach to keep it efficient.
+    text_lines = text.split("\n")
+    search_lines = search.split("\n")
+    search_line_count = len(search_lines)
+
+    for start_idx in range(len(text_lines) - search_line_count + 1):
+        candidate = "\n".join(text_lines[start_idx : start_idx + search_line_count])
+        if _ws_normalize(candidate) == norm_search:
+            before = "\n".join(text_lines[:start_idx])
+            after = "\n".join(text_lines[start_idx + search_line_count :])
+            parts = [p for p in (before, replace, after) if p]
+            return "\n".join(parts), True
+
+    # --- Level 3: line-level fuzzy match ---
+    best_ratio = 0.0
+    best_start = -1
+    best_end = -1
+    # Try window sizes around the search line count (±30%)
+    min_window = max(1, int(search_line_count * 0.7))
+    max_window = min(len(text_lines), int(search_line_count * 1.3) + 1)
+
+    for window_size in range(min_window, max_window + 1):
+        for start_idx in range(len(text_lines) - window_size + 1):
+            candidate_lines = text_lines[start_idx : start_idx + window_size]
+            # For single-line comparisons, compare at character level;
+            # for multi-line, compare at line level.
+            if window_size == 1 and search_line_count == 1:
+                ratio = difflib.SequenceMatcher(None, search_lines[0], candidate_lines[0]).ratio()
+            else:
+                ratio = difflib.SequenceMatcher(None, search_lines, candidate_lines).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_start = start_idx
+                best_end = start_idx + window_size
+
+    if best_ratio >= 0.6 and best_start >= 0:
+        before = "\n".join(text_lines[:best_start])
+        after = "\n".join(text_lines[best_end:])
+        parts = [p for p in (before, replace, after) if p]
+        return "\n".join(parts), True
+
+    return text, False
+
+
 class InstructionEditSignature(InstructionProposalSignature):
     """Asks the LLM to output search/replace edit blocks instead of rewriting
-    the entire instruction. This saves output tokens for long candidates and
+    the entire instruction.  This saves output tokens for long candidates and
     preserves parts of the instruction that are already working well.
 
     The LLM outputs one or more edit blocks in this format::
@@ -166,9 +246,11 @@ class InstructionEditSignature(InstructionProposalSignature):
         replacement text
         >>>>>>> REPLACE
 
-    The output_extractor applies each block sequentially to the original text.
-    If no valid edit blocks are found, falls back to extracting a full rewrite
-    from ``` blocks (same as InstructionProposalSignature).
+    Each block is applied sequentially.  If an exact match fails, a fuzzy
+    matching cascade is attempted (whitespace-normalized, then line-level
+    similarity).  If a block still cannot be matched, the LLM is retried
+    once with error feedback.  If no valid edit blocks are found at all,
+    falls back to extracting a full rewrite from ``` blocks.
     """
 
     default_prompt_template = """I provided an assistant with the following instructions to perform a task for me:
@@ -200,36 +282,65 @@ Rules:
 - To delete text, use an empty REPLACE section."""
 
     @classmethod
-    def _apply_edits(cls, original: str, lm_out: str) -> str | None:
-        """Parse SEARCH/REPLACE blocks from lm_out and apply them to original.
+    def _apply_edits(cls, original: str, lm_out: str) -> tuple[str | None, list[str]]:
+        """Parse SEARCH/REPLACE blocks from *lm_out* and apply them to *original*.
 
-        Returns the edited text, or None if no valid edit blocks were found.
+        Returns ``(edited_text, failed_searches)`` where *edited_text* is
+        ``None`` when no edit blocks were found at all, and
+        *failed_searches* lists SEARCH strings that could not be matched
+        even after fuzzy fallback.
         """
-        pattern = re.compile(
-            r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE",
-            re.DOTALL,
-        )
-        matches = list(pattern.finditer(lm_out))
+        matches = list(_EDIT_BLOCK_PATTERN.finditer(lm_out))
         if not matches:
-            return None
+            return None, []
 
         result = original
+        failed: list[str] = []
         for match in matches:
             search_text = match.group(1)
             replace_text = match.group(2)
-            if search_text in result:
-                result = result.replace(search_text, replace_text, 1)
-        return result
+            new_result, matched = _fuzzy_find_and_replace(result, search_text, replace_text)
+            if matched:
+                result = new_result
+            else:
+                failed.append(search_text)
+
+        return result, failed
 
     @classmethod
-    def run(cls, lm: "LanguageModel", input_dict: Mapping[str, Any]) -> dict[str, str]:
+    def run(
+        cls,
+        lm: LanguageModel,
+        input_dict: Mapping[str, Any],
+        *,
+        max_retries: int = 1,
+    ) -> dict[str, str]:
         original_instruction = input_dict.get("current_instruction_doc", "")
         full_prompt = cls.prompt_renderer(input_dict)
-        lm_res = lm(full_prompt)
-        lm_out = lm_res.strip()
+        lm_out = lm(full_prompt).strip()
 
-        # Try to apply search/replace edits
-        edited = cls._apply_edits(str(original_instruction), lm_out)
+        edited, failed = cls._apply_edits(str(original_instruction), lm_out)
+
+        # Retry loop: if some SEARCH blocks failed to match, feed the errors
+        # back to the LLM so it can correct them.
+        retries = 0
+        while failed and retries < max_retries:
+            retries += 1
+            failed_summary = "\n\n".join(
+                f"SEARCH block {i + 1} not found:\n```\n{s}\n```" for i, s in enumerate(failed)
+            )
+            retry_prompt = (
+                f"Your previous edit contained {len(failed)} SEARCH block(s) that could not be "
+                f"matched against the current instruction (even with fuzzy matching).\n\n"
+                f"{failed_summary}\n\n"
+                f"The current instruction is:\n```\n{edited if edited is not None else original_instruction}\n```\n\n"
+                "Please provide corrected SEARCH/REPLACE blocks. The SEARCH text must appear "
+                "verbatim in the current instruction above."
+            )
+            lm_out = lm(retry_prompt).strip()
+            source = edited if edited is not None else str(original_instruction)
+            edited, failed = cls._apply_edits(source, lm_out)
+
         if edited is not None:
             return {"new_instruction": edited}
 
