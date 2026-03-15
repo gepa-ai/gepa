@@ -119,7 +119,8 @@ class LM:
             **self.completion_kwargs,
         )
 
-        self._check_truncation(completion.choices)
+        # Non-streaming calls always return ModelResponse (not CustomStreamWrapper)
+        self._check_truncation(completion.choices)  # type: ignore[union-attr]
         return completion.choices[0].message.content  # type: ignore[union-attr]
 
     def batch_complete(self, messages_list: list[list[dict[str, Any]]], max_workers: int = 10) -> list[str]:
