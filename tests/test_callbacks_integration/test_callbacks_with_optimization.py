@@ -147,6 +147,7 @@ def test_callbacks_during_optimization(mocked_lms, recorder_dir):
         reflection_lm=reflection_lm,
         display_progress_bar=True,
         callbacks=[callback],
+        cache_evaluation=False,
     )
 
     # 3. Assertions: Verify callbacks were invoked correctly
@@ -301,6 +302,7 @@ def test_multiple_callbacks_all_receive_events(mocked_lms, recorder_dir):
         max_metric_calls=30,
         reflection_lm=reflection_lm,
         callbacks=[callback1, callback2],
+        cache_evaluation=False,
     )
 
     # Both callbacks should have received the same events
@@ -359,6 +361,7 @@ def test_partial_callback_implementation(mocked_lms, recorder_dir):
         max_metric_calls=30,
         reflection_lm=reflection_lm,
         callbacks=[callback],
+        cache_evaluation=False,
     )
 
     assert len(callback.iterations) >= 1, "partial callback should receive iteration events"

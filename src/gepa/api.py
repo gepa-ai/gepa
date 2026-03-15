@@ -80,7 +80,7 @@ def optimize(
     display_progress_bar: bool = False,
     use_cloudpickle: bool = False,
     # Evaluation caching
-    cache_evaluation: bool = False,
+    cache_evaluation: bool = True,
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
@@ -168,7 +168,7 @@ def optimize(
     - use_cloudpickle: Use cloudpickle instead of pickle. This can be helpful when the serialized state contains dynamically generated DSPy signatures.
 
     # Evaluation caching
-    - cache_evaluation: Whether to cache the (score, output, objective_scores) of (candidate, example) pairs. If True and a cache entry exists, GEPA will skip the fitness evaluation and use the cached results. This helps avoid redundant evaluations and saves metric calls. Defaults to False.
+    - cache_evaluation: Whether to cache the (score, output, objective_scores) of (candidate, example) pairs. If True and a cache entry exists, GEPA will skip the fitness evaluation and use the cached results. This helps avoid redundant evaluations and saves metric calls. The cache is thread-safe. Defaults to True.
 
     # Reproducibility
     - seed: The seed to use for the random number generator.

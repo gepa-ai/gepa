@@ -69,6 +69,117 @@ class TestEvaluationCache:
         assert cache.get(candidate, "ex2").objective_scores == {"acc": 0.8}
 
 
+class TestEvaluationCacheThreadSafety:
+    """Tests for thread safety of EvaluationCache."""
+
+    def test_concurrent_put_and_get(self):
+        """Concurrent puts from multiple threads should not lose data."""
+        import threading
+
+        cache: EvaluationCache = EvaluationCache()
+        candidate = {"prompt": "test"}
+        num_threads = 8
+        items_per_thread = 100
+        barrier = threading.Barrier(num_threads)
+
+        def writer(thread_id: int):
+            barrier.wait()
+            for j in range(items_per_thread):
+                eid = f"t{thread_id}_ex{j}"
+                cache.put(candidate, eid, f"out_{thread_id}_{j}", float(j))
+
+        threads = [threading.Thread(target=writer, args=(t,)) for t in range(num_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Every entry should be present
+        for t in range(num_threads):
+            for j in range(items_per_thread):
+                result = cache.get(candidate, f"t{t}_ex{j}")
+                assert result is not None, f"Missing entry t{t}_ex{j}"
+                assert result.score == float(j)
+
+    def test_concurrent_put_batch_and_get_batch(self):
+        """Concurrent put_batch and get_batch should not corrupt data."""
+        import threading
+
+        cache: EvaluationCache = EvaluationCache()
+        num_threads = 4
+        batch_size = 50
+        barrier = threading.Barrier(num_threads)
+
+        def writer(thread_id: int):
+            candidate = {"prompt": f"candidate_{thread_id}"}
+            eids = [f"ex_{j}" for j in range(batch_size)]
+            outputs = [f"out_{thread_id}_{j}" for j in range(batch_size)]
+            scores = [float(j) for j in range(batch_size)]
+            barrier.wait()
+            cache.put_batch(candidate, eids, outputs, scores)
+
+        threads = [threading.Thread(target=writer, args=(t,)) for t in range(num_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Verify all batches are retrievable
+        for t in range(num_threads):
+            candidate = {"prompt": f"candidate_{t}"}
+            cached, uncached = cache.get_batch(candidate, [f"ex_{j}" for j in range(batch_size)])
+            assert len(cached) == batch_size
+            assert len(uncached) == 0
+
+    def test_concurrent_evaluate_with_cache_full(self):
+        """evaluate_with_cache_full should work correctly under concurrent access."""
+        import threading
+
+        cache: EvaluationCache = EvaluationCache()
+        candidate = {"prompt": "shared"}
+        call_count = 0
+        count_lock = threading.Lock()
+
+        def fetcher(ids):
+            return [{"id": eid} for eid in ids]
+
+        def evaluator(batch, cand):
+            nonlocal call_count
+            with count_lock:
+                call_count += len(batch)
+            outputs = [f"out_{b['id']}" for b in batch]
+            scores = [1.0] * len(batch)
+            return outputs, scores, None
+
+        # Pre-populate half the cache
+        cache.put_batch(candidate, ["ex_0", "ex_1"], ["out_ex_0", "out_ex_1"], [1.0, 1.0])
+
+        barrier = threading.Barrier(4)
+        results = [None] * 4
+
+        def worker(idx):
+            barrier.wait()
+            results[idx] = cache.evaluate_with_cache_full(
+                candidate, ["ex_0", "ex_1", "ex_2", "ex_3"], fetcher, evaluator
+            )
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # All workers should return all 4 results
+        for r in results:
+            outputs_by_id, scores_by_id, _, _ = r
+            assert len(outputs_by_id) == 4
+            assert len(scores_by_id) == 4
+
+        # ex_0 and ex_1 were pre-cached, so evaluator should only be called for ex_2 and ex_3
+        # (possibly multiple times since threads race on the uncached portion)
+        assert call_count >= 2  # At least one thread evaluated the uncached ones
+
+
 class TestEvaluationCacheIntegration:
     """Integration tests for evaluation cache with optimize function."""
 

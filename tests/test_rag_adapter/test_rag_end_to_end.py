@@ -314,6 +314,7 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
         max_metric_calls=5,  # Small number for fast testing
         reflection_lm=simple_reflection_lm,
         display_progress_bar=True,
+        cache_evaluation=False,
     )
 
     # 3. Assertions: Verify the optimization completed successfully
@@ -409,6 +410,7 @@ def test_rag_end_to_end_optimization(sample_ai_ml_dataset, mock_chromadb_store):
         max_metric_calls=5,
         reflection_lm=simple_reflection_lm,
         display_progress_bar=False,  # Disable progress bar for cleaner test output
+        cache_evaluation=False,
     )
 
     # Results should be identical due to deterministic mocks
@@ -506,6 +508,7 @@ def test_rag_dynamic_valset_round_robin_sample(sample_ai_ml_dataset, mock_chroma
         max_metric_calls=15,
         val_evaluation_policy=RoundRobinSampleEvaluationPolicy(batch_size=1),
         run_dir=str(tmp_path / "dynamic_val_run"),
+        cache_evaluation=False,
     )
 
     assert val_loader.num_unlocked_stages >= 2
@@ -532,6 +535,7 @@ def test_rag_dynamic_valset_round_robin_sample(sample_ai_ml_dataset, mock_chroma
         max_metric_calls=12,
         val_evaluation_policy=RoundRobinSampleEvaluationPolicy(batch_size=1),
         run_dir=str(tmp_path / "dynamic_val_run_stage2"),
+        cache_evaluation=False,
     )
 
     assert val_loader.num_unlocked_stages == 3

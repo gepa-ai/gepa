@@ -477,7 +477,7 @@ class EngineConfig:
     max_workers: int | None = field(default_factory=lambda: os.cpu_count() or 32)
 
     # Evaluation caching
-    cache_evaluation: bool = False
+    cache_evaluation: bool = True
     cache_evaluation_storage: CacheEvaluationStorage = "auto"
 
     # Track top-K best evaluations per example, passed to evaluator via OptimizationState
