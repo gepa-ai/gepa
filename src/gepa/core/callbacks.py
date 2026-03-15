@@ -156,6 +156,10 @@ class ProposalEndEvent(TypedDict):
 
     iteration: int
     new_instructions: dict[str, str]
+    prompts: dict[str, str | list[dict[str, Any]]]
+    """Per-component prompts sent to the reflection LM (component name → rendered prompt)."""
+    raw_lm_outputs: dict[str, str]
+    """Per-component raw LM outputs before extraction (component name → raw text)."""
 
 
 class CandidateAcceptedEvent(TypedDict):
