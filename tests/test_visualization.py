@@ -48,11 +48,13 @@ class TestCandidateTreeDot:
         # Candidate 1 has the highest score (0.7)
         assert "fillcolor=cyan" in dot
 
-    def test_tooltip_contains_candidate_text(self):
+    def test_tooltip_suppressed_in_dot(self):
+        """DOT tooltip is a space (native SVG tooltip suppressed); candidate text lives in HTML JS."""
         candidates, parents, val_scores, pareto_front = _sample_data()
         dot = candidate_tree_dot_from_data(candidates, parents, val_scores, pareto_front)
-        assert "helpful assistant" in dot
-        assert "math tutor" in dot
+        # Candidate text should NOT be in DOT (moved to HTML JS tooltip)
+        assert "helpful assistant" not in dot
+        assert 'tooltip=" "' in dot
 
     def test_single_candidate(self):
         dot = candidate_tree_dot_from_data(
