@@ -204,6 +204,37 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to log table to mlflow: {e}")
 
+    def log_html(self, html_content: str, key: str = "candidate_tree") -> None:
+        """Log an HTML string as a rich media artifact.
+
+        Args:
+            html_content: Self-contained HTML string.
+            key: Artifact key / name used in the dashboard.
+        """
+        if self.use_wandb:
+            try:
+                import wandb  # type: ignore
+
+                html_obj = wandb.Html(html_content)
+                wandb.log({key: html_obj}, commit=False)
+                # Also write to run summary so the panel always shows the latest tree
+                wandb.run.summary[key] = html_obj  # type: ignore[union-attr]
+            except Exception as e:
+                print(f"Warning: Failed to log HTML to wandb: {e}")
+
+        if self.use_mlflow:
+            try:
+                import tempfile
+
+                import mlflow  # type: ignore
+
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
+                    f.write(html_content)
+                    tmp_path = f.name
+                mlflow.log_artifact(tmp_path, artifact_path=key)
+            except Exception as e:
+                print(f"Warning: Failed to log HTML to mlflow: {e}")
+
     def end_run(self):
         """End the current run."""
         if self.use_wandb:

@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import os
 import traceback
 from collections.abc import Sequence
 from typing import Any, Generic
@@ -244,6 +245,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             is_best_program,
         ] + [new_program[name] for name in component_names]
         self.experiment_tracker.log_table("candidates", columns=columns, data=[row])
+
+        # Update candidate tree visualization
+        self._log_candidate_tree(state)
 
         return new_program_idx, linear_pareto_front_program_idx
 
@@ -646,6 +650,20 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.experiment_tracker.log_summary(summary)
 
         return state
+
+    def _log_candidate_tree(self, state: GEPAState[RolloutOutput, DataId]) -> None:
+        """Generate and log the candidate tree visualization."""
+        try:
+            from gepa.visualization import candidate_tree_html
+
+            html_content = candidate_tree_html(state)
+            self.experiment_tracker.log_html(html_content, key="candidate_tree")
+            if self.run_dir is not None:
+                tree_path = os.path.join(self.run_dir, "candidate_tree.html")
+                with open(tree_path, "w") as f:
+                    f.write(html_content)
+        except Exception as e:
+            self.logger.log(f"Warning: Failed to generate candidate tree visualization: {e}")
 
     def _should_stop(self, state: GEPAState[RolloutOutput, DataId]) -> bool:
         """Check if the optimization should stop."""
