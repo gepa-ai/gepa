@@ -391,6 +391,60 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Try the notebook](https://colab.research.google.com/drive/1W-XNxKL2CXFoUTwrL7GLCZ7J7uZgXsut?usp=sharing)
 
+-   **Prompt Optimization Makes Misalignment Legible**
+
+    ---
+
+    Biddulph & Carroll (MATS 8.0 / ICML submission) show that GEPA's optimized system prompts **verbalize reward-hacking strategies in plain English**, making misalignment detectable and removable — unlike RL, where learned strategies are opaque.
+
+    **Key Findings:**
+
+    - GEPA prompts that reward-hack also describe the hack in the prompt text
+    - Sanitizing the prompt (removing misaligned instructions) stops the hacking
+    - Tested on Hinted MMLU, Targeted Sycophancy, and other environments
+
+    [:material-arrow-right: Read the post](https://www.lesswrong.com/posts/vRpLPZpmECCfxHfv6/paper-prompt-optimization-makes-misalignment-legible)
+
+-   **Automated Risk-of-Bias Assessment of Clinical Trials**
+
+    ---
+
+    Li, Mathrani & Susnjak (2025) use GEPA to optimize prompts for risk-of-bias assessment across **7 RoB domains** and multiple LLMs, achieving **30–40% improvement** in key domains over manually crafted prompts.
+
+    **Key Results:**
+
+    - Highest overall accuracy across 100 randomized controlled trials
+    - Models: Mistral Small 3.1, GPT-oss-20b, GPT-4 Nano/Mini
+    - Inspectable execution traces via DSPy + GEPA
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2512.01452)
+
+-   **Empowering Small Models for GPU Parallelization**
+
+    ---
+
+    Jhaveri & Lopes (2026) use GEPA to evolve prompts so that small "nano" LLMs can generate correct OpenACC pragmas, improving **GPT-4.1 Nano compilation rate from 66.7% to 93.3%** and GPT-5 Nano to **100%** on the PolyBench suite.
+
+    **Key Results:**
+
+    - 21% increase in programs achieving GPU speedups over CPU
+    - GEPA makes cheap models match expensive ones on HPC code generation
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2601.08884)
+
+-   **Prompt Optimisation for Error Detection in Medical Notes**
+
+    ---
+
+    Myles, Schrempf & Harris-Birtill (2026) use GEPA as the primary optimization method, improving **GPT-5 accuracy from 0.669 to 0.785** and **Qwen3-32B from 0.578 to 0.690** on the MEDEC benchmark, approaching medical doctor performance.
+
+    **Key Results:**
+
+    - ~17–20% relative accuracy gains from GEPA optimization
+    - State-of-the-art on clinical error detection
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2602.22483)
+
 </div>
 
 ---
