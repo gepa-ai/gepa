@@ -109,13 +109,42 @@ For example, if the model outputs `"Bills/Electricity"` and the tokens are `["Bi
 
 The closer to 0, the more certain the model is about its answer.
 
+## From Logprob to Score: How Scoring Works
+
+It is important to understand the distinction between the **joint logprob** (the raw confidence metric extracted from the LLM) and the **score** (the `[0, 1]` value that GEPA uses for optimization).  They are **not** the same thing.
+
+1. The adapter extracts the **joint logprob** from the LLM response (always ≤ 0).
+2. The scoring strategy converts it to a **probability** via `exp(joint_logprob)` (always in `[0, 1]`).
+3. The strategy then combines that probability with **correctness** to produce the final **score** in `[0, 1]`.
+
+```
+joint_logprob  ──►  probability = exp(logprob)  ──►  scoring strategy  ──►  GEPA score [0, 1]
+    -0.14                    0.87                      (depends on            e.g. 1.0
+                                                        strategy + correctness)
+```
+
+The `joint_logprob` and `probability` are also sent to the **reflection LLM** as diagnostic feedback, and exposed in `objective_scores` for Pareto-based selection.  But the single **score** is what drives GEPA's evolutionary search.
+
 ## Scoring Strategies
 
-All strategies receive the joint logprob, convert it to probability internally, and map `(is_correct, probability)` to a score in `[0, 1]`.  When logprobs are unavailable (e.g. the model doesn't support them), all strategies degrade gracefully to binary scoring.
+All strategies follow the same contract:
+
+- **Incorrect answer** → always `0.0`, regardless of confidence.
+- **Correct answer, logprobs unavailable** (`None`) → always `1.0` (graceful degradation to binary scoring).
+- **Correct answer, logprobs available** → depends on the strategy (see below).
 
 ### LinearBlendScoring (recommended)
 
-Proportionally penalises low-confidence correct answers.
+Proportionally penalizes low-confidence correct answers.  The probability (derived from `exp(logprob)`) is compared against a threshold:
+
+- **Probability ≥ threshold** → score = `1.0` (confident and correct, full credit)
+- **Probability < threshold** → score is linearly interpolated between `min_score_on_correct` and `1.0`
+
+The formula for the interpolated region is:
+
+```
+score = min_score + (1.0 - min_score) × (probability / threshold)
+```
 
 ```python
 from gepa.adapters.confidence_adapter import LinearBlendScoring
@@ -126,16 +155,22 @@ strategy = LinearBlendScoring(
 )
 ```
 
-| Answer | Probability | Score |
-|---|:---:|:---:|
-| Correct, confident | 90% | 1.0 |
-| Correct, uncertain | 30% | 0.51 |
-| Correct, very uncertain | 5% | 0.37 |
-| Incorrect (any confidence) | any | 0.0 |
+**Example scores** (with `threshold=0.5`, `min_score=0.3`):
+
+| Answer | Joint Logprob | Probability | Score | Why |
+|---|:---:|:---:|:---:|---|
+| Correct, very confident | `-0.11` | ~90% | `1.0` | Above threshold |
+| Correct, at threshold | `-0.69` | ~50% | `1.0` | At threshold boundary |
+| Correct, uncertain | `-1.20` | ~30% | `0.72` | Interpolated: `0.3 + 0.7 × (0.30/0.5)` |
+| Correct, very uncertain | `-3.00` | ~5% | `0.37` | Interpolated: `0.3 + 0.7 × (0.05/0.5)` |
+| Correct, near-random | `-10.0` | ~0% | `0.30` | Floor (`min_score_on_correct`) |
+| Incorrect (any) | any | any | `0.0` | Always zero |
 
 ### ThresholdScoring
 
-Binary gate: `1.0` only if correct **and** probability >= threshold.
+Binary gate: `1.0` only if correct **and** `exp(logprob)` ≥ threshold.  Everything else is `0.0`.
+
+This is the strictest strategy — it completely discards correct answers where the model was not confident enough.
 
 ```python
 from gepa.adapters.confidence_adapter import ThresholdScoring
@@ -143,15 +178,45 @@ from gepa.adapters.confidence_adapter import ThresholdScoring
 strategy = ThresholdScoring(threshold=0.7)
 ```
 
+**Example scores** (with `threshold=0.7`):
+
+| Answer | Joint Logprob | Probability | Score | Why |
+|---|:---:|:---:|:---:|---|
+| Correct, confident | `-0.11` | ~90% | `1.0` | Above threshold |
+| Correct, at threshold | `-0.36` | ~70% | `1.0` | At threshold boundary |
+| Correct, below threshold | `-0.51` | ~60% | `0.0` | Below threshold → rejected |
+| Correct, uncertain | `-2.30` | ~10% | `0.0` | Below threshold → rejected |
+| Incorrect (any) | any | any | `0.0` | Always zero |
+
 ### SigmoidScoring
 
-Smooth S-curve that maps probability to score when correct.
+Smooth S-curve that maps probability to a score when correct.  Unlike the linear strategy, there is no hard threshold — the transition from low to high score is gradual.
+
+The formula is:
+
+```
+score = sigmoid(steepness × (probability - midpoint))
+     = 1 / (1 + exp(-steepness × (probability - midpoint)))
+```
+
+When `probability == midpoint`, the score is exactly `0.5`.
 
 ```python
 from gepa.adapters.confidence_adapter import SigmoidScoring
 
 strategy = SigmoidScoring(midpoint=0.5, steepness=10.0)
 ```
+
+**Example scores** (with `midpoint=0.5`, `steepness=10.0`):
+
+| Answer | Joint Logprob | Probability | Score | Why |
+|---|:---:|:---:|:---:|---|
+| Correct, very confident | `-0.05` | ~95% | `0.99` | Far above midpoint |
+| Correct, confident | `-0.22` | ~80% | `0.95` | Above midpoint |
+| Correct, at midpoint | `-0.69` | ~50% | `0.50` | Exactly at midpoint |
+| Correct, uncertain | `-1.20` | ~30% | `0.12` | Below midpoint |
+| Correct, very uncertain | `-5.00` | ~1% | `0.01` | Far below midpoint |
+| Incorrect (any) | any | any | `0.0` | Always zero |
 
 ## Multi-Objective Optimization
 
