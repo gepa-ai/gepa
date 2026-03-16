@@ -215,7 +215,10 @@ class ExperimentTracker:
             try:
                 import wandb  # type: ignore
 
-                wandb.log({key: wandb.Html(html_content)}, commit=False)
+                html_obj = wandb.Html(html_content)
+                wandb.log({key: html_obj}, commit=False)
+                # Also write to run summary so the panel always shows the latest tree
+                wandb.run.summary[key] = html_obj  # type: ignore[union-attr]
             except Exception as e:
                 print(f"Warning: Failed to log HTML to wandb: {e}")
 

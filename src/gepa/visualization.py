@@ -91,7 +91,7 @@ def candidate_tree_dot_from_data(
         else:
             color = "lightgray"
 
-        dot_lines.append(f'    {idx} [label="{label}", fillcolor={color}, tooltip="{tooltip}"];')
+        dot_lines.append(f'    {idx} [label="{label}", fillcolor={color}, tooltip=" "];')
 
     for child in range(n):
         for parent in parents[child]:
@@ -198,22 +198,22 @@ _HTML_TEMPLATE = """\
 <title>GEPA Candidate Tree</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8f9fa; }
-  #header { background: #fff; border-bottom: 1px solid #dee2e6; padding: 12px 20px; display: flex; align-items: center; gap: 16px; }
+  html, body { height: 100%; width: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8f9fa; display: flex; flex-direction: column; }
+  #header { background: #fff; border-bottom: 1px solid #dee2e6; padding: 12px 20px; display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
   #header h1 { font-size: 18px; font-weight: 600; color: #212529; }
   .legend { display: flex; gap: 14px; font-size: 13px; color: #495057; }
   .legend-item { display: flex; align-items: center; gap: 4px; }
   .legend-dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid #adb5bd; }
-  #graph-container { width: 100%; overflow: auto; padding: 20px; text-align: center; }
-  #graph-container svg { max-width: 100%; height: auto; }
+  #graph-container { flex: 1 1 auto; width: 100%; overflow: auto; padding: 20px; text-align: center; }
+  #graph-container svg { width: 100%; height: 100%; }
   #tooltip {
     display: none; position: fixed; background: #fff; border: 1px solid #dee2e6;
     border-radius: 8px; padding: 14px 16px; max-width: 560px; max-height: 70vh; overflow-y: auto;
     box-shadow: 0 4px 16px rgba(0,0,0,0.18); z-index: 1000; font-size: 13px; line-height: 1.5;
-    pointer-events: none;
   }
   #tooltip .tt-header { font-weight: 700; font-size: 15px; margin-bottom: 6px; color: #212529; }
-  #tooltip .tt-meta { color: #6c757d; margin-bottom: 10px; }
+  #tooltip .tt-meta { color: #6c757d; margin-bottom: 4px; }
+  #tooltip .tt-hint { color: #adb5bd; font-size: 11px; font-style: italic; margin-bottom: 10px; }
   #tooltip .tt-comp-name { font-weight: 600; color: #495057; margin-top: 10px; border-bottom: 1px solid #e9ecef; padding-bottom: 2px; }
   #tooltip .tt-comp-text {
     white-space: pre-wrap; word-break: break-word; background: #f8f9fa;
@@ -246,10 +246,12 @@ const DOT = `__DOT_STRING__`;
 const nodeMap = {};
 NODES.forEach(n => { nodeMap[n.idx] = n; });
 
-function showTooltip(e, idx) {
+let pinnedIdx = null;   // non-null when tooltip is click-pinned (scrollable)
+let hoverIdx = null;    // non-null when hovering over a node
+
+function renderTooltip(idx) {
   const n = nodeMap[idx];
-  if (!n) return;
-  const tt = document.getElementById("tooltip");
+  if (!n) return "";
   let roleBadge = "";
   if (n.role === "Best") roleBadge = '<span class="role-badge role-best">BEST</span>';
   else if (n.role === "Pareto Front") roleBadge = '<span class="role-badge role-pareto">PARETO</span>';
@@ -261,27 +263,45 @@ function showTooltip(e, idx) {
     comps += '<div class="tt-comp-name">' + name + '</div><div class="tt-comp-text">' + escaped + '</div>';
   }
 
-  tt.innerHTML =
-    '<div class="tt-header">Candidate ' + n.idx + roleBadge + '</div>' +
-    '<div class="tt-meta">Score: <strong>' + n.score + '</strong>&nbsp;&nbsp;|&nbsp;&nbsp;Parent(s): ' + n.parents + '</div>' +
+  return '<div class="tt-header">Candidate ' + n.idx + roleBadge + '</div>' +
+    '<div class="tt-meta">Score: <strong>' + n.score + '</strong>&nbsp;&nbsp;|&nbsp;&nbsp;Parent(s): ' + n.parents +
+    '</div><div class="tt-hint">' + (pinnedIdx === idx ? 'Click node again to dismiss' : 'Click to pin &amp; scroll') + '</div>' +
     comps;
-  tt.style.display = "block";
-  positionTooltip(e);
 }
 
-function positionTooltip(e) {
+function positionTooltip(x, y) {
   const tt = document.getElementById("tooltip");
-  let x = e.clientX + 16, y = e.clientY + 16;
+  let tx = x + 16, ty = y + 16;
   const r = tt.getBoundingClientRect();
-  if (x + r.width > window.innerWidth - 8) x = e.clientX - r.width - 16;
-  if (y + r.height > window.innerHeight - 8) y = e.clientY - r.height - 16;
-  if (x < 8) x = 8;
-  if (y < 8) y = 8;
-  tt.style.left = x + "px";
-  tt.style.top = y + "px";
+  if (tx + r.width > window.innerWidth - 8) tx = x - r.width - 16;
+  if (ty + r.height > window.innerHeight - 8) ty = y - r.height - 16;
+  if (tx < 8) tx = 8;
+  if (ty < 8) ty = 8;
+  tt.style.left = tx + "px";
+  tt.style.top = ty + "px";
 }
 
-function hideTooltip() { document.getElementById("tooltip").style.display = "none"; }
+function showTooltip(idx, x, y) {
+  const tt = document.getElementById("tooltip");
+  tt.innerHTML = renderTooltip(idx);
+  tt.style.display = "block";
+  positionTooltip(x, y);
+}
+
+function hideTooltip() {
+  pinnedIdx = null;
+  hoverIdx = null;
+  document.getElementById("tooltip").style.display = "none";
+}
+
+// Click outside tooltip and outside nodes dismisses pinned tooltip
+document.addEventListener("mousedown", function(e) {
+  const tt = document.getElementById("tooltip");
+  if (pinnedIdx !== null && tt.style.display === "block"
+      && !tt.contains(e.target) && !e.target.closest(".node")) {
+    hideTooltip();
+  }
+});
 
 async function render() {
   const { instance } = await import("https://cdn.jsdelivr.net/npm/@viz-js/viz@3.11.0/lib/viz-standalone.mjs");
@@ -291,17 +311,41 @@ async function render() {
   container.innerHTML = "";
   container.appendChild(svg);
 
-  // Attach hover listeners to node groups
+  // Attach hover listeners and strip native <title> tooltips to avoid double tooltips
   svg.querySelectorAll(".node").forEach(node => {
     const title = node.querySelector("title");
     if (!title) return;
     const idx = parseInt(title.textContent, 10);
     if (isNaN(idx)) return;
+    title.remove();  // remove native SVG tooltip
     node.style.cursor = "pointer";
-    node.addEventListener("mouseenter", e => showTooltip(e, idx));
-    node.addEventListener("mousemove", e => positionTooltip(e));
-    node.addEventListener("mouseleave", hideTooltip);
+    // Hover: show tooltip following the mouse (non-interactive)
+    node.addEventListener("mouseenter", e => {
+      if (pinnedIdx !== null) return;  // don't override a pinned tooltip
+      hoverIdx = idx;
+      showTooltip(idx, e.clientX, e.clientY);
+    });
+    node.addEventListener("mousemove", e => {
+      if (pinnedIdx !== null || hoverIdx !== idx) return;
+      positionTooltip(e.clientX, e.clientY);
+    });
+    node.addEventListener("mouseleave", () => {
+      if (pinnedIdx !== null) return;
+      hoverIdx = null;
+      document.getElementById("tooltip").style.display = "none";
+    });
+    // Click: pin the tooltip so user can scroll it
+    node.addEventListener("click", e => {
+      e.stopPropagation();
+      if (pinnedIdx === idx) { hideTooltip(); return; }
+      pinnedIdx = idx;
+      showTooltip(idx, e.clientX, e.clientY);
+    });
   });
+  // Also strip <title> from edges and the graph itself
+  svg.querySelectorAll(".edge title").forEach(t => t.remove());
+  const graphTitle = svg.querySelector(":scope > title");
+  if (graphTitle) graphTitle.remove();
 }
 
 render().catch(err => {
