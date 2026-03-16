@@ -38,6 +38,11 @@ full = [
     "tqdm>=4.66.1",
     "cloudpickle>=3.0.0"
 ]
+confidence = [
+    "llm-structured-confidence>=0.4.5",
+    "litellm>=1.64.0; python_version < '3.14'",
+    "litellm>=1.81.0; python_version >= '3.14'",
+]
 dspy = []
 test = [
     "gepa[full]",
