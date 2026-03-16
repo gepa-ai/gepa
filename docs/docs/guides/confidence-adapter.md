@@ -109,6 +109,20 @@ For example, if the model outputs `"Bills/Electricity"` and the tokens are `["Bi
 
 The closer to 0, the more certain the model is about its answer.
 
+!!! warning "Logprobs are confidence scores, not calibrated probabilities"
+
+    Although we write `probability = exp(joint_logprob)` throughout this guide, this value should be treated as a **confidence score** rather than a true calibrated probability.  An LLM that reports 90% confidence is not necessarily correct 90% of the time — models are often **overconfident** (or occasionally underconfident), meaning the raw logprobs do not reflect real-world accuracy rates.
+
+    For the purposes of this adapter, this distinction does not affect correctness: what matters is the **relative ranking** — a logprob of `-0.05` reliably indicates more certainty than `-2.30`, and the scoring strategies use this ranking to separate confident answers from lucky guesses.
+
+    However, if your use case requires **true probability estimates** (e.g. "the model is correct 90% of the time when it reports 90% confidence"), you should apply **calibration techniques** on top of the raw scores.  Common approaches include:
+
+    - **Platt scaling**: fit a logistic regression on a held-out set mapping raw logprobs to observed accuracy.
+    - **Isotonic regression**: a non-parametric alternative that learns a monotonic mapping from scores to calibrated probabilities.
+    - **Temperature scaling**: adjust the softmax temperature post-hoc to minimize calibration error.
+
+    These techniques are outside the scope of this adapter but can be applied as a post-processing step on the `logprob` and `probability` values exposed in `objective_scores`.
+
 ## From Logprob to Score: How Scoring Works
 
 It is important to understand the distinction between the **joint logprob** (the raw confidence metric extracted from the LLM) and the **score** (the `[0, 1]` value that GEPA uses for optimization).  They are **not** the same thing.
