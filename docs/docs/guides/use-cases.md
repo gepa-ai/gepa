@@ -419,6 +419,20 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the paper](https://arxiv.org/abs/2512.01452)
 
+-   **Clinical NER: GEPA vs Domain-Specific Transformers (IEEE BigData 2025)**
+
+    ---
+
+    Varghese & Shang (University of Missouri, IEEE BigData 2025) benchmark GEPA optimization against fine-tuned Bio+ClinicalBERT on the n2c2 Track 2 ADE dataset, reporting **up to 12.5% improvement** in zero-shot clinical NER from GEPA optimization.
+
+    **Key Results:**
+
+    - GEPA improved zero-shot F1 by up to 12.5%
+    - Switching reflection model from GPT-4o-mini to GPT-4.1-mini raised few-shot F1 from 41.4% to 45.4%
+    - Fine-tuned domain models still lead, but GEPA narrows the gap without any training data
+
+    [:material-arrow-right: Read the paper](https://ieeexplore.ieee.org/abstract/document/11401686)
+
 -   **Empowering Small Models for GPU Parallelization**
 
     ---
