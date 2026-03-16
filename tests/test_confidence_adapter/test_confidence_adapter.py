@@ -7,6 +7,9 @@ All tests mock ``llm_structured_confidence.extract_logprobs`` and
 ``ConfidenceAdapter._call_llm`` to avoid real LLM calls.  The mock
 ``field_logprob`` objects expose ``joint_logprob`` (the sum of per-token
 logprobs) as the confidence metric.
+
+Requires ``pip install "gepa[confidence]"`` -- the entire module is
+skipped when ``llm_structured_confidence`` is not installed.
 """
 
 from __future__ import annotations
@@ -19,13 +22,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gepa.adapters.confidence_adapter.confidence_adapter import (
+pytest.importorskip("llm_structured_confidence", reason="requires gepa[confidence] extra")
+
+from gepa.adapters.confidence_adapter.confidence_adapter import (  # noqa: E402
     ConfidenceAdapter,
     ConfidenceDataInst,
     _build_feedback,
     _extract_answer_from_json,
 )
-from gepa.adapters.confidence_adapter.scoring import (
+from gepa.adapters.confidence_adapter.scoring import (  # noqa: E402
     LinearBlendScoring,
     ThresholdScoring,
 )
