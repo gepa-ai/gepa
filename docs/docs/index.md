@@ -504,6 +504,8 @@ Traditional optimizers (RL, evolutionary strategies) collapse rich execution tra
       <li>AI safety &amp; misalignment detection</li>
       <li>Clinical NLP &amp; medical error detection</li>
       <li>Agent architecture discovery</li>
+      <li>Multi-objective optimization</li>
+      <li>Adversarial prompt search</li>
     </ul>
   </a>
 </div>
