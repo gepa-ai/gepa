@@ -696,59 +696,72 @@ plt.close()
 print("  Saved roc_rotten_tomatoes.png")
 
 
-# --- 5e. Confidence distribution (ECDF: correct vs incorrect, ConfidenceAdapter) ---
+# --- 5e. Confidence distribution (ECDF: DefaultAdapter vs ConfidenceAdapter) ---
 C_CORRECT, C_INCORRECT = "#10B981", "#EF4444"
-fig, axes = plt.subplots(1, 3, figsize=(17, 5.5), sharey=True)
+fig, axes = plt.subplots(2, 3, figsize=(17, 10), sharey=True, sharex=True)
 ds_titles = {
     "ag_news": "AG News (4 classes)",
     "emotion": "Emotion (6 classes)",
     "rotten_tomatoes": "Rotten Tomatoes (binary)",
 }
-for ax, name in zip(axes, DS_NAMES, strict=True):
-    df = test_results[f"{name}_confidence"]["df"]
-    for outcome, color, lbl in [(True, C_CORRECT, "Correct"), (False, C_INCORRECT, "Incorrect")]:
-        mask = df["is_correct"] if outcome else ~df["is_correct"]
-        scores = np.sort(df.loc[mask, "score"].values)
-        n = len(scores)
-        if n == 0:
-            continue
-        ecdf_y = np.arange(1, n + 1) / n
-        ax.step(scores, ecdf_y, where="post", color=color, linewidth=2.5, label=f"{lbl} (n={n})")
-        ax.fill_between(scores, ecdf_y, step="post", alpha=0.08, color=color)
-    ax.axvline(x=0.99, color="#888888", linestyle="--", alpha=0.6, linewidth=1.2)
-    cor_scores = df.loc[df["is_correct"], "score"].values
-    inc_scores = df.loc[~df["is_correct"], "score"].values
-    pct_c = (cor_scores >= 0.99).mean() * 100
-    pct_i = (inc_scores >= 0.99).mean() * 100 if len(inc_scores) > 0 else 0
-    ax.text(
-        0.38,
-        0.55,
-        f"\u226599% confidence:\n  Correct: {pct_c:.0f}%\n  Incorrect: {pct_i:.0f}%",
-        transform=ax.transAxes,
-        fontsize=9.5,
-        verticalalignment="top",
-        fontfamily="monospace",
-        bbox={"boxstyle": "round,pad=0.5", "facecolor": "white", "edgecolor": "#cccccc", "alpha": 0.95},
-    )
-    ax.set_xlabel("Confidence (probability)", fontsize=11)
-    ax.set_title(ds_titles[name], fontsize=12, fontweight="bold")
-    ax.set_xlim(0.30, 1.005)
-    ax.grid(alpha=0.2)
-    ax.legend(fontsize=10, loc="upper left")
-axes[0].set_ylabel("Cumulative fraction of predictions", fontsize=11)
+adapter_rows = [
+    ("default", "DefaultAdapter"),
+    ("confidence", "ConfidenceAdapter"),
+]
+for col, name in enumerate(DS_NAMES):
+    for row, (adapter_key, adapter_label) in enumerate(adapter_rows):
+        ax = axes[row, col]
+        df = test_results[f"{name}_{adapter_key}"]["df"]
+        for outcome, color, lbl in [(True, C_CORRECT, "Correct"), (False, C_INCORRECT, "Incorrect")]:
+            mask = df["is_correct"] if outcome else ~df["is_correct"]
+            scores = np.sort(df.loc[mask, "score"].values)
+            n = len(scores)
+            if n == 0:
+                continue
+            ecdf_y = np.arange(1, n + 1) / n
+            ax.step(scores, ecdf_y, where="post", color=color, linewidth=2.5, label=f"{lbl} (n={n})")
+            ax.fill_between(scores, ecdf_y, step="post", alpha=0.08, color=color)
+        ax.axvline(x=0.99, color="#888888", linestyle="--", alpha=0.6, linewidth=1.2)
+        cor_scores = df.loc[df["is_correct"], "score"].values
+        inc_scores = df.loc[~df["is_correct"], "score"].values
+        pct_c = (cor_scores >= 0.99).mean() * 100
+        pct_i = (inc_scores >= 0.99).mean() * 100 if len(inc_scores) > 0 else 0
+        ax.text(
+            0.38,
+            0.55,
+            f"\u226599% confidence:\n  Correct: {pct_c:.0f}%\n  Incorrect: {pct_i:.0f}%",
+            transform=ax.transAxes,
+            fontsize=9,
+            verticalalignment="top",
+            fontfamily="monospace",
+            bbox={"boxstyle": "round,pad=0.5", "facecolor": "white", "edgecolor": "#cccccc", "alpha": 0.95},
+        )
+        ax.set_xlim(0.30, 1.005)
+        ax.grid(alpha=0.2)
+        ax.legend(fontsize=9, loc="upper left")
+        if row == 0:
+            ax.set_title(ds_titles[name], fontsize=12, fontweight="bold")
+        if col == 0:
+            ax.set_ylabel(f"{adapter_label}\nCumulative fraction", fontsize=11)
+        if row == 1:
+            ax.set_xlabel("Confidence (probability)", fontsize=11)
+fig.suptitle(
+    "Confidence Distribution: DefaultAdapter vs ConfidenceAdapter",
+    fontsize=14,
+    fontweight="bold",
+)
 fig.text(
     0.5,
     0.01,
-    "ECDF of ConfidenceAdapter probability scores. The gap between correct (green) and incorrect (red)\n"
-    "shows the model's confidence is only slightly lower for wrong answers \u2014 justifying the 0.99 threshold.",
+    "ECDF of probability scores split by correct (green) vs incorrect (red) predictions.\n"
+    "Both adapters receive logprob scores from the same model \u2014 the difference comes from the optimized prompt.",
     ha="center",
     fontsize=9,
     color="#555555",
     style="italic",
 )
-fig.suptitle("Confidence Distribution: Correct vs Incorrect (ConfidenceAdapter)", fontsize=14, fontweight="bold")
 fig.tight_layout()
-fig.subplots_adjust(bottom=0.17, top=0.90)
+fig.subplots_adjust(bottom=0.10, top=0.92, hspace=0.15)
 fig.savefig(CHARTS / "confidence_distribution.png", dpi=150)
 plt.close()
 print("  Saved confidence_distribution.png")

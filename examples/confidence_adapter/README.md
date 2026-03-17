@@ -231,11 +231,13 @@ The ROC curve provides a better view for binary classification, showing the trad
 
 ### Confidence Distribution
 
-The ECDF (empirical cumulative distribution function) below shows the probability scores for ConfidenceAdapter's correct vs incorrect predictions. The key insight: **even 70–78% of incorrect predictions have ≥99% confidence**, depending on the dataset. The gap between the correct (green) and incorrect (red) curves is small, confirming that GPT-4.1-mini with structured output produces very high probabilities even for wrong answers. This is exactly why the 0.99 threshold is necessary — anything lower would treat most errors as "high confidence" and flatten the scoring signal.
+The ECDF (empirical cumulative distribution function) below shows the probability scores for both adapters, split by correct vs incorrect predictions. Both adapters receive logprob scores from the same model — the difference comes from the optimized prompt.
 
-Emotion shows the largest gap: incorrect predictions start climbing earlier (more spread across lower probabilities), reflecting the inherent ambiguity of 6 confusable emotion categories. Rotten Tomatoes shows almost no gap, consistent with the simpler binary task.
+The key insight: **even 70–78% of incorrect predictions have ≥99% confidence**, depending on the dataset. The gap between the correct (green) and incorrect (red) curves is small, confirming that GPT-4.1-mini with structured output produces very high probabilities even for wrong answers. This is exactly why the 0.99 threshold is necessary — anything lower would treat most errors as "high confidence" and flatten the scoring signal.
 
-![Confidence ECDF: correct vs incorrect predictions per dataset](outputs/charts/confidence_distribution.png)
+Comparing the two rows, ConfidenceAdapter's prompts tend to push correct predictions toward higher confidence while slightly widening the gap between correct and incorrect — especially on Emotion, where the incorrect curve starts climbing earlier (more predictions at lower probabilities). Rotten Tomatoes shows almost no difference between the two adapters, consistent with the simpler binary task.
+
+![Confidence ECDF: DefaultAdapter (top) vs ConfidenceAdapter (bottom)](outputs/charts/confidence_distribution.png)
 
 ---
 
