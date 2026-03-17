@@ -127,15 +127,18 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
             litellm_requests.append(messages)
 
         if isinstance(self.model, str):
-            responses = [
-                resp.choices[0].message.content.strip()
-                for resp in self.litellm.batch_completion(
-                    model=self.model,
-                    messages=litellm_requests,
-                    max_workers=self.max_litellm_workers,
-                    **self.litellm_batch_completion_kwargs,
-                )
-            ]
+            raw_responses = self.litellm.batch_completion(
+                model=self.model,
+                messages=litellm_requests,
+                max_workers=self.max_litellm_workers,
+                **self.litellm_batch_completion_kwargs,
+            )
+            responses = []
+            for resp in raw_responses:
+                if isinstance(resp, Exception):
+                    responses.append("")
+                else:
+                    responses.append(resp.choices[0].message.content.strip())
         else:
             responses = [self.model(messages) for messages in litellm_requests]
 

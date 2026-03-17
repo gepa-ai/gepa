@@ -65,7 +65,9 @@ Typical usage::
                 },
             },
         },
-        scoring_strategy=LinearBlendScoring(low_confidence_threshold=0.5),
+        scoring_strategy=LinearBlendScoring(low_confidence_threshold=0.99),
+        high_confidence_threshold=0.99,
+        low_confidence_threshold=0.90,
     )
 
     result = gepa.optimize(
@@ -87,17 +89,19 @@ With the default :class:`~gepa.adapters.default_adapter.DefaultAdapter`:
 
 With :class:`ConfidenceAdapter`:
 
-    *"Correct but unreliable (-2.31 logprob, 10% probability).  Model
-    answered 'Bills/Electricity' but was nearly split with alternatives.
-    Top alternatives: 'Bills/Gas & Oil' (9%).  The model cannot reliably
-    distinguish between these options with the current prompt."*
+    *"Correct but uncertain (73% probability).  Model answered
+    'Bills/Electricity' but was nearly split with alternatives.
+    Top alternatives: 'Bills/Gas & Oil' (24%).  The model cannot
+    reliably distinguish between these categories with the current
+    prompt."*
 
 Or:
 
-    *"Incorrect with high confidence (-0.05 logprob, 95% probability).
-    Model confidently answered 'Shopping/Electronics' but the correct
-    answer is 'Shopping/Video Games'.  The prompt is misleading the model
-    for this type of input."*
+    *"WRONG — model has 95% certainty on 'Shopping/Electronics' but
+    the correct answer is 'Shopping/Video Games'.  The model has no
+    doubt about its wrong answer; the prompt is actively misleading it
+    for this type of input.  The prompt must add explicit rules to
+    disambiguate 'Shopping/Electronics' vs 'Shopping/Video Games'."*
 """
 
 from __future__ import annotations
@@ -109,18 +113,17 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Protocol, TypedDict
 
 from gepa.adapters.confidence_adapter.scoring import LinearBlendScoring, ScoringStrategy
-from gepa.core.adapter import EvaluationBatch
+from gepa.core.adapter import EvaluationBatch, GEPAAdapter, ProposalFn
 
 logger = logging.getLogger(__name__)
 
 TOP_ALTERNATIVES_IN_FEEDBACK = 3
-_HIGH_CONFIDENCE_LOGPROB = -0.36  # ~ exp(-0.36) ≈ 0.70
-_LOW_CONFIDENCE_LOGPROB = -0.69   # ~ exp(-0.69) ≈ 0.50
 
 
 # ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------
+
 
 class ConfidenceDataInst(TypedDict):
     """Input data instance for confidence-aware evaluation.
@@ -129,15 +132,15 @@ class ConfidenceDataInst(TypedDict):
     ----------
     input:
         The user-facing text to classify (e.g. a transaction description).
-    answer:
-        The expected classification label (must match an enum value).
     additional_context:
         Optional key-value pairs surfaced in reflective feedback.
+    answer:
+        The expected classification label (must match an enum value).
     """
 
     input: str
-    answer: str
     additional_context: dict[str, str]
+    answer: str
 
 
 class ConfidenceTrajectory(TypedDict):
@@ -147,7 +150,7 @@ class ConfidenceTrajectory(TypedDict):
     ----------
     data:
         The original input data instance.
-    response_text:
+    full_assistant_response:
         Raw text returned by the LLM.
     parsed_value:
         Value extracted from the JSON response at ``answer_field``.
@@ -167,7 +170,7 @@ class ConfidenceTrajectory(TypedDict):
     """
 
     data: ConfidenceDataInst
-    response_text: str
+    full_assistant_response: str
     parsed_value: str | None
     logprob_score: float | None
     top_alternatives: list[dict[str, Any]]
@@ -181,7 +184,7 @@ class ConfidenceRolloutOutput(TypedDict):
 
     Attributes
     ----------
-    response_text:
+    full_assistant_response:
         Raw text returned by the LLM.
     parsed_value:
         Value extracted from the JSON response at ``answer_field``.
@@ -189,7 +192,7 @@ class ConfidenceRolloutOutput(TypedDict):
         Joint logprob for the target field.
     """
 
-    response_text: str
+    full_assistant_response: str
     parsed_value: str | None
     logprob_score: float | None
 
@@ -223,6 +226,7 @@ class ChatCompletionCallable(Protocol):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _extract_answer_from_json(text: str, field_path: str) -> str | None:
     """Walk *field_path* (dot-separated) into parsed JSON and return the leaf value."""
     try:
@@ -245,64 +249,94 @@ def _build_feedback(
     logprob_score: float | None,
     top_alternatives: list[dict[str, Any]],
     additional_context: dict[str, str],
+    high_confidence_prob: float,
+    low_confidence_prob: float,
 ) -> str:
-    """Build rich feedback with logprob confidence for the reflection LLM.
+    """Build feedback for the reflection LLM using probability only.
 
-    The feedback is structured to help the reflection LLM understand:
-    - Whether the answer was correct
-    - How confident the model was (logprob + probability)
-    - What the close alternatives were (if any)
-    - What the prompt should improve to resolve ambiguity
+    Design principles:
+    - **Correct + confident**: just ``"Correct."`` -- no noise.
+    - **Correct + uncertain**: flag it as risky with alternatives.
+    - **Incorrect**: rich detail scaled by confidence -- the higher the
+      model's certainty on the wrong answer, the stronger the language.
+
+    Parameters
+    ----------
+    high_confidence_prob:
+        Probability threshold above which a prediction is considered
+        "highly confident".
+    low_confidence_prob:
+        Probability threshold below which a *correct* prediction is
+        labelled "unreliable".
     """
-    if logprob_score is not None:
-        probability = math.exp(logprob_score)
-        conf_str = f"{logprob_score:.2f} logprob, {probability:.0%} probability"
-    else:
-        conf_str = "unknown"
+    probability = math.exp(logprob_score) if logprob_score is not None else None
     got_str = got or "<parse error>"
 
     if is_correct:
-        if logprob_score is not None and logprob_score >= _HIGH_CONFIDENCE_LOGPROB:
-            feedback = (
-                f"Correct with high confidence ({conf_str}). "
-                f"Model is certain about '{expected}'."
-            )
-        elif logprob_score is not None and logprob_score < _LOW_CONFIDENCE_LOGPROB:
+        if probability is None or probability >= high_confidence_prob:
+            feedback = "Correct."
+        elif probability < low_confidence_prob:
             alt_str = _format_alternatives(top_alternatives, exclude=expected)
             feedback = (
-                f"Correct but unreliable ({conf_str}). "
+                f"Correct but uncertain ({probability:.0%} probability). "
                 f"Model answered '{expected}' but was nearly split with alternatives."
             )
             if alt_str:
                 feedback += f" Top alternatives: {alt_str}."
-            feedback += " The model cannot reliably distinguish between these options with the current prompt."
+            feedback += " The model cannot reliably distinguish between these categories with the current prompt."
         else:
-            feedback = (
-                f"Correct with moderate confidence ({conf_str}). "
-                f"Model answered '{expected}'."
-            )
+            alt_str = _format_alternatives(top_alternatives, exclude=expected)
+            feedback = f"Correct ({probability:.0%} probability)."
+            if alt_str:
+                feedback += f" Close alternatives: {alt_str}."
     else:
         alt_str = _format_alternatives(top_alternatives, exclude=got_str)
-        if logprob_score is not None and logprob_score >= _HIGH_CONFIDENCE_LOGPROB:
+        correct_alt_prob = _find_alternative_prob(top_alternatives, expected)
+
+        if probability is not None and probability >= high_confidence_prob:
             feedback = (
-                f"Incorrect with high confidence ({conf_str}). "
-                f"Model confidently answered '{got_str}' but the correct answer is '{expected}'. "
-                "The prompt is misleading the model for this type of input."
+                f"WRONG — model has {probability:.0%} certainty on '{got_str}' "
+                f"but the correct answer is '{expected}'. "
+                "The model has no doubt about its wrong answer; "
+                "the prompt is actively misleading it for this type of input."
             )
+            if correct_alt_prob is not None:
+                feedback += f" The correct category '{expected}' only had {correct_alt_prob:.1%} probability."
+            if alt_str:
+                feedback += f" Alternatives: {alt_str}."
+            feedback += f" The prompt must add explicit rules to disambiguate '{got_str}' vs '{expected}'."
+        elif probability is not None and probability >= low_confidence_prob:
+            feedback = f"Wrong ({probability:.0%} probability). Expected '{expected}' but got '{got_str}'."
+            if alt_str:
+                feedback += f" Alternatives: {alt_str}."
+            feedback += " The prompt should better guide the model for this case."
         else:
+            prob_str = f"{probability:.0%} probability" if probability is not None else "unknown confidence"
             feedback = (
-                f"Incorrect ({conf_str}). "
-                f"Expected '{expected}' but got '{got_str}'."
+                f"Wrong ({prob_str}). "
+                f"Expected '{expected}' but got '{got_str}'. "
+                "The model was uncertain — better prompt guidance could fix this."
             )
             if alt_str:
-                feedback += f" Top alternatives: {alt_str}."
-            feedback += " The prompt needs clearer signals to distinguish between these options."
+                feedback += f" Alternatives: {alt_str}."
 
         ctx = "\n".join(f"{k}: {v}" for k, v in additional_context.items())
         if ctx:
             feedback += f"\nAdditional context:\n{ctx}"
 
     return feedback
+
+
+def _find_alternative_prob(
+    alts: list[dict[str, Any]],
+    target: str,
+) -> float | None:
+    """Find the probability of *target* in the alternatives list."""
+    for alt in alts:
+        val = alt.get("resolved_value") or alt.get("token", "")
+        if val == target:
+            return alt.get("probability", 0.0)
+    return None
 
 
 def _format_alternatives(alts: list[dict[str, Any]], exclude: str | None = None) -> str:
@@ -319,8 +353,10 @@ def _format_alternatives(alts: list[dict[str, Any]], exclude: str | None = None)
 # ConfidenceAdapter
 # ---------------------------------------------------------------------------
 
-class ConfidenceAdapter:
+
+class ConfidenceAdapter(GEPAAdapter[ConfidenceDataInst, ConfidenceTrajectory, ConfidenceRolloutOutput]):
     """GEPA adapter for structured-output classification with logprob confidence.
+
 
     This adapter is specifically designed for **classification tasks** where
     the LLM returns a structured JSON output with an ``enum``-constrained
@@ -380,16 +416,28 @@ class ConfidenceAdapter:
     answer_field:
         JSON field path used to extract the answer from the response text.
         Defaults to *field_path* (they are usually the same).
+    high_confidence_threshold:
+        Probability threshold (in ``(0, 1]``) above which a prediction is
+        labelled "high confidence" in reflective feedback.  Models using
+        structured output with enum constraints typically produce
+        probabilities above 95%, so this should be set high (e.g. ``0.99``)
+        to produce useful feedback gradients.  Default ``0.99``.
+    low_confidence_threshold:
+        Probability threshold (in ``(0, 1)``) below which a *correct*
+        prediction is labelled "unreliable" in reflective feedback.
+        Default ``0.90``.
     top_logprobs:
         Number of top logprobs to request from the LLM (1-20).
     failure_score:
         Score assigned when an example fails (parse error, API error, etc.).
     max_litellm_workers:
         Concurrency for litellm calls (only used when *model* is a string).
-    litellm_completion_kwargs:
-        Extra keyword arguments forwarded to every ``litellm.completion``
+    litellm_batch_completion_kwargs:
+        Extra keyword arguments forwarded to every ``litellm.batch_completion``
         call (e.g. ``temperature``, ``max_tokens``).
     """
+
+    propose_new_texts: ProposalFn | None = None
 
     def __init__(
         self,
@@ -399,10 +447,12 @@ class ConfidenceAdapter:
         response_schema: type | dict[str, Any] | None = None,
         scoring_strategy: ScoringStrategy | None = None,
         answer_field: str | None = None,
+        high_confidence_threshold: float = 0.99,
+        low_confidence_threshold: float = 0.90,
         top_logprobs: int = 5,
         failure_score: float = 0.0,
         max_litellm_workers: int = 10,
-        litellm_completion_kwargs: dict[str, Any] | None = None,
+        litellm_batch_completion_kwargs: dict[str, Any] | None = None,
     ) -> None:
         if isinstance(model, str):
             import litellm
@@ -412,16 +462,109 @@ class ConfidenceAdapter:
         self.field_path = field_path
         self.response_format = response_format
         self.response_schema = response_schema
-        self.scoring_strategy: ScoringStrategy = scoring_strategy or LinearBlendScoring()
+        self.scoring_strategy: ScoringStrategy = scoring_strategy or LinearBlendScoring(
+            low_confidence_threshold=high_confidence_threshold,
+        )
         self.answer_field = answer_field or field_path
+        self.high_confidence_threshold = high_confidence_threshold
+        self.low_confidence_threshold = low_confidence_threshold
         self.top_logprobs = top_logprobs
         self.failure_score = failure_score
         self.max_litellm_workers = max_litellm_workers
-        self.litellm_completion_kwargs = litellm_completion_kwargs or {}
+        self.litellm_batch_completion_kwargs = litellm_batch_completion_kwargs or {}
 
     # ------------------------------------------------------------------
     # evaluate
     # ------------------------------------------------------------------
+
+    def _process_response(
+        self,
+        response: Any,
+        data: ConfidenceDataInst,
+        capture_traces: bool,
+    ) -> tuple[ConfidenceRolloutOutput, float, dict[str, float], ConfidenceTrajectory | None]:
+        """Extract logprobs, compute score, and build feedback from a single response."""
+        from llm_structured_confidence import extract_logprobs
+
+        try:
+            if isinstance(response, Exception):
+                raise response
+
+            response_text = self._extract_text(response)
+            parsed_value = _extract_answer_from_json(response_text, self.answer_field)
+
+            logprob_score: float | None = None
+            top_alternatives: list[dict[str, Any]] = []
+
+            try:
+                entries = extract_logprobs(
+                    response,
+                    field_path=self.field_path,
+                    response_schema=self.response_schema,
+                )
+                if entries:
+                    fl = entries[0].field_logprob
+                    logprob_score = fl.joint_logprob
+                    top_alternatives = [
+                        {
+                            "token": alt.token,
+                            "probability": alt.probability,
+                            "resolved_value": alt.resolved_value,
+                        }
+                        for alt in fl.top_logprobs
+                    ]
+            except Exception:
+                logger.debug("Logprob extraction failed for an example", exc_info=True)
+
+            is_correct = self._check_correctness(parsed_value, data["answer"])
+            score = self.scoring_strategy.score(is_correct, logprob_score)
+
+        except Exception:
+            logger.debug("LLM call or parsing failed for an example", exc_info=True)
+            response_text = ""
+            parsed_value = None
+            logprob_score = None
+            top_alternatives = []
+            is_correct = False
+            score = self.failure_score
+
+        feedback = _build_feedback(
+            is_correct=is_correct,
+            expected=data["answer"],
+            got=parsed_value,
+            logprob_score=logprob_score,
+            top_alternatives=top_alternatives,
+            additional_context=data.get("additional_context", {}),
+            high_confidence_prob=self.high_confidence_threshold,
+            low_confidence_prob=self.low_confidence_threshold,
+        )
+
+        output: ConfidenceRolloutOutput = {
+            "full_assistant_response": response_text,
+            "parsed_value": parsed_value,
+            "logprob_score": logprob_score,
+        }
+
+        probability = math.exp(logprob_score) if logprob_score is not None else 0.0
+        obj_scores = {
+            "accuracy": 1.0 if is_correct else 0.0,
+            "probability": probability,
+        }
+
+        trajectory = None
+        if capture_traces:
+            trajectory = {
+                "data": data,
+                "full_assistant_response": response_text,
+                "parsed_value": parsed_value,
+                "logprob_score": logprob_score,
+                "top_alternatives": top_alternatives,
+                "is_correct": is_correct,
+                "score": score,
+                "feedback": feedback,
+            }
+
+        return output, score, obj_scores, trajectory
 
     def evaluate(
         self,
@@ -431,103 +574,55 @@ class ConfidenceAdapter:
     ) -> EvaluationBatch[ConfidenceTrajectory, ConfidenceRolloutOutput]:
         """Run *candidate* on *batch*, extracting logprob confidence.
 
-        Each example is evaluated individually because we need the full
-        response object to extract token-level logprobs.
-
-        The joint logprob (sum of per-token logprobs) for the target field
-        is used as the confidence metric.  This value is always ``<= 0``;
-        closer to 0 means the model is more certain about its answer.
+        Uses ``litellm.batch_completion`` for parallel LLM calls, then
+        post-processes each response to extract logprobs and build feedback.
         """
-        from llm_structured_confidence import extract_logprobs
+        system_content = next(iter(candidate.values()))
+
+        all_messages: list[list[ChatMessage]] = [
+            [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": data["input"]},
+            ]
+            for data in batch
+        ]
+
+        if isinstance(self.model, str):
+            batch_kwargs: dict[str, Any] = {
+                "model": self.model,
+                "messages": all_messages,
+                "max_workers": self.max_litellm_workers,
+                "logprobs": True,
+                "top_logprobs": self.top_logprobs,
+                **self.litellm_batch_completion_kwargs,
+            }
+            if self.response_format is not None:
+                batch_kwargs["response_format"] = self.response_format
+            responses = list(self.litellm.batch_completion(**batch_kwargs))
+        else:
+            responses: list[Any] = []
+            for msgs in all_messages:
+                try:
+                    responses.append(self.model(msgs))
+                except Exception as exc:
+                    responses.append(exc)
 
         outputs: list[ConfidenceRolloutOutput] = []
         scores: list[float] = []
         objective_scores_list: list[dict[str, float]] = []
         trajectories: list[ConfidenceTrajectory] | None = [] if capture_traces else None
 
-        system_content = next(iter(candidate.values()))
-
-        for data in batch:
-            messages: list[ChatMessage] = [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": data["input"]},
-            ]
-
-            try:
-                response = self._call_llm(messages)
-                response_text = self._extract_text(response)
-                parsed_value = _extract_answer_from_json(response_text, self.answer_field)
-
-                logprob_score: float | None = None
-                top_alternatives: list[dict[str, Any]] = []
-
-                try:
-                    entries = extract_logprobs(
-                        response,
-                        field_path=self.field_path,
-                        response_schema=self.response_schema,
-                    )
-                    if entries:
-                        fl = entries[0].field_logprob
-                        logprob_score = fl.joint_logprob
-                        top_alternatives = [
-                            {
-                                "token": alt.token,
-                                "probability": alt.probability,
-                                "resolved_value": alt.resolved_value,
-                            }
-                            for alt in fl.top_logprobs
-                        ]
-                except Exception:
-                    logger.debug("Logprob extraction failed for an example", exc_info=True)
-
-                is_correct = self._check_correctness(parsed_value, data["answer"])
-                score = self.scoring_strategy.score(is_correct, logprob_score)
-
-            except Exception:
-                logger.debug("LLM call or parsing failed for an example", exc_info=True)
-                response_text = ""
-                parsed_value = None
-                logprob_score = None
-                top_alternatives = []
-                is_correct = False
-                score = self.failure_score
-
-            feedback = _build_feedback(
-                is_correct=is_correct,
-                expected=data["answer"],
-                got=parsed_value,
-                logprob_score=logprob_score,
-                top_alternatives=top_alternatives,
-                additional_context=data.get("additional_context", {}),
+        for data, response in zip(batch, responses, strict=True):
+            output, score, obj_scores, trajectory = self._process_response(
+                response,
+                data,
+                capture_traces,
             )
-
-            output: ConfidenceRolloutOutput = {
-                "response_text": response_text,
-                "parsed_value": parsed_value,
-                "logprob_score": logprob_score,
-            }
             outputs.append(output)
             scores.append(score)
-
-            probability = math.exp(logprob_score) if logprob_score is not None else 0.0
-            objective_scores_list.append({
-                "accuracy": 1.0 if is_correct else 0.0,
-                "logprob": logprob_score if logprob_score is not None else 0.0,
-                "probability": probability,
-            })
-
-            if trajectories is not None:
-                trajectories.append({
-                    "data": data,
-                    "response_text": response_text,
-                    "parsed_value": parsed_value,
-                    "logprob_score": logprob_score,
-                    "top_alternatives": top_alternatives,
-                    "is_correct": is_correct,
-                    "score": score,
-                    "feedback": feedback,
-                })
+            objective_scores_list.append(obj_scores)
+            if trajectories is not None and trajectory is not None:
+                trajectories.append(trajectory)
 
         return EvaluationBatch(
             outputs=outputs,
@@ -546,7 +641,7 @@ class ConfidenceAdapter:
         eval_batch: EvaluationBatch[ConfidenceTrajectory, ConfidenceRolloutOutput],
         components_to_update: list[str],
     ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
-        """Build reflective dataset with logprob-enriched feedback.
+        """Build reflective dataset with confidence-enriched feedback.
 
         The feedback tells the reflection LLM *why* the task model was
         uncertain, not just whether it was correct.  This enables GEPA to
@@ -556,10 +651,10 @@ class ConfidenceAdapter:
 
         * **Inputs**: the original user input text.
         * **Generated Outputs**: the model's answer annotated with
-          logprob and probability.
-        * **Feedback**: a detailed diagnosis including the joint logprob,
-          the derived probability, the top competing alternatives, and
-          guidance for what the prompt should improve.
+          probability.
+        * **Feedback**: a diagnosis including the probability, the top
+          competing alternatives, and guidance for what the prompt should
+          improve.
         """
         assert len(components_to_update) == 1
         comp = components_to_update[0]
@@ -569,16 +664,18 @@ class ConfidenceAdapter:
 
         items: list[ConfidenceReflectiveRecord] = []
         for traj in trajectories:
-            generated = traj["parsed_value"] or traj["response_text"]
+            generated = traj["parsed_value"] or traj["full_assistant_response"]
             if traj["logprob_score"] is not None:
                 probability = math.exp(traj["logprob_score"])
-                generated += f" (logprob: {traj['logprob_score']:.2f}, probability: {probability:.0%})"
+                generated += f" ({probability:.0%} probability)"
 
-            items.append({
-                "Inputs": traj["data"]["input"],
-                "Generated Outputs": generated,
-                "Feedback": traj["feedback"],
-            })
+            items.append(
+                {
+                    "Inputs": traj["data"]["input"],
+                    "Generated Outputs": generated,
+                    "Feedback": traj["feedback"],
+                }
+            )
 
         if not items:
             raise Exception("No valid predictions found for any module.")
@@ -588,21 +685,6 @@ class ConfidenceAdapter:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
-
-    def _call_llm(self, messages: list[ChatMessage]) -> Any:
-        """Call the LLM and return the full response object."""
-        if isinstance(self.model, str):
-            kwargs: dict[str, Any] = {
-                "model": self.model,
-                "messages": messages,
-                "logprobs": True,
-                "top_logprobs": self.top_logprobs,
-                **self.litellm_completion_kwargs,
-            }
-            if self.response_format is not None:
-                kwargs["response_format"] = self.response_format
-            return self.litellm.completion(**kwargs)
-        return self.model(messages)
 
     def _extract_text(self, response: Any) -> str:
         """Extract the text content from a response object."""

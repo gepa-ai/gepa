@@ -128,10 +128,7 @@ class LinearBlendScoring:
         return self.min_score_on_correct + (1.0 - self.min_score_on_correct) * t
 
     def describe(self) -> str:
-        return (
-            f"LinearBlendScoring(threshold={self.low_confidence_threshold}, "
-            f"min_score={self.min_score_on_correct})"
-        )
+        return f"LinearBlendScoring(threshold={self.low_confidence_threshold}, min_score={self.min_score_on_correct})"
 
 
 class ThresholdScoring:

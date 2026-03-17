@@ -3,10 +3,9 @@
 
 """Unit tests for ConfidenceAdapter: evaluate() and make_reflective_dataset().
 
-All tests mock ``llm_structured_confidence.extract_logprobs`` and
-``ConfidenceAdapter._call_llm`` to avoid real LLM calls.  The mock
-``field_logprob`` objects expose ``joint_logprob`` (the sum of per-token
-logprobs) as the confidence metric.
+All tests mock ``llm_structured_confidence.extract_logprobs`` to avoid
+real LLM calls.  Evaluate tests use **callable models** so they don't
+depend on litellm being installed.
 
 Requires ``pip install "gepa[confidence]"`` -- the entire module is
 skipped when ``llm_structured_confidence`` is not installed.
@@ -66,10 +65,24 @@ def _make_litellm_response(content: str) -> MagicMock:
     return resp
 
 
+def _make_callable_model(*contents: str):
+    """Return a callable model that yields mock responses in order."""
+    responses = iter([_make_litellm_response(c) for c in contents])
+
+    def model_fn(messages):
+        return next(responses)
+
+    return model_fn
+
+
 def _sample_batch() -> list[ConfidenceDataInst]:
     return [
-        {"input": "UBER EATS payment", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
-        {"input": "LIGHT electricity bill", "answer": "Bills/Electricity", "additional_context": {"merchant_type": "utility"}},
+        {"input": "UBER EATS payment", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
+        {
+            "input": "LIGHT electricity bill",
+            "additional_context": {"merchant_type": "utility"},
+            "answer": "Bills/Electricity",
+        },
     ]
 
 
@@ -127,12 +140,26 @@ class TestBuildFeedback:
             is_correct=True,
             expected="Bills/Electricity",
             got="Bills/Electricity",
-            logprob_score=-0.05,
+            logprob_score=-0.01,  # probability ~0.990
             top_alternatives=[],
             additional_context={},
+            high_confidence_prob=0.99,
+            low_confidence_prob=0.90,
         )
-        assert "Correct with high confidence" in fb
-        assert "logprob" in fb
+        assert fb == "Correct."
+
+    def test_correct_medium_confidence(self):
+        fb = _build_feedback(
+            is_correct=True,
+            expected="Bills/Electricity",
+            got="Bills/Electricity",
+            logprob_score=-0.05,  # probability ~0.951
+            top_alternatives=[],
+            additional_context={},
+            high_confidence_prob=0.99,
+            low_confidence_prob=0.90,
+        )
+        assert "Correct" in fb
         assert "probability" in fb
 
     def test_correct_low_confidence_lucky_guess(self):
@@ -140,13 +167,15 @@ class TestBuildFeedback:
             is_correct=True,
             expected="Bills/Electricity",
             got="Bills/Electricity",
-            logprob_score=-2.3,
+            logprob_score=-2.3,  # probability ~0.100
             top_alternatives=[
                 {"token": "gas", "probability": 0.09, "resolved_value": "Bills/Gas & Oil"},
             ],
             additional_context={},
+            high_confidence_prob=0.99,
+            low_confidence_prob=0.90,
         )
-        assert "unreliable" in fb
+        assert "uncertain" in fb
         assert "Bills/Gas & Oil" in fb
 
     def test_incorrect_high_confidence(self):
@@ -154,11 +183,13 @@ class TestBuildFeedback:
             is_correct=False,
             expected="Shopping/Video Games",
             got="Shopping/Electronics",
-            logprob_score=-0.09,
+            logprob_score=-0.005,  # probability ~0.995
             top_alternatives=[],
             additional_context={},
+            high_confidence_prob=0.99,
+            low_confidence_prob=0.50,
         )
-        assert "Incorrect with high confidence" in fb
+        assert "WRONG" in fb
         assert "misleading" in fb
 
     def test_incorrect_low_confidence(self):
@@ -166,13 +197,15 @@ class TestBuildFeedback:
             is_correct=False,
             expected="Shopping/Video Games",
             got="Shopping/Electronics",
-            logprob_score=-0.80,
+            logprob_score=-0.80,  # probability ~0.449
             top_alternatives=[
                 {"token": "vid", "probability": 0.38, "resolved_value": "Shopping/Video Games"},
             ],
             additional_context={},
+            high_confidence_prob=0.99,
+            low_confidence_prob=0.50,
         )
-        assert "Incorrect" in fb
+        assert "Wrong" in fb
         assert "Shopping/Video Games" in fb
 
     def test_additional_context_included_on_incorrect(self):
@@ -183,11 +216,14 @@ class TestBuildFeedback:
             logprob_score=-0.60,
             top_alternatives=[],
             additional_context={"merchant_type": "utility"},
+            high_confidence_prob=0.99,
+            low_confidence_prob=0.50,
         )
         assert "merchant_type" in fb
         assert "utility" in fb
 
-    def test_none_logprob_shows_unknown(self):
+    def test_none_logprob_correct_shows_correct(self):
+        """When logprob is None and prediction is correct, feedback is just 'Correct.'."""
         fb = _build_feedback(
             is_correct=True,
             expected="Food",
@@ -195,6 +231,22 @@ class TestBuildFeedback:
             logprob_score=None,
             top_alternatives=[],
             additional_context={},
+            high_confidence_prob=0.99,
+            low_confidence_prob=0.90,
+        )
+        assert fb == "Correct."
+
+    def test_none_logprob_incorrect_shows_unknown_confidence(self):
+        """When logprob is None and prediction is incorrect, feedback shows 'unknown confidence'."""
+        fb = _build_feedback(
+            is_correct=False,
+            expected="Food",
+            got="Drinks",
+            logprob_score=None,
+            top_alternatives=[],
+            additional_context={},
+            high_confidence_prob=0.99,
+            low_confidence_prob=0.90,
         )
         assert "unknown" in fb
 
@@ -206,20 +258,23 @@ class TestBuildFeedback:
             logprob_score=None,
             top_alternatives=[],
             additional_context={},
+            high_confidence_prob=0.99,
+            low_confidence_prob=0.90,
         )
         assert "<parse error>" in fb
 
-    def test_feedback_contains_both_logprob_and_probability(self):
-        """Feedback should show both logprob and derived probability for clarity."""
+    def test_feedback_contains_probability(self):
+        """Feedback should show probability for non-trivial correct predictions."""
         fb = _build_feedback(
             is_correct=True,
             expected="Food",
             got="Food",
-            logprob_score=-0.22,
+            logprob_score=-0.22,  # probability ~80%
             top_alternatives=[],
             additional_context={},
+            high_confidence_prob=0.99,
+            low_confidence_prob=0.50,
         )
-        assert "logprob" in fb
         assert "probability" in fb
 
 
@@ -229,22 +284,20 @@ class TestBuildFeedback:
 
 
 class TestConfidenceAdapterEvaluate:
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_correct_high_confidence_scores_one(self, mock_extract, mock_call):
-        resp = _make_litellm_response(json.dumps({"category_name": "Food & Drinks/Restaurants"}))
-        mock_call.return_value = resp
+    def test_correct_high_confidence_scores_one(self, mock_extract):
+        content = json.dumps({"category_name": "Food & Drinks/Restaurants"})
+        model = _make_callable_model(content)
 
-        fl = _make_field_logprob(joint_logprob=-0.08, top_logprobs=[])
+        fl = _make_field_logprob(joint_logprob=-0.001, top_logprobs=[])
         mock_extract.return_value = [_make_entry(fl)]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "UBER EATS payment", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
+            {"input": "UBER EATS payment", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
         ]
 
         result = adapter.evaluate(batch, {"system_prompt": "Classify."})
@@ -253,27 +306,24 @@ class TestConfidenceAdapterEvaluate:
         assert result.scores[0] == 1.0
         assert result.objective_scores is not None
         assert result.objective_scores[0]["accuracy"] == 1.0
-        assert result.objective_scores[0]["logprob"] == pytest.approx(-0.08)
-        assert result.objective_scores[0]["probability"] == pytest.approx(math.exp(-0.08))
+        assert result.objective_scores[0]["probability"] == pytest.approx(math.exp(-0.001))
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_correct_low_confidence_penalised(self, mock_extract, mock_call):
+    def test_correct_low_confidence_penalised(self, mock_extract):
         """Low logprob (e.g. -2.0 -> ~13% probability) should be penalised."""
-        resp = _make_litellm_response(json.dumps({"category_name": "Bills/Electricity"}))
-        mock_call.return_value = resp
+        content = json.dumps({"category_name": "Bills/Electricity"})
+        model = _make_callable_model(content)
 
         fl = _make_field_logprob(joint_logprob=-2.0)
         mock_extract.return_value = [_make_entry(fl)]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
             scoring_strategy=LinearBlendScoring(low_confidence_threshold=0.5, min_score_on_correct=0.3),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "LIGHT electricity bill", "answer": "Bills/Electricity", "additional_context": {}},
+            {"input": "LIGHT electricity bill", "additional_context": {}, "answer": "Bills/Electricity"},
         ]
 
         result = adapter.evaluate(batch, {"system_prompt": "Classify."})
@@ -282,22 +332,20 @@ class TestConfidenceAdapterEvaluate:
         assert result.scores[0] < 1.0
         assert result.scores[0] > 0.0
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_incorrect_scores_zero(self, mock_extract, mock_call):
-        resp = _make_litellm_response(json.dumps({"category_name": "Shopping/Electronics"}))
-        mock_call.return_value = resp
+    def test_incorrect_scores_zero(self, mock_extract):
+        content = json.dumps({"category_name": "Shopping/Electronics"})
+        model = _make_callable_model(content)
 
         fl = _make_field_logprob(joint_logprob=-0.22)
         mock_extract.return_value = [_make_entry(fl)]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "UBER EATS payment", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
+            {"input": "UBER EATS payment", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
         ]
 
         result = adapter.evaluate(batch, {"system_prompt": "Classify."})
@@ -306,19 +354,18 @@ class TestConfidenceAdapterEvaluate:
         assert result.objective_scores is not None
         assert result.objective_scores[0]["accuracy"] == 0.0
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_llm_error_returns_failure_score(self, mock_extract, mock_call):
-        mock_call.side_effect = RuntimeError("API timeout")
+    def test_llm_error_returns_failure_score(self, mock_extract):
+        def failing_model(messages):
+            raise RuntimeError("API timeout")
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=failing_model,
             field_path="category_name",
-            response_format=_sample_response_format(),
             failure_score=0.0,
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "test", "answer": "Food", "additional_context": {}},
+            {"input": "test", "additional_context": {}, "answer": "Food"},
         ]
 
         result = adapter.evaluate(batch, {"system_prompt": "Classify."})
@@ -326,11 +373,10 @@ class TestConfidenceAdapterEvaluate:
         assert result.scores[0] == 0.0
         assert result.outputs[0]["parsed_value"] is None
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_capture_traces_populates_trajectories(self, mock_extract, mock_call):
-        resp = _make_litellm_response(json.dumps({"category_name": "Food & Drinks/Restaurants"}))
-        mock_call.return_value = resp
+    def test_capture_traces_populates_trajectories(self, mock_extract):
+        content = json.dumps({"category_name": "Food & Drinks/Restaurants"})
+        model = _make_callable_model(content)
 
         fl = _make_field_logprob(
             joint_logprob=-0.16,
@@ -339,12 +385,11 @@ class TestConfidenceAdapterEvaluate:
         mock_extract.return_value = [_make_entry(fl)]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "UBER EATS", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
+            {"input": "UBER EATS", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
         ]
 
         result = adapter.evaluate(batch, {"system_prompt": "Classify."}, capture_traces=True)
@@ -357,41 +402,37 @@ class TestConfidenceAdapterEvaluate:
         assert traj["parsed_value"] == "Food & Drinks/Restaurants"
         assert len(traj["top_alternatives"]) == 1
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_no_traces_when_capture_traces_false(self, mock_extract, mock_call):
-        resp = _make_litellm_response(json.dumps({"category_name": "Food & Drinks/Restaurants"}))
-        mock_call.return_value = resp
+    def test_no_traces_when_capture_traces_false(self, mock_extract):
+        content = json.dumps({"category_name": "Food & Drinks/Restaurants"})
+        model = _make_callable_model(content)
         mock_extract.return_value = [_make_entry(_make_field_logprob(-0.1))]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "test", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
+            {"input": "test", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
         ]
 
         result = adapter.evaluate(batch, {"system_prompt": "Classify."}, capture_traces=False)
 
         assert result.trajectories is None
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_logprob_extraction_failure_degrades_gracefully(self, mock_extract, mock_call):
+    def test_logprob_extraction_failure_degrades_gracefully(self, mock_extract):
         """When extract_logprobs fails, logprob_score should be None but scoring continues."""
-        resp = _make_litellm_response(json.dumps({"category_name": "Food & Drinks/Restaurants"}))
-        mock_call.return_value = resp
+        content = json.dumps({"category_name": "Food & Drinks/Restaurants"})
+        model = _make_callable_model(content)
         mock_extract.side_effect = RuntimeError("logprob extraction error")
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "test", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
+            {"input": "test", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
         ]
 
         result = adapter.evaluate(batch, {"system_prompt": "Classify."})
@@ -399,24 +440,21 @@ class TestConfidenceAdapterEvaluate:
         assert result.scores[0] == 1.0
         assert result.outputs[0]["logprob_score"] is None
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_multiple_examples_in_batch(self, mock_extract, mock_call):
-        responses = [
-            _make_litellm_response(json.dumps({"category_name": "Food & Drinks/Restaurants"})),
-            _make_litellm_response(json.dumps({"category_name": "Bills/Electricity"})),
-        ]
-        mock_call.side_effect = responses
+    def test_multiple_examples_in_batch(self, mock_extract):
+        model = _make_callable_model(
+            json.dumps({"category_name": "Food & Drinks/Restaurants"}),
+            json.dumps({"category_name": "Bills/Electricity"}),
+        )
 
         mock_extract.side_effect = [
-            [_make_entry(_make_field_logprob(-0.10))],
-            [_make_entry(_make_field_logprob(-0.30))],
+            [_make_entry(_make_field_logprob(-0.001))],
+            [_make_entry(_make_field_logprob(-0.001))],
         ]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
         )
 
         result = adapter.evaluate(_sample_batch(), {"system_prompt": "Classify."})
@@ -426,24 +464,22 @@ class TestConfidenceAdapterEvaluate:
         assert result.scores[0] == 1.0
         assert result.scores[1] == 1.0
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_threshold_strategy_gates_on_logprob(self, mock_extract, mock_call):
+    def test_threshold_strategy_gates_on_logprob(self, mock_extract):
         """Correct but below threshold probability -> score 0.0."""
-        resp = _make_litellm_response(json.dumps({"category_name": "Food & Drinks/Restaurants"}))
-        mock_call.return_value = resp
+        content = json.dumps({"category_name": "Food & Drinks/Restaurants"})
+        model = _make_callable_model(content)
 
         fl = _make_field_logprob(joint_logprob=-0.51)
         mock_extract.return_value = [_make_entry(fl)]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
             scoring_strategy=ThresholdScoring(threshold=0.7),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "test", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
+            {"input": "test", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
         ]
 
         result = adapter.evaluate(batch, {"system_prompt": "Classify."})
@@ -462,14 +498,14 @@ class TestConfidenceAdapterEvaluate:
             return resp
 
         with patch("llm_structured_confidence.extract_logprobs") as mock_extract:
-            mock_extract.return_value = [_make_entry(_make_field_logprob(-0.05))]
+            mock_extract.return_value = [_make_entry(_make_field_logprob(-0.001))]
 
             adapter = ConfidenceAdapter(
                 model=fake_model,
                 field_path="category_name",
             )
             batch: list[ConfidenceDataInst] = [
-                {"input": "test", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
+                {"input": "test", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
             ]
 
             result = adapter.evaluate(batch, {"system_prompt": "Classify."})
@@ -478,52 +514,46 @@ class TestConfidenceAdapterEvaluate:
         assert called_with[0][0]["role"] == "system"
         assert result.scores[0] == 1.0
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_case_insensitive_correctness(self, mock_extract, mock_call):
-        resp = _make_litellm_response(json.dumps({"category_name": "food & drinks/restaurants"}))
-        mock_call.return_value = resp
-        mock_extract.return_value = [_make_entry(_make_field_logprob(-0.10))]
+    def test_case_insensitive_correctness(self, mock_extract):
+        content = json.dumps({"category_name": "food & drinks/restaurants"})
+        model = _make_callable_model(content)
+        mock_extract.return_value = [_make_entry(_make_field_logprob(-0.001))]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "test", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
+            {"input": "test", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
         ]
 
         result = adapter.evaluate(batch, {"system_prompt": "Classify."})
 
         assert result.scores[0] == 1.0
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_objective_scores_contain_logprob_and_probability(self, mock_extract, mock_call):
-        """objective_scores should expose logprob and probability for Pareto."""
-        resp = _make_litellm_response(json.dumps({"category_name": "Food & Drinks/Restaurants"}))
-        mock_call.return_value = resp
+    def test_objective_scores_contain_accuracy_and_probability(self, mock_extract):
+        """objective_scores should expose accuracy and probability for Pareto."""
+        content = json.dumps({"category_name": "Food & Drinks/Restaurants"})
+        model = _make_callable_model(content)
 
         fl = _make_field_logprob(joint_logprob=-0.35)
         mock_extract.return_value = [_make_entry(fl)]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "test", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
+            {"input": "test", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
         ]
 
         result = adapter.evaluate(batch, {"system_prompt": "Classify."})
 
         obj = result.objective_scores[0]
         assert "accuracy" in obj
-        assert "logprob" in obj
         assert "probability" in obj
-        assert obj["logprob"] == pytest.approx(-0.35)
         assert obj["probability"] == pytest.approx(math.exp(-0.35))
 
 
@@ -533,11 +563,10 @@ class TestConfidenceAdapterEvaluate:
 
 
 class TestMakeReflectiveDataset:
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_reflective_dataset_structure(self, mock_extract, mock_call):
-        resp = _make_litellm_response(json.dumps({"category_name": "Food & Drinks/Restaurants"}))
-        mock_call.return_value = resp
+    def test_reflective_dataset_structure(self, mock_extract):
+        content = json.dumps({"category_name": "Food & Drinks/Restaurants"})
+        model = _make_callable_model(content)
 
         fl = _make_field_logprob(
             joint_logprob=-1.05,
@@ -546,12 +575,11 @@ class TestMakeReflectiveDataset:
         mock_extract.return_value = [_make_entry(fl)]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "UBER EATS", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
+            {"input": "UBER EATS", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
         ]
 
         eval_batch = adapter.evaluate(batch, {"system_prompt": "Classify."}, capture_traces=True)
@@ -569,11 +597,10 @@ class TestMakeReflectiveDataset:
         assert "Generated Outputs" in record
         assert "Feedback" in record
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_reflective_feedback_includes_logprob_info(self, mock_extract, mock_call):
-        resp = _make_litellm_response(json.dumps({"category_name": "Bills/Electricity"}))
-        mock_call.return_value = resp
+    def test_reflective_feedback_includes_confidence_info(self, mock_extract):
+        content = json.dumps({"category_name": "Bills/Electricity"})
+        model = _make_callable_model(content)
 
         fl = _make_field_logprob(
             joint_logprob=-1.14,
@@ -582,12 +609,11 @@ class TestMakeReflectiveDataset:
         mock_extract.return_value = [_make_entry(fl)]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "LIGHT electricity bill", "answer": "Bills/Electricity", "additional_context": {}},
+            {"input": "LIGHT electricity bill", "additional_context": {}, "answer": "Bills/Electricity"},
         ]
 
         eval_batch = adapter.evaluate(batch, {"system_prompt": "Classify."}, capture_traces=True)
@@ -598,26 +624,23 @@ class TestMakeReflectiveDataset:
         )
 
         feedback = dataset["system_prompt"][0]["Feedback"]
-        assert "logprob" in feedback
         assert "probability" in feedback
         assert "Bills/Gas & Oil" in feedback
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_generated_outputs_include_logprob_and_probability(self, mock_extract, mock_call):
-        resp = _make_litellm_response(json.dumps({"category_name": "Food & Drinks/Restaurants"}))
-        mock_call.return_value = resp
+    def test_generated_outputs_include_probability(self, mock_extract):
+        content = json.dumps({"category_name": "Food & Drinks/Restaurants"})
+        model = _make_callable_model(content)
 
         fl = _make_field_logprob(joint_logprob=-0.16)
         mock_extract.return_value = [_make_entry(fl)]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "test", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
+            {"input": "test", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
         ]
 
         eval_batch = adapter.evaluate(batch, {"system_prompt": "Classify."}, capture_traces=True)
@@ -628,23 +651,20 @@ class TestMakeReflectiveDataset:
         )
 
         generated = dataset["system_prompt"][0]["Generated Outputs"]
-        assert "logprob" in generated
         assert "probability" in generated
 
-    @patch("gepa.adapters.confidence_adapter.confidence_adapter.ConfidenceAdapter._call_llm")
     @patch("llm_structured_confidence.extract_logprobs")
-    def test_raises_when_no_trajectories(self, mock_extract, mock_call):
-        resp = _make_litellm_response(json.dumps({"category_name": "Food & Drinks/Restaurants"}))
-        mock_call.return_value = resp
+    def test_raises_when_no_trajectories(self, mock_extract):
+        content = json.dumps({"category_name": "Food & Drinks/Restaurants"})
+        model = _make_callable_model(content)
         mock_extract.return_value = [_make_entry(_make_field_logprob(-0.1))]
 
         adapter = ConfidenceAdapter(
-            model="openai/gpt-4.1-mini",
+            model=model,
             field_path="category_name",
-            response_format=_sample_response_format(),
         )
         batch: list[ConfidenceDataInst] = [
-            {"input": "test", "answer": "Food & Drinks/Restaurants", "additional_context": {}},
+            {"input": "test", "additional_context": {}, "answer": "Food & Drinks/Restaurants"},
         ]
 
         eval_batch = adapter.evaluate(batch, {"system_prompt": "Classify."}, capture_traces=False)
