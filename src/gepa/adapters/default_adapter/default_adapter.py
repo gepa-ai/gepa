@@ -93,11 +93,9 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
         litellm_batch_completion_kwargs: dict[str, Any] | None = None,
     ):
         if isinstance(model, str):
-            from gepa.lm import LM
+            import litellm
 
-            self._lm = LM(model)
-        else:
-            self._lm = None
+            self.litellm = litellm
         self.model = model
         self.evaluator = evaluator or ContainsAnswerEvaluator()
         self.max_litellm_workers = max_litellm_workers
@@ -128,13 +126,21 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
 
             litellm_requests.append(messages)
 
-        if self._lm is not None:
-            responses = self._lm.batch_complete(
-                litellm_requests, max_workers=self.max_litellm_workers, **self.litellm_batch_completion_kwargs
+        if isinstance(self.model, str):
+            raw_responses = self.litellm.batch_completion(
+                model=self.model,
+                messages=litellm_requests,
+                max_workers=self.max_litellm_workers,
+                **self.litellm_batch_completion_kwargs,
             )
+            responses = []
+            for resp in raw_responses:
+                if isinstance(resp, Exception):
+                    responses.append("")
+                else:
+                    responses.append(resp.choices[0].message.content.strip())
         else:
-            model_fn = cast(ChatCompletionCallable, self.model)
-            responses = [model_fn(messages) for messages in litellm_requests]
+            responses = [self.model(messages) for messages in litellm_requests]
 
         for data, assistant_response in zip(batch, responses, strict=True):
             eval_result = self.evaluator(data, assistant_response)
