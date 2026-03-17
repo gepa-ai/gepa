@@ -447,6 +447,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     IterationStartEvent(
                         iteration=state.i + 1,
                         state=state,
+                        trainset_loader=self.reflective_proposer.trainset,
                     ),
                 )
                 iteration_started = True
