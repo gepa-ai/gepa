@@ -546,7 +546,14 @@ class TestOptimizationState:
 
 
 class TestMakeLitellmLm:
-    """Tests for the make_litellm_lm helper."""
+    """Tests for the make_litellm_lm helper — should return an LM instance."""
+
+    def test_returns_lm_instance(self):
+        from gepa.lm import LM
+
+        lm = oa.make_litellm_lm("test-model")
+        assert isinstance(lm, LM)
+        assert lm.model == "test-model"
 
     @patch("litellm.completion")
     def test_string_prompt(self, mock_completion):
@@ -554,6 +561,7 @@ class TestMakeLitellmLm:
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = "response text"
+        mock_response.choices[0].finish_reason = "stop"
         mock_completion.return_value = mock_response
 
         lm = oa.make_litellm_lm("test-model")
@@ -563,6 +571,8 @@ class TestMakeLitellmLm:
         mock_completion.assert_called_once_with(
             model="test-model",
             messages=[{"role": "user", "content": "hello"}],
+            num_retries=3,
+            drop_params=True,
         )
 
     @patch("litellm.completion")
@@ -571,6 +581,7 @@ class TestMakeLitellmLm:
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = "chat response"
+        mock_response.choices[0].finish_reason = "stop"
         mock_completion.return_value = mock_response
 
         lm = oa.make_litellm_lm("test-model")
@@ -578,7 +589,12 @@ class TestMakeLitellmLm:
         result = lm(messages)
 
         assert result == "chat response"
-        mock_completion.assert_called_once_with(model="test-model", messages=messages)
+        mock_completion.assert_called_once_with(
+            model="test-model",
+            messages=messages,
+            num_retries=3,
+            drop_params=True,
+        )
 
 
 # ---------------------------------------------------------------------------
