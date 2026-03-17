@@ -299,44 +299,43 @@ This is by design—GEPA first captures specific patterns, then abstracts them i
 
 ### GEPA copied specific keywords or phrases from my training examples into the prompt — how do I prevent this?
 
-This is a known failure mode: the optimizer over-indexes on surface patterns (specific usernames, document titles, domain-specific terms) that are present in the training minibatch but won't generalize. Dropbox [explicitly encountered this](https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy) when optimizing their relevance judge.
+This is a known failure mode: the optimizer over-indexes on surface patterns (specific usernames, document titles, domain-specific terms) present in the training minibatch but not generalizable. Dropbox [explicitly encountered this](https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy) when optimizing their relevance judge.
 
-The fix is to **inject an anti-overfit instruction into your feedback**. Since GEPA constructs the reflective dataset via your adapter's `make_reflective_dataset()`, you can append a reminder to every feedback record:
+The fix is to **include an anti-overfit instruction in your `side_info`** returned by your evaluator. GEPA feeds `side_info` directly to the reflection LM, so anything you include there influences how it proposes improvements:
 
 ```python
-def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
-    dataset = {}
-    for component in components_to_update:
-        records = []
-        for trace, score in zip(eval_batch.trajectories, eval_batch.scores):
-            records.append({
-                "Input": trace["input"],
-                "Output": trace["output"],
-                "Score": score,
-                "Feedback": trace["feedback"],
-                # Anti-overfit guard — include in every record
-                "Constraint": (
-                    "When improving the prompt, do NOT copy specific examples, "
-                    "keywords, usernames, or verbatim phrases from these examples. "
-                    "Generalize to rules that apply broadly."
-                ),
-            })
-        dataset[component] = records
-    return dataset
+def evaluator(data, response):
+    score = compute_score(response, data["expected"])
+    return score, {
+        "Input": data["input"],
+        "Output": response,
+        "Expected": data["expected"],
+        "Constraint": (
+            "When improving the prompt, do NOT copy specific examples, "
+            "keywords, usernames, or verbatim phrases from these examples. "
+            "Generalize to rules that apply broadly."
+        ),
+    }
 ```
 
 ### GEPA changed my rating scale or output format — how do I stop this?
 
 GEPA's reflection LM can occasionally drift the task definition — for example, changing a 1–5 rating scale to 1–3, or altering an output schema. Dropbox [explicitly handled this](https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy) by adding explicit preservation constraints to their feedback.
 
-Add a task-preservation instruction to every feedback record in `make_reflective_dataset()`:
+Add a task-preservation instruction to the `side_info` returned by your evaluator:
 
 ```python
-"Constraint": (
-    "You must NOT change the fundamental task parameters: "
-    "the rating scale (1-5), the output JSON schema, or the scoring criteria. "
-    "Only improve the reasoning guidance and domain-specific rules."
-),
+def evaluator(data, response):
+    score = compute_score(response, data["expected"])
+    return score, {
+        "Input": data["input"],
+        "Output": response,
+        "Constraint": (
+            "You must NOT change the fundamental task parameters: "
+            "the rating scale (1-5), the output JSON schema, or the scoring criteria. "
+            "Only improve the reasoning guidance and domain-specific rules."
+        ),
+    }
 ```
 
 Alternatively, for production systems where stability is critical, consider **incrementally optimizing a known set of human-written instruction bullets** rather than allowing full rewrites. See [Can GEPA's meta-prompt itself be optimized?](#can-gepas-meta-prompt-itself-be-optimized) for how to customize the instruction proposer.
