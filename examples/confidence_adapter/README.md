@@ -235,9 +235,24 @@ The ECDF (empirical cumulative distribution function) below shows the probabilit
 
 The key insight: **even 70–78% of incorrect predictions have ≥99% confidence**, depending on the dataset. The gap between the correct (green) and incorrect (red) curves is small, confirming that GPT-4.1-mini with structured output produces very high probabilities even for wrong answers. This is exactly why the 0.99 threshold is necessary — anything lower would treat most errors as "high confidence" and flatten the scoring signal.
 
-Comparing the two rows, ConfidenceAdapter's prompts tend to push correct predictions toward higher confidence while slightly widening the gap between correct and incorrect — especially on Emotion, where the incorrect curve starts climbing earlier (more predictions at lower probabilities). Rotten Tomatoes shows almost no difference between the two adapters, consistent with the simpler binary task.
+Comparing the two rows reveals that **the confidence distributions are nearly identical between the two adapters.** This is the most important takeaway: ConfidenceAdapter's advantage does not come from making the model "more confident overall" — it comes from making the model get the right answer on more examples, through better disambiguation rules in the prompt. The underlying model is the same; what changes is which examples fall on the correct side.
 
 ![Confidence ECDF: DefaultAdapter (top) vs ConfidenceAdapter (bottom)](outputs/charts/confidence_distribution.png)
+
+The numerical breakdown reinforces this:
+
+| Dataset | Adapter | Correct (n) | Incorrect (n) | ≥99% correct | ≥99% incorrect | Gap |
+|---------|---------|-------------|----------------|-------------|----------------|-----|
+| AG News | Default | 1716 | 284 | 94.4% | 69.7% | +24.7pp |
+| | **Confidence** | **1758** | **242** | **95.3%** | **69.8%** | **+25.4pp** |
+| Emotion | Default | 812 | 578 | 89.8% | 71.5% | +18.3pp |
+| | **Confidence** | **837** | **553** | **90.7%** | **76.5%** | **+14.2pp** |
+| Rotten Tomatoes | Default | 993 | 73 | 98.1% | 78.1% | +20.0pp |
+| | Confidence | 993 | 73 | 97.9% | 78.1% | +19.8pp |
+
+On AG News, ConfidenceAdapter gets 42 more predictions right while maintaining a slightly wider confidence gap. On Emotion, it gets 25 more right, but the remaining errors are *more* confident (76.5% vs 71.5% above 99%) — the prompt eliminated the uncertain errors, leaving behind the high-conviction mistakes that are hardest to fix. On Rotten Tomatoes, the distributions are indistinguishable.
+
+This confirms that ConfidenceAdapter works by leveraging the confidence signal *during optimization* to produce better prompts — not by changing how the model distributes confidence at inference time.
 
 ---
 
