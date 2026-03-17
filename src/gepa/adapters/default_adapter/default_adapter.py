@@ -129,7 +129,9 @@ class DefaultAdapter(GEPAAdapter[DefaultDataInst, DefaultTrajectory, DefaultRoll
             litellm_requests.append(messages)
 
         if self._lm is not None:
-            responses = self._lm.batch_complete(litellm_requests, max_workers=self.max_litellm_workers)
+            responses = self._lm.batch_complete(
+                litellm_requests, max_workers=self.max_litellm_workers, **self.litellm_batch_completion_kwargs
+            )
         else:
             model_fn = cast(ChatCompletionCallable, self.model)
             responses = [model_fn(messages) for messages in litellm_requests]

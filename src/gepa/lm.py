@@ -1,14 +1,13 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-"""Thin LM abstraction over LiteLLM that handles model family detection,
-parameter normalization, retries, and truncation warnings.
+"""Thin LM abstraction over LiteLLM that handles retries, truncation
+warnings, and cross-model compatibility.
 
 Usage::
 
     from gepa.lm import LM
 
-    lm = LM("openai/gpt-5-mini")          # auto-detects reasoning model
     lm = LM("openai/gpt-4.1", temperature=0.7, max_tokens=4096)
     response: str = lm("Solve this problem...")
 
@@ -22,23 +21,9 @@ The returned callable conforms to the ``LanguageModel`` protocol
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-# Regex detecting OpenAI reasoning models that require special parameter handling:
-#   o1, o3, o4, o5 (with optional -mini/-nano/-pro suffix and optional date suffix)
-#   gpt-5 family (excluding -chat variants which are non-reasoning)
-_REASONING_MODEL_RE = re.compile(
-    r"^(?:o[1-9]\d*(?:-(?:mini|nano|pro))?(?:-\d{4}-\d{2}-\d{2})?|gpt-5(?!-chat)(?:-.*)?)$"
-)
-
-
-def _is_reasoning_model(model: str) -> bool:
-    """Return True if *model* is an OpenAI reasoning model (o1/o3/o4/gpt-5 family)."""
-    family = model.split("/")[-1].lower() if "/" in model else model.lower()
-    return bool(_REASONING_MODEL_RE.match(family))
 
 
 class LM:
@@ -46,20 +31,18 @@ class LM:
 
     Handles:
 
-    - **Reasoning model detection** (o1/o3/o4/gpt-5): enforces ``temperature=1``
-      and maps ``max_tokens`` to ``max_completion_tokens``.
     - **Retries** with exponential backoff via LiteLLM's ``num_retries``.
     - **Truncation detection** — logs a warning when ``finish_reason='length'``.
-    - **drop_params=True** so unsupported params are silently ignored.
+    - **drop_params=True** so unsupported params are silently ignored
+      (with a warning logged for transparency).
 
     Conforms to the :class:`~gepa.proposer.reflective_mutation.base.LanguageModel`
     protocol, so it can be used anywhere GEPA expects a ``LanguageModel``.
 
     Args:
         model: LiteLLM model identifier, e.g. ``"openai/gpt-4.1"`` or ``"anthropic/claude-sonnet-4-6"``.
-        temperature: Sampling temperature.  Reasoning models require 1.0 or None.
-        max_tokens: Maximum tokens to generate.  For reasoning models this is
-            mapped to ``max_completion_tokens`` and defaults to 16000.
+        temperature: Sampling temperature.
+        max_tokens: Maximum tokens to generate.
         num_retries: Number of retries on transient failures (default 3).
         **kwargs: Extra keyword arguments forwarded to ``litellm.completion``
             (e.g. ``top_p``, ``stop``, ``api_key``, ``api_base``).
@@ -75,25 +58,12 @@ class LM:
     ):
         self.model = model
         self.num_retries = num_retries
-        self.is_reasoning = _is_reasoning_model(model)
 
-        if self.is_reasoning:
-            if temperature is not None and temperature != 1.0:
-                raise ValueError(
-                    f"Reasoning model '{model}' requires temperature=1.0 or None, got {temperature}. "
-                    "Set temperature=1.0 or omit it."
-                )
-            self.completion_kwargs: dict[str, Any] = {
-                "temperature": 1.0,
-                "max_completion_tokens": max_tokens or 16000,
-                **kwargs,
-            }
-        else:
-            self.completion_kwargs = {
-                **({"temperature": temperature} if temperature is not None else {}),
-                **({"max_tokens": max_tokens} if max_tokens is not None else {}),
-                **kwargs,
-            }
+        self.completion_kwargs: dict[str, Any] = {
+            **({"temperature": temperature} if temperature is not None else {}),
+            **({"max_tokens": max_tokens} if max_tokens is not None else {}),
+            **kwargs,
+        }
 
     def _check_truncation(self, choices: list[Any]) -> None:
         if any(getattr(c, "finish_reason", None) == "length" for c in choices):
@@ -123,25 +93,31 @@ class LM:
         self._check_truncation(completion.choices)  # type: ignore[union-attr]
         return completion.choices[0].message.content  # type: ignore[union-attr]
 
-    def batch_complete(self, messages_list: list[list[dict[str, Any]]], max_workers: int = 10) -> list[str]:
+    def batch_complete(
+        self, messages_list: list[list[dict[str, Any]]], max_workers: int = 10, **kwargs: Any
+    ) -> list[str]:
         """Run multiple completions in parallel using ``litellm.batch_completion``.
 
         Args:
             messages_list: List of message lists, one per request.
             max_workers: Maximum concurrent requests.
+            **kwargs: Extra keyword arguments forwarded to ``litellm.batch_completion``
+                (e.g. ``timeout``, ``api_base``).  These override any matching keys
+                set during ``__init__``.
 
         Returns:
             List of response strings, one per input.
         """
         import litellm
 
+        merged = {**self.completion_kwargs, **kwargs}
         responses = litellm.batch_completion(
             model=self.model,
             messages=messages_list,
             max_workers=max_workers,
             num_retries=self.num_retries,
             drop_params=True,
-            **self.completion_kwargs,
+            **merged,
         )
 
         results: list[str] = []
@@ -153,8 +129,6 @@ class LM:
 
     def __repr__(self) -> str:
         params = [f"model={self.model!r}"]
-        if self.is_reasoning:
-            params.append("reasoning=True")
         for k, v in self.completion_kwargs.items():
             params.append(f"{k}={v!r}")
         return f"LM({', '.join(params)})"

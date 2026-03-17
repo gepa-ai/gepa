@@ -5,85 +5,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gepa.lm import LM, _is_reasoning_model
-
-
-class TestIsReasoningModel:
-    """Test reasoning model detection regex."""
-
-    @pytest.mark.parametrize(
-        "model",
-        [
-            "o1",
-            "o1-mini",
-            "o1-pro",
-            "o1-mini-2025-01-01",
-            "o3",
-            "o3-mini",
-            "o4-mini",
-            "gpt-5",
-            "gpt-5-mini",
-            "gpt-5-nano",
-            "openai/o1",
-            "openai/o3-mini",
-            "openai/gpt-5",
-            "openai/gpt-5-mini",
-            "openai/gpt-5-mini-2025-06-01",
-        ],
-    )
-    def test_reasoning_models_detected(self, model):
-        assert _is_reasoning_model(model) is True
-
-    @pytest.mark.parametrize(
-        "model",
-        [
-            "gpt-4.1",
-            "gpt-4.1-mini",
-            "gpt-5-chat",
-            "openai/gpt-4.1",
-            "openai/gpt-5-chat",
-            "anthropic/claude-sonnet-4-6",
-            "claude-sonnet-4-6",
-            "deepseek/deepseek-r1",
-        ],
-    )
-    def test_non_reasoning_models_not_detected(self, model):
-        assert _is_reasoning_model(model) is False
+from gepa.lm import LM
 
 
 class TestLMInit:
     """Test LM constructor parameter handling."""
 
-    def test_reasoning_model_defaults(self):
-        lm = LM("openai/gpt-5-mini")
-        assert lm.is_reasoning is True
-        assert lm.completion_kwargs["temperature"] == 1.0
-        assert lm.completion_kwargs["max_completion_tokens"] == 16000
-        assert "max_tokens" not in lm.completion_kwargs
-
-    def test_reasoning_model_custom_max_tokens(self):
-        lm = LM("openai/gpt-5", max_tokens=32000)
-        assert lm.completion_kwargs["max_completion_tokens"] == 32000
-
-    def test_reasoning_model_temperature_1_ok(self):
-        lm = LM("openai/gpt-5", temperature=1.0)
-        assert lm.completion_kwargs["temperature"] == 1.0
-
-    def test_reasoning_model_temperature_none_ok(self):
-        lm = LM("o3-mini", temperature=None)
-        assert lm.completion_kwargs["temperature"] == 1.0
-
-    def test_reasoning_model_bad_temperature_raises(self):
-        with pytest.raises(ValueError, match="requires temperature=1.0"):
-            LM("openai/gpt-5", temperature=0.7)
-
-    def test_standard_model_defaults(self):
+    def test_defaults(self):
         lm = LM("openai/gpt-4.1")
-        assert lm.is_reasoning is False
         assert "temperature" not in lm.completion_kwargs
         assert "max_tokens" not in lm.completion_kwargs
 
-    def test_standard_model_custom_params(self):
+    def test_custom_params(self):
         lm = LM("openai/gpt-4.1", temperature=0.5, max_tokens=4096)
         assert lm.completion_kwargs["temperature"] == 0.5
         assert lm.completion_kwargs["max_tokens"] == 4096
@@ -92,6 +25,13 @@ class TestLMInit:
         lm = LM("openai/gpt-4.1", top_p=0.9, stop=["\n"])
         assert lm.completion_kwargs["top_p"] == 0.9
         assert lm.completion_kwargs["stop"] == ["\n"]
+
+    def test_reasoning_model_no_special_treatment(self):
+        """Reasoning models should NOT get special parameter handling."""
+        lm = LM("openai/gpt-5-mini", temperature=0.7, max_tokens=4096)
+        assert lm.completion_kwargs["temperature"] == 0.7
+        assert lm.completion_kwargs["max_tokens"] == 4096
+        assert "max_completion_tokens" not in lm.completion_kwargs
 
 
 class TestLMCall:
@@ -136,22 +76,6 @@ class TestLMCall:
             num_retries=3,
             drop_params=True,
         )
-
-    @patch("litellm.completion")
-    def test_reasoning_model_params(self, mock_completion):
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "answer"
-        mock_response.choices[0].finish_reason = "stop"
-        mock_completion.return_value = mock_response
-
-        lm = LM("openai/gpt-5-mini")
-        lm("solve this")
-
-        call_kwargs = mock_completion.call_args[1]
-        assert call_kwargs["temperature"] == 1.0
-        assert call_kwargs["max_completion_tokens"] == 16000
-        assert "max_tokens" not in call_kwargs
 
     @patch("litellm.completion")
     def test_truncation_warning(self, mock_completion, caplog):
@@ -200,30 +124,51 @@ class TestLMBatchComplete:
         )
 
     @patch("litellm.batch_completion")
-    def test_batch_reasoning_model_params(self, mock_batch):
+    def test_batch_complete_forwards_extra_kwargs(self, mock_batch):
+        """Extra kwargs passed to batch_complete should be forwarded to litellm."""
         resp = MagicMock()
         resp.choices = [MagicMock()]
         resp.choices[0].message.content = "ans"
         resp.choices[0].finish_reason = "stop"
         mock_batch.return_value = [resp]
 
-        lm = LM("openai/gpt-5")
-        lm.batch_complete([[{"role": "user", "content": "q"}]])
+        lm = LM("openai/gpt-4.1", temperature=0.5)
+        lm.batch_complete(
+            [[{"role": "user", "content": "q"}]],
+            max_workers=3,
+            timeout=30,
+            api_base="https://custom.api",
+        )
 
         call_kwargs = mock_batch.call_args[1]
-        assert call_kwargs["temperature"] == 1.0
-        assert call_kwargs["max_completion_tokens"] == 16000
+        assert call_kwargs["temperature"] == 0.5
+        assert call_kwargs["timeout"] == 30
+        assert call_kwargs["api_base"] == "https://custom.api"
+
+    @patch("litellm.batch_completion")
+    def test_batch_complete_kwargs_override_init(self, mock_batch):
+        """Kwargs passed at call time should override init kwargs."""
+        resp = MagicMock()
+        resp.choices = [MagicMock()]
+        resp.choices[0].message.content = "ans"
+        resp.choices[0].finish_reason = "stop"
+        mock_batch.return_value = [resp]
+
+        lm = LM("openai/gpt-4.1", temperature=0.5)
+        lm.batch_complete(
+            [[{"role": "user", "content": "q"}]],
+            temperature=0.9,  # override init value
+        )
+
+        call_kwargs = mock_batch.call_args[1]
+        assert call_kwargs["temperature"] == 0.9
 
 
 class TestLMRepr:
-    def test_repr_standard(self):
+    def test_repr(self):
         lm = LM("openai/gpt-4.1", temperature=0.5)
         assert "gpt-4.1" in repr(lm)
         assert "temperature=0.5" in repr(lm)
-
-    def test_repr_reasoning(self):
-        lm = LM("openai/gpt-5-mini")
-        assert "reasoning=True" in repr(lm)
 
 
 class TestLMConformsToProtocol:
