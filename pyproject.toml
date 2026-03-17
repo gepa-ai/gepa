@@ -145,3 +145,4 @@ ban-relative-imports = "all"
 ]
 "__init__.py" = ["F401"]  # Init files can be empty
 "src/gepa/gskill/**/*.py" = ["E402"]  # gskill suppresses logging before imports
+"examples/**/*.py" = ["E402"]  # Jupyter-notebook-style scripts import mid-file
