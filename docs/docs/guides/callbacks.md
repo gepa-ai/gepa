@@ -2,8 +2,13 @@
 
 GEPA provides a callback system for observing and instrumenting optimization runs.  Callbacks receive events at every stage of the loop — you can log custom metrics, stream results to external systems, add dynamic training data, inspect every LM call, or implement domain-specific monitoring.
 
-!!! note "Observational only"
-    Callbacks are **read-only observers**.  They receive a snapshot of the current state but cannot modify it.  Exceptions in callbacks are caught, logged as warnings, and never crash the optimization.
+!!! note "Mostly observational, with sanctioned mutation points"
+    Callbacks receive the **live** optimization state, not a copy.  Most events are intended for observation only, but a few fields are explicitly designed to support mutation:
+
+    - `event["trainset_loader"]` in `on_iteration_start` — call `.add_items()` to grow the training set mid-run (see [Dynamic training data](#5-dynamic-training-data-add-examples-mid-run) below).
+
+    Mutating `event["state"]` or other fields directly outside these sanctioned patterns is unsupported and may cause undefined behaviour.
+    Exceptions in callbacks are caught, logged as warnings, and never crash the optimization.
 
 ---
 
