@@ -790,6 +790,23 @@ class TrackingConfig:
     mlflow_experiment_name: str | None = None
 
 
+Backend = Literal["gepa", "skydiscover-evox", "skydiscover-adaevolve"]
+"""Search backend to use for :func:`optimize_anything`.
+
+- ``"gepa"`` (default): GEPA's own Pareto-evolutionary search.  Supports
+  single-task, multi-task, and generalization modes.
+- ``"skydiscover-evox"``: EvoX co-evolutionary search via the ``skydiscover``
+  package.  **Single-task only** (``dataset`` and ``valset`` must be ``None``).
+- ``"skydiscover-adaevolve"``: AdaEvolve adaptive search via the
+  ``skydiscover`` package.  **Single-task only** (``dataset`` and ``valset``
+  must be ``None``).
+
+Install the skydiscover backends with::
+
+    pip install gepa[skydiscover]
+"""
+
+
 @dataclass
 class GEPAConfig:
     """Top-level configuration for :func:`optimize_anything`.
@@ -805,7 +822,18 @@ class GEPAConfig:
             reflection=ReflectionConfig(reflection_lm="openai/gpt-5.1"),
             refiner=RefinerConfig(max_refinements=2),
         )
+
+    To use a skydiscover backend::
+
+        config = GEPAConfig(
+            backend="skydiscover-evox",
+            engine=EngineConfig(max_metric_calls=50),
+        )
     """
+
+    # Search backend
+    backend: Backend = "gepa"
+    """Which search backend to use.  See :data:`Backend`."""
 
     # Component configurations
     engine: EngineConfig = field(default_factory=EngineConfig)
@@ -995,6 +1023,120 @@ class EvaluatorWrapper:
         return self._wrapped(candidate, example=example, **kwargs)
 
 
+def _optimize_via_skydiscover(
+    backend: str,
+    seed_candidate: str | Candidate | None,
+    evaluator: Callable[..., Any],
+    dataset: list[DataInst] | None,
+    valset: list[DataInst] | None,
+    objective: str | None,
+    background: str | None,
+    config: "GEPAConfig",
+) -> "GEPAResult":
+    """Dispatch to a skydiscover search backend (evox or adaevolve).
+
+    skydiscover only supports single-task search mode (no dataset/valset).
+    Raises ``ValueError`` if ``dataset`` or ``valset`` are provided.
+    """
+    try:
+        from skydiscover import discover_solution  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise ImportError(
+            f"The '{backend}' backend requires the 'skydiscover' package. "
+            "Install it with: pip install gepa[skydiscover]"
+        ) from exc
+
+    if dataset is not None or valset is not None:
+        raise ValueError(
+            f"Backend '{backend}' only supports single-task search mode. "
+            "Do not pass 'dataset' or 'valset' when using a skydiscover backend."
+        )
+
+    # Normalise seed to str
+    if seed_candidate is None:
+        seed_str: str | None = None
+    elif isinstance(seed_candidate, str):
+        seed_str = seed_candidate
+    elif isinstance(seed_candidate, dict):
+        if len(seed_candidate) == 1:
+            seed_str = next(iter(seed_candidate.values()))
+        else:
+            raise ValueError(
+                f"Backend '{backend}' requires a plain string candidate. "
+                "Pass seed_candidate as a str or a single-key dict."
+            )
+    else:
+        raise TypeError(f"Unsupported seed_candidate type for backend '{backend}': {type(seed_candidate)}")
+
+    # Map backend name -> skydiscover search algorithm name
+    _SEARCH_MAP = {
+        "skydiscover-evox": "evox",
+        "skydiscover-adaevolve": "adaevolve",
+    }
+    search_algo = _SEARCH_MAP[backend]
+
+    # Build a model name from reflection_lm if it's a string
+    model: str | None = None
+    if isinstance(config.reflection.reflection_lm, str):
+        model = config.reflection.reflection_lm
+
+    # Resolve iterations from engine config
+    iterations = config.engine.max_metric_calls or config.engine.max_candidate_proposals or 50
+
+    # Adapt the GEPA evaluator signature (candidate_str) -> (score, side_info)
+    # to the skydiscover signature (program_path: str) -> dict[str, float]
+
+    def skydiscover_evaluator(program_path: str) -> dict[str, Any]:
+        with open(program_path) as f:
+            candidate_text = f.read()
+        result = evaluator(candidate_text)
+        if isinstance(result, tuple):
+            score, _side = result[0], result[1]
+        else:
+            score = float(result)
+        return {"combined_score": float(score)}
+
+    sd_result = discover_solution(
+        evaluator=skydiscover_evaluator,
+        initial_solution=seed_str,
+        iterations=iterations,
+        search=search_algo,
+        model=model,
+        system_prompt=background or objective,
+        cleanup=True,
+    )
+
+    # Wrap in a GEPAResult for a consistent return type.
+    # We report two candidates: seed (index 0) and best (index 1).
+    initial_score = float(sd_result.initial_score) if sd_result.initial_score is not None else 0.0
+    best_score = float(sd_result.best_score)
+    seed_text = seed_str or ""
+    best_text = sd_result.best_solution or seed_text
+
+    if best_text != seed_text:
+        candidates_list = [
+            {_STR_CANDIDATE_KEY: seed_text},
+            {_STR_CANDIDATE_KEY: best_text},
+        ]
+        parents_list: list[list[int | None]] = [[None], [0]]
+        val_scores = [initial_score, best_score]
+    else:
+        # No improvement — return a single-candidate result
+        candidates_list = [{_STR_CANDIDATE_KEY: seed_text}]
+        parents_list: list[list[int | None]] = [[None]]
+        val_scores = [best_score]
+
+    return GEPAResult(
+        candidates=candidates_list,
+        parents=parents_list,
+        val_aggregate_scores=val_scores,
+        val_subscores=[{} for _ in candidates_list],
+        per_val_instance_best_candidates={},
+        discovery_eval_counts=[0] * len(candidates_list),
+        _str_candidate_key=_STR_CANDIDATE_KEY,
+    )
+
+
 def optimize_anything(
     seed_candidate: str | Candidate | None = None,
     *,
@@ -1113,6 +1255,19 @@ def optimize_anything(
     # Use default config if not provided
     if config is None:
         config = GEPAConfig()
+
+    # Dispatch to alternate backends before any GEPA-specific setup
+    if config.backend != "gepa":
+        return _optimize_via_skydiscover(
+            backend=config.backend,
+            seed_candidate=seed_candidate,
+            evaluator=evaluator,
+            dataset=dataset,
+            valset=valset,
+            objective=objective,
+            background=background,
+            config=config,
+        )
 
     # Detect seed generation mode: when seed_candidate is None, the LLM
     # will generate the initial candidate from the objective.
