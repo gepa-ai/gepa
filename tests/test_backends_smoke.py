@@ -3,28 +3,99 @@
 
 """Smoke tests for the three optimize_anything backends.
 
-Each test runs a trivial string-length optimization for a tiny number of
-iterations so the suite completes quickly without requiring real LLM calls.
+Uses a lightweight inline circle-packing evaluator (no subprocess, no heavy
+deps) so the suite completes quickly.  Each backend is exercised for a handful
+of iterations against the same circle-packing problem.
 """
 
+import os
+import tempfile
+import textwrap
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
-from gepa.optimize_anything import GEPAConfig, EngineConfig, optimize_anything
+from gepa.optimize_anything import GEPAConfig, EngineConfig, ReflectionConfig, optimize_anything
 
 
 # ---------------------------------------------------------------------------
-# Shared helpers
+# Lightweight circle-packing evaluator (inline, no subprocess)
 # ---------------------------------------------------------------------------
 
-def _make_evaluator():
-    """Simple evaluator: score = length of candidate string / 100."""
+_N = 10  # small n for speed
 
-    def evaluator(candidate: str) -> float:
-        return len(candidate) / 100.0
 
-    return evaluator
+def _eval_circle_packing(candidate: str) -> tuple[float, dict]:
+    """Execute candidate code inline and return (score, side_info).
+
+    Expects the candidate to define ``def main() -> dict`` returning
+    ``{"circles": ndarray(_N, 3)}`` where each row is (x, y, radius).
+    """
+    ns: dict = {}
+    try:
+        exec(compile(candidate, "<candidate>", "exec"), ns)  # noqa: S102
+        result = ns["main"]()
+        circles = np.array(result["circles"])
+        if circles.shape != (_N, 3):
+            return 0.0, {"error": f"Expected ({_N},3), got {circles.shape}"}
+        cx, cy, r = circles[:, 0], circles[:, 1], circles[:, 2]
+        if np.any(cx - r < -1e-6) or np.any(cx + r > 1 + 1e-6):
+            return 0.0, {"error": "boundary violation x"}
+        if np.any(cy - r < -1e-6) or np.any(cy + r > 1 + 1e-6):
+            return 0.0, {"error": "boundary violation y"}
+        if np.any(r < 0):
+            return 0.0, {"error": "negative radius"}
+        for i in range(_N):
+            for j in range(i + 1, _N):
+                d = float(np.linalg.norm(circles[i, :2] - circles[j, :2]))
+                if d < circles[i, 2] + circles[j, 2] - 1e-6:
+                    return 0.0, {"error": f"overlap {i}-{j}"}
+        score = float(r.sum())
+        return score, {"sum_radii": score, "circles": circles.tolist()}
+    except Exception as e:
+        return 0.0, {"error": str(e)}
+
+
+_SEED = textwrap.dedent(f"""\
+    import numpy as np
+
+    N = {_N}
+
+    def main():
+        angles = np.linspace(0, 2 * np.pi, N, endpoint=False)
+        cx = 0.5 + 0.35 * np.cos(angles)
+        cy = 0.5 + 0.35 * np.sin(angles)
+        r_boundary = np.minimum.reduce([cx, cy, 1 - cx, 1 - cy])
+        r_pair = np.full(N, np.inf)
+        for i in range(N):
+            for j in range(i + 1, N):
+                d = np.linalg.norm(np.array([cx[i] - cx[j], cy[i] - cy[j]]))
+                half = d / 2.0
+                r_pair[i] = min(r_pair[i], half)
+                r_pair[j] = min(r_pair[j], half)
+        radii = np.minimum(r_boundary, r_pair) * 0.98
+        circles = np.column_stack([cx, cy, radii])
+        return {{"circles": circles}}
+""")
+
+_OBJECTIVE = (
+    f"Maximize the sum of radii for {_N} non-overlapping circles in a unit square. "
+    "Candidate must define 'def main()' returning {'circles': ndarray(N,3)} "
+    "where each row is (x, y, radius)."
+)
+
+_BACKGROUND = textwrap.dedent(f"""\
+    N = {_N}.  All circles must stay inside [0,1]x[0,1].
+    No two circles may overlap.
+    Return {{"circles": numpy array of shape (N, 3)}} from main().
+    Goal: maximize sum of all radii.
+""")
+
+
+def _seed_score() -> float:
+    score, _ = _eval_circle_packing(_SEED)
+    return score
 
 
 # ---------------------------------------------------------------------------
@@ -35,27 +106,21 @@ def _make_evaluator():
 class TestGEPABackend:
     def test_gepa_backend_default(self):
         """GEPAConfig.backend defaults to 'gepa'."""
-        config = GEPAConfig(engine=EngineConfig(max_metric_calls=5))
-        assert config.backend == "gepa"
+        assert GEPAConfig().backend == "gepa"
 
     def test_gepa_backend_does_not_call_skydiscover(self):
-        """The 'gepa' backend should never call _optimize_via_skydiscover."""
-        from gepa.optimize_anything import ReflectionConfig
-
-        mock_lm = MagicMock(return_value="```\nimproved candidate text here\n```")
-
+        """The 'gepa' backend must never reach _optimize_via_skydiscover."""
         with patch("gepa.optimize_anything._optimize_via_skydiscover") as mock_sd:
-            mock_sd.side_effect = AssertionError("Should not call skydiscover for 'gepa' backend")
-            # Patch internals so we don't run a real optimization loop
+            mock_sd.side_effect = AssertionError("Must not be called for 'gepa' backend")
             with patch("gepa.optimize_anything.GEPAEngine") as mock_engine_cls:
                 mock_state = MagicMock()
-                mock_state.program_candidates = [{"current_candidate": "short"}]
+                mock_state.program_candidates = [{"current_candidate": _SEED}]
                 mock_state.parent_program_for_candidate = [[None]]
                 mock_state.prog_candidate_val_subscores = [{}]
                 mock_state.program_at_pareto_front_valset = {}
-                mock_state.program_full_scores_val_set = [0.05]
+                mock_state.program_full_scores_val_set = [_seed_score()]
                 mock_state.num_metric_calls_by_discovery = [0]
-                mock_state.total_num_evals = 1
+                mock_state.total_num_evals = 8
                 mock_state.num_full_ds_evals = 1
                 mock_state.best_outputs_valset = None
                 mock_state.objective_pareto_front = {}
@@ -65,64 +130,40 @@ class TestGEPABackend:
                 mock_engine_cls.return_value = mock_engine
 
                 result = optimize_anything(
-                    seed_candidate="short",
-                    evaluator=lambda c: 0.05,
-                    objective="Make the string longer.",
+                    seed_candidate=_SEED,
+                    evaluator=_eval_circle_packing,
+                    objective=_OBJECTIVE,
+                    background=_BACKGROUND,
                     config=GEPAConfig(
                         backend="gepa",
-                        engine=EngineConfig(max_metric_calls=5),
-                        reflection=ReflectionConfig(reflection_lm=mock_lm),
+                        engine=EngineConfig(max_metric_calls=8),
+                        reflection=ReflectionConfig(reflection_lm=MagicMock(return_value=f"```python\n{_SEED}\n```")),
                     ),
                 )
 
         assert result is not None
-        assert result.best_candidate == "short"
+        assert result.val_aggregate_scores[0] == pytest.approx(_seed_score())
 
+    def test_gepa_runs_circle_packing(self):
+        """'gepa' backend actually evaluates the seed and produces a valid result."""
+        mock_lm = MagicMock(return_value=f"```python\n{_SEED}\n```")
 
-# ---------------------------------------------------------------------------
-# Mocked GEPA backend test (no real LLM needed)
-# ---------------------------------------------------------------------------
-
-
-class TestGEPABackendMocked:
-    def test_gepa_backend_returns_result(self):
-        """Verify GEPAConfig(backend='gepa') uses the GEPA path."""
-        from gepa.optimize_anything import GEPAResult
-
-        mock_result = GEPAResult(
-            candidates=[{"current_candidate": "short"}, {"current_candidate": "longer candidate"}],
-            parents=[[None], [0]],
-            val_aggregate_scores=[0.05, 0.16],
-            val_subscores=[{}, {}],
-            per_val_instance_best_candidates={},
-            discovery_eval_counts=[0, 3],
-            _str_candidate_key="current_candidate",
+        result = optimize_anything(
+            seed_candidate=_SEED,
+            evaluator=_eval_circle_packing,
+            objective=_OBJECTIVE,
+            background=_BACKGROUND,
+            config=GEPAConfig(
+                backend="gepa",
+                engine=EngineConfig(max_metric_calls=8),
+                reflection=ReflectionConfig(reflection_lm=mock_lm),
+            ),
         )
 
-        with patch("gepa.optimize_anything._optimize_via_skydiscover") as mock_sd:
-            # This should NOT be called for the gepa backend
-            mock_sd.side_effect = AssertionError("Should not call skydiscover for 'gepa' backend")
-
-            # Patch the real GEPA internals to return quickly
-            with patch("gepa.optimize_anything.GEPAEngine") as mock_engine_cls:
-                mock_engine = MagicMock()
-                mock_engine.run.return_value = MagicMock(
-                    program_candidates=[{"current_candidate": "short"}, {"current_candidate": "longer"}],
-                    parent_program_for_candidate=[[None], [0]],
-                    prog_candidate_val_subscores=[{}, {}],
-                    program_at_pareto_front_valset={},
-                    program_full_scores_val_set=[0.05, 0.16],
-                    num_metric_calls_by_discovery=[0, 3],
-                    total_num_evals=6,
-                    num_full_ds_evals=1,
-                    best_outputs_valset=None,
-                    objective_pareto_front={},
-                    program_at_pareto_front_objectives={},
-                )
-                mock_engine_cls.return_value = mock_engine
-
-                config = GEPAConfig(backend="gepa", engine=EngineConfig(max_metric_calls=6))
-                assert config.backend == "gepa"
+        assert result.best_candidate is not None
+        assert result.val_aggregate_scores[0] == pytest.approx(_seed_score(), abs=1e-4)
+        # best_candidate unwraps to str when seed_candidate was a str
+        assert isinstance(result.best_candidate, str)
 
 
 # ---------------------------------------------------------------------------
@@ -131,54 +172,59 @@ class TestGEPABackendMocked:
 
 
 class TestSkydiscoverEvoxBackend:
-    def test_evox_backend_dispatches_correctly(self):
-        """skydiscover-evox backend calls discover_solution with search='evox'."""
+    def test_evox_circle_packing(self):
+        """'skydiscover-evox' runs circle packing and returns a GEPAResult."""
         from skydiscover.api import DiscoveryResult as SDResult
 
-        mock_sd_result = SDResult(
+        seed = _seed_score()
+        better = seed + 0.05
+        better_code = _SEED.replace("* 0.98", "* 0.99")
+
+        mock_result = SDResult(
             best_program=None,
-            best_score=0.42,
-            best_solution="optimized evox candidate",
-            metrics={"combined_score": 0.42},
+            best_score=better,
+            best_solution=better_code,
+            metrics={"combined_score": better},
             output_dir=None,
-            initial_score=0.05,
+            initial_score=seed,
         )
 
-        with patch("skydiscover.discover_solution", return_value=mock_sd_result) as mock_ds:
+        with patch("skydiscover.discover_solution", return_value=mock_result) as mock_ds:
             result = optimize_anything(
-                seed_candidate="initial code",
-                evaluator=_make_evaluator(),
-                objective="Maximize string length.",
+                seed_candidate=_SEED,
+                evaluator=_eval_circle_packing,
+                objective=_OBJECTIVE,
+                background=_BACKGROUND,
                 config=GEPAConfig(
                     backend="skydiscover-evox",
-                    engine=EngineConfig(max_metric_calls=10),
+                    engine=EngineConfig(max_metric_calls=8),
                 ),
             )
 
-        mock_ds.assert_called_once()
-        call_kwargs = mock_ds.call_args[1]
-        assert call_kwargs["search"] == "evox"
-        assert call_kwargs["iterations"] == 10
-        assert call_kwargs["initial_solution"] == "initial code"
+        kw = mock_ds.call_args[1]
+        assert kw["search"] == "evox"
+        assert kw["iterations"] == 8
+        assert kw["initial_solution"] == _SEED
 
-        assert result.best_candidate == "optimized evox candidate"
-        assert result.val_aggregate_scores[1] == pytest.approx(0.42)
+        assert result.best_candidate == better_code
+        assert result.val_aggregate_scores == pytest.approx([seed, better])
+        assert len(result.candidates) == 2
 
     def test_evox_rejects_dataset(self):
-        """skydiscover-evox must raise ValueError when dataset is provided."""
+        """skydiscover-evox raises ValueError when dataset is provided."""
         with pytest.raises(ValueError, match="single-task"):
             optimize_anything(
-                seed_candidate="code",
-                evaluator=_make_evaluator(),
-                dataset=[{"x": 1}, {"x": 2}],
+                seed_candidate=_SEED,
+                evaluator=_eval_circle_packing,
+                dataset=[{"x": 1}],
                 config=GEPAConfig(
                     backend="skydiscover-evox",
-                    engine=EngineConfig(max_metric_calls=10),
+                    engine=EngineConfig(max_metric_calls=5),
                 ),
             )
 
     def test_evox_raises_without_skydiscover(self, monkeypatch):
-        """Helpful ImportError when skydiscover is not installed."""
+        """Clear ImportError when skydiscover package is not installed."""
         import builtins
         real_import = builtins.__import__
 
@@ -191,8 +237,8 @@ class TestSkydiscoverEvoxBackend:
 
         with pytest.raises(ImportError, match="pip install gepa\\[skydiscover\\]"):
             optimize_anything(
-                seed_candidate="code",
-                evaluator=_make_evaluator(),
+                seed_candidate=_SEED,
+                evaluator=_eval_circle_packing,
                 config=GEPAConfig(
                     backend="skydiscover-evox",
                     engine=EngineConfig(max_metric_calls=5),
@@ -206,69 +252,73 @@ class TestSkydiscoverEvoxBackend:
 
 
 class TestSkydiscoverAdaevolveBackend:
-    def test_adaevolve_backend_dispatches_correctly(self):
-        """skydiscover-adaevolve backend calls discover_solution with search='adaevolve'."""
+    def test_adaevolve_circle_packing(self):
+        """'skydiscover-adaevolve' runs circle packing and returns a GEPAResult."""
         from skydiscover.api import DiscoveryResult as SDResult
 
-        mock_sd_result = SDResult(
+        seed = _seed_score()
+        better = seed + 0.10
+        better_code = _SEED.replace("* 0.98", "* 0.995")
+
+        mock_result = SDResult(
             best_program=None,
-            best_score=0.75,
-            best_solution="adaevolve improved candidate",
-            metrics={"combined_score": 0.75},
+            best_score=better,
+            best_solution=better_code,
+            metrics={"combined_score": better},
             output_dir=None,
-            initial_score=0.20,
+            initial_score=seed,
         )
 
-        with patch("skydiscover.discover_solution", return_value=mock_sd_result) as mock_ds:
+        with patch("skydiscover.discover_solution", return_value=mock_result) as mock_ds:
             result = optimize_anything(
-                seed_candidate="initial prompt",
-                evaluator=_make_evaluator(),
-                objective="Maximize quality.",
+                seed_candidate=_SEED,
+                evaluator=_eval_circle_packing,
+                objective=_OBJECTIVE,
+                background=_BACKGROUND,
                 config=GEPAConfig(
                     backend="skydiscover-adaevolve",
-                    engine=EngineConfig(max_metric_calls=20),
+                    engine=EngineConfig(max_metric_calls=8),
                 ),
             )
 
-        mock_ds.assert_called_once()
-        call_kwargs = mock_ds.call_args[1]
-        assert call_kwargs["search"] == "adaevolve"
-        assert call_kwargs["iterations"] == 20
+        kw = mock_ds.call_args[1]
+        assert kw["search"] == "adaevolve"
+        assert kw["iterations"] == 8
 
-        assert result.best_candidate == "adaevolve improved candidate"
-        assert result.val_aggregate_scores == pytest.approx([0.20, 0.75])
+        assert result.best_candidate == better_code
+        assert result.val_aggregate_scores == pytest.approx([seed, better])
 
     def test_adaevolve_rejects_valset(self):
-        """skydiscover-adaevolve must raise ValueError when valset is provided."""
+        """skydiscover-adaevolve raises ValueError when valset is provided."""
         with pytest.raises(ValueError, match="single-task"):
             optimize_anything(
-                seed_candidate="code",
-                evaluator=_make_evaluator(),
+                seed_candidate=_SEED,
+                evaluator=_eval_circle_packing,
                 dataset=[{"x": 1}],
                 valset=[{"x": 2}],
                 config=GEPAConfig(
                     backend="skydiscover-adaevolve",
-                    engine=EngineConfig(max_metric_calls=10),
+                    engine=EngineConfig(max_metric_calls=5),
                 ),
             )
 
-    def test_adaevolve_no_improvement_returns_single_candidate(self):
-        """When best == seed, result has a single candidate."""
+    def test_adaevolve_no_improvement(self):
+        """When best == seed, a single-candidate result is returned."""
         from skydiscover.api import DiscoveryResult as SDResult
 
-        mock_sd_result = SDResult(
-            best_program=None,
-            best_score=0.05,
-            best_solution="initial prompt",  # unchanged
-            metrics={"combined_score": 0.05},
-            output_dir=None,
-            initial_score=0.05,
-        )
+        seed = _seed_score()
 
-        with patch("skydiscover.discover_solution", return_value=mock_sd_result):
+        with patch("skydiscover.discover_solution", return_value=SDResult(
+            best_program=None,
+            best_score=seed,
+            best_solution=_SEED,
+            metrics={"combined_score": seed},
+            output_dir=None,
+            initial_score=seed,
+        )):
             result = optimize_anything(
-                seed_candidate="initial prompt",
-                evaluator=_make_evaluator(),
+                seed_candidate=_SEED,
+                evaluator=_eval_circle_packing,
                 config=GEPAConfig(
                     backend="skydiscover-adaevolve",
                     engine=EngineConfig(max_metric_calls=5),
@@ -276,59 +326,49 @@ class TestSkydiscoverAdaevolveBackend:
             )
 
         assert len(result.candidates) == 1
-        assert result.best_candidate == "initial prompt"
+        assert result.val_aggregate_scores[0] == pytest.approx(seed)
 
 
 # ---------------------------------------------------------------------------
-# Config validation
+# Evaluator adapter integration
 # ---------------------------------------------------------------------------
 
 
-class TestBackendConfig:
-    def test_default_backend_is_gepa(self):
-        config = GEPAConfig()
-        assert config.backend == "gepa"
-
-    def test_backend_field_set(self):
-        config = GEPAConfig(backend="skydiscover-evox")
-        assert config.backend == "skydiscover-evox"
-
-    def test_evaluator_adapter_passes_score(self):
-        """The skydiscover evaluator wrapper correctly reads program files."""
-        import tempfile, os
+class TestEvaluatorAdapter:
+    def test_adapter_reads_program_file_and_scores(self):
+        """The wrapped evaluator reads a .py file and correctly scores it."""
         from skydiscover.api import DiscoveryResult as SDResult
 
-        captured_calls = []
+        captured: list[dict] = []
 
         def mock_ds(**kwargs):
-            # Call the evaluator to make sure it works
             with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-                f.write("hello world")
-                tmp_path = f.name
+                f.write(_SEED)
+                tmp = f.name
             try:
-                score_dict = kwargs["evaluator"](tmp_path)
-                captured_calls.append(score_dict)
+                score_dict = kwargs["evaluator"](tmp)
+                captured.append(score_dict)
             finally:
-                os.unlink(tmp_path)
+                os.unlink(tmp)
+            seed = score_dict["combined_score"]
             return SDResult(
                 best_program=None,
-                best_score=0.11,
-                best_solution="hello world",
-                metrics={"combined_score": 0.11},
+                best_score=seed,
+                best_solution=_SEED,
+                metrics=score_dict,
                 output_dir=None,
-                initial_score=0.11,
+                initial_score=seed,
             )
 
         with patch("skydiscover.discover_solution", side_effect=mock_ds):
             optimize_anything(
-                seed_candidate="hello world",
-                evaluator=_make_evaluator(),
+                seed_candidate=_SEED,
+                evaluator=_eval_circle_packing,
                 config=GEPAConfig(
                     backend="skydiscover-evox",
                     engine=EngineConfig(max_metric_calls=5),
                 ),
             )
 
-        assert len(captured_calls) == 1
-        assert "combined_score" in captured_calls[0]
-        assert captured_calls[0]["combined_score"] == pytest.approx(len("hello world") / 100.0)
+        assert len(captured) == 1
+        assert captured[0]["combined_score"] == pytest.approx(_seed_score())
