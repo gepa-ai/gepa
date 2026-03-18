@@ -69,6 +69,11 @@ authors:
     description: Professor, UC Berkeley
     avatar: https://bakarfellows.berkeley.edu/profile/dan-klein/
     url: https://www2.eecs.berkeley.edu/Faculty/Homepages/klein.html
+  rodolfo:
+    name: Rodolfo Nobrega
+    description: Machine Learning Engineer
+    avatar: https://github.com/rodolfonobrega.png
+    url: https://github.com/rodolfonobrega
   sanjit:
     name: Sanjit A. Seshia
     description: Professor, UC Berkeley

@@ -608,7 +608,7 @@ for name in DS_NAMES:
     ax.grid(alpha=0.3)
     ax.text(
         0.5,
-        -0.14,
+        -0.22,
         "Each point is one candidate prompt evaluated on the val set. GEPA selects the best (\u2605), not the last.\n"
         "DefaultAdapter score = accuracy  |  ConfidenceAdapter score = confidence-weighted",
         transform=ax.transAxes,
@@ -618,14 +618,55 @@ for name in DS_NAMES:
         bbox={"boxstyle": "round,pad=0.4", "facecolor": "#f0f0f0", "edgecolor": "#cccccc", "alpha": 0.9},
     )
     fig.tight_layout()
-    fig.subplots_adjust(bottom=0.20)
+    fig.subplots_adjust(bottom=0.24)
     fig.savefig(CHARTS / f"convergence_{name}.png", dpi=150)
     plt.close()
     print(f"  Saved convergence_{name}.png")
 
 
-# --- 5c. Per-class recall (multiclass datasets) ---
+# --- 5c. Per-class precision, recall (multiclass datasets) ---
 from sklearn.metrics import precision_recall_fscore_support
+
+for name, labels in [("ag_news", AG_LABELS), ("emotion", EMO_LABELS)]:
+    fig, ax = plt.subplots(figsize=(max(10, len(labels) * 2), 6))
+    x = np.arange(len(labels))
+    w = 0.25
+    for i, (cond, clabel, color) in enumerate(
+        [
+            ("baseline", "Baseline", COLORS["baseline"]),
+            ("default", "DefaultAdapter", COLORS["default"]),
+            ("confidence", "ConfidenceAdapter", COLORS["confidence"]),
+        ]
+    ):
+        df_src = baselines[name]["df"] if cond == "baseline" else test_results[f"{name}_{cond}"]["df"]
+        prec_per, _, _, _ = precision_recall_fscore_support(
+            df_src["expected"],
+            df_src["predicted"],
+            labels=labels,
+            average=None,
+            zero_division=0,
+        )
+        bars = ax.bar(x + (i - 1) * w, prec_per, w, label=clabel, color=color)
+        for bar in bars:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.005,
+                f"{bar.get_height():.0%}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+    ax.set_ylabel("Precision")
+    ax.set_title(f"Per-Class Precision — {name.replace('_', ' ').title()}", fontsize=13)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=30 if len(labels) > 4 else 0)
+    ax.legend(fontsize=10)
+    ax.set_ylim(0, 1.1)
+    ax.grid(axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(CHARTS / f"per_class_precision_{name}.png", dpi=150)
+    plt.close()
+    print(f"  Saved per_class_precision_{name}.png")
 
 for name, labels in [("ag_news", AG_LABELS), ("emotion", EMO_LABELS)]:
     fig, ax = plt.subplots(figsize=(max(10, len(labels) * 2), 6))
@@ -811,7 +852,7 @@ for name, labels in [("ag_news", AG_LABELS), ("emotion", EMO_LABELS)]:
 
 
 # --- 5g. Precision / Recall / F1 overview ---
-fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=True)
+fig, axes = plt.subplots(3, 1, figsize=(10, 14), sharey=True)
 ds_titles = {
     "ag_news": "AG News (4 classes)",
     "emotion": "Emotion (6 classes)",
@@ -841,21 +882,22 @@ for ax, name in zip(axes, DS_NAMES, strict=True):
         for bar in bars:
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
-                bar.get_height() + 0.003,
+                bar.get_height() + 0.005,
                 f"{bar.get_height():.1%}",
                 ha="center",
                 va="bottom",
-                fontsize=8,
+                fontsize=11,
             )
-    ax.set_title(ds_titles[name], fontsize=12)
+    ax.set_title(ds_titles[name], fontsize=14, fontweight="bold")
     ax.set_xticks(x)
-    ax.set_xticklabels(metric_names)
-    ax.set_ylim(0, 1.05)
+    ax.set_xticklabels(metric_names, fontsize=12)
+    ax.set_ylim(0, 1.08)
+    ax.tick_params(axis="y", labelsize=11)
     ax.grid(axis="y", alpha=0.3)
+    ax.set_ylabel("Weighted average", fontsize=12)
     if ax == axes[0]:
-        ax.set_ylabel("Score (weighted avg)")
-        ax.legend(fontsize=9)
-fig.suptitle("Precision, Recall, and F1 (Weighted Average)", fontsize=14)
+        ax.legend(fontsize=11, loc="lower right")
+fig.suptitle("Precision, Recall, and F1 (Weighted Average)", fontsize=16, fontweight="bold", y=0.995)
 fig.tight_layout()
 fig.savefig(CHARTS / "metrics_comparison.png", dpi=150)
 plt.close()
