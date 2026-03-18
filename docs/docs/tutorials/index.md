@@ -20,6 +20,12 @@ Use GEPA's `seed_candidate=None` mode to evolve a complete Python program (build
 
 - **[3D Unicorn Optimization](3d_unicorn_optimization.ipynb)** - From no code to a 600+ line 3D modeling program through seedless optimization with visual feedback.
 
+### ConfidenceAdapter AG News Tutorial
+
+A hands-on notebook for classification-only GEPA optimization using AG News. You can run the full tutorial end-to-end with `DefaultAdapter` versus `ConfidenceAdapter`, inspect GEPA prompt evolution, and reproduce confidence-based metrics and charts.
+
+- **[ConfidenceAdapter Classification Tutorial](confidence_adapter_classification.ipynb)** - Compare default and confidence-aware classification optimization, from dataset split to AG News per-class and calibration plots.
+
 ## External Tutorials
 
 For more tutorials, especially those focused on the DSPy integration, see:

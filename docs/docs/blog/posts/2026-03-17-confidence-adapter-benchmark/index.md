@@ -440,4 +440,5 @@ For practitioners using GEPA for classification tasks with structured output, Co
 
 - [Confidence-Aware Classification Guide](../../../guides/confidence-adapter.md) — step-by-step usage guide with code examples
 - [ConfidenceAdapter API Reference](../../../api/adapters/ConfidenceAdapter.md) — full parameter documentation
+- [Hands-on AG News Tutorial Notebook](../../../tutorials/confidence_adapter_classification.ipynb) — compare `DefaultAdapter` and `ConfidenceAdapter` end-to-end and inspect confidence plots
 - [Reproducible experiment script](https://github.com/gepa-ai/gepa/tree/main/examples/confidence_adapter) — the code and data used in this benchmark

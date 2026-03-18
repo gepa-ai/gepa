@@ -11,6 +11,17 @@
 # **Task model**: openai/gpt-4.1-mini (temperature=0, no reasoning)
 # **Reflection model**: anthropic/claude-sonnet-4-6 (thinking enabled, budget_tokens=1024)
 #
+# ## Required environment variables
+#
+# By default this script calls the OpenAI and Anthropic APIs directly:
+#   OPENAI_API_KEY    — for the task model (gpt-4.1-mini)
+#   ANTHROPIC_API_KEY — for the reflection model (claude-sonnet-4-6)
+#
+# If you use an OpenAI-compatible proxy that routes all models (including
+# Anthropic) through a single endpoint, set OPENAI_API_BASE and change
+# USE_LITELLM_PROXY to True below.  With a proxy you only need
+# OPENAI_API_KEY — the proxy handles Anthropic auth internally.
+#
 # Run from the repo root:
 #   uv run python -m examples.confidence_adapter.main
 #
@@ -30,7 +41,6 @@ matplotlib.use("Agg")
 import litellm
 import matplotlib.pyplot as plt
 import numpy as np
-import openai
 import pandas as pd
 from datasets import load_dataset
 from dotenv import load_dotenv
@@ -45,6 +55,11 @@ np.random.seed(SEED)
 
 TASK_MODEL = "openai/gpt-4.1-mini"
 REFLECTION_MODEL = "anthropic/claude-sonnet-4-6"
+
+# Set to True if you use an OpenAI-compatible proxy (e.g. LiteLLM gateway)
+# that routes all models — including Anthropic — through OPENAI_API_BASE.
+USE_LITELLM_PROXY = False
+PROVIDER_KWARGS = {"custom_llm_provider": "openai"} if USE_LITELLM_PROXY else {}
 
 # Why train > val?  In LLM classification the model doesn't "learn" from training
 # examples — they only feed the reflection loop.  Each iteration, GEPA samples a
@@ -116,36 +131,50 @@ def make_evaluator():
 # Claude Sonnet 4.6 with minimal thinking (budget_tokens=1024).
 # GEPA uses this to analyze errors and propose improved prompts.
 
-_client = openai.OpenAI(
-    api_key=os.environ["OPENAI_API_KEY"],
-    base_url=os.environ["OPENAI_API_BASE"],
-    timeout=120.0,
-    max_retries=5,
-)
+_THINKING_PAYLOADS = [
+    ("no_thinking", None),
+    ("thinking_disabled", {"thinking": {"type": "disabled"}}),
+    ("thinking_enabled", {"thinking": {"type": "enabled", "budget_tokens": 1024}}),
+]
+
+# Discover which thinking payload works with this model/gateway.
+print("\n--- Failfast: testing reflection model ---")
+_WORKING_THINKING_PAYLOAD = None
+for _name, _extra in _THINKING_PAYLOADS:
+    _kwargs = {"model": REFLECTION_MODEL, "messages": [{"role": "user", "content": "Say OK."}],
+               "max_tokens": 16, **PROVIDER_KWARGS}
+    if _extra is not None:
+        _kwargs["extra_body"] = _extra
+    try:
+        _r = litellm.completion(**_kwargs)
+        print(f"  Reflection model OK ({_name}): {_r.choices[0].message.content[:40]}")
+        _WORKING_THINKING_PAYLOAD = _extra
+        break
+    except Exception as _e:
+        print(f"  {_name} failed: {str(_e).splitlines()[0][:100]}")
+else:
+    raise RuntimeError("Reflection model unreachable — fix API keys / proxy config before continuing.")
 
 
 def reflection_lm(prompt):
     messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
-    for attempt in range(1, 6):
+    kwargs = {"model": REFLECTION_MODEL, "messages": messages, "max_tokens": 4096, **PROVIDER_KWARGS}
+    if _WORKING_THINKING_PAYLOAD is not None:
+        kwargs["extra_body"] = _WORKING_THINKING_PAYLOAD
+    for attempt in range(3):
         try:
-            resp = _client.chat.completions.create(
-                model=REFLECTION_MODEL,
-                messages=messages,
-                max_tokens=4096,
-                extra_body={"thinking": {"type": "enabled", "budget_tokens": 1024}},
-            )
-            return resp.choices[0].message.content
-        except openai.AuthenticationError:
-            if attempt >= 5:
+            return litellm.completion(**kwargs).choices[0].message.content
+        except Exception:
+            if attempt >= 2:
                 raise
-            time.sleep(1.5 * attempt)
+            time.sleep(1.5 * (attempt + 1))
 
 
 # %% Verify: LLM call + confidence extraction
 # Quick sanity check: one structured-output call with logprobs, then confidence
 # extraction.  Confirms the full pipeline works before the long experiment runs.
 
-print("\n--- Library verification ---")
+print("\n--- Failfast: testing task model ---")
 _test_rf = make_response_format(AG_LABELS)
 _test_schema = _test_rf["json_schema"]["schema"]
 _test_resp = litellm.completion(
@@ -159,7 +188,7 @@ _test_resp = litellm.completion(
     top_logprobs=5,
     seed=SEED,
     temperature=0,
-    custom_llm_provider="openai",
+    **PROVIDER_KWARGS,
 )
 _test_conf = extract_confidence(_test_resp, field_path="category", response_schema=_test_schema)
 
@@ -262,7 +291,7 @@ def evaluate_on_test(prompt, test_data, categories, dataset_name, condition):
                     top_logprobs=5,
                     seed=SEED,
                     temperature=0,
-                    custom_llm_provider="openai",
+                    **PROVIDER_KWARGS,
                 )
                 all_responses.extend(resps)
                 break
@@ -426,9 +455,9 @@ for name, train, val, labels in [
         evaluator=make_evaluator(),
         litellm_batch_completion_kwargs={
             "response_format": rf,
-            "custom_llm_provider": "openai",
             "seed": SEED,
             "temperature": 0,
+            **PROVIDER_KWARGS,
         },
     )
     opt_results[f"{name}_default"] = run_optimization(
@@ -453,9 +482,9 @@ for name, train, val, labels in [
         high_confidence_threshold=0.99,
         low_confidence_threshold=0.90,
         litellm_batch_completion_kwargs={
-            "custom_llm_provider": "openai",
             "seed": SEED,
             "temperature": 0,
+            **PROVIDER_KWARGS,
         },
         max_litellm_workers=BATCH_WORKERS,
     )
