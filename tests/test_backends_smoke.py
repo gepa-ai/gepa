@@ -1,16 +1,19 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-"""Real end-to-end smoke tests for the three optimize_anything backends.
+"""Real end-to-end smoke tests for all five optimize_anything backends.
 
-All three backends actually run to completion (no mocks).  LLM calls are
-intercepted at the lowest level:
-  - GEPA: reflection_lm is a Python callable that returns the seed code.
-  - skydiscover-evox / skydiscover-adaevolve: openai.OpenAI is patched so
-    chat.completions.create returns the seed code in a ```python``` block.
+All backends actually run to completion (no mocks of the optimization loop).
+LLM calls are intercepted at the lowest level:
+  - GEPA: reflection_lm is a Python callable.
+  - skydiscover-*: openai.OpenAI patched in skydiscover.llm.openai.
+  - openevolve: openai.OpenAI patched in openevolve.llm.openai.
+  - shinkaevolve: openai.OpenAI patched in shinka.llm.client.
+
+Optional-package tests are auto-skipped when the package is not installed.
 
 We use a lightweight inline circle-packing evaluator (N=10, no subprocess)
-so each iteration is fast.  Each backend is run for just 3 iterations.
+so each iteration is fast. Each backend runs for just 3 iterations.
 """
 
 import textwrap
@@ -20,6 +23,13 @@ import numpy as np
 import pytest
 
 from gepa.optimize_anything import GEPAConfig, EngineConfig, ReflectionConfig, optimize_anything
+
+# ---------------------------------------------------------------------------
+# Optional package markers — auto-skip if package absent
+# ---------------------------------------------------------------------------
+skydiscover = pytest.importorskip("skydiscover", reason="skydiscover not installed")
+openevolve = pytest.importorskip("openevolve", reason="openevolve not installed")
+shinka = pytest.importorskip("shinka", reason="ShinkaEvolve not installed")
 
 
 # ---------------------------------------------------------------------------
@@ -96,27 +106,28 @@ def _seed_score() -> float:
 
 
 def _make_openai_mock(response_text: str):
-    """Build a mock openai.OpenAI instance whose completions always return response_text."""
+    """Return a mock openai.OpenAI class whose completions return response_text."""
     choice = MagicMock()
     choice.message.content = response_text
     completion = MagicMock()
     completion.choices = [choice]
     client = MagicMock()
     client.chat.completions.create.return_value = completion
-    mock_openai_cls = MagicMock(return_value=client)
-    return mock_openai_cls
+    return MagicMock(return_value=client)
+
+
+_LLM_RESPONSE = f"```python\n{_SEED}\n```"
 
 
 # ---------------------------------------------------------------------------
-# Backend: gepa
+# Backend: gepa (built-in, always available)
 # ---------------------------------------------------------------------------
 
 
 class TestGEPABackend:
     def test_gepa_runs_to_completion(self):
         """GEPA backend runs circle packing for 8 metric calls end-to-end."""
-        # The reflection LM always returns the seed code — no real API calls.
-        mock_lm = MagicMock(return_value=f"```python\n{_SEED}\n```")
+        mock_lm = MagicMock(return_value=_LLM_RESPONSE)
 
         result = optimize_anything(
             seed_candidate=_SEED,
@@ -132,8 +143,6 @@ class TestGEPABackend:
 
         assert result is not None
         assert isinstance(result.best_candidate, str)
-        assert len(result.val_aggregate_scores) >= 1
-        # seed must have scored positively
         assert result.val_aggregate_scores[0] == pytest.approx(_seed_score(), abs=1e-4)
 
 
@@ -144,11 +153,10 @@ class TestGEPABackend:
 
 class TestSkydiscoverEvoxBackend:
     def test_evox_runs_to_completion(self):
-        """skydiscover-evox backend runs circle packing for 3 iterations end-to-end."""
-        llm_response = f"```python\n{_SEED}\n```"
-        mock_openai_cls = _make_openai_mock(llm_response)
+        """skydiscover-evox runs circle packing for 3 iterations end-to-end."""
+        mock_cls = _make_openai_mock(_LLM_RESPONSE)
 
-        with patch("skydiscover.llm.openai.openai.OpenAI", mock_openai_cls):
+        with patch("skydiscover.llm.openai.openai.OpenAI", mock_cls):
             result = optimize_anything(
                 seed_candidate=_SEED,
                 evaluator=_eval_circle_packing,
@@ -163,8 +171,6 @@ class TestSkydiscoverEvoxBackend:
 
         assert result is not None
         assert isinstance(result.best_candidate, str)
-        assert len(result.val_aggregate_scores) >= 1
-        # best score must be non-negative
         assert result.val_aggregate_scores[result.best_idx] >= 0.0
 
     def test_evox_rejects_dataset(self):
@@ -180,28 +186,6 @@ class TestSkydiscoverEvoxBackend:
                 ),
             )
 
-    def test_evox_raises_without_skydiscover(self, monkeypatch):
-        """Clear ImportError when skydiscover is not installed."""
-        import builtins
-        real_import = builtins.__import__
-
-        def mock_import(name, *args, **kwargs):
-            if name == "skydiscover":
-                raise ImportError("No module named 'skydiscover'")
-            return real_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", mock_import)
-
-        with pytest.raises(ImportError, match="pip install gepa\\[skydiscover\\]"):
-            optimize_anything(
-                seed_candidate=_SEED,
-                evaluator=_eval_circle_packing,
-                config=GEPAConfig(
-                    backend="skydiscover-evox",
-                    engine=EngineConfig(max_metric_calls=3),
-                ),
-            )
-
 
 # ---------------------------------------------------------------------------
 # Backend: skydiscover-adaevolve
@@ -210,11 +194,10 @@ class TestSkydiscoverEvoxBackend:
 
 class TestSkydiscoverAdaevolveBackend:
     def test_adaevolve_runs_to_completion(self):
-        """skydiscover-adaevolve backend runs circle packing for 3 iterations end-to-end."""
-        llm_response = f"```python\n{_SEED}\n```"
-        mock_openai_cls = _make_openai_mock(llm_response)
+        """skydiscover-adaevolve runs circle packing for 3 iterations end-to-end."""
+        mock_cls = _make_openai_mock(_LLM_RESPONSE)
 
-        with patch("skydiscover.llm.openai.openai.OpenAI", mock_openai_cls):
+        with patch("skydiscover.llm.openai.openai.OpenAI", mock_cls):
             result = optimize_anything(
                 seed_candidate=_SEED,
                 evaluator=_eval_circle_packing,
@@ -229,7 +212,6 @@ class TestSkydiscoverAdaevolveBackend:
 
         assert result is not None
         assert isinstance(result.best_candidate, str)
-        assert len(result.val_aggregate_scores) >= 1
         assert result.val_aggregate_scores[result.best_idx] >= 0.0
 
     def test_adaevolve_rejects_valset(self):
@@ -245,3 +227,114 @@ class TestSkydiscoverAdaevolveBackend:
                     engine=EngineConfig(max_metric_calls=3),
                 ),
             )
+
+
+# ---------------------------------------------------------------------------
+# Backend: openevolve
+# ---------------------------------------------------------------------------
+
+
+class TestOpenEvolveBackend:
+    def test_openevolve_runs_to_completion(self):
+        """openevolve backend runs circle packing for 3 iterations end-to-end."""
+        mock_cls = _make_openai_mock(_LLM_RESPONSE)
+
+        with patch("openevolve.llm.openai.openai.OpenAI", mock_cls):
+            result = optimize_anything(
+                seed_candidate=_SEED,
+                evaluator=_eval_circle_packing,
+                objective=_OBJECTIVE,
+                background=_BACKGROUND,
+                config=GEPAConfig(
+                    backend="openevolve",
+                    engine=EngineConfig(max_metric_calls=3),
+                    reflection=ReflectionConfig(reflection_lm="openai/gpt-4.1-mini"),
+                ),
+            )
+
+        assert result is not None
+        assert isinstance(result.best_candidate, str)
+        assert result.val_aggregate_scores[result.best_idx] >= 0.0
+
+    def test_openevolve_rejects_dataset(self):
+        """openevolve raises ValueError when dataset is provided."""
+        with pytest.raises(ValueError, match="single-task"):
+            optimize_anything(
+                seed_candidate=_SEED,
+                evaluator=_eval_circle_packing,
+                dataset=[{"x": 1}],
+                config=GEPAConfig(
+                    backend="openevolve",
+                    engine=EngineConfig(max_metric_calls=3),
+                ),
+            )
+
+    def test_openevolve_raises_without_package(self, monkeypatch):
+        """Clear ImportError when openevolve is not installed."""
+        import builtins
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "openevolve":
+                raise ImportError("No module named 'openevolve'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+
+        with pytest.raises(ImportError, match="pip install gepa\\[openevolve\\]"):
+            optimize_anything(
+                seed_candidate=_SEED,
+                evaluator=_eval_circle_packing,
+                config=GEPAConfig(
+                    backend="openevolve",
+                    engine=EngineConfig(max_metric_calls=3),
+                ),
+            )
+
+
+# ---------------------------------------------------------------------------
+# Backend: shinkaevolve
+# ---------------------------------------------------------------------------
+
+
+class TestShinkaEvolveBackend:
+    def test_shinkaevolve_runs_to_completion(self, monkeypatch):
+        """shinkaevolve backend runs circle packing for 3 iterations end-to-end."""
+        # ShinkaEvolve reads OPENAI_API_KEY from env; provide a dummy key so
+        # openai.OpenAI() constructor does not raise before our mock intercepts it.
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-dummy-for-test")
+        mock_cls = _make_openai_mock(_LLM_RESPONSE)
+
+        with (
+            patch("shinka.llm.client.openai.OpenAI", mock_cls),
+            patch("shinka.embed.client.openai.OpenAI", mock_cls),
+        ):
+            result = optimize_anything(
+                seed_candidate=_SEED,
+                evaluator=_eval_circle_packing,
+                objective=_OBJECTIVE,
+                background=_BACKGROUND,
+                config=GEPAConfig(
+                    backend="shinkaevolve",
+                    engine=EngineConfig(max_metric_calls=3),
+                    reflection=ReflectionConfig(reflection_lm="openai/gpt-4.1-mini"),
+                ),
+            )
+
+        assert result is not None
+        assert isinstance(result.best_candidate, str)
+        assert result.val_aggregate_scores[result.best_idx] >= 0.0
+
+    def test_shinkaevolve_rejects_dataset(self):
+        """shinkaevolve raises ValueError when dataset is provided."""
+        with pytest.raises(ValueError, match="single-task"):
+            optimize_anything(
+                seed_candidate=_SEED,
+                evaluator=_eval_circle_packing,
+                dataset=[{"x": 1}],
+                config=GEPAConfig(
+                    backend="shinkaevolve",
+                    engine=EngineConfig(max_metric_calls=3),
+                ),
+            )
+

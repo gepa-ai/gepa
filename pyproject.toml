@@ -63,6 +63,12 @@ dev = [
 skydiscover = [
     "skydiscover",
 ]
+openevolve = [
+    "openevolve",
+]
+shinkaevolve = [
+    "shinka-evolve",
+]
 gskill = [
     "gepa[full]",
     "swesmith",
