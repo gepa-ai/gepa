@@ -281,7 +281,7 @@ class TestOpenEvolveBackend:
 
         monkeypatch.setattr(builtins, "__import__", mock_import)
 
-        with pytest.raises(ImportError, match="pip install gepa\\[openevolve\\]"):
+        with pytest.raises(ImportError, match="pip install openevolve"):
             optimize_anything(
                 seed_candidate=_SEED,
                 evaluator=_eval_circle_packing,

@@ -801,15 +801,15 @@ Backend = Literal["gepa", "skydiscover-evox", "skydiscover-adaevolve", "openevol
   ``skydiscover`` package.  **Single-task only** (``dataset`` and ``valset``
   must be ``None``).
 - ``"openevolve"``: AlphaEvolve-style open-source evolutionary search.
-  **Single-task only**.  Install with ``pip install gepa[openevolve]``.
+  **Single-task only**.  Install with ``pip install openevolve``.
 - ``"shinkaevolve"``: ShinkaEvolve evolutionary search.
-  **Single-task only**.  Install with ``pip install gepa[shinkaevolve]``.
+  **Single-task only**.  Install with ``pip install shinka-evolve``.
 
 Install optional backends::
 
-    pip install gepa[skydiscover]    # skydiscover-evox and skydiscover-adaevolve
-    pip install gepa[openevolve]     # openevolve
-    pip install gepa[shinkaevolve]   # shinkaevolve
+    pip install skydiscover    # skydiscover-evox and skydiscover-adaevolve
+    pip install openevolve     # openevolve
+    pip install shinka-evolve   # shinkaevolve
 """
 
 
@@ -1049,7 +1049,7 @@ def _optimize_via_skydiscover(
     except ImportError as exc:
         raise ImportError(
             f"The '{backend}' backend requires the 'skydiscover' package. "
-            "Install it with: pip install gepa[skydiscover]"
+            "Install it with: pip install skydiscover"
         ) from exc
 
     if dataset is not None or valset is not None:
@@ -1223,7 +1223,7 @@ def _optimize_via_openevolve(
     so any Python callable works as the evaluator.
     **Single-task only** (``dataset`` and ``valset`` must be ``None``).
 
-    Install with: ``pip install gepa[openevolve]``
+    Install with: ``pip install openevolve``
     """
     try:
         from openevolve import run_evolution  # type: ignore[import-not-found]
@@ -1231,7 +1231,7 @@ def _optimize_via_openevolve(
     except ImportError as exc:
         raise ImportError(
             "The 'openevolve' backend requires the 'openevolve' package. "
-            "Install it with: pip install gepa[openevolve]"
+            "Install it with: pip install openevolve"
         ) from exc
 
     if dataset is not None or valset is not None:
@@ -1290,7 +1290,7 @@ def _optimize_via_shinkaevolve(
     ``inspect.getsource``.  Pass a module-level function (not a closure).
     **Single-task only** (``dataset`` and ``valset`` must be ``None``).
 
-    Install with: ``pip install gepa[shinkaevolve]``
+    Install with: ``pip install shinka-evolve``
     """
     import inspect
     import tempfile
@@ -1304,7 +1304,7 @@ def _optimize_via_shinkaevolve(
     except ImportError as exc:
         raise ImportError(
             "The 'shinkaevolve' backend requires the 'ShinkaEvolve' package. "
-            "Install it with: pip install gepa[shinkaevolve]"
+            "Install it with: pip install shinka-evolve"
         ) from exc
 
     if dataset is not None or valset is not None:
