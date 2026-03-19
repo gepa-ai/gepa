@@ -90,13 +90,49 @@ class ExperimentTracker:
             else:
                 self._created_mlflow_run = False
 
+    def log_config(self, config: dict[str, Any]) -> None:
+        """Log run configuration/hyperparameters to the active backends.
+
+        Args:
+            config: Flat dict of config key-value pairs. Non-serializable values
+                    are converted to strings.
+        """
+        safe_config = {}
+        for k, v in config.items():
+            if isinstance(v, bool | int | float | str | type(None)):
+                safe_config[k] = v
+            else:
+                safe_config[k] = str(v)
+
+        if self.use_wandb:
+            try:
+                import wandb  # type: ignore
+
+                wandb.config.update(safe_config, allow_val_change=True)
+            except Exception as e:
+                print(f"Warning: Failed to log config to wandb: {e}")
+
+        if self.use_mlflow:
+            try:
+                import mlflow  # type: ignore
+
+                # mlflow params must be strings
+                str_params = {k: str(v) for k, v in safe_config.items()}
+                mlflow.log_params(str_params)
+            except Exception as e:
+                print(f"Warning: Failed to log config to mlflow: {e}")
+
     def log_metrics(self, metrics: dict[str, Any], step: int | None = None):
         """Log metrics to the active backends."""
         if self.use_wandb:
             try:
                 import wandb  # type: ignore
 
-                wandb.log(metrics, step=step)
+                # Filter to numeric values only — non-numeric data (dicts, strings)
+                # is logged via log_table() instead to avoid noisy flat charts
+                numeric_metrics = {k: v for k, v in metrics.items() if isinstance(v, int | float)}
+                if numeric_metrics:
+                    wandb.log(numeric_metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log to wandb: {e}")
 
@@ -110,6 +146,94 @@ class ExperimentTracker:
                     mlflow.log_metrics(numeric_metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log to mlflow: {e}")
+
+    def log_summary(self, summary: dict[str, Any]) -> None:
+        """Log run summary data (visible on the run overview page).
+
+        Args:
+            summary: Key-value pairs for the run summary. Supports strings,
+                     numbers, and other serializable values.
+        """
+        if self.use_wandb:
+            try:
+                import wandb  # type: ignore
+
+                for k, v in summary.items():
+                    wandb.run.summary[k] = v  # type: ignore[union-attr]
+            except Exception as e:
+                print(f"Warning: Failed to log summary to wandb: {e}")
+
+        if self.use_mlflow:
+            try:
+                import mlflow  # type: ignore
+
+                # mlflow: numeric values as metrics, strings as params
+                numeric = {k: float(v) for k, v in summary.items() if isinstance(v, int | float)}
+                text = {k: str(v) for k, v in summary.items() if isinstance(v, str)}
+                if numeric:
+                    mlflow.log_metrics(numeric)
+                if text:
+                    mlflow.log_params({f"summary/{k}": v for k, v in text.items()})
+            except Exception as e:
+                print(f"Warning: Failed to log summary to mlflow: {e}")
+
+    def log_table(self, table_name: str, columns: list[str], data: list[list[Any]]) -> None:
+        """Log a table to the active backends.
+
+        Args:
+            table_name: Name/key for the table.
+            columns: Column headers.
+            data: Rows of data (each row is a list matching columns).
+        """
+        if self.use_wandb:
+            try:
+                import wandb  # type: ignore
+
+                table = wandb.Table(columns=columns, data=data)
+                wandb.log({table_name: table}, commit=False)
+            except Exception as e:
+                print(f"Warning: Failed to log table to wandb: {e}")
+
+        if self.use_mlflow:
+            try:
+                import mlflow  # type: ignore
+
+                # mlflow.log_table expects a dict of column -> list of values
+                table_dict = {col: [row[i] for row in data] for i, col in enumerate(columns)}
+                mlflow.log_table(data=table_dict, artifact_file=f"{table_name}.json")
+            except Exception as e:
+                print(f"Warning: Failed to log table to mlflow: {e}")
+
+    def log_html(self, html_content: str, key: str = "candidate_tree") -> None:
+        """Log an HTML string as a rich media artifact.
+
+        Args:
+            html_content: Self-contained HTML string.
+            key: Artifact key / name used in the dashboard.
+        """
+        if self.use_wandb:
+            try:
+                import wandb  # type: ignore
+
+                html_obj = wandb.Html(html_content)
+                wandb.log({key: html_obj}, commit=False)
+                # Also write to run summary so the panel always shows the latest tree
+                wandb.run.summary[key] = html_obj  # type: ignore[union-attr]
+            except Exception as e:
+                print(f"Warning: Failed to log HTML to wandb: {e}")
+
+        if self.use_mlflow:
+            try:
+                import tempfile
+
+                import mlflow  # type: ignore
+
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
+                    f.write(html_content)
+                    tmp_path = f.name
+                mlflow.log_artifact(tmp_path, artifact_path=key)
+            except Exception as e:
+                print(f"Warning: Failed to log HTML to mlflow: {e}")
 
     def end_run(self):
         """End the current run."""

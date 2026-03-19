@@ -1,9 +1,10 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import os
 import traceback
 from collections.abc import Sequence
-from typing import Generic
+from typing import Any, Generic
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
 from gepa.core.callbacks import (
@@ -230,6 +231,24 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             valset_size=len(valset),
             val_evaluation_policy=self.val_evaluation_policy,
         )
+
+        # Log candidate table row with instructions and metadata
+        component_names = sorted(new_program.keys())
+        columns = ["iteration", "candidate_idx", "parent_ids", "valset_score", "is_best"] + [
+            f"text:{name}" for name in component_names
+        ]
+        row = [
+            state.i + 1,
+            new_program_idx,
+            str(parent_program_idx),
+            valset_score,
+            is_best_program,
+        ] + [new_program[name] for name in component_names]
+        self.experiment_tracker.log_table("candidates", columns=columns, data=[row])
+
+        # Update candidate tree visualization
+        self._log_candidate_tree(state)
+
         return new_program_idx, linear_pareto_front_program_idx
 
     def run(self) -> GEPAState[RolloutOutput, DataId]:
@@ -284,35 +303,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 objective_scores_by_val_id=objective_scores_dict,
             )
 
-        # Initialize state
-        state = initialize_gepa_state(
-            run_dir=self.run_dir,
-            logger=self.logger,
-            seed_candidate=self.seed_candidate,
-            valset_evaluator=valset_evaluator,
-            track_best_outputs=self.track_best_outputs,
-            frontier_type=self.frontier_type,
-            evaluation_cache=self._initial_evaluation_cache,
-        )
-
-        # Log base program score
-        base_val_avg, base_val_coverage = state.get_program_average_val_subset(0)
-        self.experiment_tracker.log_metrics(
-            {
-                "base_program_full_valset_score": base_val_avg,
-                "base_program_val_coverage": base_val_coverage,
-                "iteration": state.i + 1,
-                "total_metric_calls": state.total_num_evals,
-            },
-            step=state.i + 1,
-        )
-
-        self.logger.log(
-            f"Iteration {state.i + 1}: Base program full valset score: {base_val_avg} "
-            f"over {base_val_coverage} / {len(valset)} examples"
-        )
-
-        # Notify callbacks of optimization start
+        # Notify callbacks of optimization start (before seed valset eval)
         notify_callbacks(
             self.callbacks,
             "on_optimization_start",
@@ -326,6 +317,63 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     "track_best_outputs": self.track_best_outputs,
                 },
             ),
+        )
+
+        # Evaluate seed candidate on valset (after on_optimization_start callback)
+        seed_valset_evaluation = valset_evaluator(self.seed_candidate)
+
+        # Initialize state with pre-computed seed evaluation
+        state = initialize_gepa_state(
+            run_dir=self.run_dir,
+            logger=self.logger,
+            seed_candidate=self.seed_candidate,
+            seed_valset_evaluation=seed_valset_evaluation,
+            track_best_outputs=self.track_best_outputs,
+            frontier_type=self.frontier_type,
+            evaluation_cache=self._initial_evaluation_cache,
+        )
+
+        # Log run configuration
+        self.experiment_tracker.log_config(
+            {
+                "seed": self.seed,
+                "perfect_score": self.perfect_score,
+                "frontier_type": self.frontier_type,
+                "track_best_outputs": self.track_best_outputs,
+                "use_cloudpickle": self.use_cloudpickle,
+                "raise_on_exception": self.raise_on_exception,
+                "trainset_size": len(self.reflective_proposer.trainset),
+                "valset_size": len(valset),
+                "seed_candidate_components": sorted(self.seed_candidate.keys()),
+                "val_evaluation_policy": type(self.val_evaluation_policy).__name__,
+                "has_merge_proposer": self.merge_proposer is not None,
+                "run_dir": self.run_dir,
+            }
+        )
+
+        # Log base program score using the same metric names as subsequent iterations
+        # so they appear on the same charts in wandb/mlflow
+        base_val_avg, base_val_coverage = state.get_program_average_val_subset(0)
+        pareto_scores = list(state.pareto_front_valset.values())
+        base_pareto_avg = sum(pareto_scores) / len(pareto_scores) if pareto_scores else base_val_avg
+        self.experiment_tracker.log_metrics(
+            {
+                "val_program_average": base_val_avg,
+                "best_score_on_valset": base_val_avg,
+                "val_evaluated_count_new_program": base_val_coverage,
+                "val_total_count": len(valset),
+                "total_metric_calls": state.total_num_evals,
+                "valset_pareto_front_agg": base_pareto_avg,
+                "new_program_idx": 0,
+                "linear_pareto_front_program_idx": 0,
+                "best_program_as_per_agg_score_valset": 0,
+            },
+            step=state.i + 1,
+        )
+
+        self.logger.log(
+            f"Iteration {state.i + 1}: Base program full valset score: {base_val_avg} "
+            f"over {base_val_coverage} / {len(valset)} examples"
         )
 
         # Notify callbacks of seed candidate's initial valset evaluation (iteration 0)
@@ -399,6 +447,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     IterationStartEvent(
                         iteration=state.i + 1,
                         state=state,
+                        trainset_loader=self.reflective_proposer.trainset,
                     ),
                 )
                 iteration_started = True
@@ -587,7 +636,35 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ),
         )
 
+        # Log final summary: seed candidate, best candidate, and all candidates table
+        best_candidate = state.program_candidates[best_candidate_idx]
+        best_score = self.val_evaluation_policy.get_valset_score(best_candidate_idx, state)
+        summary: dict[str, Any] = {
+            "best_candidate_idx": best_candidate_idx,
+            "best_valset_score": best_score,
+            "total_iterations": state.i,
+            "total_candidates": len(state.program_candidates),
+        }
+        for name in sorted(self.seed_candidate.keys()):
+            summary[f"seed/{name}"] = self.seed_candidate[name]
+            summary[f"best/{name}"] = best_candidate[name]
+        self.experiment_tracker.log_summary(summary)
+
         return state
+
+    def _log_candidate_tree(self, state: GEPAState[RolloutOutput, DataId]) -> None:
+        """Generate and log the candidate tree visualization."""
+        try:
+            from gepa.visualization import candidate_tree_html
+
+            html_content = candidate_tree_html(state)
+            self.experiment_tracker.log_html(html_content, key="candidate_tree")
+            if self.run_dir is not None:
+                tree_path = os.path.join(self.run_dir, "candidate_tree.html")
+                with open(tree_path, "w") as f:
+                    f.write(html_content)
+        except Exception as e:
+            self.logger.log(f"Warning: Failed to generate candidate tree visualization: {e}")
 
     def _should_stop(self, state: GEPAState[RolloutOutput, DataId]) -> bool:
         """Check if the optimization should stop."""

@@ -291,18 +291,54 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             for hook in hooks:
                 hook(self.total_num_evals, count)
 
+    def _atomic_write_json(self, run_dir: str, filename: str, data: Any) -> None:
+        target_path = os.path.join(run_dir, filename)
+        tmp_path = target_path + ".tmp"
+        with open(tmp_path, "w") as f:
+            json.dump(data, f, indent=2, default=json_default)
+        os.replace(tmp_path, target_path)
+
     def save(self, run_dir: str | None, *, use_cloudpickle: bool = False) -> None:
         if run_dir is None:
             return
-        with open(os.path.join(run_dir, "gepa_state.bin"), "wb") as f:
-            if use_cloudpickle:
+        if use_cloudpickle:
+            try:
                 import cloudpickle as pickle  # type: ignore[import-not-found]
-            else:
+            except ModuleNotFoundError:
                 import pickle
-            # Exclude runtime-only attributes that can't be serialized (e.g., callback hooks)
-            serialized = {k: v for k, v in self.__dict__.items() if k not in self._EXCLUDED_FROM_SERIALIZATION}
-            serialized["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
-            pickle.dump(serialized, f)
+                import warnings
+
+                warnings.warn(
+                    "cloudpickle is not installed; falling back to standard pickle. "
+                    "Install it with: pip install gepa[full]  or  pip install cloudpickle",
+                    stacklevel=2,
+                )
+        else:
+            import pickle
+        # Exclude runtime-only attributes that can't be serialized (e.g., callback hooks)
+        serialized = {k: v for k, v in self.__dict__.items() if k not in self._EXCLUDED_FROM_SERIALIZATION}
+        serialized["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
+        target_path = os.path.join(run_dir, "gepa_state.bin")
+        tmp_path = target_path + ".tmp"
+        try:
+            with open(tmp_path, "wb") as f:
+                pickle.dump(serialized, f)
+        except Exception as e:
+            if not use_cloudpickle:
+                raise type(e)(
+                    f"{e}\n\nHint: standard pickle failed to serialize the GEPA state. "
+                    "Try setting use_cloudpickle=True in EngineConfig, which can serialize "
+                    "more object types (lambdas, closures, etc.). "
+                    "Install it with: pip install gepa[full]  or  pip install cloudpickle"
+                ) from e
+            raise
+        os.replace(tmp_path, target_path)
+
+        # Save run log and candidates as human-readable JSON
+        if self.full_program_trace:
+            self._atomic_write_json(run_dir, "run_log.json", self.full_program_trace)
+        if self.program_candidates:
+            self._atomic_write_json(run_dir, "candidates.json", self.program_candidates)
 
     @staticmethod
     def load(run_dir: str) -> "GEPAState[RolloutOutput, DataId]":
@@ -617,10 +653,7 @@ def initialize_gepa_state(
     run_dir: str | None,
     logger: LoggerProtocol,
     seed_candidate: dict[str, str],
-    valset_evaluator: Callable[
-        [dict[str, str]],
-        ValsetEvaluation[RolloutOutput, DataId],
-    ],
+    seed_valset_evaluation: ValsetEvaluation[RolloutOutput, DataId],
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
     evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None" = None,
@@ -645,25 +678,21 @@ def initialize_gepa_state(
             gepa_state.evaluation_cache = evaluation_cache
         # else: keep the loaded cache (gepa_state.evaluation_cache is already set)
     else:
-        num_evals_run = 0
-
-        eval_result = valset_evaluator(seed_candidate)
         if run_dir is not None:
             write_eval_outputs_to_directory(
-                eval_result.outputs_by_val_id, os.path.join(run_dir, "generated_best_outputs_valset")
+                seed_valset_evaluation.outputs_by_val_id,
+                os.path.join(run_dir, "generated_best_outputs_valset"),
             )
-
-        num_evals_run += len(eval_result.scores_by_val_id)
 
         gepa_state = GEPAState(
             seed_candidate,
-            eval_result,
+            seed_valset_evaluation,
             track_best_outputs=track_best_outputs,
             frontier_type=frontier_type,
             evaluation_cache=evaluation_cache,
         )
 
         gepa_state.num_full_ds_evals = 1
-        gepa_state.total_num_evals = num_evals_run
+        gepa_state.total_num_evals = len(seed_valset_evaluation.scores_by_val_id)
 
     return gepa_state

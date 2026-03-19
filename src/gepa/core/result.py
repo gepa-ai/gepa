@@ -96,6 +96,28 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         the refiner was not enabled."""
         return self.candidates[self.best_idx].get("refiner_prompt")
 
+    def candidate_tree_dot(self) -> str:
+        """Generate a Graphviz DOT string of the candidate lineage tree."""
+        from gepa.visualization import candidate_tree_dot_from_data
+
+        return candidate_tree_dot_from_data(
+            candidates=self.candidates,
+            parents=self.parents,
+            val_scores=self.val_aggregate_scores,
+            pareto_front_programs=self.per_val_instance_best_candidates,
+        )
+
+    def candidate_tree_html(self) -> str:
+        """Generate a self-contained HTML page rendering the candidate tree."""
+        from gepa.visualization import candidate_tree_html_from_data
+
+        return candidate_tree_html_from_data(
+            candidates=self.candidates,
+            parents=self.parents,
+            val_scores=self.val_aggregate_scores,
+            pareto_front_programs=self.per_val_instance_best_candidates,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         cands = [dict(cand.items()) for cand in self.candidates]
 

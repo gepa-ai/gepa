@@ -43,6 +43,21 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the full blog](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization)
 
+-   **Dropbox Dash: 45% NMSE Reduction for Relevance Judging**
+
+    ---
+
+    Dropbox used GEPA to optimize their Dash search relevance judge, achieving **45% NMSE reduction** on gpt-oss-120b and reducing model adaptation time from weeks to days. For the small gemma-3-12b model, GEPA cut malformed JSON from 40% to under 3% while improving NMSE from 46.88 to 17.26.
+
+    **Key Results:**
+
+    - 45% NMSE improvement on gpt-oss-120b (8.83 → 4.86)
+    - gemma-3-12b: malformed JSON 40% → <3%, NMSE 46.88 → 17.26
+    - Model adaptation time: 1-2 weeks → 1-2 days
+    - 10-100x more data labeling at equivalent costs
+
+    [:material-arrow-right: Read the blog](https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy)
+
 -   **OpenAI Cookbook: Self-Evolving Agents**
 
     ---
@@ -105,6 +120,14 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     - Automates prompt editing, testing, and tool refinement
 
     [:material-arrow-right: View documentation](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer)
+
+-   **BAML Prompt Optimization**
+
+    ---
+
+    BAML integrates GEPA into `baml-cli optimize` for test-driven prompt optimization with multi-objective support (accuracy, latency, tokens).
+
+    [:material-arrow-right: Read the guide](https://docs.boundaryml.com/guide/baml-advanced/prompt-optimization)
 
 -   **Prompt Optimization with Pydantic AI**
 
@@ -391,6 +414,74 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Try the notebook](https://colab.research.google.com/drive/1W-XNxKL2CXFoUTwrL7GLCZ7J7uZgXsut?usp=sharing)
 
+-   **Prompt Optimization Makes Misalignment Legible**
+
+    ---
+
+    Biddulph & Carroll (MATS 8.0 / ICML submission) show that GEPA's optimized system prompts **verbalize reward-hacking strategies in plain English**, making misalignment detectable and removable — unlike RL, where learned strategies are opaque.
+
+    **Key Findings:**
+
+    - GEPA prompts that reward-hack also describe the hack in the prompt text
+    - Sanitizing the prompt (removing misaligned instructions) stops the hacking
+    - Tested on Hinted MMLU, Targeted Sycophancy, and other environments
+
+    [:material-arrow-right: Read the post](https://www.lesswrong.com/posts/vRpLPZpmECCfxHfv6/paper-prompt-optimization-makes-misalignment-legible)
+
+-   **Automated Risk-of-Bias Assessment of Clinical Trials**
+
+    ---
+
+    Li, Mathrani & Susnjak (2025) use GEPA to optimize prompts for risk-of-bias assessment across **7 RoB domains** and multiple LLMs, achieving **30–40% improvement** in key domains over manually crafted prompts.
+
+    **Key Results:**
+
+    - Highest overall accuracy across 100 randomized controlled trials
+    - Models: Mistral Small 3.1, GPT-oss-20b, GPT-4 Nano/Mini
+    - Inspectable execution traces via DSPy + GEPA
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2512.01452)
+
+-   **Clinical NER: GEPA vs Domain-Specific Transformers (IEEE BigData 2025)**
+
+    ---
+
+    Varghese & Shang (University of Missouri, IEEE BigData 2025) benchmark GEPA optimization against fine-tuned Bio+ClinicalBERT on the n2c2 Track 2 ADE dataset, reporting **up to 12.5% improvement** in zero-shot clinical NER from GEPA optimization.
+
+    **Key Results:**
+
+    - GEPA improved zero-shot F1 by up to 12.5%
+    - Switching reflection model from GPT-4o-mini to GPT-4.1-mini raised few-shot F1 from 41.4% to 45.4%
+    - Fine-tuned domain models still lead, but GEPA narrows the gap without any training data
+
+    [:material-arrow-right: Read the paper](https://ieeexplore.ieee.org/abstract/document/11401686)
+
+-   **Empowering Small Models for GPU Parallelization**
+
+    ---
+
+    Jhaveri & Lopes (2026) use GEPA to evolve prompts so that small "nano" LLMs can generate correct OpenACC pragmas, improving **GPT-4.1 Nano compilation rate from 66.7% to 93.3%** and GPT-5 Nano to **100%** on the PolyBench suite.
+
+    **Key Results:**
+
+    - 21% increase in programs achieving GPU speedups over CPU
+    - GEPA makes cheap models match expensive ones on HPC code generation
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2601.08884)
+
+-   **Prompt Optimisation for Error Detection in Medical Notes**
+
+    ---
+
+    Myles, Schrempf & Harris-Birtill (2026) use GEPA as the primary optimization method, improving **GPT-5 accuracy from 0.669 to 0.785** and **Qwen3-32B from 0.578 to 0.690** on the MEDEC benchmark, approaching medical doctor performance.
+
+    **Key Results:**
+
+    - ~17–20% relative accuracy gains from GEPA optimization
+    - State-of-the-art on clinical error detection
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2602.22483)
+
 </div>
 
 ---
@@ -452,6 +543,8 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     - Practical implementation guidance
 
     [:material-arrow-right: Watch the event](https://www.linkedin.com/events/automaticpromptoptimization-ait7404883890873618433/theater/)
+
+    [:material-arrow-right: BAML Prompt Optimization Guide](https://docs.boundaryml.com/guide/baml-advanced/prompt-optimization)
 
 </div>
 

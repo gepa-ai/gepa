@@ -129,7 +129,7 @@ from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
 from gepa.image import Image  # noqa: F401 — re-exported for user convenience
 from gepa.logging.experiment_tracker import create_experiment_tracker
-from gepa.logging.logger import LoggerProtocol, StdOutLogger
+from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
@@ -138,6 +138,7 @@ from gepa.strategies.candidate_selector import (
     CurrentBestCandidateSelector,
     EpsilonGreedyCandidateSelector,
     ParetoCandidateSelector,
+    TopKParetoCandidateSelector,
 )
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
@@ -466,7 +467,9 @@ class EngineConfig:
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
-    candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto"
+    candidate_selection_strategy: CandidateSelector | Literal[
+        "pareto", "current_best", "epsilon_greedy", "top_k_pareto"
+    ] = "pareto"
     frontier_type: FrontierType = "hybrid"
 
     # Parallelization settings for evaluation
@@ -844,18 +847,14 @@ def make_litellm_lm(model_name: str) -> LanguageModel:
     The returned callable conforms to the ``LanguageModel`` protocol and
     accepts a plain ``str`` prompt, a ``list[dict]`` chat-messages list, or
     a multimodal messages list (with content arrays containing images).
+
+    Uses :class:`gepa.lm.LM` which handles reasoning model detection
+    (o1/o3/o4/gpt-5), retries with exponential backoff, truncation
+    warnings, and ``drop_params=True`` for cross-model compatibility.
     """
-    import litellm
+    from gepa.lm import LM
 
-    def _lm(prompt: str | list[dict[str, Any]]) -> str:
-        if isinstance(prompt, str):
-            messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
-        else:
-            messages = prompt
-        completion = litellm.completion(model=model_name, messages=messages)
-        return completion.choices[0].message.content  # type: ignore[union-attr]
-
-    return _lm
+    return LM(model_name)
 
 
 class EvaluatorWrapper:
@@ -1290,7 +1289,11 @@ def optimize_anything(
 
     # Setup default logger if not provided
     if config.tracking.logger is None:
-        config.tracking.logger = StdOutLogger()
+        if config.engine.run_dir is not None:
+            os.makedirs(config.engine.run_dir, exist_ok=True)
+            config.tracking.logger = Logger(os.path.join(config.engine.run_dir, "run_log.txt"))
+        else:
+            config.tracking.logger = StdOutLogger()
 
     # --- 3. Setup random number generator ---
     rng = random.Random(config.engine.seed)
@@ -1302,6 +1305,7 @@ def optimize_anything(
             "pareto": lambda: ParetoCandidateSelector(rng=rng),
             "current_best": lambda: CurrentBestCandidateSelector(),
             "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
+            "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
         }
 
         try:
@@ -1309,7 +1313,7 @@ def optimize_anything(
         except KeyError as exc:
             raise ValueError(
                 f"Unknown candidate_selector strategy: {config.engine.candidate_selection_strategy}. "
-                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto'"
             ) from exc
     elif isinstance(config.engine.candidate_selection_strategy, CandidateSelector):
         candidate_selector = config.engine.candidate_selection_strategy
@@ -1467,8 +1471,13 @@ def optimize_anything(
     )
 
     # --- 15. Run optimization ---
+    logger = config.tracking.logger
     with experiment_tracker:
-        state = engine.run()
+        if isinstance(logger, Logger):
+            with logger:
+                state = engine.run()
+        else:
+            state = engine.run()
 
     return GEPAResult.from_state(
         state,

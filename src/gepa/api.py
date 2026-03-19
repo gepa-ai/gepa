@@ -20,7 +20,7 @@ from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
-from gepa.logging.logger import LoggerProtocol, StdOutLogger
+from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
@@ -29,6 +29,7 @@ from gepa.strategies.candidate_selector import (
     CurrentBestCandidateSelector,
     EpsilonGreedyCandidateSelector,
     ParetoCandidateSelector,
+    TopKParetoCandidateSelector,
 )
 from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
@@ -47,7 +48,8 @@ def optimize(
     evaluator: Evaluator | None = None,
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
-    candidate_selection_strategy: CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy"] = "pareto",
+    candidate_selection_strategy: CandidateSelector
+    | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"] = "pareto",
     frontier_type: FrontierType = "instance",
     skip_perfect_score: bool = True,
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
@@ -253,25 +255,18 @@ def optimize(
 
     reflection_lm_callable: LanguageModel | None = None
     if isinstance(reflection_lm, str):
-        import litellm
+        from gepa.lm import LM
 
-        reflection_lm_name = reflection_lm
-
-        def _reflection_lm(prompt: str | list[dict[str, str]]) -> str:
-            if isinstance(prompt, str):
-                completion = litellm.completion(
-                    model=reflection_lm_name, messages=[{"role": "user", "content": prompt}]
-                )
-            else:
-                completion = litellm.completion(model=reflection_lm_name, messages=prompt)
-            return completion.choices[0].message.content  # type: ignore
-
-        reflection_lm_callable = _reflection_lm
+        reflection_lm_callable = LM(reflection_lm)
     else:
         reflection_lm_callable = reflection_lm
 
     if logger is None:
-        logger = StdOutLogger()
+        if run_dir is not None:
+            os.makedirs(run_dir, exist_ok=True)
+            logger = Logger(os.path.join(run_dir, "run_log.txt"))
+        else:
+            logger = StdOutLogger()
 
     rng = random.Random(seed)
 
@@ -281,6 +276,7 @@ def optimize(
             "pareto": lambda: ParetoCandidateSelector(rng=rng),
             "current_best": lambda: CurrentBestCandidateSelector(),
             "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
+            "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
         }
 
         try:
@@ -288,7 +284,7 @@ def optimize(
         except KeyError as exc:
             raise ValueError(
                 f"Unknown candidate_selector strategy: {candidate_selection_strategy}. "
-                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto'"
             ) from exc
     elif isinstance(candidate_selection_strategy, CandidateSelector):
         candidate_selector = candidate_selection_strategy
@@ -404,6 +400,10 @@ def optimize(
     )
 
     with experiment_tracker:
-        state = engine.run()
+        if isinstance(logger, Logger):
+            with logger:
+                state = engine.run()
+        else:
+            state = engine.run()
 
     return GEPAResult.from_state(state, run_dir=run_dir, seed=seed)
