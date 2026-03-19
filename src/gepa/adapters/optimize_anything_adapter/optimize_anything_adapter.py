@@ -12,7 +12,9 @@ internal engine.  It handles:
 - **Reflective dataset**: formats evaluation results for the reflection LLM
 """
 
+import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import pickle
@@ -75,6 +77,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         cache_dir: str | Path | None = None,
     ):
         self.evaluator = evaluator
+        # Detect async evaluator: EvaluatorWrapper exposes .is_async; fall back to inspect.
+        self._evaluator_is_async: bool = getattr(evaluator, "is_async", inspect.iscoroutinefunction(evaluator))
         self.parallel = parallel
         self.max_workers = max_workers
         self.refiner_config = refiner_config
@@ -178,6 +182,49 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         return OptimizationState(best_example_evals=self._get_best_example_evals(example))
 
+    def _invoke_evaluator(self, candidate: "Candidate", example: Any) -> tuple[float, Any, dict]:
+        """Call the evaluator, bridging async evaluators into sync context.
+
+        For async evaluators this bridges via _run_coroutine.  When evaluating
+        a whole batch in parallel, prefer _invoke_evaluator_batch_async() instead
+        to take advantage of concurrent asyncio.gather execution.
+
+        # TODO (issue #61): when the engine becomes async, this method should
+        # become ``async def _invoke_evaluator`` so async evaluators are
+        # awaited directly.  The _run_coroutine bridge can then be removed.
+        """
+        kwargs: dict[str, Any] = dict(example=example, opt_state=self._build_opt_state(example))
+        if self._evaluator_is_async:
+            from gepa.optimize_anything import _run_coroutine
+            return _run_coroutine(self.evaluator(candidate, **kwargs))
+        return self.evaluator(candidate, **kwargs)
+
+    def _invoke_evaluator_batch_async(
+        self, candidate: "Candidate", batch: list[Any]
+    ) -> list[tuple[float, Any, dict]]:
+        """Evaluate a full batch concurrently using asyncio.gather.
+
+        Only called when ``_evaluator_is_async`` is True.  All examples are
+        launched as coroutines via ``EvaluatorWrapper.async_call`` and gathered
+        concurrently, giving true async parallelism within a single engine step.
+
+        # TODO (issue #61): when the engine is fully async, convert to
+        # ``async def`` and call with ``await``, removing _run_coroutine.
+        """
+        from gepa.optimize_anything import _run_coroutine
+
+        async def _gather() -> list[tuple[float, Any, dict]]:
+            return list(await asyncio.gather(*[
+                self.evaluator.async_call(  # type: ignore[union-attr]
+                    candidate,
+                    example=ex,
+                    opt_state=self._build_opt_state(ex),
+                )
+                for ex in batch
+            ]))
+
+        return _run_coroutine(_gather())
+
     def _call_evaluator(
         self,
         candidate: "Candidate",
@@ -186,11 +233,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         """Call evaluator with optional caching."""
         # No caching
         if self.cache_mode == "off":
-            return self.evaluator(
-                candidate,
-                example=example,
-                opt_state=self._build_opt_state(example),
-            )
+            return self._invoke_evaluator(candidate, example)
 
         # Build cache key
         cache_key = self._cache_key(candidate, example)
@@ -201,11 +244,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 return self._eval_cache[cache_key]
 
         # Cache miss - call evaluator
-        result = self.evaluator(
-            candidate,
-            example=example,
-            opt_state=self._build_opt_state(example),
-        )
+        result = self._invoke_evaluator(candidate, example)
 
         # Store in cache (thread-safe)
         with self._eval_cache_lock:
@@ -231,7 +270,16 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Backward compatibility: if refiner_config is None, use old behavior
         if self.refiner_config is None:
             # Old path: direct evaluation without refinement
-            if self.parallel and len(batch) > 1:
+            if self._evaluator_is_async and len(batch) > 1:
+                # Async evaluator with multiple examples: gather concurrently.
+                # This gives true async parallelism within the evaluation step.
+                # TODO (issue #61): when the engine is fully async, remove this
+                # branch — the engine itself will await the async evaluator directly.
+                raw_results = self._invoke_evaluator_batch_async(candidate, batch)
+            elif self._evaluator_is_async:
+                # Single example, async evaluator — bridge via _run_coroutine.
+                raw_results = [self._invoke_evaluator(candidate, batch[0])]
+            elif self.parallel and len(batch) > 1:
                 raw_results = self._evaluate_parallel(batch, candidate)
             else:
                 raw_results = [self._call_evaluator(candidate, example) for example in batch]

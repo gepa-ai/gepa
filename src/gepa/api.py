@@ -1,6 +1,8 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import asyncio
+import functools
 import os
 import random
 from collections.abc import Sequence
@@ -405,3 +407,46 @@ def optimize(
             state = engine.run()
 
     return GEPAResult.from_state(state, run_dir=run_dir, seed=seed)
+
+
+async def aoptimize(
+    seed_candidate: dict[str, str],
+    trainset: "list[DataInst] | DataLoader[DataId, DataInst]",
+    valset: "list[DataInst] | DataLoader[DataId, DataInst] | None" = None,
+    adapter: "GEPAAdapter | None" = None,
+    reflection_lm: "str | Any | None" = None,
+    **kwargs: Any,
+) -> "GEPAResult":
+    """Async entry point for :func:`optimize`.
+
+    Runs optimization in a thread-pool executor so the calling event loop
+    is not blocked.  Accepts both sync and async :class:`~gepa.core.adapter.GEPAAdapter`
+    instances — if the adapter's ``evaluate()`` method is async it will be
+    gathered concurrently across each evaluation batch.
+
+    All parameters are identical to :func:`optimize`.
+
+    Example::
+
+        result = await gepa.aoptimize(
+            seed_candidate={"system_prompt": "..."},
+            trainset=train_data,
+            valset=val_data,
+            adapter=MyAsyncAdapter(),
+        )
+
+    # TODO (issue #61): when GEPAEngine.run() becomes ``async def``, this
+    # wrapper can be removed and aoptimize can call the engine directly
+    # with ``await``, eliminating the thread-pool overhead.
+    """
+    loop = asyncio.get_event_loop()
+    fn = functools.partial(
+        optimize,
+        seed_candidate,
+        trainset,
+        valset=valset,
+        adapter=adapter,
+        reflection_lm=reflection_lm,
+        **kwargs,
+    )
+    return await loop.run_in_executor(None, fn)

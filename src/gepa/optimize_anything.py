@@ -105,6 +105,8 @@ Public API:
     - :class:`Image` — wrapper for including images in side_info (VLM reflection)
 """
 
+import asyncio
+import concurrent.futures
 import inspect
 import io
 import os
@@ -167,6 +169,35 @@ _SINGLE_INSTANCE_SENTINEL = _SingleInstanceSentinel()
 
 # Internal key used to wrap a plain-str seed_candidate into a dict.
 _STR_CANDIDATE_KEY = "current_candidate"
+
+
+def _run_coroutine(coro: Any) -> Any:
+    """Run an async coroutine from synchronous code safely.
+
+    Handles three contexts:
+    - No running event loop: use ``asyncio.run()`` (the normal case).
+    - Running event loop present (Jupyter, FastAPI, etc.): execute the
+      coroutine in a fresh thread that owns its own event loop, then
+      block until it completes.  This avoids the ``asyncio.run()``
+      "cannot run a new event loop while a loop is already running" error.
+
+    # TODO (issue #61): When GEPAEngine.run() becomes ``async def``, this
+    # helper is no longer needed for the hot path — callers will simply
+    # ``await`` the coroutine directly.  Remove _run_coroutine at that point.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is None or not loop.is_running():
+        return asyncio.run(coro)
+
+    # A loop is already running (e.g. Jupyter / async web framework).
+    # Run the coroutine in a dedicated thread with its own event loop.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
 
 SideInfo: TypeAlias = dict[str, Any]
 """Actionable Side Information (ASI) returned by the evaluator alongside each score.
@@ -925,7 +956,15 @@ class EvaluatorWrapper:
                     stdout_capturer.start_capture()
                     stderr_capturer.start_capture()
 
-                result = evaluator_fn(eval_candidate, **filtered)
+                if inspect.iscoroutinefunction(evaluator_fn):
+                    # Async evaluator: bridge into sync context.
+                    # TODO (issue #61): when the engine loop becomes async,
+                    # wrapped_evaluator itself should become ``async def`` so
+                    # the coroutine can be awaited directly here instead of
+                    # being bridged via _run_coroutine.
+                    result = _run_coroutine(evaluator_fn(eval_candidate, **filtered))
+                else:
+                    result = evaluator_fn(eval_candidate, **filtered)
             except Exception as e:
                 result = e  # Sentinel; handled below after cleanup
             finally:
@@ -988,6 +1027,51 @@ class EvaluatorWrapper:
                 return score, None, auto_side_info
 
         self._wrapped = wrapped_evaluator
+        self._is_async = inspect.iscoroutinefunction(evaluator_fn)
+        # Capture closure variables needed for async_call (they live in the
+        # __init__ local scope and are captured by _wrapped, but we also need
+        # them for the async variant).
+        self._single_instance_mode = single_instance_mode
+        self._str_candidate_mode = str_candidate_mode
+        self._filter_kwargs = _filter_kwargs
+        # Store the raw async evaluator fn for async_call.
+        self._raw_fn = evaluator_fn if self._is_async else None
+
+    @property
+    def is_async(self) -> bool:
+        """True if the underlying evaluator is an async function."""
+        return self._is_async
+
+    async def async_call(
+        self, candidate: Candidate, example: object | None = None, **kwargs: Any
+    ) -> tuple[float, Any, SideInfo]:
+        """Async variant: await the raw async evaluator and normalise the result.
+
+        Used by :class:`~gepa.adapters.optimize_anything_adapter.OptimizeAnythingAdapter`
+        when gathering a whole batch concurrently via ``asyncio.gather``.
+
+        # TODO (issue #61): when the engine loop becomes async, ``__call__``
+        # itself should become ``async def`` and this separate method can be
+        # removed — callers will just ``await evaluator_wrapper(...)``.
+        """
+        assert self._raw_fn is not None, "async_call requires an async evaluator"
+        if self._single_instance_mode:
+            all_kwargs = kwargs
+        else:
+            all_kwargs = {"example": example, **kwargs}
+        filtered = self._filter_kwargs(all_kwargs)
+        eval_candidate: Candidate | str = candidate
+        if self._str_candidate_mode:
+            eval_candidate = candidate[_STR_CANDIDATE_KEY]
+        result = await self._raw_fn(eval_candidate, **filtered)
+        # Normalise to (score, output, side_info)
+        if isinstance(result, tuple):
+            score, side_info = result
+            side_info = dict(side_info) if side_info is not None else {}
+        else:
+            score = float(result)
+            side_info = {}
+        return float(score), None, side_info
 
     def __call__(
         self, candidate: Candidate, example: object | None = None, **kwargs: Any
@@ -1485,3 +1569,50 @@ def optimize_anything(
         seed=config.engine.seed,
         str_candidate_key=_STR_CANDIDATE_KEY if str_candidate_mode else None,
     )
+
+
+async def aoptimize_anything(
+    seed_candidate: str | Candidate | None = None,
+    *,
+    evaluator: Callable[..., Any],
+    dataset: list[DataInst] | None = None,
+    valset: list[DataInst] | None = None,
+    objective: str | None = None,
+    background: str | None = None,
+    config: GEPAConfig | None = None,
+) -> GEPAResult:
+    """Async entry point for :func:`optimize_anything`.
+
+    Runs optimization in a thread-pool executor so the calling event loop
+    is not blocked.  Accepts both sync and async evaluators — async
+    evaluators are gathered concurrently across each evaluation batch.
+
+    All parameters are identical to :func:`optimize_anything`.
+
+    Example::
+
+        result = await aoptimize_anything(
+            seed_candidate="def solve(): ...",
+            evaluator=my_async_evaluator,   # async def evaluator(candidate) -> float
+            objective="Maximize score.",
+            config=GEPAConfig(engine=EngineConfig(max_metric_calls=200)),
+        )
+
+    # TODO (issue #61): when GEPAEngine.run() becomes ``async def``, this
+    # wrapper can be removed and aoptimize_anything can call the engine
+    # directly with ``await``, eliminating the thread-pool overhead.
+    """
+    import functools
+
+    loop = asyncio.get_event_loop()
+    fn = functools.partial(
+        optimize_anything,
+        seed_candidate,
+        evaluator=evaluator,
+        dataset=dataset,
+        valset=valset,
+        objective=objective,
+        background=background,
+        config=config,
+    )
+    return await loop.run_in_executor(None, fn)
