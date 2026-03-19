@@ -1227,7 +1227,8 @@ def _optimize_via_openevolve(
     """
     try:
         from openevolve import run_evolution  # type: ignore[import-not-found]
-        from openevolve.config import Config as OEConfig, LLMModelConfig  # type: ignore[import-not-found]
+        from openevolve.config import Config as OEConfig  # type: ignore[import-not-found]
+        from openevolve.config import LLMModelConfig
     except ImportError as exc:
         raise ImportError(
             "The 'openevolve' backend requires the 'openevolve' package. "
