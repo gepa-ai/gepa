@@ -250,6 +250,31 @@ result = optimize_anything(..., config=config)
 ```
 
 
+### My smaller model produces malformed outputs frequently — can GEPA fix this?
+
+Yes, and this is one of GEPA's strongest use cases for smaller models. Dropbox reduced gemma-3-12b's malformed JSON rate from **40% to under 3%** while simultaneously improving relevance quality, by optimizing the prompt to enforce structured output compliance.
+
+The key is to **penalize format failures in your metric** so GEPA learns this is a hard constraint:
+
+```python
+def evaluator(data, response):
+    import json
+    # Hard penalty for format violations
+    try:
+        parsed = json.loads(response)
+    except json.JSONDecodeError:
+        return 0.0, {"Output": response, "Error": "Malformed JSON — failed to parse"}
+
+    score = compute_quality_score(parsed, data)
+    return score, {
+        "Output": parsed,
+        "Expected": data["expected"],
+        "Score": score,
+    }
+```
+
+Including the parse error in `side_info` gives GEPA's reflection LM the signal it needs to add explicit formatting instructions to the prompt.
+
 ### Does GEPA support async optimization?
 
 GEPA's implementation serializes the agent trajectory to reflect on it, so async workflows should generally work. If you're running agentic systems with async operations, you'll want to ensure your trajectory data is properly captured before GEPA's reflection step.
@@ -271,6 +296,49 @@ For agentic systems with expensive rollouts (simulations, long runtime), this tr
 The initial rounds of GEPA tend to include a lot of information from the first examples it sees—sometimes even specific content from training examples. This is normal behavior. However, **as optimization progresses, GEPA creates generalized rules** and the prompts become more concise while remaining effective.
 
 This is by design—GEPA first captures specific patterns, then abstracts them into general principles. If you want to prevent verbatim example inclusion, use custom instruction proposers with explicit constraints.
+
+### GEPA copied specific keywords or phrases from my training examples into the prompt — how do I prevent this?
+
+This is a known failure mode: the optimizer over-indexes on surface patterns (specific usernames, document titles, domain-specific terms) present in the training minibatch but not generalizable. Dropbox [explicitly encountered this](https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy) when optimizing their relevance judge.
+
+The fix is to **include an anti-overfit instruction in your `side_info`** returned by your evaluator. GEPA feeds `side_info` directly to the reflection LM, so anything you include there influences how it proposes improvements:
+
+```python
+def evaluator(data, response):
+    score = compute_score(response, data["expected"])
+    return score, {
+        "Input": data["input"],
+        "Output": response,
+        "Expected": data["expected"],
+        "Constraint": (
+            "When improving the prompt, do NOT copy specific examples, "
+            "keywords, usernames, or verbatim phrases from these examples. "
+            "Generalize to rules that apply broadly."
+        ),
+    }
+```
+
+### GEPA changed my rating scale or output format — how do I stop this?
+
+GEPA's reflection LM can occasionally drift the task definition — for example, changing a 1–5 rating scale to 1–3, or altering an output schema. Dropbox [explicitly handled this](https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy) by adding explicit preservation constraints to their feedback.
+
+Add a task-preservation instruction to the `side_info` returned by your evaluator:
+
+```python
+def evaluator(data, response):
+    score = compute_score(response, data["expected"])
+    return score, {
+        "Input": data["input"],
+        "Output": response,
+        "Constraint": (
+            "You must NOT change the fundamental task parameters: "
+            "the rating scale (1-5), the output JSON schema, or the scoring criteria. "
+            "Only improve the reasoning guidance and domain-specific rules."
+        ),
+    }
+```
+
+Alternatively, for production systems where stability is critical, consider **incrementally optimizing a known set of human-written instruction bullets** rather than allowing full rewrites. See [Can GEPA's meta-prompt itself be optimized?](#can-gepas-meta-prompt-itself-be-optimized) for how to customize the instruction proposer.
 
 ---
 
@@ -295,6 +363,35 @@ An emerging pattern for GEPA+DSPy deployment:
    - Deploy updated system
 
 This creates a **continuous improvement loop** without requiring constant human annotation.
+
+### How do I safely optimize a prompt that's already in production?
+
+When optimizing a prompt that already serves live traffic, full rewrites carry regression risk. Dropbox [described this as wanting "small PRs with tests"](https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy) — incremental, diagnosable changes rather than large refactors.
+
+Two strategies:
+
+**1. Constrain the reflection prompt** to make smaller edits. Customize the `reflection_prompt_template` to instruct the LM to make minimal changes:
+
+```python
+result = gepa.optimize(
+    ...
+    reflection_prompt_template="""
+I provided an assistant with the following instructions:
+```
+<curr_param>
+```
+Here are examples where it underperformed, with feedback:
+```
+<side_info>
+```
+Make the **smallest possible targeted edit** to fix the identified failure mode.
+Preserve all existing correct behavior. Do not rewrite from scratch.
+Provide the updated instructions within ``` blocks.
+""",
+)
+```
+
+**2. Build an instruction library** — write a set of human-authored rule bullets, and let GEPA select which to include. Implement this via a custom `ProposalFn` that proposes subsets of your rule library rather than generating new text wholesale.
 
 ### Can GEPA help with model migration?
 
@@ -456,7 +553,9 @@ This helps the reflection LLM understand the reasoning behind classifications.
 
 ### Why is GEPA overfitting to my training data?
 
-If you're seeing GEPA overfit, make sure you provide a **separate validation set**:
+Overfitting in GEPA can appear in two distinct ways:
+
+**1. Score overfitting** — the candidate scores well on train but poorly on validation. Fix: ensure you have a **separate validation set**:
 
 ```python
 optimizer = dspy.GEPA(metric=metric, ...)
@@ -464,6 +563,8 @@ optimized = optimizer.compile(program, trainset=train_data, valset=val_data)
 ```
 
 Without a separate valset, GEPA will tend to overfit the training data. Follow the standard 80/20 train/val split.
+
+**2. Prompt-level overfitting** — the optimized prompt contains specific keywords, phrases, or examples from your training data. This improves training scores but fails on new inputs. Fix this by injecting anti-overfit constraints into your reflective dataset — see [GEPA copied specific keywords from my training examples — how do I prevent this?](#gepa-copied-specific-keywords-or-phrases-from-my-training-examples-into-the-prompt----how-do-i-prevent-this)
 
 ### How do I use GEPA for agentic systems with expensive rollouts?
 

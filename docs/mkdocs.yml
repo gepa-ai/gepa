@@ -25,6 +25,7 @@ nav:
         - FAQ: guides/faq.md
         - Creating Adapters: guides/adapters.md
         - Using Callbacks: guides/callbacks.md
+        - Experiment Tracking: guides/experiment-tracking.md
         - gskill: guides/gskill.md
         - Contributing: guides/contributing.md
     - Tutorials:
