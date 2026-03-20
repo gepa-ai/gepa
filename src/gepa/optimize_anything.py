@@ -999,6 +999,7 @@ def optimize_anything(
     seed_candidate: str | Candidate | None = None,
     *,
     evaluator: Callable[..., Any],
+    batch_evaluator: Callable[..., Any] | None = None,
     dataset: list[DataInst] | None = None,
     valset: list[DataInst] | None = None,
     objective: str | None = None,
@@ -1042,6 +1043,18 @@ def optimize_anything(
               where to begin.
 
         evaluator: Scoring function.  Returns ``(score, side_info)`` or ``score``.
+        batch_evaluator: Optional batch scoring function.  When provided, GEPA
+            calls ``batch_evaluator([(candidate, example), ...])`` for each
+            evaluation batch instead of dispatching examples individually via
+            the thread pool.  This is useful when you want full control over
+            batching — e.g. vectorized inference, batched API calls, or GPU
+            pipelines.  The function must return a list of results aligned with
+            the input list, where each result is ``(score, side_info)`` or
+            just ``score``.  ``batch_evaluator`` and ``evaluator`` are
+            complementary: ``evaluator`` is still required (used as the
+            single-example fallback by the ``oa.log()`` capture machinery),
+            but when ``batch_evaluator`` is set it handles all evaluation
+            batches and ``evaluator`` is never called directly by GEPA.
             See :class:`Evaluator`.  Diagnostic output via ``oa.log()`` is
             automatically captured as Actionable Side Information (ASI).
             For richer diagnostics, return a ``(score, dict)`` tuple with
@@ -1182,6 +1195,7 @@ def optimize_anything(
 
     active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
         evaluator=wrapped_evaluator,
+        batch_evaluator=batch_evaluator,
         parallel=config.engine.parallel,
         max_workers=config.engine.max_workers,
         refiner_config=config.refiner,
