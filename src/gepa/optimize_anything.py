@@ -836,6 +836,19 @@ class TrackingConfig:
             )
             mlflow.log_metric("train/loss", 0.1)  # still works
     """
+    key_prefix: str = ""
+    """String prepended to every key/name logged to wandb and MLflow.
+
+    Applies uniformly to metric keys, config keys, summary keys, table names,
+    and HTML artifact keys.  Useful when running multiple GEPA optimizations in
+    the same wandb/MLflow run to keep their data namespaced::
+
+        TrackingConfig(
+            use_wandb=True,
+            wandb_attach_existing=True,
+            key_prefix="gepa/round2/",   # metrics become e.g. gepa/round2/val_score
+        )
+    """
 
 
 @dataclass
@@ -1411,6 +1424,7 @@ def optimize_anything(
         mlflow_tracking_uri=config.tracking.mlflow_tracking_uri,
         mlflow_experiment_name=config.tracking.mlflow_experiment_name,
         mlflow_attach_existing=config.tracking.mlflow_attach_existing,
+        key_prefix=config.tracking.key_prefix,
     )
 
     # --- 9. Build reflection prompt template from objective/background if provided ---

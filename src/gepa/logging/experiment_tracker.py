@@ -30,6 +30,7 @@ class ExperimentTracker:
         mlflow_tracking_uri: str | None = None,
         mlflow_experiment_name: str | None = None,
         mlflow_attach_existing: bool = False,
+        key_prefix: str = "",
     ):
         self.use_wandb = use_wandb
         self.use_mlflow = use_mlflow
@@ -40,8 +41,13 @@ class ExperimentTracker:
         self.mlflow_tracking_uri = mlflow_tracking_uri
         self.mlflow_experiment_name = mlflow_experiment_name
         self.mlflow_attach_existing = mlflow_attach_existing
+        self.key_prefix = key_prefix
 
         self._created_mlflow_run = False
+
+    def _p(self, key: str) -> str:
+        """Prepend key_prefix to a key/name, if one is set."""
+        return f"{self.key_prefix}{key}" if self.key_prefix else key
 
     def initialize(self):
         """Initialize the logging backends."""
@@ -127,7 +133,8 @@ class ExperimentTracker:
             try:
                 import wandb  # type: ignore
 
-                wandb.config.update(safe_config, allow_val_change=True)
+                prefixed = {self._p(k): v for k, v in safe_config.items()}
+                wandb.config.update(prefixed, allow_val_change=True)
             except Exception as e:
                 print(f"Warning: Failed to log config to wandb: {e}")
 
@@ -136,7 +143,7 @@ class ExperimentTracker:
                 import mlflow  # type: ignore
 
                 # mlflow params must be strings
-                str_params = {k: str(v) for k, v in safe_config.items()}
+                str_params = {self._p(k): str(v) for k, v in safe_config.items()}
                 mlflow.log_params(str_params)
             except Exception as e:
                 print(f"Warning: Failed to log config to mlflow: {e}")
@@ -149,7 +156,7 @@ class ExperimentTracker:
 
                 # Filter to numeric values only — non-numeric data (dicts, strings)
                 # is logged via log_table() instead to avoid noisy flat charts
-                numeric_metrics = {k: v for k, v in metrics.items() if isinstance(v, int | float)}
+                numeric_metrics = {self._p(k): v for k, v in metrics.items() if isinstance(v, int | float)}
                 if numeric_metrics:
                     wandb.log(numeric_metrics, step=step)
             except Exception as e:
@@ -160,7 +167,7 @@ class ExperimentTracker:
                 import mlflow  # type: ignore
 
                 # MLflow only accepts numeric metrics, filter out non-numeric values
-                numeric_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, int | float)}
+                numeric_metrics = {self._p(k): float(v) for k, v in metrics.items() if isinstance(v, int | float)}
                 if numeric_metrics:
                     mlflow.log_metrics(numeric_metrics, step=step)
             except Exception as e:
@@ -178,7 +185,7 @@ class ExperimentTracker:
                 import wandb  # type: ignore
 
                 for k, v in summary.items():
-                    wandb.run.summary[k] = v  # type: ignore[union-attr]
+                    wandb.run.summary[self._p(k)] = v  # type: ignore[union-attr]
             except Exception as e:
                 print(f"Warning: Failed to log summary to wandb: {e}")
 
@@ -187,8 +194,8 @@ class ExperimentTracker:
                 import mlflow  # type: ignore
 
                 # mlflow: numeric values as metrics, strings as params
-                numeric = {k: float(v) for k, v in summary.items() if isinstance(v, int | float)}
-                text = {k: str(v) for k, v in summary.items() if isinstance(v, str)}
+                numeric = {self._p(k): float(v) for k, v in summary.items() if isinstance(v, int | float)}
+                text = {self._p(k): str(v) for k, v in summary.items() if isinstance(v, str)}
                 if numeric:
                     mlflow.log_metrics(numeric)
                 if text:
@@ -209,7 +216,7 @@ class ExperimentTracker:
                 import wandb  # type: ignore
 
                 table = wandb.Table(columns=columns, data=data)
-                wandb.log({table_name: table}, commit=False)
+                wandb.log({self._p(table_name): table}, commit=False)
             except Exception as e:
                 print(f"Warning: Failed to log table to wandb: {e}")
 
@@ -219,7 +226,7 @@ class ExperimentTracker:
 
                 # mlflow.log_table expects a dict of column -> list of values
                 table_dict = {col: [row[i] for row in data] for i, col in enumerate(columns)}
-                mlflow.log_table(data=table_dict, artifact_file=f"{table_name}.json")
+                mlflow.log_table(data=table_dict, artifact_file=f"{self._p(table_name)}.json")
             except Exception as e:
                 print(f"Warning: Failed to log table to mlflow: {e}")
 
@@ -235,9 +242,10 @@ class ExperimentTracker:
                 import wandb  # type: ignore
 
                 html_obj = wandb.Html(html_content)
-                wandb.log({key: html_obj}, commit=False)
+                pkey = self._p(key)
+                wandb.log({pkey: html_obj}, commit=False)
                 # Also write to run summary so the panel always shows the latest tree
-                wandb.run.summary[key] = html_obj  # type: ignore[union-attr]
+                wandb.run.summary[pkey] = html_obj  # type: ignore[union-attr]
             except Exception as e:
                 print(f"Warning: Failed to log HTML to wandb: {e}")
 
@@ -250,7 +258,7 @@ class ExperimentTracker:
                 with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
                     f.write(html_content)
                     tmp_path = f.name
-                mlflow.log_artifact(tmp_path, artifact_path=key)
+                mlflow.log_artifact(tmp_path, artifact_path=self._p(key))
             except Exception as e:
                 print(f"Warning: Failed to log HTML to mlflow: {e}")
 
@@ -311,6 +319,7 @@ def create_experiment_tracker(
     mlflow_tracking_uri: str | None = None,
     mlflow_experiment_name: str | None = None,
     mlflow_attach_existing: bool = False,
+    key_prefix: str = "",
 ) -> ExperimentTracker:
     """
     Create an experiment tracker based on the specified backends.
@@ -343,4 +352,5 @@ def create_experiment_tracker(
         mlflow_tracking_uri=mlflow_tracking_uri,
         mlflow_experiment_name=mlflow_experiment_name,
         mlflow_attach_existing=mlflow_attach_existing,
+        key_prefix=key_prefix,
     )

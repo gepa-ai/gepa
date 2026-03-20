@@ -78,6 +78,7 @@ def optimize(
     mlflow_tracking_uri: str | None = None,
     mlflow_experiment_name: str | None = None,
     mlflow_attach_existing: bool = False,
+    tracking_key_prefix: str = "",
     track_best_outputs: bool = False,
     display_progress_bar: bool = False,
     use_cloudpickle: bool = False,
@@ -333,6 +334,7 @@ def optimize(
         mlflow_tracking_uri=mlflow_tracking_uri,
         mlflow_experiment_name=mlflow_experiment_name,
         mlflow_attach_existing=mlflow_attach_existing,
+        key_prefix=tracking_key_prefix,
     )
 
     if reflection_prompt_template is not None:

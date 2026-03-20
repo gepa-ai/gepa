@@ -283,3 +283,128 @@ class TestOptimizeApiAttachExisting:
 
         assert len(created) == 1
         assert created[0].wandb_attach_existing is True
+
+
+# ---------------------------------------------------------------------------
+# key_prefix
+# ---------------------------------------------------------------------------
+
+class TestKeyPrefix:
+    def test_metrics_prefixed_wandb(self):
+        tracker = ExperimentTracker(use_wandb=True, key_prefix="gepa/")
+        with patch("wandb.log") as mock_log:
+            tracker.log_metrics({"val_score": 0.8, "iteration": 1}, step=1)
+        call_kwargs = mock_log.call_args[0][0]
+        assert "gepa/val_score" in call_kwargs
+        assert "gepa/iteration" in call_kwargs
+        assert "val_score" not in call_kwargs
+
+    def test_metrics_prefixed_mlflow(self):
+        tracker = ExperimentTracker(use_mlflow=True, key_prefix="gepa/")
+        with patch("mlflow.log_metrics") as mock_log:
+            tracker.log_metrics({"val_score": 0.8}, step=1)
+        call_kwargs = mock_log.call_args[0][0]
+        assert "gepa/val_score" in call_kwargs
+
+    def test_table_name_prefixed_wandb(self):
+        tracker = ExperimentTracker(use_wandb=True, key_prefix="run1/")
+        with patch("wandb.log") as mock_log, \
+             patch("wandb.Table", return_value=MagicMock()):
+            tracker.log_table("candidates", ["col"], [[1]])
+        call_kwargs = mock_log.call_args[0][0]
+        assert "run1/candidates" in call_kwargs
+
+    def test_table_name_prefixed_mlflow(self):
+        tracker = ExperimentTracker(use_mlflow=True, key_prefix="run1/")
+        with patch("mlflow.log_table") as mock_log:
+            tracker.log_table("candidates", ["col"], [[1]])
+        mock_log.assert_called_once()
+        assert mock_log.call_args[1]["artifact_file"] == "run1/candidates.json"
+
+    def test_html_key_prefixed_wandb(self):
+        tracker = ExperimentTracker(use_wandb=True, key_prefix="gepa/")
+        mock_run = MagicMock()
+        with patch("wandb.log") as mock_log, \
+             patch("wandb.Html", return_value=MagicMock()), \
+             patch("wandb.run", mock_run):
+            tracker.log_html("<html/>", key="candidate_tree")
+        call_kwargs = mock_log.call_args[0][0]
+        assert "gepa/candidate_tree" in call_kwargs
+        assert mock_run.summary.__setitem__.call_args[0][0] == "gepa/candidate_tree"
+
+    def test_html_key_prefixed_mlflow(self):
+        tracker = ExperimentTracker(use_mlflow=True, key_prefix="gepa/")
+        with patch("mlflow.log_artifact") as mock_artifact:
+            tracker.log_html("<html/>", key="candidate_tree")
+        assert mock_artifact.call_args[1]["artifact_path"] == "gepa/candidate_tree"
+
+    def test_summary_keys_prefixed_wandb(self):
+        tracker = ExperimentTracker(use_wandb=True, key_prefix="opt/")
+        mock_run = MagicMock()
+        with patch("wandb.run", mock_run):
+            tracker.log_summary({"best_score": 0.9})
+        # log_summary does: wandb.run.summary[k] = v
+        mock_run.summary.__setitem__.assert_called_with("opt/best_score", 0.9)
+
+    def test_config_keys_prefixed_wandb(self):
+        tracker = ExperimentTracker(use_wandb=True, key_prefix="gepa/")
+        with patch("wandb.config") as mock_cfg:
+            tracker.log_config({"model": "gpt-5", "lr": 0.01})
+        call_kwargs = mock_cfg.update.call_args[0][0]
+        assert "gepa/model" in call_kwargs
+        assert "gepa/lr" in call_kwargs
+
+    def test_empty_prefix_unchanged(self):
+        """Empty prefix (default) leaves keys unchanged."""
+        tracker = ExperimentTracker(use_wandb=True, key_prefix="")
+        with patch("wandb.log") as mock_log:
+            tracker.log_metrics({"score": 1.0}, step=1)
+        call_kwargs = mock_log.call_args[0][0]
+        assert "score" in call_kwargs
+
+    def test_prefix_via_tracking_config(self):
+        """key_prefix in TrackingConfig is wired to ExperimentTracker."""
+        from gepa.optimize_anything import TrackingConfig, GEPAConfig
+
+        created: list[ExperimentTracker] = []
+        original = create_experiment_tracker
+
+        def spy(**kwargs):
+            t = original(**kwargs)
+            created.append(t)
+            return t
+
+        with patch("gepa.optimize_anything.create_experiment_tracker", side_effect=spy), \
+             patch("gepa.optimize_anything.GEPAEngine") as mock_cls:
+            from unittest.mock import MagicMock
+            mock_engine = MagicMock()
+            mock_state = MagicMock()
+            mock_state.program_candidates = [{"current_candidate": "v0"}]
+            mock_state.parent_program_for_candidate = [[None]]
+            mock_state.prog_candidate_val_subscores = [{}]
+            mock_state.program_at_pareto_front_valset = {}
+            mock_state.program_full_scores_val_set = [0.5]
+            mock_state.num_metric_calls_by_discovery = [0]
+            mock_state.total_num_evals = 1
+            mock_state.num_full_ds_evals = 1
+            mock_state.best_outputs_valset = None
+            mock_state.objective_pareto_front = {}
+            mock_state.program_at_pareto_front_objectives = {}
+            mock_engine.run.return_value = mock_state
+            mock_cls.return_value = mock_engine
+
+            from gepa.optimize_anything import optimize_anything, EngineConfig, ReflectionConfig
+            optimize_anything(
+                seed_candidate="x",
+                evaluator=lambda c: 0.5,
+                config=GEPAConfig(
+                    engine=EngineConfig(max_metric_calls=3),
+                    reflection=ReflectionConfig(
+                        reflection_lm=MagicMock(return_value="```\nx\n```")
+                    ),
+                    tracking=TrackingConfig(key_prefix="gepa/"),
+                ),
+            )
+
+        assert created[0].key_prefix == "gepa/"
+        assert created[0]._p("score") == "gepa/score"
