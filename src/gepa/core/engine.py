@@ -27,6 +27,7 @@ from gepa.core.callbacks import (
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import EvaluationCache, FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
+from gepa.core.token_budget import FALLBACK_TOKEN_COUNTER_MODEL
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
@@ -75,6 +76,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
+        # Token limit for candidate size control
+        max_candidate_tokens: int | None = None,
+        token_counter_model: str = FALLBACK_TOKEN_COUNTER_MODEL,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -118,9 +122,64 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.use_cloudpickle = use_cloudpickle
 
         self.raise_on_exception = raise_on_exception
+        self.max_candidate_tokens = max_candidate_tokens
+        self.token_counter_model = token_counter_model
         self.val_evaluation_policy: EvaluationPolicy[DataId, DataInst] = (
             val_evaluation_policy if val_evaluation_policy is not None else FullEvaluationPolicy()
         )
+
+    def _candidate_exceeds_token_limit(self, candidate: dict[str, str], iteration: int) -> bool:
+        """Check if a candidate exceeds max_candidate_tokens. Returns True if rejected."""
+        if self.max_candidate_tokens is None:
+            return False
+
+        from gepa.core.token_budget import check_candidate_token_limit
+
+        token_count, exceeds, _ = check_candidate_token_limit(
+            candidate, self.max_candidate_tokens, token_counter_model=self.token_counter_model
+        )
+        if exceeds:
+            self.logger.log(
+                f"Iteration {iteration}: Candidate rejected — "
+                f"{token_count} tokens exceeds limit of {self.max_candidate_tokens}"
+            )
+            notify_callbacks(
+                self.callbacks,
+                "on_candidate_rejected",
+                CandidateRejectedEvent(
+                    iteration=iteration,
+                    old_score=0.0,
+                    new_score=0.0,
+                    reason=f"Token limit exceeded: {token_count} > {self.max_candidate_tokens}",
+                ),
+            )
+            return True
+        return False
+
+    def _log_candidate_token_metrics(
+        self,
+        candidate: dict[str, str],
+        state: GEPAState[RolloutOutput, DataId],
+    ) -> None:
+        """Log token usage metrics and emit a warning when approaching the limit."""
+        if self.max_candidate_tokens is None:
+            return
+
+        from gepa.core.token_budget import check_candidate_token_limit
+
+        token_count, _, warn = check_candidate_token_limit(
+            candidate, self.max_candidate_tokens, token_counter_model=self.token_counter_model
+        )
+        self.experiment_tracker.log_metrics(
+            {"candidate_tokens": token_count, "max_candidate_tokens": self.max_candidate_tokens},
+            step=state.i + 1,
+        )
+        if warn:
+            pct = token_count / self.max_candidate_tokens * 100
+            self.logger.log(
+                f"Warning: Candidate uses {token_count} tokens "
+                f"({pct:.0f}% of {self.max_candidate_tokens} max_candidate_tokens)"
+            )
 
     def _evaluate_on_valset(
         self,
@@ -246,6 +305,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         ] + [new_program[name] for name in component_names]
         self.experiment_tracker.log_table("candidates", columns=columns, data=[row])
 
+        # Track candidate token metrics for accepted candidates
+        self._log_candidate_token_metrics(new_program, state)
+
         # Update candidate tree visualization
         self._log_candidate_tree(state)
 
@@ -334,22 +396,23 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         )
 
         # Log run configuration
-        self.experiment_tracker.log_config(
-            {
-                "seed": self.seed,
-                "perfect_score": self.perfect_score,
-                "frontier_type": self.frontier_type,
-                "track_best_outputs": self.track_best_outputs,
-                "use_cloudpickle": self.use_cloudpickle,
-                "raise_on_exception": self.raise_on_exception,
-                "trainset_size": len(self.reflective_proposer.trainset),
-                "valset_size": len(valset),
-                "seed_candidate_components": sorted(self.seed_candidate.keys()),
-                "val_evaluation_policy": type(self.val_evaluation_policy).__name__,
-                "has_merge_proposer": self.merge_proposer is not None,
-                "run_dir": self.run_dir,
-            }
-        )
+        config_dict: dict[str, Any] = {
+            "seed": self.seed,
+            "perfect_score": self.perfect_score,
+            "frontier_type": self.frontier_type,
+            "track_best_outputs": self.track_best_outputs,
+            "use_cloudpickle": self.use_cloudpickle,
+            "raise_on_exception": self.raise_on_exception,
+            "trainset_size": len(self.reflective_proposer.trainset),
+            "valset_size": len(valset),
+            "seed_candidate_components": sorted(self.seed_candidate.keys()),
+            "val_evaluation_policy": type(self.val_evaluation_policy).__name__,
+            "has_merge_proposer": self.merge_proposer is not None,
+            "run_dir": self.run_dir,
+        }
+        if self.max_candidate_tokens is not None:
+            config_dict["max_candidate_tokens"] = self.max_candidate_tokens
+        self.experiment_tracker.log_config(config_dict)
 
         # Log base program score using the same metric names as subsequent iterations
         # so they appear on the same charts in wandb/mlflow
@@ -375,6 +438,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             f"Iteration {state.i + 1}: Base program full valset score: {base_val_avg} "
             f"over {base_val_coverage} / {len(valset)} examples"
         )
+
+        # Log seed candidate token usage
+        self._log_candidate_token_metrics(self.seed_candidate, state)
 
         # Notify callbacks of seed candidate's initial valset evaluation (iteration 0)
         # This provides the baseline performance before any optimization
@@ -477,6 +543,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                             )
 
                             if new_sum >= max(parent_sums):
+                                # Hard enforcement: reject merged candidates that exceed token budget
+                                if self._candidate_exceeds_token_limit(proposal.candidate, state.i + 1):
+                                    continue
+
                                 # ACCEPTED: consume one merge attempt and record it
                                 new_idx, _ = self._run_full_eval_and_add(
                                     new_program=proposal.candidate,
@@ -559,6 +629,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     self.logger.log(
                         f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
                     )
+
+                # Hard enforcement: reject candidates that exceed max_candidate_tokens
+                if self._candidate_exceeds_token_limit(proposal.candidate, state.i + 1):
+                    continue
 
                 # Accept: full eval + add
                 new_idx, _ = self._run_full_eval_and_add(
