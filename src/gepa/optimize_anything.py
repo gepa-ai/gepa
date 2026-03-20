@@ -1456,6 +1456,8 @@ def optimize_anything(
             max_merge_invocations=config.merge.max_merge_invocations,
             rng=rng,
             val_overlap_floor=config.merge.merge_val_overlap_floor,
+            max_candidate_tokens=config.engine.max_candidate_tokens,
+            token_counter_model=token_counter_model,
         )
 
     # --- 13. Create evaluation cache if enabled ---

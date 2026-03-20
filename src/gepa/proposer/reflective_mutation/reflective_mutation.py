@@ -19,6 +19,7 @@ from gepa.core.callbacks import (
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
+from gepa.core.token_budget import build_candidate_token_context, check_candidate_token_limit
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 from gepa.proposer.reflective_mutation.base import (
     CandidateSelector,
@@ -141,8 +142,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
             token_budget_context = None
             if self.max_candidate_tokens is not None:
-                from gepa.core.token_budget import build_candidate_token_context
-
                 token_budget_context = build_candidate_token_context(
                     candidate, self.max_candidate_tokens, token_counter_model=self.token_counter_model
                 )
@@ -350,6 +349,18 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         for pname, text in new_texts.items():
             assert pname in new_candidate, f"{pname} missing in candidate"
             new_candidate[pname] = text
+
+        # Early rejection: skip evaluation if candidate exceeds token limit
+        if self.max_candidate_tokens is not None:
+            token_count, exceeds, _ = check_candidate_token_limit(
+                new_candidate, self.max_candidate_tokens, token_counter_model=self.token_counter_model
+            )
+            if exceeds:
+                self.logger.log(
+                    f"Iteration {i}: Candidate rejected before evaluation — "
+                    f"{token_count} tokens exceeds limit of {self.max_candidate_tokens}"
+                )
+                return None
 
         def evaluator(b, c):
             r = self.adapter.evaluate(b, c, capture_traces=False)

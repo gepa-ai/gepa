@@ -27,6 +27,7 @@ from gepa.core.callbacks import (
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import EvaluationCache, FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
+from gepa.core.token_budget import check_candidate_token_limit
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
@@ -127,34 +128,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             val_evaluation_policy if val_evaluation_policy is not None else FullEvaluationPolicy()
         )
 
-    def _candidate_exceeds_token_limit(self, candidate: dict[str, str], iteration: int) -> bool:
-        """Check if a candidate exceeds max_candidate_tokens. Returns True if rejected."""
-        if self.max_candidate_tokens is None:
-            return False
-
-        from gepa.core.token_budget import check_candidate_token_limit
-
-        token_count, exceeds, _ = check_candidate_token_limit(
-            candidate, self.max_candidate_tokens, token_counter_model=self.token_counter_model
-        )
-        if exceeds:
-            self.logger.log(
-                f"Iteration {iteration}: Candidate rejected — "
-                f"{token_count} tokens exceeds limit of {self.max_candidate_tokens}"
-            )
-            notify_callbacks(
-                self.callbacks,
-                "on_candidate_rejected",
-                CandidateRejectedEvent(
-                    iteration=iteration,
-                    old_score=0.0,
-                    new_score=0.0,
-                    reason=f"Token limit exceeded: {token_count} > {self.max_candidate_tokens}",
-                ),
-            )
-            return True
-        return False
-
     def _log_candidate_token_metrics(
         self,
         candidate: dict[str, str],
@@ -163,8 +136,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         """Log token usage metrics and emit a warning when approaching the limit."""
         if self.max_candidate_tokens is None:
             return
-
-        from gepa.core.token_budget import check_candidate_token_limit
 
         token_count, _, warn = check_candidate_token_limit(
             candidate, self.max_candidate_tokens, token_counter_model=self.token_counter_model
@@ -542,10 +513,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                             )
 
                             if new_sum >= max(parent_sums):
-                                # Hard enforcement: reject merged candidates that exceed token budget
-                                if self._candidate_exceeds_token_limit(proposal.candidate, state.i + 1):
-                                    continue
-
                                 # ACCEPTED: consume one merge attempt and record it
                                 new_idx, _ = self._run_full_eval_and_add(
                                     new_program=proposal.candidate,
@@ -628,10 +595,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     self.logger.log(
                         f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
                     )
-
-                # Hard enforcement: reject candidates that exceed max_candidate_tokens
-                if self._candidate_exceeds_token_limit(proposal.candidate, state.i + 1):
-                    continue
 
                 # Accept: full eval + add
                 new_idx, _ = self._run_full_eval_and_add(

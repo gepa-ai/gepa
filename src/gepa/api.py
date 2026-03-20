@@ -387,6 +387,8 @@ def optimize(
             rng=rng,
             val_overlap_floor=merge_val_overlap_floor,
             callbacks=callbacks,
+            max_candidate_tokens=max_candidate_tokens,
+            token_counter_model=token_counter_model,
         )
 
     engine = GEPAEngine(

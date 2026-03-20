@@ -15,6 +15,7 @@ from gepa.core.callbacks import (
 )
 from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState, ObjectiveScores, ProgramIdx
+from gepa.core.token_budget import check_candidate_token_limit
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
@@ -231,6 +232,8 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         val_overlap_floor: int = 5,
         rng: random.Random | None = None,
         callbacks: list[GEPACallback] | None = None,
+        max_candidate_tokens: int | None = None,
+        token_counter_model: str | None = None,
     ):
         self.logger = logger
         self.valset = valset
@@ -239,6 +242,8 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         self.max_merge_invocations = max_merge_invocations
         self.rng = rng if rng is not None else random.Random(0)
         self.callbacks = callbacks
+        self.max_candidate_tokens = max_candidate_tokens
+        self.token_counter_model = token_counter_model
 
         if val_overlap_floor <= 0:
             raise ValueError("val_overlap_floor should be a positive integer")
@@ -328,6 +333,18 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         state.full_program_trace[-1]["merged_entities"] = (id1, id2, ancestor)
         self.merges_performed[0].append((id1, id2, ancestor))
         self.logger.log(f"Iteration {i}: Merged programs {id1} and {id2} via ancestor {ancestor}")
+
+        # Early rejection: skip evaluation if merged candidate exceeds token limit
+        if self.max_candidate_tokens is not None:
+            token_count, exceeds, _ = check_candidate_token_limit(
+                new_program, self.max_candidate_tokens, token_counter_model=self.token_counter_model
+            )
+            if exceeds:
+                self.logger.log(
+                    f"Iteration {i}: Merged candidate rejected before evaluation — "
+                    f"{token_count} tokens exceeds limit of {self.max_candidate_tokens}"
+                )
+                return None
 
         subsample_ids = self.select_eval_subsample_for_merged_program(
             state.prog_candidate_val_subscores[id1],
