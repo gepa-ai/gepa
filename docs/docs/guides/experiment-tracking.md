@@ -225,27 +225,75 @@ with open(local_path) as f:
 
 ---
 
-## Nesting Inside Existing Runs
+## Logging Into an Already-Active Run
 
-### WandB
+When GEPA is embedded inside a larger workflow that already has an active
+wandb/MLflow run, use `wandb_attach_existing=True` or `mlflow_attach_existing=True`
+to log GEPA metrics into it **without touching the run lifecycle**.
 
-GEPA always calls `wandb.init()`.  To log into an existing run, finish the existing run first or configure via `wandb_init_kwargs={"resume": "allow", "id": existing_run_id}`.
+Without these flags, GEPA calls `wandb.init()` on entry and `wandb.finish()` on exit —
+terminating the caller's run and causing all subsequent `wandb.log()` calls to
+silently fail.
 
-### MLflow
+=== "WandB"
 
-If an MLflow run is **already active** when GEPA starts, GEPA logs into it and does **not** end the run when optimization finishes.  This makes it easy to nest GEPA inside your own experiment tracking:
+    ```python
+    import wandb
+    import gepa
 
-```python
-import mlflow
+    wandb.init(project="my-project")  # caller owns this run
 
-with mlflow.start_run():
-    mlflow.log_param("model", "gpt-5")
+    result = gepa.optimize(
+        seed_candidate={"system_prompt": "..."},
+        ...
+        use_wandb=True,
+        wandb_attach_existing=True,   # skip init() + finish()
+    )
 
-    # GEPA logs to the active run; won't close it
-    result = gepa.optimize(..., use_mlflow=True)
+    # Still works — run was never closed by GEPA
+    wandb.log({"final_metric": compute_metric()})
+    wandb.finish()
+    ```
 
-    mlflow.log_metric("final_score", result.val_aggregate_scores[result.best_idx])
-```
+    Or via `TrackingConfig` with `optimize_anything`:
+
+    ```python
+    from gepa.optimize_anything import optimize_anything, GEPAConfig, TrackingConfig
+
+    result = optimize_anything(
+        ...,
+        config=GEPAConfig(
+            tracking=TrackingConfig(
+                use_wandb=True,
+                wandb_attach_existing=True,
+            )
+        ),
+    )
+    ```
+
+=== "MLflow"
+
+    ```python
+    import mlflow
+    import gepa
+
+    with mlflow.start_run():           # caller owns this run
+        mlflow.log_param("model", "gpt-5")
+
+        result = gepa.optimize(
+            ...,
+            use_mlflow=True,
+            mlflow_attach_existing=True,   # skip start_run() + end_run()
+        )
+
+        # Still works — run was never closed by GEPA
+        mlflow.log_metric("final_score", result.val_aggregate_scores[result.best_idx])
+    ```
+
+!!! tip "What gets logged in attach mode"
+    All of GEPA's normal logging still works — `log_metrics()`, `log_table()`,
+    `log_summary()`, `log_html()` — it just doesn't touch `init` / `finish`.
+    GEPA's metrics appear alongside the caller's metrics in the same run.
 
 ---
 
