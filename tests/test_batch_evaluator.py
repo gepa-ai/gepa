@@ -242,3 +242,72 @@ class TestOptimizeAnythingBatchEvaluator:
             )
 
         assert result is not None
+
+    def test_batch_evaluator_only_no_evaluator(self):
+        """batch_evaluator alone (no evaluator) is accepted."""
+        def batch_eval(pairs):
+            return [0.5] * len(pairs)
+
+        with patch("gepa.optimize_anything.GEPAEngine") as mock_engine_cls:
+            mock_engine = MagicMock()
+            mock_engine.run.return_value = _make_mock_state()
+            mock_engine_cls.return_value = mock_engine
+
+            result = optimize_anything(
+                seed_candidate="code",
+                batch_evaluator=batch_eval,
+                config=GEPAConfig(
+                    engine=EngineConfig(max_metric_calls=5),
+                    reflection=ReflectionConfig(
+                        reflection_lm=MagicMock(return_value="```\ncode\n```")
+                    ),
+                ),
+            )
+
+        assert result is not None
+
+    def test_neither_evaluator_nor_batch_raises(self):
+        """Providing neither evaluator nor batch_evaluator raises ValueError."""
+        with pytest.raises(ValueError, match="Either 'evaluator' or 'batch_evaluator'"):
+            optimize_anything(
+                seed_candidate="code",
+                config=GEPAConfig(engine=EngineConfig(max_metric_calls=5)),
+            )
+
+    def test_capture_stdio_with_batch_evaluator_raises(self):
+        """capture_stdio=True alongside batch_evaluator raises ValueError."""
+        with pytest.raises(ValueError, match="capture_stdio"):
+            optimize_anything(
+                seed_candidate="code",
+                batch_evaluator=lambda pairs: [0.5] * len(pairs),
+                config=GEPAConfig(
+                    engine=EngineConfig(max_metric_calls=5, capture_stdio=True),
+                    reflection=ReflectionConfig(
+                        reflection_lm=MagicMock(return_value="```\ncode\n```")
+                    ),
+                ),
+            )
+
+    def test_both_evaluator_and_batch_warns(self):
+        """Passing both evaluator and batch_evaluator emits a UserWarning."""
+
+        def batch_eval(pairs):
+            return [0.5] * len(pairs)
+
+        with patch("gepa.optimize_anything.GEPAEngine") as mock_engine_cls:
+            mock_engine = MagicMock()
+            mock_engine.run.return_value = _make_mock_state()
+            mock_engine_cls.return_value = mock_engine
+
+            with pytest.warns(UserWarning, match="batch_evaluator"):
+                optimize_anything(
+                    seed_candidate="code",
+                    evaluator=_dummy_evaluator,
+                    batch_evaluator=batch_eval,
+                    config=GEPAConfig(
+                        engine=EngineConfig(max_metric_calls=5),
+                        reflection=ReflectionConfig(
+                            reflection_lm=MagicMock(return_value="```\ncode\n```")
+                        ),
+                    ),
+                )
