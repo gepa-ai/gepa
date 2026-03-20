@@ -193,6 +193,25 @@ result = gepa.optimize(
 )
 ```
 
+### Token Budget
+
+Limit the size of the optimized candidate to stay within a deployment context window or cost budget:
+
+```python
+result = gepa.optimize(
+    # ... other args ...
+    max_candidate_tokens=4096,                     # Reject candidates exceeding 4096 tokens
+)
+```
+
+When set, GEPA logs a `candidate_tokens` metric after each accepted candidate, warns when usage exceeds 80% of the limit, instructs the reflection LM to prefer concise changes, and rejects candidates that exceed the limit.
+
+For `optimize_anything`, set it in `EngineConfig`:
+
+```python
+config = GEPAConfig(engine=EngineConfig(max_metric_calls=100, max_candidate_tokens=4096))
+```
+
 ### Candidate Selection Strategies
 
 Choose how candidates are selected for mutation:
