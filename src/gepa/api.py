@@ -19,7 +19,6 @@ from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
-from gepa.core.token_budget import FALLBACK_TOKEN_COUNTER_MODEL
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
@@ -346,7 +345,8 @@ def optimize(
 
     # Resolve the model name for the tokenizer used by max_candidate_tokens.
     # Prefer task_lm (the model the candidate is sent to) over reflection_lm.
-    token_counter_model = FALLBACK_TOKEN_COUNTER_MODEL
+    # Falls back to None — token_budget utilities use FALLBACK_TOKEN_COUNTER_MODEL.
+    token_counter_model: str | None = None
     if isinstance(task_lm, str):
         token_counter_model = task_lm
     elif isinstance(reflection_lm, str):

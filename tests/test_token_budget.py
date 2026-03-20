@@ -4,7 +4,6 @@ from unittest.mock import Mock
 
 from gepa.core.token_budget import (
     _WARNING_THRESHOLD,
-    FALLBACK_TOKEN_COUNTER_MODEL,
     build_candidate_token_context,
     check_candidate_token_limit,
     count_candidate_tokens,
@@ -15,55 +14,52 @@ from gepa.core.token_budget import (
 # ---------------------------------------------------------------------------
 
 
-_MODEL = FALLBACK_TOKEN_COUNTER_MODEL
-
-
 class TestCountCandidateTokens:
     def test_single_component(self):
         candidate = {"prompt": "Hello world"}
-        tokens = count_candidate_tokens(candidate, token_counter_model=_MODEL)
+        tokens = count_candidate_tokens(candidate)
         assert tokens > 0
 
     def test_multi_component(self):
         candidate = {"a": "Hello", "b": "World of tokens"}
-        tokens = count_candidate_tokens(candidate, token_counter_model=_MODEL)
-        single_a = count_candidate_tokens({"a": "Hello"}, token_counter_model=_MODEL)
+        tokens = count_candidate_tokens(candidate)
+        single_a = count_candidate_tokens({"a": "Hello"})
         assert tokens > single_a
 
     def test_empty_candidate(self):
         candidate = {"prompt": ""}
-        tokens = count_candidate_tokens(candidate, token_counter_model=_MODEL)
+        tokens = count_candidate_tokens(candidate)
         assert tokens >= 0
 
     def test_long_text_proportional(self):
-        short = count_candidate_tokens({"p": "word " * 10}, token_counter_model=_MODEL)
-        long = count_candidate_tokens({"p": "word " * 100}, token_counter_model=_MODEL)
+        short = count_candidate_tokens({"p": "word " * 10})
+        long = count_candidate_tokens({"p": "word " * 100})
         assert long > short
 
 
 class TestCheckCandidateTokenLimit:
     def test_within_limit(self):
         candidate = {"p": "short"}
-        token_count, exceeds, warn = check_candidate_token_limit(candidate, 10000, token_counter_model=_MODEL)
+        token_count, exceeds, warn = check_candidate_token_limit(candidate, 10000)
         assert not exceeds
         assert not warn
         assert token_count > 0
 
     def test_exceeds_limit(self):
         candidate = {"p": "word " * 500}
-        token_count, exceeds, warn = check_candidate_token_limit(candidate, 5, token_counter_model=_MODEL)
+        token_count, exceeds, warn = check_candidate_token_limit(candidate, 5)
         assert exceeds
         assert warn
         assert token_count > 5
 
     def test_warning_threshold(self):
         candidate = {"p": "x"}
-        token_count = count_candidate_tokens(candidate, token_counter_model=_MODEL)
+        token_count = count_candidate_tokens(candidate)
         # Set limit so that token_count > 80% of limit but <= limit
         limit = int(token_count / _WARNING_THRESHOLD) - 1
         if limit < token_count:
             limit = token_count
-        _, exceeds, warn = check_candidate_token_limit(candidate, limit, token_counter_model=_MODEL)
+        _, exceeds, warn = check_candidate_token_limit(candidate, limit)
         assert not exceeds
         assert warn
 
@@ -71,15 +67,15 @@ class TestCheckCandidateTokenLimit:
 class TestBuildCandidateTokenContext:
     def test_contains_limit_info(self):
         candidate = {"p": "hello world"}
-        context = build_candidate_token_context(candidate, 1000, token_counter_model=_MODEL)
+        context = build_candidate_token_context(candidate, 1000)
         assert "1000" in context
         assert "Token Limit" in context
         assert "MUST" in context
 
     def test_contains_current_tokens(self):
         candidate = {"p": "hello world"}
-        tokens = count_candidate_tokens(candidate, token_counter_model=_MODEL)
-        context = build_candidate_token_context(candidate, 1000, token_counter_model=_MODEL)
+        tokens = count_candidate_tokens(candidate)
+        context = build_candidate_token_context(candidate, 1000)
         assert str(tokens) in context
 
 

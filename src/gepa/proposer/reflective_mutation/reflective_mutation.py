@@ -19,7 +19,6 @@ from gepa.core.callbacks import (
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
-from gepa.core.token_budget import FALLBACK_TOKEN_COUNTER_MODEL
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 from gepa.proposer.reflective_mutation.base import (
     CandidateSelector,
@@ -58,7 +57,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
         max_candidate_tokens: int | None = None,
-        token_counter_model: str = FALLBACK_TOKEN_COUNTER_MODEL,
+        token_counter_model: str | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)

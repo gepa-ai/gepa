@@ -127,7 +127,6 @@ from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
-from gepa.core.token_budget import FALLBACK_TOKEN_COUNTER_MODEL
 from gepa.image import Image  # noqa: F401 — re-exported for user convenience
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
@@ -1268,11 +1267,8 @@ def optimize_anything(
 
     # Resolve the model name for the tokenizer used by max_candidate_tokens
     # (must happen before the string is converted to a callable below).
-    token_counter_model = (
-        config.reflection.reflection_lm
-        if isinstance(config.reflection.reflection_lm, str)
-        else FALLBACK_TOKEN_COUNTER_MODEL
-    )
+    # Falls back to None — token_budget utilities use FALLBACK_TOKEN_COUNTER_MODEL.
+    token_counter_model = config.reflection.reflection_lm if isinstance(config.reflection.reflection_lm, str) else None
 
     # Convert reflection_lm string to callable
     if isinstance(config.reflection.reflection_lm, str):

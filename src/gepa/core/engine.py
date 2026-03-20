@@ -27,7 +27,6 @@ from gepa.core.callbacks import (
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import EvaluationCache, FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
-from gepa.core.token_budget import FALLBACK_TOKEN_COUNTER_MODEL
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
@@ -78,7 +77,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
         # Token limit for candidate size control
         max_candidate_tokens: int | None = None,
-        token_counter_model: str = FALLBACK_TOKEN_COUNTER_MODEL,
+        token_counter_model: str | None = None,
     ):
         self.logger = logger
         self.run_dir = run_dir

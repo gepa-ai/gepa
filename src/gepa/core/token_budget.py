@@ -6,12 +6,15 @@ _WARNING_THRESHOLD = 0.8
 FALLBACK_TOKEN_COUNTER_MODEL = "openai/gpt-5"
 
 
-def count_candidate_tokens(candidate: dict[str, str], token_counter_model: str) -> int:
+def count_candidate_tokens(candidate: dict[str, str], token_counter_model: str | None = None) -> int:
     """Count the total number of tokens across all text components of a candidate.
 
     Uses litellm.token_counter when available for accurate counts,
     otherwise falls back to a character-based heuristic (~4 chars per token).
     """
+    if token_counter_model is None:
+        token_counter_model = FALLBACK_TOKEN_COUNTER_MODEL
+
     total_text = "\n\n".join(candidate.values())
 
     try:
@@ -25,7 +28,7 @@ def count_candidate_tokens(candidate: dict[str, str], token_counter_model: str) 
 def check_candidate_token_limit(
     candidate: dict[str, str],
     max_candidate_tokens: int,
-    token_counter_model: str,
+    token_counter_model: str | None = None,
 ) -> tuple[int, bool, bool]:
     """Check a candidate against the token limit.
 
@@ -39,7 +42,7 @@ def check_candidate_token_limit(
 
 
 def build_candidate_token_context(
-    candidate: dict[str, str], max_candidate_tokens: int, token_counter_model: str
+    candidate: dict[str, str], max_candidate_tokens: int, token_counter_model: str | None = None
 ) -> str:
     """Build a context string describing the token limit for the reflection LM."""
     current_tokens = count_candidate_tokens(candidate, token_counter_model=token_counter_model)
