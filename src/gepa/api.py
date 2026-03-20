@@ -84,6 +84,7 @@ def optimize(
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
+    max_consecutive_failures: int = 10,
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
@@ -391,6 +392,7 @@ def optimize(
         track_best_outputs=track_best_outputs,
         display_progress_bar=display_progress_bar,
         raise_on_exception=raise_on_exception,
+        max_consecutive_failures=max_consecutive_failures,
         stop_callback=stop_callback,
         val_evaluation_policy=val_evaluation_policy,
         use_cloudpickle=use_cloudpickle,
