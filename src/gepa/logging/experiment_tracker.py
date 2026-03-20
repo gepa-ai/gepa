@@ -25,17 +25,21 @@ class ExperimentTracker:
         use_wandb: bool = False,
         wandb_api_key: str | None = None,
         wandb_init_kwargs: dict[str, Any] | None = None,
+        wandb_attach_existing: bool = False,
         use_mlflow: bool = False,
         mlflow_tracking_uri: str | None = None,
         mlflow_experiment_name: str | None = None,
+        mlflow_attach_existing: bool = False,
     ):
         self.use_wandb = use_wandb
         self.use_mlflow = use_mlflow
 
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs or {}
+        self.wandb_attach_existing = wandb_attach_existing
         self.mlflow_tracking_uri = mlflow_tracking_uri
         self.mlflow_experiment_name = mlflow_experiment_name
+        self.mlflow_attach_existing = mlflow_attach_existing
 
         self._created_mlflow_run = False
 
@@ -75,20 +79,35 @@ class ExperimentTracker:
             raise RuntimeError(f"Error setting up mlflow: {e}")
 
     def start_run(self):
-        """Start a new run."""
+        """Start a new run.
+
+        When ``wandb_attach_existing=True`` the tracker skips ``wandb.init()``
+        and logs into whatever run is already active in the process.
+        When ``mlflow_attach_existing=True`` the tracker skips
+        ``mlflow.start_run()`` and logs into the already-active MLflow run.
+        In both cases ``end_run()`` will not terminate the run.
+        """
         if self.use_wandb:
-            import wandb  # type: ignore
-
-            wandb.init(**self.wandb_init_kwargs)
-        if self.use_mlflow:
-            import mlflow  # type: ignore
-
-            # Only start a new run if there's no active run
-            if mlflow.active_run() is None:
-                mlflow.start_run()
-                self._created_mlflow_run = True
+            if self.wandb_attach_existing:
+                # Attach to the active run — no init, no finish later.
+                pass
             else:
+                import wandb  # type: ignore
+
+                wandb.init(**self.wandb_init_kwargs)
+        if self.use_mlflow:
+            if self.mlflow_attach_existing:
+                # Attach to the active run — no start, no end later.
                 self._created_mlflow_run = False
+            else:
+                import mlflow  # type: ignore
+
+                # Only start a new run if there's no active run
+                if mlflow.active_run() is None:
+                    mlflow.start_run()
+                    self._created_mlflow_run = True
+                else:
+                    self._created_mlflow_run = False
 
     def log_config(self, config: dict[str, Any]) -> None:
         """Log run configuration/hyperparameters to the active backends.
@@ -236,8 +255,12 @@ class ExperimentTracker:
                 print(f"Warning: Failed to log HTML to mlflow: {e}")
 
     def end_run(self):
-        """End the current run."""
-        if self.use_wandb:
+        """End the current run.
+
+        When ``wandb_attach_existing=True`` or ``mlflow_attach_existing=True``
+        the respective run is left open — the caller owns its lifecycle.
+        """
+        if self.use_wandb and not self.wandb_attach_existing:
             try:
                 import wandb  # type: ignore
 
@@ -283,9 +306,11 @@ def create_experiment_tracker(
     use_wandb: bool = False,
     wandb_api_key: str | None = None,
     wandb_init_kwargs: dict[str, Any] | None = None,
+    wandb_attach_existing: bool = False,
     use_mlflow: bool = False,
     mlflow_tracking_uri: str | None = None,
     mlflow_experiment_name: str | None = None,
+    mlflow_attach_existing: bool = False,
 ) -> ExperimentTracker:
     """
     Create an experiment tracker based on the specified backends.
@@ -295,8 +320,13 @@ def create_experiment_tracker(
         use_mlflow: Whether to use mlflow
         wandb_api_key: API key for wandb
         wandb_init_kwargs: Additional kwargs for wandb.init()
+        wandb_attach_existing: When True, skip wandb.init() and wandb.finish()
+            and log into the already-active run.  Use this when embedding GEPA
+            inside a training loop that manages its own wandb run.
         mlflow_tracking_uri: Tracking URI for mlflow
         mlflow_experiment_name: Experiment name for mlflow
+        mlflow_attach_existing: When True, skip mlflow.start_run() and
+            mlflow.end_run() and log into the already-active run.
 
     Returns:
         ExperimentTracker instance
@@ -308,7 +338,9 @@ def create_experiment_tracker(
         use_wandb=use_wandb,
         wandb_api_key=wandb_api_key,
         wandb_init_kwargs=wandb_init_kwargs,
+        wandb_attach_existing=wandb_attach_existing,
         use_mlflow=use_mlflow,
         mlflow_tracking_uri=mlflow_tracking_uri,
         mlflow_experiment_name=mlflow_experiment_name,
+        mlflow_attach_existing=mlflow_attach_existing,
     )

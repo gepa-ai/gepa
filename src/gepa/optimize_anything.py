@@ -785,9 +785,57 @@ class TrackingConfig:
     use_wandb: bool = False
     wandb_api_key: str | None = None
     wandb_init_kwargs: dict[str, Any] | None = None
+    wandb_attach_existing: bool = False
+    """Attach to an already-active W&B run without managing its lifecycle.
+
+    When ``True``, GEPA logs metrics and tables into the run that is already
+    active in the process (``wandb.run``) — it will not call ``wandb.init()``
+    on entry or ``wandb.finish()`` on exit.
+
+    Use this when embedding GEPA inside an RL training loop or any other
+    process that manages its own W&B run::
+
+        import wandb
+        wandb.init(project="my-training")   # caller owns this run
+
+        result = optimize_anything(
+            ...,
+            config=GEPAConfig(
+                tracking=TrackingConfig(
+                    use_wandb=True,
+                    wandb_attach_existing=True,  # log here, don't close it
+                )
+            ),
+        )
+
+        wandb.log({"train/loss": 0.1})   # still works — run is still open
+    """
     use_mlflow: bool = False
     mlflow_tracking_uri: str | None = None
     mlflow_experiment_name: str | None = None
+    mlflow_attach_existing: bool = False
+    """Attach to an already-active MLflow run without managing its lifecycle.
+
+    When ``True``, GEPA logs into the run that is already active (via
+    ``mlflow.active_run()``) — it will not call ``mlflow.start_run()`` on
+    entry or ``mlflow.end_run()`` on exit.
+
+    Use this when embedding GEPA inside a training loop that manages its own
+    MLflow run::
+
+        import mlflow
+        with mlflow.start_run():          # caller owns this run
+            result = optimize_anything(
+                ...,
+                config=GEPAConfig(
+                    tracking=TrackingConfig(
+                        use_mlflow=True,
+                        mlflow_attach_existing=True,
+                    )
+                ),
+            )
+            mlflow.log_metric("train/loss", 0.1)  # still works
+    """
 
 
 @dataclass
@@ -1358,9 +1406,11 @@ def optimize_anything(
         use_wandb=config.tracking.use_wandb,
         wandb_api_key=config.tracking.wandb_api_key,
         wandb_init_kwargs=config.tracking.wandb_init_kwargs,
+        wandb_attach_existing=config.tracking.wandb_attach_existing,
         use_mlflow=config.tracking.use_mlflow,
         mlflow_tracking_uri=config.tracking.mlflow_tracking_uri,
         mlflow_experiment_name=config.tracking.mlflow_experiment_name,
+        mlflow_attach_existing=config.tracking.mlflow_attach_existing,
     )
 
     # --- 9. Build reflection prompt template from objective/background if provided ---
