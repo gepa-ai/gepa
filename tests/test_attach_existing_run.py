@@ -188,7 +188,10 @@ class TestTrackingConfig:
             return t
 
         with patch("gepa.optimize_anything.create_experiment_tracker", side_effect=spy), \
-             patch("gepa.optimize_anything.GEPAEngine") as mock_cls:
+             patch("gepa.optimize_anything.GEPAEngine") as mock_cls, \
+             patch("wandb.login"), patch("wandb.init"), patch("wandb.finish"), \
+             patch("mlflow.active_run", return_value=MagicMock()), \
+             patch("mlflow.start_run"), patch("mlflow.end_run"):
             mock_engine = MagicMock()
             mock_state = MagicMock()
             mock_state.program_candidates = [{"current_candidate": "v0"}]
@@ -254,7 +257,8 @@ class TestOptimizeApiAttachExisting:
                 return {c: [] for c in components}
 
         with patch("gepa.api.create_experiment_tracker", side_effect=spy), \
-             patch("gepa.api.GEPAEngine") as mock_cls:
+             patch("gepa.api.GEPAEngine") as mock_cls, \
+             patch("wandb.login"), patch("wandb.init"), patch("wandb.finish"):
             mock_engine = MagicMock()
             mock_state = MagicMock()
             mock_state.program_candidates = [{"system_prompt": "v0"}]
@@ -375,7 +379,8 @@ class TestKeyPrefix:
             return t
 
         with patch("gepa.optimize_anything.create_experiment_tracker", side_effect=spy), \
-             patch("gepa.optimize_anything.GEPAEngine") as mock_cls:
+             patch("gepa.optimize_anything.GEPAEngine") as mock_cls, \
+             patch("wandb.login"), patch("wandb.init"), patch("wandb.finish"):
             from unittest.mock import MagicMock
             mock_engine = MagicMock()
             mock_state = MagicMock()
