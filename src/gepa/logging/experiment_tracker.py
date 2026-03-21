@@ -48,6 +48,12 @@ class ExperimentTracker:
         self._created_mlflow_run = False
         self._wandb_step_metric_defined = False
 
+        # Accumulate table rows so each wandb.log() sends the full growing
+        # table, not just the latest row.  Without this, commit=False causes
+        # the pending dict to overwrite earlier single-row tables with the
+        # newest one, and only the last row per commit cycle survives.
+        self._wandb_table_rows: dict[str, tuple[list[str], list[list]]] = {}
+
     def _p(self, key: str) -> str:
         """Prepend key_prefix to a key/name, if one is set."""
         return f"{self.key_prefix}{key}" if self.key_prefix else key
@@ -260,8 +266,19 @@ class ExperimentTracker:
             try:
                 import wandb  # type: ignore
 
-                table = wandb.Table(columns=columns, data=data)
-                wandb.log({self._p(table_name): table}, commit=False)
+                # Accumulate rows: each call appends to the stored rows for
+                # this table, then logs the full growing table.  This ensures
+                # all rows survive even when multiple log_table calls share
+                # the same commit cycle (commit=False overwrites the pending
+                # dict, so a single-row table would replace the previous one).
+                key = self._p(table_name)
+                if key not in self._wandb_table_rows:
+                    self._wandb_table_rows[key] = (columns, list(data))
+                else:
+                    self._wandb_table_rows[key][1].extend(data)
+                all_columns, all_rows = self._wandb_table_rows[key]
+                table = wandb.Table(columns=all_columns, data=all_rows)
+                wandb.log({key: table}, commit=False)
             except Exception as e:
                 print(f"Warning: Failed to log table to wandb: {e}")
 
