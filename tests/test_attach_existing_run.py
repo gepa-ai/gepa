@@ -413,3 +413,97 @@ class TestKeyPrefix:
 
         assert created[0].key_prefix == "gepa/"
         assert created[0]._p("score") == "gepa/score"
+
+
+# ---------------------------------------------------------------------------
+# wandb_step_metric — custom x-axis for embedded runs
+# ---------------------------------------------------------------------------
+
+class TestWandbStepMetric:
+    def test_define_metric_called_on_first_log(self):
+        """wandb.define_metric is called lazily on the first log_metrics call."""
+        tracker = ExperimentTracker(use_wandb=True, wandb_step_metric="gepa/iteration")
+        mock_run = MagicMock()
+        with patch("wandb.run", mock_run), \
+             patch("wandb.define_metric") as mock_define, \
+             patch("wandb.log"):
+            tracker.log_metrics({"score": 0.5}, step=1)
+        # define_metric called twice: once for the step metric, once for "*"
+        assert mock_define.call_count == 2
+        mock_define.assert_any_call("gepa/iteration", hidden=False)
+        mock_define.assert_any_call("*", step_metric="gepa/iteration")
+
+    def test_define_metric_only_called_once(self):
+        """wandb.define_metric is NOT called on subsequent log_metrics calls."""
+        tracker = ExperimentTracker(use_wandb=True, wandb_step_metric="gepa/iteration")
+        mock_run = MagicMock()
+        with patch("wandb.run", mock_run), \
+             patch("wandb.define_metric") as mock_define, \
+             patch("wandb.log"):
+            tracker.log_metrics({"score": 0.5}, step=1)
+            tracker.log_metrics({"score": 0.6}, step=2)
+        assert mock_define.call_count == 2  # only from the first call
+
+    def test_step_injected_as_metric(self):
+        """step is injected as a metric value, not passed as step= kwarg."""
+        tracker = ExperimentTracker(use_wandb=True, wandb_step_metric="gepa/iteration")
+        mock_run = MagicMock()
+        with patch("wandb.run", mock_run), \
+             patch("wandb.define_metric"), \
+             patch("wandb.log") as mock_log:
+            tracker.log_metrics({"score": 0.5, "loss": 0.3}, step=3)
+        mock_log.assert_called_once()
+        call_args = mock_log.call_args
+        logged_data = call_args[0][0]
+        # step is a metric value, not a kwarg
+        assert logged_data["gepa/iteration"] == 3
+        assert logged_data["score"] == 0.5
+        assert logged_data["loss"] == 0.3
+        # step= kwarg NOT passed
+        assert "step" not in call_args[1]
+
+    def test_no_step_metric_uses_global_step(self):
+        """Without wandb_step_metric, step= is passed to wandb.log as before."""
+        tracker = ExperimentTracker(use_wandb=True)
+        with patch("wandb.log") as mock_log:
+            tracker.log_metrics({"score": 0.5}, step=3)
+        call_args = mock_log.call_args
+        assert call_args[1]["step"] == 3
+        assert "gepa/iteration" not in call_args[0][0]
+
+    def test_step_metric_with_key_prefix(self):
+        """wandb_step_metric works alongside key_prefix."""
+        tracker = ExperimentTracker(
+            use_wandb=True,
+            wandb_step_metric="gepa/iteration",
+            key_prefix="round1/",
+        )
+        mock_run = MagicMock()
+        with patch("wandb.run", mock_run), \
+             patch("wandb.define_metric"), \
+             patch("wandb.log") as mock_log:
+            tracker.log_metrics({"score": 0.5}, step=2)
+        logged_data = mock_log.call_args[0][0]
+        # key_prefix applied to metric keys
+        assert "round1/score" in logged_data
+        # step metric is injected as-is (not prefixed — it already has its namespace)
+        assert logged_data["gepa/iteration"] == 2
+
+    def test_step_metric_none_step_no_injection(self):
+        """When step is None, step metric is not injected."""
+        tracker = ExperimentTracker(use_wandb=True, wandb_step_metric="gepa/iteration")
+        mock_run = MagicMock()
+        with patch("wandb.run", mock_run), \
+             patch("wandb.define_metric"), \
+             patch("wandb.log") as mock_log:
+            tracker.log_metrics({"score": 0.5}, step=None)
+        logged_data = mock_log.call_args[0][0]
+        assert "gepa/iteration" not in logged_data
+
+    def test_wired_through_tracking_config(self):
+        """wandb_step_metric in TrackingConfig reaches ExperimentTracker."""
+        tracker = create_experiment_tracker(
+            use_wandb=True,
+            wandb_step_metric="gepa/step",
+        )
+        assert tracker.wandb_step_metric == "gepa/step"

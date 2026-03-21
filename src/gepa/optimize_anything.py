@@ -791,24 +791,27 @@ class TrackingConfig:
     When ``True``, GEPA logs metrics and tables into the run that is already
     active in the process (``wandb.run``) — it will not call ``wandb.init()``
     on entry or ``wandb.finish()`` on exit.
+    """
+    wandb_step_metric: str | None = None
+    """Custom x-axis metric name for wandb charts.
 
-    Use this when embedding GEPA inside an RL training loop or any other
-    process that manages its own W&B run::
+    When set, GEPA uses ``wandb.define_metric`` to declare a custom x-axis
+    for all its metrics, decoupling them from wandb's global monotonic step
+    counter.  The ``step`` value passed to ``log_metrics`` is injected as a
+    regular metric (under this name) instead of being passed as ``step=``.
 
-        import wandb
-        wandb.init(project="my-training")   # caller owns this run
+    **Required when embedding GEPA inside a host training loop** that manages
+    its own wandb step counter.  Without this, GEPA's ``step=1, 2, 3, ...``
+    collides with the host's ``step=100, 101, ...``, causing wandb to drop
+    GEPA's data.
 
-        result = optimize_anything(
-            ...,
-            config=GEPAConfig(
-                tracking=TrackingConfig(
-                    use_wandb=True,
-                    wandb_attach_existing=True,  # log here, don't close it
-                )
-            ),
+    Example::
+
+        TrackingConfig(
+            use_wandb=True,
+            wandb_attach_existing=True,
+            wandb_step_metric="gepa/iteration",
         )
-
-        wandb.log({"train/loss": 0.1})   # still works — run is still open
     """
     use_mlflow: bool = False
     mlflow_tracking_uri: str | None = None
@@ -1420,6 +1423,7 @@ def optimize_anything(
         wandb_api_key=config.tracking.wandb_api_key,
         wandb_init_kwargs=config.tracking.wandb_init_kwargs,
         wandb_attach_existing=config.tracking.wandb_attach_existing,
+        wandb_step_metric=config.tracking.wandb_step_metric,
         use_mlflow=config.tracking.use_mlflow,
         mlflow_tracking_uri=config.tracking.mlflow_tracking_uri,
         mlflow_experiment_name=config.tracking.mlflow_experiment_name,

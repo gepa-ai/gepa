@@ -26,6 +26,7 @@ class ExperimentTracker:
         wandb_api_key: str | None = None,
         wandb_init_kwargs: dict[str, Any] | None = None,
         wandb_attach_existing: bool = False,
+        wandb_step_metric: str | None = None,
         use_mlflow: bool = False,
         mlflow_tracking_uri: str | None = None,
         mlflow_experiment_name: str | None = None,
@@ -38,12 +39,14 @@ class ExperimentTracker:
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs or {}
         self.wandb_attach_existing = wandb_attach_existing
+        self.wandb_step_metric = wandb_step_metric
         self.mlflow_tracking_uri = mlflow_tracking_uri
         self.mlflow_experiment_name = mlflow_experiment_name
         self.mlflow_attach_existing = mlflow_attach_existing
         self.key_prefix = key_prefix
 
         self._created_mlflow_run = False
+        self._wandb_step_metric_defined = False
 
     def _p(self, key: str) -> str:
         """Prepend key_prefix to a key/name, if one is set."""
@@ -83,6 +86,30 @@ class ExperimentTracker:
             raise ImportError("mlflow is not installed. Please install it or set backend='wandb' or 'none'.")
         except Exception as e:
             raise RuntimeError(f"Error setting up mlflow: {e}")
+
+    def _define_wandb_step_metric(self) -> None:
+        """Declare a custom x-axis for all GEPA metrics in wandb.
+
+        Called once on the first ``log_metrics`` call (not in ``start_run``)
+        so that it works regardless of whether GEPA owns the ``wandb.init``
+        call or is attaching to an existing run.
+
+        When ``wandb_step_metric`` is set, all GEPA metrics are plotted
+        against this custom step metric instead of wandb's global monotonic
+        step counter.  This avoids conflicts when GEPA is embedded inside
+        a host training loop that uses its own step counter.
+        """
+        if self._wandb_step_metric_defined or not self.wandb_step_metric:
+            return
+        try:
+            import wandb  # type: ignore
+
+            if wandb.run is not None:
+                wandb.define_metric(self.wandb_step_metric, hidden=False)
+                wandb.define_metric("*", step_metric=self.wandb_step_metric)
+                self._wandb_step_metric_defined = True
+        except Exception as e:
+            print(f"Warning: Failed to define wandb step metric: {e}")
 
     def start_run(self):
         """Start a new run.
@@ -154,11 +181,21 @@ class ExperimentTracker:
             try:
                 import wandb  # type: ignore
 
+                # Lazily define the custom step metric on the first log call.
+                self._define_wandb_step_metric()
+
                 # Filter to numeric values only — non-numeric data (dicts, strings)
                 # is logged via log_table() instead to avoid noisy flat charts
                 numeric_metrics = {self._p(k): v for k, v in metrics.items() if isinstance(v, int | float)}
                 if numeric_metrics:
-                    wandb.log(numeric_metrics, step=step)
+                    if self.wandb_step_metric and step is not None:
+                        # Use custom x-axis: inject the step as a metric value
+                        # and omit the step= arg to avoid conflicting with the
+                        # host run's global step counter.
+                        numeric_metrics[self.wandb_step_metric] = step
+                        wandb.log(numeric_metrics)
+                    else:
+                        wandb.log(numeric_metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log to wandb: {e}")
 
@@ -315,6 +352,7 @@ def create_experiment_tracker(
     wandb_api_key: str | None = None,
     wandb_init_kwargs: dict[str, Any] | None = None,
     wandb_attach_existing: bool = False,
+    wandb_step_metric: str | None = None,
     use_mlflow: bool = False,
     mlflow_tracking_uri: str | None = None,
     mlflow_experiment_name: str | None = None,
@@ -330,8 +368,12 @@ def create_experiment_tracker(
         wandb_api_key: API key for wandb
         wandb_init_kwargs: Additional kwargs for wandb.init()
         wandb_attach_existing: When True, skip wandb.init() and wandb.finish()
-            and log into the already-active run.  Use this when embedding GEPA
-            inside a training loop that manages its own wandb run.
+            and log into the already-active run.
+        wandb_step_metric: Custom x-axis metric name for wandb.  When set,
+            GEPA uses ``wandb.define_metric`` to log all metrics against this
+            custom step instead of wandb's global monotonic step counter.
+            Required when embedding GEPA inside a host training loop that
+            manages its own wandb step counter.
         mlflow_tracking_uri: Tracking URI for mlflow
         mlflow_experiment_name: Experiment name for mlflow
         mlflow_attach_existing: When True, skip mlflow.start_run() and
@@ -348,6 +390,7 @@ def create_experiment_tracker(
         wandb_api_key=wandb_api_key,
         wandb_init_kwargs=wandb_init_kwargs,
         wandb_attach_existing=wandb_attach_existing,
+        wandb_step_metric=wandb_step_metric,
         use_mlflow=use_mlflow,
         mlflow_tracking_uri=mlflow_tracking_uri,
         mlflow_experiment_name=mlflow_experiment_name,
