@@ -282,6 +282,48 @@ Rules:
 - To delete text, use an empty REPLACE section."""
 
     @classmethod
+    def run_with_metadata(
+        cls, lm: "LanguageModel", input_dict: Mapping[str, Any]
+    ) -> tuple[dict[str, str], str | list[dict[str, Any]], str]:
+        """Like ``run()``, but also returns the rendered prompt and raw LM output.
+
+        Overrides the base class to route through ``InstructionEditSignature.run()``
+        which has SEARCH/REPLACE parsing, retry logic, and fuzzy matching —
+        rather than the base class's simple backtick extraction.
+        """
+        full_prompt = cls.prompt_renderer(input_dict)
+        lm_res = lm(full_prompt)
+        raw_lm_out = lm_res.strip()
+
+        original_instruction = input_dict.get("current_instruction_doc", "")
+        edited, failed = cls._apply_edits(str(original_instruction), raw_lm_out)
+
+        # Retry loop (same as run())
+        retries = 0
+        while failed and retries < 1:
+            retries += 1
+            failed_summary = "\n\n".join(
+                f"SEARCH block {i + 1} not found:\n```\n{s}\n```" for i, s in enumerate(failed)
+            )
+            retry_prompt = (
+                f"Your previous edit contained {len(failed)} SEARCH block(s) that could not be "
+                f"matched against the current instruction (even with fuzzy matching).\n\n"
+                f"{failed_summary}\n\n"
+                f"The current instruction is:\n```\n{edited if edited is not None else original_instruction}\n```\n\n"
+                "Please provide corrected SEARCH/REPLACE blocks. The SEARCH text must appear "
+                "verbatim in the current instruction above."
+            )
+            raw_lm_out = lm(retry_prompt).strip()
+            source = edited if edited is not None else str(original_instruction)
+            edited, failed = cls._apply_edits(source, raw_lm_out)
+
+        if edited is not None:
+            return {"new_instruction": edited}, full_prompt, raw_lm_out
+
+        # Fallback: extract full rewrite from ``` blocks (same as parent)
+        return cls.output_extractor(raw_lm_out), full_prompt, raw_lm_out
+
+    @classmethod
     def _apply_edits(cls, original: str, lm_out: str) -> tuple[str | None, list[str]]:
         """Parse SEARCH/REPLACE blocks from *lm_out* and apply them to *original*.
 
