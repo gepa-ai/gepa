@@ -106,7 +106,15 @@ class ExperimentTracker:
 
             if wandb.run is not None:
                 wandb.define_metric(self.wandb_step_metric, hidden=False)
-                wandb.define_metric("*", step_metric=self.wandb_step_metric)
+                # Scope the custom x-axis to GEPA's prefixed metrics only.
+                # Using "*" would override the x-axis for ALL metrics in the
+                # run, including the host's metrics (e.g. train/loss), causing
+                # wandb to drop the host's data after GEPA runs.
+                if self.key_prefix:
+                    glob = f"{self.key_prefix}*"
+                else:
+                    glob = "*"
+                wandb.define_metric(glob, step_metric=self.wandb_step_metric)
                 self._wandb_step_metric_defined = True
         except Exception as e:
             print(f"Warning: Failed to define wandb step metric: {e}")
