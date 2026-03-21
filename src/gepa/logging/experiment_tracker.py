@@ -39,6 +39,12 @@ class ExperimentTracker:
 
         self._created_mlflow_run = False
 
+        # Accumulate table rows so each wandb.log() sends the full growing
+        # table, not just the latest row.  Without this, commit=False causes
+        # the pending dict to overwrite earlier single-row tables with the
+        # newest one — only the last row per commit cycle survives.
+        self._wandb_table_rows: dict[str, tuple[list[str], list[list]]] = {}
+
     def initialize(self):
         """Initialize the logging backends."""
         if self.use_wandb:
@@ -189,7 +195,17 @@ class ExperimentTracker:
             try:
                 import wandb  # type: ignore
 
-                table = wandb.Table(columns=columns, data=data)
+                # Accumulate rows: each call appends to the stored rows for
+                # this table, then logs the full growing table.  This ensures
+                # all rows survive even when multiple log_table() calls share
+                # the same commit cycle (commit=False overwrites the pending
+                # dict key, so a single-row table would replace the previous).
+                if table_name not in self._wandb_table_rows:
+                    self._wandb_table_rows[table_name] = (columns, list(data))
+                else:
+                    self._wandb_table_rows[table_name][1].extend(data)
+                all_columns, all_rows = self._wandb_table_rows[table_name]
+                table = wandb.Table(columns=all_columns, data=all_rows)
                 wandb.log({table_name: table}, commit=False)
             except Exception as e:
                 print(f"Warning: Failed to log table to wandb: {e}")
