@@ -76,7 +76,7 @@ def optimize(
     use_mlflow: bool = False,
     mlflow_tracking_uri: str | None = None,
     mlflow_experiment_name: str | None = None,
-    track_best_outputs: bool = False,
+    track_best_outputs: bool = True,
     display_progress_bar: bool = False,
     use_cloudpickle: bool = False,
     # Evaluation caching
