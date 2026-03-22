@@ -24,6 +24,9 @@
 <p align="center">
   <a href="https://join.slack.com/t/gepa-ai/shared_invite/zt-3o352xhyf-QZDfwmMpiQjsvoSYo7M1_w"><img src="https://badgen.net/badge/icon/Slack?icon=slack&label&color=4A154B" alt="Slack"></a>
   <a href="https://discord.gg/WXFSeVGdbW"><img src="https://dcbadge.limes.pink/api/server/https://discord.gg/WXFSeVGdbW?style=flat" alt="Discord"></a>
+  <a href="https://gitcgr.com/gepa-ai/gepa">
+    <img src="https://gitcgr.com/badge/gepa-ai/gepa.svg" alt="gitcgr" />
+  </a>
 </p>
 
 ---
