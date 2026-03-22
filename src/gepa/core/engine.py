@@ -69,6 +69,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         track_best_outputs: bool = False,
         display_progress_bar: bool = False,
         raise_on_exception: bool = True,
+        max_consecutive_failures: int = 10,
         use_cloudpickle: bool = False,
         # Budget and Stop Condition
         stop_callback: StopperProtocol | None = None,
@@ -118,6 +119,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.use_cloudpickle = use_cloudpickle
 
         self.raise_on_exception = raise_on_exception
+        self.max_consecutive_failures = max_consecutive_failures
         self.val_evaluation_policy: EvaluationPolicy[DataId, DataInst] = (
             val_evaluation_policy if val_evaluation_policy is not None else FullEvaluationPolicy()
         )
@@ -417,6 +419,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Main loop
         last_pbar_val = 0
+        # Track consecutive iterations where the proposer failed to produce any output.
+        # This catches: LM errors, parse errors, adapter failures in the proposer
+        # (which are caught internally and return None).  Also catches exceptions
+        # that propagate all the way to the main except block.
+        consecutive_proposer_failures = 0
+        collected_failure_exceptions: list[Exception] = []
+        last_failure_exception: Exception | None = None
         while not self._should_stop(state):
             if self.display_progress_bar and progress_bar is not None:
                 delta = state.total_num_evals - last_pbar_val
@@ -534,7 +543,17 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 proposal = self.reflective_proposer.propose(state)
                 if proposal is None:
                     self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
+                    # Count as a failure: the proposer couldn't generate a candidate,
+                    # usually due to an LM error or parse failure caught internally.
+                    consecutive_proposer_failures += 1
+                    self._check_consecutive_failures(
+                        consecutive_proposer_failures, collected_failure_exceptions
+                    )
                     continue
+                # Proposer produced a candidate — reset the failure counter.
+                consecutive_proposer_failures = 0
+                collected_failure_exceptions = []
+                last_failure_exception = None
 
                 # Acceptance: require strict improvement on subsample
                 old_sum = sum(proposal.subsample_scores_before or [])
@@ -601,8 +620,19 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 )
                 if self.raise_on_exception:
                     raise e
-                else:
-                    continue
+                # Track consecutive failures to detect systemic misconfiguration.
+                consecutive_proposer_failures += 1
+                last_failure_exception = e
+                collected_failure_exceptions.append(e)
+                self._check_consecutive_failures(
+                    consecutive_proposer_failures, collected_failure_exceptions
+                )
+                continue
+            else:
+                # Iteration completed without exception — reset the failure counter.
+                consecutive_proposer_failures = 0
+                collected_failure_exceptions = []
+                last_failure_exception = None
             finally:
                 # Notify iteration end only if the iteration actually started
                 # (i.e., on_iteration_start was called successfully)
@@ -651,6 +681,38 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.experiment_tracker.log_summary(summary)
 
         return state
+
+    def _check_consecutive_failures(
+        self,
+        count: int,
+        exceptions: list[Exception],
+    ) -> None:
+        """Raise if consecutive failures exceed ``max_consecutive_failures``.
+
+        Collects all intermediate exceptions into the error message so the
+        user can see the full pattern of failures, not just the last one.
+        Only active when ``raise_on_exception=False`` and
+        ``max_consecutive_failures > 0``.
+        """
+        if self.raise_on_exception or self.max_consecutive_failures <= 0:
+            return
+        if count < self.max_consecutive_failures:
+            return
+
+        exc_summary = "\n".join(
+            f"  [{i + 1}] {type(e).__name__}: {e}"
+            for i, e in enumerate(exceptions)
+        ) if exceptions else "  (no exceptions captured — proposer returned None silently)"
+        raise RuntimeError(
+            f"GEPA aborted: {count} consecutive iterations failed to produce a "
+            f"candidate proposal (raise_on_exception=False).  This usually "
+            f"indicates a misconfigured reflection LM, adapter, or evaluator "
+            f"rather than transient failures.\n\n"
+            f"Exceptions collected:\n{exc_summary}\n\n"
+            f"To surface errors immediately, set raise_on_exception=True.  "
+            f"To allow more retries, increase max_consecutive_failures "
+            f"(currently {self.max_consecutive_failures})."
+        ) from (exceptions[-1] if exceptions else None)
 
     def _log_candidate_tree(self, state: GEPAState[RolloutOutput, DataId]) -> None:
         """Generate and log the candidate tree visualization."""

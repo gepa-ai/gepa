@@ -458,6 +458,20 @@ class EngineConfig:
     seed: int = 0
     display_progress_bar: bool = False
     raise_on_exception: bool = True
+    max_consecutive_failures: int = 5
+    """Raise a ``RuntimeError`` after this many consecutive failed iterations.
+
+    Only active when ``raise_on_exception=False``.  A "failure" is any
+    iteration that raises an unhandled exception (e.g. a broken evaluator, a
+    bad LLM response that cannot be parsed, or a network error).  The counter
+    resets to zero as soon as an iteration completes without error — whether or
+    not a new candidate was accepted.
+
+    Set to ``0`` to disable the guard entirely.
+
+    This prevents GEPA from silently completing with zero improvements when
+    every iteration fails due to a configuration error.
+    """
     use_cloudpickle: bool = True
     track_best_outputs: bool = True
 
@@ -1464,6 +1478,7 @@ def optimize_anything(
         track_best_outputs=config.engine.track_best_outputs,
         display_progress_bar=config.engine.display_progress_bar,
         raise_on_exception=config.engine.raise_on_exception,
+        max_consecutive_failures=config.engine.max_consecutive_failures,
         stop_callback=stop_callback,
         val_evaluation_policy=config.engine.val_evaluation_policy,
         use_cloudpickle=config.engine.use_cloudpickle,
