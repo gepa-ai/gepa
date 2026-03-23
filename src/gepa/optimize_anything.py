@@ -123,6 +123,7 @@ from typing import (
 
 from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
 from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn
+from gepa.core.callbacks import GEPACallback
 from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
@@ -818,6 +819,24 @@ class GEPAConfig:
 
     # Complex callbacks that aren't serializable
     stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None
+    callbacks: "list[GEPACallback] | None" = None
+    """Observation callbacks for monitoring optimization progress.
+
+    Receive events like ``on_optimization_start``, ``on_iteration_end``,
+    ``on_candidate_accepted``, ``on_proposal_end``, etc.  See
+    :class:`~gepa.core.callbacks.GEPACallback` for the full protocol.
+
+    Example::
+
+        class MyCallback:
+            def on_candidate_accepted(self, event):
+                print(f"New candidate {event['new_candidate_idx']} accepted")
+
+        config = GEPAConfig(
+            callbacks=[MyCallback()],
+            engine=EngineConfig(max_metric_calls=100),
+        )
+    """
 
     def __post_init__(self):
         """Handle dicts passed in (e.g., from a JSON/YAML file)."""
@@ -1421,6 +1440,7 @@ def optimize_anything(
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
+        callbacks=config.callbacks,
     )
 
     # Define evaluator function for merge proposer
@@ -1461,6 +1481,7 @@ def optimize_anything(
         frontier_type=config.engine.frontier_type,
         logger=config.tracking.logger,
         experiment_tracker=experiment_tracker,
+        callbacks=config.callbacks,
         track_best_outputs=config.engine.track_best_outputs,
         display_progress_bar=config.engine.display_progress_bar,
         raise_on_exception=config.engine.raise_on_exception,
