@@ -85,7 +85,7 @@ config = GEPAConfig(
     engine=EngineConfig(max_metric_calls=200),
     stop_callbacks=[
         TimeoutStopCondition(seconds=3600),
-        NoImprovementStopper(patience=10),
+        NoImprovementStopper(max_iterations_without_improvement=10),
     ],
 )
 ```
