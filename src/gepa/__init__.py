@@ -5,11 +5,13 @@ from . import (
     optimize_anything,  # expose submodule; use `from gepa.optimize_anything import optimize_anything` for the function
 )
 from .adapters import default_adapter
+from .adapters.coding_adapter import CodingAdapter
 from .api import optimize
 from .core.adapter import EvaluationBatch, GEPAAdapter
 from .core.result import GEPAResult
 from .examples import aime
 from .image import Image
+from .optimize_anything import CodeCandidate
 from .utils.stop_condition import (
     CompositeStopper,
     FileStopper,
