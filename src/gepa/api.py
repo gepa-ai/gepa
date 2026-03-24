@@ -44,27 +44,13 @@ from gepa.utils import FileStopper, StopperProtocol
 
 
 class _AsyncEvaluateAdapterBridge:
-    """Sync GEPAAdapter facade for adapters with async evaluate()."""
+    """Sync facade that bridges an adapter with ``async def evaluate()``."""
 
     def __init__(self, adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput]) -> None:
         self._adapter = adapter
-        self.propose_new_texts = getattr(adapter, "propose_new_texts", None)
 
-    def evaluate(
-        self,
-        batch: list[DataInst],
-        candidate: dict[str, str],
-        capture_traces: bool = False,
-    ) -> Any:
+    def evaluate(self, batch: list[DataInst], candidate: dict[str, str], capture_traces: bool = False) -> Any:
         return _run_coroutine(self._adapter.evaluate(batch, candidate, capture_traces=capture_traces))
-
-    def make_reflective_dataset(
-        self,
-        candidate: dict[str, str],
-        eval_batch: Any,
-        components_to_update: list[str],
-    ) -> Any:
-        return self._adapter.make_reflective_dataset(candidate, eval_batch, components_to_update)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._adapter, name)
@@ -73,17 +59,9 @@ class _AsyncEvaluateAdapterBridge:
 def _normalize_adapter(
     adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput],
 ) -> GEPAAdapter[DataInst, Trajectory, RolloutOutput]:
-    """Wrap supported async adapter hooks to match the engine's sync contract."""
-    if inspect.iscoroutinefunction(getattr(adapter, "make_reflective_dataset", None)):
-        raise TypeError("Async make_reflective_dataset() is not supported. Keep this adapter hook synchronous.")
-
-    propose_new_texts = getattr(adapter, "propose_new_texts", None)
-    if propose_new_texts is not None and inspect.iscoroutinefunction(propose_new_texts):
-        raise TypeError("Async propose_new_texts() is not supported. Keep this adapter hook synchronous.")
-
+    """Wrap async adapter.evaluate() to match the engine's sync contract."""
     if inspect.iscoroutinefunction(getattr(adapter, "evaluate", None)):
         return cast(GEPAAdapter[DataInst, Trajectory, RolloutOutput], _AsyncEvaluateAdapterBridge(adapter))
-
     return adapter
 
 
