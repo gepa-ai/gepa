@@ -134,6 +134,33 @@ class TestEvaluatorWrapperAsync:
         asyncio.run(_run())
         assert received["example"] == {"id": 42}
 
+    def test_async_call_preserves_log_capture(self):
+        async def async_eval(candidate):
+            gepa.optimize_anything.log("from async eval")
+            return 1.0, {}
+
+        wrapper = EvaluatorWrapper(async_eval, single_instance_mode=True)
+
+        async def _run():
+            return await wrapper.async_call({"current_candidate": "x"})
+
+        score, _, side_info = asyncio.run(_run())
+        assert score == 1.0
+        assert side_info["log"] == "from async eval\n"
+
+    def test_async_call_respects_raise_on_exception_false(self):
+        async def async_eval(candidate):
+            raise RuntimeError("boom")
+
+        wrapper = EvaluatorWrapper(async_eval, single_instance_mode=True, raise_on_exception=False)
+
+        async def _run():
+            return await wrapper.async_call({"current_candidate": "x"})
+
+        score, _, side_info = asyncio.run(_run())
+        assert score == 0.0
+        assert side_info["error"] == "boom"
+
 
 # ---------------------------------------------------------------------------
 # optimize_anything — sync evaluator (regression)
@@ -192,6 +219,21 @@ class TestOptimizeAnythingAsyncEvaluator:
 
         assert result is not None
 
+    def test_async_evaluator_single_example_adapter_path(self):
+        from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
+
+        async def async_eval(candidate: str, example=None) -> tuple[float, dict]:
+            await asyncio.sleep(0)
+            return 0.5, {"ok": True}
+
+        wrapper = EvaluatorWrapper(async_eval, single_instance_mode=False)
+        adapter = OptimizeAnythingAdapter(evaluator=wrapper, parallel=True)
+
+        eval_batch = adapter.evaluate([{"id": 1}], {"current_candidate": "x"})
+
+        assert eval_batch.scores == [0.5]
+        assert eval_batch.trajectories == [{"ok": True}]
+
     def test_async_evaluator_batch_gathered(self):
         """Async evaluators in the adapter are gathered concurrently."""
         from gepa.optimize_anything import EvaluatorWrapper
@@ -217,6 +259,69 @@ class TestOptimizeAnythingAsyncEvaluator:
         assert sorted(order) == [0, 1, 2]
         # Concurrent execution: id=2 (shortest delay) arrives before id=0
         assert order[0] == 2
+
+    def test_async_evaluator_batch_preserves_logs(self):
+        from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
+
+        async def async_eval(candidate: str, example=None) -> tuple[float, dict]:
+            gepa.optimize_anything.log(f"log {example['id']}")
+            await asyncio.sleep(0)
+            return 0.5, {}
+
+        wrapper = EvaluatorWrapper(async_eval, single_instance_mode=False)
+        adapter = OptimizeAnythingAdapter(evaluator=wrapper, parallel=True)
+
+        eval_batch = adapter.evaluate([{"id": 1}, {"id": 2}], {"current_candidate": "x"})
+
+        assert eval_batch.trajectories == [{"log": "log 1\n"}, {"log": "log 2\n"}]
+
+    def test_async_evaluator_batch_respects_raise_on_exception_false(self):
+        from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
+
+        async def async_eval(candidate: str, example=None) -> tuple[float, dict]:
+            raise RuntimeError(f"boom:{example['id']}")
+
+        wrapper = EvaluatorWrapper(async_eval, single_instance_mode=False, raise_on_exception=False)
+        adapter = OptimizeAnythingAdapter(evaluator=wrapper, parallel=True)
+
+        eval_batch = adapter.evaluate([{"id": 1}, {"id": 2}], {"current_candidate": "x"})
+
+        assert eval_batch.scores == [0.0, 0.0]
+        assert eval_batch.trajectories == [{"error": "boom:1"}, {"error": "boom:2"}]
+
+    def test_async_evaluator_batch_uses_cache(self):
+        from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
+
+        counter = {"calls": 0}
+
+        async def async_eval(candidate: str, example=None) -> tuple[float, dict]:
+            counter["calls"] += 1
+            await asyncio.sleep(0)
+            return 0.5, {}
+
+        wrapper = EvaluatorWrapper(async_eval, single_instance_mode=False, raise_on_exception=False)
+        adapter = OptimizeAnythingAdapter(evaluator=wrapper, parallel=True, cache_mode="memory")
+
+        batch = [{"id": 1}, {"id": 2}]
+        adapter.evaluate(batch, {"current_candidate": "x"})
+        adapter.evaluate(batch, {"current_candidate": "x"})
+
+        assert counter["calls"] == 2
+
+    def test_async_evaluator_capture_stdio_falls_back(self):
+        from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
+
+        async def async_eval(candidate: str, example=None) -> tuple[float, dict]:
+            print(f"stdout {example['id']}")
+            await asyncio.sleep(0)
+            return 0.5, {}
+
+        wrapper = EvaluatorWrapper(async_eval, single_instance_mode=False, capture_stdio=True)
+        adapter = OptimizeAnythingAdapter(evaluator=wrapper, parallel=True)
+
+        eval_batch = adapter.evaluate([{"id": 1}, {"id": 2}], {"current_candidate": "x"})
+
+        assert eval_batch.trajectories == [{"stdout": "stdout 1\n"}, {"stdout": "stdout 2\n"}]
 
 
 # ---------------------------------------------------------------------------
@@ -309,3 +414,32 @@ class TestAOptimize:
             result = asyncio.run(_run())
 
         assert result is not None
+
+    def test_aoptimize_supports_async_adapter_in_real_engine(self):
+        from gepa.core.adapter import EvaluationBatch
+
+        class AsyncAdapter:
+            propose_new_texts = None
+
+            async def evaluate(self, batch, candidate, capture_traces=False):
+                await asyncio.sleep(0)
+                scores = [0.5] * len(batch)
+                return EvaluationBatch(outputs=scores, scores=scores)
+
+            def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+                return {c: [] for c in components_to_update}
+
+        async def _run():
+            return await gepa.aoptimize(
+                seed_candidate={"system_prompt": "hello"},
+                trainset=[{"q": "x"}],
+                valset=[{"q": "y"}],
+                adapter=AsyncAdapter(),
+                reflection_lm=MagicMock(return_value="```\nhello\n```"),
+                max_metric_calls=1,
+            )
+
+        result = asyncio.run(_run())
+
+        assert result is not None
+        assert result.best_candidate is not None

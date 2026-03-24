@@ -79,6 +79,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self.evaluator = evaluator
         # Detect async evaluator: EvaluatorWrapper exposes .is_async; fall back to inspect.
         self._evaluator_is_async: bool = getattr(evaluator, "is_async", inspect.iscoroutinefunction(evaluator))
+        self._raw_evaluator_is_async_fn = inspect.iscoroutinefunction(evaluator)
+        self._supports_async_call = hasattr(evaluator, "async_call")
+        self._capture_stdio = bool(getattr(evaluator, "capture_stdio", False))
+        self._can_run_async_batch_concurrently = (
+            self._evaluator_is_async and self._supports_async_call and not self._capture_stdio
+        )
         self.parallel = parallel
         self.max_workers = max_workers
         self.refiner_config = refiner_config
@@ -183,47 +189,89 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         return OptimizationState(best_example_evals=self._get_best_example_evals(example))
 
     def _invoke_evaluator(self, candidate: "Candidate", example: Any) -> tuple[float, Any, dict]:
-        """Call the evaluator, bridging async evaluators into sync context.
+        """Call the evaluator from synchronous code.
 
-        For async evaluators this bridges via _run_coroutine.  When evaluating
-        a whole batch in parallel, prefer _invoke_evaluator_batch_async() instead
-        to take advantage of concurrent asyncio.gather execution.
+        Raw async evaluator functions are bridged via _run_coroutine here.
+        EvaluatorWrapper instances already expose a synchronous __call__ that
+        performs the bridge internally, so they must not be double-bridged.
 
         # TODO (issue #61): when the engine becomes async, this method should
         # become ``async def _invoke_evaluator`` so async evaluators are
         # awaited directly.  The _run_coroutine bridge can then be removed.
         """
         kwargs: dict[str, Any] = dict(example=example, opt_state=self._build_opt_state(example))
-        if self._evaluator_is_async:
+        if self._raw_evaluator_is_async_fn:
             from gepa.optimize_anything import _run_coroutine
+
             return _run_coroutine(self.evaluator(candidate, **kwargs))
         return self.evaluator(candidate, **kwargs)
+
+    async def _invoke_evaluator_async(self, candidate: "Candidate", example: Any) -> tuple[float, Any, dict]:
+        """Call the evaluator from async code."""
+        kwargs: dict[str, Any] = dict(example=example, opt_state=self._build_opt_state(example))
+        if self._supports_async_call:
+            return await self.evaluator.async_call(candidate, **kwargs)  # type: ignore[union-attr]
+        if self._raw_evaluator_is_async_fn:
+            return await self.evaluator(candidate, **kwargs)
+        return self.evaluator(candidate, **kwargs)
+
+    async def _call_evaluator_async(
+        self,
+        candidate: "Candidate",
+        example: Any,
+    ) -> tuple[float, Any, dict]:
+        """Async variant of _call_evaluator with the same cache semantics."""
+        if self.cache_mode == "off":
+            return await self._invoke_evaluator_async(candidate, example)
+
+        cache_key = self._cache_key(candidate, example)
+        with self._eval_cache_lock:
+            if cache_key in self._eval_cache:
+                return self._eval_cache[cache_key]
+
+        result = await self._invoke_evaluator_async(candidate, example)
+
+        with self._eval_cache_lock:
+            self._eval_cache[cache_key] = result
+            if self.cache_mode == "disk":
+                self._save_cache_entry(cache_key, result)
+
+        return result
+
+    async def _run_async_batch(
+        self,
+        coroutines: list[asyncio.Future | asyncio.Task | Any],
+    ) -> list[tuple[float, Any, dict]]:
+        """Run a batch of evaluator coroutines concurrently.
+
+        Uses TaskGroup on Python 3.11+ and falls back to gather on 3.10.
+        """
+        task_group_cls = getattr(asyncio, "TaskGroup", None)
+        if task_group_cls is None:
+            return list(await asyncio.gather(*coroutines))
+
+        results: list[tuple[float, Any, dict] | None] = [None] * len(coroutines)
+
+        async def _store_result(index: int, coroutine: Any) -> None:
+            results[index] = await coroutine
+
+        async with task_group_cls() as task_group:
+            for index, coroutine in enumerate(coroutines):
+                task_group.create_task(_store_result(index, coroutine))
+
+        return [result for result in results if result is not None]
 
     def _invoke_evaluator_batch_async(
         self, candidate: "Candidate", batch: list[Any]
     ) -> list[tuple[float, Any, dict]]:
-        """Evaluate a full batch concurrently using asyncio.gather.
-
-        Only called when ``_evaluator_is_async`` is True.  All examples are
-        launched as coroutines via ``EvaluatorWrapper.async_call`` and gathered
-        concurrently, giving true async parallelism within a single engine step.
-
-        # TODO (issue #61): when the engine is fully async, convert to
-        # ``async def`` and call with ``await``, removing _run_coroutine.
-        """
+        """Evaluate a full batch concurrently with async task scheduling."""
         from gepa.optimize_anything import _run_coroutine
 
-        async def _gather() -> list[tuple[float, Any, dict]]:
-            return list(await asyncio.gather(*[
-                self.evaluator.async_call(  # type: ignore[union-attr]
-                    candidate,
-                    example=ex,
-                    opt_state=self._build_opt_state(ex),
-                )
-                for ex in batch
-            ]))
+        async def _evaluate_batch() -> list[tuple[float, Any, dict]]:
+            coroutines = [self._call_evaluator_async(candidate, example) for example in batch]
+            return await self._run_async_batch(coroutines)
 
-        return _run_coroutine(_gather())
+        return _run_coroutine(_evaluate_batch())
 
     def _call_evaluator(
         self,
@@ -270,15 +318,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Backward compatibility: if refiner_config is None, use old behavior
         if self.refiner_config is None:
             # Old path: direct evaluation without refinement
-            if self._evaluator_is_async and len(batch) > 1:
+            if self._can_run_async_batch_concurrently and len(batch) > 1:
                 # Async evaluator with multiple examples: gather concurrently.
-                # This gives true async parallelism within the evaluation step.
+                # This gives true async parallelism within the evaluation step
+                # while preserving wrapper semantics and caching.
                 # TODO (issue #61): when the engine is fully async, remove this
                 # branch — the engine itself will await the async evaluator directly.
                 raw_results = self._invoke_evaluator_batch_async(candidate, batch)
-            elif self._evaluator_is_async:
-                # Single example, async evaluator — bridge via _run_coroutine.
-                raw_results = [self._invoke_evaluator(candidate, batch[0])]
             elif self.parallel and len(batch) > 1:
                 raw_results = self._evaluate_parallel(batch, candidate)
             else:

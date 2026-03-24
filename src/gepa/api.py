@@ -3,6 +3,7 @@
 
 import asyncio
 import functools
+import inspect
 import os
 import random
 from collections.abc import Sequence
@@ -23,6 +24,7 @@ from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
+from gepa.optimize_anything import _run_coroutine
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
@@ -39,6 +41,50 @@ from gepa.strategies.component_selector import (
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
+
+
+class _AsyncEvaluateAdapterBridge:
+    """Sync GEPAAdapter facade for adapters with async evaluate()."""
+
+    def __init__(self, adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput]) -> None:
+        self._adapter = adapter
+        self.propose_new_texts = getattr(adapter, "propose_new_texts", None)
+
+    def evaluate(
+        self,
+        batch: list[DataInst],
+        candidate: dict[str, str],
+        capture_traces: bool = False,
+    ) -> Any:
+        return _run_coroutine(self._adapter.evaluate(batch, candidate, capture_traces=capture_traces))
+
+    def make_reflective_dataset(
+        self,
+        candidate: dict[str, str],
+        eval_batch: Any,
+        components_to_update: list[str],
+    ) -> Any:
+        return self._adapter.make_reflective_dataset(candidate, eval_batch, components_to_update)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._adapter, name)
+
+
+def _normalize_adapter(
+    adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput],
+) -> GEPAAdapter[DataInst, Trajectory, RolloutOutput]:
+    """Wrap supported async adapter hooks to match the engine's sync contract."""
+    if inspect.iscoroutinefunction(getattr(adapter, "make_reflective_dataset", None)):
+        raise TypeError("Async make_reflective_dataset() is not supported. Keep this adapter hook synchronous.")
+
+    propose_new_texts = getattr(adapter, "propose_new_texts", None)
+    if propose_new_texts is not None and inspect.iscoroutinefunction(propose_new_texts):
+        raise TypeError("Async propose_new_texts() is not supported. Keep this adapter hook synchronous.")
+
+    if inspect.iscoroutinefunction(getattr(adapter, "evaluate", None)):
+        return cast(GEPAAdapter[DataInst, Trajectory, RolloutOutput], _AsyncEvaluateAdapterBridge(adapter))
+
+    return adapter
 
 
 def optimize(
@@ -196,7 +242,7 @@ def optimize(
         assert evaluator is None, (
             "Since an adapter is provided, GEPA does not require an evaluator to be provided. Please set the `evaluator` parameter to None."
         )
-        active_adapter = adapter
+        active_adapter = _normalize_adapter(adapter)
 
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(trainset)
@@ -420,9 +466,10 @@ async def aoptimize(
     """Async entry point for :func:`optimize`.
 
     Runs optimization in a thread-pool executor so the calling event loop
-    is not blocked.  Accepts both sync and async :class:`~gepa.core.adapter.GEPAAdapter`
-    instances — if the adapter's ``evaluate()`` method is async it will be
-    gathered concurrently across each evaluation batch.
+    is not blocked. Accepts normal GEPA adapters and adapters whose
+    ``evaluate()`` method is ``async def``. Async adapter evaluation is
+    bridged to the engine's synchronous contract; other adapter hooks remain
+    synchronous.
 
     All parameters are identical to :func:`optimize`.
 
@@ -439,7 +486,7 @@ async def aoptimize(
     # wrapper can be removed and aoptimize can call the engine directly
     # with ``await``, eliminating the thread-pool overhead.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     fn = functools.partial(
         optimize,
         seed_candidate,
