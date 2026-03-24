@@ -108,6 +108,7 @@ Public API:
 import asyncio
 import concurrent.futures
 import contextvars
+import functools
 import inspect
 import io
 import os
@@ -1634,8 +1635,6 @@ async def aoptimize_anything(
     # wrapper can be removed and aoptimize_anything can call the engine
     # directly with ``await``, eliminating the thread-pool overhead.
     """
-    import functools
-
     loop = asyncio.get_running_loop()
     fn = functools.partial(
         optimize_anything,

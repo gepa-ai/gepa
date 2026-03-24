@@ -79,12 +79,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self.evaluator = evaluator
         # Detect async evaluator: EvaluatorWrapper exposes .is_async; fall back to inspect.
         self._evaluator_is_async: bool = getattr(evaluator, "is_async", inspect.iscoroutinefunction(evaluator))
-        self._raw_evaluator_is_async_fn = inspect.iscoroutinefunction(evaluator)
-        self._supports_async_call = hasattr(evaluator, "async_call")
         self._capture_stdio = bool(getattr(evaluator, "capture_stdio", False))
-        self._can_run_async_batch_concurrently = (
-            self._evaluator_is_async and self._supports_async_call and not self._capture_stdio
-        )
+        self._can_run_async_batch_concurrently = self._evaluator_is_async and not self._capture_stdio
         self.parallel = parallel
         self.max_workers = max_workers
         self.refiner_config = refiner_config
@@ -191,29 +187,19 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def _invoke_evaluator(self, candidate: "Candidate", example: Any) -> tuple[float, Any, dict]:
         """Call the evaluator from synchronous code.
 
-        Raw async evaluator functions are bridged via _run_coroutine here.
-        EvaluatorWrapper instances already expose a synchronous __call__ that
-        performs the bridge internally, so they must not be double-bridged.
+        EvaluatorWrapper.__call__ handles async-to-sync bridging internally,
+        so callers simply invoke the wrapper synchronously.
 
         # TODO (issue #61): when the engine becomes async, this method should
-        # become ``async def _invoke_evaluator`` so async evaluators are
-        # awaited directly.  The _run_coroutine bridge can then be removed.
+        # become ``async def`` so async evaluators are awaited directly.
         """
         kwargs: dict[str, Any] = dict(example=example, opt_state=self._build_opt_state(example))
-        if self._raw_evaluator_is_async_fn:
-            from gepa.optimize_anything import _run_coroutine
-
-            return _run_coroutine(self.evaluator(candidate, **kwargs))
         return self.evaluator(candidate, **kwargs)
 
     async def _invoke_evaluator_async(self, candidate: "Candidate", example: Any) -> tuple[float, Any, dict]:
-        """Call the evaluator from async code."""
+        """Call the evaluator from async code via EvaluatorWrapper.async_call."""
         kwargs: dict[str, Any] = dict(example=example, opt_state=self._build_opt_state(example))
-        if self._supports_async_call:
-            return await self.evaluator.async_call(candidate, **kwargs)  # type: ignore[union-attr]
-        if self._raw_evaluator_is_async_fn:
-            return await self.evaluator(candidate, **kwargs)
-        return self.evaluator(candidate, **kwargs)
+        return await self.evaluator.async_call(candidate, **kwargs)  # type: ignore[union-attr]
 
     async def _call_evaluator_async(
         self,
