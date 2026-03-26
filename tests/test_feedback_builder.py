@@ -262,3 +262,42 @@ class TestImport:
         assert FB is not None
         builder = FB(include_score_diff=True, global_constraints=["test"])
         assert builder.include_score_diff is True
+
+
+# ---------------------------------------------------------------------------
+# Tasks 7-8 – adapter integration
+# ---------------------------------------------------------------------------
+
+from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
+
+
+def _dummy_evaluator(candidate, example):
+    return 1.0, "output", {"Input": example, "Output": "output"}
+
+
+class TestAdapterIntegration:
+    def test_adapter_delegates_to_feedback_builder(self) -> None:
+        """OptimizeAnythingAdapter delegates make_reflective_dataset to FeedbackBuilder when set."""
+        builder = FeedbackBuilder(global_constraints=["Do not overfit."])
+        adapter = OptimizeAnythingAdapter(evaluator=_dummy_evaluator, feedback_builder=builder)
+        eval_batch = EvaluationBatch(
+            outputs=["out"],
+            scores=[0.5],
+            trajectories=[{"Input": "q1", "Output": "a1"}],
+        )
+        result = adapter.make_reflective_dataset({"prompt": "test"}, eval_batch, ["prompt"])
+        assert "Constraints" in result["prompt"][0]
+        assert "Do not overfit." in result["prompt"][0]["Constraints"]
+
+    def test_adapter_without_feedback_builder_unchanged(self) -> None:
+        """Without feedback_builder, make_reflective_dataset works as before."""
+        adapter = OptimizeAnythingAdapter(evaluator=_dummy_evaluator)
+        eval_batch = EvaluationBatch(
+            outputs=["out"],
+            scores=[0.5],
+            trajectories=[{"Input": "q1", "Output": "a1", "scores": {"acc": 0.5}}],
+        )
+        result = adapter.make_reflective_dataset({"prompt": "test"}, eval_batch, ["prompt"])
+        assert result["prompt"][0]["Input"] == "q1"
+        assert result["prompt"][0]["Scores (Higher is Better)"] == {"acc": 0.5}
+        assert "Constraints" not in result["prompt"][0]

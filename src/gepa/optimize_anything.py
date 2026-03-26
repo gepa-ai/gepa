@@ -114,12 +114,16 @@ import warnings
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import (
+    TYPE_CHECKING,
     Any,
     Literal,
     Protocol,
     Sequence,
     TypeAlias,
 )
+
+if TYPE_CHECKING:
+    from gepa.utils.feedback_builder import FeedbackBuilder
 
 from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
 from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn
@@ -718,6 +722,7 @@ class ReflectionConfig:
     reflection_lm: LanguageModel | str | None = "openai/gpt-5.1"
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
+    feedback_builder: "FeedbackBuilder | None" = None
 
 
 @dataclass
@@ -1190,6 +1195,7 @@ def optimize_anything(
         background=background,
         cache_mode=resolved_cache_mode,
         cache_dir=config.engine.run_dir,
+        feedback_builder=config.reflection.feedback_builder,
     )
 
     # Normalize datasets to DataLoader instances
