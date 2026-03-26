@@ -16,8 +16,6 @@ Re-exports:
 """
 
 # Feedback builder for enriching evaluation trajectories into structured records
-from .feedback_builder import FeedbackBuilder
-
 # Code execution utilities for fitness functions that evaluate generated code
 from .code_execution import (
     CodeExecutionResult,
@@ -26,6 +24,7 @@ from .code_execution import (
     execute_code,
     get_code_hash,
 )
+from .feedback_builder import FeedbackBuilder
 from .stdio_capture import (
     StreamCaptureManager,
     ThreadLocalStreamCapture,

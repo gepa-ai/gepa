@@ -1,15 +1,13 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-"""Tests for FeedbackBuilder (Tasks 1-4)."""
+"""Tests for FeedbackBuilder"""
 
 from __future__ import annotations
 
-import pytest
-
+from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
 from gepa.core.adapter import EvaluationBatch
 from gepa.utils.feedback_builder import FeedbackBuilder
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,7 +27,7 @@ def _batch(
 
 
 # ---------------------------------------------------------------------------
-# Task 1 – base record construction
+# base record construction
 # ---------------------------------------------------------------------------
 
 
@@ -90,7 +88,7 @@ class TestBaseRecords:
 
 
 # ---------------------------------------------------------------------------
-# Task 2 – score diff enrichment
+# score diff enrichment
 # ---------------------------------------------------------------------------
 
 
@@ -123,7 +121,7 @@ class TestScoreDiff:
 
 
 # ---------------------------------------------------------------------------
-# Task 3 – rationale extraction
+# Rationale extraction
 # ---------------------------------------------------------------------------
 
 
@@ -158,7 +156,7 @@ class TestRationale:
 
 
 # ---------------------------------------------------------------------------
-# Task 4 – global constraints
+# Global constraints
 # ---------------------------------------------------------------------------
 
 
@@ -186,7 +184,7 @@ class TestGlobalConstraints:
 
 
 # ---------------------------------------------------------------------------
-# Task 5 – combined feature tests
+# Combined feature tests
 # ---------------------------------------------------------------------------
 
 
@@ -250,25 +248,23 @@ class TestCombined:
 
 
 # ---------------------------------------------------------------------------
-# Task 6 – import test
+# Import test
 # ---------------------------------------------------------------------------
 
 
 class TestImport:
     def test_import_from_gepa_utils(self) -> None:
         """FeedbackBuilder is importable from gepa.utils (as shown in issue #264)."""
-        from gepa.utils import FeedbackBuilder as FB
+        from gepa.utils import FeedbackBuilder as FeedbackBuilderFromUtils
 
-        assert FB is not None
-        builder = FB(include_score_diff=True, global_constraints=["test"])
+        assert FeedbackBuilderFromUtils is not None
+        builder = FeedbackBuilderFromUtils(include_score_diff=True, global_constraints=["test"])
         assert builder.include_score_diff is True
 
 
 # ---------------------------------------------------------------------------
-# Tasks 7-8 – adapter integration
+# adapter integration
 # ---------------------------------------------------------------------------
-
-from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
 
 
 def _dummy_evaluator(candidate, example):
