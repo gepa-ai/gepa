@@ -183,3 +183,82 @@ class TestGlobalConstraints:
         )
         result = FeedbackBuilder(global_constraints=[]).build(batch, ["comp"])
         assert "Constraints" not in result["comp"][0]
+
+
+# ---------------------------------------------------------------------------
+# Task 5 – combined feature tests
+# ---------------------------------------------------------------------------
+
+
+class TestCombined:
+    def test_build_all_features_combined(self) -> None:
+        """All enrichments work together without interference."""
+        builder = FeedbackBuilder(
+            include_score_diff=True,
+            rationale_field="explanation",
+            global_constraints=["Stay general.", "Preserve schema."],
+        )
+        batch = _batch(
+            scores=[0.3],
+            trajectories=[
+                {
+                    "Input": "q1",
+                    "Output": "a1",
+                    "Feedback": "Wrong answer.",
+                    "explanation": "The correct approach is X.",
+                    "scores": {"accuracy": 0.0},
+                    "prompt_specific_info": {"Detail": "prompt-level info"},
+                },
+            ],
+        )
+        result = builder.build(batch, ["prompt"])
+        rec = result["prompt"][0]
+
+        # Base record construction
+        assert rec["Input"] == "q1"
+        assert rec["Output"] == "a1"
+        assert rec["Scores (Higher is Better)"] == {"accuracy": 0.0}
+        assert rec["Detail"] == "prompt-level info"
+
+        # Score diff appended to existing Feedback
+        assert "Wrong answer." in rec["Feedback"]
+        assert "Score: 0.3" in rec["Feedback"]
+        assert "Gap from perfect: 0.70" in rec["Feedback"]
+
+        # Rationale extracted
+        assert rec["Rationale"] == "The correct approach is X."
+        assert "explanation" not in rec
+
+        # Constraints added
+        assert "Stay general." in rec["Constraints"]
+        assert "Preserve schema." in rec["Constraints"]
+
+    def test_build_default_is_noop_enrichment(self) -> None:
+        """Default FeedbackBuilder (no options) produces identical output to raw side_info extraction."""
+        batch = _batch(
+            scores=[1.0],
+            trajectories=[
+                {"Input": "q1", "Output": "a1", "Feedback": "Good.", "scores": {"acc": 1.0}},
+            ],
+        )
+        result = FeedbackBuilder().build(batch, ["prompt"])
+        rec = result["prompt"][0]
+
+        assert "Rationale" not in rec
+        assert "Constraints" not in rec
+        assert rec["Feedback"] == "Good."
+
+
+# ---------------------------------------------------------------------------
+# Task 6 – import test
+# ---------------------------------------------------------------------------
+
+
+class TestImport:
+    def test_import_from_gepa_utils(self) -> None:
+        """FeedbackBuilder is importable from gepa.utils (as shown in issue #264)."""
+        from gepa.utils import FeedbackBuilder as FB
+
+        assert FB is not None
+        builder = FB(include_score_diff=True, global_constraints=["test"])
+        assert builder.include_score_diff is True

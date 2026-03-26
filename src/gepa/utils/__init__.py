@@ -1,6 +1,9 @@
 """Utilities for ``optimize_anything`` evaluators and optimization control.
 
 Re-exports:
+    **Feedback builder** — enrich evaluation trajectories into structured records:
+    ``FeedbackBuilder``.
+
     **Stop conditions** — control when optimization terminates:
     ``MaxMetricCallsStopper``, ``TimeoutStopCondition``, ``NoImprovementStopper``,
     ``ScoreThresholdStopper``, ``FileStopper``, ``SignalStopper``, ``CompositeStopper``.
@@ -11,6 +14,9 @@ Re-exports:
     **Stdio capture** — thread-safe stdout/stderr capture during evaluation:
     ``StreamCaptureManager``, ``ThreadLocalStreamCapture``.
 """
+
+# Feedback builder for enriching evaluation trajectories into structured records
+from .feedback_builder import FeedbackBuilder
 
 # Code execution utilities for fitness functions that evaluate generated code
 from .code_execution import (
@@ -38,6 +44,8 @@ from .stop_condition import (
 )
 
 __all__ = [
+    # Feedback builder
+    "FeedbackBuilder",
     # Stop conditions
     "CompositeStopper",
     "FileStopper",
