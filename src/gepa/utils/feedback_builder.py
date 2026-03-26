@@ -67,7 +67,7 @@ class FeedbackBuilder:
     ) -> None:
         """Apply optional enrichments to *record* in-place."""
 
-        # Task 2 – score diff
+        # Score diff
         if self.include_score_diff:
             gap = 1.0 - score
             line = f"Score: {score}. Gap from perfect: {gap:.2f}."
@@ -77,12 +77,12 @@ class FeedbackBuilder:
             else:
                 record["Feedback"] = line
 
-        # Task 3 – rationale extraction
+        # Rationale extraction
         if self.rationale_field is not None:
             value = side_info.get(self.rationale_field)
             if value is not None:
                 record["Rationale"] = value
 
-        # Task 4 – global constraints
+        # Global constraints
         if self.global_constraints:
             record["Constraints"] = "\n".join(f"- {c}" for c in self.global_constraints)
