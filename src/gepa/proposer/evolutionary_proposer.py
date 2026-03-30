@@ -7,18 +7,18 @@ import hashlib
 import json
 import random
 from typing import Any
+import math
 
 from gepa.adapters.glean_adapter.al_adapter import (
     MODULES,
     AssistantALAdapter,
     Candidate,
-    CandidateEval,
     EvalSummary,
     ModuleSpec,
     within_prompt_budget,
 )
 from gepa.adapters.glean_adapter.utils import apply_single_module_edit, crossover
-from gepa.core.adapter import DataInst
+from gepa.core.adapter import DataInst, EvaluationBatch
 from gepa.core.callbacks import GEPACallback
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
@@ -27,22 +27,14 @@ from gepa.logging.logger import LoggerProtocol
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 
 
-def pick_module_to_edit(summary: EvalSummary) -> str:
-    """Heuristic module selection based on eval summary metrics."""
-    if summary.tool_align < 0.8:
-        # Pick a random TOOL_USAGE module if tool alignment is low
-        return random.choice(["TOOL_USAGE_1", "TOOL_USAGE_2", "TOOL_USAGE_3", "TOOL_USAGE_4"])
-    if summary.tokens > 2000:
-        return "FORMATTING"  # Formatting can impact verbosity
-    if summary.quality < 0.85:
-        return "GLOBAL_ROLE"
-    return random.choice(MODULES)
-
+# TODO(Cathy): pick modules based on holistic performance of the eval
+def pick_modules_to_edit() -> [str]:
+   return random.choices(MODULES, k=2)
 
 def make_children_for_generation(
     adapter: AssistantALAdapter,
     frontier_candidates: list[Candidate],
-    frontier_evals: dict[str, CandidateEval],
+    frontier_evals: dict[str, EvaluationBatch],
     reflection_llm: Any,
     offspring_count: int = 24,
     reflect_k: int = 8,
@@ -61,7 +53,7 @@ def make_children_for_generation(
 
     # pick a "main parent" biased to best-quality (doc says bias to best correctness)
     best_quality_parent = max(
-        frontier_candidates, key=lambda c: frontier_evals[c.candidate_id].summary.quality
+        frontier_candidates, key=lambda c: frontier_evals[c.candidate_id].summary['correctness']
     )
 
     # helper: choose a second parent emphasizing diversity
@@ -77,40 +69,40 @@ def make_children_for_generation(
         if r < p_mutation:
             parent = best_quality_parent if random.random() < 0.7 else random.choice(frontier_candidates)
             parent_eval = frontier_evals[parent.candidate_id]
-            if not parent_eval.results:
+            if not parent_eval.trajectories:
                 # need traces to reflect; skip mutation if missing
                 continue
 
             # pick a module to improve: worst module by relevance over high-signal failures
-            module_to_edit = pick_module_to_edit(parent_eval.summary)
+            modules_to_edit = pick_modules_to_edit()
 
             # select high-signal examples for this module (doc requirement)
             high_signal = adapter.make_reflective_dataset(
                 candidate=parent,
-                executions=parent_eval.results,
-                module_name=module_to_edit,
+                eval_batch=frontier_evals[parent.candidate_id],
+                components_to_update=modules_to_edit,
                 k=reflect_k,
             )
 
             # ask teacher/reflection model for 1–3 rewrite variants (small deltas)
-            variants, not_relevant = adapter.propose_new_texts(
-                reflection_llm=reflection_llm,
-                candidate=parent,
-                module_name=module_to_edit,
-                reflective_examples=high_signal,
-                max_variants=3,
-            )
+            for module in modules_to_edit:
+                variants, not_relevant = adapter.propose_new_texts(
+                    reflection_llm=reflection_llm,
+                    candidate=parent,
+                    components_to_update=[module],
+                    reflective_examples=high_signal[module],
+                )
+                # TODO(Cathy): Add logic here to add these to good variant.
+                if not_relevant or not variants:
+                    # module freeze logic lives outside (track streak; stop choosing module later)
+                    continue
 
-            if not_relevant or not variants:
-                # module freeze logic lives outside (track streak; stop choosing module later)
-                continue
-
-            # create one child per variant (bounded)
-            for v in variants[: max(1, (offspring_count - len(children)))]:
-                child = apply_single_module_edit(parent, module_to_edit, v)
-                children.append(child)
-                if len(children) >= offspring_count:
-                    break
+                # create one child per variant (bounded)
+                for v in variants[: max(1, (offspring_count - len(children)))]:
+                    child = apply_single_module_edit(parent, module, v)
+                    children.append(child)
+                    if len(children) >= offspring_count:
+                        break
 
         # ---- 2) crossover: combine two parents
         elif r < p_mutation + p_crossover:
@@ -231,7 +223,7 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
 
         # 2. Convert frontier programs to Candidate objects and evaluate with AL adapter
         frontier_candidates: list[Candidate] = []
-        frontier_evals: dict[str, CandidateEval] = {}
+        frontier_evals: dict[str, EvaluationBatch] = {}
         prog_idx_to_cand_id: dict[int, str] = {}
 
         for idx in frontier_idxs_sorted:
@@ -272,16 +264,16 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
 
         # 5. Screen children with AL adapter and pick best
         best_child: Candidate | None = None
-        best_child_eval: CandidateEval | None = None
+        best_child_eval: EvaluationBatch | None = None
         best_child_quality = float("-inf")
         for child in valid_children:
             screen_eval = self.al_adapter.evaluate(
                 self._batch_data, child.prompt_modules, capture_traces=False
             )
-            if screen_eval.summary.quality > best_child_quality:
+            if screen_eval.summary['correctness'] > best_child_quality:
                 best_child = child
                 best_child_eval = screen_eval
-                best_child_quality = screen_eval.summary.quality
+                best_child_quality = screen_eval.summary['correctness']
 
         if best_child is None or best_child_eval is None:
             return None
@@ -295,8 +287,8 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
         # Use screen eval set as "subsample" (one eval set evaluation)
         # Both parent and child evaluated on same screen eval set
         subsample_ids = [0]  # Dummy ID since we evaluate on full eval set
-        parent_score = parent_eval.summary.quality
-        child_score = best_child_eval.summary.quality
+        parent_score = parent_eval.summary['correctness']
+        child_score = best_child_eval.summary['correctness']
         state.increment_evals(1)  # One eval set run
 
         self.logger.log(

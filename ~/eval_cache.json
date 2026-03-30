@@ -1,0 +1,12 @@
+{
+  "eval_cache": {
+    "[\"Glean Chat Multiturn V2 Small\", \"20260320\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1774839568",
+    "[\"Glean Chat Multiturn V2 Small\", \"20260320\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1774839572"
+  },
+  "judge_triggered": [
+    [
+      "gepa_gpt_3070257bbe5f1340_1774839568",
+      "gepa_fast_1ad33e85e6067b04_1774839572"
+    ]
+  ]
+}

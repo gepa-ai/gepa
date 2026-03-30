@@ -127,6 +127,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         program: dict[str, str],
         state: GEPAState[RolloutOutput, DataId],
     ) -> ValsetEvaluation[RolloutOutput, DataId]:
+        print("Evalute on valset")
         valset = self.valset
         assert valset is not None
 
@@ -448,85 +449,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 )
                 iteration_started = True
 
-                # 1) Attempt merge first if scheduled and last iter found new program
-                if self.merge_proposer is not None and self.merge_proposer.use_merge:
-                    if self.merge_proposer.merges_due > 0 and self.merge_proposer.last_iter_found_new_program:
-                        proposal = self.merge_proposer.propose(state)
-                        self.merge_proposer.last_iter_found_new_program = False  # old behavior
-
-                        if proposal is not None and proposal.tag == "merge":
-                            parent_sums = proposal.subsample_scores_before or [
-                                float("-inf"),
-                                float("-inf"),
-                            ]
-                            new_sum = sum(proposal.subsample_scores_after or [])
-
-                            # Notify merge attempted
-                            notify_callbacks(
-                                self.callbacks,
-                                "on_merge_attempted",
-                                MergeAttemptedEvent(
-                                    iteration=state.i + 1,
-                                    parent_ids=proposal.parent_program_ids,
-                                    merged_candidate=proposal.candidate,
-                                ),
-                            )
-
-                            if new_sum >= max(parent_sums):
-                                # ACCEPTED: consume one merge attempt and record it
-                                new_idx, _ = self._run_full_eval_and_add(
-                                    new_program=proposal.candidate,
-                                    state=state,
-                                    parent_program_idx=proposal.parent_program_ids,
-                                )
-                                self.merge_proposer.merges_due -= 1
-                                self.merge_proposer.total_merges_tested += 1
-                                proposal_accepted = True
-
-                                # Notify merge accepted
-                                notify_callbacks(
-                                    self.callbacks,
-                                    "on_merge_accepted",
-                                    MergeAcceptedEvent(
-                                        iteration=state.i + 1,
-                                        new_candidate_idx=new_idx,
-                                        parent_ids=proposal.parent_program_ids,
-                                    ),
-                                )
-                                notify_callbacks(
-                                    self.callbacks,
-                                    "on_candidate_accepted",
-                                    CandidateAcceptedEvent(
-                                        iteration=state.i + 1,
-                                        new_candidate_idx=new_idx,
-                                        new_score=new_sum,
-                                        parent_ids=proposal.parent_program_ids,
-                                    ),
-                                )
-                                continue  # skip reflective this iteration
-                            else:
-                                # REJECTED: do NOT consume merges_due or total_merges_tested
-                                self.logger.log(
-                                    f"Iteration {state.i + 1}: New program subsample score {new_sum} "
-                                    f"is worse than both parents {parent_sums}, skipping merge"
-                                )
-                                # Notify merge rejected
-                                notify_callbacks(
-                                    self.callbacks,
-                                    "on_merge_rejected",
-                                    MergeRejectedEvent(
-                                        iteration=state.i + 1,
-                                        parent_ids=proposal.parent_program_ids,
-                                        reason=f"Merged score {new_sum} worse than both parents {parent_sums}",
-                                    ),
-                                )
-                                # Skip reflective this iteration (old behavior)
-                                continue
-
-                    # Old behavior: regardless of whether we attempted, clear the flag before reflective
-                    self.merge_proposer.last_iter_found_new_program = False
-
-                # 2) Reflective mutation proposer
                 proposal = self.reflective_proposer.propose(state)
                 if proposal is None:
                     self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")

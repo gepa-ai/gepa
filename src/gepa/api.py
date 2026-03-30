@@ -39,7 +39,7 @@ from gepa.strategies.component_selector import (
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
-from gepa.adapters.glean_adapter import ALDataInst
+
 
 def optimize(
     seed_candidate: dict[str, str],
@@ -48,20 +48,8 @@ def optimize(
     adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None,
     task_lm: str | ChatCompletionCallable | None = None,
     evaluator: Evaluator | None = None,
-    # Reflection-based configuration
-    reflection_lm: LanguageModel | str | None = None,
-    candidate_selection_strategy: CandidateSelector
-    | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"] = "pareto",
     frontier_type: FrontierType = "instance",
-    skip_perfect_score: bool = True,
-    batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
-    reflection_minibatch_size: int | None = None,
     perfect_score: float = 1.0,
-    reflection_prompt_template: str | dict[str, str] | None = None,
-    custom_candidate_proposer: ProposalFn | None = None,
-    # Component selection configuration
-    module_selector: ReflectionComponentSelector | str = "round_robin",
-    # Merge-based configuration
     use_merge: bool = False,
     max_merge_invocations: int = 5,
     merge_val_overlap_floor: int = 5,
@@ -268,111 +256,7 @@ def optimize(
         evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
 
     # Build proposer: use the custom one if provided, otherwise create ReflectiveMutationProposer
-    active_proposer: ProposeNewCandidate  # type: ignore[type-arg]
-    if proposer is not None:
-        active_proposer = proposer
-    else:
-        # Validate that only one custom proposal method is provided
-        adapter_has_propose = hasattr(active_adapter, "propose_new_texts") and active_adapter.propose_new_texts is not None
-        if adapter_has_propose and custom_candidate_proposer is not None:
-            raise ValueError(
-                "Cannot provide both adapter.propose_new_texts and custom_candidate_proposer. "
-                "Please use only one custom proposal method."
-            )
-
-        if not adapter_has_propose and custom_candidate_proposer is None:
-            assert reflection_lm is not None, (
-                f"reflection_lm was not provided. The adapter used '{active_adapter!s}' does not provide a propose_new_texts method, "
-                + "and custom_candidate_proposer was not provided. "
-                + "GEPA will use the default proposer, which requires a reflection_lm to be specified."
-            )
-
-        reflection_lm_callable: LanguageModel | None = None
-        if isinstance(reflection_lm, str):
-            import litellm
-
-            reflection_lm_name = reflection_lm
-
-            def _reflection_lm(prompt: str | list[dict[str, str]]) -> str:
-                if isinstance(prompt, str):
-                    completion = litellm.completion(
-                        model=reflection_lm_name, messages=[{"role": "user", "content": prompt}]
-                    )
-                else:
-                    completion = litellm.completion(model=reflection_lm_name, messages=prompt)
-                return completion.choices[0].message.content  # type: ignore
-
-            reflection_lm_callable = _reflection_lm
-        else:
-            reflection_lm_callable = reflection_lm
-
-        if logger is None:
-            if run_dir is not None:
-                os.makedirs(run_dir, exist_ok=True)
-                logger = Logger(os.path.join(run_dir, "run_log.txt"))
-            else:
-                logger = StdOutLogger()
-
-        rng = random.Random(seed)
-
-        candidate_selector: CandidateSelector
-        if isinstance(candidate_selection_strategy, str):
-            factories = {
-                "pareto": lambda: ParetoCandidateSelector(rng=rng),
-                "current_best": lambda: CurrentBestCandidateSelector(),
-                "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
-                "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
-            }
-
-            try:
-                candidate_selector = factories[candidate_selection_strategy]()
-            except KeyError as exc:
-                raise ValueError(
-                    f"Unknown candidate_selector strategy: {candidate_selection_strategy}. "
-                    "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'"
-                ) from exc
-        elif isinstance(candidate_selection_strategy, CandidateSelector):
-            candidate_selector = candidate_selection_strategy
-        else:
-            raise TypeError(
-                "candidate_selection_strategy must be a supported string strategy or an instance of CandidateSelector."
-            )
-
-        if isinstance(module_selector, str):
-            module_selector_cls = {
-                "round_robin": RoundRobinReflectionComponentSelector,
-                "all": AllReflectionComponentSelector,
-            }.get(module_selector)
-
-            assert module_selector_cls is not None, (
-                f"Unknown module_selector strategy: {module_selector}. Supported strategies: 'round_robin', 'all'"
-            )
-
-            module_selector_instance: ReflectionComponentSelector = module_selector_cls()
-        else:
-            module_selector_instance = module_selector
-
-        if reflection_prompt_template is not None:
-            assert not (adapter is not None and getattr(adapter, "propose_new_texts", None) is not None), (
-                f"Adapter {adapter!s} provides its own propose_new_texts method; reflection_prompt_template will be ignored. "
-                "Set reflection_prompt_template to None."
-            )
-
-        active_proposer = ReflectiveMutationProposer(
-            logger=logger,
-            trainset=train_loader,
-            adapter=active_adapter,
-            candidate_selector=candidate_selector,
-            module_selector=module_selector_instance,
-            batch_sampler=batch_sampler,
-            perfect_score=perfect_score,
-            skip_perfect_score=skip_perfect_score,
-            experiment_tracker=experiment_tracker,
-            reflection_lm=reflection_lm_callable,
-            reflection_prompt_template=reflection_prompt_template,
-            custom_candidate_proposer=custom_candidate_proposer,
-            callbacks=callbacks,
-        )
+    active_proposer = proposer
 
     def evaluator_fn(
         inputs: list[DataInst], prog: dict[str, str]
@@ -432,17 +316,15 @@ def main() -> None:
     import json
     from pathlib import Path
 
+    from gepa.adapters.glean_adapter import ALBatchSampler, ALDataInst
     from gepa.adapters.glean_adapter.al_adapter import (
         MODULES,
         ALRunner,
-        AssistantALAdapter,
-        Example,
         Judge,
-        ModuleSpec,
-        TeacherCache,
+        AssistantALAdapter,
         Thresholds,
+        ModuleSpec,
     )
-    from gepa.adapters.glean_adapter.gepa_adapter import GleanGEPAAdapter
     from gepa.proposer.evolutionary_proposer import EvolutionaryProposer
 
     parser = argparse.ArgumentParser(
@@ -455,14 +337,13 @@ def main() -> None:
     )
     parser.add_argument("--max_metric_calls", type=int, default=10, help="Maximum number of metric calls (default: 10)")
     parser.add_argument("--run_dir", type=Path, default=None, help="Directory for run artifacts and resume")
-    parser.add_argument("--model", type=str, default="claude", help="Student model name (default: claude)")
+    parser.add_argument("--model", type=str, default='fast', help="Student model name (default: claude)")
     parser.add_argument("--teacher_model", type=str, default="gpt", help="Teacher model name (default: gpt)")
-    parser.add_argument("--reflection_lm", type=str, default="gpt-4o-mini", help="Model for reflection LLM (default: gpt-4o-mini)")
+    parser.add_argument("--reflection_lm", type=str, default="gpt-5.1", help="Model for reflection LLM (default: gpt-5.1")
     parser.add_argument("--global_token_cap", type=int, default=4096, help="Global token cap for candidates (default: 4096)")
     parser.add_argument("--seed", type=int, default=0, help="Random seed (default: 0)")
     parser.add_argument("--cookie", type=str, default=None, help="Cookie string for Glean API authentication")
     parser.add_argument("--api_url", type=str, default="https://apps-gke.glean.com/debug/cortex/evalruns", help="Glean API URL")
-    parser.add_argument("--eval_set_version", type=str, default="20260308", help="Eval set version (default: 20260308)")
     args = parser.parse_args()
 
     # Load seed_candidate (JSON string or path)
@@ -495,40 +376,65 @@ def main() -> None:
     # Eval set names (hardcoded - always the same)
     # Important: We don't have separate "train" and "val" sets. We train ON eval runs.
     # Mini-batch sampling = running on a small eval set (Small)
-    # Full evaluation = running on a larger eval set (Medium)
+    # Full evaluation = running on a larger eval set (Medium/Large)
     SCREEN_EVAL_SET_NAME = "Glean Chat Multiturn V2 Small"  # For screening/mini-batch
-    FULL_EVAL_SET_NAME = "Glean Chat Multiturn V2 Medium"    # For full evaluation
+    # TODO(Cathy): Update this to use the correct eval set name
+    FULL_EVAL_SET_NAME = "Glean Chat Multiturn V2 Small"   # For full evaluation
 
-    # Create a single placeholder item representing the entire eval set for screening
-    # The API call will run the entire eval set and return all results
+    # Create multiple ALDataInst objects with different eval_set_versions (dates)
+    # Each represents a complete eval set snapshot from different dates
+    # This provides diversity in the training data across different time periods
+
+    # Screening/training eval sets - multiple dates for diverse mini-batch sampling
+    eval_versions = [
+        # "20260308",  # March 8, 2026
+        # "20260310",  # March 10, 2026
+        # "20260312",  # March 12, 2026
+        # "20260314",  # March 14, 2026
+        # "20260316",  # March 16, 2026
+        # "20260318",
+        "20260320"
+    ]
+
     screen_evalset: list[ALDataInst] = [
         {
             "eval_set_name": SCREEN_EVAL_SET_NAME,
-            "eval_set_version": args.eval_set_version,
-            "deployment_ids": ['scio-prod'],
-            "status": "pending"
+            "eval_set_version": version,
+            "deployment_ids": ["scio-prod"],
+            "status": "active",
         }
+        for version in eval_versions
     ]
+
 
     full_evalset: list[ALDataInst] = [
         {
             "eval_set_name": FULL_EVAL_SET_NAME,
-            "eval_set_version": args.eval_set_version,
-            "deployment_ids": ['scio-prod'],
-            "status": "pending"
+            "eval_set_version": version,
+            "deployment_ids": ["scio-prod"],
+            "status": "active",
         }
+        for version in eval_versions
     ]
 
     al_adapter = AssistantALAdapter(
         runner=ALRunner(
             api_url=args.api_url,
             cookie=args.cookie,
-            eval_set_version=args.eval_set_version
-        )
+        ),
+        judge=Judge(
+            cookie=args.cookie,
+        ),
+        teacher_model=args.teacher_model,
+        thresholds=Thresholds(
+            quality_min=0.7,
+            tools_min=0.7,
+            max_student_tokens=100000
+        ),
+        student_model=args.model,
+        cache_file="~/eval_cache.json"
     )
 
-
-    # Create AL Example objects (one per eval set)
     # Module specs with default token budgets
     module_specs = {mid: ModuleSpec(module_id=mid, kind="free_text", token_budget=1024) for mid in MODULES}
 
@@ -540,15 +446,23 @@ def main() -> None:
 
     # Reflection LLM callable
     reflection_lm_name = args.reflection_lm
+    MAX_TOKENS = 4096
 
     def reflection_llm(prompt: str) -> str:
-        import litellm
+        import openai
 
-        completion = litellm.completion(
-            model=reflection_lm_name,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return completion.choices[0].message.content  # type: ignore[union-attr]
+        try:
+            completion = openai.chat.completions.create(
+                model=reflection_lm_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                max_completion_tokens=MAX_TOKENS,
+            )
+            content = completion.choices[0].message.content
+            return content if content is not None else ""
+        except Exception as e:
+            print(f'OpenAI API call failed: {e}')
+            return ""
 
     # Create EvolutionaryProposer
     proposer = EvolutionaryProposer(
