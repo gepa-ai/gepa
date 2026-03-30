@@ -14,6 +14,9 @@ Usage::
     # Also works with chat messages
     response = lm([{"role": "user", "content": "Hello"}])
 
+    # MiniMax models are auto-detected and configured
+    lm = LM("minimax/MiniMax-M2.7", temperature=0.7, max_tokens=4096)
+
 The returned callable conforms to the ``LanguageModel`` protocol
 (``(str | list[dict]) -> str``) used throughout GEPA.
 """
@@ -21,9 +24,50 @@ The returned callable conforms to the ``LanguageModel`` protocol
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# MiniMax provider constants
+MINIMAX_API_BASE = "https://api.minimax.io/v1"
+MINIMAX_MODELS = {
+    "MiniMax-M2.7": {"max_context": 204_800, "description": "Latest MiniMax model with 204K context"},
+    "MiniMax-M2.7-highspeed": {"max_context": 204_800, "description": "Fast variant of M2.7 with 204K context"},
+    "MiniMax-M2.5": {"max_context": 204_800, "description": "MiniMax M2.5 with 204K context"},
+    "MiniMax-M2.5-highspeed": {"max_context": 204_800, "description": "Fast variant of M2.5 with 204K context"},
+}
+
+
+def _is_minimax_model(model: str) -> bool:
+    """Check if a model identifier refers to a MiniMax model."""
+    return model.startswith("minimax/")
+
+
+def _resolve_minimax_model(model: str) -> str:
+    """Extract the model name from a minimax/ prefixed identifier.
+
+    Returns the model name suitable for the OpenAI-compatible API,
+    e.g. ``"minimax/MiniMax-M2.7"`` → ``"MiniMax-M2.7"``.
+    """
+    return model.removeprefix("minimax/")
+
+
+def _clamp_minimax_temperature(temperature: float | None) -> float | None:
+    """Clamp temperature for MiniMax models to the valid range (0.0, 1.0].
+
+    MiniMax API requires temperature strictly greater than 0.0 and at most 1.0.
+    """
+    if temperature is None:
+        return None
+    clamped = max(0.01, min(temperature, 1.0))
+    if clamped != temperature:
+        logger.info(
+            "MiniMax temperature clamped from %s to %s (valid range: (0.0, 1.0])",
+            temperature,
+            clamped,
+        )
+    return clamped
 
 
 class LM:
@@ -35,12 +79,16 @@ class LM:
     - **Truncation detection** — logs a warning when ``finish_reason='length'``.
     - **drop_params=True** so unsupported params are silently ignored
       (with a warning logged for transparency).
+    - **MiniMax auto-configuration** — models prefixed with ``minimax/``
+      are automatically routed to the MiniMax OpenAI-compatible API with
+      proper temperature clamping.
 
     Conforms to the :class:`~gepa.proposer.reflective_mutation.base.LanguageModel`
     protocol, so it can be used anywhere GEPA expects a ``LanguageModel``.
 
     Args:
-        model: LiteLLM model identifier, e.g. ``"openai/gpt-4.1"`` or ``"anthropic/claude-sonnet-4-6"``.
+        model: LiteLLM model identifier, e.g. ``"openai/gpt-4.1"``,
+            ``"anthropic/claude-sonnet-4-6"``, or ``"minimax/MiniMax-M2.7"``.
         temperature: Sampling temperature.
         max_tokens: Maximum tokens to generate.
         num_retries: Number of retries on transient failures (default 3).
@@ -56,8 +104,20 @@ class LM:
         num_retries: int = 3,
         **kwargs: Any,
     ):
-        self.model = model
         self.num_retries = num_retries
+
+        # MiniMax auto-configuration: route minimax/ prefixed models
+        # through the OpenAI-compatible API at api.minimax.io/v1.
+        if _is_minimax_model(model):
+            model_name = _resolve_minimax_model(model)
+            self.model = f"openai/{model_name}"
+            temperature = _clamp_minimax_temperature(temperature)
+            kwargs.setdefault("api_base", MINIMAX_API_BASE)
+            api_key = kwargs.pop("api_key", None) or os.environ.get("MINIMAX_API_KEY")
+            if api_key:
+                kwargs["api_key"] = api_key
+        else:
+            self.model = model
 
         self.completion_kwargs: dict[str, Any] = {
             **({"temperature": temperature} if temperature is not None else {}),

@@ -345,11 +345,50 @@ Finally:
 
 ---
 
+## Supported LLM Providers
+
+GEPA uses [LiteLLM](https://docs.litellm.ai/) under the hood, supporting 100+ LLM providers out of the box. Additionally, GEPA provides first-class integration for the following providers:
+
+| Provider | Model Prefix | Example Models |
+|---|---|---|
+| OpenAI | `openai/` | `openai/gpt-4.1`, `openai/gpt-5` |
+| Anthropic | `anthropic/` | `anthropic/claude-sonnet-4-6` |
+| MiniMax | `minimax/` | `minimax/MiniMax-M2.7`, `minimax/MiniMax-M2.7-highspeed` |
+
+### Using MiniMax Models
+
+[MiniMax](https://www.minimax.io/) models are auto-configured when using the `minimax/` prefix — API base URL and temperature clamping are handled automatically:
+
+```bash
+export MINIMAX_API_KEY="your-minimax-api-key"
+```
+
+```python
+import gepa
+
+result = gepa.optimize(
+    seed_candidate={"system_prompt": "You are a helpful assistant."},
+    trainset=trainset,
+    valset=valset,
+    task_lm="minimax/MiniMax-M2.7",
+    max_metric_calls=150,
+    reflection_lm="minimax/MiniMax-M2.7",
+)
+```
+
+Available MiniMax models (all with 204K context window):
+- `minimax/MiniMax-M2.7` — Latest flagship model
+- `minimax/MiniMax-M2.7-highspeed` — Optimized for speed
+- `minimax/MiniMax-M2.5` — Previous generation
+- `minimax/MiniMax-M2.5-highspeed` — Previous generation, speed-optimized
+
+---
+
 ## When GEPA Shines
 
 - **Expensive rollouts** — Scientific simulations, complex agents with tool calls, slow compilation. GEPA needs 100–500 evals vs 10K+ for RL.
 - **Scarce data** — Works with as few as 3 examples. No large training sets required.
-- **API-only models** — No weights access needed. Optimize GPT-5, Claude, Gemini directly through their APIs.
+- **API-only models** — No weights access needed. Optimize GPT-5, Claude, Gemini, MiniMax directly through their APIs.
 - **Interpretability** — Human-readable optimization traces show *why* each prompt changed.
 - **Complements RL** — Use GEPA for rapid initial optimization, then apply RL/fine-tuning for additional gains ([BetterTogether](https://arxiv.org/abs/2407.10930)).
 
