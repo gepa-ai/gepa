@@ -469,7 +469,7 @@ class EngineConfig:
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
     candidate_selection_strategy: CandidateSelector | Literal[
-        "pareto", "current_best", "epsilon_greedy", "top_k_pareto", "llm", "llm_pareto"
+        "pareto", "current_best", "epsilon_greedy", "top_k_pareto", "llm", "llm_diverse"
     ] = "pareto"
     frontier_type: FrontierType = "hybrid"
 
@@ -997,13 +997,13 @@ class EvaluatorWrapper:
 
 
 def _make_llm_selector(
-    config: GEPAConfig, rng: random.Random, mode: Literal["best", "pareto_front"]
+    config: GEPAConfig, rng: random.Random, mode: Literal["best", "diverse"]
 ) -> LLMCandidateSelector:
     """Build an LLMCandidateSelector, validating that reflection_lm is available."""
     lm = config.reflection.reflection_lm
     if lm is None:
         raise ValueError(
-            "reflection_lm is required for LLM candidate selection strategies ('llm', 'llm_pareto'). "
+            "reflection_lm is required for LLM candidate selection strategies ('llm', 'llm_diverse'). "
             "Set config.reflection.reflection_lm to a model name or callable."
         )
     return LLMCandidateSelector(lm=lm, mode=mode, rng=rng)
@@ -1322,7 +1322,7 @@ def optimize_anything(
             "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
             "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
             "llm": lambda: _make_llm_selector(config, rng, mode="best"),
-            "llm_pareto": lambda: _make_llm_selector(config, rng, mode="pareto_front"),
+            "llm_diverse": lambda: _make_llm_selector(config, rng, mode="diverse"),
         }
 
         try:
@@ -1330,7 +1330,7 @@ def optimize_anything(
         except KeyError as exc:
             raise ValueError(
                 f"Unknown candidate_selector strategy: {config.engine.candidate_selection_strategy}. "
-                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto', 'llm', 'llm_pareto'"
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto', 'llm', 'llm_diverse'"
             ) from exc
     elif isinstance(config.engine.candidate_selection_strategy, CandidateSelector):
         candidate_selector = config.engine.candidate_selection_strategy

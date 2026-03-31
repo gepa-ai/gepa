@@ -83,11 +83,11 @@ class TestCandidateSelectionSignature:
         assert "Aggregate Score: 0.8000" in prompt
         assert "select the single best candidate" in prompt.lower()
 
-    def test_prompt_renderer_pareto_mode(self):
+    def test_prompt_renderer_diverse_mode(self):
         prompt = CandidateSelectionSignature.prompt_renderer(
-            {"candidates": self._make_candidates_info(), "mode": "pareto_front", "num_candidates": 2}
+            {"candidates": self._make_candidates_info(), "mode": "diverse", "num_candidates": 2}
         )
-        assert "Pareto-optimal" in prompt
+        assert "different approaches" in prompt
         assert "comma-separated" in prompt
 
     def test_prompt_includes_objective_scores(self):
@@ -139,6 +139,13 @@ class TestCandidateSelectionSignature:
     def test_output_extractor_no_numbers_raises(self):
         with pytest.raises(ValueError, match="No candidate numbers found"):
             CandidateSelectionSignature.output_extractor("no numbers here")
+
+    def test_output_extractor_score_digits_not_extracted(self):
+        """Bare integers from scores (e.g., '0.8000') are not picked up as candidate indices."""
+        with pytest.raises(ValueError, match="No candidate numbers found"):
+            CandidateSelectionSignature.output_extractor(
+                "Based on the scores of 0.8000, the best approach is clearly superior"
+            )
 
 
 # --- LLMCandidateSelector tests ---
@@ -246,11 +253,11 @@ class TestLLMCandidateSelector:
         selector = LLMCandidateSelector(lm=failing_lm, mode="best", fallback=AlwaysZeroSelector())
         assert selector.select_candidate_idx(mock_state) == 0
 
-    def test_pareto_mode_samples_from_set(self, mock_state):
-        """In pareto_front mode, LLM returns a set and selector samples from it."""
+    def test_diverse_mode_samples_from_set(self, mock_state):
+        """In diverse mode, LLM returns a set and selector samples from it."""
         lm = lambda prompt: "0, 2"
         rng = random.Random(42)
-        selector = LLMCandidateSelector(lm=lm, mode="pareto_front", rng=rng)
+        selector = LLMCandidateSelector(lm=lm, mode="diverse", rng=rng)
 
         # Run multiple times to check sampling behavior
         results = set()
@@ -263,12 +270,12 @@ class TestLLMCandidateSelector:
         assert results.issubset({0, 2})
         assert len(results) == 2  # should have both with 50 samples
 
-    def test_pareto_mode_empty_valid_indices_falls_back(self, mock_state):
-        """If LLM returns indices all out of range in pareto mode, falls back."""
+    def test_diverse_mode_empty_valid_indices_falls_back(self, mock_state):
+        """If LLM returns indices all out of range in diverse mode, falls back."""
         lm = lambda prompt: "99, 100"
-        selector = LLMCandidateSelector(lm=lm, mode="pareto_front")
+        selector = LLMCandidateSelector(lm=lm, mode="diverse")
         selected = selector.select_candidate_idx(mock_state)
-        assert selected == 2  # fallback to ParetoCandidateSelector
+        assert selected == 2  # fallback to ParetoCandidateSelector (default for diverse mode)
 
     def test_text_truncation(self, mock_state):
         """Long texts are truncated in the prompt."""
@@ -293,28 +300,28 @@ class TestLLMCandidateSelector:
         lm = lambda prompt: "0, 1, 2"
 
         results1 = []
-        selector1 = LLMCandidateSelector(lm=lm, mode="pareto_front", rng=random.Random(42))
+        selector1 = LLMCandidateSelector(lm=lm, mode="diverse", rng=random.Random(42))
         for _ in range(10):
             results1.append(selector1.select_candidate_idx(mock_state))
 
         results2 = []
-        selector2 = LLMCandidateSelector(lm=lm, mode="pareto_front", rng=random.Random(42))
+        selector2 = LLMCandidateSelector(lm=lm, mode="diverse", rng=random.Random(42))
         for _ in range(10):
             results2.append(selector2.select_candidate_idx(mock_state))
 
         assert results1 == results2
 
     def test_default_fallback_matches_mode(self):
-        """Default fallback selector matches the mode: best->CurrentBest, pareto->Pareto."""
+        """Default fallback selector matches the mode: best->CurrentBest, diverse->Pareto."""
         lm = lambda prompt: "0"
         best_sel = LLMCandidateSelector(lm=lm, mode="best")
-        pareto_sel = LLMCandidateSelector(lm=lm, mode="pareto_front")
+        diverse_sel = LLMCandidateSelector(lm=lm, mode="diverse")
         assert type(best_sel.fallback).__name__ == "CurrentBestCandidateSelector"
-        assert type(pareto_sel.fallback).__name__ == "ParetoCandidateSelector"
+        assert type(diverse_sel.fallback).__name__ == "ParetoCandidateSelector"
 
     def test_only_two_modes(self):
-        """Only 'best' and 'pareto_front' modes are supported."""
+        """Only 'best' and 'diverse' modes are supported."""
         lm = lambda prompt: "0"
         # Valid modes work
         LLMCandidateSelector(lm=lm, mode="best")
-        LLMCandidateSelector(lm=lm, mode="pareto_front")
+        LLMCandidateSelector(lm=lm, mode="diverse")

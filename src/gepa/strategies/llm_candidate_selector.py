@@ -25,28 +25,30 @@ class CandidateSelectionSignature(Signature):
     prompt_template: ClassVar[str] = ""  # unused; mode-specific templates below
 
     _HEADER = """You are an expert evaluator for an evolutionary optimization system.
-Below are {num_candidates} candidate solutions. Each has text content for its components and performance scores.
-Your task is to evaluate them by comparing their relative quality.
+Below are {num_candidates} candidate solutions. Each has text content for its components.
+Your task is to evaluate them by comparing the quality and approach of their text content.
+
+Note: Approximate scores are shown for reference, but they may not reflect true quality -- focus on the text content, approach, and potential of each candidate.
 
 ## Candidates
 
 {candidates_block}"""
 
-    _MODE_BEST = """Based on both the quantitative scores AND qualitative assessment of the candidate texts, select the single best candidate to use as the basis for the next mutation. Consider:
-- Overall score (higher is better)
-- Quality, clarity, and sophistication of the text
+    _MODE_BEST = """Select the single best candidate to use as the basis for the next mutation. Focus on:
+- Quality, clarity, and sophistication of the text content
 - Potential for further improvement through mutation
 - Diversity of approach compared to other candidates
+- Scores are approximate -- a lower-scoring candidate may have a better approach
 
 Respond with ONLY the candidate number (e.g., "0" or "3"). Do not include any other text."""
 
-    _MODE_PARETO_FRONT = """Identify the set of Pareto-optimal candidates -- those that represent meaningfully different approaches or trade-offs that should be preserved.
-A candidate is Pareto-optimal if no other candidate is strictly better in ALL respects (score, text quality, approach diversity).
+    _MODE_DIVERSE = """Identify the set of candidates that represent meaningfully different approaches or trade-offs worth preserving in the population.
 
 Consider:
 - Which candidates represent genuinely different strategies?
-- Which candidates excel in different dimensions (even if not highest overall)?
-- Which candidates have unique strengths worth preserving?
+- Which candidates have unique strengths, even if not highest-scoring?
+- Which approaches are worth preserving for diversity?
+- Scores are approximate -- do not rely on them alone
 
 Respond with a comma-separated list of candidate numbers (e.g., "0, 2, 5"). Do not include any other text."""
 
@@ -89,8 +91,8 @@ Respond with a comma-separated list of candidate numbers (e.g., "0, 2, 5"). Do n
 
         if mode == "best":
             return header + "\n" + cls._MODE_BEST
-        elif mode == "pareto_front":
-            return header + "\n" + cls._MODE_PARETO_FRONT
+        elif mode == "diverse":
+            return header + "\n" + cls._MODE_DIVERSE
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
@@ -110,18 +112,13 @@ Respond with a comma-separated list of candidate numbers (e.g., "0, 2, 5"). Do n
                 unique = list(dict.fromkeys(digits))
                 return {"selected_index": unique[0], "selected_indices": ",".join(unique)}
 
-        # Fallback: find "candidate N" patterns first, then bare integers
+        # Fallback: find "candidate N" patterns
         candidate_refs = re.findall(r"[Cc]andidate\s+(\d+)", lm_out)
         if candidate_refs:
             unique = list(dict.fromkeys(candidate_refs))
             return {"selected_index": unique[0], "selected_indices": ",".join(unique)}
 
-        # Last resort: extract all bare integers
-        numbers = re.findall(r"\b(\d+)\b", lm_out)
-        if not numbers:
-            raise ValueError(f"No candidate numbers found in LLM response: {lm_out!r}")
-        unique = list(dict.fromkeys(numbers))
-        return {"selected_index": unique[0], "selected_indices": ",".join(unique)}
+        raise ValueError(f"No candidate numbers found in LLM response: {lm_out!r}")
 
 
 class LLMCandidateSelector:
@@ -136,22 +133,22 @@ class LLMCandidateSelector:
         lm: Language model to use for selection. Can be a ``LanguageModel``
             callable or a model name string (e.g., ``"openai/gpt-4.1-mini"``).
         mode: Selection mode. ``"best"`` selects the single best candidate.
-            ``"pareto_front"`` identifies the Pareto-optimal set and samples
-            from it.
+            ``"diverse"`` identifies a diverse set of candidates with
+            meaningfully different approaches and samples from it.
         pre_filter_k: Maximum number of candidates to show the LLM (top K by
             aggregate score). Keeps prompts within context limits.
         max_text_chars: Truncate each component's text to this many characters.
-        rng: Random number generator for Pareto front sampling and fallback.
+        rng: Random number generator for diverse set sampling and fallback.
         fallback: Fallback selector used when the LLM call fails or returns
             an unparseable response. Defaults to ``CurrentBestCandidateSelector``
             for ``"best"`` mode and ``ParetoCandidateSelector`` for
-            ``"pareto_front"`` mode.
+            ``"diverse"`` mode.
     """
 
     def __init__(
         self,
         lm: LanguageModel | str,
-        mode: Literal["best", "pareto_front"] = "best",
+        mode: Literal["best", "diverse"] = "best",
         pre_filter_k: int = 10,
         max_text_chars: int = 500,
         rng: random.Random | None = None,
@@ -164,7 +161,7 @@ class LLMCandidateSelector:
         self.rng = rng if rng is not None else random.Random(0)
         if fallback is not None:
             self.fallback = fallback
-        elif mode == "pareto_front":
+        elif mode == "diverse":
             self.fallback = ParetoCandidateSelector(rng=self.rng)
         else:
             self.fallback = CurrentBestCandidateSelector()
@@ -224,7 +221,7 @@ class LLMCandidateSelector:
                 },
             )
 
-            if self.mode == "pareto_front":
+            if self.mode == "diverse":
                 # Parse multiple indices and sample from them
                 indices_str = result.get("selected_indices", "")
                 display_indices = [int(x.strip()) for x in indices_str.split(",") if x.strip()]
