@@ -111,15 +111,8 @@ class CodingAdapter(OptimizeAnythingAdapter):
                 record: dict[str, Any] = {
                     "Code Diff from Base": diff,
                     "Score": score,
+                    **side_info,
                 }
-                # Include side_info fields (skip "scores" key used for objectives)
-                for k, v in side_info.items():
-                    if k == "scores":
-                        record["Scores (Higher is Better)"] = v
-                    elif k == f"{repo_path}_specific_info":
-                        record.update(v)
-                    elif not k.endswith("_specific_info"):
-                        record[k] = v
                 records.append(record)
 
             ret[repo_path] = records
