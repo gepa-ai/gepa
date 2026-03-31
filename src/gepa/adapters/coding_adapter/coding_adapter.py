@@ -1,132 +1,86 @@
-"""CodingAdapter — GEPAAdapter for optimizing code in a git repository.
+"""CodingAdapter — subclass of OptimizeAnythingAdapter for code optimization.
 
-Candidates are represented as ``{"_branch": "branch_name"}`` internally.
-The adapter handles git checkout, evaluation, reflective dataset construction,
-and delegates code generation to a pluggable coding agent.
+Candidates are ``{repo_path: branch_name}`` dicts where each key is a path to
+a git repository and each value is the branch to check out.  Multiple repos
+are supported (equivalent to multiple components in text mode).
+
+The adapter:
+
+1. **Before evaluation**: checks out each repo to its branch
+2. **Reflective dataset**: includes code diffs per component
+3. **Proposal**: delegates to a pluggable coding agent
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import threading
-from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 from gepa.adapters.coding_adapter.coding_agent import CodingAgentProtocol
 from gepa.adapters.coding_adapter.git_repo import GitRepo
-from gepa.core.adapter import EvaluationBatch
+from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
+from gepa.core.adapter import DataInst, EvaluationBatch
 
-_BRANCH_KEY = "_branch"
+if TYPE_CHECKING:
+    pass
+
+logger = logging.getLogger(__name__)
 
 
-class CodingAdapter:
-    """GEPAAdapter that optimizes code in a git repository.
+class CodingAdapter(OptimizeAnythingAdapter):
+    """Adapter for optimizing code in git repositories.
 
-    Each candidate is a git branch. Evaluation checks out the branch and runs
-    the user's evaluator. Proposal delegates to a coding agent that modifies
-    code and returns a new branch.
+    Subclasses :class:`OptimizeAnythingAdapter` to reuse evaluation caching,
+    parallel execution, ``oa.log()`` capture, and ``opt_state`` injection.
+
+    Overrides:
+        - ``evaluate``: checks out branches before calling the evaluator
+        - ``make_reflective_dataset``: includes code diffs
+        - ``propose_new_texts``: delegates to a coding agent
     """
 
     def __init__(
         self,
-        repo: GitRepo,
-        base_branch: str,
-        evaluator: Callable[..., Any],
+        *args: Any,
         coding_agent: CodingAgentProtocol,
+        repos: dict[str, GitRepo],
+        base_branches: dict[str, str],
         branch_prefix: str = "gepa",
         objective: str | None = None,
         background: str | None = None,
-        parallel: bool = False,
-        max_workers: int | None = None,
+        **kwargs: Any,
     ) -> None:
-        self.repo = repo
-        self.base_branch = base_branch
-        self.evaluator = evaluator
+        super().__init__(*args, **kwargs)
+
         self.coding_agent = coding_agent
+        self.repos = repos  # {repo_path: GitRepo}
+        self.base_branches = base_branches  # {repo_path: base_branch_name}
         self.branch_prefix = branch_prefix
-        self.objective = objective
-        self.background = background
-        self.parallel = parallel
-        self.max_workers = max_workers
+        self.coding_objective = objective
+        self.coding_background = background
 
         self._branch_counter = 0
-        self._counter_lock = threading.Lock()
-        self._checkout_lock = threading.Lock()
+        self._branch_counter_lock = threading.Lock()
 
-    def _next_branch_name(self) -> str:
-        with self._counter_lock:
-            self._branch_counter += 1
-            return f"{self.branch_prefix}/iter_{self._branch_counter}"
-
-    def _call_evaluator(self, repo_path: str, example: Any) -> tuple[float, dict[str, Any]]:
-        """Call the user's evaluator and normalize the return value."""
-        if example is None or (hasattr(example, "__repr__") and "SingleInstanceSentinel" in repr(example)):
-            result = self.evaluator(repo_path)
-        else:
-            result = self.evaluator(repo_path, example)
-
-        if isinstance(result, tuple):
-            score, side_info = result
-            if not isinstance(side_info, dict):
-                side_info = {"info": side_info}
-        else:
-            score = float(result)
-            side_info = {}
-
-        return score, side_info
+    # --- Override: checkout before evaluation ---
 
     def evaluate(
         self,
-        batch: list[Any],
+        batch: list[DataInst],
         candidate: dict[str, str],
         capture_traces: bool = False,
     ) -> EvaluationBatch:
-        """Evaluate a candidate branch on a batch of examples."""
-        branch = candidate[_BRANCH_KEY]
+        """Checkout all repos to their branches, then delegate to parent evaluate."""
+        for repo_path, branch in candidate.items():
+            repo = self.repos[repo_path]
+            repo.checkout(branch)
 
-        # Checkout the branch (serialized to avoid conflicts)
-        with self._checkout_lock:
-            self.repo.checkout(branch)
+        return super().evaluate(batch, candidate, capture_traces)
 
-        repo_path = self.repo.repo_path
-
-        if self.parallel and len(batch) > 1:
-            raw_results = self._evaluate_parallel(repo_path, batch)
-        else:
-            raw_results = [self._call_evaluator(repo_path, example) for example in batch]
-
-        scores = [score for score, _ in raw_results]
-        side_infos = [si for _, si in raw_results]
-        outputs = list(raw_results)
-
-        # Extract objective_scores from side_info["scores"] if present
-        objective_scores: list[dict[str, float]] = []
-        for si in side_infos:
-            obj = {}
-            if "scores" in si:
-                obj.update(si["scores"])
-            objective_scores.append(obj)
-
-        return EvaluationBatch(
-            outputs=outputs,
-            scores=scores,
-            trajectories=side_infos if capture_traces else None,
-            objective_scores=objective_scores if any(objective_scores) else None,
-        )
-
-    def _evaluate_parallel(self, repo_path: str, batch: list[Any]) -> list[tuple[float, dict[str, Any]]]:
-        """Evaluate batch examples in parallel (same branch checkout)."""
-        results: list[tuple[int, tuple[float, dict[str, Any]]]] = []
-        with ThreadPoolExecutor(max_workers=self.max_workers or len(batch)) as executor:
-            future_to_idx = {
-                executor.submit(self._call_evaluator, repo_path, example): idx for idx, example in enumerate(batch)
-            }
-            for future in as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                results.append((idx, future.result()))
-        results.sort(key=lambda x: x[0])
-        return [r for _, r in results]
+    # --- Override: reflective dataset with code diffs ---
 
     def make_reflective_dataset(
         self,
@@ -134,27 +88,50 @@ class CodingAdapter:
         eval_batch: EvaluationBatch,
         components_to_update: list[str],
     ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
-        """Build reflective dataset with code diffs and evaluation feedback."""
-        branch = candidate[_BRANCH_KEY]
+        """Build reflective dataset including code diffs for each component (repo)."""
+        scores = eval_batch.scores
         side_infos = eval_batch.trajectories
         assert side_infos is not None
 
-        # Get the diff from base branch to this candidate
-        try:
-            diff = self.repo.get_diff(self.base_branch, branch)
-        except Exception:
-            diff = "(diff unavailable)"
+        ret: dict[str, list[dict[str, Any]]] = {}
 
-        records: list[dict[str, Any]] = []
-        for score, side_info in zip(eval_batch.scores, side_infos, strict=True):
-            record: dict[str, Any] = {"Code Diff from Base": diff, "Score": score}
-            # Include all side_info fields
-            for k, v in side_info.items():
-                if k != "scores":
-                    record[k] = v
-            records.append(record)
+        for repo_path in components_to_update:
+            branch = candidate[repo_path]
+            base_branch = self.base_branches[repo_path]
+            repo = self.repos[repo_path]
 
-        return {_BRANCH_KEY: records}
+            # Get diff for this repo
+            try:
+                diff = repo.get_diff(base_branch, branch)
+            except Exception:
+                diff = "(diff unavailable)"
+
+            records: list[dict[str, Any]] = []
+            for score, side_info in zip(scores, side_infos, strict=True):
+                record: dict[str, Any] = {
+                    "Code Diff from Base": diff,
+                    "Score": score,
+                }
+                # Include side_info fields (skip "scores" key used for objectives)
+                for k, v in side_info.items():
+                    if k == "scores":
+                        record["Scores (Higher is Better)"] = v
+                    elif k == f"{repo_path}_specific_info":
+                        record.update(v)
+                    elif not k.endswith("_specific_info"):
+                        record[k] = v
+                records.append(record)
+
+            ret[repo_path] = records
+
+        return ret
+
+    # --- Proposal via coding agent ---
+
+    def _next_branch_name(self) -> str:
+        with self._branch_counter_lock:
+            self._branch_counter += 1
+            return f"{self.branch_prefix}/iter_{self._branch_counter}"
 
     def propose_new_texts(
         self,
@@ -162,55 +139,60 @@ class CodingAdapter:
         reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
         components_to_update: list[str],
     ) -> dict[str, str]:
-        """Use the coding agent to propose code changes on a new branch."""
-        parent_branch = candidate[_BRANCH_KEY]
+        """Use the coding agent to propose code changes.
+
+        For each repo in ``components_to_update``, creates a new branch from
+        the parent, runs the coding agent, and commits the changes.
+
+        Returns ``{repo_path: new_branch_name}`` for updated repos.
+        """
+        new_candidate: dict[str, str] = {}
+        feedback = self._format_feedback(reflective_dataset)
         new_branch = self._next_branch_name()
 
-        # Format feedback from reflective dataset
-        feedback = self._format_feedback(reflective_dataset)
+        for repo_path in components_to_update:
+            parent_branch = candidate[repo_path]
+            base_branch = self.base_branches[repo_path]
+            repo = self.repos[repo_path]
 
-        # Create and checkout new branch from parent
-        self.repo.create_branch(new_branch, parent_branch)
-        self.repo.checkout(new_branch)
+            repo.create_branch(new_branch, parent_branch)
+            repo.checkout(new_branch)
 
-        try:
-            changes_made = self.coding_agent.propose(
-                repo=self.repo,
-                base_branch=self.base_branch,
-                feedback=feedback,
-                objective=self.objective,
-                background=self.background,
-            )
+            try:
+                changes_made = self.coding_agent.propose(
+                    repo=repo,
+                    base_branch=base_branch,
+                    feedback=feedback,
+                    objective=self.coding_objective,
+                    background=self.coding_background,
+                )
+                if changes_made:
+                    repo.commit_all(f"gepa: iteration {self._branch_counter}")
+            except Exception:
+                repo.checkout(parent_branch)
+                raise
 
-            if changes_made:
-                self.repo.commit_all(f"gepa: iteration {self._branch_counter}")
-            else:
-                # No changes — still return the new branch (it's identical to parent)
-                pass
+            new_candidate[repo_path] = new_branch
 
-        except Exception:
-            # On failure, checkout back to parent and re-raise
-            self.repo.checkout(parent_branch)
-            raise
-
-        return {_BRANCH_KEY: new_branch}
+        return new_candidate
 
     def _format_feedback(self, reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]]) -> str:
-        """Format reflective dataset into a readable feedback string for the coding agent."""
-        records = reflective_dataset.get(_BRANCH_KEY, [])
-        if not records:
-            return "(no evaluation feedback available)"
-
+        """Format reflective dataset into readable feedback for the coding agent."""
         parts: list[str] = []
-        for i, record in enumerate(records):
-            part = f"### Example {i + 1}\n"
-            for k, v in record.items():
-                if k == "Code Diff from Base":
-                    continue  # Don't duplicate the diff in per-example feedback
-                if isinstance(v, dict | list):
-                    part += f"**{k}**: {json.dumps(v, indent=2, default=str)}\n"
-                else:
-                    part += f"**{k}**: {v}\n"
-            parts.append(part)
 
-        return "\n".join(parts)
+        for component, records in reflective_dataset.items():
+            if not records:
+                continue
+            parts.append(f"## Repository: {component}\n")
+            for i, record in enumerate(records):
+                part = f"### Example {i + 1}\n"
+                for k, v in record.items():
+                    if k == "Code Diff from Base":
+                        continue  # Agent computes its own diff
+                    if isinstance(v, dict | list):
+                        part += f"**{k}**: {json.dumps(v, indent=2, default=str)}\n"
+                    else:
+                        part += f"**{k}**: {v}\n"
+                parts.append(part)
+
+        return "\n".join(parts) if parts else "(no evaluation feedback available)"

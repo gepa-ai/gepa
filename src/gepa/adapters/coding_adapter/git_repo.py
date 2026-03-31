@@ -1,5 +1,7 @@
 """Git repository operations for the coding adapter."""
 
+from __future__ import annotations
+
 import subprocess
 from pathlib import Path
 
@@ -11,6 +13,47 @@ class GitRepo:
         self.repo_path = str(Path(repo_path).resolve())
         # Validate it's a git repo
         self._run(["git", "rev-parse", "--git-dir"])
+
+    @staticmethod
+    def ensure_repo(repo_path: str, initial_branch: str = "base") -> GitRepo:
+        """Ensure a directory is a git repo. If not, initialize it.
+
+        For non-git directories, runs ``git init``, commits all existing files,
+        and creates a named branch at that commit.
+
+        Returns a GitRepo instance.
+        """
+        resolved = str(Path(repo_path).resolve())
+        check = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=resolved,
+            capture_output=True,
+            text=True,
+        )
+        if check.returncode == 0:
+            # Already a git repo
+            repo = GitRepo(resolved)
+            # Ensure the initial branch exists (create if needed)
+            if not repo.branch_exists(initial_branch):
+                repo._run(["git", "checkout", "-B", initial_branch])
+            return repo
+
+        # Not a git repo — initialize
+        subprocess.run(["git", "init"], cwd=resolved, check=True, capture_output=True)
+        subprocess.run(["git", "add", "-A"], cwd=resolved, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial commit (gepa)"],
+            cwd=resolved,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-B", initial_branch],
+            cwd=resolved,
+            check=True,
+            capture_output=True,
+        )
+        return GitRepo(resolved)
 
     def _run(
         self,
@@ -37,6 +80,9 @@ class GitRepo:
         return result.returncode == 0
 
     def create_branch(self, name: str, from_branch: str) -> None:
+        """Create a new branch. If it already exists, delete and recreate."""
+        if self.branch_exists(name):
+            self._run(["git", "branch", "-D", name])
         self._run(["git", "branch", name, from_branch])
 
     def checkout(self, branch: str) -> None:
@@ -45,10 +91,9 @@ class GitRepo:
     def commit_all(self, message: str) -> bool:
         """Stage all changes and commit. Returns True if a commit was created."""
         self._run(["git", "add", "-A"])
-        # Check if there's anything to commit
         result = self._run(["git", "diff", "--cached", "--quiet"], check=False)
         if result.returncode == 0:
-            return False  # Nothing staged
+            return False
         self._run(["git", "commit", "-m", message])
         return True
 
@@ -88,11 +133,3 @@ class GitRepo:
     def has_uncommitted_changes(self) -> bool:
         result = self._run(["git", "status", "--porcelain"])
         return bool(result.stdout.strip())
-
-    def stash(self) -> bool:
-        """Stash uncommitted changes. Returns True if anything was stashed."""
-        result = self._run(["git", "stash", "push", "-m", "gepa-auto-stash"])
-        return "No local changes" not in result.stdout
-
-    def stash_pop(self) -> None:
-        self._run(["git", "stash", "pop"])

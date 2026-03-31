@@ -157,44 +157,55 @@ CacheEvaluationStorage = Literal["memory", "disk", "auto"]
 
 @dataclass
 class CodeCandidate:
-    """Seed candidate for coding mode — optimizes code in a git repository.
+    """Seed candidate for coding mode — optimizes code in git repositories.
 
     When passed as ``seed_candidate`` to :func:`optimize_anything`, the system
-    enters coding mode where candidates are git branches and a coding agent
-    proposes code changes.
+    enters coding mode where candidates are ``{repo_path: branch_name}`` dicts.
+    Each repo path is a "component" that can be optimized independently (like
+    multi-component text optimization).
+
+    For non-git directories, the repo is auto-initialized with ``git init``.
 
     Example::
 
         from gepa.optimize_anything import optimize_anything, CodeCandidate
 
+        # Single repo
         result = optimize_anything(
             seed_candidate=CodeCandidate(
-                repo_path="/path/to/my/repo",
-                base_branch="main",
+                repo_paths="/path/to/my/repo",
                 coding_agent="claude_code",
             ),
             evaluator=run_tests,
             objective="Fix the failing unit tests.",
         )
-        print(result.best_candidate)  # {"_branch": "gepa/iter_5"}
+        print(result.best_candidate)  # {"/path/to/my/repo": "gepa/iter_5"}
+
+        # Multiple repos (multi-component)
+        result = optimize_anything(
+            seed_candidate=CodeCandidate(
+                repo_paths=["/path/to/backend", "/path/to/frontend"],
+                coding_agent="bash",
+            ),
+            evaluator=run_integration_tests,
+            objective="Optimize the full-stack application.",
+        )
 
     Args:
-        repo_path: Path to the git repository to optimize.
-        base_branch: Starting branch (default ``"main"``).
+        repo_paths: Path(s) to git repositories to optimize. Can be a single
+            string or a list of strings for multi-repo optimization.
+        base_branch: Starting branch name for all repos (default ``"main"``).
+            Non-git directories are auto-initialized with this branch name.
         coding_agent: Which coding agent to use for proposals.
-            ``"bash"`` — agentic LM with a bash tool in a loop. Explores the
-            repo, reads files, and edits code directly via shell commands.
-            Uses ``model`` for the LLM.
-            ``"claude_code"`` — delegates to ``claude -p`` CLI for autonomous
-            code editing.
-            Or pass a custom object implementing :class:`CodingAgentProtocol`.
-        model: LiteLLM model name for the bash agent (e.g. ``"openai/gpt-5.1"``).
+            ``"bash"`` — agentic LM with a bash tool in a loop.
+            ``"claude_code"`` — delegates to ``claude -p`` CLI.
+            Or pass a custom :class:`CodingAgentProtocol` instance.
+        model: LiteLLM model name for the bash agent.
             Ignored when ``coding_agent="claude_code"``.
-            Defaults to ``"openai/gpt-5.1"``.
         branch_prefix: Prefix for branches created during optimization.
     """
 
-    repo_path: str
+    repo_paths: str | list[str]
     base_branch: str = "main"
     coding_agent: Literal["bash", "claude_code"] | Any = "bash"
     model: str = "openai/gpt-5.1"
@@ -1165,10 +1176,22 @@ def optimize_anything(
 
     if code_candidate_mode:
         assert isinstance(seed_candidate, CodeCandidate)  # for type narrowing
-        from gepa.adapters.coding_adapter import BashCodingAgent, ClaudeCodeAgent, CodingAdapter, GitRepo
+        from gepa.adapters.coding_adapter import BashCodingAgent, ClaudeCodeAgent, GitRepo
 
         code_cfg = seed_candidate
-        git_repo = GitRepo(code_cfg.repo_path)
+
+        # Normalize repo_paths to list
+        if isinstance(code_cfg.repo_paths, str):
+            repo_path_list = [code_cfg.repo_paths]
+        else:
+            repo_path_list = list(code_cfg.repo_paths)
+
+        # Ensure each directory is a git repo (auto-init if needed)
+        repos: dict[str, GitRepo] = {}
+        base_branches: dict[str, str] = {}
+        for rp in repo_path_list:
+            repos[rp] = GitRepo.ensure_repo(rp, initial_branch=code_cfg.base_branch)
+            base_branches[rp] = code_cfg.base_branch
 
         # Resolve coding agent
         if isinstance(code_cfg.coding_agent, str):
@@ -1184,25 +1207,14 @@ def optimize_anything(
         else:
             resolved_coding_agent = code_cfg.coding_agent
 
-        active_adapter: GEPAAdapter = CodingAdapter(
-            repo=git_repo,
-            base_branch=code_cfg.base_branch,
-            evaluator=evaluator,
-            coding_agent=resolved_coding_agent,
-            branch_prefix=code_cfg.branch_prefix,
-            objective=objective,
-            background=background,
-            parallel=config.engine.parallel,
-            max_workers=config.engine.max_workers,
-        )
-
-        # Set seed_candidate to the branch dict for the engine
-        seed_candidate = {"_branch": code_cfg.base_branch}
+        # Build seed candidate: {repo_path: base_branch} for each repo
+        seed_candidate = {rp: code_cfg.base_branch for rp in repo_path_list}
         str_candidate_mode = False
         needs_seed_generation = False
 
-        # Force module_selector to "all" (single component "_branch")
-        config.reflection.module_selector = "all"
+        # Use "all" module selector for single repo, "round_robin" for multi
+        if len(repo_path_list) == 1:
+            config.reflection.module_selector = "all"
         # Disable merge proposer for coding mode
         config.merge = None
         # Disable refiner (not applicable to coding mode)
@@ -1244,8 +1256,35 @@ def optimize_anything(
     else:
         effective_dataset = dataset if dataset is not None else [None]  # type: ignore[list-item]
 
-    if not code_candidate_mode:
-        # Wrap the evaluator to handle signature normalization, log/stdout capture, etc.
+    if code_candidate_mode:
+        from gepa.adapters.coding_adapter import CodingAdapter
+
+        # Wrap the evaluator (same as text mode — enables oa.log(), stdio capture, etc.)
+        wrapped_evaluator = EvaluatorWrapper(
+            evaluator,
+            single_instance_mode,
+            capture_stdio=config.engine.capture_stdio,
+            str_candidate_mode=False,
+            raise_on_exception=config.engine.raise_on_exception,
+        )
+
+        active_adapter: GEPAAdapter = CodingAdapter(
+            evaluator=wrapped_evaluator,
+            parallel=config.engine.parallel,
+            max_workers=config.engine.max_workers,
+            best_example_evals_k=config.engine.best_example_evals_k,
+            objective=objective,
+            background=background,
+            cache_mode="off",
+            # Coding-specific params
+            coding_agent=resolved_coding_agent,
+            repos=repos,
+            base_branches=base_branches,
+            branch_prefix=code_cfg.branch_prefix,
+        )
+
+    else:
+        # Text mode: wrap evaluator, enable caching, etc.
         wrapped_evaluator = EvaluatorWrapper(
             evaluator,
             single_instance_mode,
