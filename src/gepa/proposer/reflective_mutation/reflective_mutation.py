@@ -56,6 +56,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
+        mutation_rate: float = 1.0,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -69,6 +70,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.reflection_lm = reflection_lm
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
+        self.mutation_rate = mutation_rate
 
         self.reflection_prompt_template = reflection_prompt_template
         # Track parameters for which we've already logged missing template warnings
@@ -134,6 +136,27 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             else:
                 # Use the single template for all parameters
                 prompt_template = self.reflection_prompt_template
+
+            # Append mutation rate constraint instructions
+            if self.mutation_rate < 1.0:
+                retention_pct = int((1.0 - self.mutation_rate) * 100)
+                if self.mutation_rate == 0.0:
+                    constraint = (
+                        "\n\n## Mutation Constraint\n\n"
+                        "Do not change the current parameter value."
+                        " Return it exactly as-is, with no modifications whatsoever."
+                    )
+                else:
+                    constraint = (
+                        "\n\n## Mutation Constraint\n\n"
+                        f"Make targeted edits only. Your proposed output must retain at least "
+                        f"{retention_pct}% of the current parameter value. Do not rewrite from scratch. "
+                        f"Focus on surgical improvements while preserving the existing structure and content."
+                    )
+                if prompt_template is None:
+                    prompt_template = InstructionProposalSignature.default_prompt_template + constraint
+                else:
+                    prompt_template = prompt_template + constraint
 
             result, prompt, raw_output = InstructionProposalSignature.run_with_metadata(
                 lm=self.reflection_lm,
