@@ -719,6 +719,7 @@ class ReflectionConfig:
     reflection_lm: LanguageModel | str | None = "openai/gpt-5.1"
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
+    mutation_rate: float = 1.0  # 0.0 = no change, 1.0 = full rewrite (default)
 
 
 @dataclass
@@ -1495,6 +1496,11 @@ def optimize_anything(
             InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
 
     # --- 11. Build reflective proposer from ReflectionConfig ---
+    if not 0.0 <= config.reflection.mutation_rate <= 1.0:
+        raise ValueError(
+            f"mutation_rate must be between 0.0 and 1.0, got {config.reflection.mutation_rate}"
+        )
+
     reflective_proposer = ReflectiveMutationProposer(
         logger=config.tracking.logger,
         trainset=train_loader,
@@ -1509,6 +1515,7 @@ def optimize_anything(
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
         callbacks=config.callbacks,
+        mutation_rate=config.reflection.mutation_rate,
     )
 
     # Define evaluator function for merge proposer
