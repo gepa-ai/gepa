@@ -177,8 +177,9 @@ class BashCodingAgent:
                 drop_params=True,
             )
 
+            # litellm types Choices | StreamingChoices; we use non-streaming so it's always Choices
             choice = response.choices[0]  # type: ignore[union-attr]
-            message = choice.message
+            message = choice.message  # type: ignore[union-attr]
 
             # Append assistant message to history
             messages.append(message.model_dump(exclude_none=True))

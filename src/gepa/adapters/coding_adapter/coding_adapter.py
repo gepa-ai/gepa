@@ -126,7 +126,7 @@ class CodingAdapter(OptimizeAnythingAdapter):
             self._branch_counter += 1
             return f"{self.branch_prefix}/iter_{self._branch_counter}"
 
-    def propose_new_texts(
+    def propose_new_texts(  # type: ignore[override]
         self,
         candidate: dict[str, str],
         reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],

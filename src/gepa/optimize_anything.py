@@ -1208,7 +1208,7 @@ def optimize_anything(
             resolved_coding_agent = code_cfg.coding_agent
 
         # Build seed candidate: {repo_path: base_branch} for each repo
-        seed_candidate = {rp: code_cfg.base_branch for rp in repo_path_list}
+        seed_candidate = dict.fromkeys(repo_path_list, code_cfg.base_branch)
         str_candidate_mode = False
         needs_seed_generation = False
 
@@ -1219,6 +1219,12 @@ def optimize_anything(
         config.merge = None
         # Disable refiner (not applicable to coding mode)
         config.refiner = None
+
+        # Store for adapter creation below
+        _coding_agent = resolved_coding_agent
+        _coding_repos = repos
+        _coding_base_branches = base_branches
+        _coding_branch_prefix = code_cfg.branch_prefix
 
     else:
         # --- Standard text mode (original behavior) ---
@@ -1277,10 +1283,10 @@ def optimize_anything(
             background=background,
             cache_mode="off",
             # Coding-specific params
-            coding_agent=resolved_coding_agent,
-            repos=repos,
-            base_branches=base_branches,
-            branch_prefix=code_cfg.branch_prefix,
+            coding_agent=_coding_agent,
+            repos=_coding_repos,
+            base_branches=_coding_base_branches,
+            branch_prefix=_coding_branch_prefix,
         )
 
     else:
