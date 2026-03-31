@@ -1220,13 +1220,8 @@ def optimize_anything(
         # Disable refiner (not applicable to coding mode)
         config.refiner = None
 
-        # Store for adapter creation below
-        _coding_agent = resolved_coding_agent
-        _coding_repos = repos
-        _coding_base_branches = base_branches
-        _coding_branch_prefix = code_cfg.branch_prefix
-
     else:
+        # --- Standard text mode (original behavior) ---
         # --- Standard text mode (original behavior) ---
 
         # Detect seed generation mode: when seed_candidate is None, the LLM
@@ -1265,7 +1260,6 @@ def optimize_anything(
     if code_candidate_mode:
         from gepa.adapters.coding_adapter import CodingAdapter
 
-        # Wrap the evaluator (same as text mode — enables oa.log(), stdio capture, etc.)
         wrapped_evaluator = EvaluatorWrapper(
             evaluator,
             single_instance_mode,
@@ -1282,11 +1276,10 @@ def optimize_anything(
             objective=objective,
             background=background,
             cache_mode="off",
-            # Coding-specific params
-            coding_agent=_coding_agent,
-            repos=_coding_repos,
-            base_branches=_coding_base_branches,
-            branch_prefix=_coding_branch_prefix,
+            coding_agent=resolved_coding_agent,
+            repos=repos,
+            base_branches=base_branches,
+            branch_prefix=code_cfg.branch_prefix,
         )
 
     else:

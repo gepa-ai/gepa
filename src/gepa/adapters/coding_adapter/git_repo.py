@@ -2,8 +2,18 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
+
+# Git environment for commits — ensures commits work even without global git config
+_GIT_ENV = {
+    **os.environ,
+    "GIT_AUTHOR_NAME": "gepa",
+    "GIT_AUTHOR_EMAIL": "gepa@gepa",
+    "GIT_COMMITTER_NAME": "gepa",
+    "GIT_COMMITTER_EMAIL": "gepa@gepa",
+}
 
 
 class GitRepo:
@@ -39,19 +49,21 @@ class GitRepo:
             return repo
 
         # Not a git repo — initialize
-        subprocess.run(["git", "init"], cwd=resolved, check=True, capture_output=True)
-        subprocess.run(["git", "add", "-A"], cwd=resolved, check=True, capture_output=True)
+        subprocess.run(["git", "init"], cwd=resolved, check=True, capture_output=True, env=_GIT_ENV)
+        subprocess.run(["git", "add", "-A"], cwd=resolved, check=True, capture_output=True, env=_GIT_ENV)
         subprocess.run(
             ["git", "commit", "-m", "initial commit (gepa)"],
             cwd=resolved,
             check=True,
             capture_output=True,
+            env=_GIT_ENV,
         )
         subprocess.run(
             ["git", "checkout", "-B", initial_branch],
             cwd=resolved,
             check=True,
             capture_output=True,
+            env=_GIT_ENV,
         )
         return GitRepo(resolved)
 
@@ -69,6 +81,7 @@ class GitRepo:
             capture_output=capture,
             text=True,
             check=check,
+            env=_GIT_ENV,
         )
 
     def current_branch(self) -> str:

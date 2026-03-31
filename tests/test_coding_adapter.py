@@ -33,7 +33,7 @@ def temp_git_repo(tmp_path):
         cwd=repo,
         check=True,
         capture_output=True,
-        env={**os.environ, "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t"},
+        env={**os.environ, "GIT_AUTHOR_NAME": "gepa", "GIT_AUTHOR_EMAIL": "gepa@gepa", "GIT_COMMITTER_NAME": "gepa", "GIT_COMMITTER_EMAIL": "gepa@gepa"},
     )
     subprocess.run(["git", "checkout", "-B", "base"], cwd=repo, check=True, capture_output=True)
     return str(repo)
