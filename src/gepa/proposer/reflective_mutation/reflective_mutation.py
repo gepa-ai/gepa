@@ -323,6 +323,13 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 ),
             )
 
+            # Stash LM call data in proposal metadata so the engine can log
+            # it to experiment tracking once it knows accept/reject + candidate_idx.
+            _lm_metadata: dict[str, Any] = {}
+            for comp in new_texts:
+                _lm_metadata[f"prompt:{comp}"] = prompts.get(comp, "")
+                _lm_metadata[f"raw_lm_output:{comp}"] = raw_lm_outputs.get(comp, "")
+
             for pname, text in new_texts.items():
                 self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
         except Exception as e:
@@ -399,4 +406,5 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             subsample_scores_before=eval_curr.scores,
             subsample_scores_after=new_scores,
             tag="reflective_mutation",
+            metadata=_lm_metadata,
         )

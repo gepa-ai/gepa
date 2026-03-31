@@ -459,7 +459,7 @@ class EngineConfig:
     display_progress_bar: bool = False
     raise_on_exception: bool = True
     use_cloudpickle: bool = True
-    track_best_outputs: bool = False
+    track_best_outputs: bool = True
 
     # Simple stopping conditions
     max_metric_calls: int | None = None
