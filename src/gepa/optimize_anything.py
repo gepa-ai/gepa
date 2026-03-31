@@ -107,6 +107,8 @@ Public API:
 
 import asyncio
 import concurrent.futures
+import contextvars
+import functools
 import inspect
 import io
 import os
@@ -318,18 +320,28 @@ class LogContext:
             return text
 
 
-# Thread-local storage for the active LogContext on each thread.
-_log_tls = threading.local()
+# Context-local storage for the active LogContext. This is task-local for
+# asyncio and can still be propagated manually to child threads via
+# get_log_context() / set_log_context().
+_log_context_var: contextvars.ContextVar["LogContext | None"] = contextvars.ContextVar(
+    "gepa_log_context",
+    default=None,
+)
 
 
 def _get_log_context() -> "LogContext | None":
-    """Return the active log context for the current thread, or None."""
-    return getattr(_log_tls, "context", None)
+    """Return the active log context for the current execution context, or None."""
+    return _log_context_var.get()
 
 
-def _set_log_context(ctx: "LogContext | None") -> None:
-    """Set (or clear) the active log context on the current thread."""
-    _log_tls.context = ctx
+def _set_log_context(ctx: "LogContext | None") -> contextvars.Token["LogContext | None"]:
+    """Set (or clear) the active log context and return a reset token."""
+    return _log_context_var.set(ctx)
+
+
+def _reset_log_context(token: contextvars.Token["LogContext | None"]) -> None:
+    """Restore the previously active log context from a reset token."""
+    _log_context_var.reset(token)
 
 
 def get_log_context() -> LogContext:
@@ -910,137 +922,139 @@ class EvaluatorWrapper:
         sig = inspect.signature(evaluator_fn)
         has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
         if has_var_keyword:
-            accepted_params = None  # accept all
+            self._accepted_params = None  # accept all
         else:
-            accepted_params = set(sig.parameters.keys())
+            self._accepted_params = set(sig.parameters.keys())
 
-        def _filter_kwargs(kwargs: dict) -> dict:
-            if accepted_params is None:
-                return kwargs
-            return {k: v for k, v in kwargs.items() if k in accepted_params}
-
-        def wrapped_evaluator(
-            candidate: Candidate, example: object | None = None, **kwargs: Any
-        ) -> tuple[float, Any, SideInfo]:
-            # Create a fresh, shared log context for this evaluator call.
-            # The same LogContext is accessible from child threads via
-            # oa.get_log_context() / oa.set_log_context().
-            log_ctx = LogContext()
-            _set_log_context(log_ctx)
-
-            # Build full kwargs dict. In single-instance mode, don't forward
-            # example to the evaluator at all.
-            if single_instance_mode:
-                all_kwargs = kwargs
-            else:
-                all_kwargs = {"example": example, **kwargs}
-
-            filtered = _filter_kwargs(all_kwargs)
-
-            # Unwrap candidate for str_candidate_mode
-            eval_candidate: Candidate | str = candidate
-            if str_candidate_mode:
-                eval_candidate = candidate[_STR_CANDIDATE_KEY]
-
-            # Acquire per-thread stream capture from the shared manager per-call.
-            # This scopes the sys.stdout/stderr replacement to only the duration
-            # of evaluator execution, restoring the originals between calls.
-            # Both acquire/start_capture and the evaluator call are inside the
-            # same try/finally so that stream_manager.release() is always called
-            # even if start_capture() raises (e.g. assertion on double-capture).
-            stdout_capturer: ThreadLocalStreamCapture | None = None
-            stderr_capturer: ThreadLocalStreamCapture | None = None
-            try:
-                if capture_stdio:
-                    stdout_capturer, stderr_capturer = stream_manager.acquire()
-                    stdout_capturer.start_capture()
-                    stderr_capturer.start_capture()
-
-                if inspect.iscoroutinefunction(evaluator_fn):
-                    # Async evaluator: bridge into sync context.
-                    # TODO (issue #61): when the engine loop becomes async,
-                    # wrapped_evaluator itself should become ``async def`` so
-                    # the coroutine can be awaited directly here instead of
-                    # being bridged via _run_coroutine.
-                    result = _run_coroutine(evaluator_fn(eval_candidate, **filtered))
-                else:
-                    result = evaluator_fn(eval_candidate, **filtered)
-            except Exception as e:
-                result = e  # Sentinel; handled below after cleanup
-            finally:
-                captured_stdout = stdout_capturer.stop_capture() if stdout_capturer else ""
-                captured_stderr = stderr_capturer.stop_capture() if stderr_capturer else ""
-                if capture_stdio and stdout_capturer is not None:
-                    stream_manager.release()
-                log_output = log_ctx.drain()
-                _set_log_context(None)
-
-            # If evaluator raised, preserve captured diagnostics
-            if isinstance(result, Exception):
-                if raise_on_exception:
-                    raise result
-                fail_side_info: SideInfo = {"error": str(result)}
-                if log_output:
-                    fail_side_info["log"] = log_output
-                if captured_stdout:
-                    fail_side_info["stdout"] = captured_stdout
-                if captured_stderr:
-                    fail_side_info["stderr"] = captured_stderr
-                return 0.0, None, fail_side_info
-
-            # Detect return type and normalize to (score, output, side_info)
-            if isinstance(result, tuple):
-                score, side_info = result
-                side_info = dict(side_info) if side_info is not None else {}
-
-                # Inject captured output, renaming on collision with a warning
-                injected: dict[str, str] = {}
-                if log_output:
-                    injected["log"] = log_output
-                if captured_stdout:
-                    injected["stdout"] = captured_stdout
-                if captured_stderr:
-                    injected["stderr"] = captured_stderr
-
-                for key in list(injected):
-                    if key in side_info:
-                        prefixed = f"_gepa_{key}"
-                        warnings.warn(
-                            f"Your evaluator returned side_info with key '{key}' that conflicts "
-                            f"with GEPA's captured output key. The captured output will be stored "
-                            f"under '{prefixed}' instead.",
-                            stacklevel=2,
-                        )
-                        injected[prefixed] = injected.pop(key)
-
-                side_info.update(injected)
-                return score, None, side_info
-            else:
-                score = result
-                auto_side_info: SideInfo = {}
-                if captured_stdout:
-                    auto_side_info["stdout"] = captured_stdout
-                if captured_stderr:
-                    auto_side_info["stderr"] = captured_stderr
-                if log_output:
-                    auto_side_info["log"] = log_output
-                return score, None, auto_side_info
-
-        self._wrapped = wrapped_evaluator
+        self._evaluator_fn = evaluator_fn
         self._is_async = inspect.iscoroutinefunction(evaluator_fn)
-        # Capture closure variables needed for async_call (they live in the
-        # __init__ local scope and are captured by _wrapped, but we also need
-        # them for the async variant).
         self._single_instance_mode = single_instance_mode
+        self._capture_stdio = capture_stdio
         self._str_candidate_mode = str_candidate_mode
-        self._filter_kwargs = _filter_kwargs
-        # Store the raw async evaluator fn for async_call.
         self._raw_fn = evaluator_fn if self._is_async else None
+        self._raise_on_exception = raise_on_exception
 
     @property
     def is_async(self) -> bool:
         """True if the underlying evaluator is an async function."""
         return self._is_async
+
+    @property
+    def capture_stdio(self) -> bool:
+        """True when stdout/stderr capture is enabled for evaluator calls."""
+        return self._capture_stdio
+
+    def _filter_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        if self._accepted_params is None:
+            return kwargs
+        return {k: v for k, v in kwargs.items() if k in self._accepted_params}
+
+    def _prepare_call(
+        self,
+        candidate: Candidate,
+        example: object | None,
+        kwargs: dict[str, Any],
+    ) -> tuple[Candidate | str, dict[str, Any]]:
+        if self._single_instance_mode:
+            all_kwargs = kwargs
+        else:
+            all_kwargs = {"example": example, **kwargs}
+        filtered = self._filter_kwargs(all_kwargs)
+
+        eval_candidate: Candidate | str = candidate
+        if self._str_candidate_mode:
+            eval_candidate = candidate[_STR_CANDIDATE_KEY]
+        return eval_candidate, filtered
+
+    def _start_capture(
+        self,
+    ) -> tuple[
+        LogContext,
+        contextvars.Token["LogContext | None"],
+        ThreadLocalStreamCapture | None,
+        ThreadLocalStreamCapture | None,
+    ]:
+        log_ctx = LogContext()
+        token = _set_log_context(log_ctx)
+
+        stdout_capturer: ThreadLocalStreamCapture | None = None
+        stderr_capturer: ThreadLocalStreamCapture | None = None
+        if self._capture_stdio:
+            stdout_capturer, stderr_capturer = stream_manager.acquire()
+            stdout_capturer.start_capture()
+            stderr_capturer.start_capture()
+
+        return log_ctx, token, stdout_capturer, stderr_capturer
+
+    def _finish_capture(
+        self,
+        log_ctx: LogContext,
+        token: contextvars.Token["LogContext | None"],
+        stdout_capturer: ThreadLocalStreamCapture | None,
+        stderr_capturer: ThreadLocalStreamCapture | None,
+    ) -> tuple[str, str, str]:
+        captured_stdout = stdout_capturer.stop_capture() if stdout_capturer else ""
+        captured_stderr = stderr_capturer.stop_capture() if stderr_capturer else ""
+        if self._capture_stdio and stdout_capturer is not None:
+            stream_manager.release()
+        log_output = log_ctx.drain()
+        _reset_log_context(token)
+        return captured_stdout, captured_stderr, log_output
+
+    def _normalize_result(
+        self,
+        result: Any,
+        captured_stdout: str,
+        captured_stderr: str,
+        log_output: str,
+    ) -> tuple[float, Any, SideInfo]:
+        if isinstance(result, Exception):
+            if self._raise_on_exception:
+                raise result
+            fail_side_info: SideInfo = {"error": str(result)}
+            if log_output:
+                fail_side_info["log"] = log_output
+            if captured_stdout:
+                fail_side_info["stdout"] = captured_stdout
+            if captured_stderr:
+                fail_side_info["stderr"] = captured_stderr
+            return 0.0, None, fail_side_info
+
+        if isinstance(result, tuple):
+            score, side_info = result
+            side_info = dict(side_info) if side_info is not None else {}
+
+            injected: dict[str, str] = {}
+            if log_output:
+                injected["log"] = log_output
+            if captured_stdout:
+                injected["stdout"] = captured_stdout
+            if captured_stderr:
+                injected["stderr"] = captured_stderr
+
+            for key in list(injected):
+                if key in side_info:
+                    prefixed = f"_gepa_{key}"
+                    warnings.warn(
+                        f"Your evaluator returned side_info with key '{key}' that conflicts "
+                        f"with GEPA's captured output key. The captured output will be stored "
+                        f"under '{prefixed}' instead.",
+                        stacklevel=2,
+                    )
+                    injected[prefixed] = injected.pop(key)
+
+            side_info.update(injected)
+            return score, None, side_info
+
+        score = result
+        auto_side_info: SideInfo = {}
+        if captured_stdout:
+            auto_side_info["stdout"] = captured_stdout
+        if captured_stderr:
+            auto_side_info["stderr"] = captured_stderr
+        if log_output:
+            auto_side_info["log"] = log_output
+        return score, None, auto_side_info
 
     async def async_call(
         self, candidate: Candidate, example: object | None = None, **kwargs: Any
@@ -1055,28 +1069,46 @@ class EvaluatorWrapper:
         # removed — callers will just ``await evaluator_wrapper(...)``.
         """
         assert self._raw_fn is not None, "async_call requires an async evaluator"
-        if self._single_instance_mode:
-            all_kwargs = kwargs
-        else:
-            all_kwargs = {"example": example, **kwargs}
-        filtered = self._filter_kwargs(all_kwargs)
-        eval_candidate: Candidate | str = candidate
-        if self._str_candidate_mode:
-            eval_candidate = candidate[_STR_CANDIDATE_KEY]
-        result = await self._raw_fn(eval_candidate, **filtered)
-        # Normalise to (score, output, side_info)
-        if isinstance(result, tuple):
-            score, side_info = result
-            side_info = dict(side_info) if side_info is not None else {}
-        else:
-            score = float(result)
-            side_info = {}
-        return float(score), None, side_info
+        eval_candidate, filtered = self._prepare_call(candidate, example, kwargs)
+        log_ctx, token, stdout_capturer, stderr_capturer = self._start_capture()
+        try:
+            result = await self._raw_fn(eval_candidate, **filtered)
+        except Exception as e:
+            result = e
+        finally:
+            captured_stdout, captured_stderr, log_output = self._finish_capture(
+                log_ctx,
+                token,
+                stdout_capturer,
+                stderr_capturer,
+            )
+        return self._normalize_result(result, captured_stdout, captured_stderr, log_output)
 
     def __call__(
         self, candidate: Candidate, example: object | None = None, **kwargs: Any
     ) -> tuple[float, Any, SideInfo]:
-        return self._wrapped(candidate, example=example, **kwargs)
+        eval_candidate, filtered = self._prepare_call(candidate, example, kwargs)
+        log_ctx, token, stdout_capturer, stderr_capturer = self._start_capture()
+        try:
+            if self._is_async:
+                # Async evaluator: bridge into sync context.
+                # TODO (issue #61): when the engine loop becomes async,
+                # __call__ itself should become ``async def`` so the
+                # coroutine can be awaited directly here.
+                assert self._raw_fn is not None
+                result = _run_coroutine(self._raw_fn(eval_candidate, **filtered))
+            else:
+                result = self._evaluator_fn(eval_candidate, **filtered)
+        except Exception as e:
+            result = e
+        finally:
+            captured_stdout, captured_stderr, log_output = self._finish_capture(
+                log_ctx,
+                token,
+                stdout_capturer,
+                stderr_capturer,
+            )
+        return self._normalize_result(result, captured_stdout, captured_stderr, log_output)
 
 
 def optimize_anything(
@@ -1584,8 +1616,9 @@ async def aoptimize_anything(
     """Async entry point for :func:`optimize_anything`.
 
     Runs optimization in a thread-pool executor so the calling event loop
-    is not blocked.  Accepts both sync and async evaluators — async
-    evaluators are gathered concurrently across each evaluation batch.
+    is not blocked. Accepts both sync and async evaluators. Async evaluator
+    batching preserves the same log, exception, and cache semantics as the
+    sync path.
 
     All parameters are identical to :func:`optimize_anything`.
 
@@ -1602,9 +1635,7 @@ async def aoptimize_anything(
     # wrapper can be removed and aoptimize_anything can call the engine
     # directly with ``await``, eliminating the thread-pool overhead.
     """
-    import functools
-
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     fn = functools.partial(
         optimize_anything,
         seed_candidate,
