@@ -19,6 +19,7 @@ from gepa.core.callbacks import (
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
+from gepa.core.token_budget import build_candidate_token_context, check_candidate_token_limit
 from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
 from gepa.proposer.reflective_mutation.base import (
     CandidateSelector,
@@ -56,6 +57,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
+        max_candidate_tokens: int | None = None,
+        token_counter_model: str | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -69,6 +72,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.reflection_lm = reflection_lm
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
+        self.max_candidate_tokens = max_candidate_tokens
+        self.token_counter_model = token_counter_model
 
         self.reflection_prompt_template = reflection_prompt_template
         # Track parameters for which we've already logged missing template warnings
@@ -135,12 +140,19 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 # Use the single template for all parameters
                 prompt_template = self.reflection_prompt_template
 
+            token_budget_context = None
+            if self.max_candidate_tokens is not None:
+                token_budget_context = build_candidate_token_context(
+                    candidate, self.max_candidate_tokens, token_counter_model=self.token_counter_model
+                )
+
             result, prompt, raw_output = InstructionProposalSignature.run_with_metadata(
                 lm=self.reflection_lm,
                 input_dict={
                     "current_instruction_doc": base_instruction,
                     "dataset_with_feedback": dataset_with_feedback,
                     "prompt_template": prompt_template,
+                    "token_budget_context": token_budget_context,
                 },
             )
             new_texts[name] = result["new_instruction"]
@@ -344,6 +356,18 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         for pname, text in new_texts.items():
             assert pname in new_candidate, f"{pname} missing in candidate"
             new_candidate[pname] = text
+
+        # Early rejection: skip evaluation if candidate exceeds token limit
+        if self.max_candidate_tokens is not None:
+            token_count, exceeds, _ = check_candidate_token_limit(
+                new_candidate, self.max_candidate_tokens, token_counter_model=self.token_counter_model
+            )
+            if exceeds:
+                self.logger.log(
+                    f"Iteration {i}: Candidate rejected before evaluation — "
+                    f"{token_count} tokens exceeds limit of {self.max_candidate_tokens}"
+                )
+                return None
 
         def evaluator(b, c):
             r = self.adapter.evaluate(b, c, capture_traces=False)

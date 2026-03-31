@@ -66,6 +66,8 @@ def optimize(
     # Budget and Stop Condition
     max_metric_calls: int | None = None,
     stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None,
+    # Token limit for candidate size control
+    max_candidate_tokens: int | None = None,
     # Logging and Callbacks
     logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
@@ -154,6 +156,7 @@ def optimize(
     # Budget and Stop Condition
     - max_metric_calls: Optional maximum number of metric calls to perform. If not provided, stop_callbacks must be provided.
     - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single StopperProtocol or a list or tuple of StopperProtocol instances. Examples: FileStopper, TimeoutStopCondition, SignalStopper, NoImprovementStopper, or custom stopping logic. If not provided, max_metric_calls must be provided.
+    - max_candidate_tokens: Optional maximum number of tokens allowed for the optimized candidate text. When set: (1) logs ``candidate_tokens`` metric after each accepted candidate, (2) warns when usage exceeds 80% of the limit, (3) instructs the reflection LM to stay within the limit, (4) rejects candidates that exceed the limit. This controls the size of the optimized artifact, not the LM generation length. Defaults to None (no limit).
 
     # Logging and Callbacks
     - logger: A `LoggerProtocol` instance that is used to log the progress of the optimization.
@@ -348,6 +351,15 @@ def optimize(
     if cache_evaluation:
         evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
 
+    # Resolve the model name for the tokenizer used by max_candidate_tokens.
+    # Prefer task_lm (the model the candidate is sent to) over reflection_lm.
+    # Falls back to None — token_budget utilities use FALLBACK_TOKEN_COUNTER_MODEL.
+    token_counter_model: str | None = None
+    if isinstance(task_lm, str):
+        token_counter_model = task_lm
+    elif isinstance(reflection_lm, str):
+        token_counter_model = reflection_lm
+
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
         trainset=train_loader,
@@ -362,6 +374,8 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
+        max_candidate_tokens=max_candidate_tokens,
+        token_counter_model=token_counter_model,
     )
 
     def evaluator_fn(
@@ -381,6 +395,8 @@ def optimize(
             rng=rng,
             val_overlap_floor=merge_val_overlap_floor,
             callbacks=callbacks,
+            max_candidate_tokens=max_candidate_tokens,
+            token_counter_model=token_counter_model,
         )
 
     engine = GEPAEngine(
@@ -403,6 +419,8 @@ def optimize(
         val_evaluation_policy=val_evaluation_policy,
         use_cloudpickle=use_cloudpickle,
         evaluation_cache=evaluation_cache,
+        max_candidate_tokens=max_candidate_tokens,
+        token_counter_model=token_counter_model,
     )
 
     with experiment_tracker:

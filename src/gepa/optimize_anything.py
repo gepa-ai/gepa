@@ -467,9 +467,9 @@ class EngineConfig:
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
-    candidate_selection_strategy: CandidateSelector | Literal[
-        "pareto", "current_best", "epsilon_greedy", "top_k_pareto"
-    ] = "pareto"
+    candidate_selection_strategy: (
+        CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"]
+    ) = "pareto"
     frontier_type: FrontierType = "hybrid"
 
     # Parallelization settings for evaluation
@@ -496,6 +496,13 @@ class EngineConfig:
     # internally by libraries. For those, use oa.log() or capture subprocess
     # output manually and pass it to oa.log().
     capture_stdio: bool = False
+
+    # Maximum tokens allowed for the optimized candidate text.
+    # When set: (1) logs candidate_tokens metric after each accepted candidate,
+    # (2) warns when usage exceeds 80% of the limit, (3) instructs the reflection
+    # LM to stay within the limit, (4) rejects candidates that exceed the limit.
+    # This controls the size of the optimized artifact, not the LM generation length.
+    max_candidate_tokens: int | None = None
 
 
 def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
@@ -584,6 +591,9 @@ Based on your analysis, propose an improved version that:
 2. Preserves successful behaviors from the current version
 3. Makes meaningful improvements rather than superficial changes{constraint_line}""")
 
+    # Token budget — replaced at render time; resolves to "" when no budget is set
+    sections.append("<token_budget>")
+
     # Output format - always present
     sections.append("""
 ## Output Format
@@ -622,9 +632,7 @@ def _build_seed_generation_prompt(
         examples = dataset[:3]
         example_lines = [f"- Example {i}: {ex}" for i, ex in enumerate(examples, 1)]
         sections.append(
-            "\n## Sample Inputs\n\n"
-            "The candidate will be evaluated on inputs like these:\n\n"
-            + "\n".join(example_lines)
+            "\n## Sample Inputs\n\nThe candidate will be evaluated on inputs like these:\n\n" + "\n".join(example_lines)
         )
 
     sections.append(
@@ -689,7 +697,7 @@ Carefully analyze all the evaluation data provided above. Look for patterns that
 - Specific technical details that are crucial for understanding the parameter's role
 
 Based on your analysis, propose a new parameter value that addresses the identified issues while maintaining or improving upon what works well. Your proposal should be directly informed by the patterns and insights from the evaluation data.
-
+<token_budget>
 Provide the new parameter value within ``` blocks."""
 
 
@@ -1321,6 +1329,11 @@ def optimize_anything(
     if config.refiner is not None and config.refiner.refiner_lm is None:
         config.refiner.refiner_lm = config.reflection.reflection_lm
 
+    # Resolve the model name for the tokenizer used by max_candidate_tokens
+    # (must happen before the string is converted to a callable below).
+    # Falls back to None — token_budget utilities use FALLBACK_TOKEN_COUNTER_MODEL.
+    token_counter_model = config.reflection.reflection_lm if isinstance(config.reflection.reflection_lm, str) else None
+
     # Convert reflection_lm string to callable
     if isinstance(config.reflection.reflection_lm, str):
         config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
@@ -1489,6 +1502,8 @@ def optimize_anything(
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
+        max_candidate_tokens=config.engine.max_candidate_tokens,
+        token_counter_model=token_counter_model,
     )
 
     # Define evaluator function for merge proposer
@@ -1509,6 +1524,8 @@ def optimize_anything(
             max_merge_invocations=config.merge.max_merge_invocations,
             rng=rng,
             val_overlap_floor=config.merge.merge_val_overlap_floor,
+            max_candidate_tokens=config.engine.max_candidate_tokens,
+            token_counter_model=token_counter_model,
         )
 
     # --- 13. Create evaluation cache if enabled ---
@@ -1536,6 +1553,8 @@ def optimize_anything(
         val_evaluation_policy=config.engine.val_evaluation_policy,
         use_cloudpickle=config.engine.use_cloudpickle,
         evaluation_cache=evaluation_cache,
+        max_candidate_tokens=config.engine.max_candidate_tokens,
+        token_counter_model=token_counter_model,
     )
 
     # --- 15. Run optimization ---
