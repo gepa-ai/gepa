@@ -1265,9 +1265,6 @@ def optimize_anything(
     if code_candidate_mode:
         from gepa.adapters.coding_adapter import CodingAdapter
 
-        # These are guaranteed bound when code_candidate_mode is True (set in the block above)
-        assert isinstance(resolved_coding_agent, object)
-
         wrapped_evaluator = EvaluatorWrapper(
             evaluator,
             single_instance_mode,
