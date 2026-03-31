@@ -530,14 +530,22 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         for component_name in components_to_update:
             ret[component_name] = []
             for score, side_info in zip(scores, side_infos, strict=False):
-                ret[component_name].append({})
+                record: dict[str, Any] = {}
+
+                # Auto-inject score if not already present
+                has_score_key = any(k.lower() == "score" for k in side_info)
+                if not has_score_key:
+                    record["Score"] = score
+
                 for k, v in side_info.items():
                     if k == "scores":
-                        ret[component_name][-1]["Scores (Higher is Better)"] = v
+                        record["Scores (Higher is Better)"] = v
                     elif not k.endswith("_specific_info"):
-                        ret[component_name][-1][k] = v
+                        record[k] = v
                     elif k == f"{component_name}_specific_info":
-                        ret[component_name][-1].update(v)
+                        record.update(v)
                     else:
                         continue
+
+                ret[component_name].append(record)
         return ret

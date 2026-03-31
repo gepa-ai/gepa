@@ -88,36 +88,45 @@ class TestBaseRecords:
 
 
 # ---------------------------------------------------------------------------
-# score diff enrichment
+# Auto-inject score (#288)
 # ---------------------------------------------------------------------------
 
 
-class TestScoreDiff:
-    def test_build_with_score_diff(self) -> None:
-        """include_score_diff=True appends gap info and preserves existing Feedback."""
+class TestAutoInjectScore:
+    def test_score_injected_when_not_in_side_info(self) -> None:
+        """Score is auto-injected as record['Score'] when evaluator does not provide it."""
         batch = _batch(
             scores=[0.75],
-            trajectories=[{"Feedback": "Good attempt"}],
+            trajectories=[{"Input": "q1", "Output": "a1"}],
         )
-        result = FeedbackBuilder(include_score_diff=True).build(batch, ["comp"])
+        result = FeedbackBuilder().build(batch, ["comp"])
         rec = result["comp"][0]
 
-        assert rec["Feedback"].startswith("Good attempt\n")
-        assert "Gap from perfect: 0.25" in rec["Feedback"]
-        assert "Score: 0.75" in rec["Feedback"]
+        assert rec["Score"] == 0.75
 
-    def test_build_score_diff_without_existing_feedback(self) -> None:
-        """Creates Feedback field when none exists in side_info."""
+    def test_score_not_injected_when_already_present(self) -> None:
+        """Score is NOT injected if side_info already has a 'score' key (case-insensitive)."""
         batch = _batch(
-            scores=[0.6],
-            trajectories=[{"question": "q1"}],
+            scores=[0.75],
+            trajectories=[{"Input": "q1", "Score": 0.9}],
         )
-        result = FeedbackBuilder(include_score_diff=True).build(batch, ["comp"])
+        result = FeedbackBuilder().build(batch, ["comp"])
         rec = result["comp"][0]
 
-        assert "Feedback" in rec
-        assert "Score: 0.6" in rec["Feedback"]
-        assert "Gap from perfect: 0.40" in rec["Feedback"]
+        # Should keep the user-provided value, not overwrite with eval score
+        assert rec["Score"] == 0.9
+
+    def test_score_not_injected_case_insensitive(self) -> None:
+        """Case-insensitive check: 'score' in side_info prevents injection."""
+        batch = _batch(
+            scores=[0.75],
+            trajectories=[{"Input": "q1", "score": 0.9}],
+        )
+        result = FeedbackBuilder().build(batch, ["comp"])
+        rec = result["comp"][0]
+
+        assert rec["score"] == 0.9
+        assert "Score" not in rec
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +201,6 @@ class TestCombined:
     def test_build_all_features_combined(self) -> None:
         """All enrichments work together without interference."""
         builder = FeedbackBuilder(
-            include_score_diff=True,
             rationale_field="explanation",
             global_constraints=["Stay general.", "Preserve schema."],
         )
@@ -218,10 +226,11 @@ class TestCombined:
         assert rec["Scores (Higher is Better)"] == {"accuracy": 0.0}
         assert rec["Detail"] == "prompt-level info"
 
-        # Score diff appended to existing Feedback
-        assert "Wrong answer." in rec["Feedback"]
-        assert "Score: 0.3" in rec["Feedback"]
-        assert "Gap from perfect: 0.70" in rec["Feedback"]
+        # Auto-injected score (#288)
+        assert rec["Score"] == 0.3
+
+        # Feedback unchanged (no score diff enrichment)
+        assert rec["Feedback"] == "Wrong answer."
 
         # Rationale extracted
         assert rec["Rationale"] == "The correct approach is X."
@@ -258,8 +267,8 @@ class TestImport:
         from gepa.utils import FeedbackBuilder as FeedbackBuilderFromUtils
 
         assert FeedbackBuilderFromUtils is not None
-        builder = FeedbackBuilderFromUtils(include_score_diff=True, global_constraints=["test"])
-        assert builder.include_score_diff is True
+        builder = FeedbackBuilderFromUtils(global_constraints=["test"])
+        assert builder.global_constraints == ["test"]
 
 
 # ---------------------------------------------------------------------------
@@ -297,3 +306,14 @@ class TestAdapterIntegration:
         assert result["prompt"][0]["Input"] == "q1"
         assert result["prompt"][0]["Scores (Higher is Better)"] == {"acc": 0.5}
         assert "Constraints" not in result["prompt"][0]
+
+    def test_adapter_fallback_auto_injects_score(self) -> None:
+        """Without feedback_builder, adapter fallback also auto-injects score (#288)."""
+        adapter = OptimizeAnythingAdapter(evaluator=_dummy_evaluator)
+        eval_batch = EvaluationBatch(
+            outputs=["out"],
+            scores=[0.5],
+            trajectories=[{"Input": "q1", "Output": "a1"}],
+        )
+        result = adapter.make_reflective_dataset({"prompt": "test"}, eval_batch, ["prompt"])
+        assert result["prompt"][0]["Score"] == 0.5
