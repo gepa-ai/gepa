@@ -190,21 +190,25 @@ class TestGitRepoEnsure:
 
 class TestCodeCandidate:
     def test_single_repo_string(self):
-        cc = CodeCandidate(repo_paths="/path/to/repo")
-        assert cc.repo_paths == "/path/to/repo"
+        cc = CodeCandidate(repo_path="/path/to/repo")
+        assert cc.repo_path == "/path/to/repo"
         assert cc.base_branch == "main"
         assert cc.coding_agent == "bash"
 
-    def test_multi_repo_list(self):
-        cc = CodeCandidate(repo_paths=["/path/a", "/path/b"])
-        assert cc.repo_paths == ["/path/a", "/path/b"]
+    def test_multi_repo_as_list(self):
+        ccs = [
+            CodeCandidate(repo_path="/path/a", base_branch="main"),
+            CodeCandidate(repo_path="/path/b", base_branch="dev"),
+        ]
+        assert ccs[0].repo_path == "/path/a"
+        assert ccs[1].base_branch == "dev"
 
     def test_custom_agent(self):
-        cc = CodeCandidate(repo_paths="/repo", coding_agent="claude_code")
+        cc = CodeCandidate(repo_path="/repo", coding_agent="claude_code")
         assert cc.coding_agent == "claude_code"
 
     def test_custom_model(self):
-        cc = CodeCandidate(repo_paths="/repo", model="anthropic/claude-sonnet-4-6")
+        cc = CodeCandidate(repo_path="/repo", model="anthropic/claude-sonnet-4-6")
         assert cc.model == "anthropic/claude-sonnet-4-6"
 
 
@@ -377,7 +381,7 @@ class TestCodingAdapterIntegration:
 
         result = optimize_anything(
             seed_candidate=CodeCandidate(
-                repo_paths=temp_git_repo,
+                repo_path=temp_git_repo,
                 base_branch="base",
                 coding_agent=mock_agent,
                 branch_prefix="gepa",
@@ -424,12 +428,10 @@ class TestCodingAdapterIntegration:
         )
 
         result = optimize_anything(
-            seed_candidate=CodeCandidate(
-                repo_paths=[str(repo_a), str(repo_b)],
-                base_branch="base",
-                coding_agent=mock_agent,
-                branch_prefix="gepa",
-            ),
+            seed_candidate=[
+                CodeCandidate(repo_path=str(repo_a), base_branch="base", coding_agent=mock_agent),
+                CodeCandidate(repo_path=str(repo_b), base_branch="base", coding_agent=mock_agent),
+            ],
             evaluator=evaluator,
             objective="Optimize both repos",
             config=GEPAConfig(

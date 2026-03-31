@@ -157,12 +157,14 @@ CacheEvaluationStorage = Literal["memory", "disk", "auto"]
 
 @dataclass
 class CodeCandidate:
-    """Seed candidate for coding mode — optimizes code in git repositories.
+    """Seed candidate for coding mode — optimizes code in a git repository.
 
     When passed as ``seed_candidate`` to :func:`optimize_anything`, the system
     enters coding mode where candidates are ``{repo_path: branch_name}`` dicts.
-    Each repo path is a "component" that can be optimized independently (like
-    multi-component text optimization).
+
+    For multi-repo optimization, pass a list of ``CodeCandidate`` objects as
+    ``seed_candidate`` — each repo becomes a component that can be optimized
+    independently (like multi-component text optimization).
 
     For non-git directories, the repo is auto-initialized with ``git init``.
 
@@ -173,7 +175,7 @@ class CodeCandidate:
         # Single repo
         result = optimize_anything(
             seed_candidate=CodeCandidate(
-                repo_paths="/path/to/my/repo",
+                repo_path="/path/to/my/repo",
                 coding_agent="claude_code",
             ),
             evaluator=run_tests,
@@ -181,20 +183,19 @@ class CodeCandidate:
         )
         print(result.best_candidate)  # {"/path/to/my/repo": "gepa/iter_5"}
 
-        # Multiple repos (multi-component)
+        # Multiple repos (multi-component, different base branches)
         result = optimize_anything(
-            seed_candidate=CodeCandidate(
-                repo_paths=["/path/to/backend", "/path/to/frontend"],
-                coding_agent="bash",
-            ),
+            seed_candidate=[
+                CodeCandidate(repo_path="/path/to/backend", base_branch="main"),
+                CodeCandidate(repo_path="/path/to/frontend", base_branch="dev"),
+            ],
             evaluator=run_integration_tests,
             objective="Optimize the full-stack application.",
         )
 
     Args:
-        repo_paths: Path(s) to git repositories to optimize. Can be a single
-            string or a list of strings for multi-repo optimization.
-        base_branch: Starting branch name for all repos (default ``"main"``).
+        repo_path: Path to the git repository to optimize.
+        base_branch: Starting branch (default ``"main"``).
             Non-git directories are auto-initialized with this branch name.
         coding_agent: Which coding agent to use for proposals.
             ``"bash"`` — agentic LM with a bash tool in a loop.
@@ -205,7 +206,7 @@ class CodeCandidate:
         branch_prefix: Prefix for branches created during optimization.
     """
 
-    repo_paths: str | list[str]
+    repo_path: str
     base_branch: str = "main"
     coding_agent: Literal["bash", "claude_code"] | Any = "bash"
     model: str = "openai/gpt-5.1"
@@ -1053,7 +1054,7 @@ class EvaluatorWrapper:
 
 
 def optimize_anything(
-    seed_candidate: str | Candidate | CodeCandidate | None = None,
+    seed_candidate: str | Candidate | CodeCandidate | list[CodeCandidate] | None = None,
     *,
     evaluator: Callable[..., Any],
     dataset: list[DataInst] | None = None,
@@ -1171,49 +1172,50 @@ def optimize_anything(
     if config is None:
         config = GEPAConfig()
 
-    # --- Coding mode: CodeCandidate triggers git-branch-based optimization ---
-    code_candidate_mode = isinstance(seed_candidate, CodeCandidate)
+    # --- Coding mode: CodeCandidate or list[CodeCandidate] triggers git-branch-based optimization ---
+    code_candidate_mode = isinstance(seed_candidate, CodeCandidate) or (
+        isinstance(seed_candidate, list) and len(seed_candidate) > 0 and isinstance(seed_candidate[0], CodeCandidate)
+    )
 
     if code_candidate_mode:
-        assert isinstance(seed_candidate, CodeCandidate)  # for type narrowing
         from gepa.adapters.coding_adapter import BashCodingAgent, ClaudeCodeAgent, GitRepo
 
-        code_cfg = seed_candidate
-
-        # Normalize repo_paths to list
-        if isinstance(code_cfg.repo_paths, str):
-            repo_path_list = [code_cfg.repo_paths]
+        # Normalize to list of CodeCandidate
+        if isinstance(seed_candidate, CodeCandidate):
+            code_candidates = [seed_candidate]
         else:
-            repo_path_list = list(code_cfg.repo_paths)
+            assert isinstance(seed_candidate, list)
+            code_candidates = seed_candidate
 
         # Ensure each directory is a git repo (auto-init if needed)
         repos: dict[str, GitRepo] = {}
         base_branches: dict[str, str] = {}
-        for rp in repo_path_list:
-            repos[rp] = GitRepo.ensure_repo(rp, initial_branch=code_cfg.base_branch)
-            base_branches[rp] = code_cfg.base_branch
+        for cc in code_candidates:
+            repos[cc.repo_path] = GitRepo.ensure_repo(cc.repo_path, initial_branch=cc.base_branch)
+            base_branches[cc.repo_path] = cc.base_branch
 
-        # Resolve coding agent
-        if isinstance(code_cfg.coding_agent, str):
-            if code_cfg.coding_agent == "claude_code":
+        # Resolve coding agent from the first CodeCandidate
+        first_cc = code_candidates[0]
+        if isinstance(first_cc.coding_agent, str):
+            if first_cc.coding_agent == "claude_code":
                 resolved_coding_agent = ClaudeCodeAgent()
-            elif code_cfg.coding_agent == "bash":
-                resolved_coding_agent = BashCodingAgent(model=code_cfg.model)
+            elif first_cc.coding_agent == "bash":
+                resolved_coding_agent = BashCodingAgent(model=first_cc.model)
             else:
                 raise ValueError(
-                    f"Unknown coding_agent: {code_cfg.coding_agent!r}. "
+                    f"Unknown coding_agent: {first_cc.coding_agent!r}. "
                     "Use 'bash', 'claude_code', or pass a CodingAgentProtocol instance."
                 )
         else:
-            resolved_coding_agent = code_cfg.coding_agent
+            resolved_coding_agent = first_cc.coding_agent
 
         # Build seed candidate: {repo_path: base_branch} for each repo
-        seed_candidate = dict.fromkeys(repo_path_list, code_cfg.base_branch)
+        seed_candidate = {cc.repo_path: cc.base_branch for cc in code_candidates}
         str_candidate_mode = False
         needs_seed_generation = False
 
         # Use "all" module selector for single repo, "round_robin" for multi
-        if len(repo_path_list) == 1:
+        if len(code_candidates) == 1:
             config.reflection.module_selector = "all"
         # Disable merge proposer for coding mode
         config.merge = None
@@ -1279,7 +1281,7 @@ def optimize_anything(
             coding_agent=resolved_coding_agent,
             repos=repos,
             base_branches=base_branches,
-            branch_prefix=code_cfg.branch_prefix,
+            branch_prefix=first_cc.branch_prefix,
         )
 
     else:
