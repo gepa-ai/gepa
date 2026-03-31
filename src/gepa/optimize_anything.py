@@ -1224,7 +1224,6 @@ def optimize_anything(
 
     else:
         # --- Standard text mode (original behavior) ---
-        # --- Standard text mode (original behavior) ---
 
         # Detect seed generation mode: when seed_candidate is None, the LLM
         # will generate the initial candidate from the objective.
@@ -1244,6 +1243,9 @@ def optimize_anything(
             if isinstance(seed_candidate, str):
                 seed_candidate = {_STR_CANDIDATE_KEY: seed_candidate}
 
+    # At this point seed_candidate is always a dict[str, str] (normalized above)
+    assert isinstance(seed_candidate, dict)
+
     # Detect single-instance mode: when both dataset=None and valset=None
     single_instance_mode = dataset is None and valset is None
 
@@ -1259,8 +1261,12 @@ def optimize_anything(
     else:
         effective_dataset = dataset if dataset is not None else [None]  # type: ignore[list-item]
 
+    # --- Build adapter ---
     if code_candidate_mode:
         from gepa.adapters.coding_adapter import CodingAdapter
+
+        # These are guaranteed bound when code_candidate_mode is True (set in the block above)
+        assert isinstance(resolved_coding_agent, object)
 
         wrapped_evaluator = EvaluatorWrapper(
             evaluator,
@@ -1278,10 +1284,10 @@ def optimize_anything(
             objective=objective,
             background=background,
             cache_mode="off",
-            coding_agent=resolved_coding_agent,
-            repos=repos,
-            base_branches=base_branches,
-            branch_prefix=first_cc.branch_prefix,
+            coding_agent=resolved_coding_agent,  # type: ignore[possibly-undefined]
+            repos=repos,  # type: ignore[possibly-undefined]
+            base_branches=base_branches,  # type: ignore[possibly-undefined]
+            branch_prefix=first_cc.branch_prefix,  # type: ignore[possibly-undefined]
         )
 
     else:
