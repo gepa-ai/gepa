@@ -121,6 +121,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 continue
 
             base_instruction = candidate[name]
+
+            # Short-circuit: mutation_rate=0 means no change, skip LM call entirely
+            if self.mutation_rate == 0.0:
+                new_texts[name] = base_instruction
+                continue
+
             dataset_with_feedback = reflective_dataset[name]
 
             # Determine which prompt template to use for this parameter
@@ -140,19 +146,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             # Append mutation rate constraint instructions
             if self.mutation_rate < 1.0:
                 retention_pct = int((1.0 - self.mutation_rate) * 100)
-                if self.mutation_rate == 0.0:
-                    constraint = (
-                        "\n\n## Mutation Constraint\n\n"
-                        "Do not change the current parameter value."
-                        " Return it exactly as-is, with no modifications whatsoever."
-                    )
-                else:
-                    constraint = (
-                        "\n\n## Mutation Constraint\n\n"
-                        f"Make targeted edits only. Your proposed output must retain at least "
-                        f"{retention_pct}% of the current parameter value. Do not rewrite from scratch. "
-                        f"Focus on surgical improvements while preserving the existing structure and content."
-                    )
+                constraint = (
+                    "\n\n## Mutation Constraint\n\n"
+                    f"Make targeted edits only. Your proposed output must retain at least "
+                    f"{retention_pct}% of the current parameter value. Do not rewrite from scratch. "
+                    f"Focus on surgical improvements while preserving the existing structure and content."
+                )
                 if prompt_template is None:
                     prompt_template = InstructionProposalSignature.default_prompt_template + constraint
                 else:

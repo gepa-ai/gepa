@@ -75,17 +75,16 @@ class TestMutationRateConstraintText:
         prompt = _get_prompt(proposer)
         assert "70%" in prompt
 
-    def test_freeze_at_0(self) -> None:
-        """mutation_rate=0.0 appends freeze language."""
+    def test_freeze_at_0_skips_lm(self) -> None:
+        """mutation_rate=0.0 returns original text without calling LM."""
         proposer = _make_proposer(mutation_rate=0.0)
-        proposer.propose_new_texts(
+        new_texts, prompts, raw_outputs = proposer.propose_new_texts(
             {"component": "original text"},
             {"component": [{"input": "test", "output": "result"}]},
             ["component"],
         )
-        prompt = _get_prompt(proposer)
-        assert "## Mutation Constraint" in prompt
-        assert "do not change" in prompt.lower()
+        assert new_texts["component"] == "original text"
+        proposer.reflection_lm.assert_not_called()
 
     def test_constraint_uses_generic_language(self) -> None:
         """Constraint text says 'parameter value', not 'prompt'."""
