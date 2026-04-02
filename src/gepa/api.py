@@ -88,6 +88,8 @@ def optimize(
     seed: int = 0,
     raise_on_exception: bool = True,
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
+    # Aggregation method: "naive" (standard GEPA) or "combee" (parallel scan + augmented shuffle)
+    aggregation_method: Literal["naive", "combee"] = "naive",
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -179,6 +181,16 @@ def optimize(
     - seed: The seed to use for the random number generator.
     - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
     - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
+
+    # Aggregation method
+    - aggregation_method: Aggregation strategy for combining reflections into a context update.
+      "naive" (default) feeds all reflections to the LM in a single call (standard GEPA).
+      "combee" applies ComBEE's parallel scan aggregation with augmented shuffling (paper §3.1-3.2):
+        - Reflections are duplicated p=2 times and shuffled (augmented shuffle).
+        - Shuffled reflections are split into k=⌊√n⌋ groups; each group produces an intermediate
+          instruction via one LM call (Map/Level-1).
+        - The k intermediate instructions are aggregated into a final instruction via one more LM
+          call (Reduce/Level-2). Requires reflection_lm to be set.
     """
     # Validate seed_candidate is not None or empty
     if seed_candidate is None or not seed_candidate:
@@ -362,6 +374,8 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
+        aggregation_method=aggregation_method,
+        rng=rng,
     )
 
     def evaluator_fn(

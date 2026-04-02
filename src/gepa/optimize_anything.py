@@ -708,6 +708,19 @@ class ReflectionConfig:
     targeted improvements on that subset.  Over iterations, all examples get
     attention, and the Pareto frontier preserves specialized gains across
     iterations rather than averaging them away.
+
+    ``aggregation_method`` selects the strategy used to combine reflections
+    into a single context update:
+
+    - ``"naive"`` (default): all reflections are fed to the LM in one call
+      (standard GEPA behaviour).
+    - ``"combee"``: applies the ComBEE parallel scan aggregation with
+      augmented shuffling (Combee paper §3.1-3.2).  Reflections are
+      duplicated ``p=2`` times and shuffled, then split into
+      ``k=⌊√n⌋`` groups.  Each group is reflected on independently
+      (Level-1 / Map), and the resulting ``k`` intermediate instructions
+      are aggregated in a second LM call (Level-2 / Reduce).  Requires
+      ``reflection_lm`` to be set.
     """
 
     skip_perfect_score: bool = False
@@ -718,6 +731,7 @@ class ReflectionConfig:
     reflection_lm: LanguageModel | str | None = "openai/gpt-5.1"
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
+    aggregation_method: Literal["naive", "combee"] = "naive"
 
 
 @dataclass
@@ -1489,6 +1503,8 @@ def optimize_anything(
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
+        aggregation_method=config.reflection.aggregation_method,
+        rng=rng,
     )
 
     # Define evaluator function for merge proposer
