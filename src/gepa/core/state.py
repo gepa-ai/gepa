@@ -46,6 +46,13 @@ class CachedEvaluation(Generic[RolloutOutput]):
     output: RolloutOutput
     score: float
     objective_scores: ObjectiveScores | None
+    trajectory: Any | None = None
+
+    def __setstate__(self, state: dict) -> None:
+        """Handle deserialization of old cache entries without trajectory field."""
+        if "trajectory" not in state:
+            state["trajectory"] = None
+        self.__dict__.update(state)
 
 
 @dataclass
@@ -143,10 +150,11 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         output: RolloutOutput,
         score: float,
         objective_scores: ObjectiveScores | None = None,
+        trajectory: Any | None = None,
     ) -> None:
         """Store an evaluation result in the cache."""
         h = _candidate_hash(candidate)
-        entry = CachedEvaluation(output, score, objective_scores)
+        entry = CachedEvaluation(output, score, objective_scores, trajectory)
         with self._lock:
             self._cache[(h, example_id)] = entry
         self._save_to_disk(h, example_id, entry)
@@ -172,6 +180,7 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         outputs: list[RolloutOutput],
         scores: list[float],
         objective_scores_list: Sequence[ObjectiveScores] | None = None,
+        trajectories: list[Any] | None = None,
     ) -> None:
         """Store evaluation results for a batch of examples."""
         h = _candidate_hash(candidate)
@@ -179,7 +188,10 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         with self._lock:
             for i, eid in enumerate(example_ids):
                 entry = CachedEvaluation(
-                    outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None
+                    outputs[i],
+                    scores[i],
+                    objective_scores_list[i] if objective_scores_list else None,
+                    trajectories[i] if trajectories else None,
                 )
                 self._cache[(h, eid)] = entry
                 entries.append((eid, entry))
