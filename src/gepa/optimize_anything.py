@@ -133,6 +133,7 @@ from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
+from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
 from gepa.strategies.candidate_selector import (
     CurrentBestCandidateSelector,
@@ -471,6 +472,11 @@ class EngineConfig:
         "pareto", "current_best", "epsilon_greedy", "top_k_pareto"
     ] = "pareto"
     frontier_type: FrontierType = "hybrid"
+
+    # Acceptance criterion for reflective mutation proposals
+    acceptance_criterion: AcceptanceCriterion | Literal[
+        "strict_improvement", "improvement_or_equal"
+    ] = "strict_improvement"
 
     # Parallelization settings for evaluation
     parallel: bool = True
@@ -1395,6 +1401,27 @@ def optimize_anything(
             f"val_evaluation_policy should be 'full_eval' or an EvaluationPolicy instance, but got {type(config.engine.val_evaluation_policy)}"
         )
 
+    # --- 5b. Build acceptance criterion from EngineConfig ---
+    acceptance_criterion_instance: AcceptanceCriterion
+    if isinstance(config.engine.acceptance_criterion, str):
+        acceptance_factories: dict[str, type[AcceptanceCriterion]] = {
+            "strict_improvement": StrictImprovementAcceptance,
+            "improvement_or_equal": ImprovementOrEqualAcceptance,
+        }
+        try:
+            acceptance_criterion_instance = acceptance_factories[config.engine.acceptance_criterion]()
+        except KeyError as exc:
+            raise ValueError(
+                f"Unknown acceptance_criterion: {config.engine.acceptance_criterion}. "
+                "Supported strategies: 'strict_improvement', 'improvement_or_equal'"
+            ) from exc
+    elif isinstance(config.engine.acceptance_criterion, AcceptanceCriterion):
+        acceptance_criterion_instance = config.engine.acceptance_criterion
+    else:
+        raise TypeError(
+            "acceptance_criterion must be a supported string strategy or an instance of AcceptanceCriterion."
+        )
+
     # --- 6. Build module selector from ReflectionConfig ---
     if isinstance(config.reflection.module_selector, str):
         module_selector_cls = {
@@ -1534,6 +1561,7 @@ def optimize_anything(
         raise_on_exception=config.engine.raise_on_exception,
         stop_callback=stop_callback,
         val_evaluation_policy=config.engine.val_evaluation_policy,
+        acceptance_criterion=acceptance_criterion_instance,
         use_cloudpickle=config.engine.use_cloudpickle,
         evaluation_cache=evaluation_cache,
     )
