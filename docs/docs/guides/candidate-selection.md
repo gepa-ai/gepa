@@ -2,6 +2,8 @@
 
 Each iteration, GEPA picks one existing candidate to mutate. The **candidate selection strategy** controls which candidate is chosen. The right strategy depends on the shape of your objective landscape — single-metric, multi-metric, or heavily multi-objective.
 
+GEPA ships with four built-in strategies described below. You can also implement your own by writing a class that satisfies the `CandidateSelector` protocol — see [Custom Strategies](#custom-strategies) for the full API and a worked example.
+
 ---
 
 ## Built-in Strategies
