@@ -185,12 +185,7 @@ def optimize(
     # Aggregation method
     - aggregation_method: Aggregation strategy for combining reflections into a context update.
       "naive" (default) feeds all reflections to the LM in a single call (standard GEPA).
-      "combee" applies ComBEE's parallel scan aggregation with augmented shuffling (paper §3.1-3.2):
-        - Reflections are duplicated p=2 times and shuffled (augmented shuffle).
-        - Shuffled reflections are split into k=⌊√n⌋ groups; each group produces an intermediate
-          instruction via one LM call (Map/Level-1).
-        - The k intermediate instructions are aggregated into a final instruction via one more LM
-          call (Reduce/Level-2). Requires reflection_lm to be set.
+       "combee" applies the improved aggregation in Combee paper
     """
     # Validate seed_candidate is not None or empty
     if seed_candidate is None or not seed_candidate:
