@@ -177,7 +177,7 @@ GEPA is integrated into several major frameworks:
 - **[Pydantic](https://pydantic.dev/articles/prompt-optimization-with-gepa)** — Prompt optimization for Pydantic AI.
 - **[OpenAI Cookbook](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining)** — Self-evolving agents with GEPA.
 - **[HuggingFace Cookbook](https://huggingface.co/learn/cookbook/en/dspy_gepa)** — Prompt optimization guide.
-- **[Google ADK](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/)** — Optimizing Google Agent Development Kit agents.
+- **[Google ADK](https://adk.dev/optimize/)** — Built-in agent optimization in Google's Agent Development Kit. [Community tutorial](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/).
 
 ---
 
@@ -388,7 +388,7 @@ Finally:
   - [Comet ML Opik](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer) - Core optimization algorithm in Opik Agent Optimizer.
   - [OpenAI Cookbook](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining) - Self-evolving agents with GEPA.
   - [HuggingFace Cookbook](https://huggingface.co/learn/cookbook/en/dspy_gepa) - Prompt optimization guide.
-  - [Google ADK](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/) - Optimizing Google Agent Development Kit agents.
+  - [Google ADK](https://adk.dev/optimize/) - Built-in agent optimization in Google's Agent Development Kit. [Community tutorial](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/).
   - [Contributed Adapters](src/gepa/adapters/) – see our adapter templates and issue tracker to request new integrations.
     - [DefaultAdapter](src/gepa/adapters/default_adapter/) - System Prompt Optimization for a single-turn task.
     - [DSPy Full Program Adapter](src/gepa/adapters/dspy_full_program_adapter/) - Evolves entire DSPy programs including signatures, modules, and control flow. Achieves **93% accuracy** on MATH benchmark (vs 67% with basic DSPy ChainOfThought).
@@ -415,9 +415,11 @@ Finally:
     - [DeepResearch Agent Optimized with GEPA](https://www.rajapatnaik.com/blog/2025/10/23/langgraph-dspy-gepa-researcher)
     - Boosting Sanskrit QA: Finetuning EmbeddingGemma with 50k GEPA generated synthetic data samples [(Tweet)](https://x.com/dhrtha/status/1984315872547385504), [(Code)](https://github.com/ganarajpr/rgfe)
     - [Simulating Realistic Market Research Focus Groups with GEPA-Optimized AI Personas](https://x.com/hammer_mt/status/1984269888979116061)
-    - [Optimizing Google ADK Agents' SOP using GEPA](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/)
+    - [Google ADK: Official agent optimization powered by GEPA](https://adk.dev/optimize/)
     - [HuggingFace Cookbook on prompt optimization for with DSPy and GEPA](https://huggingface.co/learn/cookbook/en/dspy_gepa)
     - [OpenAI Cookbook showing how to build self-evolving agents using GEPA](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining)
+    - [What Do Prompts Reveal About Model Capabilities in Low-Resource Languages? (AfricaNLP 2026)](https://openreview.net/attachment?id=7JZmTp85Yf&name=pdf)
+    - [Beyond the Answer: Decoding the Behavior of LLMs as Scientific Reasoners (ICLR 2026 Workshop)](https://arxiv.org/abs/2603.28038)
 
 ---
 
