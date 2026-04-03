@@ -43,6 +43,21 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the full blog](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization)
 
+-   **Dropbox Dash: 45% NMSE Reduction for Relevance Judging**
+
+    ---
+
+    Dropbox used GEPA to optimize their Dash search relevance judge, achieving **45% NMSE reduction** on gpt-oss-120b and reducing model adaptation time from weeks to days. For the small gemma-3-12b model, GEPA cut malformed JSON from 40% to under 3% while improving NMSE from 46.88 to 17.26.
+
+    **Key Results:**
+
+    - 45% NMSE improvement on gpt-oss-120b (8.83 → 4.86)
+    - gemma-3-12b: malformed JSON 40% → <3%, NMSE 46.88 → 17.26
+    - Model adaptation time: 1-2 weeks → 1-2 days
+    - 10-100x more data labeling at equivalent costs
+
+    [:material-arrow-right: Read the blog](https://dropbox.tech/machine-learning/optimizing-dropbox-dash-relevance-judge-with-dspy)
+
 -   **OpenAI Cookbook: Self-Evolving Agents**
 
     ---
@@ -105,6 +120,14 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     - Automates prompt editing, testing, and tool refinement
 
     [:material-arrow-right: View documentation](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer)
+
+-   **BAML Prompt Optimization**
+
+    ---
+
+    BAML integrates GEPA into `baml-cli optimize` for test-driven prompt optimization with multi-objective support (accuracy, latency, tokens).
+
+    [:material-arrow-right: Read the guide](https://docs.boundaryml.com/guide/baml-advanced/prompt-optimization)
 
 -   **Prompt Optimization with Pydantic AI**
 

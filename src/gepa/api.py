@@ -73,10 +73,13 @@ def optimize(
     use_wandb: bool = False,
     wandb_api_key: str | None = None,
     wandb_init_kwargs: dict[str, Any] | None = None,
+    wandb_attach_existing: bool = False,
     use_mlflow: bool = False,
     mlflow_tracking_uri: str | None = None,
     mlflow_experiment_name: str | None = None,
-    track_best_outputs: bool = False,
+    mlflow_attach_existing: bool = False,
+    tracking_key_prefix: str = "",
+    track_best_outputs: bool = True,
     display_progress_bar: bool = False,
     use_cloudpickle: bool = False,
     # Evaluation caching
@@ -159,6 +162,8 @@ def optimize(
     - use_wandb: Whether to use Weights and Biases to log the progress of the optimization.
     - wandb_api_key: The API key to use for Weights and Biases.
     - wandb_init_kwargs: Additional keyword arguments to pass to the Weights and Biases initialization.
+    - wandb_attach_existing: When True, log into the already-active W&B run without calling wandb.init() or wandb.finish(). Use when GEPA is embedded in a training loop that owns the run.
+    - mlflow_attach_existing: When True, log into the already-active MLflow run without calling mlflow.start_run() or mlflow.end_run(). Use when GEPA is embedded in a training loop that owns the run.
     - use_mlflow: Whether to use MLflow to log the progress of the optimization.
       Both wandb and mlflow can be used simultaneously if desired.
     - mlflow_tracking_uri: The tracking URI to use for MLflow.
@@ -254,20 +259,9 @@ def optimize(
 
     reflection_lm_callable: LanguageModel | None = None
     if isinstance(reflection_lm, str):
-        import litellm
+        from gepa.lm import LM
 
-        reflection_lm_name = reflection_lm
-
-        def _reflection_lm(prompt: str | list[dict[str, str]]) -> str:
-            if isinstance(prompt, str):
-                completion = litellm.completion(
-                    model=reflection_lm_name, messages=[{"role": "user", "content": prompt}]
-                )
-            else:
-                completion = litellm.completion(model=reflection_lm_name, messages=prompt)
-            return completion.choices[0].message.content  # type: ignore
-
-        reflection_lm_callable = _reflection_lm
+        reflection_lm_callable = LM(reflection_lm)
     else:
         reflection_lm_callable = reflection_lm
 
@@ -335,9 +329,12 @@ def optimize(
         use_wandb=use_wandb,
         wandb_api_key=wandb_api_key,
         wandb_init_kwargs=wandb_init_kwargs,
+        wandb_attach_existing=wandb_attach_existing,
         use_mlflow=use_mlflow,
         mlflow_tracking_uri=mlflow_tracking_uri,
         mlflow_experiment_name=mlflow_experiment_name,
+        mlflow_attach_existing=mlflow_attach_existing,
+        key_prefix=tracking_key_prefix,
     )
 
     if reflection_prompt_template is not None:

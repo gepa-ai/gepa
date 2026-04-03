@@ -91,17 +91,27 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         candidate: dict[str, str],
         reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
         components_to_update: list[str],
-    ) -> dict[str, str]:
+    ) -> tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]]:
+        """Propose new instruction texts for the given components.
+
+        Returns:
+            A tuple of (new_texts, prompts, raw_lm_outputs) where each is a
+            dict keyed by component name.  When the adapter or a custom proposer
+            handles the call, prompts and raw_lm_outputs are empty dicts.
+        """
+        empty: dict[str, str | list[dict[str, Any]]] = {}
         if self.adapter.propose_new_texts is not None:
-            return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update)
+            return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update), empty, {}
 
         if self.custom_candidate_proposer is not None:
-            return self.custom_candidate_proposer(candidate, reflective_dataset, components_to_update)
+            return self.custom_candidate_proposer(candidate, reflective_dataset, components_to_update), empty, {}
 
         if self.reflection_lm is None:
             raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
 
         new_texts: dict[str, str] = {}
+        prompts: dict[str, str | list[dict[str, Any]]] = {}
+        raw_lm_outputs: dict[str, str] = {}
         for name in components_to_update:
             # Gracefully handle cases where a selected component has no data in reflective_dataset
             if name not in reflective_dataset or not reflective_dataset.get(name):
@@ -125,15 +135,18 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 # Use the single template for all parameters
                 prompt_template = self.reflection_prompt_template
 
-            new_texts[name] = InstructionProposalSignature.run(
+            result, prompt, raw_output = InstructionProposalSignature.run_with_metadata(
                 lm=self.reflection_lm,
                 input_dict={
                     "current_instruction_doc": base_instruction,
                     "dataset_with_feedback": dataset_with_feedback,
                     "prompt_template": prompt_template,
                 },
-            )["new_instruction"]
-        return new_texts
+            )
+            new_texts[name] = result["new_instruction"]
+            prompts[name] = prompt
+            raw_lm_outputs[name] = raw_output
+        return new_texts, prompts, raw_lm_outputs
 
     def propose(self, state: GEPAState) -> CandidateProposal | None:
         i = state.i + 1
@@ -294,7 +307,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 ),
             )
 
-            new_texts = self.propose_new_texts(curr_prog, reflective_dataset, predictor_names_to_update)
+            new_texts, prompts, raw_lm_outputs = self.propose_new_texts(
+                curr_prog, reflective_dataset, predictor_names_to_update
+            )
 
             # Notify proposal end
             notify_callbacks(
@@ -303,8 +318,17 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 ProposalEndEvent(
                     iteration=i,
                     new_instructions=new_texts,
+                    prompts=prompts,
+                    raw_lm_outputs=raw_lm_outputs,
                 ),
             )
+
+            # Stash LM call data in proposal metadata so the engine can log
+            # it to experiment tracking once it knows accept/reject + candidate_idx.
+            _lm_metadata: dict[str, Any] = {}
+            for comp in new_texts:
+                _lm_metadata[f"prompt:{comp}"] = prompts.get(comp, "")
+                _lm_metadata[f"raw_lm_output:{comp}"] = raw_lm_outputs.get(comp, "")
 
             for pname, text in new_texts.items():
                 self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
@@ -382,4 +406,5 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             subsample_scores_before=eval_curr.scores,
             subsample_scores_after=new_scores,
             tag="reflective_mutation",
+            metadata=_lm_metadata,
         )

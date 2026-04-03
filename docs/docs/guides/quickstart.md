@@ -188,7 +188,7 @@ result = gepa.optimize(
     max_metric_calls=100,                          # Stop after 100 evaluations
     stop_callbacks=[
         TimeoutStopCondition(seconds=3600),        # Or after 1 hour
-        NoImprovementStopper(patience=10),         # Or after 10 iterations without improvement
+        NoImprovementStopper(max_iterations_without_improvement=10),         # Or after 10 iterations without improvement
     ],
 )
 ```
