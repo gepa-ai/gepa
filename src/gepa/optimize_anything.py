@@ -714,13 +714,7 @@ class ReflectionConfig:
 
     - ``"naive"`` (default): all reflections are fed to the LM in one call
       (standard GEPA behaviour).
-    - ``"combee"``: applies the ComBEE parallel scan aggregation with
-      augmented shuffling (Combee paper §3.1-3.2).  Reflections are
-      duplicated ``p=2`` times and shuffled, then split into
-      ``k=⌊√n⌋`` groups.  Each group is reflected on independently
-      (Level-1 / Map), and the resulting ``k`` intermediate instructions
-      are aggregated in a second LM call (Level-2 / Reduce).  Requires
-      ``reflection_lm`` to be set.
+    - "combee" applies the improved aggregation in Combee paper. 
     """
 
     skip_perfect_score: bool = False
