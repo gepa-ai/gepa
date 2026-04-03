@@ -218,11 +218,9 @@ class TestRefiner:
             print(f"Best candidate: {result.best_candidate}")
             print(f"Best score: {result.val_aggregate_scores[result.best_idx]}")
 
-            # Verify cache files created
-            cache_dir = Path(tmp_dir) / "fitness_cache"
-            assert cache_dir.exists()
-            cache_files = list(cache_dir.glob("*.pkl"))
-            print(f"Cache files: {len(cache_files)}")
+            # Verify state file created (cache persists via gepa_state.bin)
+            state_file = Path(tmp_dir) / "gepa_state.bin"
+            assert state_file.exists()
 
     def test_refiner_cache_reduces_calls(self):
         """Test that caching reduces actual fitness_fn calls with refiner."""
@@ -387,7 +385,6 @@ class TestRefiner:
             evaluator=wrapped,
             parallel=False,
             refiner_config=refiner_config,
-            cache_mode="off",
         )
 
         # Build candidate with refiner_prompt (as optimize_anything would auto-inject)
@@ -458,7 +455,6 @@ class TestRefiner:
             evaluator=wrapped,
             parallel=False,
             refiner_config=refiner_config,
-            cache_mode="off",
         )
 
         # Deliberately bad seed — far from target
@@ -522,7 +518,6 @@ class TestRefiner:
             evaluator=wrapped,
             parallel=False,
             refiner_config=refiner_config,
-            cache_mode="off",
         )
 
         # Seed already near-perfect — refiner shouldn't make it worse
@@ -581,7 +576,6 @@ class TestRefiner:
             evaluator=wrapped,
             parallel=False,
             refiner_config=refiner_config,
-            cache_mode="off",
         )
 
         candidate = {
@@ -749,7 +743,6 @@ class TestRefinerFrontierTypes:
             evaluator=raw_fitness_fn,
             parallel=False,
             refiner_config=refiner_config,
-            cache_mode="off",
         )
 
         candidate = {
@@ -809,7 +802,6 @@ if __name__ == "__main__":
         engine=EngineConfig(
             max_metric_calls=5,
             cache_evaluation=True,
-            cache_evaluation_storage="memory",
         ),
         reflection=ReflectionConfig(
             reflection_lm="openrouter/openai/gpt-5-nano",
