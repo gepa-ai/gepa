@@ -1266,17 +1266,24 @@ def optimize_anything(
         raise_on_exception=config.engine.raise_on_exception,
     )
 
-    # Deprecation: cache_evaluation_storage is no longer used — caching is handled
-    # entirely by the core EvaluationCache in GEPAState (persisted via gepa_state.bin).
-    if config.engine.cache_evaluation_storage != "auto":
-        warnings.warn(
-            f"cache_evaluation_storage={config.engine.cache_evaluation_storage!r} is deprecated and ignored. "
-            f"Evaluation caching is now handled by the core EvaluationCache, which persists "
-            f"automatically via gepa_state.bin when run_dir is set. "
-            f"Use cache_evaluation=True/False to enable/disable caching.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+    # Resolve cache storage mode: cache_evaluation controls on/off,
+    # cache_evaluation_storage controls where ("memory", "disk", or "auto").
+    if not config.engine.cache_evaluation:
+        resolved_cache_storage = "off"
+        if config.engine.cache_evaluation_storage != "auto":
+            warnings.warn(
+                f"cache_evaluation_storage={config.engine.cache_evaluation_storage!r} is set but "
+                f"cache_evaluation=False, so caching is disabled. Set cache_evaluation=True to "
+                f"enable caching with the specified storage mode.",
+                stacklevel=2,
+            )
+    elif config.engine.cache_evaluation_storage == "auto":
+        resolved_cache_storage = "disk" if config.engine.run_dir else "memory"
+    else:
+        resolved_cache_storage = config.engine.cache_evaluation_storage
+
+    if resolved_cache_storage == "disk" and not config.engine.run_dir:
+        raise ValueError("cache_evaluation_storage='disk' requires run_dir in EngineConfig")
 
     # Configure cloudpickle for code execution subprocess serialization
     from gepa.utils.code_execution import set_use_cloudpickle
@@ -1574,6 +1581,8 @@ def optimize_anything(
     evaluation_cache: EvaluationCache[Any, Any] | None = None
     if config.engine.cache_evaluation:
         evaluation_cache = EvaluationCache[Any, Any]()
+        if resolved_cache_storage == "disk" and config.engine.run_dir:
+            evaluation_cache.enable_disk_cache(os.path.join(config.engine.run_dir, "eval_cache"))
 
     # --- 14. Build the main engine from EngineConfig ---
     engine = GEPAEngine(

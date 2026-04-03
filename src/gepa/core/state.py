@@ -3,12 +3,17 @@
 
 import hashlib
 import json
+import logging
 import os
+import pickle
 import threading
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, ClassVar, Generic, Literal, TypeAlias
+
+_logger = logging.getLogger(__name__)
 
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
@@ -53,23 +58,78 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
 
     Thread-safe: all reads and writes are protected by an internal lock,
     making this safe for use from adapters with parallel evaluation.
+
+    Supports optional disk write-through via ``cache_dir``.  When set,
+    every ``put`` / ``put_batch`` is immediately persisted as a pickle
+    file so that results survive mid-iteration crashes.  On startup the
+    directory is scanned and entries are loaded into the in-memory dict.
     """
 
     _cache: dict[CacheKey, CachedEvaluation[RolloutOutput]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self._lock = threading.Lock()
+        self._cache_dir: Path | None = None
+
+    # --- Disk cache configuration ---
+
+    def enable_disk_cache(self, cache_dir: str | Path) -> None:
+        """Enable write-through disk persistence and load existing entries."""
+        self._cache_dir = Path(cache_dir)
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._load_from_disk()
+
+    def _data_id_key(self, data_id: DataId) -> str:
+        """Produce a short, filename-safe hash for a DataId."""
+        return hashlib.sha256(str(data_id).encode()).hexdigest()[:16]
+
+    def _disk_filename(self, cand_hash: CandidateHash, data_id: DataId) -> str:
+        return f"{cand_hash[:16]}_{self._data_id_key(data_id)}.pkl"
+
+    def _save_to_disk(self, cand_hash: CandidateHash, data_id: DataId, entry: CachedEvaluation) -> None:
+        if self._cache_dir is None:
+            return
+        filepath = self._cache_dir / self._disk_filename(cand_hash, data_id)
+        try:
+            with open(filepath, "wb") as f:
+                pickle.dump({"key": (cand_hash, data_id), "value": entry}, f)
+        except Exception as exc:
+            _logger.warning("Failed to write cache entry %s: %s", filepath, exc)
+
+    def _load_from_disk(self) -> None:
+        if self._cache_dir is None:
+            return
+        loaded = 0
+        for cache_file in self._cache_dir.glob("*.pkl"):
+            try:
+                with open(cache_file, "rb") as f:
+                    data = pickle.load(f)
+                key: CacheKey = data["key"]
+                value: CachedEvaluation = data["value"]
+                if key not in self._cache:
+                    self._cache[key] = value
+                    loaded += 1
+            except Exception as exc:
+                _logger.warning("Failed to load cache file %s: %s", cache_file, exc)
+        if loaded:
+            _logger.info("Loaded %d entries from disk cache at %s", loaded, self._cache_dir)
+
+    # --- Serialization (pickle) ---
 
     def __getstate__(self) -> dict:
-        """Exclude the non-picklable lock from serialization."""
+        """Exclude non-picklable lock and runtime cache_dir from serialization."""
         state = self.__dict__.copy()
         state.pop("_lock", None)
+        state.pop("_cache_dir", None)
         return state
 
     def __setstate__(self, state: dict) -> None:
-        """Restore the lock after deserialization."""
+        """Restore lock and reset cache_dir after deserialization."""
         self.__dict__.update(state)
         self._lock = threading.Lock()
+        self._cache_dir = None  # Must be re-enabled via enable_disk_cache()
+
+    # --- Cache operations ---
 
     def get(self, candidate: dict[str, str], example_id: DataId) -> CachedEvaluation[RolloutOutput] | None:
         """Retrieve cached evaluation result if it exists."""
@@ -86,9 +146,11 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         objective_scores: ObjectiveScores | None = None,
     ) -> None:
         """Store an evaluation result in the cache."""
-        key = (_candidate_hash(candidate), example_id)
+        h = _candidate_hash(candidate)
+        entry = CachedEvaluation(output, score, objective_scores)
         with self._lock:
-            self._cache[key] = CachedEvaluation(output, score, objective_scores)
+            self._cache[(h, example_id)] = entry
+        self._save_to_disk(h, example_id, entry)
 
     def get_batch(
         self, candidate: dict[str, str], example_ids: list[DataId]
@@ -114,11 +176,16 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
     ) -> None:
         """Store evaluation results for a batch of examples."""
         h = _candidate_hash(candidate)
+        entries = []
         with self._lock:
             for i, eid in enumerate(example_ids):
-                self._cache[(h, eid)] = CachedEvaluation(
+                entry = CachedEvaluation(
                     outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None
                 )
+                self._cache[(h, eid)] = entry
+                entries.append((eid, entry))
+        for eid, entry in entries:
+            self._save_to_disk(h, eid, entry)
 
     def evaluate_with_cache_full(
         self,
@@ -713,7 +780,10 @@ def initialize_gepa_state(
             gepa_state.evaluation_cache = None
         elif gepa_state.evaluation_cache is None:
             gepa_state.evaluation_cache = evaluation_cache
-        # else: keep the loaded cache (gepa_state.evaluation_cache is already set)
+        else:
+            # Keep loaded cache entries but re-enable disk persistence if requested
+            if evaluation_cache._cache_dir is not None:
+                gepa_state.evaluation_cache.enable_disk_cache(evaluation_cache._cache_dir)
     else:
         if run_dir is not None:
             write_eval_outputs_to_directory(
