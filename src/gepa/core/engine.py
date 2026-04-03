@@ -543,7 +543,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 # Acceptance: delegate to configurable acceptance criterion
                 old_sum = sum(proposal.subsample_scores_before or [])
                 new_sum = sum(proposal.subsample_scores_after or [])
-                if not self.acceptance_criterion.should_accept(proposal):
+                if not self.acceptance_criterion.should_accept(proposal, state):
                     self.logger.log(
                         f"Iteration {state.i + 1}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
                     )

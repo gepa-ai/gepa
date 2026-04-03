@@ -3,6 +3,7 @@
 
 from typing import Protocol, runtime_checkable
 
+from gepa.core.state import GEPAState
 from gepa.proposer.base import CandidateProposal
 
 
@@ -10,24 +11,27 @@ from gepa.proposer.base import CandidateProposal
 class AcceptanceCriterion(Protocol):
     """Decides whether a proposed candidate should be accepted based on subsample evaluation results.
 
-    The ``should_accept`` method receives the full ``CandidateProposal``, which
-    contains:
+    The ``should_accept`` method receives:
 
-    - ``proposal.eval_before`` / ``proposal.eval_after``: ``SubsampleEvaluation``
-      objects with per-example ``scores``, ``outputs``, ``objective_scores``, and
-      ``trajectories``.
-    - ``proposal.subsample_scores_before`` / ``subsample_scores_after``: shorthand
-      for the score lists (same data as ``eval_before.scores`` / ``eval_after.scores``).
-    - ``proposal.candidate``: the proposed candidate text.
-    - ``proposal.parent_program_ids``: indices of parent candidates.
-    - ``proposal.metadata``: free-form dict with LM prompts and raw outputs.
+    - ``proposal``: the full ``CandidateProposal`` containing:
+
+      - ``eval_before`` / ``eval_after``: ``SubsampleEvaluation`` objects with
+        per-example ``scores``, ``outputs``, ``objective_scores``, and ``trajectories``.
+      - ``subsample_scores_before`` / ``subsample_scores_after``: shorthand score lists.
+      - ``candidate``: the proposed candidate text.
+      - ``parent_program_ids``: indices of parent candidates.
+      - ``metadata``: free-form dict with LM prompts and raw outputs.
+
+    - ``state``: the full ``GEPAState``, giving access to all existing candidates,
+      validation scores, the Pareto frontier, iteration count, etc.
     """
 
-    def should_accept(self, proposal: CandidateProposal) -> bool:
+    def should_accept(self, proposal: CandidateProposal, state: GEPAState) -> bool:
         """Return ``True`` if the proposed candidate should be accepted.
 
         Args:
             proposal: The full proposal including evaluation data, candidate, and metadata.
+            state: The current optimization state.
         """
         ...
 
@@ -38,7 +42,7 @@ class StrictImprovementAcceptance:
     This is the default acceptance criterion used by GEPA.
     """
 
-    def should_accept(self, proposal: CandidateProposal) -> bool:
+    def should_accept(self, proposal: CandidateProposal, state: GEPAState) -> bool:
         old_sum = sum(proposal.subsample_scores_before or [])
         new_sum = sum(proposal.subsample_scores_after or [])
         return new_sum > old_sum
@@ -51,7 +55,7 @@ class ImprovementOrEqualAcceptance:
     may explore different regions of the solution space.
     """
 
-    def should_accept(self, proposal: CandidateProposal) -> bool:
+    def should_accept(self, proposal: CandidateProposal, state: GEPAState) -> bool:
         old_sum = sum(proposal.subsample_scores_before or [])
         new_sum = sum(proposal.subsample_scores_after or [])
         return new_sum >= old_sum
