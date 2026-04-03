@@ -29,20 +29,6 @@ from gepa.proposer.reflective_mutation.base import (
 from gepa.strategies.batch_sampler import BatchSampler
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
-_DEFAULT_COMBEE_AGGREGATION_PROMPT = """I provided an assistant with the following current instruction:
-```
-<curr_param>
-```
-
-Multiple parallel processes each independently proposed an updated instruction based on a different subset of evaluation examples. Here are the proposed updates:
-```
-<side_info>
-```
-
-Your task is to synthesize these proposed instruction updates into a single, comprehensive instruction. Incorporate the key improvements and specific insights from all proposals. When proposals offer complementary guidance, include all relevant details. When they conflict, prefer more specific and task-relevant guidance.
-
-Provide the final synthesized instruction within ``` blocks."""
-
 
 class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
     """
@@ -98,7 +84,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             raise ValueError(f"aggregation_method must be 'naive' or 'combee', got {aggregation_method!r}")
         self.aggregation_method = aggregation_method
         self.combee_duplication_factor = combee_duplication_factor
-        self._combee_aggregation_prompt = combee_aggregation_prompt or _DEFAULT_COMBEE_AGGREGATION_PROMPT
+        self._combee_aggregation_prompt = combee_aggregation_prompt or InstructionProposalSignature.default_aggregation_prompt_template
         self._rng = rng if rng is not None else random.Random(0)
 
         if isinstance(reflection_prompt_template, dict):
