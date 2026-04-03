@@ -498,7 +498,11 @@ class EngineConfig:
     capture_stdio: bool = False
 
 
-def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
+def _build_reflection_prompt_template(
+    objective: str | None = None,
+    background: str | None = None,
+    proposal_mode: str = "rewrite",
+) -> str:
     """
     Build a reflection prompt template dynamically based on provided objective and background.
 
@@ -584,12 +588,33 @@ Based on your analysis, propose an improved version that:
 2. Preserves successful behaviors from the current version
 3. Makes meaningful improvements rather than superficial changes{constraint_line}""")
 
-    # Output format - always present
-    sections.append("""
+    # Output format — mode-dependent
+    if proposal_mode == "edit":
+        sections.append("""
 ## Output Format
 
-Provide ONLY the improved version within ``` blocks. The output must be a complete, 
-drop-in replacement for the current component (whether it's a prompt, configuration, 
+Make targeted edits using SEARCH/REPLACE blocks. Do NOT rewrite the component from scratch.
+
+Express each edit as:
+
+<<<<<<< SEARCH
+exact text from the current component to find
+=======
+replacement text
+>>>>>>> REPLACE
+
+Rules:
+- The SEARCH section must match the current component EXACTLY (including whitespace and newlines).
+- You can use multiple SEARCH/REPLACE blocks to make several edits.
+- To insert new text, use a SEARCH block that matches the text just before where you want to insert, and include that text plus the new content in REPLACE.
+- To delete text, use an empty REPLACE section.
+- Do not include explanations or commentary outside the SEARCH/REPLACE blocks.""")
+    else:
+        sections.append("""
+## Output Format
+
+Provide ONLY the improved version within ``` blocks. The output must be a complete,
+drop-in replacement for the current component (whether it's a prompt, configuration,
 code, or any other parameter type).
 Do not include explanations, commentary, or markdown outside the ``` blocks.""")
 
@@ -622,9 +647,7 @@ def _build_seed_generation_prompt(
         examples = dataset[:3]
         example_lines = [f"- Example {i}: {ex}" for i, ex in enumerate(examples, 1)]
         sections.append(
-            "\n## Sample Inputs\n\n"
-            "The candidate will be evaluated on inputs like these:\n\n"
-            + "\n".join(example_lines)
+            "\n## Sample Inputs\n\nThe candidate will be evaluated on inputs like these:\n\n" + "\n".join(example_lines)
         )
 
     sections.append(
@@ -718,6 +741,7 @@ class ReflectionConfig:
     reflection_lm: LanguageModel | str | None = "openai/gpt-5.1"
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
+    proposal_mode: Literal["rewrite", "edit"] = "rewrite"
 
 
 @dataclass
@@ -1453,7 +1477,9 @@ def optimize_anything(
     # with those values filled in, creating a template with <curr_param> and <side_info> placeholders
     if user_provided_objective_or_background:
         config.reflection.reflection_prompt_template = _build_reflection_prompt_template(
-            objective=objective, background=background
+            objective=objective,
+            background=background,
+            proposal_mode=config.reflection.proposal_mode,
         )
 
     # --- 10. Validate reflection prompt template ---
@@ -1489,6 +1515,7 @@ def optimize_anything(
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
+        proposal_mode=config.reflection.proposal_mode,
     )
 
     # Define evaluator function for merge proposer

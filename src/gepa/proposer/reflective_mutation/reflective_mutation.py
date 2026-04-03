@@ -26,7 +26,7 @@ from gepa.proposer.reflective_mutation.base import (
     ReflectionComponentSelector,
 )
 from gepa.strategies.batch_sampler import BatchSampler
-from gepa.strategies.instruction_proposal import InstructionProposalSignature
+from gepa.strategies.instruction_proposal import InstructionEditSignature, InstructionProposalSignature
 
 
 class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
@@ -56,6 +56,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
+        proposal_mode: str = "rewrite",
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -69,6 +70,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.reflection_lm = reflection_lm
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
+        self.proposal_mode = proposal_mode
 
         self.reflection_prompt_template = reflection_prompt_template
         # Track parameters for which we've already logged missing template warnings
@@ -135,7 +137,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 # Use the single template for all parameters
                 prompt_template = self.reflection_prompt_template
 
-            result, prompt, raw_output = InstructionProposalSignature.run_with_metadata(
+            signature_cls = InstructionEditSignature if self.proposal_mode == "edit" else InstructionProposalSignature
+            result, prompt, raw_output = signature_cls.run_with_metadata(
                 lm=self.reflection_lm,
                 input_dict={
                     "current_instruction_doc": base_instruction,

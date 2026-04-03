@@ -3,6 +3,7 @@
 
 import os
 import random
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -57,6 +58,7 @@ def optimize(
     perfect_score: float = 1.0,
     reflection_prompt_template: str | dict[str, str] | None = None,
     custom_candidate_proposer: ProposalFn | None = None,
+    proposal_mode: Literal["rewrite", "edit"] = "rewrite",
     # Component selection configuration
     module_selector: ReflectionComponentSelector | str = "round_robin",
     # Merge-based configuration
@@ -348,6 +350,20 @@ def optimize(
     if cache_evaluation:
         evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
 
+    # Warn if edit mode is combined with a custom template — the custom template
+    # won't contain SEARCH/REPLACE instructions, so edit mode silently falls back
+    # to rewrite mode.  Treat as rewrite to avoid confusion.
+    effective_proposal_mode = proposal_mode
+    if proposal_mode == "edit" and reflection_prompt_template is not None:
+        warnings.warn(
+            "proposal_mode='edit' with a custom reflection_prompt_template will use "
+            "rewrite mode. Edit mode requires SEARCH/REPLACE output format instructions "
+            "which are only present in the default template. Either remove the custom "
+            "template to use edit mode, or set proposal_mode='rewrite'.",
+            stacklevel=2,
+        )
+        effective_proposal_mode = "rewrite"
+
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
         trainset=train_loader,
@@ -362,6 +378,7 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
+        proposal_mode=effective_proposal_mode,
     )
 
     def evaluator_fn(
