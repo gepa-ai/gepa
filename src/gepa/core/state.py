@@ -90,10 +90,13 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         if self._cache_dir is None:
             return
         filepath = self._cache_dir / self._disk_filename(cand_hash, data_id)
+        tmp_path = filepath.with_suffix(".tmp")
         try:
-            with open(filepath, "wb") as f:
+            with open(tmp_path, "wb") as f:
                 pickle.dump({"key": (cand_hash, data_id), "value": entry}, f)
+            tmp_path.replace(filepath)  # atomic on POSIX
         except Exception as exc:
+            tmp_path.unlink(missing_ok=True)
             _logger.warning("Failed to write cache entry %s: %s", filepath, exc)
 
     def _load_from_disk(self) -> None:
