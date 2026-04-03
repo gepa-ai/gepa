@@ -27,6 +27,7 @@ nav:
         - Candidate Selection Strategies: guides/candidate-selection.md
         - Using Callbacks: guides/callbacks.md
         - Experiment Tracking: guides/experiment-tracking.md
+        - Using Claude Code as a Proposer: guides/claude-cli-as-proposer.md
         - gskill: guides/gskill.md
         - Contributing: guides/contributing.md
     - Tutorials:
