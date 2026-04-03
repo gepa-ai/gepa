@@ -10,18 +10,24 @@ from gepa.proposer.base import CandidateProposal
 class AcceptanceCriterion(Protocol):
     """Decides whether a proposed candidate should be accepted based on subsample evaluation results.
 
-    The :pymethod:`should_accept` method receives the full ``CandidateProposal``, which
-    contains the per-example scores before and after the mutation (``subsample_scores_before``
-    and ``subsample_scores_after``), the candidate text, parent indices, and free-form
-    metadata.  Implementations may use any subset of this information to make the
-    acceptance decision.
+    The ``should_accept`` method receives the full ``CandidateProposal``, which
+    contains:
+
+    - ``proposal.eval_before`` / ``proposal.eval_after``: ``SubsampleEvaluation``
+      objects with per-example ``scores``, ``outputs``, ``objective_scores``, and
+      ``trajectories`` (trajectories only available on ``eval_before``).
+    - ``proposal.subsample_scores_before`` / ``subsample_scores_after``: shorthand
+      for the score lists (same data as ``eval_before.scores`` / ``eval_after.scores``).
+    - ``proposal.candidate``: the proposed candidate text.
+    - ``proposal.parent_program_ids``: indices of parent candidates.
+    - ``proposal.metadata``: free-form dict with LM prompts and raw outputs.
     """
 
     def should_accept(self, proposal: CandidateProposal) -> bool:
         """Return ``True`` if the proposed candidate should be accepted.
 
         Args:
-            proposal: The full proposal including old/new scores, candidate, and metadata.
+            proposal: The full proposal including evaluation data, candidate, and metadata.
         """
         ...
 

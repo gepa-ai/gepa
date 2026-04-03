@@ -19,7 +19,7 @@ from gepa.core.callbacks import (
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
-from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
+from gepa.proposer.base import CandidateProposal, ProposeNewCandidate, SubsampleEvaluation
 from gepa.proposer.reflective_mutation.base import (
     CandidateSelector,
     LanguageModel,
@@ -405,6 +405,17 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             subsample_indices=subsample_ids,
             subsample_scores_before=eval_curr.scores,
             subsample_scores_after=new_scores,
+            eval_before=SubsampleEvaluation(
+                scores=eval_curr.scores,
+                outputs=eval_curr.outputs,
+                objective_scores=list(eval_curr.objective_scores) if eval_curr.objective_scores else None,
+                trajectories=eval_curr.trajectories,
+            ),
+            eval_after=SubsampleEvaluation(
+                scores=new_scores,
+                outputs=outputs,
+                objective_scores=[objective_by_id[eid] for eid in subsample_ids] if objective_by_id else None,
+            ),
             tag="reflective_mutation",
             metadata=_lm_metadata,
         )
