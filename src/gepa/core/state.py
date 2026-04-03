@@ -4,6 +4,7 @@
 import hashlib
 import json
 import os
+import threading
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -28,9 +29,13 @@ CandidateHash: TypeAlias = str
 CacheKey: TypeAlias = tuple[CandidateHash, DataId]
 
 
-def _candidate_hash(candidate: dict[str, str]) -> CandidateHash:
+def candidate_hash(candidate: dict[str, str]) -> CandidateHash:
     """Compute a deterministic hash of a candidate dictionary."""
     return hashlib.sha256(json.dumps(sorted(candidate.items())).encode()).hexdigest()
+
+
+# Backward-compatible alias
+_candidate_hash = candidate_hash
 
 
 @dataclass
@@ -44,13 +49,33 @@ class CachedEvaluation(Generic[RolloutOutput]):
 
 @dataclass
 class EvaluationCache(Generic[RolloutOutput, DataId]):
-    """Cache for storing evaluation results of (candidate, example) pairs."""
+    """Cache for storing evaluation results of (candidate, example) pairs.
+
+    Thread-safe: all reads and writes are protected by an internal lock,
+    making this safe for use from adapters with parallel evaluation.
+    """
 
     _cache: dict[CacheKey, CachedEvaluation[RolloutOutput]] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        self._lock = threading.Lock()
+
+    def __getstate__(self) -> dict:
+        """Exclude the non-picklable lock from serialization."""
+        state = self.__dict__.copy()
+        state.pop("_lock", None)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """Restore the lock after deserialization."""
+        self.__dict__.update(state)
+        self._lock = threading.Lock()
+
     def get(self, candidate: dict[str, str], example_id: DataId) -> CachedEvaluation[RolloutOutput] | None:
         """Retrieve cached evaluation result if it exists."""
-        return self._cache.get((_candidate_hash(candidate), example_id))
+        key = (_candidate_hash(candidate), example_id)
+        with self._lock:
+            return self._cache.get(key)
 
     def put(
         self,
@@ -61,7 +86,9 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         objective_scores: ObjectiveScores | None = None,
     ) -> None:
         """Store an evaluation result in the cache."""
-        self._cache[(_candidate_hash(candidate), example_id)] = CachedEvaluation(output, score, objective_scores)
+        key = (_candidate_hash(candidate), example_id)
+        with self._lock:
+            self._cache[key] = CachedEvaluation(output, score, objective_scores)
 
     def get_batch(
         self, candidate: dict[str, str], example_ids: list[DataId]
@@ -69,11 +96,12 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         """Look up cached results for a batch. Returns (cached_results, uncached_ids)."""
         h = _candidate_hash(candidate)
         cached, uncached = {}, []
-        for eid in example_ids:
-            if entry := self._cache.get((h, eid)):
-                cached[eid] = entry
-            else:
-                uncached.append(eid)
+        with self._lock:
+            for eid in example_ids:
+                if entry := self._cache.get((h, eid)):
+                    cached[eid] = entry
+                else:
+                    uncached.append(eid)
         return cached, uncached
 
     def put_batch(
@@ -86,10 +114,11 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
     ) -> None:
         """Store evaluation results for a batch of examples."""
         h = _candidate_hash(candidate)
-        for i, eid in enumerate(example_ids):
-            self._cache[(h, eid)] = CachedEvaluation(
-                outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None
-            )
+        with self._lock:
+            for i, eid in enumerate(example_ids):
+                self._cache[(h, eid)] = CachedEvaluation(
+                    outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None
+                )
 
     def evaluate_with_cache_full(
         self,
@@ -115,7 +144,7 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
                 objective_by_id = objective_by_id or {}
                 objective_by_id[eid] = c.objective_scores
 
-        # Evaluate uncached examples
+        # Evaluate uncached examples (outside the lock — evaluation can be slow)
         if uncached_ids:
             batch = fetcher(uncached_ids)
             outputs, scores, obj_scores = evaluator(batch, candidate)

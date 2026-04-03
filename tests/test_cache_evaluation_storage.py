@@ -1,16 +1,21 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-"""Tests for adapter-level fitness function caching (cache_evaluation_storage)."""
+"""Tests for evaluation caching via the core EvaluationCache.
+
+Caching is handled entirely by the core EvaluationCache in GEPAState,
+which persists automatically via gepa_state.bin when run_dir is set.
+The adapter-level fitness_cache has been removed.
+"""
 
 import tempfile
-from pathlib import Path
+import warnings
 
 import pytest
 
 from gepa.optimize_anything import (
-    GEPAConfig,
     EngineConfig,
+    GEPAConfig,
     ReflectionConfig,
     optimize_anything,
 )
@@ -44,18 +49,17 @@ def create_fitness_fn(call_counter: dict):
 
 
 class TestCacheEvaluationStorage:
-    """Tests for cache_evaluation_storage parameter."""
+    """Tests for cache_evaluation parameter."""
 
     def test_memory_cache_prevents_duplicate_calls(self):
-        """Memory cache should prevent re-evaluation of same candidate."""
+        """Core cache should prevent re-evaluation of same candidate."""
         call_counter = {"count": 0}
         fitness_fn = create_fitness_fn(call_counter)
 
         config = GEPAConfig(
             engine=EngineConfig(
                 max_metric_calls=5,
-                cache_evaluation=True,  # Enable caching
-                cache_evaluation_storage="memory",
+                cache_evaluation=True,
             ),
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-4.1-nano",
@@ -75,8 +79,8 @@ class TestCacheEvaluationStorage:
         # because duplicate candidates are served from cache
         print(f"Metric calls: {result.total_metric_calls}, Actual fitness calls: {call_counter['count']}")
 
-    def test_disk_cache_persists_across_runs(self):
-        """Disk cache should persist and be loaded on subsequent runs."""
+    def test_cache_persists_across_runs_via_state(self):
+        """Cache should persist across runs via gepa_state.bin."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             call_counter = {"count": 0}
             fitness_fn = create_fitness_fn(call_counter)
@@ -85,7 +89,6 @@ class TestCacheEvaluationStorage:
                 engine=EngineConfig(
                     max_metric_calls=3,
                     cache_evaluation=True,
-                    cache_evaluation_storage="disk",
                     run_dir=tmp_dir,
                 ),
                 reflection=ReflectionConfig(
@@ -105,14 +108,7 @@ class TestCacheEvaluationStorage:
             first_run_calls = call_counter["count"]
             print(f"First run - Metric calls: {result1.total_metric_calls}, Actual fitness calls: {first_run_calls}")
 
-            # Verify cache files were created
-            cache_dir = Path(tmp_dir) / "fitness_cache"
-            assert cache_dir.exists(), "Cache directory should be created"
-            cache_files = list(cache_dir.glob("*.pkl"))
-            assert len(cache_files) > 0, "Cache files should be created"
-            print(f"Cache files created: {len(cache_files)}")
-
-            # Second run with same seed - should use cache
+            # Second run with same seed - should use cache via gepa_state.bin
             call_counter["count"] = 0
             fitness_fn2 = create_fitness_fn(call_counter)
 
@@ -120,7 +116,6 @@ class TestCacheEvaluationStorage:
                 engine=EngineConfig(
                     max_metric_calls=3,
                     cache_evaluation=True,
-                    cache_evaluation_storage="disk",
                     run_dir=tmp_dir,
                 ),
                 reflection=ReflectionConfig(
@@ -139,8 +134,7 @@ class TestCacheEvaluationStorage:
             second_run_calls = call_counter["count"]
             print(f"Second run - Metric calls: {result2.total_metric_calls}, Actual fitness calls: {second_run_calls}")
 
-            # Second run should have fewer calls due to cache hits
-            # At minimum, the seed candidate should be cached
+            # Second run should have fewer calls due to cache hits from gepa_state.bin
             assert second_run_calls <= first_run_calls, "Second run should benefit from cache"
 
     def test_cache_off_when_cache_evaluation_false(self):
@@ -170,37 +164,8 @@ class TestCacheEvaluationStorage:
         # Every metric call should result in a fitness_fn call (no caching)
         print(f"Metric calls: {result.total_metric_calls}, Actual fitness calls: {call_counter['count']}")
 
-    def test_auto_mode_uses_disk_when_run_dir_provided(self):
-        """Auto mode should use disk cache when run_dir is provided."""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            call_counter = {"count": 0}
-            fitness_fn = create_fitness_fn(call_counter)
-
-            config = GEPAConfig(
-                engine=EngineConfig(
-                    max_metric_calls=3,
-                    cache_evaluation=True,
-                    run_dir=tmp_dir,
-                ),
-                reflection=ReflectionConfig(
-                    reflection_lm="openrouter/openai/gpt-4.1-nano",
-                ),
-                refiner=None,
-            )
-
-            result = optimize_anything(
-                seed_candidate={"number": "50"},
-                evaluator=fitness_fn,
-                objective="Guess the golden integer.",
-                config=config,
-            )
-
-            # Verify cache files were created (disk mode)
-            cache_dir = Path(tmp_dir) / "fitness_cache"
-            assert cache_dir.exists(), "Auto mode with run_dir should use disk cache"
-
-    def test_auto_mode_uses_memory_when_no_run_dir(self):
-        """Auto mode should use memory cache when no run_dir is provided."""
+    def test_cache_works_without_run_dir(self):
+        """Cache should work in memory when no run_dir is provided."""
         call_counter = {"count": 0}
         fitness_fn = create_fitness_fn(call_counter)
 
@@ -208,7 +173,7 @@ class TestCacheEvaluationStorage:
             engine=EngineConfig(
                 max_metric_calls=3,
                 cache_evaluation=True,
-                run_dir=None,  # No run_dir
+                run_dir=None,  # No run_dir — cache is in-memory only
             ),
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-4.1-nano",
@@ -216,7 +181,6 @@ class TestCacheEvaluationStorage:
             refiner=None,
         )
 
-        # Should not raise - uses memory mode
         result = optimize_anything(
             seed_candidate={"number": "50"},
             evaluator=fitness_fn,
@@ -226,8 +190,8 @@ class TestCacheEvaluationStorage:
 
         assert result is not None
 
-    def test_disk_mode_without_run_dir_raises_error(self):
-        """Disk mode without run_dir should raise ValueError."""
+    def test_cache_evaluation_storage_emits_deprecation_warning(self):
+        """Setting cache_evaluation_storage should emit a DeprecationWarning."""
         call_counter = {"count": 0}
         fitness_fn = create_fitness_fn(call_counter)
 
@@ -235,8 +199,7 @@ class TestCacheEvaluationStorage:
             engine=EngineConfig(
                 max_metric_calls=3,
                 cache_evaluation=True,
-                cache_evaluation_storage="disk",  # Explicit disk without run_dir
-                run_dir=None,  # No run_dir
+                cache_evaluation_storage="disk",
             ),
             reflection=ReflectionConfig(
                 reflection_lm="openrouter/openai/gpt-4.1-nano",
@@ -244,13 +207,19 @@ class TestCacheEvaluationStorage:
             refiner=None,
         )
 
-        with pytest.raises(ValueError, match="cache_evaluation_storage='disk' requires run_dir"):
-            optimize_anything(
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = optimize_anything(
                 seed_candidate={"number": "50"},
                 evaluator=fitness_fn,
                 objective="Guess the golden integer.",
                 config=config,
             )
+            deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+            assert len(deprecation_warnings) >= 1, "Should emit DeprecationWarning for cache_evaluation_storage"
+            assert "deprecated" in str(deprecation_warnings[0].message).lower()
+
+        assert result is not None
 
 
 if __name__ == "__main__":
@@ -264,7 +233,6 @@ if __name__ == "__main__":
         engine=EngineConfig(
             max_metric_calls=5,
             cache_evaluation=True,
-            cache_evaluation_storage="memory",
         ),
         reflection=ReflectionConfig(
             reflection_lm="openrouter/openai/gpt-4.1-nano",

@@ -1266,24 +1266,17 @@ def optimize_anything(
         raise_on_exception=config.engine.raise_on_exception,
     )
 
-    # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
-    if not config.engine.cache_evaluation:
-        resolved_cache_mode = "off"
-        if config.engine.cache_evaluation_storage != "auto":
-            warnings.warn(
-                f"cache_evaluation_storage={config.engine.cache_evaluation_storage!r} is set but "
-                f"cache_evaluation=False, so caching is disabled. Set cache_evaluation=True to "
-                f"enable caching with the specified storage mode.",
-                stacklevel=2,
-            )
-    elif config.engine.cache_evaluation_storage == "auto":
-        resolved_cache_mode = "disk" if config.engine.run_dir else "memory"
-    else:
-        resolved_cache_mode = config.engine.cache_evaluation_storage
-
-    # Validate disk mode requires run_dir
-    if resolved_cache_mode == "disk" and not config.engine.run_dir:
-        raise ValueError("cache_evaluation_storage='disk' requires run_dir in EngineConfig")
+    # Deprecation: cache_evaluation_storage is no longer used — caching is handled
+    # entirely by the core EvaluationCache in GEPAState (persisted via gepa_state.bin).
+    if config.engine.cache_evaluation_storage != "auto":
+        warnings.warn(
+            f"cache_evaluation_storage={config.engine.cache_evaluation_storage!r} is deprecated and ignored. "
+            f"Evaluation caching is now handled by the core EvaluationCache, which persists "
+            f"automatically via gepa_state.bin when run_dir is set. "
+            f"Use cache_evaluation=True/False to enable/disable caching.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     # Configure cloudpickle for code execution subprocess serialization
     from gepa.utils.code_execution import set_use_cloudpickle
@@ -1298,8 +1291,6 @@ def optimize_anything(
         best_example_evals_k=config.engine.best_example_evals_k,
         objective=objective,
         background=background,
-        cache_mode=resolved_cache_mode,
-        cache_dir=config.engine.run_dir,
     )
 
     # Normalize datasets to DataLoader instances
