@@ -15,7 +15,7 @@ class AcceptanceCriterion(Protocol):
 
     - ``proposal.eval_before`` / ``proposal.eval_after``: ``SubsampleEvaluation``
       objects with per-example ``scores``, ``outputs``, ``objective_scores``, and
-      ``trajectories`` (trajectories only available on ``eval_before``).
+      ``trajectories``.
     - ``proposal.subsample_scores_before`` / ``subsample_scores_after``: shorthand
       for the score lists (same data as ``eval_before.scores`` / ``eval_after.scores``).
     - ``proposal.candidate``: the proposed candidate text.

@@ -17,9 +17,8 @@ class SubsampleEvaluation:
     - ``scores``: per-example numeric scores.
     - ``outputs``: per-example raw outputs (e.g. the model's response text).
     - ``objective_scores``: optional per-example multi-objective score dicts.
-    - ``trajectories``: optional per-example execution traces. Only available
-      for the *before* evaluation (captured with ``capture_traces=True``); the
-      *after* evaluation does not capture traces.
+    - ``trajectories``: optional per-example execution traces (captured for both
+      before and after evaluations).
     """
 
     scores: list[float]
