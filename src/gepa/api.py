@@ -370,6 +370,8 @@ def optimize(
     evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None
     if cache_evaluation:
         evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
+        if run_dir is not None:
+            evaluation_cache.enable_disk_cache(os.path.join(run_dir, "eval_cache"))
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
