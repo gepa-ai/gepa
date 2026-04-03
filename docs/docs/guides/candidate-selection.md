@@ -91,6 +91,10 @@ GEPA maintains a mapping from **frontier keys** to the set of candidates that ac
 
 When GEPA uses the `"pareto"` strategy, it counts how many frontier keys each candidate appears in and samples proportionally. A candidate appearing in 5 keys is 5x more likely to be selected than one appearing in 1.
 
+The diagram below illustrates this for `frontier_type="instance"`. Each candidate in the pool is evaluated on every task. For each task, GEPA identifies the best-scoring candidate(s). The union of those per-task bests forms the **filtered pool (Pareto frontier)** — only candidates that are the best on at least one task are retained for selection.
+
+![Pareto-based Candidate Filtering](../static/img/pareto_candidate_filtering.jpg)
+
 ### When "good across the board" candidates are missed
 
 Because the frontier tracks the **best per key**, a candidate that is competitive but never the single best on any key will not appear in the frontier. Consider three candidates scored on two objectives:
