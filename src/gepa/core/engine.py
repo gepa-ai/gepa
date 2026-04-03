@@ -545,7 +545,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 new_sum = sum(proposal.subsample_scores_after or [])
                 if not self.acceptance_criterion.should_accept(proposal, state):
                     self.logger.log(
-                        f"Iteration {state.i + 1}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
+                        f"Iteration {state.i + 1}: Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum}), skipping"
                     )
                     # Log rejected proposal LM call to experiment tracker
                     self._log_proposal_lm_calls(state.i + 1, proposal, candidate_idx=-1)
@@ -557,13 +557,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                             iteration=state.i + 1,
                             old_score=old_sum,
                             new_score=new_sum,
-                            reason=f"New subsample score {new_sum} not better than old score {old_sum}",
+                            reason=f"Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum})",
                         ),
                     )
                     continue
                 else:
                     self.logger.log(
-                        f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
+                        f"Iteration {state.i + 1}: Candidate accepted (old_sum={old_sum}, new_sum={new_sum}). Continue to full eval and add to candidate pool."
                     )
 
                 # Accept: full eval + add
