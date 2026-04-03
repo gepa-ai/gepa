@@ -2,7 +2,7 @@
 
 GEPA's reflection LM — the model that reads evaluation feedback and proposes improved candidates — accepts any callable matching `(str) -> str`. This means you can use [Claude Code](https://docs.anthropic.com/en/docs/claude-code)'s `claude -p` command as a drop-in proposer, powered by your existing Claude subscription with no API key required.
 
-The same approach works for any CLI-based model (e.g., `ollama run`, a local model server, or any tool that accepts a prompt on stdin and returns text on stdout).
+The same approach works for any CLI-based model (e.g., `ollama run`, a local model server). More generally, the `reflection_lm` accepts any Python function with signature `(str) -> str` — it doesn't need to be a CLI wrapper. You can call a local model, hit a custom HTTP endpoint, or implement any logic you want.
 
 ---
 
@@ -144,5 +144,5 @@ print(f"Best score: {result.val_aggregate_scores[result.best_idx]:.3f}")
 !!! tip "Parallelism"
     Each `claude -p` call is a separate subprocess, so GEPA's parallel evaluation works out of the box if you use `claude_cli_chat` as your task LM. The reflection LM calls are sequential by design (one proposal per iteration).
 
-!!! note "Rate limits and latency"
-    `claude -p` is subject to your subscription's rate limits. For large-scale optimization runs, using the API via LiteLLM (the default path with `reflection_lm="anthropic/claude-sonnet-4-20250514"`) will be faster and more reliable. The CLI approach is best for experimentation and moderate-scale runs where you want to avoid API key setup.
+!!! note "Why Claude Code as a proposer?"
+    Unlike a plain API call, Claude Code has access to your full task context, documentation, custom skills, and any connected MCP servers. When used as the reflection LM, it can draw on all of that context to produce richer, more informed proposals — not just generic text improvements.
