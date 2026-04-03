@@ -34,13 +34,9 @@ CandidateHash: TypeAlias = str
 CacheKey: TypeAlias = tuple[CandidateHash, DataId]
 
 
-def candidate_hash(candidate: dict[str, str]) -> CandidateHash:
+def _candidate_hash(candidate: dict[str, str]) -> CandidateHash:
     """Compute a deterministic hash of a candidate dictionary."""
     return hashlib.sha256(json.dumps(sorted(candidate.items())).encode()).hexdigest()
-
-
-# Backward-compatible alias
-_candidate_hash = candidate_hash
 
 
 @dataclass
