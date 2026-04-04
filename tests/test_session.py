@@ -193,24 +193,23 @@ class TestSessionManager:
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory, strategy=AlwaysResume())
 
-        # First select creates a new session
-        session1 = manager.select(parent_candidate_idx=0)
+        session1 = manager.select()
         session1.resume("hello")
 
-        # Second select returns the same live session
-        session2 = manager.select(parent_candidate_idx=1)
+        # Resume returns the same session
+        session2 = manager.select()
         assert session2 is session1
-        assert len(session2.history) == 2  # history preserved
+        assert len(session2.history) == 2
 
     def test_select_with_create_strategy(self) -> None:
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory, strategy=AlwaysCreate())
 
-        session1 = manager.select(parent_candidate_idx=0)
+        session1 = manager.select()
         session1.resume("hello")
 
-        # AlwaysCreate gives a fresh session each time
-        session2 = manager.select(parent_candidate_idx=0)
+        # Create gives a fresh session each time
+        session2 = manager.select()
         assert session2 is not session1
         assert len(session2.history) == 0
 
@@ -218,112 +217,93 @@ class TestSessionManager:
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory, strategy=AlwaysFork())
 
-        # Seed: create, resume, checkpoint
-        session = manager.select(parent_candidate_idx=0)
-        session.resume("first")
-        session.resume("second")
-        manager.checkpoint(candidate_idx=0, accepted=True)
+        session1 = manager.select()
+        session1.resume("first")
+        session1.resume("second")
 
-        # Fork from checkpoint[0]
-        forked = manager.select(parent_candidate_idx=0)
-        assert forked is not session
-        assert len(forked.history) == 4  # copied history (2 resume x 2 messages)
+        # Fork copies history into a new session
+        session2 = manager.select()
+        assert session2 is not session1
+        assert len(session2.history) == 4  # copied
 
-        # Diverges
-        forked.resume("diverged")
-        assert len(forked.history) == 6
-        assert len(manager.checkpoints[0].history) == 4  # checkpoint untouched
+        # Original untouched by fork's future work
+        session2.resume("diverged")
+        assert len(session1.history) == 4
+        assert len(session2.history) == 6
 
-    def test_checkpoint_saves_snapshot(self) -> None:
+    def test_new_sessions_added_to_pool(self) -> None:
+        factory, _ = _make_echo_factory()
+        manager = SessionManager(create=factory, strategy=AlwaysCreate())
+
+        manager.select()
+        manager.select()
+        manager.select()
+
+        assert len(manager.sessions) == 3
+
+    def test_resumed_session_not_duplicated_in_pool(self) -> None:
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory, strategy=AlwaysResume())
 
-        session = manager.select(parent_candidate_idx=0)
-        session.resume("hello")
-        manager.checkpoint(candidate_idx=0, accepted=True)
+        manager.select()
+        manager.select()
+        manager.select()
 
-        assert 0 in manager.checkpoints
-        assert len(manager.checkpoints[0].history) == 2
+        # AlwaysResume returns the same session, so pool stays at 1
+        assert len(manager.sessions) == 1
 
-    def test_checkpoint_immutability(self) -> None:
-        """Resuming the live session must not corrupt stored checkpoints."""
+    def test_forked_sessions_added_to_pool(self) -> None:
         factory, _ = _make_echo_factory()
-        manager = SessionManager(create=factory, strategy=AlwaysResume())
+        manager = SessionManager(create=factory, strategy=AlwaysFork())
 
-        session = manager.select(parent_candidate_idx=0)
-        session.resume("hello")
-        manager.checkpoint(candidate_idx=0, accepted=True)
+        manager.select()  # first: create (pool empty)
+        manager.select()  # fork of first
+        manager.select()  # fork of most recent
 
-        # Continue using the live session
-        session.resume("more")
-        session.resume("even more")
-
-        # Checkpoint must still reflect state at checkpoint time
-        assert len(manager.checkpoints[0].history) == 2
-        assert len(session.history) == 6
-
-    def test_checkpoint_skip_on_rejected(self) -> None:
-        """A strategy can skip checkpointing rejected candidates."""
-        factory, _ = _make_echo_factory()
-
-        class AcceptedOnlyStrategy:
-            def select(self, parent_candidate_idx, current, checkpoints, create):
-                return current or create()
-
-            def checkpoint(self, candidate_idx, session, checkpoints, accepted):
-                return session.fork(label=f"c{candidate_idx}") if accepted else None
-
-        manager = SessionManager(create=factory, strategy=AcceptedOnlyStrategy())
-
-        session = manager.select(parent_candidate_idx=0)
-        session.resume("try something")
-        manager.checkpoint(candidate_idx=0, accepted=False)
-
-        assert 0 not in manager.checkpoints
-
-        session.resume("try again")
-        manager.checkpoint(candidate_idx=1, accepted=True)
-
-        assert 1 in manager.checkpoints
-
-    def test_custom_strategy(self) -> None:
-        factory, _ = _make_echo_factory()
-        call_log: list[int] = []
-
-        class LoggingStrategy:
-            def select(self, parent_idx, current, checkpoints, create):
-                call_log.append(parent_idx)
-                return create()
-
-            def checkpoint(self, candidate_idx, session, checkpoints, accepted):
-                return session.fork(label=f"c{candidate_idx}")
-
-        manager = SessionManager(create=factory, strategy=LoggingStrategy())
-
-        manager.select(parent_candidate_idx=0)
-        manager.select(parent_candidate_idx=3)
-        assert call_log == [0, 3]
+        assert len(manager.sessions) == 3
 
     def test_default_strategy_is_resume(self) -> None:
         factory, _ = _make_echo_factory()
-        manager = SessionManager(create=factory)  # no strategy = resume
+        manager = SessionManager(create=factory)
         assert isinstance(manager._strategy, AlwaysResume)
 
     def test_current_session(self) -> None:
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory, strategy=AlwaysCreate())
 
-        session = manager.select(parent_candidate_idx=0)
+        session = manager.select()
         assert manager.current_session() is session
 
-    def test_session_tree_scenario(self) -> None:
-        """Full scenario matching the PR doc tree diagram.
+    def test_current_session_creates_if_none(self) -> None:
+        factory, _ = _make_echo_factory()
+        manager = SessionManager(create=factory)
 
-        Candidate tree:              Session tree:
+        session = manager.current_session()
+        assert session is not None
+        assert len(manager.sessions) == 1
 
-              A                      Session 1 (resume):  A->B -> B->C -> C->D
-             / \\                     Session 2 (fork@B):  A->B -> B->E
-            B   G                    Session 3 (create):  A->G
+    def test_custom_strategy(self) -> None:
+        factory, _ = _make_echo_factory()
+        call_count = [0]
+
+        class CountingStrategy:
+            def select(self, sessions, create):
+                call_count[0] += 1
+                return create()
+
+        manager = SessionManager(create=factory, strategy=CountingStrategy())
+        manager.select()
+        manager.select()
+        assert call_count[0] == 2
+
+    def test_pool_scenario(self) -> None:
+        """Full scenario matching the PR doc.
+
+        Candidate tree:           Session pool:
+
+              A                   Session 1: mutate(A)->B, mutate(B)->C, mutate(B)->E
+             / \\                  Session 2: mutate(C)->D
+            B   F                 Session 3: mutate(A)->F
            / \\
           C   E
           |
@@ -331,42 +311,46 @@ class TestSessionManager:
         """
         factory, _ = _make_echo_factory()
 
-        # --- Session 1: resume through A->B->C->D ---
-        mgr1 = SessionManager(create=factory, strategy=AlwaysResume())
+        # We manually simulate the strategy decisions per iteration
+        sessions_log: list[str] = []
 
-        session1 = mgr1.select(parent_candidate_idx=-1)
-        session1.resume("mutate A")  # -> B
-        mgr1.checkpoint(candidate_idx=0, accepted=True)
+        # Iter 1: mutate A -> B (create Session 1)
+        manager = SessionManager(create=factory, strategy=AlwaysCreate())
+        s1 = manager.select()
+        s1.resume("mutate A")  # -> B
+        sessions_log.append("S1:create")
 
-        session1 = mgr1.select(parent_candidate_idx=0)
-        assert session1 is mgr1.current_session()  # same live session (resume)
-        session1.resume("mutate B")  # -> C
-        mgr1.checkpoint(candidate_idx=1, accepted=True)
+        # Iter 2: mutate B -> C (resume Session 1)
+        # Switch to resume strategy to reuse s1
+        manager_resume = SessionManager(create=factory, strategy=AlwaysResume())
+        manager_resume._sessions.append(s1)
+        manager_resume._current = s1
+        s1_again = manager_resume.select()
+        assert s1_again is s1
+        s1.resume("mutate B")  # -> C
+        sessions_log.append("S1:resume")
 
-        session1.resume("mutate C")  # -> D
-        mgr1.checkpoint(candidate_idx=2, accepted=True)
+        # Iter 3: mutate A -> F (create Session 3)
+        s3 = factory()
+        s3.resume("mutate A")  # -> F
+        sessions_log.append("S3:create")
 
-        assert len(session1.history) == 6  # 3 resume x 2 messages
+        # Iter 4: mutate B -> E (resume Session 1)
+        s1.resume("mutate B")  # -> E
+        sessions_log.append("S1:resume")
 
-        # --- Session 2: fork from checkpoint[0] (state at B) ---
-        # Simulate: a different strategy forks from B's checkpoint
-        checkpoint_b = mgr1.checkpoints[0]
-        session2 = checkpoint_b.fork()
-        assert len(session2.history) == 2  # only A->B
-        session2.resume("mutate B differently")  # -> E
-        assert len(session2.history) == 4
+        # Iter 5: mutate C -> D (create Session 2)
+        s2 = factory()
+        s2.resume("mutate C")  # -> D
+        sessions_log.append("S2:create")
 
-        # Checkpoint at B is untouched
-        assert len(mgr1.checkpoints[0].history) == 2
+        # Verify session histories
+        assert len(s1.history) == 6  # mutate(A)->B, mutate(B)->C, mutate(B)->E
+        assert len(s2.history) == 2  # mutate(C)->D
+        assert len(s3.history) == 2  # mutate(A)->F
 
-        # --- Session 3: fresh (create) ---
-        mgr3 = SessionManager(create=factory, strategy=AlwaysCreate())
-        session3 = mgr3.select(parent_candidate_idx=-1)
-        assert len(session3.history) == 0
-        session3.resume("mutate A fresh")  # -> G
-        assert len(session3.history) == 2
-
-        # All three sessions are independent
-        assert len(session1.history) == 6
-        assert len(session2.history) == 4
-        assert len(session3.history) == 2
+        # All sessions independent
+        assert s1.history[1]["content"] == "echo: mutate A"
+        assert s1.history[5]["content"] == "echo: mutate B"
+        assert s2.history[1]["content"] == "echo: mutate C"
+        assert s3.history[1]["content"] == "echo: mutate A"
