@@ -43,7 +43,7 @@ result = gepa.optimize(
 )
 ```
 
-If `held_out` is provided and you do not explicitly pass a held-out-aware policy, GEPA uses `HeldOutSetEvaluationPolicy`.
+If `held_out` is provided and `val_evaluation_policy` is left as `None`, GEPA uses `HeldOutSetEvaluationPolicy`.
 
 If you explicitly pass `FullEvaluationPolicy()` together with `held_out`, GEPA raises an error.
 

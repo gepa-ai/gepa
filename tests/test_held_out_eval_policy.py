@@ -150,6 +150,7 @@ def test_held_out_eval_policy_integration(tmp_path):
         valset=valset,
         held_out=held_out_data,
         adapter=adapter,  # type: ignore[arg-type]
+        val_evaluation_policy="heldout_eval",
         max_metric_calls=15,
         run_dir=str(tmp_path / "run"),
     )
@@ -191,7 +192,30 @@ def test_held_out_auto_policy_selection(tmp_path):
         held_out=held_out_data,
         adapter=adapter,  # type: ignore[arg-type]
         max_metric_calls=5,
-        # No val_evaluation_policy — should auto-select HeldOutSetEvaluationPolicy
+    )
+
+    assert result.held_out_scores is not None
+
+
+def test_held_out_string_policy_selection(tmp_path):
+    """The explicit 'heldout_eval' string selects HeldOutSetEvaluationPolicy."""
+    trainset = [{"id": 0, "difficulty": 2}]
+    valset = [{"id": 0, "difficulty": 2}]
+    held_out_data = [{"id": 0, "difficulty": 3}]
+
+    def val_score(item, weight):
+        return min(1.0, weight / item["difficulty"])
+
+    adapter = _DummyAdapter(val_scores_fn=val_score)
+
+    result = gepa.optimize(
+        seed_candidate={"weight": "0"},
+        trainset=trainset,
+        valset=valset,
+        held_out=held_out_data,
+        adapter=adapter,  # type: ignore[arg-type]
+        max_metric_calls=5,
+        val_evaluation_policy="heldout_eval",
     )
 
     assert result.held_out_scores is not None
@@ -216,6 +240,7 @@ def test_held_out_evals_do_not_consume_budget():
         valset=valset,
         held_out=held_out_data,
         adapter=adapter,  # type: ignore[arg-type]
+        val_evaluation_policy="heldout_eval",
         max_metric_calls=1,
     )
 
@@ -250,6 +275,7 @@ def test_held_out_only_evaluated_for_valset_leader(tmp_path):
         valset=valset,
         held_out=held_out_data,
         adapter=adapter,  # type: ignore[arg-type]
+        val_evaluation_policy="heldout_eval",
         max_metric_calls=20,
         run_dir=str(tmp_path / "run"),
     )
@@ -295,6 +321,7 @@ def test_empty_held_out_loader_skips_evaluation():
         valset=valset,
         held_out=[],  # empty loader triggers the early-return in _evaluate_on_held_out_set
         adapter=adapter,  # type: ignore[arg-type]
+        val_evaluation_policy="heldout_eval",
         max_metric_calls=5,
     )
 
@@ -433,6 +460,7 @@ def test_engine_emits_held_out_callback_for_seed_at_iteration_0():
         valset=valset,
         held_out=held_out_data,
         adapter=adapter,  # type: ignore[arg-type]
+        val_evaluation_policy="heldout_eval",
         max_metric_calls=1,
         callbacks=[cb],
     )
@@ -472,6 +500,7 @@ def test_engine_emits_held_out_callback_when_valset_leader_changes():
         valset=valset,
         held_out=held_out_data,
         adapter=adapter,  # type: ignore[arg-type]
+        val_evaluation_policy="heldout_eval",
         max_metric_calls=20,
         callbacks=[cb],
     )
@@ -516,6 +545,7 @@ def test_on_valset_evaluated_is_best_program_tracks_valset_leader_with_held_out(
         valset=valset,
         held_out=held_out_data,
         adapter=adapter,  # type: ignore[arg-type]
+        val_evaluation_policy="heldout_eval",
         max_metric_calls=2,
         callbacks=[cb],
     )
@@ -546,6 +576,7 @@ def test_final_summary_reports_best_score_on_valset_even_when_held_out_winner_di
             valset=valset,
             held_out=held_out_data,
             adapter=adapter,  # type: ignore[arg-type]
+            val_evaluation_policy="heldout_eval",
             max_metric_calls=2,
         )
 

@@ -64,7 +64,7 @@ print("Best prompt:", result.best_candidate['system_prompt'])
 print("Best score:", result.best_score)
 ```
 
-If you do not want a separate held-out split, just omit `held_out=...` and GEPA will select the final candidate by `valset` score.
+If you do not want a separate held-out split, just omit `held_out=...`. GEPA will then select the final candidate by `valset` score.
 
 ### Option 2: Using optimize_anything
 

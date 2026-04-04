@@ -87,7 +87,7 @@ def optimize(
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
-    val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
+    val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval", "heldout_eval"] | None = None,
     held_out: list[DataInst] | DataLoader[DataId, DataInst] | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
@@ -178,7 +178,7 @@ def optimize(
 
     # Reproducibility
     - seed: The seed to use for the random number generator.
-    - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
+    - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) and "heldout_eval" (evaluate every id each time and select the final candidate by held-out score). Passing None defaults to "full_eval".
     - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
     """
     # Validate seed_candidate is not None or empty
@@ -298,17 +298,23 @@ def optimize(
             "candidate_selection_strategy must be a supported string strategy or an instance of CandidateSelector."
         )
 
-    if val_evaluation_policy is None or val_evaluation_policy == "full_eval":
+    if val_evaluation_policy is None:
         val_evaluation_policy = HeldOutSetEvaluationPolicy() if held_out is not None else FullEvaluationPolicy()
+    elif val_evaluation_policy == "full_eval":
+        val_evaluation_policy = FullEvaluationPolicy()
+    elif val_evaluation_policy == "heldout_eval":
+        val_evaluation_policy = HeldOutSetEvaluationPolicy()
     elif not isinstance(val_evaluation_policy, EvaluationPolicy):
         raise ValueError(
-            f"val_evaluation_policy should be one of 'full_eval' or an instance of EvaluationPolicy, but got {type(val_evaluation_policy)}"
+            f"val_evaluation_policy should be one of 'full_eval', 'heldout_eval', or an instance of "
+            f"EvaluationPolicy, but got {type(val_evaluation_policy)}"
         )
 
     if held_out is not None and not isinstance(val_evaluation_policy, HeldOutSetEvaluationPolicy):
         raise ValueError(
             f"held_out requires HeldOutSetEvaluationPolicy, but val_evaluation_policy is "
-            f"{type(val_evaluation_policy).__name__}. Pass val_evaluation_policy=None to auto-select it."
+            f"{type(val_evaluation_policy).__name__}. Pass val_evaluation_policy=None or "
+            f"val_evaluation_policy='heldout_eval'."
         )
 
     if isinstance(module_selector, str):
