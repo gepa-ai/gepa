@@ -61,7 +61,7 @@ def log_detailed_metrics_after_discovering_new_program(
         "iteration": gepa_state.i + 1,
         "new_program_idx": new_program_idx,
         "valset_pareto_front_agg": pareto_avg,
-        "best_valset_score": max(gepa_state.program_full_scores_val_set),
+        "best_score_on_valset": max(gepa_state.program_full_scores_val_set),
         "best_program_idx_by_policy": linear_pareto_front_program_idx,
         "val_evaluated_count_new_program": coverage,
         "val_total_count": valset_size,
@@ -69,7 +69,7 @@ def log_detailed_metrics_after_discovering_new_program(
         "total_metric_calls": gepa_state.total_num_evals,
     }
     if held_out_subscores:
-        metrics["best_program_held_out_score"] = sum(held_out_subscores.values()) / len(held_out_subscores)
+        metrics["best_score_on_held_out"] = sum(held_out_subscores.values()) / len(held_out_subscores)
     if objective_scores:
         for obj_name, obj_val in objective_scores.items():
             if isinstance(obj_val, int | float):

@@ -477,7 +477,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         seed_held_out = state.prog_candidate_held_out_subscores[0]
         seed_metrics: dict = {
             "val_program_average": base_val_avg,
-            "best_valset_score": base_val_avg,
+            "best_score_on_valset": base_val_avg,
             "val_evaluated_count_new_program": base_val_coverage,
             "val_total_count": len(valset),
             "total_metric_calls": state.total_num_evals,
@@ -486,7 +486,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             "best_program_idx_by_policy": 0,
         }
         if seed_held_out:
-            seed_metrics["best_program_held_out_score"] = sum(seed_held_out.values()) / len(seed_held_out)
+            seed_metrics["best_score_on_held_out"] = sum(seed_held_out.values()) / len(seed_held_out)
         self.experiment_tracker.log_metrics(seed_metrics, step=state.i + 1)
 
         self.logger.log(
@@ -793,7 +793,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         best_score = self.val_evaluation_policy.get_valset_score(best_valset_candidate_idx, state)
         summary: dict[str, Any] = {
             "best_candidate_idx": best_candidate_idx,
-            "best_valset_score": best_score,
+            "best_score_on_valset": best_score,
             "total_iterations": state.i,
             "total_candidates": len(state.program_candidates),
         }

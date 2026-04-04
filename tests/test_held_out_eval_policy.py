@@ -525,7 +525,7 @@ def test_on_valset_evaluated_is_best_program_tracks_valset_leader_with_held_out(
     assert candidate_call["is_best_program"] is True
 
 
-def test_final_summary_reports_best_valset_score_even_when_held_out_winner_differs():
+def test_final_summary_reports_best_score_on_valset_even_when_held_out_winner_differs():
     """Summary should report both the true best valset score and the held-out-selected winner's score."""
     trainset = [{"id": 0, "kind": "train"}]
     valset = [{"id": 0, "kind": "val"}]
@@ -551,7 +551,7 @@ def test_final_summary_reports_best_valset_score_even_when_held_out_winner_diffe
 
     assert tracker.summary is not None
     assert tracker.summary["best_candidate_idx"] == 0
-    assert tracker.summary["best_valset_score"] == 1.0
+    assert tracker.summary["best_score_on_valset"] == 1.0
     assert tracker.summary["best_held_out_score"] == 1.0
 
 
