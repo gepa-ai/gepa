@@ -13,25 +13,21 @@ from typing import Any, Protocol, runtime_checkable
 class Session(Protocol):
     """Forkable interaction context for LLMs and coding agents.
 
-    A session tracks conversation state and supports four operations:
+    A session tracks conversation state and supports three operations:
 
     - ``send(content)``: continue the conversation — history grows.
-    - ``fork()``: create a **new** session with history **copied** from this one.
-      Original is untouched.  The fork diverges independently after this point.
+    - ``fork()``: create a **new** session with history **copied** from this
+      one.  Original is untouched.  The fork diverges independently.
     - ``branch()``: create a **new** session with **no history** but the same
       backend config (system prompt, API, agent).  Original is untouched.
-    - ``reset()``: clear this session's history **in-place**.  Same session
-      object, just emptied.
 
-    +---------------------+-------------------+----------+---------+
-    | Operation           | Creates new?      | History  | Mutates |
-    |                     |                   | in new   | orig?   |
-    +---------------------+-------------------+----------+---------+
-    | send(content)       | No                | Grows    | Yes     |
-    | fork(label)         | Yes               | Copied   | No      |
-    | branch(label)       | Yes               | Empty    | No      |
-    | reset()             | No                | Cleared  | Yes     |
-    +---------------------+-------------------+----------+---------+
+    +-----------------+--------------+----------+----------------+
+    | Operation       | Creates new? | History  | Mutates orig?  |
+    +-----------------+--------------+----------+----------------+
+    | send(content)   | No           | Grows    | Yes            |
+    | fork(label)     | Yes          | Copied   | No             |
+    | branch(label)   | Yes          | Empty    | No             |
+    +-----------------+--------------+----------+----------------+
     """
 
     @property
@@ -56,10 +52,6 @@ class Session(Protocol):
         Original is untouched.  Use when starting fresh exploration from
         a candidate's code/text state without conversation baggage.
         """
-        ...
-
-    def reset(self) -> None:
-        """Clear this session's history in-place.  Same session object."""
         ...
 
     @property
@@ -143,9 +135,6 @@ class MessageListSession:
             session_id=new_id,
         )
 
-    def reset(self) -> None:
-        self._messages.clear()
-
 
 class NullSession:
     """No-op session for text-mode backward compatibility.
@@ -174,9 +163,6 @@ class NullSession:
 
     def branch(self, label: str = "") -> NullSession:
         return NullSession(session_id=f"{self._session_id}_branch_{label or 'null'}")
-
-    def reset(self) -> None:
-        pass
 
 
 # ---------------------------------------------------------------------------

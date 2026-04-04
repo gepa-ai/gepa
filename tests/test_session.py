@@ -68,13 +68,6 @@ class TestMessageListSession:
         assert session.history[-1]["content"] == "echo: parent only"
         assert forked.history[-1]["content"] == "echo: child only"
 
-    def test_reset_clears_history(self) -> None:
-        session = self._make_echo_session()
-        session.send("hello")
-        assert len(session.history) > 0
-        session.reset()
-        assert len(session.history) == 0
-
     def test_branch_creates_empty_session(self) -> None:
         session = self._make_echo_session()
         session.send("before branch")
@@ -91,14 +84,6 @@ class TestMessageListSession:
         branched = session.branch()
         response = branched.send("test branch")
         assert response == "echo: test branch"  # same API works
-
-    def test_reset_preserves_system_prompt(self) -> None:
-        session = self._make_echo_session(system_prompt="custom prompt")
-        session.send("hello")
-        session.reset()
-        response = session.send("after reset")
-        assert response == "echo: after reset"
-        assert len(session.history) == 2
 
     def test_history_is_copy(self) -> None:
         session = self._make_echo_session()
@@ -155,10 +140,6 @@ class TestNullSession:
         branched = session.branch("label")
         assert isinstance(branched, NullSession)
         assert branched.session_id != session.session_id
-
-    def test_reset_noop(self) -> None:
-        session = NullSession()
-        session.reset()  # should not raise
 
 
 class TestMakeSessionLm:
