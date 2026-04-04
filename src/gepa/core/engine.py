@@ -797,8 +797,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         }
         best_candidate_held_out_scores = state.prog_candidate_held_out_subscores[best_candidate_idx]
         if best_candidate_held_out_scores:
-            best_held_out_score = sum(best_candidate_held_out_scores.values()) / len(best_candidate_held_out_scores)
-            summary["best_held_out_score"] = best_held_out_score
+            summary["best_score_on_held_out"] = sum(best_candidate_held_out_scores.values()) / len(
+                best_candidate_held_out_scores
+            )
         for name in sorted(self.seed_candidate.keys()):
             summary[f"seed/{name}"] = self.seed_candidate[name]
             summary[f"best/{name}"] = best_candidate[name]

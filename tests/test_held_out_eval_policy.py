@@ -609,7 +609,7 @@ def test_final_summary_reports_policy_selected_candidate_scores():
     assert tracker.summary is not None
     assert tracker.summary["best_candidate_idx"] == 0
     assert tracker.summary["best_score_on_valset"] == 0.0
-    assert tracker.summary["best_held_out_score"] == 1.0
+    assert tracker.summary["best_score_on_held_out"] == 1.0
 
 
 # ---------------------------------------------------------------------------

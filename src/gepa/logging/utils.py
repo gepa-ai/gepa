@@ -152,7 +152,6 @@ def log_held_out_metrics(
         key=lambda i: gepa_state.get_program_average_held_out(i)[0],
         default=candidate_idx,
     )
-    best_held_out_score = gepa_state.get_program_average_held_out(best_held_out_idx)[0]
 
     logger.log(
         f"Iteration {gepa_state.i + 1}: Held-out score for candidate {candidate_idx}: {avg_score}"
@@ -161,13 +160,9 @@ def log_held_out_metrics(
     logger.log(
         f"Iteration {gepa_state.i + 1}: Individual held-out scores for candidate {candidate_idx}: {held_out_evaluation.scores_by_id}"
     )
-    logger.log(
-        f"Iteration {gepa_state.i + 1}: Best held-out score so far: {best_held_out_score} (candidate {best_held_out_idx})"
-    )
 
     metrics = {
         "held_out_score": avg_score,
-        "best_held_out_score": best_held_out_score,
         "held_out_leader_idx": best_held_out_idx,
         "held_out_evaluated_count": coverage,
         "held_out_total_count": held_out_size,
