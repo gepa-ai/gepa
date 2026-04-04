@@ -43,6 +43,11 @@ result = gepa.optimize(
 )
 ```
 
+!!! danger "Held-out evaluations are not counted in `max_metric_calls`"
+    `max_metric_calls` only budgets optimization-time evaluation on `valset`.
+    Any evaluation done on `held_out` is tracked separately and does **not** count toward that limit.
+    This means total evaluator usage can exceed `max_metric_calls` when `held_out` is enabled.
+
 If `held_out` is provided and `val_evaluation_policy` is left as `None`, GEPA uses `HeldOutSetEvaluationPolicy`.
 
 If you explicitly pass `FullEvaluationPolicy()` together with `held_out`, GEPA raises an error.
