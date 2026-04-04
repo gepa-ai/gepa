@@ -153,55 +153,142 @@ class NullSession:
 
 
 # ---------------------------------------------------------------------------
-# Session manager — registry + pluggable strategy
+# Session strategy — governs the session tree
 # ---------------------------------------------------------------------------
 
-# Strategy callables: given parent candidate idx and session registry,
-# return the session to use for the next mutation.
-SessionStrategyFn = Callable[[int, dict[int, "Session"]], "Session"]
+
+@runtime_checkable
+class SessionStrategy(Protocol):
+    """Policy that governs how the session tree evolves.
+
+    A strategy decides — given the parent candidate and all available sessions —
+    which session to use for the next mutation.  It uses the session primitives
+    (``fork``, ``reset``, ``send``) internally but the *policy* logic is what
+    makes it a strategy.
+
+    Examples of strategies:
+
+    - **Random**: randomly continue, fork, or start fresh each iteration.
+    - **Greedy**: always continue the best-scoring session.
+    - **Explore-exploit**: fork top K, reset bottom K, continue the rest.
+    - **LLM-decided**: ask an LLM whether to continue or try fresh.
+    - **Population**: maintain N active sessions, prune worst performers.
+    """
+
+    def select(
+        self,
+        parent_candidate_idx: int,
+        sessions: dict[int, Session],
+        factory: Callable[[], Session],
+    ) -> Session:
+        """Return the session to use for the next mutation.
+
+        Parameters
+        ----------
+        parent_candidate_idx:
+            Index of the candidate selected as the mutation parent.
+        sessions:
+            The current ``candidate_idx → Session`` registry (snapshots).
+        factory:
+            Creates a fresh session with no history.
+        """
+        ...
+
+
+# ---------------------------------------------------------------------------
+# Built-in strategies
+# ---------------------------------------------------------------------------
+
+
+class AlwaysContinueStrategy:
+    """Reuse the parent's session — history keeps growing.
+
+    The agent/LLM sees the full conversation history from prior iterations.
+    Good when continuity helps (e.g. the LLM can learn from past mistakes).
+    """
+
+    def select(
+        self,
+        parent_candidate_idx: int,
+        sessions: dict[int, Session],
+        factory: Callable[[], Session],
+    ) -> Session:
+        return sessions.get(parent_candidate_idx) or factory()
+
+
+class AlwaysFreshStrategy:
+    """Start a fresh session every time — no conversation history.
+
+    The agent only sees the candidate's code/text state, not prior conversation.
+    Good for independent exploration from any point in the candidate tree.
+    """
+
+    def select(
+        self,
+        parent_candidate_idx: int,
+        sessions: dict[int, Session],
+        factory: Callable[[], Session],
+    ) -> Session:
+        return factory()
+
+
+class AlwaysForkStrategy:
+    """Deep-copy the parent's session — history preserved, diverges after.
+
+    Like ``continue`` but creates an independent copy so the parent's session
+    is not modified.  Good when you want to try a different direction while
+    preserving the parent's context.
+    """
+
+    def select(
+        self,
+        parent_candidate_idx: int,
+        sessions: dict[int, Session],
+        factory: Callable[[], Session],
+    ) -> Session:
+        parent = sessions.get(parent_candidate_idx)
+        return parent.fork() if parent else factory()
+
+
+# ---------------------------------------------------------------------------
+# Session manager — registry + strategy
+# ---------------------------------------------------------------------------
 
 
 class SessionManager:
-    """Manages a tree of sessions with a pluggable selection strategy.
+    """Manages the session tree with a pluggable strategy.
 
-    Combines three concerns:
+    Combines two concerns:
 
     1. **Registry** — ``candidate_idx → Session`` mapping (the tree).
-    2. **Strategy** — decides how to pick/create a session for each mutation.
-    3. **Provider** — ``current_session()`` feeds the active session into
-       ``make_session_lm`` or any other consumer.
-
-    Built-in strategies:
-
-    - ``"continue"`` — reuse the parent's session (history grows).
-    - ``"branch"``   — create a fresh session (no history from parent).
-    - ``"fork"``     — deep-copy the parent's session (history preserved,
-      diverges after).
-
-    Custom strategies are callables ``(parent_idx, sessions) -> Session``.
+    2. **Strategy** — a ``SessionStrategy`` that governs how sessions are
+       selected, forked, or created for each mutation.
 
     Example
     -------
     ::
 
         factory = lambda: MessageListSession(system_prompt="...", api_call=llm)
-        manager = SessionManager(session_factory=factory, strategy="branch")
+        manager = SessionManager(
+            session_factory=factory,
+            strategy=AlwaysFreshStrategy(),
+        )
 
         # When proposer selects parent candidate 2:
         session = manager.select(parent_candidate_idx=2)
         response = session.send("Improve the code...")
 
         # After candidate is accepted:
-        manager.register(candidate_idx=5, session=session)
+        manager.register(candidate_idx=5)
     """
 
     def __init__(
         self,
         session_factory: Callable[[], Session],
-        strategy: str | SessionStrategyFn = "continue",
+        strategy: SessionStrategy | None = None,
     ) -> None:
         self._factory = session_factory
-        self._strategy = strategy
+        self._strategy: SessionStrategy = strategy or AlwaysContinueStrategy()
         self._sessions: dict[int, Session] = {}
         self._current: Session | None = None
 
@@ -225,17 +312,9 @@ class SessionManager:
 
         Returns the selected session and sets it as ``current_session()``.
         """
-        if callable(self._strategy) and not isinstance(self._strategy, str):
-            self._current = self._strategy(parent_candidate_idx, self._sessions)
-        elif self._strategy == "continue":
-            self._current = self._sessions.get(parent_candidate_idx) or self._factory()
-        elif self._strategy == "branch":
-            self._current = self._factory()
-        elif self._strategy == "fork":
-            parent = self._sessions.get(parent_candidate_idx)
-            self._current = parent.fork() if parent else self._factory()
-        else:
-            raise ValueError(f"Unknown session strategy: {self._strategy!r}")
+        self._current = self._strategy.select(
+            parent_candidate_idx, self._sessions, self._factory
+        )
         return self._current
 
     def current_session(self) -> Session:

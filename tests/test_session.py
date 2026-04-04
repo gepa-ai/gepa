@@ -5,14 +5,24 @@
 
 from __future__ import annotations
 
-from gepa.core.session import MessageListSession, NullSession, Session, SessionManager, make_session_lm
+from gepa.core.session import (
+    AlwaysContinueStrategy,
+    AlwaysForkStrategy,
+    AlwaysFreshStrategy,
+    MessageListSession,
+    NullSession,
+    Session,
+    SessionManager,
+    SessionStrategy,
+    make_session_lm,
+)
 
 
 class TestMessageListSession:
     def _make_echo_session(self, system_prompt: str = "You are helpful.") -> MessageListSession:
         """Create a session with a simple echo API call."""
 
-        def echo_api(messages: list[dict], **kwargs) -> str:  # noqa: ARG001
+        def echo_api(messages: list[dict], **kwargs) -> str:
             last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
             return f"echo: {last_user}"
 
@@ -85,7 +95,7 @@ class TestMessageListSession:
         assert len(session.session_id) > 0
 
     def test_session_id_explicit(self) -> None:
-        def noop(messages, **kwargs):  # noqa: ARG001
+        def noop(messages, **kwargs):
             return ""
 
         session = MessageListSession(system_prompt="", api_call=noop, session_id="my-id")
@@ -94,7 +104,7 @@ class TestMessageListSession:
     def test_api_call_receives_system_prompt(self) -> None:
         received_messages = []
 
-        def capture_api(messages: list[dict], **kwargs) -> str:  # noqa: ARG001
+        def capture_api(messages: list[dict], **kwargs) -> str:
             received_messages.extend(messages)
             return "ok"
 
@@ -130,7 +140,7 @@ class TestNullSession:
 
 class TestMakeSessionLm:
     def _make_echo_session(self) -> MessageListSession:
-        def echo_api(messages: list[dict], **kwargs) -> str:  # noqa: ARG001
+        def echo_api(messages: list[dict], **kwargs) -> str:
             last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
             return f"echo: {last_user}"
 
@@ -180,7 +190,7 @@ class TestMakeSessionLm:
 def _make_echo_factory(system_prompt: str = "test") -> tuple:
     """Return (factory, echo_api) for building test sessions."""
 
-    def echo_api(messages: list[dict], **kwargs) -> str:  # noqa: ARG001
+    def echo_api(messages: list[dict], **kwargs) -> str:
         last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
         return f"echo: {last_user}"
 
@@ -190,35 +200,41 @@ def _make_echo_factory(system_prompt: str = "test") -> tuple:
     return factory, echo_api
 
 
+class TestSessionStrategy:
+    def test_protocol_compliance(self) -> None:
+        assert isinstance(AlwaysContinueStrategy(), SessionStrategy)
+        assert isinstance(AlwaysFreshStrategy(), SessionStrategy)
+        assert isinstance(AlwaysForkStrategy(), SessionStrategy)
+
+
 class TestSessionManager:
     def test_register_and_select_continue(self) -> None:
         factory, _ = _make_echo_factory()
-        manager = SessionManager(session_factory=factory, strategy="continue")
+        manager = SessionManager(session_factory=factory, strategy=AlwaysContinueStrategy())
 
-        # Create seed session and register it
         seed_session = factory()
         seed_session.send("seed message")
         manager.register(0, seed_session)
 
-        # Select with continue — should get the registered session's snapshot
+        # Continue — should get the registered session's snapshot
         session = manager.select(parent_candidate_idx=0)
         assert len(session.history) == 2  # user + assistant from seed
 
-    def test_branch_strategy_creates_fresh(self) -> None:
+    def test_fresh_strategy_creates_fresh(self) -> None:
         factory, _ = _make_echo_factory()
-        manager = SessionManager(session_factory=factory, strategy="branch")
+        manager = SessionManager(session_factory=factory, strategy=AlwaysFreshStrategy())
 
         seed_session = factory()
         seed_session.send("seed message")
         manager.register(0, seed_session)
 
-        # Branch should create a fresh session with no history
+        # Fresh should create a session with no history
         session = manager.select(parent_candidate_idx=0)
         assert len(session.history) == 0
 
     def test_fork_strategy_copies_history(self) -> None:
         factory, _ = _make_echo_factory()
-        manager = SessionManager(session_factory=factory, strategy="fork")
+        manager = SessionManager(session_factory=factory, strategy=AlwaysForkStrategy())
 
         seed_session = factory()
         seed_session.send("first")
@@ -239,21 +255,27 @@ class TestSessionManager:
         factory, _ = _make_echo_factory()
         call_log: list[int] = []
 
-        def my_strategy(parent_idx: int, sessions: dict[int, Session]) -> Session:
-            call_log.append(parent_idx)
-            return factory()  # always fresh
+        class LoggingStrategy:
+            def select(self, parent_idx: int, sessions: dict[int, Session], factory_fn):
+                call_log.append(parent_idx)
+                return factory_fn()
 
-        manager = SessionManager(session_factory=factory, strategy=my_strategy)
+        manager = SessionManager(session_factory=factory, strategy=LoggingStrategy())
         manager.register(0, factory())
 
         manager.select(parent_candidate_idx=0)
         manager.select(parent_candidate_idx=3)
         assert call_log == [0, 3]
 
+    def test_default_strategy_is_continue(self) -> None:
+        factory, _ = _make_echo_factory()
+        manager = SessionManager(session_factory=factory)  # no strategy = continue
+        assert isinstance(manager._strategy, AlwaysContinueStrategy)
+
     def test_register_snapshots_current(self) -> None:
         """register() without explicit session snapshots the current one."""
         factory, _ = _make_echo_factory()
-        manager = SessionManager(session_factory=factory, strategy="continue")
+        manager = SessionManager(session_factory=factory)
 
         session = manager.select(parent_candidate_idx=0)
         session.send("hello")
@@ -269,15 +291,15 @@ class TestSessionManager:
 
     def test_current_session(self) -> None:
         factory, _ = _make_echo_factory()
-        manager = SessionManager(session_factory=factory, strategy="branch")
+        manager = SessionManager(session_factory=factory, strategy=AlwaysFreshStrategy())
 
         session = manager.select(parent_candidate_idx=0)
         assert manager.current_session() is session
 
     def test_session_tree_scenario(self) -> None:
-        """Full scenario: A→B→C→D (session 1), then branch from C→E→F (session 2)."""
+        """Full scenario: A→B→C→D (session 1), then fresh from C→E→F (session 2)."""
         factory, _ = _make_echo_factory()
-        manager = SessionManager(session_factory=factory, strategy="continue")
+        manager = SessionManager(session_factory=factory, strategy=AlwaysContinueStrategy())
 
         # Session 1: A → B → C → D
         session1 = manager.select(parent_candidate_idx=-1)  # seed, no parent
@@ -293,21 +315,20 @@ class TestSessionManager:
         session1.send("create D")
         manager.register(3)  # snapshot at D
 
-        # Session 2: branch from C (fresh, no history)
-        manager_branch = SessionManager(session_factory=factory, strategy="branch")
-        # Copy registry from first manager
+        # Session 2: fresh from C (no conversation history)
+        manager_fresh = SessionManager(session_factory=factory, strategy=AlwaysFreshStrategy())
         for idx, sess in manager.sessions.items():
-            manager_branch.register(idx, sess)
+            manager_fresh.register(idx, sess)
 
-        session2 = manager_branch.select(parent_candidate_idx=2)
+        session2 = manager_fresh.select(parent_candidate_idx=2)
         assert len(session2.history) == 0  # fresh — no session 1 history
 
         session2.send("create E from C's code")
-        manager_branch.register(4, session2)
+        manager_fresh.register(4, session2)
 
         session2.send("create F")
-        manager_branch.register(5, session2)
+        manager_fresh.register(5, session2)
 
         # Verify independence
-        assert len(manager.sessions[2].history) == 6   # A, B, C (3 sends × 2)
-        assert len(manager_branch.sessions[4].history) == 2  # just E
+        assert len(manager.sessions[2].history) == 6   # A, B, C (3 sends x 2)
+        assert len(manager_fresh.sessions[4].history) == 2  # just E
