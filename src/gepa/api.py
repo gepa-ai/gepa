@@ -3,6 +3,7 @@
 
 import os
 import random
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -308,6 +309,14 @@ def optimize(
         raise ValueError(
             f"val_evaluation_policy should be one of 'full_eval', 'heldout_eval', or an instance of "
             f"EvaluationPolicy, but got {type(val_evaluation_policy)}"
+        )
+
+    if held_out is None and isinstance(val_evaluation_policy, HeldOutSetEvaluationPolicy):
+        warnings.warn(
+            "HeldOutSetEvaluationPolicy was selected, but no held_out set was provided. "
+            "GEPA will fall back to valset-only selection semantics.",
+            UserWarning,
+            stacklevel=2,
         )
 
     if held_out is not None and not isinstance(val_evaluation_policy, HeldOutSetEvaluationPolicy):

@@ -221,6 +221,27 @@ def test_held_out_string_policy_selection(tmp_path):
     assert result.held_out_scores is not None
 
 
+def test_heldout_eval_without_held_out_warns(tmp_path):
+    """Selecting heldout_eval without a held_out set should warn explicitly."""
+    trainset = [{"id": 0, "difficulty": 2}]
+    valset = [{"id": 0, "difficulty": 2}]
+
+    def val_score(item, weight):
+        return min(1.0, weight / item["difficulty"])
+
+    adapter = _DummyAdapter(val_scores_fn=val_score)
+
+    with pytest.warns(UserWarning, match="no held_out set was provided"):
+        gepa.optimize(
+            seed_candidate={"weight": "0"},
+            trainset=trainset,
+            valset=valset,
+            adapter=adapter,  # type: ignore[arg-type]
+            max_metric_calls=5,
+            val_evaluation_policy="heldout_eval",
+        )
+
+
 def test_held_out_evals_do_not_consume_budget():
     """num_held_out_evals is tracked separately and does not count toward the budget."""
     # With max_metric_calls=1 the optimization stops after seeding (1 valset eval).
@@ -555,7 +576,7 @@ def test_on_valset_evaluated_is_best_program_tracks_valset_leader_with_held_out(
     assert candidate_call["is_best_program"] is True
 
 
-def test_final_summary_reports_best_score_on_valset_even_when_held_out_winner_differs():
+def test_final_summary_reports_best_valset_score_even_when_held_out_winner_differs():
     """Summary should report both the true best valset score and the held-out-selected winner's score."""
     trainset = [{"id": 0, "kind": "train"}]
     valset = [{"id": 0, "kind": "val"}]
@@ -582,7 +603,7 @@ def test_final_summary_reports_best_score_on_valset_even_when_held_out_winner_di
 
     assert tracker.summary is not None
     assert tracker.summary["best_candidate_idx"] == 0
-    assert tracker.summary["best_score_on_valset"] == 1.0
+    assert tracker.summary["best_valset_score"] == 1.0
     assert tracker.summary["best_held_out_score"] == 1.0
 
 

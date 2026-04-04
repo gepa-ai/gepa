@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class GEPAResult(Generic[RolloutOutput, DataId]):
-    """Immutable snapshot returned by :func:`~gepa.optimize_anything.optimize_anything`.
+    """Immutable snapshot returned by GEPA optimization runs.
 
     Key attributes:
         best_candidate: The optimized parameter(s) — ``dict[str, str]`` or plain
@@ -35,6 +35,11 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         result = optimize_anything(...)
         print(result.best_candidate)
         print(result.val_aggregate_scores[result.best_idx])
+
+    Notes:
+        Some fields are only populated by specific APIs. For example,
+        ``held_out_scores`` and ``num_held_out_evals`` are currently populated by
+        :func:`gepa.optimize`, not by :func:`gepa.optimize_anything.optimize_anything`.
     """
 
     # Core data
