@@ -13,20 +13,21 @@ from typing import Any, Protocol, runtime_checkable
 class Session(Protocol):
     """Forkable interaction context for LLMs and coding agents.
 
-    A session tracks conversation state and supports three operations:
+    A session tracks conversation state and supports two operations:
 
-    - ``send(content)``: continue the conversation — history grows.
+    - ``resume(content)``: continue the conversation -- history grows.
     - ``fork()``: create a **new** session with history **copied** from this
       one.  Original is untouched.  The fork diverges independently.
-    - ``branch()``: create a **new** session with **no history** but the same
-      backend config (system prompt, API, agent).  Original is untouched.
+
+    A third way to obtain a session -- ``create()`` -- lives on the
+    ``SessionManager``, not on Session itself.  A session can clone itself
+    (``fork``), but creating one from nothing is the manager's job.
 
     +-----------------+--------------+----------+----------------+
     | Operation       | Creates new? | History  | Mutates orig?  |
     +-----------------+--------------+----------+----------------+
-    | send(content)   | No           | Grows    | Yes            |
+    | resume(content) | No           | Grows    | Yes            |
     | fork(label)     | Yes          | Copied   | No             |
-    | branch(label)   | Yes          | Empty    | No             |
     +-----------------+--------------+----------+----------------+
     """
 
@@ -46,14 +47,6 @@ class Session(Protocol):
         """
         ...
 
-    def branch(self, label: str = "") -> Session:
-        """Create a new session with no history but same backend config.
-
-        Original is untouched.  Use when starting fresh exploration from
-        a candidate's code/text state without conversation baggage.
-        """
-        ...
-
     @property
     def history(self) -> list[dict[str, Any]]:
         """Message history (read-only view)."""
@@ -66,11 +59,10 @@ class Session(Protocol):
 
 
 class MessageListSession:
-    """Session backed by an in-memory message list — works with any LLM API.
+    """Session backed by an in-memory message list -- works with any LLM API.
 
     ``fork()`` deep-copies the message list so the child can diverge.
-    ``reset()`` clears back to the system prompt only.
-    ``send()`` appends a user message, calls the LLM, and appends the response.
+    ``resume()`` appends a user message, calls the LLM, and appends the response.
 
     Parameters
     ----------
@@ -127,14 +119,6 @@ class MessageListSession:
             messages=copy.deepcopy(self._messages),
         )
 
-    def branch(self, label: str = "") -> MessageListSession:
-        new_id = f"{self._session_id}_branch_{label or uuid.uuid4().hex[:6]}"
-        return MessageListSession(
-            system_prompt=self._system_prompt,
-            api_call=self._api_call,
-            session_id=new_id,
-        )
-
 
 class NullSession:
     """No-op session for text-mode backward compatibility.
@@ -161,12 +145,9 @@ class NullSession:
     def fork(self, label: str = "") -> NullSession:
         return NullSession(session_id=f"{self._session_id}_fork_{label or 'null'}")
 
-    def branch(self, label: str = "") -> NullSession:
-        return NullSession(session_id=f"{self._session_id}_branch_{label or 'null'}")
-
 
 # ---------------------------------------------------------------------------
-# Session strategy — governs the session tree
+# Session strategy -- governs the session tree
 # ---------------------------------------------------------------------------
 
 
@@ -174,25 +155,33 @@ class NullSession:
 class SessionStrategy(Protocol):
     """Policy that governs how the session tree evolves.
 
-    A strategy decides — given the parent candidate and all available sessions —
-    which session to use for the next mutation.  It uses the session primitives
-    (``fork``, ``branch``, ``reset``, ``send``) internally but the *policy*
-    logic is what makes it a strategy.
+    A strategy makes two decisions each iteration:
+
+    1. **select()** -- given the parent candidate and all available checkpoints,
+       which session should the next mutation use?
+    2. **checkpoint()** -- after a mutation, should we save the session state?
+
+    The strategy uses three session primitives internally:
+
+    - ``resume``: return the live session (history keeps growing)
+    - ``fork``: create a copy from a checkpoint (sees past context, diverges)
+    - ``create``: fresh session via factory (no history)
 
     Examples of strategies:
 
-    - **Random**: randomly continue, fork, or branch each iteration.
-    - **Greedy**: always continue the best-scoring session.
-    - **Explore-exploit**: fork top K, branch bottom K, continue the rest.
-    - **LLM-decided**: ask an LLM whether to continue or branch.
-    - **Population**: maintain N active sessions, prune worst performers.
+    - **AlwaysResume**: reuse the live session across iterations.
+    - **AlwaysFork**: fork from the parent's checkpoint every time.
+    - **AlwaysCreate**: fresh session every time (stateless, like current GEPA).
+    - **ExploreExploit**: fork top-k performers, create fresh for the rest.
+    - **LLMDecided**: ask an LLM whether to resume, fork, or create.
     """
 
     def select(
         self,
         parent_candidate_idx: int,
-        sessions: dict[int, Session],
-        factory: Callable[[], Session],
+        current: Session | None,
+        checkpoints: dict[int, Session],
+        create: Callable[[], Session],
     ) -> Session:
         """Return the session to use for the next mutation.
 
@@ -200,11 +189,38 @@ class SessionStrategy(Protocol):
         ----------
         parent_candidate_idx:
             Index of the candidate selected as the mutation parent.
-        sessions:
-            The current ``candidate_idx -> Session`` registry (snapshots).
-        factory:
-            Creates a brand-new session.  Only needed when no parent session
-            exists (e.g. seed candidate).
+        current:
+            The live session from the previous iteration (if any).
+        checkpoints:
+            Immutable ``candidate_idx -> Session`` snapshots.
+        create:
+            Creates a brand-new session with no history.
+        """
+        ...
+
+    def checkpoint(
+        self,
+        candidate_idx: int,
+        session: Session,
+        checkpoints: dict[int, Session],
+        accepted: bool,
+    ) -> Session | None:
+        """Decide whether to save a checkpoint after a mutation.
+
+        Parameters
+        ----------
+        candidate_idx:
+            Index of the candidate just produced.
+        session:
+            The live session that produced the candidate.
+        checkpoints:
+            The current checkpoint registry.
+        accepted:
+            Whether the candidate was accepted by the selection step.
+
+        Returns
+        -------
+        A forked session to store as checkpoint, or ``None`` to skip.
         """
         ...
 
@@ -214,8 +230,8 @@ class SessionStrategy(Protocol):
 # ---------------------------------------------------------------------------
 
 
-class AlwaysContinueStrategy:
-    """Reuse the parent's session — history keeps growing.
+class AlwaysResume:
+    """Reuse the live session -- history keeps growing.
 
     The agent/LLM sees the full conversation history from prior iterations.
     Good when continuity helps (e.g. the LLM can learn from past mistakes).
@@ -224,32 +240,24 @@ class AlwaysContinueStrategy:
     def select(
         self,
         parent_candidate_idx: int,
-        sessions: dict[int, Session],
-        factory: Callable[[], Session],
+        current: Session | None,
+        checkpoints: dict[int, Session],
+        create: Callable[[], Session],
     ) -> Session:
-        return sessions.get(parent_candidate_idx) or factory()
+        return current or create()
 
-
-class AlwaysBranchStrategy:
-    """Branch from the parent — new session with no history.
-
-    Uses ``parent.branch()`` to create a fresh session with the same backend
-    config but no conversation history.  Good for independent exploration
-    from any point in the candidate tree.
-    """
-
-    def select(
+    def checkpoint(
         self,
-        parent_candidate_idx: int,
-        sessions: dict[int, Session],
-        factory: Callable[[], Session],
-    ) -> Session:
-        parent = sessions.get(parent_candidate_idx)
-        return parent.branch() if parent else factory()
+        candidate_idx: int,
+        session: Session,
+        checkpoints: dict[int, Session],
+        accepted: bool,
+    ) -> Session | None:
+        return session.fork(label=f"c{candidate_idx}")
 
 
-class AlwaysForkStrategy:
-    """Fork the parent's session — history copied, diverges after.
+class AlwaysFork:
+    """Fork from the parent's checkpoint -- history copied, diverges after.
 
     Uses ``parent.fork()`` to create an independent copy with full conversation
     history.  Good when you want to try a different direction while keeping
@@ -259,15 +267,52 @@ class AlwaysForkStrategy:
     def select(
         self,
         parent_candidate_idx: int,
-        sessions: dict[int, Session],
-        factory: Callable[[], Session],
+        current: Session | None,
+        checkpoints: dict[int, Session],
+        create: Callable[[], Session],
     ) -> Session:
-        parent = sessions.get(parent_candidate_idx)
-        return parent.fork() if parent else factory()
+        parent = checkpoints.get(parent_candidate_idx)
+        return parent.fork() if parent else create()
+
+    def checkpoint(
+        self,
+        candidate_idx: int,
+        session: Session,
+        checkpoints: dict[int, Session],
+        accepted: bool,
+    ) -> Session | None:
+        return session.fork(label=f"c{candidate_idx}")
+
+
+class AlwaysCreate:
+    """Fresh session every time -- no history.
+
+    Creates a new session with no conversation history for each mutation.
+    Equivalent to current GEPA behavior (stateless reflection LM).
+    Good as the default backward-compatible mode.
+    """
+
+    def select(
+        self,
+        parent_candidate_idx: int,
+        current: Session | None,
+        checkpoints: dict[int, Session],
+        create: Callable[[], Session],
+    ) -> Session:
+        return create()
+
+    def checkpoint(
+        self,
+        candidate_idx: int,
+        session: Session,
+        checkpoints: dict[int, Session],
+        accepted: bool,
+    ) -> Session | None:
+        return session.fork(label=f"c{candidate_idx}")
 
 
 # ---------------------------------------------------------------------------
-# Session manager — registry + strategy
+# Session manager -- registry + strategy
 # ---------------------------------------------------------------------------
 
 
@@ -276,67 +321,66 @@ class SessionManager:
 
     Combines two concerns:
 
-    1. **Registry** — ``candidate_idx → Session`` mapping (the tree).
-    2. **Strategy** — a ``SessionStrategy`` that governs how sessions are
-       selected, forked, or created for each mutation.
+    1. **Registry** -- ``candidate_idx -> Session`` checkpoint mapping.
+    2. **Strategy** -- a ``SessionStrategy`` that governs how sessions are
+       selected and checkpointed for each mutation.
+
+    Checkpoints are immutable snapshots (created via ``fork()``).  The live
+    session can keep growing without corrupting stored snapshots.
 
     Example
     -------
     ::
 
-        factory = lambda: MessageListSession(system_prompt="...", api_call=llm)
-        manager = SessionManager(
-            session_factory=factory,
-            strategy=AlwaysFreshStrategy(),
-        )
+        create = lambda: MessageListSession(system_prompt="...", api_call=llm)
+        manager = SessionManager(create=create, strategy=AlwaysFork())
 
         # When proposer selects parent candidate 2:
         session = manager.select(parent_candidate_idx=2)
         response = session.resume("Improve the code...")
 
-        # After candidate is accepted:
-        manager.register(candidate_idx=5)
+        # After candidate is evaluated:
+        manager.checkpoint(candidate_idx=5, accepted=True)
     """
 
     def __init__(
         self,
-        session_factory: Callable[[], Session],
+        create: Callable[[], Session],
         strategy: SessionStrategy | None = None,
     ) -> None:
-        self._factory = session_factory
-        self._strategy: SessionStrategy = strategy or AlwaysContinueStrategy()
-        self._sessions: dict[int, Session] = {}
+        self._create = create
+        self._strategy: SessionStrategy = strategy or AlwaysResume()
+        self._checkpoints: dict[int, Session] = {}
         self._current: Session | None = None
 
     @property
-    def sessions(self) -> dict[int, Session]:
-        """Read-only view of the candidate → session registry."""
-        return dict(self._sessions)
-
-    def register(self, candidate_idx: int, session: Session | None = None) -> None:
-        """Snapshot a session for a candidate.
-
-        If *session* is ``None``, snapshots (forks) the current session.
-        The stored session is always a fork so the original can keep growing.
-        """
-        sess = session or self._current
-        if sess is not None:
-            self._sessions[candidate_idx] = sess.fork(label=f"c{candidate_idx}")
+    def checkpoints(self) -> dict[int, Session]:
+        """Read-only view of the candidate -> session checkpoint registry."""
+        return dict(self._checkpoints)
 
     def select(self, parent_candidate_idx: int) -> Session:
         """Pick the session for the next mutation using the configured strategy.
 
         Returns the selected session and sets it as ``current_session()``.
         """
-        self._current = self._strategy.select(
-            parent_candidate_idx, self._sessions, self._factory
-        )
+        self._current = self._strategy.select(parent_candidate_idx, self._current, self._checkpoints, self._create)
         return self._current
+
+    def checkpoint(self, candidate_idx: int, accepted: bool) -> None:
+        """Ask the strategy whether to save a checkpoint for this candidate.
+
+        The strategy returns a forked session to store, or ``None`` to skip.
+        """
+        if self._current is None:
+            return
+        result = self._strategy.checkpoint(candidate_idx, self._current, self._checkpoints, accepted)
+        if result is not None:
+            self._checkpoints[candidate_idx] = result
 
     def current_session(self) -> Session:
         """Return the active session (set by the last ``select()`` call)."""
         if self._current is None:
-            self._current = self._factory()
+            self._current = self._create()
         return self._current
 
 
@@ -356,14 +400,14 @@ def make_session_lm(
         class LanguageModel(Protocol):
             def __call__(self, prompt: str | list[dict[str, Any]]) -> str: ...
 
-    This bridges sessions into the existing reflection pipeline — the proposer
+    This bridges sessions into the existing reflection pipeline -- the proposer
     calls ``lm(prompt)`` and the session handles statefulness transparently.
 
     Parameters
     ----------
     session:
         Either a ``Session`` instance (fixed) or a callable that returns the
-        current session (dynamic — e.g. ``manager.current_session``).
+        current session (dynamic -- e.g. ``manager.current_session``).
 
     Example
     -------
@@ -373,7 +417,7 @@ def make_session_lm(
         lm = make_session_lm(session)
 
         # Dynamic via SessionManager:
-        manager = SessionManager(factory, strategy="branch")
+        manager = SessionManager(create=factory, strategy=AlwaysFork())
         lm = make_session_lm(manager.current_session)
     """
 
