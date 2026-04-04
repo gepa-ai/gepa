@@ -184,16 +184,20 @@ def test_held_out_auto_policy_selection(tmp_path):
         return min(1.0, weight / item["difficulty"])
 
     adapter = _DummyAdapter(val_scores_fn=val_score)
+    tracker = _RecordingTracker()
 
-    result = gepa.optimize(
-        seed_candidate={"weight": "0"},
-        trainset=trainset,
-        valset=valset,
-        held_out=held_out_data,
-        adapter=adapter,  # type: ignore[arg-type]
-        max_metric_calls=5,
-    )
+    with patch("gepa.api.create_experiment_tracker", return_value=tracker):
+        result = gepa.optimize(
+            seed_candidate={"weight": "0"},
+            trainset=trainset,
+            valset=valset,
+            held_out=held_out_data,
+            adapter=adapter,  # type: ignore[arg-type]
+            max_metric_calls=5,
+        )
 
+    assert tracker.config is not None
+    assert tracker.config["val_evaluation_policy"] == "HeldOutSetEvaluationPolicy"
     assert result.held_out_scores is not None
 
 
@@ -440,6 +444,7 @@ class _RecordingCallback:
 class _RecordingTracker:
     def __init__(self):
         self.summary: dict | None = None
+        self.config: dict | None = None
 
     def __enter__(self):
         return self
@@ -448,7 +453,7 @@ class _RecordingTracker:
         return False
 
     def log_config(self, config):
-        pass
+        self.config = dict(config)
 
     def log_metrics(self, metrics, step=None):
         pass
@@ -576,8 +581,8 @@ def test_on_valset_evaluated_is_best_program_tracks_valset_leader_with_held_out(
     assert candidate_call["is_best_program"] is True
 
 
-def test_final_summary_reports_best_valset_score_even_when_held_out_winner_differs():
-    """Summary should report both the true best valset score and the held-out-selected winner's score."""
+def test_final_summary_reports_policy_selected_candidate_scores():
+    """Summary should report the policy-selected candidate's valset and held-out scores."""
     trainset = [{"id": 0, "kind": "train"}]
     valset = [{"id": 0, "kind": "val"}]
     held_out_data = [{"id": 0, "kind": "held_out"}]
@@ -603,7 +608,7 @@ def test_final_summary_reports_best_valset_score_even_when_held_out_winner_diffe
 
     assert tracker.summary is not None
     assert tracker.summary["best_candidate_idx"] == 0
-    assert tracker.summary["best_valset_score"] == 1.0
+    assert tracker.summary["best_score_on_valset"] == 0.0
     assert tracker.summary["best_held_out_score"] == 1.0
 
 
@@ -704,5 +709,28 @@ def test_incompatible_policy_with_held_out_raises():
             held_out=held_out_data,
             adapter=adapter,  # type: ignore[arg-type]
             val_evaluation_policy=FullEvaluationPolicy(),  # incompatible
+            max_metric_calls=5,
+        )
+
+
+def test_full_eval_string_with_held_out_raises():
+    """Passing held_out with the 'full_eval' string path raises."""
+    trainset = [{"id": 0, "difficulty": 2}]
+    valset = [{"id": 0, "difficulty": 2}]
+    held_out_data = [{"id": 0, "difficulty": 3}]
+
+    def val_score(item, weight):
+        return min(1.0, weight / item["difficulty"])
+
+    adapter = _DummyAdapter(val_scores_fn=val_score)
+
+    with pytest.raises(ValueError, match="held_out requires HeldOutSetEvaluationPolicy"):
+        gepa.optimize(
+            seed_candidate={"weight": "0"},
+            trainset=trainset,
+            valset=valset,
+            held_out=held_out_data,
+            adapter=adapter,  # type: ignore[arg-type]
+            val_evaluation_policy="full_eval",
             max_metric_calls=5,
         )

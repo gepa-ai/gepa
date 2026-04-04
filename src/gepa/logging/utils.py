@@ -55,11 +55,13 @@ def log_detailed_metrics_after_discovering_new_program(
     logger.log(
         f"Iteration {gepa_state.i + 1}: Best valset aggregate score so far: {max(gepa_state.program_full_scores_val_set)}"
     )
-    logger.log(
-        f"Iteration {gepa_state.i + 1}: Best program as per aggregate score on valset: "
-        f"{best_program_as_per_agg_score_valset}"
-    )
+    if isinstance(val_evaluation_policy, HeldOutSetEvaluationPolicy):
+        logger.log(
+            f"Iteration {gepa_state.i + 1}: Best program as per aggregate score on valset: "
+            f"{best_program_as_per_agg_score_valset}"
+        )
     logger.log(f"Iteration {gepa_state.i + 1}: Best program index by policy: {linear_pareto_front_program_idx}")
+    policy_selected_valset_score = val_evaluation_policy.get_valset_score(linear_pareto_front_program_idx, gepa_state)
     held_out_subscores = gepa_state.prog_candidate_held_out_subscores[linear_pareto_front_program_idx]
     if held_out_subscores:
         held_out_avg = sum(held_out_subscores.values()) / len(held_out_subscores)
@@ -71,16 +73,17 @@ def log_detailed_metrics_after_discovering_new_program(
         "iteration": gepa_state.i + 1,
         "new_program_idx": new_program_idx,
         "valset_pareto_front_agg": pareto_avg,
-        "best_valset_score": max(gepa_state.program_full_scores_val_set),
-        "best_program_as_per_agg_score_valset": best_program_as_per_agg_score_valset,
+        "best_score_on_valset": policy_selected_valset_score,
         "best_program_idx_by_policy": linear_pareto_front_program_idx,
         "val_evaluated_count_new_program": coverage,
         "val_total_count": valset_size,
         "val_program_average": valset_score,
         "total_metric_calls": gepa_state.total_num_evals,
     }
+    if isinstance(val_evaluation_policy, HeldOutSetEvaluationPolicy):
+        metrics["best_program_as_per_agg_score_valset"] = best_program_as_per_agg_score_valset
     if held_out_subscores:
-        metrics["best_held_out_score"] = sum(held_out_subscores.values()) / len(held_out_subscores)
+        metrics["best_score_on_held_out"] = sum(held_out_subscores.values()) / len(held_out_subscores)
     if objective_scores:
         for obj_name, obj_val in objective_scores.items():
             if isinstance(obj_val, int | float):
