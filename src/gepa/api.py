@@ -260,10 +260,26 @@ def optimize(
         )
 
     reflection_lm_callable: LanguageModel | None = None
+    _agent_session = None  # set if reflection_lm is an agent string
     if isinstance(reflection_lm, str):
-        from gepa.lm import LM
+        if reflection_lm.startswith("claude_code/"):
+            from gepa.core.claude_code import ClaudeCodeSession
+            from gepa.core.session import make_session_lm
 
-        reflection_lm_callable = LM(reflection_lm)
+            model = reflection_lm.split("/", 1)[1]
+            _agent_session = ClaudeCodeSession(model=model)
+            reflection_lm_callable = make_session_lm(_agent_session)
+        elif reflection_lm.startswith("opencode/"):
+            from gepa.core.opencode import OpenCodeSession
+            from gepa.core.session import make_session_lm
+
+            model = reflection_lm.split("/", 1)[1]
+            _agent_session = OpenCodeSession(model=model)
+            reflection_lm_callable = make_session_lm(_agent_session)
+        else:
+            from gepa.lm import LM
+
+            reflection_lm_callable = LM(reflection_lm)
     else:
         reflection_lm_callable = reflection_lm
 

@@ -1324,7 +1324,20 @@ def optimize_anything(
 
     # Convert reflection_lm string to callable
     if isinstance(config.reflection.reflection_lm, str):
-        config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
+        if config.reflection.reflection_lm.startswith("claude_code/"):
+            from gepa.core.claude_code import ClaudeCodeSession
+            from gepa.core.session import make_session_lm
+
+            _model = config.reflection.reflection_lm.split("/", 1)[1]
+            config.reflection.reflection_lm = make_session_lm(ClaudeCodeSession(model=_model))
+        elif config.reflection.reflection_lm.startswith("opencode/"):
+            from gepa.core.opencode import OpenCodeSession
+            from gepa.core.session import make_session_lm
+
+            _model = config.reflection.reflection_lm.split("/", 1)[1]
+            config.reflection.reflection_lm = make_session_lm(OpenCodeSession(model=_model))
+        else:
+            config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
 
     # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
     if config.refiner is not None:
