@@ -483,6 +483,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             "total_metric_calls": state.total_num_evals,
             "valset_pareto_front_agg": base_pareto_avg,
             "new_program_idx": 0,
+            "best_program_as_per_agg_score_valset": 0,
             "best_program_idx_by_policy": 0,
         }
         if seed_held_out:

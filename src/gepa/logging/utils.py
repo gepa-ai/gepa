@@ -20,6 +20,10 @@ def log_detailed_metrics_after_discovering_new_program(
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst],
 ):
     valset_score = val_evaluation_policy.get_valset_score(new_program_idx, gepa_state)
+    best_program_as_per_agg_score_valset = max(
+        range(len(gepa_state.program_full_scores_val_set)),
+        key=lambda i: gepa_state.program_full_scores_val_set[i],
+    )
     valset_scores = valset_evaluation.scores_by_val_id
     coverage = len(valset_scores)
     logger.log(
@@ -48,8 +52,14 @@ def log_detailed_metrics_after_discovering_new_program(
         logger.log(
             f"Iteration {gepa_state.i + 1}: Updated objective pareto front programs: {gepa_state.program_at_pareto_front_objectives}"
         )
-    logger.log(f"Iteration {gepa_state.i + 1}: Best valset score so far: {max(gepa_state.program_full_scores_val_set)}")
-    logger.log(f"Iteration {gepa_state.i + 1}: Best program index (by policy): {linear_pareto_front_program_idx}")
+    logger.log(
+        f"Iteration {gepa_state.i + 1}: Best valset aggregate score so far: {max(gepa_state.program_full_scores_val_set)}"
+    )
+    logger.log(
+        f"Iteration {gepa_state.i + 1}: Best program as per aggregate score on valset: "
+        f"{best_program_as_per_agg_score_valset}"
+    )
+    logger.log(f"Iteration {gepa_state.i + 1}: Best program index by policy: {linear_pareto_front_program_idx}")
     held_out_subscores = gepa_state.prog_candidate_held_out_subscores[linear_pareto_front_program_idx]
     if held_out_subscores:
         held_out_avg = sum(held_out_subscores.values()) / len(held_out_subscores)
@@ -62,6 +72,7 @@ def log_detailed_metrics_after_discovering_new_program(
         "new_program_idx": new_program_idx,
         "valset_pareto_front_agg": pareto_avg,
         "best_score_on_valset": max(gepa_state.program_full_scores_val_set),
+        "best_program_as_per_agg_score_valset": best_program_as_per_agg_score_valset,
         "best_program_idx_by_policy": linear_pareto_front_program_idx,
         "val_evaluated_count_new_program": coverage,
         "val_total_count": valset_size,
