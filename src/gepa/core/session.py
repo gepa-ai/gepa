@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import uuid
+from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -149,3 +150,49 @@ class NullSession:
 
     def reset(self) -> None:
         pass
+
+
+# ---------------------------------------------------------------------------
+# LanguageModel bridge
+# ---------------------------------------------------------------------------
+
+
+def make_session_lm(session: Session) -> Callable[[str | list[dict[str, Any]]], str]:
+    """Wrap a Session as a ``LanguageModel`` callable.
+
+    The returned callable satisfies the ``LanguageModel`` protocol used by
+    ``ReflectiveMutationProposer``::
+
+        class LanguageModel(Protocol):
+            def __call__(self, prompt: str | list[dict[str, Any]]) -> str: ...
+
+    This bridges sessions into the existing reflection pipeline — the proposer
+    calls ``lm(prompt)`` and the session handles statefulness (message history,
+    fork/reset/continue) transparently.
+
+    Parameters
+    ----------
+    session:
+        The session to route calls through.  Each ``lm(prompt)`` call maps to
+        ``session.send(content)``.
+
+    Example
+    -------
+    ::
+
+        session = MessageListSession(system_prompt="...", api_call=my_llm)
+        lm = make_session_lm(session)
+
+        # Use as a regular LanguageModel in the proposer:
+        proposer = ReflectiveMutationProposer(reflection_lm=lm, ...)
+    """
+
+    def lm(prompt: str | list[dict[str, Any]]) -> str:
+        if isinstance(prompt, str):
+            content = prompt
+        else:
+            # Extract the last user message from an OpenAI-style message list
+            content = prompt[-1]["content"] if prompt else ""
+        return session.send(content)
+
+    return lm

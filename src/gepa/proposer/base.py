@@ -19,8 +19,6 @@ class CandidateProposal(Generic[DataId]):
     # Free-form metadata for logging/trace
     tag: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
-    # Optional session id linking this proposal to the session that produced it
-    session_id: str | None = None
 
 
 class ProposeNewCandidate(Protocol[DataId]):

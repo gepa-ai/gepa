@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from gepa.core.session import MessageListSession, NullSession, Session
+from gepa.core.session import MessageListSession, NullSession, Session, make_session_lm
 
 
 class TestMessageListSession:
@@ -126,3 +126,36 @@ class TestNullSession:
     def test_reset_noop(self) -> None:
         session = NullSession()
         session.reset()  # should not raise
+
+
+class TestMakeSessionLm:
+    def _make_echo_session(self) -> MessageListSession:
+        def echo_api(messages: list[dict], **kwargs) -> str:  # noqa: ARG001
+            last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+            return f"echo: {last_user}"
+
+        return MessageListSession(system_prompt="test", api_call=echo_api)
+
+    def test_string_prompt(self) -> None:
+        session = self._make_echo_session()
+        lm = make_session_lm(session)
+        result = lm("hello")
+        assert result == "echo: hello"
+
+    def test_message_list_prompt(self) -> None:
+        session = self._make_echo_session()
+        lm = make_session_lm(session)
+        result = lm([{"role": "user", "content": "from list"}])
+        assert result == "echo: from list"
+
+    def test_session_accumulates_history(self) -> None:
+        session = self._make_echo_session()
+        lm = make_session_lm(session)
+        lm("first")
+        lm("second")
+        assert len(session.history) == 4  # 2 user + 2 assistant
+
+    def test_callable_satisfies_lm_protocol(self) -> None:
+        session = self._make_echo_session()
+        lm = make_session_lm(session)
+        assert callable(lm)
