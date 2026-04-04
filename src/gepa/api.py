@@ -179,7 +179,7 @@ def optimize(
 
     # Reproducibility
     - seed: The seed to use for the random number generator.
-    - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) and "heldout_eval" (evaluate every id each time and select the final candidate by held-out score). Passing None defaults to "full_eval".
+    - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) and "heldout_eval" (evaluate every id each time and select the final candidate by held-out score). Passing None defaults to `HeldOutSetEvaluationPolicy` when `held_out` is provided, and to `FullEvaluationPolicy` otherwise.
     - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
     """
     # Validate seed_candidate is not None or empty

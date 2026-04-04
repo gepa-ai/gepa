@@ -5,7 +5,7 @@
 from gepa.core.adapter import DataInst
 from gepa.core.data_loader import DataId
 from gepa.core.state import GEPAState, HeldOutEvaluation, ValsetEvaluation
-from gepa.strategies.eval_policy import EvaluationPolicy
+from gepa.strategies.eval_policy import EvaluationPolicy, HeldOutSetEvaluationPolicy
 
 
 def log_detailed_metrics_after_discovering_new_program(
@@ -20,9 +20,8 @@ def log_detailed_metrics_after_discovering_new_program(
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst],
 ):
     valset_score = val_evaluation_policy.get_valset_score(new_program_idx, gepa_state)
-    get_valset_leader = getattr(val_evaluation_policy, "get_valset_leader", None)
-    if callable(get_valset_leader):
-        best_program_as_per_agg_score_valset = get_valset_leader(gepa_state)
+    if isinstance(val_evaluation_policy, HeldOutSetEvaluationPolicy):
+        best_program_as_per_agg_score_valset = val_evaluation_policy.get_valset_leader(gepa_state)
     else:
         best_program_as_per_agg_score_valset = val_evaluation_policy.get_best_program(gepa_state)
     valset_scores = valset_evaluation.scores_by_val_id

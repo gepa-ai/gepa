@@ -37,9 +37,9 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         print(result.val_aggregate_scores[result.best_idx])
 
     Notes:
-        Some fields are only populated by specific APIs. For example,
-        ``held_out_scores`` and ``num_held_out_evals`` are currently populated by
-        :func:`gepa.optimize`, not by :func:`gepa.optimize_anything.optimize_anything`.
+        Some fields are only populated in specific optimization modes. For example,
+        held-out-related fields are only set when a run is configured with a
+        held-out evaluation split.
     """
 
     # Core data
