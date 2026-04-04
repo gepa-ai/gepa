@@ -13,17 +13,20 @@ from typing import Any, Protocol, runtime_checkable
 class Session(Protocol):
     """Forkable interaction context for LLMs and coding agents.
 
-    A session tracks conversation state and supports two operations:
+    A session tracks conversation state and supports three operations:
 
-    - ``resume(content)``: continue the conversation -- history grows.
-    - ``fork()``: create a **new** session with history **copied** from this
-      one.  Original is untouched.  The fork diverges independently.
+    - ``send(content)``: send a message and get a response -- history grows.
+    - ``fork()``: create a **new** session with history **copied**.
+    - ``reset()``: create a **new** session with **no history** but same config.
+
+    Both ``fork()`` and ``reset()`` leave the original untouched.
 
     +-----------------+--------------+----------+----------------+
     | Operation       | Creates new? | History  | Mutates orig?  |
     +-----------------+--------------+----------+----------------+
-    | resume(content) | No           | Grows    | Yes            |
+    | send(content)   | No           | Grows    | Yes            |
     | fork(label)     | Yes          | Copied   | No             |
+    | reset(label)    | Yes          | Empty    | No             |
     +-----------------+--------------+----------+----------------+
     """
 
@@ -32,7 +35,7 @@ class Session(Protocol):
         """Unique identifier for this session."""
         ...
 
-    def resume(self, content: str, **kwargs: Any) -> str:
+    def send(self, content: str, **kwargs: Any) -> str:
         """Send a message and get a response.  History grows."""
         ...
 
@@ -40,6 +43,14 @@ class Session(Protocol):
         """Create a new session with history copied from this one.
 
         Original is untouched.  The fork diverges independently.
+        """
+        ...
+
+    def reset(self, label: str = "") -> Session:
+        """Create a new session with no history but same backend config.
+
+        Original is untouched.  Use when starting fresh exploration
+        without conversation baggage.
         """
         ...
 
@@ -57,8 +68,10 @@ class Session(Protocol):
 class MessageListSession:
     """Session backed by an in-memory message list -- works with any LLM API.
 
+    ``send()`` appends a user message, calls the LLM, and appends the response.
     ``fork()`` deep-copies the message list so the child can diverge.
-    ``resume()`` appends a user message, calls the LLM, and appends the response.
+    ``reset()`` creates a new session with the same system prompt and API but
+    no message history.
 
     Parameters
     ----------
@@ -99,7 +112,7 @@ class MessageListSession:
 
     # -- Protocol methods -----------------------------------------------------
 
-    def resume(self, content: str, **kwargs: Any) -> str:
+    def send(self, content: str, **kwargs: Any) -> str:
         self._messages.append({"role": "user", "content": content})
         full_messages = [{"role": "system", "content": self._system_prompt}, *self._messages]
         response = self._api_call(full_messages, **kwargs)
@@ -113,6 +126,14 @@ class MessageListSession:
             api_call=self._api_call,
             session_id=new_id,
             messages=copy.deepcopy(self._messages),
+        )
+
+    def reset(self, label: str = "") -> MessageListSession:
+        new_id = f"{self._session_id}_reset_{label or uuid.uuid4().hex[:6]}"
+        return MessageListSession(
+            system_prompt=self._system_prompt,
+            api_call=self._api_call,
+            session_id=new_id,
         )
 
 
@@ -135,11 +156,14 @@ class NullSession:
     def history(self) -> list[dict[str, Any]]:
         return []
 
-    def resume(self, content: str, **kwargs: Any) -> str:
+    def send(self, content: str, **kwargs: Any) -> str:
         return ""
 
     def fork(self, label: str = "") -> NullSession:
         return NullSession(session_id=f"{self._session_id}_fork_{label or 'null'}")
+
+    def reset(self, label: str = "") -> NullSession:
+        return NullSession(session_id=f"{self._session_id}_reset_{label or 'null'}")
 
 
 # ---------------------------------------------------------------------------
@@ -152,17 +176,16 @@ class SessionStrategy(Protocol):
     """Policy that picks which session to use for the next mutation.
 
     At each iteration, the engine picks a parent candidate to mutate.
-    The strategy then decides: use an existing session from the pool,
-    fork one, or create a new one.
+    The strategy then decides: fork an existing session from the pool,
+    or reset one to start fresh.
 
     The strategy sees the pool of existing sessions and a factory for
-    creating new ones.  It returns a Session to use.
+    bootstrapping the very first session (when the pool is empty).
 
-    Three built-in primitives a strategy can use:
+    Two built-in primitives a strategy can use:
 
-    - **resume**: return an existing session from the pool (history grows)
-    - **fork**: call ``session.fork()`` on a pooled session (copy, diverge)
-    - **create**: call ``create()`` for a fresh session (no history)
+    - **fork**: call ``session.fork()`` on a pooled session (copy history)
+    - **reset**: call ``session.reset()`` on a pooled session (no history)
 
     Built-in strategies use one primitive each.  Custom strategies can
     mix them: random, round-robin, LLM-decided, explore-exploit, etc.
@@ -180,7 +203,7 @@ class SessionStrategy(Protocol):
         sessions:
             The pool of existing sessions (may be empty).
         create:
-            Factory that creates a brand-new session with no history.
+            Factory that creates the first session when the pool is empty.
         """
         ...
 
@@ -190,28 +213,12 @@ class SessionStrategy(Protocol):
 # ---------------------------------------------------------------------------
 
 
-class AlwaysResume:
-    """Reuse the most recent session -- history keeps growing.
-
-    The LLM sees the full conversation history from all prior iterations
-    that used this session.  Good when continuity helps (e.g. the LLM
-    can learn from past mistakes).
-    """
-
-    def select(
-        self,
-        sessions: list[Session],
-        create: Callable[[], Session],
-    ) -> Session:
-        return sessions[-1] if sessions else create()
-
-
 class AlwaysFork:
     """Fork the most recent session -- copy history, diverge after.
 
     Creates an independent copy of the most recent session.  The original
-    stays in the pool untouched.  Good when you want context of what was
-    tried before but don't want to pollute the original session.
+    stays in the pool untouched.  The LLM sees the full conversation
+    history and can build on what was tried before.
     """
 
     def select(
@@ -222,10 +229,11 @@ class AlwaysFork:
         return sessions[-1].fork() if sessions else create()
 
 
-class AlwaysCreate:
-    """Fresh session every time -- no history.
+class AlwaysReset:
+    """Reset from the most recent session -- no history.
 
-    Equivalent to current GEPA behavior (stateless reflection LM).
+    Creates a new session with the same backend config but no conversation
+    history.  Equivalent to current GEPA behavior (stateless reflection LM).
     Each mutation starts with a clean slate.
     """
 
@@ -234,7 +242,7 @@ class AlwaysCreate:
         sessions: list[Session],
         create: Callable[[], Session],
     ) -> Session:
-        return create()
+        return sessions[-1].reset() if sessions else create()
 
 
 # ---------------------------------------------------------------------------
@@ -248,9 +256,9 @@ class SessionManager:
     At each iteration:
 
     1. The engine calls ``select()`` -- the strategy picks a session
-       from the pool (resume/fork) or creates a new one.
-    2. The returned session is used for the mutation (via ``resume()``).
-    3. The session is automatically added to the pool if it's new.
+       from the pool (fork) or resets one (fresh start).
+    2. The returned session is used for the mutation (via ``send()``).
+    3. The session is automatically added to the pool.
 
     Example
     -------
@@ -260,7 +268,7 @@ class SessionManager:
         manager = SessionManager(create=create, strategy=AlwaysFork())
 
         session = manager.select()
-        response = session.resume("Improve the code...")
+        response = session.send("Improve the code...")
     """
 
     def __init__(
@@ -269,7 +277,7 @@ class SessionManager:
         strategy: SessionStrategy | None = None,
     ) -> None:
         self._create = create
-        self._strategy: SessionStrategy = strategy or AlwaysResume()
+        self._strategy: SessionStrategy = strategy or AlwaysFork()
         self._sessions: list[Session] = []
         self._current: Session | None = None
 
@@ -336,6 +344,6 @@ def make_session_lm(
             content = prompt
         else:
             content = prompt[-1]["content"] if prompt else ""
-        return sess.resume(content)
+        return sess.send(content)
 
     return lm

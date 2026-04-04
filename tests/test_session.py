@@ -6,9 +6,8 @@
 from __future__ import annotations
 
 from gepa.core.session import (
-    AlwaysCreate,
     AlwaysFork,
-    AlwaysResume,
+    AlwaysReset,
     MessageListSession,
     NullSession,
     Session,
@@ -32,23 +31,23 @@ class TestMessageListSession:
         session = self._make_echo_session()
         assert isinstance(session, Session)
 
-    def test_resume_appends_messages(self) -> None:
+    def test_send_appends_messages(self) -> None:
         session = self._make_echo_session()
-        response = session.resume("hello")
+        response = session.send("hello")
         assert response == "echo: hello"
         assert len(session.history) == 2
         assert session.history[0] == {"role": "user", "content": "hello"}
         assert session.history[1] == {"role": "assistant", "content": "echo: hello"}
 
-    def test_resume_multiple(self) -> None:
+    def test_send_multiple(self) -> None:
         session = self._make_echo_session()
-        session.resume("first")
-        session.resume("second")
+        session.send("first")
+        session.send("second")
         assert len(session.history) == 4
 
     def test_fork_copies_history(self) -> None:
         session = self._make_echo_session()
-        session.resume("before fork")
+        session.send("before fork")
         forked = session.fork("child")
 
         assert forked.session_id != session.session_id
@@ -57,20 +56,37 @@ class TestMessageListSession:
 
     def test_fork_diverges(self) -> None:
         session = self._make_echo_session()
-        session.resume("shared")
+        session.send("shared")
         forked = session.fork()
 
-        session.resume("parent only")
-        forked.resume("child only")
+        session.send("parent only")
+        forked.send("child only")
 
         assert len(session.history) == 4
         assert len(forked.history) == 4
         assert session.history[-1]["content"] == "echo: parent only"
         assert forked.history[-1]["content"] == "echo: child only"
 
+    def test_reset_creates_empty_session(self) -> None:
+        session = self._make_echo_session()
+        session.send("before reset")
+        reset = session.reset("child")
+
+        assert reset.session_id != session.session_id
+        assert "child" in reset.session_id
+        assert len(reset.history) == 0
+        assert len(session.history) == 2  # original untouched
+
+    def test_reset_preserves_backend(self) -> None:
+        session = self._make_echo_session()
+        session.send("setup")
+        reset = session.reset()
+        response = reset.send("test reset")
+        assert response == "echo: test reset"  # same API works
+
     def test_history_is_copy(self) -> None:
         session = self._make_echo_session()
-        session.resume("hello")
+        session.send("hello")
         history = session.history
         history.clear()
         assert len(session.history) == 2
@@ -94,7 +110,7 @@ class TestMessageListSession:
             return "ok"
 
         session = MessageListSession(system_prompt="Be concise.", api_call=capture_api)
-        session.resume("test")
+        session.send("test")
         assert received_messages[0] == {"role": "system", "content": "Be concise."}
 
 
@@ -103,13 +119,13 @@ class TestNullSession:
         session = NullSession()
         assert isinstance(session, Session)
 
-    def test_resume_returns_empty(self) -> None:
+    def test_send_returns_empty(self) -> None:
         session = NullSession()
-        assert session.resume("anything") == ""
+        assert session.send("anything") == ""
 
     def test_history_empty(self) -> None:
         session = NullSession()
-        session.resume("something")
+        session.send("something")
         assert session.history == []
 
     def test_fork_returns_new_null(self) -> None:
@@ -117,6 +133,12 @@ class TestNullSession:
         forked = session.fork("label")
         assert isinstance(forked, NullSession)
         assert forked.session_id != session.session_id
+
+    def test_reset_returns_new_null(self) -> None:
+        session = NullSession()
+        reset = session.reset("label")
+        assert isinstance(reset, NullSession)
+        assert reset.session_id != session.session_id
 
 
 class TestMakeSessionLm:
@@ -183,93 +205,61 @@ def _make_echo_factory(system_prompt: str = "test") -> tuple:
 
 class TestSessionStrategy:
     def test_protocol_compliance(self) -> None:
-        assert isinstance(AlwaysResume(), SessionStrategy)
         assert isinstance(AlwaysFork(), SessionStrategy)
-        assert isinstance(AlwaysCreate(), SessionStrategy)
+        assert isinstance(AlwaysReset(), SessionStrategy)
 
 
 class TestSessionManager:
-    def test_select_with_resume_strategy(self) -> None:
-        factory, _ = _make_echo_factory()
-        manager = SessionManager(create=factory, strategy=AlwaysResume())
-
-        session1 = manager.select()
-        session1.resume("hello")
-
-        # Resume returns the same session
-        session2 = manager.select()
-        assert session2 is session1
-        assert len(session2.history) == 2
-
-    def test_select_with_create_strategy(self) -> None:
-        factory, _ = _make_echo_factory()
-        manager = SessionManager(create=factory, strategy=AlwaysCreate())
-
-        session1 = manager.select()
-        session1.resume("hello")
-
-        # Create gives a fresh session each time
-        session2 = manager.select()
-        assert session2 is not session1
-        assert len(session2.history) == 0
-
     def test_select_with_fork_strategy(self) -> None:
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory, strategy=AlwaysFork())
 
-        session1 = manager.select()
-        session1.resume("first")
-        session1.resume("second")
+        s1 = manager.select()
+        s1.send("first")
+        s1.send("second")
 
         # Fork copies history into a new session
-        session2 = manager.select()
-        assert session2 is not session1
-        assert len(session2.history) == 4  # copied
+        s2 = manager.select()
+        assert s2 is not s1
+        assert len(s2.history) == 4  # copied
 
         # Original untouched by fork's future work
-        session2.resume("diverged")
-        assert len(session1.history) == 4
-        assert len(session2.history) == 6
+        s2.send("diverged")
+        assert len(s1.history) == 4
+        assert len(s2.history) == 6
 
-    def test_new_sessions_added_to_pool(self) -> None:
+    def test_select_with_reset_strategy(self) -> None:
         factory, _ = _make_echo_factory()
-        manager = SessionManager(create=factory, strategy=AlwaysCreate())
+        manager = SessionManager(create=factory, strategy=AlwaysReset())
 
-        manager.select()
-        manager.select()
-        manager.select()
+        s1 = manager.select()
+        s1.send("hello")
 
-        assert len(manager.sessions) == 3
+        # Reset gives a fresh session (no history, same backend)
+        s2 = manager.select()
+        assert s2 is not s1
+        assert len(s2.history) == 0
+        s2.send("test")
+        assert s2.send("works") == "echo: works"
 
-    def test_resumed_session_not_duplicated_in_pool(self) -> None:
-        factory, _ = _make_echo_factory()
-        manager = SessionManager(create=factory, strategy=AlwaysResume())
-
-        manager.select()
-        manager.select()
-        manager.select()
-
-        # AlwaysResume returns the same session, so pool stays at 1
-        assert len(manager.sessions) == 1
-
-    def test_forked_sessions_added_to_pool(self) -> None:
+    def test_sessions_added_to_pool(self) -> None:
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory, strategy=AlwaysFork())
 
-        manager.select()  # first: create (pool empty)
-        manager.select()  # fork of first
-        manager.select()  # fork of most recent
+        manager.select()
+        manager.select()
+        manager.select()
 
         assert len(manager.sessions) == 3
 
-    def test_default_strategy_is_resume(self) -> None:
+    def test_default_strategy_is_fork(self) -> None:
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory)
-        assert isinstance(manager._strategy, AlwaysResume)
+        assert isinstance(manager._strategy, AlwaysFork)
 
     def test_current_session(self) -> None:
         factory, _ = _make_echo_factory()
-        manager = SessionManager(create=factory, strategy=AlwaysCreate())
+        manager = SessionManager(create=factory, strategy=AlwaysReset())
 
         session = manager.select()
         assert manager.current_session() is session
@@ -311,46 +301,39 @@ class TestSessionManager:
         """
         factory, _ = _make_echo_factory()
 
-        # We manually simulate the strategy decisions per iteration
-        sessions_log: list[str] = []
+        # Iter 1: mutate A -> B (create first session)
+        s1 = factory()
+        s1.send("mutate A")  # -> B
 
-        # Iter 1: mutate A -> B (create Session 1)
-        manager = SessionManager(create=factory, strategy=AlwaysCreate())
-        s1 = manager.select()
-        s1.resume("mutate A")  # -> B
-        sessions_log.append("S1:create")
+        # Iter 2: mutate B -> C (fork S1, continue with context)
+        s1_fork = s1.fork()
+        s1_fork.send("mutate B")  # -> C
+        # S1 untouched, s1_fork has [A->B, B->C]
 
-        # Iter 2: mutate B -> C (resume Session 1)
-        # Switch to resume strategy to reuse s1
-        manager_resume = SessionManager(create=factory, strategy=AlwaysResume())
-        manager_resume._sessions.append(s1)
-        manager_resume._current = s1
-        s1_again = manager_resume.select()
-        assert s1_again is s1
-        s1.resume("mutate B")  # -> C
-        sessions_log.append("S1:resume")
+        # Iter 3: mutate A -> F (reset — fresh session)
+        s3 = s1.reset()
+        s3.send("mutate A")  # -> F
+        # s3 has no history from S1
 
-        # Iter 3: mutate A -> F (create Session 3)
-        s3 = factory()
-        s3.resume("mutate A")  # -> F
-        sessions_log.append("S3:create")
+        # Iter 4: mutate B -> E (fork S1 again — gets [A->B] context)
+        s1_fork2 = s1.fork()
+        s1_fork2.send("mutate B")  # -> E
+        # s1_fork2 has [A->B, B->E], independent from s1_fork
 
-        # Iter 4: mutate B -> E (resume Session 1)
-        s1.resume("mutate B")  # -> E
-        sessions_log.append("S1:resume")
-
-        # Iter 5: mutate C -> D (create Session 2)
-        s2 = factory()
-        s2.resume("mutate C")  # -> D
-        sessions_log.append("S2:create")
+        # Iter 5: mutate C -> D (reset — fresh)
+        s2 = s1_fork.reset()
+        s2.send("mutate C")  # -> D
 
         # Verify session histories
-        assert len(s1.history) == 6  # mutate(A)->B, mutate(B)->C, mutate(B)->E
-        assert len(s2.history) == 2  # mutate(C)->D
-        assert len(s3.history) == 2  # mutate(A)->F
+        assert len(s1.history) == 2  # [A->B] — never mutated after fork
+        assert len(s1_fork.history) == 4  # [A->B, B->C]
+        assert len(s1_fork2.history) == 4  # [A->B, B->E]
+        assert len(s2.history) == 2  # [C->D]
+        assert len(s3.history) == 2  # [A->F]
 
-        # All sessions independent
+        # All independent
         assert s1.history[1]["content"] == "echo: mutate A"
-        assert s1.history[5]["content"] == "echo: mutate B"
+        assert s1_fork.history[3]["content"] == "echo: mutate B"
+        assert s1_fork2.history[3]["content"] == "echo: mutate B"
         assert s2.history[1]["content"] == "echo: mutate C"
         assert s3.history[1]["content"] == "echo: mutate A"
