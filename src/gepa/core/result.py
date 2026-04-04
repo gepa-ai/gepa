@@ -14,7 +14,8 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class GEPAResult(Generic[RolloutOutput, DataId]):
-    """Immutable snapshot returned by ``gepa.optimize()`` and ``optimize_anything()``.
+    """Immutable snapshot returned by :func:`~gepa.api.optimize` and
+    :func:`~gepa.optimize_anything.optimize_anything`.
 
     Key attributes:
         best_candidate: The optimized parameter(s) — ``dict[str, str]`` or plain
@@ -38,8 +39,8 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
 
     Notes:
         Some fields are only populated in specific optimization modes. In particular,
-        held-out-related fields are currently only set by ``gepa.optimize()`` when
-        a run is configured with a held-out evaluation split.
+        held-out-related fields are currently only set by :func:`~gepa.api.optimize`
+        when a run is configured with a held-out evaluation split.
     """
 
     # Core data
