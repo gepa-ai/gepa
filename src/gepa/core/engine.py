@@ -794,7 +794,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         best_score = self.val_evaluation_policy.get_valset_score(best_valset_candidate_idx, state)
         summary: dict[str, Any] = {
             "best_candidate_idx": best_candidate_idx,
-            "best_score_on_valset": best_score,
+            "best_valset_score": best_score,
             "total_iterations": state.i,
             "total_candidates": len(state.program_candidates),
         }
