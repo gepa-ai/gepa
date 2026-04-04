@@ -718,6 +718,7 @@ class ReflectionConfig:
     reflection_lm: LanguageModel | str | None = "openai/gpt-5.1"
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
+    session_strategy: Any | Literal["fork", "reset", "random", "round_robin"] | None = None
 
 
 @dataclass
@@ -1475,7 +1476,44 @@ def optimize_anything(
         else:
             InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
 
-    # --- 11. Build reflective proposer from ReflectionConfig ---
+    # --- 11. Build session manager from ReflectionConfig ---
+    session_manager = None
+    if config.reflection.session_strategy is not None:
+        from gepa.core.session import (
+            AlwaysFork,
+            AlwaysReset,
+            MessageListSession,
+            RandomStrategy,
+            RoundRobin,
+            SessionManager,
+            SessionStrategy,
+        )
+
+        if isinstance(config.reflection.session_strategy, str):
+            strategy_factories = {
+                "fork": AlwaysFork,
+                "reset": AlwaysReset,
+                "random": RandomStrategy,
+                "round_robin": RoundRobin,
+            }
+            strategy_cls = strategy_factories.get(config.reflection.session_strategy)
+            if strategy_cls is None:
+                raise ValueError(
+                    f"Unknown session_strategy: {config.reflection.session_strategy}. "
+                    f"Supported strategies: {', '.join(repr(k) for k in strategy_factories)}"
+                )
+            session_strategy: SessionStrategy = strategy_cls()
+        else:
+            session_strategy = config.reflection.session_strategy
+
+        reflection_lm = config.reflection.reflection_lm
+
+        def _create_session() -> MessageListSession:
+            return MessageListSession(system_prompt="", api_call=reflection_lm)
+
+        session_manager = SessionManager(create=_create_session, strategy=session_strategy)
+
+    # --- 12. Build reflective proposer from ReflectionConfig ---
     reflective_proposer = ReflectiveMutationProposer(
         logger=config.tracking.logger,
         trainset=train_loader,
@@ -1489,6 +1527,7 @@ def optimize_anything(
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
+        session_manager=session_manager,
     )
 
     # Define evaluator function for merge proposer

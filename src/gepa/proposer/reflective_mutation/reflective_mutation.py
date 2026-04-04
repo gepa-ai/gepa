@@ -56,6 +56,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
+        session_manager: Any | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -69,6 +70,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.reflection_lm = reflection_lm
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
+        self.session_manager = session_manager
 
         self.reflection_prompt_template = reflection_prompt_template
         # Track parameters for which we've already logged missing template warnings
@@ -106,8 +108,17 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         if self.custom_candidate_proposer is not None:
             return self.custom_candidate_proposer(candidate, reflective_dataset, components_to_update), empty, {}
 
-        if self.reflection_lm is None:
+        if self.reflection_lm is None and self.session_manager is None:
             raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
+
+        # Pick the LM for this iteration: session-backed or plain
+        if self.session_manager is not None:
+            from gepa.core.session import make_session_lm
+
+            session = self.session_manager.select()
+            lm: LanguageModel = make_session_lm(session)
+        else:
+            lm = self.reflection_lm  # type: ignore[assignment]
 
         new_texts: dict[str, str] = {}
         prompts: dict[str, str | list[dict[str, Any]]] = {}
@@ -136,7 +147,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 prompt_template = self.reflection_prompt_template
 
             result, prompt, raw_output = InstructionProposalSignature.run_with_metadata(
-                lm=self.reflection_lm,
+                lm=lm,
                 input_dict={
                     "current_instruction_doc": base_instruction,
                     "dataset_with_feedback": dataset_with_feedback,
