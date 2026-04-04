@@ -5,6 +5,7 @@ Welcome to the GEPA guides! These guides will help you understand and use GEPA e
 ## Getting Started
 
 - [Quick Start](quickstart.md) - Get up and running with GEPA in minutes
+- [Held-Out Selection Policy](held-out-selection.md) - Separate Pareto-time selection from final model selection
 - [Use Cases](use-cases.md) - Real-world applications of GEPA across industries
 - [FAQ](faq.md) - Frequently asked questions about GEPA
 - [Creating Adapters](adapters.md) - Learn how to integrate GEPA with your system

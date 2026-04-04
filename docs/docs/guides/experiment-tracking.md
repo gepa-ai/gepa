@@ -80,7 +80,8 @@ Every iteration GEPA logs scalars you can plot over time:
 | Metric | Description |
 |--------|-------------|
 | `val_program_average` | Average valset score for the current candidate |
-| `best_score_on_valset` | Best valset score found so far |
+| `best_valset_score` | Best valset score found so far |
+| `best_program_held_out_score` | Held-out score of the current policy-selected best candidate |
 | `valset_pareto_front_agg` | Pareto-frontier aggregate score |
 | `subsample/before` | Reflection minibatch score before mutation |
 | `subsample/after` | Reflection minibatch score after mutation |
@@ -134,6 +135,7 @@ Per-example and per-objective scores logged as growing matrix tables.  See the
 At the end of optimization GEPA logs:
 
 - `best_candidate_idx`, `best_valset_score`, `total_iterations`, `total_candidates`
+- `best_held_out_score` when `held_out` is configured
 - `seed/<component>` — the original seed text for each component
 - `best/<component>` — the best-found text for each component
 
