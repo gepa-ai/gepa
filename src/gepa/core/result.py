@@ -182,12 +182,15 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
 
     @staticmethod
     def _common_kwargs_from_dict(d: dict[str, Any]) -> dict[str, Any]:
+        held_out_scores = d.get("held_out_scores")
         return {
             "candidates": [dict(candidate) for candidate in d.get("candidates", [])],
             "parents": [list(parent_row) for parent_row in d.get("parents", [])],
             "val_aggregate_scores": list(d.get("val_aggregate_scores", [])),
             "discovery_eval_counts": list(d.get("discovery_eval_counts", [])),
-            "held_out_scores": d.get("held_out_scores"),
+            "held_out_scores": (
+                {int(program_idx): score for program_idx, score in held_out_scores.items()} if held_out_scores else None
+            ),
             "total_metric_calls": d.get("total_metric_calls"),
             "num_full_val_evals": d.get("num_full_val_evals"),
             "num_held_out_evals": d.get("num_held_out_evals"),
@@ -217,17 +220,19 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     @staticmethod
     def _from_dict_v2(d: dict[str, Any]) -> "GEPAResult[RolloutOutput, DataId]":
         kwargs = GEPAResult._common_kwargs_from_dict(d)
-        kwargs["val_subscores"] = [dict(scores) for scores in d.get("val_subscores", [])]
+        kwargs["val_subscores"] = [
+            {int(val_id): score for val_id, score in scores.items()} for scores in d.get("val_subscores", [])
+        ]
         per_val_instance_best_candidates_data = d.get("per_val_instance_best_candidates", {})
         kwargs["per_val_instance_best_candidates"] = {
-            val_id: set(candidates_on_front)
+            int(val_id): set(candidates_on_front)
             for val_id, candidates_on_front in per_val_instance_best_candidates_data.items()
         }
 
         best_outputs_valset = d.get("best_outputs_valset")
         if best_outputs_valset is not None:
             kwargs["best_outputs_valset"] = {
-                val_id: [(program_idx, output) for program_idx, output in outputs]
+                int(val_id): [(program_idx, output) for program_idx, output in outputs]
                 for val_id, outputs in best_outputs_valset.items()
             }
         else:

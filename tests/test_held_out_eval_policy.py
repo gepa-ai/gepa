@@ -1,5 +1,6 @@
 """Tests for HeldOutSetEvaluationPolicy and the held-out evaluation flow."""
 
+import json
 from unittest.mock import patch
 
 import pytest
@@ -378,6 +379,27 @@ def test_result_to_dict_and_from_dict_roundtrip_with_held_out_scores():
     assert restored.best_idx == 1
     # valset_best_idx uses valset: candidate 1 also has 0.7
     assert restored.valset_best_idx == 1
+
+
+def test_result_json_roundtrip_preserves_integer_keys_for_held_out_scores():
+    """A real JSON round-trip should not turn best_idx into a string."""
+    from gepa.core.result import GEPAResult
+
+    original = GEPAResult(
+        candidates=[{"p": "seed"}, {"p": "v1"}],
+        parents=[[None], [0]],
+        val_aggregate_scores=[0.9, 0.4],
+        val_subscores=[{0: 0.9}, {0: 0.4}],
+        per_val_instance_best_candidates={0: {0}},
+        discovery_eval_counts=[0, 5],
+        held_out_scores={0: 0.3, 1: 0.8},
+    )
+
+    restored = GEPAResult.from_dict(json.loads(json.dumps(original.to_dict())))
+
+    assert restored.held_out_scores == {0: 0.3, 1: 0.8}
+    assert restored.best_idx == 1
+    assert restored.best_candidate == {"p": "v1"}
 
 
 def test_result_best_idx_uses_held_out_over_valset():
