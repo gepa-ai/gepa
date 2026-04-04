@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class GEPAResult(Generic[RolloutOutput, DataId]):
-    """Immutable snapshot returned by GEPA optimization runs.
+    """Immutable snapshot returned by ``gepa.optimize()`` and ``optimize_anything()``.
 
     Key attributes:
         best_candidate: The optimized parameter(s) — ``dict[str, str]`` or plain
@@ -32,14 +32,14 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
 
     Example::
 
-        result = optimize_anything(...)
+        result = optimize_anything(...)  # or: result = gepa.optimize(...)
         print(result.best_candidate)
         print(result.val_aggregate_scores[result.best_idx])
 
     Notes:
-        Some fields are only populated in specific optimization modes. For example,
-        held-out-related fields are only set when a run is configured with a
-        held-out evaluation split.
+        Some fields are only populated in specific optimization modes. In particular,
+        held-out-related fields are currently only set by ``gepa.optimize()`` when
+        a run is configured with a held-out evaluation split.
     """
 
     # Core data
