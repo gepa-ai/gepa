@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import random as random_module
 import uuid
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
@@ -25,8 +26,8 @@ class Session(Protocol):
     | Operation       | Creates new? | History  | Mutates orig?  |
     +-----------------+--------------+----------+----------------+
     | send(content)   | No           | Grows    | Yes            |
-    | fork(label)     | Yes          | Copied   | No             |
-    | reset(label)    | Yes          | Empty    | No             |
+    | fork()          | Yes          | Copied   | No             |
+    | reset()         | Yes          | Empty    | No             |
     +-----------------+--------------+----------+----------------+
     """
 
@@ -39,14 +40,14 @@ class Session(Protocol):
         """Send a message and get a response.  History grows."""
         ...
 
-    def fork(self, label: str = "") -> Session:
+    def fork(self) -> Session:
         """Create a new session with history copied from this one.
 
         Original is untouched.  The fork diverges independently.
         """
         ...
 
-    def reset(self, label: str = "") -> Session:
+    def reset(self) -> Session:
         """Create a new session with no history but same backend config.
 
         Original is untouched.  Use when starting fresh exploration
@@ -119,21 +120,17 @@ class MessageListSession:
         self._messages.append({"role": "assistant", "content": response})
         return response
 
-    def fork(self, label: str = "") -> MessageListSession:
-        new_id = f"{self._session_id}_fork_{label or uuid.uuid4().hex[:6]}"
+    def fork(self) -> MessageListSession:
         return MessageListSession(
             system_prompt=self._system_prompt,
             api_call=self._api_call,
-            session_id=new_id,
             messages=copy.deepcopy(self._messages),
         )
 
-    def reset(self, label: str = "") -> MessageListSession:
-        new_id = f"{self._session_id}_reset_{label or uuid.uuid4().hex[:6]}"
+    def reset(self) -> MessageListSession:
         return MessageListSession(
             system_prompt=self._system_prompt,
             api_call=self._api_call,
-            session_id=new_id,
         )
 
 
@@ -159,11 +156,11 @@ class NullSession:
     def send(self, content: str, **kwargs: Any) -> str:
         return ""
 
-    def fork(self, label: str = "") -> NullSession:
-        return NullSession(session_id=f"{self._session_id}_fork_{label or 'null'}")
+    def fork(self) -> NullSession:
+        return NullSession(session_id=uuid.uuid4().hex[:12])
 
-    def reset(self, label: str = "") -> NullSession:
-        return NullSession(session_id=f"{self._session_id}_reset_{label or 'null'}")
+    def reset(self) -> NullSession:
+        return NullSession(session_id=uuid.uuid4().hex[:12])
 
 
 # ---------------------------------------------------------------------------
@@ -176,19 +173,19 @@ class SessionStrategy(Protocol):
     """Policy that picks which session to use for the next mutation.
 
     At each iteration, the engine picks a parent candidate to mutate.
-    The strategy then decides: fork an existing session from the pool,
-    or reset one to start fresh.
+    The strategy then decides: fork an existing session from the pool
+    (continue with context), or reset one (clean slate).
 
     The strategy sees the pool of existing sessions and a factory for
     bootstrapping the very first session (when the pool is empty).
 
-    Two built-in primitives a strategy can use:
+    Two primitives a strategy can use:
 
     - **fork**: call ``session.fork()`` on a pooled session (copy history)
     - **reset**: call ``session.reset()`` on a pooled session (no history)
 
-    Built-in strategies use one primitive each.  Custom strategies can
-    mix them: random, round-robin, LLM-decided, explore-exploit, etc.
+    Built-in strategies: AlwaysFork, AlwaysReset, RandomStrategy, RoundRobin.
+    Custom strategies can implement any logic: LLM-decided, explore-exploit, etc.
     """
 
     def select(
@@ -243,6 +240,57 @@ class AlwaysReset:
         create: Callable[[], Session],
     ) -> Session:
         return sessions[-1].reset() if sessions else create()
+
+
+class RandomStrategy:
+    """Randomly fork or reset a random session from the pool.
+
+    Each iteration, picks a random session and randomly decides whether
+    to fork it (keep history) or reset it (clean slate).
+
+    Parameters
+    ----------
+    fork_probability:
+        Probability of forking vs resetting.  Default 0.5.
+    """
+
+    def __init__(self, fork_probability: float = 0.5) -> None:
+        self._fork_prob = fork_probability
+
+    def select(
+        self,
+        sessions: list[Session],
+        create: Callable[[], Session],
+    ) -> Session:
+        if not sessions:
+            return create()
+        session = random_module.choice(sessions)
+        if random_module.random() < self._fork_prob:
+            return session.fork()
+        return session.reset()
+
+
+class RoundRobin:
+    """Alternate between fork and reset.
+
+    Cycles through fork and reset on each call.  Starts with fork.
+    """
+
+    def __init__(self) -> None:
+        self._counter = 0
+
+    def select(
+        self,
+        sessions: list[Session],
+        create: Callable[[], Session],
+    ) -> Session:
+        if not sessions:
+            return create()
+        session = sessions[-1]
+        self._counter += 1
+        if self._counter % 2 == 1:
+            return session.fork()
+        return session.reset()
 
 
 # ---------------------------------------------------------------------------
