@@ -117,9 +117,20 @@ trainset = examples[:80]  # 80% for training
 valset = examples[80:]    # 20% for validation
 ```
 
+In GEPA, `valset` participates in the optimization loop by determining which candidates survive. If you also use that same split for final selection, it is doing double duty.
+
+It has been shown on some datasets that using a separate held-out set for final candidate selection can be useful. A practical alternative is:
+
+- **70 / 15 / 15** for `trainset` / `valset` / `held_out`
+- **60 / 20 / 20** for `trainset` / `valset` / `held_out`
+
+For very small datasets, adding a third split is harder because every held-out example reduces the data available for reflection and search. In those cases, a two-way split may still be the better tradeoff.
+
+See the [Held-Out Selection Policy](held-out-selection.md) guide for the rationale and behavior.
+
 ### Can GEPA work with very few examples?
 
-Yes! GEPA can show improvements with as few as **3 examples**. We've demonstrated +9% improvement on held-out data with just 3 examples in one GEPA iteration.
+Yes! GEPA can show improvements with as few as **3 examples**. We've demonstrated +9% improvement on test data with just 3 examples in one GEPA iteration.
 
 That said, more data generally leads to better optimization. Aim for **30-300 examples** for best results, using **80/20** when total examples exceed 200 and **50/50** when you have fewer than 200.
 

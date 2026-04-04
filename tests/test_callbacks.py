@@ -131,6 +131,9 @@ class RecordingCallback:
     def on_valset_evaluated(self, event):
         self._record("on_valset_evaluated", event)
 
+    def on_held_out_evaluated(self, event):
+        self._record("on_held_out_evaluated", event)
+
 
 class FailingCallback:
     """A callback that raises exceptions for testing error handling.

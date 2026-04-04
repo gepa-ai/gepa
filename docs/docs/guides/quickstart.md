@@ -39,6 +39,10 @@ trainset = [
     # ... more examples
 ]
 
+# Define evaluation splits
+valset = [...]
+held_out_set = [...]  # Optional: use a separate held-out set for final model selection
+
 # Define your seed prompt
 seed_prompt = {
     "system_prompt": "You are a helpful assistant. Answer questions concisely."
@@ -48,6 +52,8 @@ seed_prompt = {
 result = gepa.optimize(
     seed_candidate=seed_prompt,
     trainset=trainset,
+    valset=valset,
+    held_out=held_out_set,            # Optional
     task_lm="openai/gpt-4o-mini",      # Model to optimize
     reflection_lm="openai/gpt-4o",      # Model for reflection
     max_metric_calls=50,                # Budget
@@ -57,6 +63,8 @@ result = gepa.optimize(
 print("Best prompt:", result.best_candidate['system_prompt'])
 print("Best score:", result.best_score)
 ```
+
+If you do not want a separate held-out split, just omit `held_out=...`. GEPA will then select the final candidate by `valset` score.
 
 ### Option 2: Using optimize_anything
 
@@ -169,10 +177,15 @@ The `GEPAResult` object contains:
 
 ```python
 result.best_candidate    # Dict[str, str] - the optimized text components
-result.best_score        # float - validation score of best candidate
+result.best_score        # float - score of best candidate under the active selection policy
+result.best_idx          # int - held-out winner if held_out is configured, else valset winner
+result.valset_best_idx   # int - best candidate by valset score
+result.held_out_scores   # Optional[Dict[int, float]] - average held-out score for evaluated leaders
 result.pareto_frontier   # List of candidates on the Pareto frontier
 result.history           # Optimization history
 ```
+
+If you pass `held_out=...`, GEPA still uses `valset` during optimization, but selects the final winner using held-out scores. See the [Held-Out Selection Policy](held-out-selection.md) guide.
 
 ## Configuration Options
 

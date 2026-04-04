@@ -3,6 +3,7 @@
 
 import os
 import random
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -35,7 +36,7 @@ from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
 )
-from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
+from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy, HeldOutSetEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
 
 
@@ -87,7 +88,8 @@ def optimize(
     # Reproducibility
     seed: int = 0,
     raise_on_exception: bool = True,
-    val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
+    val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval", "heldout_eval"] | None = None,
+    held_out: list[DataInst] | DataLoader[DataId, DataInst] | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -177,7 +179,7 @@ def optimize(
 
     # Reproducibility
     - seed: The seed to use for the random number generator.
-    - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
+    - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) and "heldout_eval" (evaluate every id each time and select the final candidate by held-out score). Passing None defaults to `HeldOutSetEvaluationPolicy` when `held_out` is provided, and to `FullEvaluationPolicy` otherwise.
     - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
     """
     # Validate seed_candidate is not None or empty
@@ -297,11 +299,31 @@ def optimize(
             "candidate_selection_strategy must be a supported string strategy or an instance of CandidateSelector."
         )
 
-    if val_evaluation_policy is None or val_evaluation_policy == "full_eval":
+    if val_evaluation_policy is None:
+        val_evaluation_policy = HeldOutSetEvaluationPolicy() if held_out is not None else FullEvaluationPolicy()
+    elif val_evaluation_policy == "full_eval":
         val_evaluation_policy = FullEvaluationPolicy()
+    elif val_evaluation_policy == "heldout_eval":
+        val_evaluation_policy = HeldOutSetEvaluationPolicy()
     elif not isinstance(val_evaluation_policy, EvaluationPolicy):
         raise ValueError(
-            f"val_evaluation_policy should be one of 'full_eval' or an instance of EvaluationPolicy, but got {type(val_evaluation_policy)}"
+            f"val_evaluation_policy should be one of 'full_eval', 'heldout_eval', or an instance of "
+            f"EvaluationPolicy, but got {type(val_evaluation_policy)}"
+        )
+
+    if held_out is None and isinstance(val_evaluation_policy, HeldOutSetEvaluationPolicy):
+        warnings.warn(
+            "HeldOutSetEvaluationPolicy was selected, but no held_out set was provided. "
+            "GEPA will fall back to valset-only selection semantics.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    if held_out is not None and not isinstance(val_evaluation_policy, HeldOutSetEvaluationPolicy):
+        raise ValueError(
+            f"held_out requires HeldOutSetEvaluationPolicy, but val_evaluation_policy is "
+            f"{type(val_evaluation_policy).__name__}. Pass val_evaluation_policy=None or "
+            f"val_evaluation_policy='heldout_eval'."
         )
 
     if isinstance(module_selector, str):
@@ -383,6 +405,8 @@ def optimize(
             callbacks=callbacks,
         )
 
+    held_out_loader = ensure_loader(held_out) if held_out is not None else None
+
     engine = GEPAEngine(
         adapter=active_adapter,
         run_dir=run_dir,
@@ -401,6 +425,7 @@ def optimize(
         raise_on_exception=raise_on_exception,
         stop_callback=stop_callback,
         val_evaluation_policy=val_evaluation_policy,
+        held_out=held_out_loader,
         use_cloudpickle=use_cloudpickle,
         evaluation_cache=evaluation_cache,
     )

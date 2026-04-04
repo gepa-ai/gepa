@@ -139,6 +139,15 @@ class ValsetEvaluation(Generic[RolloutOutput, DataId]):
     objective_scores_by_val_id: dict[DataId, ObjectiveScores] | None = None
 
 
+@dataclass(slots=True)
+class HeldOutEvaluation(Generic[RolloutOutput, DataId]):
+    """Results from evaluating a candidate on the held-out set."""
+
+    outputs_by_id: dict[DataId, RolloutOutput]
+    scores_by_id: dict[DataId, float]
+    objective_scores_by_id: dict[DataId, ObjectiveScores] | None = None
+
+
 class GEPAState(Generic[RolloutOutput, DataId]):
     """Internal persistent state of a GEPA optimization run.
 
@@ -150,13 +159,14 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     returned by :func:`~gepa.optimize_anything.optimize_anything`.
     """
 
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 4
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 5
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
     _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
 
     program_candidates: list[dict[str, str]]
     parent_program_for_candidate: list[list[ProgramIdx | None]]
     prog_candidate_val_subscores: list[dict[DataId, float]]
+    prog_candidate_held_out_subscores: list[dict[DataId, float]]  # empty dict means not yet evaluated on held-out
     prog_candidate_objective_scores: list[ObjectiveScores]
 
     pareto_front_valset: dict[DataId, float]
@@ -171,6 +181,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     i: int
     num_full_ds_evals: int
+    num_held_out_evals: int
 
     total_num_evals: int
 
@@ -188,12 +199,16 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self,
         seed_candidate: dict[str, str],
         base_evaluation: ValsetEvaluation[RolloutOutput, DataId],
+        seed_held_out_evaluation: "HeldOutEvaluation[RolloutOutput, DataId] | None" = None,
         track_best_outputs: bool = False,
         frontier_type: FrontierType = "instance",
         evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None" = None,
     ):
         self.program_candidates = [dict(seed_candidate)]
         self.prog_candidate_val_subscores = [dict(base_evaluation.scores_by_val_id)]
+        self.prog_candidate_held_out_subscores = [
+            dict(seed_held_out_evaluation.scores_by_id) if seed_held_out_evaluation is not None else {}
+        ]
 
         base_objective_aggregates = self._aggregate_objective_scores(base_evaluation.objective_scores_by_val_id)
         self.prog_candidate_objective_scores = [base_objective_aggregates]
@@ -252,6 +267,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         assert len(self.program_candidates) == len(self.parent_program_for_candidate)
         assert len(self.program_candidates) == len(self.named_predictor_id_to_update_next_for_program_candidate)
         assert len(self.program_candidates) == len(self.prog_candidate_val_subscores)
+        assert len(self.program_candidates) == len(self.prog_candidate_held_out_subscores)
         assert len(self.program_candidates) == len(self.prog_candidate_objective_scores)
         assert len(self.program_candidates) == len(self.num_metric_calls_by_discovery)
 
@@ -290,6 +306,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if hooks:
             for hook in hooks:
                 hook(self.total_num_evals, count)
+
+    def increment_held_out_evals(self, count: int) -> None:
+        """Increment num_held_out_evals without affecting the optimization budget."""
+        self.num_held_out_evals += count
 
     def _atomic_write_json(self, run_dir: str, filename: str, data: Any) -> None:
         target_path = os.path.join(run_dir, filename)
@@ -360,6 +380,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         state.validation_schema_version = GEPAState._VALIDATION_SCHEMA_VERSION
         assert len(state.program_candidates) == len(state.prog_candidate_val_subscores)
+        assert len(state.program_candidates) == len(state.prog_candidate_held_out_subscores)
         assert len(state.program_candidates) == len(state.prog_candidate_objective_scores)
         assert len(state.program_candidates) == len(state.num_metric_calls_by_discovery)
         assert len(state.program_candidates) == len(state.parent_program_for_candidate)
@@ -409,6 +430,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         # evaluation_cache is not persisted across runs by default; initialize to None if missing
         if "evaluation_cache" not in d:
             d["evaluation_cache"] = None
+        if "prog_candidate_held_out_subscores" not in d:
+            d["prog_candidate_held_out_subscores"] = [{} for _ in range(num_candidates)]
+        if "num_held_out_evals" not in d:
+            d["num_held_out_evals"] = 0
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
@@ -435,6 +460,22 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         num_samples = len(scores)
         avg = sum(scores.values()) / num_samples
         return avg, num_samples
+
+    def get_program_average_held_out(self, program_idx: int) -> tuple[float, int]:
+        """Return (average_score, num_samples) for the held-out evaluation of program_idx.
+
+        Returns (-inf, 0) if the program has not been evaluated on the held-out set.
+        """
+        scores = self.prog_candidate_held_out_subscores[program_idx]
+        if not scores:
+            return float("-inf"), 0
+        return sum(scores.values()) / len(scores), len(scores)
+
+    def update_held_out_scores(
+        self, program_idx: ProgramIdx, evaluation: "HeldOutEvaluation[RolloutOutput, DataId]"
+    ) -> None:
+        """Store held-out scores for program_idx."""
+        self.prog_candidate_held_out_subscores[program_idx].update(evaluation.scores_by_id)
 
     @property
     def valset_evaluations(self) -> dict[DataId, list[ProgramIdx]]:
@@ -537,6 +578,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         valset_scores = dict(valset_evaluation.scores_by_val_id)
         self.prog_candidate_val_subscores.append(valset_scores)
+        self.prog_candidate_held_out_subscores.append({})
         objective_scores = self._aggregate_objective_scores(valset_evaluation.objective_scores_by_val_id)
         self.prog_candidate_objective_scores.append(objective_scores)
 
@@ -654,6 +696,7 @@ def initialize_gepa_state(
     logger: LoggerProtocol,
     seed_candidate: dict[str, str],
     seed_valset_evaluation: ValsetEvaluation[RolloutOutput, DataId],
+    seed_held_out_evaluation: "HeldOutEvaluation[RolloutOutput, DataId] | None" = None,
     track_best_outputs: bool = False,
     frontier_type: FrontierType = "instance",
     evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None" = None,
@@ -687,6 +730,7 @@ def initialize_gepa_state(
         gepa_state = GEPAState(
             seed_candidate,
             seed_valset_evaluation,
+            seed_held_out_evaluation=seed_held_out_evaluation,
             track_best_outputs=track_best_outputs,
             frontier_type=frontier_type,
             evaluation_cache=evaluation_cache,
@@ -694,5 +738,8 @@ def initialize_gepa_state(
 
         gepa_state.num_full_ds_evals = 1
         gepa_state.total_num_evals = len(seed_valset_evaluation.scores_by_val_id)
+        gepa_state.num_held_out_evals = (
+            len(seed_held_out_evaluation.scores_by_id) if seed_held_out_evaluation is not None else 0
+        )
 
     return gepa_state

@@ -229,6 +229,19 @@ class ValsetEvaluatedEvent(TypedDict):
     outputs_by_val_id: dict[Any, Any] | None
 
 
+class HeldOutEvaluatedEvent(TypedDict):
+    """Event for on_held_out_evaluated callback."""
+
+    iteration: int
+    candidate_idx: int
+    candidate: dict[str, str]
+    scores_by_id: dict[Any, float]
+    average_score: float
+    num_examples_evaluated: int
+    total_held_out_size: int
+    outputs_by_id: dict[Any, Any] | None
+
+
 class StateSavedEvent(TypedDict):
     """Event for on_state_saved callback."""
 
@@ -315,6 +328,10 @@ class GEPACallback(Protocol):
 
     def on_valset_evaluated(self, event: ValsetEvaluatedEvent) -> None:
         """Called after a candidate is evaluated on the validation set."""
+        ...
+
+    def on_held_out_evaluated(self, event: HeldOutEvaluatedEvent) -> None:
+        """Called after a candidate is evaluated on the held-out set."""
         ...
 
     # =========================================================================
@@ -486,6 +503,9 @@ class CompositeCallback:
 
     def on_valset_evaluated(self, event: ValsetEvaluatedEvent) -> None:
         self._notify("on_valset_evaluated", event)
+
+    def on_held_out_evaluated(self, event: HeldOutEvaluatedEvent) -> None:
+        self._notify("on_held_out_evaluated", event)
 
     def on_reflective_dataset_built(self, event: ReflectiveDatasetBuiltEvent) -> None:
         self._notify("on_reflective_dataset_built", event)

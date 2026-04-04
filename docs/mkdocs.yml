@@ -22,6 +22,7 @@ nav:
     - Guides:
         - Guides Overview: guides/index.md
         - Quick Start: guides/quickstart.md
+        - Held-Out Selection Policy: guides/held-out-selection.md
         - FAQ: guides/faq.md
         - Creating Adapters: guides/adapters.md
         - Candidate Selection Strategies: guides/candidate-selection.md
@@ -123,6 +124,7 @@ nav:
             - AllComponentSelector: api/strategies/AllComponentSelector.md
             - EvaluationPolicy: api/strategies/EvaluationPolicy.md
             - FullEvaluationPolicy: api/strategies/FullEvaluationPolicy.md
+            - HeldOutSetEvaluationPolicy: api/strategies/HeldOutSetEvaluationPolicy.md
             - InstructionProposalSignature: api/strategies/InstructionProposalSignature.md
 
 theme:

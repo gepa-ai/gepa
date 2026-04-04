@@ -37,6 +37,9 @@ def mock_state():
     state.prog_candidate_objective_scores.append({})
     state.prog_candidate_objective_scores.append({})
 
+    state.prog_candidate_held_out_subscores.append({})
+    state.prog_candidate_held_out_subscores.append({})
+
     state.parent_program_for_candidate.append([0])
     state.parent_program_for_candidate.append([1])
 
