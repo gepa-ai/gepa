@@ -13,6 +13,7 @@ from gepa.core.callbacks import (
     CandidateRejectedEvent,
     ErrorEvent,
     GEPACallback,
+    HeldOutEvaluatedEvent,
     IterationEndEvent,
     IterationStartEvent,
     MergeAcceptedEvent,
@@ -26,15 +27,22 @@ from gepa.core.callbacks import (
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
-from gepa.core.state import EvaluationCache, FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
+from gepa.core.state import (
+    EvaluationCache,
+    FrontierType,
+    GEPAState,
+    HeldOutEvaluation,
+    ValsetEvaluation,
+    initialize_gepa_state,
+)
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
-from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
+from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program, log_held_out_metrics
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import (
     ReflectiveMutationProposer,
 )
-from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
+from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy, HeldOutSetEvaluationPolicy
 from gepa.utils import StopperProtocol
 
 # Import tqdm for progress bar functionality
@@ -73,6 +81,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Budget and Stop Condition
         stop_callback: StopperProtocol | None = None,
         val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
+        # Optional held-out set
+        held_out: list[DataInst] | DataLoader[DataId, DataInst] | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
     ):
@@ -99,6 +109,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.evaluator = evaluator
 
         self.valset = ensure_loader(valset) if valset is not None else None
+        self.held_out = ensure_loader(held_out) if held_out is not None else None
         self.seed_candidate = seed_candidate
 
         self.perfect_score = perfect_score
@@ -120,6 +131,32 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.raise_on_exception = raise_on_exception
         self.val_evaluation_policy: EvaluationPolicy[DataId, DataInst] = (
             val_evaluation_policy if val_evaluation_policy is not None else FullEvaluationPolicy()
+        )
+
+    def _evaluate_on_held_out_set(
+        self,
+        program: dict[str, str],
+        state: GEPAState[RolloutOutput, DataId],
+    ) -> HeldOutEvaluation[RolloutOutput, DataId]:
+        """Evaluate program on the held-out set, increment held-out eval count, and return results.
+
+        Deliberately bypasses the evaluation cache: held-out and valset loaders both use
+        integer ids starting at 0 (ListDataLoader), so a shared cache would return valset
+        hits for held-out ids, producing wrong scores when cache_evaluation=True.
+        """
+        assert self.held_out is not None
+        held_out_ids = list(self.held_out.all_ids())
+        if not held_out_ids:
+            return HeldOutEvaluation(outputs_by_id={}, scores_by_id={})
+        batch = self.held_out.fetch(held_out_ids)
+        outputs, scores, objective_scores = self.evaluator(batch, program)
+        state.increment_held_out_evals(len(held_out_ids))
+        return HeldOutEvaluation(
+            outputs_by_id=dict(zip(held_out_ids, outputs, strict=False)),
+            scores_by_id=dict(zip(held_out_ids, scores, strict=False)),
+            objective_scores_by_id=(
+                dict(zip(held_out_ids, objective_scores, strict=False)) if objective_scores else None
+            ),
         )
 
     def _evaluate_on_valset(
@@ -167,11 +204,30 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             num_metric_calls_by_discovery_of_new_program=num_metric_calls_by_discovery,
         )
 
-        # Compute best program immediately after state update (before callbacks)
-        # to ensure is_best_program reflects the updated Pareto front
+        # Track the current valset leader separately from the policy-selected best program.
+        # Held-out selection is allowed to change the latter, but valset callbacks should
+        # continue to reflect valset-only semantics.
+        valset_leader_idx = self.val_evaluation_policy.get_best_program(state)
+
+        # Evaluate the current valset leader on the held-out set if not yet done.
+        # Must happen before get_best_program() so HeldOutSetEvaluationPolicy can use the scores.
+        held_out_evaluation: HeldOutEvaluation[RolloutOutput, DataId] | None = None
+        held_out_candidate_idx: int | None = None
+        if self.held_out is not None:
+            assert isinstance(self.val_evaluation_policy, HeldOutSetEvaluationPolicy), (
+                "A held_out loader was provided but val_evaluation_policy does not support it. "
+                "Use HeldOutSetEvaluationPolicy or pass val_evaluation_policy=None to auto-select it."
+            )
+            valset_leader_idx = self.val_evaluation_policy.get_valset_leader(state)
+            if valset_leader_idx >= 0 and not state.prog_candidate_held_out_subscores[valset_leader_idx]:
+                held_out_evaluation = self._evaluate_on_held_out_set(state.program_candidates[valset_leader_idx], state)
+                state.update_held_out_scores(valset_leader_idx, held_out_evaluation)
+                held_out_candidate_idx = valset_leader_idx
+
+        # Compute the policy-selected best program immediately after state update (before callbacks).
         valset_score = self.val_evaluation_policy.get_valset_score(new_program_idx, state)
         linear_pareto_front_program_idx = self.val_evaluation_policy.get_best_program(state)
-        is_best_program = new_program_idx == linear_pareto_front_program_idx
+        is_best_program = new_program_idx == valset_leader_idx
 
         # Snapshot Pareto front after update and notify callback
         front_after = state.get_pareto_front_mapping()
@@ -231,6 +287,33 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             valset_size=len(valset),
             val_evaluation_policy=self.val_evaluation_policy,
         )
+
+        if held_out_evaluation is not None and held_out_candidate_idx is not None:
+            assert self.held_out is not None
+            notify_callbacks(
+                self.callbacks,
+                "on_held_out_evaluated",
+                HeldOutEvaluatedEvent(
+                    iteration=state.i + 1,
+                    candidate_idx=held_out_candidate_idx,
+                    candidate=state.program_candidates[held_out_candidate_idx],
+                    scores_by_id=dict(held_out_evaluation.scores_by_id),
+                    average_score=state.get_program_average_held_out(held_out_candidate_idx)[0],
+                    num_examples_evaluated=len(held_out_evaluation.scores_by_id),
+                    total_held_out_size=len(self.held_out),
+                    outputs_by_id=dict(held_out_evaluation.outputs_by_id)
+                    if held_out_evaluation.outputs_by_id
+                    else None,
+                ),
+            )
+            log_held_out_metrics(
+                logger=self.logger,
+                gepa_state=state,
+                candidate_idx=held_out_candidate_idx,
+                held_out_evaluation=held_out_evaluation,
+                held_out_size=len(self.held_out),
+                experiment_tracker=self.experiment_tracker,
+            )
 
         # Log candidate table row with instructions and metadata
         component_names = sorted(new_program.keys())
@@ -303,6 +386,23 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 objective_scores_by_val_id=objective_scores_dict,
             )
 
+        def held_out_evaluator(
+            program: dict[str, str],
+        ) -> HeldOutEvaluation[RolloutOutput, DataId] | None:
+            if self.held_out is None:
+                return None
+            held_out_ids = list(self.held_out.all_ids())
+            if not held_out_ids:
+                return None
+            outputs, scores, objective_scores = self.evaluator(self.held_out.fetch(held_out_ids), program)
+            return HeldOutEvaluation(
+                outputs_by_id=dict(zip(held_out_ids, outputs, strict=False)),
+                scores_by_id=dict(zip(held_out_ids, scores, strict=False)),
+                objective_scores_by_id=(
+                    dict(zip(held_out_ids, objective_scores, strict=False)) if objective_scores is not None else None
+                ),
+            )
+
         # Notify callbacks of optimization start (before seed valset eval)
         notify_callbacks(
             self.callbacks,
@@ -322,12 +422,30 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Evaluate seed candidate on valset (after on_optimization_start callback)
         seed_valset_evaluation = valset_evaluator(self.seed_candidate)
 
+        # Evaluate seed candidate on held-out set if configured and not resuming.
+        # On resume, the persisted state already contains the seed's held-out scores;
+        # re-evaluating here would produce a nondeterministic result that is then
+        # discarded when initialize_gepa_state() loads the saved state.
+        _resuming = self.run_dir is not None and os.path.exists(os.path.join(self.run_dir, "gepa_state.bin"))
+        seed_held_out_evaluation = None if _resuming else held_out_evaluator(self.seed_candidate)
+        if seed_held_out_evaluation is not None:
+            held_out_avg = (
+                sum(seed_held_out_evaluation.scores_by_id.values()) / len(seed_held_out_evaluation.scores_by_id)
+                if seed_held_out_evaluation.scores_by_id
+                else 0.0
+            )
+            self.logger.log(
+                f"Iteration 0: Seed candidate held-out score: {held_out_avg}"
+                f" over {len(seed_held_out_evaluation.scores_by_id)} / {len(self.held_out)} examples"
+            )
+
         # Initialize state with pre-computed seed evaluation
         state = initialize_gepa_state(
             run_dir=self.run_dir,
             logger=self.logger,
             seed_candidate=self.seed_candidate,
             seed_valset_evaluation=seed_valset_evaluation,
+            seed_held_out_evaluation=seed_held_out_evaluation,
             track_best_outputs=self.track_best_outputs,
             frontier_type=self.frontier_type,
             evaluation_cache=self._initial_evaluation_cache,
@@ -356,20 +474,20 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         base_val_avg, base_val_coverage = state.get_program_average_val_subset(0)
         pareto_scores = list(state.pareto_front_valset.values())
         base_pareto_avg = sum(pareto_scores) / len(pareto_scores) if pareto_scores else base_val_avg
-        self.experiment_tracker.log_metrics(
-            {
-                "val_program_average": base_val_avg,
-                "best_score_on_valset": base_val_avg,
-                "val_evaluated_count_new_program": base_val_coverage,
-                "val_total_count": len(valset),
-                "total_metric_calls": state.total_num_evals,
-                "valset_pareto_front_agg": base_pareto_avg,
-                "new_program_idx": 0,
-                "linear_pareto_front_program_idx": 0,
-                "best_program_as_per_agg_score_valset": 0,
-            },
-            step=state.i + 1,
-        )
+        seed_held_out = state.prog_candidate_held_out_subscores[0]
+        seed_metrics: dict = {
+            "val_program_average": base_val_avg,
+            "best_valset_score": base_val_avg,
+            "val_evaluated_count_new_program": base_val_coverage,
+            "val_total_count": len(valset),
+            "total_metric_calls": state.total_num_evals,
+            "valset_pareto_front_agg": base_pareto_avg,
+            "new_program_idx": 0,
+            "best_program_idx_by_policy": 0,
+        }
+        if seed_held_out:
+            seed_metrics["best_program_held_out_score"] = sum(seed_held_out.values()) / len(seed_held_out)
+        self.experiment_tracker.log_metrics(seed_metrics, step=state.i + 1)
 
         self.logger.log(
             f"Iteration {state.i + 1}: Base program full valset score: {base_val_avg} "
@@ -395,6 +513,30 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 outputs_by_val_id=None,  # Outputs not tracked at initialization unless track_best_outputs=True
             ),
         )
+
+        # Notify callbacks of seed candidate's held-out evaluation (iteration 0), mirroring the
+        # valset callback above so that callback consumers observe a symmetric event stream.
+        if seed_held_out_evaluation is not None and self.held_out is not None:
+            seed_held_out_scores = state.prog_candidate_held_out_subscores[0]
+            seed_held_out_avg = (
+                sum(seed_held_out_scores.values()) / len(seed_held_out_scores) if seed_held_out_scores else 0.0
+            )
+            notify_callbacks(
+                self.callbacks,
+                "on_held_out_evaluated",
+                HeldOutEvaluatedEvent(
+                    iteration=0,
+                    candidate_idx=0,
+                    candidate=self.seed_candidate,
+                    scores_by_id=dict(seed_held_out_scores),
+                    average_score=seed_held_out_avg,
+                    num_examples_evaluated=len(seed_held_out_scores),
+                    total_held_out_size=len(self.held_out),
+                    outputs_by_id=(
+                        dict(seed_held_out_evaluation.outputs_by_id) if seed_held_out_evaluation.outputs_by_id else None
+                    ),
+                ),
+            )
 
         # Register budget hook to fire on_budget_updated callback in real-time
         def budget_hook(new_total: int, delta: int) -> None:
@@ -630,6 +772,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Notify optimization end
         best_candidate_idx = self.val_evaluation_policy.get_best_program(state)
+        best_valset_candidate_idx = (
+            self.val_evaluation_policy.get_valset_leader(state)
+            if isinstance(self.val_evaluation_policy, HeldOutSetEvaluationPolicy)
+            else best_candidate_idx
+        )
         notify_callbacks(
             self.callbacks,
             "on_optimization_end",
@@ -643,13 +790,17 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Log final summary: seed candidate, best candidate, and all candidates table
         best_candidate = state.program_candidates[best_candidate_idx]
-        best_score = self.val_evaluation_policy.get_valset_score(best_candidate_idx, state)
+        best_score = self.val_evaluation_policy.get_valset_score(best_valset_candidate_idx, state)
         summary: dict[str, Any] = {
             "best_candidate_idx": best_candidate_idx,
             "best_valset_score": best_score,
             "total_iterations": state.i,
             "total_candidates": len(state.program_candidates),
         }
+        best_candidate_held_out_scores = state.prog_candidate_held_out_subscores[best_candidate_idx]
+        if best_candidate_held_out_scores:
+            best_held_out_score = sum(best_candidate_held_out_scores.values()) / len(best_candidate_held_out_scores)
+            summary["best_held_out_score"] = best_held_out_score
         for name in sorted(self.seed_candidate.keys()):
             summary[f"seed/{name}"] = self.seed_candidate[name]
             summary[f"best/{name}"] = best_candidate[name]
@@ -671,11 +822,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         ``"candidates"`` table in WandB / MLflow.
         """
         metadata = proposal.metadata or {}
-        components = {
-            k.split(":", 1)[1]
-            for k in metadata
-            if k.startswith("prompt:") or k.startswith("raw_lm_output:")
-        }
+        components = {k.split(":", 1)[1] for k in metadata if k.startswith("prompt:") or k.startswith("raw_lm_output:")}
         if not components:
             return
 
@@ -689,18 +836,20 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             prompt = metadata.get(f"prompt:{comp}", "")
             raw_output = metadata.get(f"raw_lm_output:{comp}", "")
             proposed_text = proposal.candidate.get(comp, "")
-            rows.append([
-                iteration,
-                comp,
-                status,
-                candidate_idx,
-                parent_ids_str,
-                subsample_before,
-                subsample_after,
-                prompt if isinstance(prompt, str) else str(prompt),
-                raw_output,
-                proposed_text,
-            ])
+            rows.append(
+                [
+                    iteration,
+                    comp,
+                    status,
+                    candidate_idx,
+                    parent_ids_str,
+                    subsample_before,
+                    subsample_after,
+                    prompt if isinstance(prompt, str) else str(prompt),
+                    raw_output,
+                    proposed_text,
+                ]
+            )
 
         self.experiment_tracker.log_table(
             "proposals",

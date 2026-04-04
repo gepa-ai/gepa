@@ -51,9 +51,13 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     # Optional data
     best_outputs_valset: dict[DataId, list[tuple[ProgramIdx, RolloutOutput]]] | None = None
 
+    # Held-out scores: program_idx -> average held-out score (only set when held_out was configured)
+    held_out_scores: dict[int, float] | None = None
+
     # Run metadata (optional)
     total_metric_calls: int | None = None
     num_full_val_evals: int | None = None
+    num_held_out_evals: int | None = None
     run_dir: str | None = None
     seed: int | None = None
 
@@ -74,6 +78,13 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
 
     @property
     def best_idx(self) -> int:
+        if self.held_out_scores:
+            return max(self.held_out_scores, key=self.held_out_scores.__getitem__)
+        return self.valset_best_idx
+
+    @property
+    def valset_best_idx(self) -> int:
+        """Best candidate by valset score, regardless of held-out scores."""
         scores = self.val_aggregate_scores
         return max(range(len(scores)), key=lambda i: scores[i])
 
@@ -138,8 +149,10 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             ),
             "objective_pareto_front": self.objective_pareto_front,
             "discovery_eval_counts": self.discovery_eval_counts,
+            "held_out_scores": self.held_out_scores,
             "total_metric_calls": self.total_metric_calls,
             "num_full_val_evals": self.num_full_val_evals,
+            "num_held_out_evals": self.num_held_out_evals,
             "run_dir": self.run_dir,
             "seed": self.seed,
             "_str_candidate_key": self._str_candidate_key,
@@ -168,8 +181,10 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             "parents": [list(parent_row) for parent_row in d.get("parents", [])],
             "val_aggregate_scores": list(d.get("val_aggregate_scores", [])),
             "discovery_eval_counts": list(d.get("discovery_eval_counts", [])),
+            "held_out_scores": d.get("held_out_scores"),
             "total_metric_calls": d.get("total_metric_calls"),
             "num_full_val_evals": d.get("num_full_val_evals"),
+            "num_held_out_evals": d.get("num_held_out_evals"),
             "run_dir": d.get("run_dir"),
             "seed": d.get("seed"),
             "_str_candidate_key": d.get("_str_candidate_key"),
@@ -250,6 +265,16 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
         }
         objective_front = dict(state.objective_pareto_front)
 
+        held_out_subscores = getattr(state, "prog_candidate_held_out_subscores", None)
+        held_out_scores: dict[int, float] | None = None
+        if isinstance(held_out_subscores, list):
+            scored = {
+                prog_idx: sum(scores.values()) / len(scores)
+                for prog_idx, scores in enumerate(held_out_subscores)
+                if scores
+            }
+            held_out_scores = scored if scored else None
+
         return GEPAResult(
             candidates=list(state.program_candidates),
             parents=list(state.parent_program_for_candidate),
@@ -263,8 +288,10 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             per_objective_best_candidates=(per_objective_best if per_objective_best else None),
             objective_pareto_front=objective_front if objective_front else None,
             discovery_eval_counts=list(state.num_metric_calls_by_discovery),
+            held_out_scores=held_out_scores,
             total_metric_calls=getattr(state, "total_num_evals", None),
             num_full_val_evals=getattr(state, "num_full_ds_evals", None),
+            num_held_out_evals=getattr(state, "num_held_out_evals", None),
             run_dir=run_dir,
             seed=seed,
             _str_candidate_key=str_candidate_key,

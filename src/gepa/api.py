@@ -35,7 +35,7 @@ from gepa.strategies.component_selector import (
     AllReflectionComponentSelector,
     RoundRobinReflectionComponentSelector,
 )
-from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
+from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy, HeldOutSetEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
 
 
@@ -88,6 +88,7 @@ def optimize(
     seed: int = 0,
     raise_on_exception: bool = True,
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
+    held_out: list[DataInst] | DataLoader[DataId, DataInst] | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -298,10 +299,16 @@ def optimize(
         )
 
     if val_evaluation_policy is None or val_evaluation_policy == "full_eval":
-        val_evaluation_policy = FullEvaluationPolicy()
+        val_evaluation_policy = HeldOutSetEvaluationPolicy() if held_out is not None else FullEvaluationPolicy()
     elif not isinstance(val_evaluation_policy, EvaluationPolicy):
         raise ValueError(
             f"val_evaluation_policy should be one of 'full_eval' or an instance of EvaluationPolicy, but got {type(val_evaluation_policy)}"
+        )
+
+    if held_out is not None and not isinstance(val_evaluation_policy, HeldOutSetEvaluationPolicy):
+        raise ValueError(
+            f"held_out requires HeldOutSetEvaluationPolicy, but val_evaluation_policy is "
+            f"{type(val_evaluation_policy).__name__}. Pass val_evaluation_policy=None to auto-select it."
         )
 
     if isinstance(module_selector, str):
@@ -383,6 +390,8 @@ def optimize(
             callbacks=callbacks,
         )
 
+    held_out_loader = ensure_loader(held_out) if held_out is not None else None
+
     engine = GEPAEngine(
         adapter=active_adapter,
         run_dir=run_dir,
@@ -401,6 +410,7 @@ def optimize(
         raise_on_exception=raise_on_exception,
         stop_callback=stop_callback,
         val_evaluation_policy=val_evaluation_policy,
+        held_out=held_out_loader,
         use_cloudpickle=use_cloudpickle,
         evaluation_cache=evaluation_cache,
     )
