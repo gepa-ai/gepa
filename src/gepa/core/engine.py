@@ -207,7 +207,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Track the current valset leader separately from the policy-selected best program.
         # Held-out selection is allowed to change the latter, but valset callbacks should
         # continue to reflect valset-only semantics.
-        valset_leader_idx = self.val_evaluation_policy.get_best_program(state)
+        if isinstance(self.val_evaluation_policy, HeldOutSetEvaluationPolicy):
+            valset_leader_idx = self.val_evaluation_policy.get_valset_leader(state)
+        else:
+            valset_leader_idx = self.val_evaluation_policy.get_best_program(state)
 
         # Evaluate the current valset leader on the held-out set if not yet done.
         # Must happen before get_best_program() so HeldOutSetEvaluationPolicy can use the scores.
@@ -218,7 +221,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 "A held_out loader was provided but val_evaluation_policy does not support it. "
                 "Use HeldOutSetEvaluationPolicy or pass val_evaluation_policy=None to auto-select it."
             )
-            valset_leader_idx = self.val_evaluation_policy.get_valset_leader(state)
             if valset_leader_idx >= 0 and not state.prog_candidate_held_out_subscores[valset_leader_idx]:
                 held_out_evaluation = self._evaluate_on_held_out_set(state.program_candidates[valset_leader_idx], state)
                 state.update_held_out_scores(valset_leader_idx, held_out_evaluation)
@@ -227,6 +229,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Compute the policy-selected best program immediately after state update (before callbacks).
         valset_score = self.val_evaluation_policy.get_valset_score(new_program_idx, state)
         linear_pareto_front_program_idx = self.val_evaluation_policy.get_best_program(state)
+        # Keep callback semantics valset-focused: this flag means "current valset leader",
+        # not "policy-selected best candidate" under held-out selection.
         is_best_program = new_program_idx == valset_leader_idx
 
         # Snapshot Pareto front after update and notify callback
@@ -488,6 +492,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         }
         if isinstance(self.val_evaluation_policy, HeldOutSetEvaluationPolicy):
             seed_metrics["best_program_as_per_agg_score_valset"] = 0
+            seed_metrics["policy_selected_valset_score"] = base_val_avg
         if seed_held_out:
             seed_metrics["best_score_on_held_out"] = sum(seed_held_out.values()) / len(seed_held_out)
         self.experiment_tracker.log_metrics(seed_metrics, step=state.i + 1)
@@ -788,13 +793,21 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Log final summary: seed candidate, best candidate, and all candidates table
         best_candidate = state.program_candidates[best_candidate_idx]
-        best_score = self.val_evaluation_policy.get_valset_score(best_candidate_idx, state)
+        best_valset_candidate_idx = (
+            self.val_evaluation_policy.get_valset_leader(state)
+            if isinstance(self.val_evaluation_policy, HeldOutSetEvaluationPolicy)
+            else best_candidate_idx
+        )
+        best_score = self.val_evaluation_policy.get_valset_score(best_valset_candidate_idx, state)
+        policy_selected_valset_score = self.val_evaluation_policy.get_valset_score(best_candidate_idx, state)
         summary: dict[str, Any] = {
             "best_candidate_idx": best_candidate_idx,
             "best_score_on_valset": best_score,
             "total_iterations": state.i,
             "total_candidates": len(state.program_candidates),
         }
+        if isinstance(self.val_evaluation_policy, HeldOutSetEvaluationPolicy):
+            summary["policy_selected_valset_score"] = policy_selected_valset_score
         best_candidate_held_out_scores = state.prog_candidate_held_out_subscores[best_candidate_idx]
         if best_candidate_held_out_scores:
             summary["best_score_on_held_out"] = sum(best_candidate_held_out_scores.values()) / len(
