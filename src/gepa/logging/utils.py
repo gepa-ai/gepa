@@ -33,7 +33,7 @@ def log_detailed_metrics_after_discovering_new_program(
     logger.log(f"Iteration {gepa_state.i + 1}: Individual valset scores for new program: {valset_scores}")
     if objective_scores:
         logger.log(f"Iteration {gepa_state.i + 1}: Objective aggregate scores for new program: {objective_scores}")
-    logger.log(f"Iteration {gepa_state.i + 1}: New valset pareto front scores: {gepa_state.pareto_front_valset}")
+    logger.log(f"Iteration {gepa_state.i + 1}: Current Pareto-front scores: {gepa_state.pareto_front_valset}")
     if gepa_state.objective_pareto_front:
         logger.log(f"Iteration {gepa_state.i + 1}: Objective pareto front scores: {gepa_state.objective_pareto_front}")
 
@@ -44,9 +44,9 @@ def log_detailed_metrics_after_discovering_new_program(
     assert len(pareto_scores) > 0
     pareto_avg = sum(pareto_scores) / len(pareto_scores)
 
-    logger.log(f"Iteration {gepa_state.i + 1}: Valset pareto front aggregate score: {pareto_avg}")
+    logger.log(f"Iteration {gepa_state.i + 1}: Pareto-front aggregate score: {pareto_avg}")
     logger.log(
-        f"Iteration {gepa_state.i + 1}: Updated valset pareto front programs: {gepa_state.program_at_pareto_front_valset}"
+        f"Iteration {gepa_state.i + 1}: Current Pareto-front programs: {gepa_state.program_at_pareto_front_valset}"
     )
     if gepa_state.program_at_pareto_front_objectives:
         logger.log(
@@ -62,6 +62,11 @@ def log_detailed_metrics_after_discovering_new_program(
         )
     logger.log(f"Iteration {gepa_state.i + 1}: Best program index by policy: {linear_pareto_front_program_idx}")
     policy_selected_valset_score = val_evaluation_policy.get_valset_score(linear_pareto_front_program_idx, gepa_state)
+    best_score_on_valset = (
+        val_evaluation_policy.get_valset_score(best_program_as_per_agg_score_valset, gepa_state)
+        if isinstance(val_evaluation_policy, HeldOutSetEvaluationPolicy)
+        else max(gepa_state.program_full_scores_val_set)
+    )
     held_out_subscores = gepa_state.prog_candidate_held_out_subscores[linear_pareto_front_program_idx]
     if held_out_subscores:
         held_out_avg = sum(held_out_subscores.values()) / len(held_out_subscores)
@@ -73,7 +78,7 @@ def log_detailed_metrics_after_discovering_new_program(
         "iteration": gepa_state.i + 1,
         "new_program_idx": new_program_idx,
         "valset_pareto_front_agg": pareto_avg,
-        "best_score_on_valset": policy_selected_valset_score,
+        "best_score_on_valset": best_score_on_valset,
         "best_program_idx_by_policy": linear_pareto_front_program_idx,
         "val_evaluated_count_new_program": coverage,
         "val_total_count": valset_size,
@@ -82,6 +87,7 @@ def log_detailed_metrics_after_discovering_new_program(
     }
     if isinstance(val_evaluation_policy, HeldOutSetEvaluationPolicy):
         metrics["best_program_as_per_agg_score_valset"] = best_program_as_per_agg_score_valset
+        metrics["policy_selected_valset_score"] = policy_selected_valset_score
     if held_out_subscores:
         metrics["best_score_on_held_out"] = sum(held_out_subscores.values()) / len(held_out_subscores)
     if objective_scores:
