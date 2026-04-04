@@ -8,6 +8,7 @@ import gepa
 from gepa.core.adapter import EvaluationBatch
 from gepa.core.data_loader import ListDataLoader
 from gepa.core.state import GEPAState, HeldOutEvaluation, ValsetEvaluation
+from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.strategies.eval_policy import FullEvaluationPolicy, HeldOutSetEvaluationPolicy
 
 # ---------------------------------------------------------------------------
@@ -445,6 +446,7 @@ class _RecordingTracker:
     def __init__(self):
         self.summary: dict | None = None
         self.config: dict | None = None
+        self.metrics: list[tuple[dict, int | None]] = []
 
     def __enter__(self):
         return self
@@ -456,7 +458,7 @@ class _RecordingTracker:
         self.config = dict(config)
 
     def log_metrics(self, metrics, step=None):
-        pass
+        self.metrics.append((dict(metrics), step))
 
     def log_table(self, name, columns, data):
         pass
@@ -466,6 +468,53 @@ class _RecordingTracker:
 
     def log_html(self, html_content, key):
         pass
+
+
+class _RecordingLogger:
+    def __init__(self):
+        self.messages: list[str] = []
+
+    def log(self, message: str):
+        self.messages.append(message)
+
+
+class _LoggingState:
+    def __init__(
+        self,
+        *,
+        val_subscores: list[dict[int, float]],
+        held_out_subscores: list[dict[int, float]],
+        pareto_front_valset: dict[int, float],
+        program_at_pareto_front_valset: dict[int, set[int]],
+        program_full_scores_val_set: list[float],
+        new_program_objective_scores: list[dict[str, float]],
+    ):
+        self.i = 5
+        self.prog_candidate_val_subscores = val_subscores
+        self.prog_candidate_held_out_subscores = held_out_subscores
+        self.program_candidates = [{"weight": str(i)} for i in range(len(val_subscores))]
+        self.pareto_front_valset = pareto_front_valset
+        self.program_at_pareto_front_valset = program_at_pareto_front_valset
+        self.program_full_scores_val_set = program_full_scores_val_set
+        self.parent_program_for_candidate = [[i - 1] if i > 0 else [None] for i in range(len(val_subscores))]
+        self.prog_candidate_objective_scores = new_program_objective_scores
+        self.objective_pareto_front = None
+        self.program_at_pareto_front_objectives: dict[str, set[int]] = {}
+        self.total_num_evals = 42
+
+    def get_program_average_val_subset(self, idx: int) -> tuple[float, int]:
+        scores = self.prog_candidate_val_subscores[idx]
+        if not scores:
+            return float("-inf"), 0
+        values = list(scores.values())
+        return sum(values) / len(values), len(values)
+
+    def get_program_average_held_out(self, idx: int) -> tuple[float, int]:
+        scores = self.prog_candidate_held_out_subscores[idx]
+        if not scores:
+            return float("-inf"), 0
+        values = list(scores.values())
+        return sum(values) / len(values), len(values)
 
 
 def test_engine_emits_held_out_callback_for_seed_at_iteration_0():
@@ -608,8 +657,100 @@ def test_final_summary_reports_policy_selected_candidate_scores():
 
     assert tracker.summary is not None
     assert tracker.summary["best_candidate_idx"] == 0
-    assert tracker.summary["best_score_on_valset"] == 0.0
+    assert tracker.summary["best_score_on_valset"] == 1.0
+    assert tracker.summary["policy_selected_valset_score"] == 0.0
     assert tracker.summary["best_score_on_held_out"] == 1.0
+
+
+def test_logging_distinguishes_valset_leader_from_policy_selected_candidate():
+    """Held-out logging should make the valset leader and policy-selected best explicit."""
+    val_subscores = [
+        {0: 0.1, 1: 0.2, 2: 0.2, 3: 0.1, 4: 0.2, 5: 0.2},
+        {0: 0.2, 1: 0.3, 2: 0.2, 3: 0.2, 4: 0.3, 5: 0.2},
+        {0: 0.2, 1: 0.2, 2: 0.4, 3: 0.2, 4: 0.2, 5: 0.3},
+        {0: 0.3, 1: 0.2, 2: 0.3, 3: 0.3, 4: 0.2, 5: 0.3},  # policy-selected by held-out
+        {0: 0.1, 1: 0.4, 2: 0.2, 3: 0.3, 4: 0.3, 5: 0.2},
+        {0: 0.3, 1: 0.3, 2: 0.2, 3: 0.2, 4: 0.4, 5: 0.2},
+        {0: 0.2, 1: 0.3, 2: 0.5, 3: 0.3, 4: 0.2, 5: 0.3},
+        {0: 0.5, 1: 0.5, 2: 0.0, 3: 1.0, 4: 1.0, 5: 1.0},  # valset leader
+        {0: 0.2, 1: 0.3, 2: 0.2, 3: 0.6, 4: 0.4, 5: 0.3},
+        {0: 0.0, 1: 0.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0},  # new program
+    ]
+    held_out_subscores = [
+        {0: 0.5, 1: 0.5},
+        {},
+        {0: 0.1, 1: 0.2},
+        {0: 0.9, 1: 0.9},  # policy-selected best
+        {},
+        {0: 0.6, 1: 0.6},
+        {},
+        {0: 0.25, 1: 0.25},  # valset leader does worse on held-out
+        {},
+        {},
+    ]
+    pareto_front_valset = {0: 0.5, 1: 0.5, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0}
+    program_at_pareto_front_valset = {
+        0: {3, 7},
+        1: {4, 7},
+        2: {9},
+        3: {7, 9},
+        4: {7, 9},
+        5: {7, 9},
+    }
+    program_full_scores_val_set = [sum(scores.values()) / len(scores) for scores in val_subscores]
+    state = _LoggingState(
+        val_subscores=val_subscores,
+        held_out_subscores=held_out_subscores,
+        pareto_front_valset=pareto_front_valset,
+        program_at_pareto_front_valset=program_at_pareto_front_valset,
+        program_full_scores_val_set=program_full_scores_val_set,
+        new_program_objective_scores=[{} for _ in range(len(val_subscores))],
+    )
+    logger = _RecordingLogger()
+    tracker = _RecordingTracker()
+    policy = HeldOutSetEvaluationPolicy()
+    new_program_idx = 9
+    valset_evaluation = ValsetEvaluation(outputs_by_val_id={}, scores_by_val_id=val_subscores[new_program_idx])
+
+    log_detailed_metrics_after_discovering_new_program(
+        logger=logger,
+        gepa_state=state,  # type: ignore[arg-type]
+        new_program_idx=new_program_idx,
+        valset_evaluation=valset_evaluation,
+        objective_scores={},
+        experiment_tracker=tracker,
+        linear_pareto_front_program_idx=policy.get_best_program(state),  # type: ignore[arg-type]
+        valset_size=6,
+        val_evaluation_policy=policy,
+    )
+
+    assert (
+        "Iteration 6: Current Pareto-front scores: {0: 0.5, 1: 0.5, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0}" in logger.messages
+    )
+    assert "Iteration 6: Pareto-front aggregate score: 0.8333333333333334" in logger.messages
+    current_front_programs = next(msg for msg in logger.messages if "Current Pareto-front programs:" in msg)
+    assert "0: {3, 7}" in current_front_programs
+    assert "1: {4, 7}" in current_front_programs
+    assert "2: {9}" in current_front_programs
+    assert "3: {9, 7}" in current_front_programs or "3: {7, 9}" in current_front_programs
+    assert "4: {9, 7}" in current_front_programs or "4: {7, 9}" in current_front_programs
+    assert "5: {9, 7}" in current_front_programs or "5: {7, 9}" in current_front_programs
+    assert "Iteration 6: Best valset aggregate score so far: 0.6666666666666666" in logger.messages
+    assert "Iteration 6: Best program as per aggregate score on valset: 7" in logger.messages
+    assert "Iteration 6: Best program index by policy: 3" in logger.messages
+    assert "Iteration 6: Best program held-out score: 0.9" in logger.messages
+    assert not any("New valset pareto front scores" in msg for msg in logger.messages)
+    assert not any("Valset pareto front aggregate score" in msg for msg in logger.messages)
+    assert not any("Updated valset pareto front programs" in msg for msg in logger.messages)
+
+    assert tracker.metrics, "Expected scalar metrics to be logged"
+    metrics, step = tracker.metrics[-1]
+    assert step == 6
+    assert metrics["best_score_on_valset"] == 0.6666666666666666
+    assert metrics["policy_selected_valset_score"] == 0.26666666666666666
+    assert metrics["best_score_on_held_out"] == 0.9
+    assert metrics["best_program_as_per_agg_score_valset"] == 7
+    assert metrics["best_program_idx_by_policy"] == 3
 
 
 # ---------------------------------------------------------------------------
