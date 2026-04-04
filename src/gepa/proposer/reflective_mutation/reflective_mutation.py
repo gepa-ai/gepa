@@ -109,9 +109,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             return self.custom_candidate_proposer(candidate, reflective_dataset, components_to_update), empty, {}
 
         if self.reflection_lm is None and self.session_manager is None:
-            raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
+            raise ValueError("reflection_lm or session_manager must be provided when adapter.propose_new_texts is None.")
 
-        # Pick the LM for this iteration: session-backed or plain
+        # Pick the LM for this iteration: session-backed (default) or plain fallback
         if self.session_manager is not None:
             from gepa.core.session import make_session_lm
 
