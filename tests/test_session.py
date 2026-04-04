@@ -34,7 +34,7 @@ class TestMessageListSession:
 
     def test_send_appends_messages(self) -> None:
         session = self._make_echo_session()
-        response = session.send("hello")
+        response = session.resume("hello")
         assert response == "echo: hello"
         assert len(session.history) == 2
         assert session.history[0] == {"role": "user", "content": "hello"}
@@ -42,13 +42,13 @@ class TestMessageListSession:
 
     def test_send_multiple(self) -> None:
         session = self._make_echo_session()
-        session.send("first")
-        session.send("second")
+        session.resume("first")
+        session.resume("second")
         assert len(session.history) == 4
 
     def test_fork_copies_history(self) -> None:
         session = self._make_echo_session()
-        session.send("before fork")
+        session.resume("before fork")
         forked = session.fork("child")
 
         assert forked.session_id != session.session_id
@@ -57,11 +57,11 @@ class TestMessageListSession:
 
     def test_fork_diverges(self) -> None:
         session = self._make_echo_session()
-        session.send("shared")
+        session.resume("shared")
         forked = session.fork()
 
-        session.send("parent only")
-        forked.send("child only")
+        session.resume("parent only")
+        forked.resume("child only")
 
         assert len(session.history) == 4
         assert len(forked.history) == 4
@@ -70,7 +70,7 @@ class TestMessageListSession:
 
     def test_branch_creates_empty_session(self) -> None:
         session = self._make_echo_session()
-        session.send("before branch")
+        session.resume("before branch")
         branched = session.branch("child")
 
         assert branched.session_id != session.session_id
@@ -80,14 +80,14 @@ class TestMessageListSession:
 
     def test_branch_preserves_backend(self) -> None:
         session = self._make_echo_session()
-        session.send("setup")
+        session.resume("setup")
         branched = session.branch()
-        response = branched.send("test branch")
+        response = branched.resume("test branch")
         assert response == "echo: test branch"  # same API works
 
     def test_history_is_copy(self) -> None:
         session = self._make_echo_session()
-        session.send("hello")
+        session.resume("hello")
         history = session.history
         history.clear()
         assert len(session.history) == 2
@@ -111,7 +111,7 @@ class TestMessageListSession:
             return "ok"
 
         session = MessageListSession(system_prompt="Be concise.", api_call=capture_api)
-        session.send("test")
+        session.resume("test")
         assert received_messages[0] == {"role": "system", "content": "Be concise."}
 
 
@@ -122,11 +122,11 @@ class TestNullSession:
 
     def test_send_returns_empty(self) -> None:
         session = NullSession()
-        assert session.send("anything") == ""
+        assert session.resume("anything") == ""
 
     def test_history_empty(self) -> None:
         session = NullSession()
-        session.send("something")
+        session.resume("something")
         assert session.history == []
 
     def test_fork_returns_new_null(self) -> None:
@@ -217,7 +217,7 @@ class TestSessionManager:
         manager = SessionManager(session_factory=factory, strategy=AlwaysContinueStrategy())
 
         seed_session = factory()
-        seed_session.send("seed message")
+        seed_session.resume("seed message")
         manager.register(0, seed_session)
 
         # Continue — should get the registered session's snapshot
@@ -229,7 +229,7 @@ class TestSessionManager:
         manager = SessionManager(session_factory=factory, strategy=AlwaysBranchStrategy())
 
         seed_session = factory()
-        seed_session.send("seed message")
+        seed_session.resume("seed message")
         manager.register(0, seed_session)
 
         # Fresh should create a session with no history
@@ -241,8 +241,8 @@ class TestSessionManager:
         manager = SessionManager(session_factory=factory, strategy=AlwaysForkStrategy())
 
         seed_session = factory()
-        seed_session.send("first")
-        seed_session.send("second")
+        seed_session.resume("first")
+        seed_session.resume("second")
         manager.register(0, seed_session)
 
         # Fork should copy history
@@ -250,7 +250,7 @@ class TestSessionManager:
         assert len(session.history) == 4  # 2 user + 2 assistant
 
         # But diverge after
-        session.send("diverged")
+        session.resume("diverged")
         original = manager.sessions[0]
         assert len(original.history) == 4  # unchanged
         assert len(session.history) == 6
@@ -282,7 +282,7 @@ class TestSessionManager:
         manager = SessionManager(session_factory=factory)
 
         session = manager.select(parent_candidate_idx=0)
-        session.send("hello")
+        session.resume("hello")
         manager.register(0)
 
         # Snapshot should have history
@@ -290,7 +290,7 @@ class TestSessionManager:
         assert len(snapshot.history) == 2
 
         # Continuing original should not affect snapshot
-        session.send("more")
+        session.resume("more")
         assert len(snapshot.history) == 2
 
     def test_current_session(self) -> None:
@@ -307,16 +307,16 @@ class TestSessionManager:
 
         # Session 1: A → B → C → D
         session1 = manager.select(parent_candidate_idx=-1)  # seed, no parent
-        session1.send("create A")
+        session1.resume("create A")
         manager.register(0)  # snapshot at A
 
-        session1.send("create B")
+        session1.resume("create B")
         manager.register(1)  # snapshot at B
 
-        session1.send("create C")
+        session1.resume("create C")
         manager.register(2)  # snapshot at C
 
-        session1.send("create D")
+        session1.resume("create D")
         manager.register(3)  # snapshot at D
 
         # Session 2: fresh from C (no conversation history)
@@ -327,10 +327,10 @@ class TestSessionManager:
         session2 = manager_fresh.select(parent_candidate_idx=2)
         assert len(session2.history) == 0  # fresh — no session 1 history
 
-        session2.send("create E from C's code")
+        session2.resume("create E from C's code")
         manager_fresh.register(4, session2)
 
-        session2.send("create F")
+        session2.resume("create F")
         manager_fresh.register(5, session2)
 
         # Verify independence

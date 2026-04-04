@@ -35,7 +35,7 @@ class Session(Protocol):
         """Unique identifier for this session."""
         ...
 
-    def send(self, content: str, **kwargs: Any) -> str:
+    def resume(self, content: str, **kwargs: Any) -> str:
         """Send a message and get a response.  History grows."""
         ...
 
@@ -111,7 +111,7 @@ class MessageListSession:
 
     # -- Protocol methods -----------------------------------------------------
 
-    def send(self, content: str, **kwargs: Any) -> str:
+    def resume(self, content: str, **kwargs: Any) -> str:
         self._messages.append({"role": "user", "content": content})
         full_messages = [{"role": "system", "content": self._system_prompt}, *self._messages]
         response = self._api_call(full_messages, **kwargs)
@@ -155,7 +155,7 @@ class NullSession:
     def history(self) -> list[dict[str, Any]]:
         return []
 
-    def send(self, content: str, **kwargs: Any) -> str:
+    def resume(self, content: str, **kwargs: Any) -> str:
         return ""
 
     def fork(self, label: str = "") -> NullSession:
@@ -292,7 +292,7 @@ class SessionManager:
 
         # When proposer selects parent candidate 2:
         session = manager.select(parent_candidate_idx=2)
-        response = session.send("Improve the code...")
+        response = session.resume("Improve the code...")
 
         # After candidate is accepted:
         manager.register(candidate_idx=5)
@@ -383,6 +383,6 @@ def make_session_lm(
             content = prompt
         else:
             content = prompt[-1]["content"] if prompt else ""
-        return sess.send(content)
+        return sess.resume(content)
 
     return lm
