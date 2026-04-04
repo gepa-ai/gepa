@@ -429,6 +429,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         _resuming = self.run_dir is not None and os.path.exists(os.path.join(self.run_dir, "gepa_state.bin"))
         seed_held_out_evaluation = None if _resuming else held_out_evaluator(self.seed_candidate)
         if seed_held_out_evaluation is not None:
+            assert self.held_out is not None
             held_out_avg = (
                 sum(seed_held_out_evaluation.scores_by_id.values()) / len(seed_held_out_evaluation.scores_by_id)
                 if seed_held_out_evaluation.scores_by_id
