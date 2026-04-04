@@ -75,8 +75,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
+        # Session management (engine owns session lifecycle)
+        session_manager: Any | None = None,
     ):
         self.logger = logger
+        self.session_manager = session_manager
         self.run_dir = run_dir
         self.callbacks = callbacks
 
@@ -439,6 +442,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
                 state.i += 1
                 state.full_program_trace.append({"i": state.i})
+
+                # Select session for this iteration (engine owns session lifecycle)
+                if self.session_manager is not None:
+                    self.session_manager.select()
 
                 # Notify callbacks of iteration start
                 notify_callbacks(

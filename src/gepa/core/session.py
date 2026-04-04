@@ -66,7 +66,7 @@ class Session(Protocol):
 # ---------------------------------------------------------------------------
 
 
-class MessageListSession:
+class LLMSession:
     """Session backed by an in-memory message list -- works with any LLM API.
 
     ``send()`` appends a user message, calls the LLM, and appends the response.
@@ -120,15 +120,15 @@ class MessageListSession:
         self._messages.append({"role": "assistant", "content": response})
         return response
 
-    def fork(self) -> MessageListSession:
-        return MessageListSession(
+    def fork(self) -> LLMSession:
+        return LLMSession(
             system_prompt=self._system_prompt,
             api_call=self._api_call,
             messages=copy.deepcopy(self._messages),
         )
 
-    def reset(self) -> MessageListSession:
-        return MessageListSession(
+    def reset(self) -> LLMSession:
+        return LLMSession(
             system_prompt=self._system_prompt,
             api_call=self._api_call,
         )
@@ -312,7 +312,7 @@ class SessionManager:
     -------
     ::
 
-        create = lambda: MessageListSession(system_prompt="...", api_call=llm)
+        create = lambda: LLMSession(system_prompt="...", api_call=llm)
         manager = SessionManager(create=create, strategy=AlwaysFork())
 
         session = manager.select()
@@ -347,6 +347,33 @@ class SessionManager:
             self._current = self._create()
             self._sessions.append(self._current)
         return self._current
+
+
+# ---------------------------------------------------------------------------
+# Strategy resolution helper
+# ---------------------------------------------------------------------------
+
+
+def resolve_session_strategy(strategy: str | SessionStrategy) -> SessionStrategy:
+    """Convert a strategy name to a ``SessionStrategy`` instance.
+
+    Accepts a string (``"fork"``, ``"reset"``, ``"random"``, ``"round_robin"``)
+    or an already-instantiated ``SessionStrategy``.
+    """
+    if isinstance(strategy, str):
+        factories: dict[str, type] = {
+            "fork": AlwaysFork,
+            "reset": AlwaysReset,
+            "random": RandomStrategy,
+            "round_robin": RoundRobin,
+        }
+        if strategy not in factories:
+            raise ValueError(
+                f"Unknown session_strategy: {strategy!r}. "
+                f"Supported: {', '.join(repr(k) for k in factories)}"
+            )
+        return factories[strategy]()
+    return strategy
 
 
 # ---------------------------------------------------------------------------

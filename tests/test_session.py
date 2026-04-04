@@ -8,7 +8,7 @@ from __future__ import annotations
 from gepa.core.session import (
     AlwaysFork,
     AlwaysReset,
-    MessageListSession,
+    LLMSession,
     NullSession,
     RandomStrategy,
     RoundRobin,
@@ -19,15 +19,15 @@ from gepa.core.session import (
 )
 
 
-class TestMessageListSession:
-    def _make_echo_session(self, system_prompt: str = "You are helpful.") -> MessageListSession:
+class TestLLMSession:
+    def _make_echo_session(self, system_prompt: str = "You are helpful.") -> LLMSession:
         """Create a session with a simple echo API call."""
 
         def echo_api(messages: list[dict], **kwargs) -> str:
             last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
             return f"echo: {last_user}"
 
-        return MessageListSession(system_prompt=system_prompt, api_call=echo_api)
+        return LLMSession(system_prompt=system_prompt, api_call=echo_api)
 
     def test_protocol_compliance(self) -> None:
         session = self._make_echo_session()
@@ -99,7 +99,7 @@ class TestMessageListSession:
         def noop(messages, **kwargs):
             return ""
 
-        session = MessageListSession(system_prompt="", api_call=noop, session_id="my-id")
+        session = LLMSession(system_prompt="", api_call=noop, session_id="my-id")
         assert session.session_id == "my-id"
 
     def test_api_call_receives_system_prompt(self) -> None:
@@ -109,7 +109,7 @@ class TestMessageListSession:
             received_messages.extend(messages)
             return "ok"
 
-        session = MessageListSession(system_prompt="Be concise.", api_call=capture_api)
+        session = LLMSession(system_prompt="Be concise.", api_call=capture_api)
         session.send("test")
         assert received_messages[0] == {"role": "system", "content": "Be concise."}
 
@@ -142,12 +142,12 @@ class TestNullSession:
 
 
 class TestMakeSessionLm:
-    def _make_echo_session(self) -> MessageListSession:
+    def _make_echo_session(self) -> LLMSession:
         def echo_api(messages: list[dict], **kwargs) -> str:
             last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
             return f"echo: {last_user}"
 
-        return MessageListSession(system_prompt="test", api_call=echo_api)
+        return LLMSession(system_prompt="test", api_call=echo_api)
 
     def test_string_prompt(self) -> None:
         session = self._make_echo_session()
@@ -197,8 +197,8 @@ def _make_echo_factory(system_prompt: str = "test") -> tuple:
         last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
         return f"echo: {last_user}"
 
-    def factory() -> MessageListSession:
-        return MessageListSession(system_prompt=system_prompt, api_call=echo_api)
+    def factory() -> LLMSession:
+        return LLMSession(system_prompt=system_prompt, api_call=echo_api)
 
     return factory, echo_api
 

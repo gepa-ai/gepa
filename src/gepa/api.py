@@ -350,40 +350,16 @@ def optimize(
     if cache_evaluation:
         evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
 
-    # Build session manager
-    from gepa.core.session import (
-        AlwaysFork,
-        AlwaysReset,
-        MessageListSession,
-        RandomStrategy,
-        RoundRobin,
-        SessionManager,
-        SessionStrategy,
-    )
+    # Build session manager — engine owns lifecycle, proposer sees a plain LM
+    from gepa.core.session import LLMSession, SessionManager, make_session_lm, resolve_session_strategy
 
-    if isinstance(session_strategy, str):
-        _strategy_factories = {
-            "fork": AlwaysFork,
-            "reset": AlwaysReset,
-            "random": RandomStrategy,
-            "round_robin": RoundRobin,
-        }
-        _strategy_cls = _strategy_factories.get(session_strategy)
-        if _strategy_cls is None:
-            raise ValueError(
-                f"Unknown session_strategy: {session_strategy}. "
-                f"Supported strategies: {', '.join(repr(k) for k in _strategy_factories)}"
-            )
-        resolved_session_strategy: SessionStrategy = _strategy_cls()
-    else:
-        resolved_session_strategy = session_strategy
-
+    strategy = resolve_session_strategy(session_strategy)
     _reflection_lm_for_session = reflection_lm_callable
-
-    def _create_session() -> MessageListSession:
-        return MessageListSession(system_prompt="", api_call=_reflection_lm_for_session)
-
-    session_manager = SessionManager(create=_create_session, strategy=resolved_session_strategy)
+    session_manager = SessionManager(
+        create=lambda: LLMSession(system_prompt="", api_call=_reflection_lm_for_session),
+        strategy=strategy,
+    )
+    dynamic_lm = make_session_lm(session_manager.current_session) if reflection_lm_callable is not None else None
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
@@ -395,11 +371,10 @@ def optimize(
         perfect_score=perfect_score,
         skip_perfect_score=skip_perfect_score,
         experiment_tracker=experiment_tracker,
-        reflection_lm=reflection_lm_callable,
+        reflection_lm=dynamic_lm,
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
-        session_manager=session_manager,
     )
 
     def evaluator_fn(
@@ -441,6 +416,7 @@ def optimize(
         val_evaluation_policy=val_evaluation_policy,
         use_cloudpickle=use_cloudpickle,
         evaluation_cache=evaluation_cache,
+        session_manager=session_manager if reflection_lm_callable is not None else None,
     )
 
     with experiment_tracker:

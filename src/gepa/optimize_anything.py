@@ -1476,40 +1476,20 @@ def optimize_anything(
         else:
             InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
 
-    # --- 11. Build session manager from ReflectionConfig ---
-    from gepa.core.session import (
-        AlwaysFork,
-        AlwaysReset,
-        MessageListSession,
-        RandomStrategy,
-        RoundRobin,
-        SessionManager,
-        SessionStrategy,
+    # --- 11. Build session manager — engine owns lifecycle, proposer sees a plain LM ---
+    from gepa.core.session import LLMSession, SessionManager, make_session_lm, resolve_session_strategy
+
+    strategy = resolve_session_strategy(config.reflection.session_strategy)
+    _reflection_lm_for_session = config.reflection.reflection_lm
+    session_manager = SessionManager(
+        create=lambda: LLMSession(system_prompt="", api_call=_reflection_lm_for_session),
+        strategy=strategy,
     )
-
-    if isinstance(config.reflection.session_strategy, str):
-        strategy_factories = {
-            "fork": AlwaysFork,
-            "reset": AlwaysReset,
-            "random": RandomStrategy,
-            "round_robin": RoundRobin,
-        }
-        strategy_cls = strategy_factories.get(config.reflection.session_strategy)
-        if strategy_cls is None:
-            raise ValueError(
-                f"Unknown session_strategy: {config.reflection.session_strategy}. "
-                f"Supported strategies: {', '.join(repr(k) for k in strategy_factories)}"
-            )
-        session_strategy: SessionStrategy = strategy_cls()
-    else:
-        session_strategy = config.reflection.session_strategy
-
-    reflection_lm = config.reflection.reflection_lm
-
-    def _create_session() -> MessageListSession:
-        return MessageListSession(system_prompt="", api_call=reflection_lm)
-
-    session_manager = SessionManager(create=_create_session, strategy=session_strategy)
+    dynamic_lm = (
+        make_session_lm(session_manager.current_session)
+        if config.reflection.reflection_lm is not None
+        else None
+    )
 
     # --- 12. Build reflective proposer from ReflectionConfig ---
     reflective_proposer = ReflectiveMutationProposer(
@@ -1522,10 +1502,9 @@ def optimize_anything(
         perfect_score=config.reflection.perfect_score,
         skip_perfect_score=config.reflection.skip_perfect_score,
         experiment_tracker=experiment_tracker,
-        reflection_lm=config.reflection.reflection_lm,
+        reflection_lm=dynamic_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
-        session_manager=session_manager,
     )
 
     # Define evaluator function for merge proposer
@@ -1573,6 +1552,7 @@ def optimize_anything(
         val_evaluation_policy=config.engine.val_evaluation_policy,
         use_cloudpickle=config.engine.use_cloudpickle,
         evaluation_cache=evaluation_cache,
+        session_manager=session_manager if config.reflection.reflection_lm is not None else None,
     )
 
     # --- 15. Run optimization ---
