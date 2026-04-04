@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 from gepa.core.session import (
+    AlwaysBranchStrategy,
     AlwaysContinueStrategy,
     AlwaysForkStrategy,
-    AlwaysFreshStrategy,
     MessageListSession,
     NullSession,
     Session,
@@ -75,6 +75,23 @@ class TestMessageListSession:
         session.reset()
         assert len(session.history) == 0
 
+    def test_branch_creates_empty_session(self) -> None:
+        session = self._make_echo_session()
+        session.send("before branch")
+        branched = session.branch("child")
+
+        assert branched.session_id != session.session_id
+        assert "child" in branched.session_id
+        assert len(branched.history) == 0  # no history
+        assert len(session.history) == 2   # original untouched
+
+    def test_branch_preserves_backend(self) -> None:
+        session = self._make_echo_session()
+        session.send("setup")
+        branched = session.branch()
+        response = branched.send("test branch")
+        assert response == "echo: test branch"  # same API works
+
     def test_reset_preserves_system_prompt(self) -> None:
         session = self._make_echo_session(system_prompt="custom prompt")
         session.send("hello")
@@ -132,6 +149,12 @@ class TestNullSession:
         forked = session.fork("label")
         assert isinstance(forked, NullSession)
         assert forked.session_id != session.session_id
+
+    def test_branch_returns_new_null(self) -> None:
+        session = NullSession()
+        branched = session.branch("label")
+        assert isinstance(branched, NullSession)
+        assert branched.session_id != session.session_id
 
     def test_reset_noop(self) -> None:
         session = NullSession()
@@ -203,7 +226,7 @@ def _make_echo_factory(system_prompt: str = "test") -> tuple:
 class TestSessionStrategy:
     def test_protocol_compliance(self) -> None:
         assert isinstance(AlwaysContinueStrategy(), SessionStrategy)
-        assert isinstance(AlwaysFreshStrategy(), SessionStrategy)
+        assert isinstance(AlwaysBranchStrategy(), SessionStrategy)
         assert isinstance(AlwaysForkStrategy(), SessionStrategy)
 
 
@@ -220,9 +243,9 @@ class TestSessionManager:
         session = manager.select(parent_candidate_idx=0)
         assert len(session.history) == 2  # user + assistant from seed
 
-    def test_fresh_strategy_creates_fresh(self) -> None:
+    def test_branch_strategy_creates_fresh(self) -> None:
         factory, _ = _make_echo_factory()
-        manager = SessionManager(session_factory=factory, strategy=AlwaysFreshStrategy())
+        manager = SessionManager(session_factory=factory, strategy=AlwaysBranchStrategy())
 
         seed_session = factory()
         seed_session.send("seed message")
@@ -291,7 +314,7 @@ class TestSessionManager:
 
     def test_current_session(self) -> None:
         factory, _ = _make_echo_factory()
-        manager = SessionManager(session_factory=factory, strategy=AlwaysFreshStrategy())
+        manager = SessionManager(session_factory=factory, strategy=AlwaysBranchStrategy())
 
         session = manager.select(parent_candidate_idx=0)
         assert manager.current_session() is session
@@ -316,7 +339,7 @@ class TestSessionManager:
         manager.register(3)  # snapshot at D
 
         # Session 2: fresh from C (no conversation history)
-        manager_fresh = SessionManager(session_factory=factory, strategy=AlwaysFreshStrategy())
+        manager_fresh = SessionManager(session_factory=factory, strategy=AlwaysBranchStrategy())
         for idx, sess in manager.sessions.items():
             manager_fresh.register(idx, sess)
 

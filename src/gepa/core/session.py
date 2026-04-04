@@ -13,17 +13,25 @@ from typing import Any, Protocol, runtime_checkable
 class Session(Protocol):
     """Forkable interaction context for LLMs and coding agents.
 
-    A session tracks conversation state and supports branching:
-    - ``send()``: interact with the underlying LLM/agent
-    - ``fork()``: create an independent copy (explore different mutation directions)
-    - ``reset()``: return to initial state (start fresh)
+    A session tracks conversation state and supports four operations:
 
-    **Text-mode LLMs**: ``MessageListSession`` wraps a system prompt + message
-    list.  ``fork()`` deep-copies messages, ``reset()`` clears to system prompt.
+    - ``send(content)``: continue the conversation — history grows.
+    - ``fork()``: create a **new** session with history **copied** from this one.
+      Original is untouched.  The fork diverges independently after this point.
+    - ``branch()``: create a **new** session with **no history** but the same
+      backend config (system prompt, API, agent).  Original is untouched.
+    - ``reset()``: clear this session's history **in-place**.  Same session
+      object, just emptied.
 
-    **Coding agents** (Claude Code, Codex): concrete implementations in
-    ``src/gepa/core/sessions/`` wrap CLI subprocesses.  ``fork()`` creates a
-    new session from a checkpoint, ``reset()`` starts a fresh session.
+    +---------------------+-------------------+----------+---------+
+    | Operation           | Creates new?      | History  | Mutates |
+    |                     |                   | in new   | orig?   |
+    +---------------------+-------------------+----------+---------+
+    | send(content)       | No                | Grows    | Yes     |
+    | fork(label)         | Yes               | Copied   | No      |
+    | branch(label)       | Yes               | Empty    | No      |
+    | reset()             | No                | Cleared  | Yes     |
+    +---------------------+-------------------+----------+---------+
     """
 
     @property
@@ -32,18 +40,26 @@ class Session(Protocol):
         ...
 
     def send(self, content: str, **kwargs: Any) -> str:
-        """Send a message and get a response."""
+        """Send a message and get a response.  History grows."""
         ...
 
     def fork(self, label: str = "") -> Session:
-        """Create an independent copy of this session's state.
+        """Create a new session with history copied from this one.
 
-        The forked session shares history up to this point but diverges after.
+        Original is untouched.  The fork diverges independently.
+        """
+        ...
+
+    def branch(self, label: str = "") -> Session:
+        """Create a new session with no history but same backend config.
+
+        Original is untouched.  Use when starting fresh exploration from
+        a candidate's code/text state without conversation baggage.
         """
         ...
 
     def reset(self) -> None:
-        """Return to initial state (system prompt only, no history)."""
+        """Clear this session's history in-place.  Same session object."""
         ...
 
     @property
@@ -119,6 +135,14 @@ class MessageListSession:
             messages=copy.deepcopy(self._messages),
         )
 
+    def branch(self, label: str = "") -> MessageListSession:
+        new_id = f"{self._session_id}_branch_{label or uuid.uuid4().hex[:6]}"
+        return MessageListSession(
+            system_prompt=self._system_prompt,
+            api_call=self._api_call,
+            session_id=new_id,
+        )
+
     def reset(self) -> None:
         self._messages.clear()
 
@@ -148,6 +172,9 @@ class NullSession:
     def fork(self, label: str = "") -> NullSession:
         return NullSession(session_id=f"{self._session_id}_fork_{label or 'null'}")
 
+    def branch(self, label: str = "") -> NullSession:
+        return NullSession(session_id=f"{self._session_id}_branch_{label or 'null'}")
+
     def reset(self) -> None:
         pass
 
@@ -163,15 +190,15 @@ class SessionStrategy(Protocol):
 
     A strategy decides — given the parent candidate and all available sessions —
     which session to use for the next mutation.  It uses the session primitives
-    (``fork``, ``reset``, ``send``) internally but the *policy* logic is what
-    makes it a strategy.
+    (``fork``, ``branch``, ``reset``, ``send``) internally but the *policy*
+    logic is what makes it a strategy.
 
     Examples of strategies:
 
-    - **Random**: randomly continue, fork, or start fresh each iteration.
+    - **Random**: randomly continue, fork, or branch each iteration.
     - **Greedy**: always continue the best-scoring session.
-    - **Explore-exploit**: fork top K, reset bottom K, continue the rest.
-    - **LLM-decided**: ask an LLM whether to continue or try fresh.
+    - **Explore-exploit**: fork top K, branch bottom K, continue the rest.
+    - **LLM-decided**: ask an LLM whether to continue or branch.
     - **Population**: maintain N active sessions, prune worst performers.
     """
 
@@ -188,9 +215,10 @@ class SessionStrategy(Protocol):
         parent_candidate_idx:
             Index of the candidate selected as the mutation parent.
         sessions:
-            The current ``candidate_idx → Session`` registry (snapshots).
+            The current ``candidate_idx -> Session`` registry (snapshots).
         factory:
-            Creates a fresh session with no history.
+            Creates a brand-new session.  Only needed when no parent session
+            exists (e.g. seed candidate).
         """
         ...
 
@@ -216,11 +244,12 @@ class AlwaysContinueStrategy:
         return sessions.get(parent_candidate_idx) or factory()
 
 
-class AlwaysFreshStrategy:
-    """Start a fresh session every time — no conversation history.
+class AlwaysBranchStrategy:
+    """Branch from the parent — new session with no history.
 
-    The agent only sees the candidate's code/text state, not prior conversation.
-    Good for independent exploration from any point in the candidate tree.
+    Uses ``parent.branch()`` to create a fresh session with the same backend
+    config but no conversation history.  Good for independent exploration
+    from any point in the candidate tree.
     """
 
     def select(
@@ -229,15 +258,16 @@ class AlwaysFreshStrategy:
         sessions: dict[int, Session],
         factory: Callable[[], Session],
     ) -> Session:
-        return factory()
+        parent = sessions.get(parent_candidate_idx)
+        return parent.branch() if parent else factory()
 
 
 class AlwaysForkStrategy:
-    """Deep-copy the parent's session — history preserved, diverges after.
+    """Fork the parent's session — history copied, diverges after.
 
-    Like ``continue`` but creates an independent copy so the parent's session
-    is not modified.  Good when you want to try a different direction while
-    preserving the parent's context.
+    Uses ``parent.fork()`` to create an independent copy with full conversation
+    history.  Good when you want to try a different direction while keeping
+    the context of what was tried before.
     """
 
     def select(
