@@ -153,12 +153,107 @@ class NullSession:
 
 
 # ---------------------------------------------------------------------------
+# Session manager — registry + pluggable strategy
+# ---------------------------------------------------------------------------
+
+# Strategy callables: given parent candidate idx and session registry,
+# return the session to use for the next mutation.
+SessionStrategyFn = Callable[[int, dict[int, "Session"]], "Session"]
+
+
+class SessionManager:
+    """Manages a tree of sessions with a pluggable selection strategy.
+
+    Combines three concerns:
+
+    1. **Registry** — ``candidate_idx → Session`` mapping (the tree).
+    2. **Strategy** — decides how to pick/create a session for each mutation.
+    3. **Provider** — ``current_session()`` feeds the active session into
+       ``make_session_lm`` or any other consumer.
+
+    Built-in strategies:
+
+    - ``"continue"`` — reuse the parent's session (history grows).
+    - ``"branch"``   — create a fresh session (no history from parent).
+    - ``"fork"``     — deep-copy the parent's session (history preserved,
+      diverges after).
+
+    Custom strategies are callables ``(parent_idx, sessions) -> Session``.
+
+    Example
+    -------
+    ::
+
+        factory = lambda: MessageListSession(system_prompt="...", api_call=llm)
+        manager = SessionManager(session_factory=factory, strategy="branch")
+
+        # When proposer selects parent candidate 2:
+        session = manager.select(parent_candidate_idx=2)
+        response = session.send("Improve the code...")
+
+        # After candidate is accepted:
+        manager.register(candidate_idx=5, session=session)
+    """
+
+    def __init__(
+        self,
+        session_factory: Callable[[], Session],
+        strategy: str | SessionStrategyFn = "continue",
+    ) -> None:
+        self._factory = session_factory
+        self._strategy = strategy
+        self._sessions: dict[int, Session] = {}
+        self._current: Session | None = None
+
+    @property
+    def sessions(self) -> dict[int, Session]:
+        """Read-only view of the candidate → session registry."""
+        return dict(self._sessions)
+
+    def register(self, candidate_idx: int, session: Session | None = None) -> None:
+        """Snapshot a session for a candidate.
+
+        If *session* is ``None``, snapshots (forks) the current session.
+        The stored session is always a fork so the original can keep growing.
+        """
+        sess = session or self._current
+        if sess is not None:
+            self._sessions[candidate_idx] = sess.fork(label=f"c{candidate_idx}")
+
+    def select(self, parent_candidate_idx: int) -> Session:
+        """Pick the session for the next mutation using the configured strategy.
+
+        Returns the selected session and sets it as ``current_session()``.
+        """
+        if callable(self._strategy) and not isinstance(self._strategy, str):
+            self._current = self._strategy(parent_candidate_idx, self._sessions)
+        elif self._strategy == "continue":
+            self._current = self._sessions.get(parent_candidate_idx) or self._factory()
+        elif self._strategy == "branch":
+            self._current = self._factory()
+        elif self._strategy == "fork":
+            parent = self._sessions.get(parent_candidate_idx)
+            self._current = parent.fork() if parent else self._factory()
+        else:
+            raise ValueError(f"Unknown session strategy: {self._strategy!r}")
+        return self._current
+
+    def current_session(self) -> Session:
+        """Return the active session (set by the last ``select()`` call)."""
+        if self._current is None:
+            self._current = self._factory()
+        return self._current
+
+
+# ---------------------------------------------------------------------------
 # LanguageModel bridge
 # ---------------------------------------------------------------------------
 
 
-def make_session_lm(session: Session) -> Callable[[str | list[dict[str, Any]]], str]:
-    """Wrap a Session as a ``LanguageModel`` callable.
+def make_session_lm(
+    session: Session | Callable[[], Session],
+) -> Callable[[str | list[dict[str, Any]]], str]:
+    """Wrap a Session (or session provider) as a ``LanguageModel`` callable.
 
     The returned callable satisfies the ``LanguageModel`` protocol used by
     ``ReflectiveMutationProposer``::
@@ -167,32 +262,32 @@ def make_session_lm(session: Session) -> Callable[[str | list[dict[str, Any]]], 
             def __call__(self, prompt: str | list[dict[str, Any]]) -> str: ...
 
     This bridges sessions into the existing reflection pipeline — the proposer
-    calls ``lm(prompt)`` and the session handles statefulness (message history,
-    fork/reset/continue) transparently.
+    calls ``lm(prompt)`` and the session handles statefulness transparently.
 
     Parameters
     ----------
     session:
-        The session to route calls through.  Each ``lm(prompt)`` call maps to
-        ``session.send(content)``.
+        Either a ``Session`` instance (fixed) or a callable that returns the
+        current session (dynamic — e.g. ``manager.current_session``).
 
     Example
     -------
     ::
 
-        session = MessageListSession(system_prompt="...", api_call=my_llm)
+        # Fixed session:
         lm = make_session_lm(session)
 
-        # Use as a regular LanguageModel in the proposer:
-        proposer = ReflectiveMutationProposer(reflection_lm=lm, ...)
+        # Dynamic via SessionManager:
+        manager = SessionManager(factory, strategy="branch")
+        lm = make_session_lm(manager.current_session)
     """
 
     def lm(prompt: str | list[dict[str, Any]]) -> str:
+        sess = session() if callable(session) and not isinstance(session, Session) else session
         if isinstance(prompt, str):
             content = prompt
         else:
-            # Extract the last user message from an OpenAI-style message list
             content = prompt[-1]["content"] if prompt else ""
-        return session.send(content)
+        return sess.send(content)
 
     return lm
