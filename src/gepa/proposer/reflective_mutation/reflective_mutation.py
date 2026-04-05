@@ -125,6 +125,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             # Short-circuit: mutation_rate=0 means no change, skip LM call entirely
             if self.mutation_rate == 0.0:
                 new_texts[name] = base_instruction
+                prompts[name] = "(frozen: mutation_rate=0.0)"
+                raw_lm_outputs[name] = base_instruction
                 continue
 
             dataset_with_feedback = reflective_dataset[name]

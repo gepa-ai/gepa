@@ -468,9 +468,9 @@ class EngineConfig:
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
-    candidate_selection_strategy: (
-        CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"]
-    ) = "pareto"
+    candidate_selection_strategy: CandidateSelector | Literal[
+        "pareto", "current_best", "epsilon_greedy", "top_k_pareto"
+    ] = "pareto"
     frontier_type: FrontierType = "hybrid"
 
     # Parallelization settings for evaluation
@@ -623,7 +623,9 @@ def _build_seed_generation_prompt(
         examples = dataset[:3]
         example_lines = [f"- Example {i}: {ex}" for i, ex in enumerate(examples, 1)]
         sections.append(
-            "\n## Sample Inputs\n\nThe candidate will be evaluated on inputs like these:\n\n" + "\n".join(example_lines)
+            "\n## Sample Inputs\n\n"
+            "The candidate will be evaluated on inputs like these:\n\n"
+            + "\n".join(example_lines)
         )
 
     sections.append(

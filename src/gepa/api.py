@@ -187,6 +187,10 @@ def optimize(
     if seed_candidate is None or not seed_candidate:
         raise ValueError("seed_candidate must contain at least one component text.")
 
+    # Validate mutation_rate
+    if not 0.0 <= mutation_rate <= 1.0:
+        raise ValueError(f"mutation_rate must be between 0.0 and 1.0, got {mutation_rate}")
+
     active_adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None
     if adapter is None:
         assert task_lm is not None, (
@@ -350,10 +354,6 @@ def optimize(
     evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None
     if cache_evaluation:
         evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
-
-    # Validate mutation_rate
-    if not 0.0 <= mutation_rate <= 1.0:
-        raise ValueError(f"mutation_rate must be between 0.0 and 1.0, got {mutation_rate}")
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
