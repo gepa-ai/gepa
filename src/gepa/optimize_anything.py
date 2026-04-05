@@ -467,9 +467,9 @@ class EngineConfig:
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
-    candidate_selection_strategy: CandidateSelector | Literal[
-        "pareto", "current_best", "epsilon_greedy", "top_k_pareto"
-    ] = "pareto"
+    candidate_selection_strategy: (
+        CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"]
+    ) = "pareto"
     frontier_type: FrontierType = "hybrid"
 
     # Parallelization settings for evaluation
@@ -622,9 +622,7 @@ def _build_seed_generation_prompt(
         examples = dataset[:3]
         example_lines = [f"- Example {i}: {ex}" for i, ex in enumerate(examples, 1)]
         sections.append(
-            "\n## Sample Inputs\n\n"
-            "The candidate will be evaluated on inputs like these:\n\n"
-            + "\n".join(example_lines)
+            "\n## Sample Inputs\n\nThe candidate will be evaluated on inputs like these:\n\n" + "\n".join(example_lines)
         )
 
     sections.append(
@@ -1494,12 +1492,19 @@ def optimize_anything(
 
     strategy = resolve_session_strategy(config.reflection.session_strategy)
     _reflection_lm_for_session = config.reflection.reflection_lm
+
+    def _session_api_call(messages: list[dict], **kwargs: Any) -> str:
+        """Bridge: LLMSession passes list[dict], but the underlying LM expects str."""
+        assert _reflection_lm_for_session is not None
+        last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        return _reflection_lm_for_session(last_user)
+
     session_manager = SessionManager(
-        create=lambda: LLMSession(system_prompt="", api_call=_reflection_lm_for_session),
+        create=lambda: LLMSession(system_prompt="", api_call=_session_api_call),
         strategy=strategy,
     )
-    dynamic_lm = (
-        make_session_lm(session_manager.current_session)
+    dynamic_lm: LanguageModel | None = (
+        make_session_lm(session_manager.current_session, fallback=config.reflection.reflection_lm)  # type: ignore[assignment]
         if config.reflection.reflection_lm is not None
         else None
     )

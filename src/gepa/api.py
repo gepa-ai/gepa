@@ -371,11 +371,26 @@ def optimize(
 
     strategy = resolve_session_strategy(session_strategy)
     _reflection_lm_for_session = reflection_lm_callable
+
+    def _session_api_call(messages: list[dict[str, Any]], **kwargs: Any) -> str:
+        """Bridge: LLMSession passes list[dict], underlying LM expects str.
+
+        Extracts the last user message content and passes it as a plain string
+        so the underlying reflection_lm sees exactly what it would without sessions.
+        """
+        assert _reflection_lm_for_session is not None
+        last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        return _reflection_lm_for_session(last_user)
+
     session_manager = SessionManager(
-        create=lambda: LLMSession(system_prompt="", api_call=_reflection_lm_for_session),
+        create=lambda: LLMSession(system_prompt="", api_call=_session_api_call),
         strategy=strategy,
     )
-    dynamic_lm = make_session_lm(session_manager.current_session) if reflection_lm_callable is not None else None
+    dynamic_lm: LanguageModel | None = (
+        make_session_lm(session_manager.current_session, fallback=reflection_lm_callable)  # type: ignore[assignment]
+        if reflection_lm_callable is not None
+        else None
+    )
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,

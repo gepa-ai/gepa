@@ -369,8 +369,7 @@ def resolve_session_strategy(strategy: str | SessionStrategy) -> SessionStrategy
         }
         if strategy not in factories:
             raise ValueError(
-                f"Unknown session_strategy: {strategy!r}. "
-                f"Supported: {', '.join(repr(k) for k in factories)}"
+                f"Unknown session_strategy: {strategy!r}. Supported: {', '.join(repr(k) for k in factories)}"
             )
         return factories[strategy]()
     return strategy
@@ -383,6 +382,7 @@ def resolve_session_strategy(strategy: str | SessionStrategy) -> SessionStrategy
 
 def make_session_lm(
     session: Session | Callable[[], Session],
+    fallback: Callable | None = None,
 ) -> Callable[[str | list[dict[str, Any]]], str]:
     """Wrap a Session (or session provider) as a ``LanguageModel`` callable.
 
@@ -395,11 +395,17 @@ def make_session_lm(
     This bridges sessions into the existing reflection pipeline -- the proposer
     calls ``lm(prompt)`` and the session handles statefulness transparently.
 
+    For multimodal prompts (``list[dict]`` with image content), the session
+    is bypassed and the ``fallback`` LM is called directly, since sessions
+    only handle text.
+
     Parameters
     ----------
     session:
         Either a ``Session`` instance (fixed) or a callable that returns the
         current session (dynamic -- e.g. ``manager.current_session``).
+    fallback:
+        Optional LM callable for multimodal prompts that sessions can't handle.
 
     Example
     -------
@@ -416,9 +422,12 @@ def make_session_lm(
     def lm(prompt: str | list[dict[str, Any]]) -> str:
         sess = session() if callable(session) and not isinstance(session, Session) else session
         if isinstance(prompt, str):
-            content = prompt
-        else:
-            content = prompt[-1]["content"] if prompt else ""
+            return sess.send(prompt)
+        # Multimodal prompt (list of dicts) — bypass session if fallback is available
+        if fallback is not None:
+            return fallback(prompt)
+        # No fallback — extract text content and send through session
+        content = prompt[-1]["content"] if prompt else ""
         return sess.send(content)
 
     return lm
