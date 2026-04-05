@@ -1323,13 +1323,13 @@ def optimize_anything(
     # Convert reflection_lm string to callable
     if isinstance(config.reflection.reflection_lm, str):
         if config.reflection.reflection_lm.startswith("claude_code/"):
-            from gepa.core.claude_code import ClaudeCodeSession
+            from gepa.agents.claude_code import ClaudeCodeSession
             from gepa.core.session import make_session_lm
 
             _model = config.reflection.reflection_lm.split("/", 1)[1]
             config.reflection.reflection_lm = make_session_lm(ClaudeCodeSession(model=_model))  # type: ignore[assignment]
         elif config.reflection.reflection_lm.startswith("opencode/"):
-            from gepa.core.opencode import OpenCodeSession
+            from gepa.agents.opencode import OpenCodeSession
             from gepa.core.session import make_session_lm
 
             _model = config.reflection.reflection_lm.split("/", 1)[1]

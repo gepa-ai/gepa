@@ -263,14 +263,14 @@ def optimize(
     _agent_session = None  # set if reflection_lm is an agent string
     if isinstance(reflection_lm, str):
         if reflection_lm.startswith("claude_code/"):
-            from gepa.core.claude_code import ClaudeCodeSession
+            from gepa.agents.claude_code import ClaudeCodeSession
             from gepa.core.session import make_session_lm
 
             model = reflection_lm.split("/", 1)[1]
             _agent_session = ClaudeCodeSession(model=model)
             reflection_lm_callable = make_session_lm(_agent_session)  # type: ignore[assignment]
         elif reflection_lm.startswith("opencode/"):
-            from gepa.core.opencode import OpenCodeSession
+            from gepa.agents.opencode import OpenCodeSession
             from gepa.core.session import make_session_lm
 
             model = reflection_lm.split("/", 1)[1]

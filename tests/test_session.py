@@ -6,16 +6,18 @@
 from __future__ import annotations
 
 from gepa.core.session import (
-    AlwaysFork,
-    AlwaysReset,
     LLMSession,
     NullSession,
-    RandomStrategy,
-    RoundRobin,
     Session,
     SessionManager,
     SessionStrategy,
     make_session_lm,
+)
+from gepa.strategies.session_strategy import (
+    AlwaysFork,
+    AlwaysReset,
+    RandomStrategy,
+    RoundRobin,
 )
 
 

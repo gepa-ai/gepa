@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import copy
-import random as random_module
 import uuid
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
@@ -101,8 +100,6 @@ class LLMSession:
         self._api_call = api_call
         self._messages: list[dict[str, Any]] = list(messages) if messages else []
 
-    # -- Protocol properties --------------------------------------------------
-
     @property
     def session_id(self) -> str:
         return self._session_id
@@ -110,8 +107,6 @@ class LLMSession:
     @property
     def history(self) -> list[dict[str, Any]]:
         return list(self._messages)
-
-    # -- Protocol methods -----------------------------------------------------
 
     def send(self, content: str, **kwargs: Any) -> str:
         self._messages.append({"role": "user", "content": content})
@@ -135,11 +130,9 @@ class LLMSession:
 
 
 class NullSession:
-    """No-op session for text-mode backward compatibility.
+    """No-op session for backward compatibility.
 
     All operations are safe to call but do nothing meaningful.
-    Used when a proposer does not need session management (e.g. the existing
-    ``ReflectiveMutationProposer``).
     """
 
     def __init__(self, session_id: str | None = None) -> None:
@@ -164,7 +157,7 @@ class NullSession:
 
 
 # ---------------------------------------------------------------------------
-# Session strategy -- governs session selection
+# Session strategy protocol
 # ---------------------------------------------------------------------------
 
 
@@ -176,16 +169,7 @@ class SessionStrategy(Protocol):
     The strategy then decides: fork an existing session from the pool
     (continue with context), or reset one (clean slate).
 
-    The strategy sees the pool of existing sessions and a factory for
-    bootstrapping the very first session (when the pool is empty).
-
-    Two primitives a strategy can use:
-
-    - **fork**: call ``session.fork()`` on a pooled session (copy history)
-    - **reset**: call ``session.reset()`` on a pooled session (no history)
-
-    Built-in strategies: AlwaysFork, AlwaysReset, RandomStrategy, RoundRobin.
-    Custom strategies can implement any logic: LLM-decided, explore-exploit, etc.
+    Built-in strategies live in ``gepa.strategies.session_strategy``.
     """
 
     def select(
@@ -206,91 +190,31 @@ class SessionStrategy(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Built-in strategies
+# Strategy resolution helper
 # ---------------------------------------------------------------------------
 
 
-class AlwaysFork:
-    """Fork the most recent session -- copy history, diverge after.
+def resolve_session_strategy(strategy: str | SessionStrategy) -> SessionStrategy:
+    """Convert a strategy name to a ``SessionStrategy`` instance.
 
-    Creates an independent copy of the most recent session.  The original
-    stays in the pool untouched.  The LLM sees the full conversation
-    history and can build on what was tried before.
+    Accepts a string (``"fork"``, ``"reset"``, ``"random"``, ``"round_robin"``)
+    or an already-instantiated ``SessionStrategy``.
     """
+    if isinstance(strategy, str):
+        from gepa.strategies.session_strategy import AlwaysFork, AlwaysReset, RandomStrategy, RoundRobin
 
-    def select(
-        self,
-        sessions: list[Session],
-        create: Callable[[], Session],
-    ) -> Session:
-        return sessions[-1].fork() if sessions else create()
-
-
-class AlwaysReset:
-    """Reset from the most recent session -- no history.
-
-    Creates a new session with the same backend config but no conversation
-    history.  Equivalent to current GEPA behavior (stateless reflection LM).
-    Each mutation starts with a clean slate.
-    """
-
-    def select(
-        self,
-        sessions: list[Session],
-        create: Callable[[], Session],
-    ) -> Session:
-        return sessions[-1].reset() if sessions else create()
-
-
-class RandomStrategy:
-    """Randomly fork or reset a random session from the pool.
-
-    Each iteration, picks a random session and randomly decides whether
-    to fork it (keep history) or reset it (clean slate).
-
-    Parameters
-    ----------
-    fork_probability:
-        Probability of forking vs resetting.  Default 0.5.
-    """
-
-    def __init__(self, fork_probability: float = 0.5) -> None:
-        self._fork_prob = fork_probability
-
-    def select(
-        self,
-        sessions: list[Session],
-        create: Callable[[], Session],
-    ) -> Session:
-        if not sessions:
-            return create()
-        session = random_module.choice(sessions)
-        if random_module.random() < self._fork_prob:
-            return session.fork()
-        return session.reset()
-
-
-class RoundRobin:
-    """Alternate between fork and reset.
-
-    Cycles through fork and reset on each call.  Starts with fork.
-    """
-
-    def __init__(self) -> None:
-        self._counter = 0
-
-    def select(
-        self,
-        sessions: list[Session],
-        create: Callable[[], Session],
-    ) -> Session:
-        if not sessions:
-            return create()
-        session = sessions[-1]
-        self._counter += 1
-        if self._counter % 2 == 1:
-            return session.fork()
-        return session.reset()
+        factories: dict[str, type] = {
+            "fork": AlwaysFork,
+            "reset": AlwaysReset,
+            "random": RandomStrategy,
+            "round_robin": RoundRobin,
+        }
+        if strategy not in factories:
+            raise ValueError(
+                f"Unknown session_strategy: {strategy!r}. Supported: {', '.join(repr(k) for k in factories)}"
+            )
+        return factories[strategy]()
+    return strategy
 
 
 # ---------------------------------------------------------------------------
@@ -301,16 +225,15 @@ class RoundRobin:
 class SessionManager:
     """Manages a pool of sessions with a pluggable strategy.
 
-    At each iteration:
-
-    1. The engine calls ``select()`` -- the strategy picks a session
-       from the pool (fork) or resets one (fresh start).
-    2. The returned session is used for the mutation (via ``send()``).
-    3. The session is automatically added to the pool.
+    At each iteration the engine calls ``select()`` — the strategy picks
+    a session from the pool (fork) or resets one (fresh start).  The
+    returned session is used for the mutation via ``send()``.
 
     Example
     -------
     ::
+
+        from gepa.strategies.session_strategy import AlwaysFork
 
         create = lambda: LLMSession(system_prompt="...", api_call=llm)
         manager = SessionManager(create=create, strategy=AlwaysFork())
@@ -325,7 +248,11 @@ class SessionManager:
         strategy: SessionStrategy | None = None,
     ) -> None:
         self._create = create
-        self._strategy: SessionStrategy = strategy or AlwaysFork()
+        if strategy is None:
+            from gepa.strategies.session_strategy import AlwaysFork
+
+            strategy = AlwaysFork()
+        self._strategy: SessionStrategy = strategy
         self._sessions: list[Session] = []
         self._current: Session | None = None
 
@@ -350,32 +277,6 @@ class SessionManager:
 
 
 # ---------------------------------------------------------------------------
-# Strategy resolution helper
-# ---------------------------------------------------------------------------
-
-
-def resolve_session_strategy(strategy: str | SessionStrategy) -> SessionStrategy:
-    """Convert a strategy name to a ``SessionStrategy`` instance.
-
-    Accepts a string (``"fork"``, ``"reset"``, ``"random"``, ``"round_robin"``)
-    or an already-instantiated ``SessionStrategy``.
-    """
-    if isinstance(strategy, str):
-        factories: dict[str, type] = {
-            "fork": AlwaysFork,
-            "reset": AlwaysReset,
-            "random": RandomStrategy,
-            "round_robin": RoundRobin,
-        }
-        if strategy not in factories:
-            raise ValueError(
-                f"Unknown session_strategy: {strategy!r}. Supported: {', '.join(repr(k) for k in factories)}"
-            )
-        return factories[strategy]()
-    return strategy
-
-
-# ---------------------------------------------------------------------------
 # LanguageModel bridge
 # ---------------------------------------------------------------------------
 
@@ -392,9 +293,6 @@ def make_session_lm(
         class LanguageModel(Protocol):
             def __call__(self, prompt: str | list[dict[str, Any]]) -> str: ...
 
-    This bridges sessions into the existing reflection pipeline -- the proposer
-    calls ``lm(prompt)`` and the session handles statefulness transparently.
-
     For multimodal prompts (``list[dict]`` with image content), the session
     is bypassed and the ``fallback`` LM is called directly, since sessions
     only handle text.
@@ -403,20 +301,9 @@ def make_session_lm(
     ----------
     session:
         Either a ``Session`` instance (fixed) or a callable that returns the
-        current session (dynamic -- e.g. ``manager.current_session``).
+        current session (dynamic — e.g. ``manager.current_session``).
     fallback:
         Optional LM callable for multimodal prompts that sessions can't handle.
-
-    Example
-    -------
-    ::
-
-        # Fixed session:
-        lm = make_session_lm(session)
-
-        # Dynamic via SessionManager:
-        manager = SessionManager(create=factory, strategy=AlwaysFork())
-        lm = make_session_lm(manager.current_session)
     """
 
     def lm(prompt: str | list[dict[str, Any]]) -> str:
