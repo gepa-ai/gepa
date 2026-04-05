@@ -125,10 +125,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         """Snapshot adapter state into GEPAState before saving.
 
         No-op if the adapter does not implement ``get_adapter_state``.
+        Makes a shallow copy to avoid mutations between snapshot and save.
         """
         getter = getattr(self.adapter, "get_adapter_state", None)
         if getter is not None:
-            state.adapter_state = getter()
+            state.adapter_state = dict(getter())
 
     def _sync_state_to_adapter(self, state: GEPAState) -> None:
         """Restore persisted adapter state into the adapter after loading.

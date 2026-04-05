@@ -84,6 +84,20 @@ class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
        This method receives the current candidate, the reflective dataset, and the list of components to update,
        and returns a mapping from component name to new component text.
 
+    4) Optional adapter state persistence (get_adapter_state / set_adapter_state):
+       Adapters that need to persist state across checkpoint save/load/resume
+       boundaries can implement two optional methods:
+
+       - ``get_adapter_state() -> dict[str, Any]``: return a fresh dict of
+         adapter-specific state to be snapshotted into the checkpoint. Must
+         return a **new dict** (not a reference to internal state) to avoid
+         mutations between snapshot and save.
+       - ``set_adapter_state(state: dict[str, Any]) -> None``: restore
+         previously persisted state into the adapter (called on resume).
+
+       Adapters that do not implement these methods are unaffected — the
+       engine detects their absence via duck typing and skips the calls.
+
     Key concepts and contracts:
     - candidate: Dict[str, str] mapping a named component of the system to its corresponding text.
     - scores: higher is better. GEPA uses:

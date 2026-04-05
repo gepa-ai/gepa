@@ -372,6 +372,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         assert len(state.pareto_front_valset) == len(state.program_at_pareto_front_valset)
         assert set(state.pareto_front_valset.keys()) == set(state.program_at_pareto_front_valset.keys())
         assert set(state.objective_pareto_front.keys()) == set(state.program_at_pareto_front_objectives.keys())
+        assert isinstance(state.adapter_state, dict)
         return state
 
     @staticmethod
