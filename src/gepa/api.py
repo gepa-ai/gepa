@@ -268,14 +268,14 @@ def optimize(
 
             model = reflection_lm.split("/", 1)[1]
             _agent_session = ClaudeCodeSession(model=model)
-            reflection_lm_callable = make_session_lm(_agent_session)
+            reflection_lm_callable = make_session_lm(_agent_session)  # type: ignore[assignment]
         elif reflection_lm.startswith("opencode/"):
             from gepa.core.opencode import OpenCodeSession
             from gepa.core.session import make_session_lm
 
             model = reflection_lm.split("/", 1)[1]
             _agent_session = OpenCodeSession(model=model)
-            reflection_lm_callable = make_session_lm(_agent_session)
+            reflection_lm_callable = make_session_lm(_agent_session)  # type: ignore[assignment]
         else:
             from gepa.lm import LM
 

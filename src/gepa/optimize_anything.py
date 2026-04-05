@@ -1327,13 +1327,13 @@ def optimize_anything(
             from gepa.core.session import make_session_lm
 
             _model = config.reflection.reflection_lm.split("/", 1)[1]
-            config.reflection.reflection_lm = make_session_lm(ClaudeCodeSession(model=_model))
+            config.reflection.reflection_lm = make_session_lm(ClaudeCodeSession(model=_model))  # type: ignore[assignment]
         elif config.reflection.reflection_lm.startswith("opencode/"):
             from gepa.core.opencode import OpenCodeSession
             from gepa.core.session import make_session_lm
 
             _model = config.reflection.reflection_lm.split("/", 1)[1]
-            config.reflection.reflection_lm = make_session_lm(OpenCodeSession(model=_model))
+            config.reflection.reflection_lm = make_session_lm(OpenCodeSession(model=_model))  # type: ignore[assignment]
         else:
             config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
 
@@ -1497,7 +1497,7 @@ def optimize_anything(
         """Bridge: LLMSession passes list[dict], but the underlying LM expects str."""
         assert _reflection_lm_for_session is not None
         last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-        return _reflection_lm_for_session(last_user)
+        return _reflection_lm_for_session(last_user)  # type: ignore[operator]
 
     session_manager = SessionManager(
         create=lambda: LLMSession(system_prompt="", api_call=_session_api_call),
