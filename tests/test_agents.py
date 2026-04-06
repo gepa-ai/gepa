@@ -957,6 +957,209 @@ class TestAgentWiring:
 
 
 # ===========================================================================
+# End-to-end mock: Claude Code optimization loop with sessions
+# ===========================================================================
+
+
+class TestEndToEndClaudeCodeSession:
+    """Simulate a full optimization loop with ClaudeCodeSession + SessionManager.
+
+    Mocks subprocess.run so no real CLI calls happen.  Exercises the complete
+    data flow: select(parent) → session.send(prompt) → evaluate → observe.
+    """
+
+    @patch("gepa.agents.claude_code.subprocess.run")
+    def test_fork_strategy_with_agent(self, mock_run: MagicMock):
+        """AlwaysFork: agent sessions fork and accumulate across iterations."""
+        from gepa.core.session import SessionManager
+        from gepa.strategies.session_strategy import AlwaysFork
+
+        call_count = [0]
+
+        def mock_subprocess(*args, **kwargs):
+            call_count[0] += 1
+            return _cc_result(
+                stdout=_claude_ok(
+                    result=f"candidate_v{call_count[0]}",
+                    session_id=f"sess_{call_count[0]}",
+                )
+            )
+
+        mock_run.side_effect = mock_subprocess
+
+        agent = CodingAgent(harness="claude_code", model="sonnet")
+        manager = SessionManager(create=agent.create_session, strategy=AlwaysFork())
+
+        # Iteration 0: root mutation
+        s0 = manager.select(parent_candidate_idx=None)
+        r0 = s0.send("Improve the initial code")
+        assert r0 == "candidate_v1"
+        assert s0.session_id == "sess_1"
+        manager.observe(candidate_idx=0, accepted=True, val_score=0.3)
+
+        # Iteration 1: fork from most recent, mutate → accepted
+        s1 = manager.select(parent_candidate_idx=0)
+        # Fork triggers a subprocess call (--fork-session)
+        assert isinstance(s1, ClaudeCodeSession)
+        r1 = s1.send("Make it faster")
+        assert "candidate_v" in r1
+        manager.observe(candidate_idx=1, accepted=True, val_score=0.6)
+
+        # Iteration 2: fork again, mutate → rejected
+        s2 = manager.select(parent_candidate_idx=1)
+        s2.send("Add error handling")
+        manager.observe(candidate_idx=2, accepted=False, val_score=0.2)
+        assert 2 not in manager.sessions  # rejected → not bound
+
+        # Verify: 2 accepted candidates with scores
+        assert set(manager.sessions.keys()) == {0, 1}
+        assert manager.sessions[0].val_score == 0.3
+        assert manager.sessions[1].val_score == 0.6
+
+    @patch("gepa.agents.claude_code.subprocess.run")
+    def test_parent_linked_lineage_with_agent(self, mock_run: MagicMock):
+        """ParentLinked: agent sessions fork from parent candidate's session.
+
+        Candidate tree:   0 → 1 → 2
+                              \\→ 3
+        """
+        from gepa.core.session import SessionManager
+        from gepa.strategies.session_strategy import ParentLinked
+
+        call_count = [0]
+
+        def mock_subprocess(*args, **kwargs):
+            call_count[0] += 1
+            return _cc_result(
+                stdout=_claude_ok(
+                    result=f"candidate_v{call_count[0]}",
+                    session_id=f"sess_{call_count[0]}",
+                )
+            )
+
+        mock_run.side_effect = mock_subprocess
+
+        agent = CodingAgent(harness="claude_code", model="sonnet")
+        manager = SessionManager(create=agent.create_session, strategy=ParentLinked())
+
+        # Root: candidate 0
+        s0 = manager.select(parent_candidate_idx=None)
+        s0.send("root mutation")
+        manager.observe(candidate_idx=0, accepted=True, val_score=0.3)
+
+        # Mutate 0 → candidate 1
+        s1 = manager.select(parent_candidate_idx=0)
+        s1.send("mutate 0 → 1")
+        manager.observe(candidate_idx=1, accepted=True, val_score=0.6)
+
+        # Mutate 1 → candidate 2
+        s2 = manager.select(parent_candidate_idx=1)
+        s2.send("mutate 1 → 2")
+        manager.observe(candidate_idx=2, accepted=True, val_score=0.8)
+
+        # Mutate 1 again → candidate 3 (sibling of 2)
+        s3 = manager.select(parent_candidate_idx=1)
+        s3.send("mutate 1 → 3")
+        manager.observe(candidate_idx=3, accepted=True, val_score=0.5)
+
+        # All 4 candidates bound with scores
+        assert set(manager.sessions.keys()) == {0, 1, 2, 3}
+        assert manager.sessions[2].val_score == 0.8
+        best = max(manager.sessions, key=lambda k: manager.sessions[k].val_score or 0)
+        assert best == 2
+
+    @patch("gepa.agents.claude_code.subprocess.run")
+    def test_cli_flags_correct_across_loop(self, mock_run: MagicMock):
+        """Verify subprocess calls use --resume and --fork-session correctly."""
+        from gepa.core.session import SessionManager
+        from gepa.strategies.session_strategy import AlwaysFork
+
+        call_count = [0]
+        captured_cmds: list[list[str]] = []
+
+        def mock_subprocess(cmd, **kwargs):
+            call_count[0] += 1
+            captured_cmds.append(list(cmd))
+            return _cc_result(
+                stdout=_claude_ok(
+                    result=f"result_{call_count[0]}",
+                    session_id=f"sess_{call_count[0]}",
+                )
+            )
+
+        mock_run.side_effect = mock_subprocess
+
+        agent = CodingAgent(harness="claude_code", model="sonnet")
+        manager = SessionManager(create=agent.create_session, strategy=AlwaysFork())
+
+        # Iteration 0: first send — no --resume (new session)
+        s0 = manager.select()
+        s0.send("Hello")
+        manager.observe(candidate_idx=0, accepted=True)
+
+        # Iteration 1: fork → --fork-session, then send → --resume
+        s1 = manager.select()
+        s1.send("World")
+        manager.observe(candidate_idx=1, accepted=True)
+
+        # cmd[0]: initial send — no --resume, no --fork-session
+        assert "--resume" not in captured_cmds[0]
+        assert "--fork-session" not in captured_cmds[0]
+
+        # cmd[1]: fork call — has --fork-session and --resume (from s0's session_id)
+        assert "--fork-session" in captured_cmds[1]
+        assert "--resume" in captured_cmds[1]
+
+        # cmd[2]: send on forked session — has --resume (new forked session_id)
+        assert "--resume" in captured_cmds[2]
+        assert "--fork-session" not in captured_cmds[2]
+
+        # No --dangerously-skip-permissions in any call
+        for cmd in captured_cmds:
+            assert "--dangerously-skip-permissions" not in cmd
+
+    @patch("gepa.agents.claude_code.subprocess.run")
+    def test_dynamic_lm_with_agent_session(self, mock_run: MagicMock):
+        """make_session_lm routes proposer calls through the agent's current session."""
+        from gepa.core.session import SessionManager, make_session_lm
+        from gepa.strategies.session_strategy import AlwaysFork
+
+        call_count = [0]
+
+        def mock_subprocess(*args, **kwargs):
+            call_count[0] += 1
+            return _cc_result(
+                stdout=_claude_ok(
+                    result=f"improved_v{call_count[0]}",
+                    session_id=f"sess_{call_count[0]}",
+                )
+            )
+
+        mock_run.side_effect = mock_subprocess
+
+        agent = CodingAgent(harness="claude_code", model="sonnet")
+        manager = SessionManager(create=agent.create_session, strategy=AlwaysFork())
+        dynamic_lm = make_session_lm(manager.current_session)
+
+        # Iteration 0: select, then proposer calls lm()
+        manager.select()
+        result = dynamic_lm("Improve this code")
+        assert result == "improved_v1"
+        manager.observe(candidate_idx=0, accepted=True, val_score=0.5)
+
+        # Iteration 1: new session via fork, lm() routes to it
+        manager.select()
+        result = dynamic_lm("Make it cleaner")
+        # Fork call (v2) + send call (v3)
+        assert result == "improved_v3"
+        manager.observe(candidate_idx=1, accepted=True, val_score=0.8)
+
+        # Scores tracked in store
+        assert manager.sessions[0].val_score == 0.5
+        assert manager.sessions[1].val_score == 0.8
+
+
+# ===========================================================================
 # Integration Tests — real CLI calls (skipped if CLI not available)
 # ===========================================================================
 

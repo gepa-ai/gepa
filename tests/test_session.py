@@ -548,3 +548,146 @@ class TestResolveSessionStrategy:
     def test_unknown_raises(self):
         with pytest.raises(ValueError, match="Unknown session_strategy"):
             resolve_session_strategy("nonexistent")
+
+
+# ===========================================================================
+# End-to-end mock: LLM API optimization loop with sessions
+# ===========================================================================
+
+
+class TestEndToEndLLMSession:
+    """Simulate a full optimization loop with LLMSession + SessionManager.
+
+    This exercises the complete data flow that the engine performs:
+    select(parent) → session.send(prompt) → evaluate → observe(idx, accepted, score)
+    repeated across multiple iterations, verifying that session state, history,
+    val_scores, and lineage tracking all work correctly.
+    """
+
+    def test_fork_strategy_accumulates_history(self):
+        """AlwaysFork: each accepted mutation's session carries forward full history."""
+        factory, _ = _make_echo_factory()
+        manager = SessionManager(create=factory, strategy=AlwaysFork())
+
+        # Iteration 0: root mutation
+        s0 = manager.select(parent_candidate_idx=None)
+        response_0 = s0.send("Improve the initial prompt")
+        assert response_0 == "echo: Improve the initial prompt"
+        manager.observe(candidate_idx=0, accepted=True, val_score=0.3)
+
+        # Iteration 1: mutate candidate 0 → accepted as candidate 1
+        s1 = manager.select(parent_candidate_idx=0)
+        response_1 = s1.send("Make it more concise")
+        assert response_1 == "echo: Make it more concise"
+        # s1 was forked from most-recent → carries s0's history
+        assert len(s1.history) == 4  # 2 from s0 + 2 from this send
+        manager.observe(candidate_idx=1, accepted=True, val_score=0.6)
+
+        # Iteration 2: mutate candidate 1 → rejected
+        s2 = manager.select(parent_candidate_idx=1)
+        s2.send("Add examples")
+        manager.observe(candidate_idx=2, accepted=False, val_score=0.2)
+        # Rejected → not bound in store
+        assert 2 not in manager.sessions
+
+        # Iteration 3: mutate candidate 1 again → accepted
+        s3 = manager.select(parent_candidate_idx=1)
+        s3.send("Use chain of thought")
+        manager.observe(candidate_idx=3, accepted=True, val_score=0.8)
+
+        # Final state: 3 accepted candidates, scores tracked
+        assert set(manager.sessions.keys()) == {0, 1, 3}
+        assert manager.sessions[0].val_score == 0.3
+        assert manager.sessions[1].val_score == 0.6
+        assert manager.sessions[3].val_score == 0.8
+        assert manager.iteration == 4
+
+    def test_reset_strategy_stateless_behavior(self):
+        """AlwaysReset: each iteration starts with empty history (current GEPA default)."""
+        factory, _ = _make_echo_factory()
+        manager = SessionManager(create=factory, strategy=AlwaysReset())
+
+        # Iteration 0
+        s0 = manager.select()
+        s0.send("First prompt")
+        manager.observe(candidate_idx=0, accepted=True, val_score=0.5)
+
+        # Iteration 1: reset gives clean slate
+        s1 = manager.select()
+        assert s1.history == []  # no history from previous iteration
+        s1.send("Second prompt")
+        assert len(s1.history) == 2  # only this iteration's messages
+        manager.observe(candidate_idx=1, accepted=True, val_score=0.7)
+
+    def test_parent_linked_lineage(self):
+        """ParentLinked: forking from parent builds a session tree matching the candidate tree.
+
+        Candidate tree:
+              0 (root)
+             / \\
+            1   3
+            |
+            2
+
+        Session tree should mirror this: s1 forks from s0, s2 from s1, s3 from s0.
+        """
+        factory, _ = _make_echo_factory()
+        manager = SessionManager(create=factory, strategy=ParentLinked())
+
+        # Root: create session, produce candidate 0
+        s0 = manager.select(parent_candidate_idx=None)
+        s0.send("root mutation")
+        manager.observe(candidate_idx=0, accepted=True, val_score=0.3)
+
+        # Mutate 0 → candidate 1
+        s1 = manager.select(parent_candidate_idx=0)
+        s1.send("mutate 0 → 1")
+        manager.observe(candidate_idx=1, accepted=True, val_score=0.5)
+        # s1 should have root's history + its own
+        assert len(s1.history) == 4
+
+        # Mutate 1 → candidate 2
+        s2 = manager.select(parent_candidate_idx=1)
+        s2.send("mutate 1 → 2")
+        manager.observe(candidate_idx=2, accepted=True, val_score=0.8)
+        # s2 should have root + 0→1 + 1→2
+        assert len(s2.history) == 6
+
+        # Mutate 0 again → candidate 3 (sibling of 1)
+        s3 = manager.select(parent_candidate_idx=0)
+        s3.send("mutate 0 → 3")
+        manager.observe(candidate_idx=3, accepted=True, val_score=0.4)
+        # s3 forks from s0 → only root history + its own
+        assert len(s3.history) == 4
+
+        # s0 untouched by any fork
+        assert len(s0.history) == 2
+
+        # All scores tracked
+        assert manager.sessions[2].val_score == 0.8
+        best = max(manager.sessions, key=lambda k: manager.sessions[k].val_score or 0)
+        assert best == 2
+
+    def test_dynamic_lm_routes_through_session(self):
+        """make_session_lm + SessionManager: the proposer's lm() call hits the current session."""
+        from gepa.core.session import make_session_lm
+
+        factory, _ = _make_echo_factory()
+        manager = SessionManager(create=factory, strategy=AlwaysFork())
+
+        # Wire dynamic LM the same way api.py does
+        dynamic_lm = make_session_lm(manager.current_session)
+
+        # Iteration 0
+        manager.select()
+        result = dynamic_lm("Improve this prompt")  # goes through current_session.send()
+        assert result == "echo: Improve this prompt"
+        manager.observe(candidate_idx=0, accepted=True, val_score=0.5)
+
+        # Iteration 1: select new session, dynamic_lm automatically uses it
+        manager.select()
+        result = dynamic_lm("Make it better")
+        assert result == "echo: Make it better"
+        # Current session has forked history from iter 0 + new message
+        current = manager.current_session()
+        assert len(current.history) == 4
