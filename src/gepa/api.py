@@ -57,6 +57,8 @@ def optimize(
     perfect_score: float = 1.0,
     reflection_prompt_template: str | dict[str, str] | None = None,
     custom_candidate_proposer: ProposalFn | None = None,
+    # Mutation rate configuration
+    mutation_rate: float = 1.0,
     # Component selection configuration
     module_selector: ReflectionComponentSelector | str = "round_robin",
     # Merge-based configuration
@@ -142,6 +144,7 @@ def optimize(
     - perfect_score: The perfect score to achieve.
     - reflection_prompt_template: The prompt template to use for reflection. Can be either a string (applied to all components) or a dict mapping component names to their specific templates. If not provided, GEPA will use the default prompt template (see [InstructionProposalSignature](src/gepa/strategies/instruction_proposal.py)). Each prompt template must contain the following placeholders, which will be replaced with actual values: `<curr_param>` (will be replaced by the instructions/component to evolve) and `<side_info>` (replaced with the inputs, outputs, and feedback generated with current instruction). When using a dict, components without a specified template will use the default template. This will be ignored if the adapter provides its own `propose_new_texts` method.
     - custom_candidate_proposer: Optional custom function for proposing new candidates. If provided, this will be used instead of the default LLM-based reflection approach. Cannot be used if adapter provides `propose_new_texts`. Signature: `(candidate, reflective_dataset, components_to_update) -> dict[str, str]`.
+    - mutation_rate: Controls how much of the candidate can change per iteration, expressed as a fraction (0.0-1.0). 1.0 (default) allows full rewrites. 0.2 means only ~20% can change. 0.0 freezes the candidate. When < 1.0, constraint instructions are appended to the reflection prompt.
 
     # Component selection configuration
     - module_selector: Component selection strategy. Can be a ReflectionComponentSelector instance or a string ('round_robin', 'all'). Defaults to 'round_robin'. The 'round_robin' strategy cycles through components in order. The 'all' strategy selects all components for modification in every GEPA iteration.
@@ -183,6 +186,10 @@ def optimize(
     # Validate seed_candidate is not None or empty
     if seed_candidate is None or not seed_candidate:
         raise ValueError("seed_candidate must contain at least one component text.")
+
+    # Validate mutation_rate
+    if not 0.0 <= mutation_rate <= 1.0:
+        raise ValueError(f"mutation_rate must be between 0.0 and 1.0, got {mutation_rate}")
 
     active_adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None
     if adapter is None:
@@ -362,6 +369,7 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
+        mutation_rate=mutation_rate,
     )
 
     def evaluator_fn(
