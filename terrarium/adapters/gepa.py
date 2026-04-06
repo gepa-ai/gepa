@@ -33,12 +33,14 @@ class GEPAAdapter:
         run_dir: str = "outputs/terrarium",
         parallel: bool = True,
         max_workers: int = 16,
+        callbacks: list[Any] | None = None,
         **engine_kwargs: Any,
     ) -> None:
         self.reflection_lm = reflection_lm
         self.run_dir = run_dir
         self.parallel = parallel
         self.max_workers = max_workers
+        self.callbacks = callbacks or []
         self.engine_kwargs = engine_kwargs
 
     def evolve(self, task: Task, server: EvalServer, max_evals: int) -> Result:
@@ -55,6 +57,7 @@ class GEPAAdapter:
                 **self.engine_kwargs,
             ),
             reflection=ReflectionConfig(reflection_lm=self.reflection_lm),
+            callbacks=self.callbacks if self.callbacks else None,
         )
 
         # Bridge: optimize_anything calls this evaluator, which goes through

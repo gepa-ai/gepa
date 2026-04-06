@@ -13,6 +13,7 @@ from terrarium.budget import BudgetExhausted, BudgetTracker
 from terrarium.eval_server import EvalServer
 from terrarium.registry import get_task
 from terrarium.task import Task
+from terrarium.tracking import TerrariumTracker, TrackingConfig
 
 
 def run(
@@ -20,6 +21,8 @@ def run(
     adapter: str | Adapter,
     *,
     max_evals: int = 100,
+    max_concurrency: int = 8,
+    tracking: TrackingConfig | None = None,
 ) -> Result:
     """Run an evolution system on a task.
 
@@ -51,9 +54,18 @@ def run(
     if isinstance(adapter, str):
         adapter = load_adapter(adapter)
 
+    tracker = TerrariumTracker(tracking) if tracking else None
     budget = BudgetTracker(max_evals=max_evals)
-    server = EvalServer(task, budget)
+    server = EvalServer(task, budget, tracker=tracker, max_concurrency=max_concurrency)
     server.start()
+
+    if tracker:
+        tracker.start({"task": task.name, "max_evals": max_evals})
+        # Inject GEPA-level callback for iteration/valset metrics
+        from terrarium.adapters.gepa import GEPAAdapter
+
+        if isinstance(adapter, GEPAAdapter):
+            adapter.callbacks.append(tracker.create_callback())
 
     start = time.time()
 
@@ -73,6 +85,14 @@ def run(
     result.eval_log = server.eval_log
     result.metadata["wall_time"] = time.time() - start
     result.metadata["budget"] = budget.status()
+
+    if tracker:
+        tracker.log_summary({
+            "best_score": result.best_score,
+            "total_evals": result.total_evals,
+            "wall_time": result.metadata["wall_time"],
+        })
+        tracker.end()
 
     return result
 
@@ -109,10 +129,35 @@ def main() -> None:
     parser.add_argument("adapter", help="Path to adapter .py file (must define create_adapter())")
     parser.add_argument("--max-evals", type=int, default=100, help="Maximum eval budget (default: 100)")
     parser.add_argument("--output", "-o", help="Write result JSON to this file")
+    parser.add_argument("--wandb", action="store_true", help="Enable wandb tracking")
+    parser.add_argument("--wandb-project", default="terrarium", help="wandb project name (default: terrarium)")
+    parser.add_argument("--wandb-entity", default=None, help="wandb entity/team")
+    parser.add_argument("--mlflow", action="store_true", help="Enable mlflow tracking")
+    parser.add_argument("--mlflow-tracking-uri", default=None, help="mlflow tracking URI")
+    parser.add_argument("--mlflow-experiment", default="terrarium", help="mlflow experiment name (default: terrarium)")
+    parser.add_argument("--max-concurrency", type=int, default=8, help="Max parallel evaluations (default: 8)")
 
     args = parser.parse_args()
 
-    result = run(args.task, args.adapter, max_evals=args.max_evals)
+    tracking_config = None
+    if args.wandb or args.mlflow:
+        tracking_config = TrackingConfig(
+            use_wandb=args.wandb,
+            wandb_project=args.wandb_project,
+            wandb_entity=args.wandb_entity,
+            use_mlflow=args.mlflow,
+            mlflow_tracking_uri=args.mlflow_tracking_uri,
+            mlflow_experiment_name=args.mlflow_experiment,
+            wandb_tags=[args.task],
+        )
+
+    result = run(
+        args.task,
+        args.adapter,
+        max_evals=args.max_evals,
+        max_concurrency=args.max_concurrency,
+        tracking=tracking_config,
+    )
 
     summary = {
         "task": args.task,

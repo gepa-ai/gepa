@@ -3,7 +3,7 @@
 Architecture:
     terrarium process                   Claude Code subprocess
     ┌─────────────────────┐             ┌──────────────────────┐
-    │ EvalServer (HTTP)   │◄── POST ────│ calls eval_client.sh │
+    │ EvalServer (HTTP)   │◄── POST ────│ calls eval.sh        │
     │ - enforces budget   │── score ──► │ - reads score        │
     │ - tracks best       │             │ - mutates candidate  │
     └─────────────────────┘             └──────────────────────┘
@@ -27,24 +27,47 @@ from terrarium.task import Task
 if TYPE_CHECKING:
     from terrarium.eval_server import EvalServer
 
-# Shell script that Claude Code uses to evaluate candidates.
-# It POSTs the candidate to the terrarium eval server and prints the result.
-EVAL_CLIENT_SCRIPT = """\
+# Unified eval script: supports full-split eval, specific example IDs, or single-task.
+# Usage:
+#   ./eval.sh <candidate_file>                     → eval on train split (default)
+#   ./eval.sh <candidate_file> test                → eval on test split
+#   ./eval.sh <candidate_file> --ids id1,id2,id3   → eval on specific examples
+EVAL_SCRIPT = """\
 #!/usr/bin/env bash
-# Usage: ./eval.sh <candidate_file> [example_id]
-# Evaluates a candidate via the terrarium eval server.
+# Usage: ./eval.sh <candidate_file> [split]
+#        ./eval.sh <candidate_file> --ids id1,id2,id3
+# Evaluates a candidate on the terrarium eval server.
+# Without --ids: evaluates across ALL examples in the split (default: train).
+# With --ids: evaluates only the specified examples (comma-separated).
+# Examples run in parallel server-side.
 # Exit code 1 if budget exhausted.
 set -euo pipefail
 
 CANDIDATE_FILE="$1"
-EXAMPLE_ID="${{2:-}}"
+shift
 SERVER_URL="{server_url}"
 
 CANDIDATE=$(cat "$CANDIDATE_FILE")
 
-BODY=$(jq -n --arg c "$CANDIDATE" --arg e "$EXAMPLE_ID" '{{candidate: $c}} + (if $e != "" then {{example_id: $e}} else {{}} end)')
+# Parse args: either --ids or a split name
+IDS=""
+SPLIT="train"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --ids) IDS="$2"; shift 2 ;;
+        *) SPLIT="$1"; shift ;;
+    esac
+done
 
-RESPONSE=$(curl -s -w "\\n%{{http_code}}" -X POST "$SERVER_URL/evaluate" \\
+if [ -n "$IDS" ]; then
+    # Convert comma-separated IDs to JSON array
+    IDS_JSON=$(echo "$IDS" | jq -R 'split(",")')
+    BODY=$(jq -n --arg c "$CANDIDATE" --argjson ids "$IDS_JSON" '{{candidate: $c, example_ids: $ids}}')
+else
+    BODY=$(jq -n --arg c "$CANDIDATE" --arg s "$SPLIT" '{{candidate: $c, split: $s}}')
+fi
+
+RESPONSE=$(curl -s -w "\\n%{{http_code}}" -X POST "$SERVER_URL/evaluate_examples" \\
     -H "Content-Type: application/json" \\
     -d "$BODY")
 
@@ -70,19 +93,49 @@ You are an AI research system tasked with evolving and improving a candidate sol
 The initial candidate is in: {candidate_file}
 
 ## How to Evaluate
-Run: `{eval_script} <candidate_file>`
-This prints a JSON response with "score" and "info" fields.
-If the budget is exhausted, it exits with code 1 and prints BUDGET_EXHAUSTED to stderr.
+
+`{eval_script} <candidate_file> [split | --ids id1,id2,id3]`
+
+One script, flexible usage:
+
+- **Full split** (default): `{eval_script} candidate.txt` or `{eval_script} candidate.txt train`
+  Evaluates across ALL examples in the split. Examples run in parallel server-side.
+  Costs N budget units (one per example).
+
+- **Specific examples**: `{eval_script} candidate.txt --ids example_1,example_5,example_12`
+  Evaluates only the listed examples. Costs 1 budget unit per example listed.
+  Useful for targeted debugging after seeing which examples score low.
+
+- **Single-task** (no dataset): `{eval_script} candidate.txt`
+  Just evaluates the candidate. Costs 1 budget unit.
+
+Response fields:
+- `average_score`: Mean score across evaluated examples.
+- `scores`: Per-example scores (dict of example_id → score).
+- `num_evaluated` / `num_total`: How many examples were evaluated vs total in split.
+- `partial`: True if budget ran out mid-evaluation.
+- `errors`: Per-example errors, if any.
+- `budget`: Remaining eval budget.
+
+{dataset_info}
 
 ## Budget
-You have a maximum of {max_evals} evaluations. Use them wisely.
+You have a maximum of {max_evals} individual example evaluations.
+Each example = 1 budget unit. A full train split of N examples costs N units.
+If budget runs out mid-evaluation, you get partial results.
+
+## Strategy Tips
+- Start with a full eval to see overall performance and identify weak examples.
+- Use `--ids` to cheaply iterate on specific failing examples.
+- Once you've improved on the weak examples, do another full eval to confirm.
+- For single-task problems, each eval call costs exactly 1 budget unit.
 
 ## Goal
 Iteratively improve the candidate to maximize the score. When you're done
 (or budget is exhausted), write your best candidate to: {best_file}
 
 ## Rules
-- Each call to the eval script counts as one evaluation.
+- Each example evaluation counts as one budget unit.
 - You cannot modify the eval script or the server.
 - Focus on making meaningful improvements each iteration.
 """
@@ -113,10 +166,26 @@ class ClaudeCodeAdapter:
             best_file = work / "best_candidate.txt"
             best_file.write_text(task.initial_candidate)
 
-            # Write eval client script
+            # Write eval script
             eval_script = work / "eval.sh"
-            eval_script.write_text(EVAL_CLIENT_SCRIPT.format(server_url=server.url))
+            eval_script.write_text(EVAL_SCRIPT.format(server_url=server.url))
             eval_script.chmod(0o755)
+
+            # Build dataset info section for the prompt
+            if task.has_dataset:
+                example_ids = []
+                if task.train_set:
+                    example_ids = [ex.id for ex in task.train_set]
+                lines = [f"## Dataset\nThis is a dataset task with {len(example_ids)} training examples."]
+                if example_ids:
+                    lines.append(f"Example IDs: {', '.join(example_ids[:20])}")
+                    if len(example_ids) > 20:
+                        lines.append(f"... and {len(example_ids) - 20} more.")
+                if task.test_set:
+                    lines.append(f"Test set: {len(task.test_set)} examples (use split='test' to evaluate).")
+                dataset_info = "\n".join(lines)
+            else:
+                dataset_info = "## Task Type\nThis is a single-task problem (no dataset). Each eval call costs 1 budget unit."
 
             # Build the prompt for Claude Code
             prompt = CLAUDE_CODE_SYSTEM.format(
@@ -125,6 +194,7 @@ class ClaudeCodeAdapter:
                 eval_script=str(eval_script),
                 max_evals=max_evals,
                 best_file=str(best_file),
+                dataset_info=dataset_info,
             )
 
             # Launch Claude Code

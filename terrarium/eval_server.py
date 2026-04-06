@@ -15,6 +15,15 @@ POST /evaluate
     Response: {"score": 1.23, "info": {...}, "budget": {"used": 5, "remaining": 95, ...}}
     Status 429 when budget exhausted.
 
+POST /evaluate_examples
+    Body: {"candidate": "<text>", "example_ids": ["a","b","c"]}
+    Or:   {"candidate": "<text>", "split": "train"|"test"|"all"}
+    Evaluates the candidate on the specified examples (or all in a split)
+    in parallel, respecting the concurrency limit. Each example = 1 budget tick.
+    Response: {"average_score": 1.23, "scores": {"a": 0.9, ...}, "budget": {...}}
+    For single-task problems (no dataset), behaves like /evaluate.
+    Status 429 when budget exhausted mid-evaluation (partial results returned).
+
 GET /status
     Response: {"budget": {...}, "task": "<name>", "best_score": 1.23}
 
@@ -26,11 +35,15 @@ from __future__ import annotations
 
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 from terrarium.budget import BudgetExhausted, BudgetTracker
 from terrarium.task import Example, Task
+from terrarium.tracking import TerrariumTracker
+
+DEFAULT_MAX_CONCURRENCY = 8
 
 
 class EvalServer:
@@ -39,15 +52,32 @@ class EvalServer:
     In-process adapters call :meth:`evaluate` directly.
     External adapters POST to the HTTP endpoint at :attr:`url`.
     Both go through the same budget counter.
+
+    Args:
+        task: The task to evaluate.
+        budget: Budget tracker for limiting evaluations.
+        tracker: Optional experiment tracker for logging.
+        max_concurrency: Maximum number of parallel evaluations.
+            Controls the thread pool size for batch/parallel eval methods.
+            Defaults to 8.
     """
 
-    def __init__(self, task: Task, budget: BudgetTracker) -> None:
+    def __init__(
+        self,
+        task: Task,
+        budget: BudgetTracker,
+        tracker: TerrariumTracker | None = None,
+        max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+    ) -> None:
         self.task = task
         self.budget = budget
+        self.tracker = tracker
+        self.max_concurrency = max_concurrency
         self.best_score: float = float("-inf")
         self.best_candidate: str = task.initial_candidate
         self.eval_log: list[dict[str, Any]] = []
         self._lock = threading.Lock()
+        self._eval_semaphore = threading.Semaphore(max_concurrency)
 
         # Build example lookup for dataset tasks
         self._examples: dict[str, Example] = {}
@@ -56,6 +86,7 @@ class EvalServer:
                 for ex in dataset:
                     self._examples[ex.id] = ex
 
+        self._pool = ThreadPoolExecutor(max_workers=max_concurrency)
         self._server: HTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -70,18 +101,119 @@ class EvalServer:
         Raises:
             BudgetExhausted: When the budget has been used up.
         """
-        self.budget.check()
+        self._eval_semaphore.acquire()
+        try:
+            self.budget.check()
 
-        if example is not None:
-            score, info = self.task.eval_fn(candidate, example)
+            if example is not None:
+                score, info = self.task.eval_fn(candidate, example)
+            else:
+                score, info = self.task.eval_fn(candidate)
+
+            self.budget.record(score)
+            self._track(candidate, score)
+
+            info["_budget"] = self.budget.status()
+            return score, info
+        finally:
+            self._eval_semaphore.release()
+
+    def evaluate_examples(
+        self,
+        candidate: str,
+        example_ids: list[str] | None = None,
+        split: str | None = None,
+    ) -> tuple[float, dict[str, Any]]:
+        """Evaluate a candidate on specific examples or an entire split, in parallel.
+
+        For single-task problems (no dataset), delegates to evaluate().
+
+        Provide either ``example_ids`` (explicit list) or ``split`` ("train"/"test"/"all").
+        If both are given, ``example_ids`` takes precedence.
+
+        Returns:
+            (average_score, info_dict) with per-example scores and partial-eval metadata.
+        """
+        if not self.task.has_dataset:
+            score, info = self.evaluate(candidate)
+            return score, {
+                "scores": {"_single": score},
+                "num_evaluated": 1,
+                "num_total": 1,
+                "partial": False,
+                "_budget": self.budget.status(),
+            }
+
+        # Resolve examples
+        examples: list[Example] = []
+        if example_ids is not None:
+            for eid in example_ids:
+                if eid in self._examples:
+                    examples.append(self._examples[eid])
+        elif split is not None:
+            if split in ("train", "all") and self.task.train_set:
+                examples.extend(self.task.train_set)
+            if split in ("test", "all") and self.task.test_set:
+                examples.extend(self.task.test_set)
         else:
-            score, info = self.task.eval_fn(candidate)
+            if self.task.train_set:
+                examples.extend(self.task.train_set)
 
-        self.budget.record(score)
-        self._track(candidate, score)
+        if not examples:
+            score, info = self.evaluate(candidate)
+            return score, {
+                "scores": {"_single": score},
+                "num_evaluated": 1,
+                "num_total": 1,
+                "partial": False,
+                "_budget": self.budget.status(),
+            }
 
-        info["_budget"] = self.budget.status()
-        return score, info
+        scores: dict[str, float] = {}
+        errors: dict[str, str] = {}
+        total = len(examples)
+
+        def _eval_one(ex: Example) -> tuple[str, float | None, str | None]:
+            try:
+                score, _ = self.evaluate(candidate, ex)
+                return (ex.id, score, None)
+            except BudgetExhausted:
+                return (ex.id, None, "budget_exhausted")
+            except Exception as e:
+                return (ex.id, None, str(e))
+
+        futures = {self._pool.submit(_eval_one, ex): ex for ex in examples}
+        budget_hit = False
+
+        for future in as_completed(futures):
+            eid, score, err = future.result()
+            if err == "budget_exhausted":
+                budget_hit = True
+                # Cancel remaining futures (best-effort)
+                for f in futures:
+                    f.cancel()
+                break
+            elif err is not None:
+                errors[eid] = err
+            else:
+                assert score is not None
+                scores[eid] = score
+
+        if not scores:
+            raise BudgetExhausted("Budget exhausted before any examples could be evaluated")
+
+        avg = sum(scores.values()) / len(scores)
+        info: dict[str, Any] = {
+            "scores": scores,
+            "num_evaluated": len(scores),
+            "num_total": total,
+            "partial": len(scores) < total or budget_hit,
+            "_budget": self.budget.status(),
+        }
+        if errors:
+            info["errors"] = errors
+
+        return avg, info
 
     # ── HTTP server (used by external/black-box adapters) ───────────────
 
@@ -103,6 +235,8 @@ class EvalServer:
             def do_POST(self):
                 if self.path == "/evaluate":
                     server_ref._handle_evaluate(self)
+                elif self.path == "/evaluate_examples":
+                    server_ref._handle_evaluate_examples(self)
                 else:
                     self.send_error(404)
 
@@ -126,6 +260,7 @@ class EvalServer:
         if self._server:
             self._server.shutdown()
             self._server = None
+        self._pool.shutdown(wait=False)
 
     # ── Internal ────────────────────────────────────────────────────────
 
@@ -135,6 +270,8 @@ class EvalServer:
             if score > self.best_score:
                 self.best_score = score
                 self.best_candidate = candidate
+            if self.tracker:
+                self.tracker.log_eval(self.budget.used, score, self.best_score)
 
     def _handle_evaluate(self, handler: BaseHTTPRequestHandler) -> None:
         content_length = int(handler.headers.get("Content-Length", 0))
@@ -151,6 +288,40 @@ class EvalServer:
             example = self._examples.get(example_id) if example_id else None
             score, info = self.evaluate(candidate, example)
             self._send_json(handler, {"score": score, "info": info, "budget": self.budget.status()})
+
+        except BudgetExhausted:
+            self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
+
+        except Exception as e:
+            self._send_json(handler, {"error": str(e), "budget": self.budget.status()}, status=500)
+
+    def _handle_evaluate_examples(self, handler: BaseHTTPRequestHandler) -> None:
+        content_length = int(handler.headers.get("Content-Length", 0))
+        body = json.loads(handler.rfile.read(content_length)) if content_length else {}
+
+        candidate = body.get("candidate", "")
+        example_ids = body.get("example_ids")
+        split = body.get("split", "train")
+
+        if self.budget.exhausted:
+            self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
+            return
+
+        try:
+            avg_score, info = self.evaluate_examples(
+                candidate,
+                example_ids=example_ids,
+                split=split if example_ids is None else None,
+            )
+            self._send_json(handler, {
+                "average_score": avg_score,
+                "scores": info.get("scores", {}),
+                "num_evaluated": info.get("num_evaluated", 1),
+                "num_total": info.get("num_total", 1),
+                "partial": info.get("partial", False),
+                "errors": info.get("errors", {}),
+                "budget": self.budget.status(),
+            })
 
         except BudgetExhausted:
             self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
