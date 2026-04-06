@@ -165,8 +165,13 @@ class ExperimentTracker:
             active = mlflow.active_run()
             if active is not None:
                 self._mlflow_run_id = active.info.run_id
-                tracking_uri = mlflow.get_tracking_uri()
-                self._mlflow_client = MlflowClient(tracking_uri=tracking_uri)
+                try:
+                    tracking_uri = mlflow.get_tracking_uri()
+                    self._mlflow_client = MlflowClient(tracking_uri=tracking_uri)
+                except Exception:
+                    # MlflowClient creation can fail in test environments;
+                    # fall back to fluent API (thread-unsafe but functional).
+                    self._mlflow_client = None
 
     def log_config(self, config: dict[str, Any]) -> None:
         """Log run configuration/hyperparameters to the active backends.
