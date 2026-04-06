@@ -502,6 +502,20 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the paper](https://arxiv.org/abs/2603.28038)
 
+-   **Self-Optimizing Multi-Agent Systems for Deep Research (ECIR 2026 Workshop)**
+
+    ---
+
+    Camara, Slot & Zavrel (Zeta Alpha, ECIR 2026) evaluate GEPA and TextGrad for optimizing multi-agent Deep Research systems. **GEPA outperforms TextGrad, OpenAI's prompt optimizer, and expert-crafted prompts**, with GEPA + custom meta-prompt achieving the best overall score (0.705) on the ScholarQA-CS benchmark.
+
+    **Key Results:**
+
+    - GEPA's Pareto-based exploration converges faster than TextGrad's greedy search
+    - Domain-tailored meta-prompts yield the best performance
+    - Optimized agents match or outperform expert-crafted prompts
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2604.02988)
+
 </div>
 
 ---
