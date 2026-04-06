@@ -34,7 +34,7 @@ from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import (
     ReflectiveMutationProposer,
 )
-from gepa.strategies.acceptance import AcceptanceCriterion, StrictImprovementAcceptance
+from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import StopperProtocol
 
@@ -543,10 +543,17 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 # Acceptance: delegate to configurable acceptance criterion
                 old_sum = sum(proposal.subsample_scores_before or [])
                 new_sum = sum(proposal.subsample_scores_after or [])
+                _uses_builtin_criterion = isinstance(
+                    self.acceptance_criterion, (StrictImprovementAcceptance, ImprovementOrEqualAcceptance)
+                )
                 if not self.acceptance_criterion.should_accept(proposal, state):
-                    self.logger.log(
-                        f"Iteration {state.i + 1}: Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum}), skipping"
-                    )
+                    if _uses_builtin_criterion:
+                        reject_msg = f"Iteration {state.i + 1}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
+                        reject_reason = f"New subsample score {new_sum} not better than old score {old_sum}"
+                    else:
+                        reject_msg = f"Iteration {state.i + 1}: Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum}), skipping"
+                        reject_reason = f"Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum})"
+                    self.logger.log(reject_msg)
                     # Log rejected proposal LM call to experiment tracker
                     self._log_proposal_lm_calls(state.i + 1, proposal, candidate_idx=-1)
                     # Notify candidate rejected
@@ -557,14 +564,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                             iteration=state.i + 1,
                             old_score=old_sum,
                             new_score=new_sum,
-                            reason=f"Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum})",
+                            reason=reject_reason,
                         ),
                     )
                     continue
                 else:
-                    self.logger.log(
-                        f"Iteration {state.i + 1}: Candidate accepted (old_sum={old_sum}, new_sum={new_sum}). Continue to full eval and add to candidate pool."
-                    )
+                    if _uses_builtin_criterion:
+                        accept_msg = f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
+                    else:
+                        accept_msg = f"Iteration {state.i + 1}: Candidate accepted (old_sum={old_sum}, new_sum={new_sum}). Continue to full eval and add to candidate pool."
+                    self.logger.log(accept_msg)
 
                 # Accept: full eval + add
                 new_idx, _ = self._run_full_eval_and_add(
