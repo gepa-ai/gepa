@@ -420,7 +420,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         eval_after = self.adapter.evaluate(ctx.minibatch, new_candidate, capture_traces=True)
         new_scores = eval_after.scores
         new_outputs = eval_after.outputs
-        total_evals += eval_after.num_metric_calls if eval_after.num_metric_calls is not None else len(ctx.subsample_ids)
+        total_evals += len(ctx.subsample_ids)
 
         notify_callbacks(
             self.callbacks,

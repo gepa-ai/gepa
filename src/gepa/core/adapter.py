@@ -32,7 +32,6 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
     scores: list[float]
     trajectories: list[Trajectory] | None = None
     objective_scores: list[dict[str, float]] | None = None
-    num_metric_calls: int | None = None
 
 
 class ProposalFn(Protocol):
