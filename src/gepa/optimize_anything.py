@@ -123,6 +123,7 @@ from typing import (
 
 from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
 from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn
+from gepa.core.callbacks import GEPACallback
 from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
@@ -786,9 +787,73 @@ class TrackingConfig:
     use_wandb: bool = False
     wandb_api_key: str | None = None
     wandb_init_kwargs: dict[str, Any] | None = None
+    wandb_attach_existing: bool = False
+    """Attach to an already-active W&B run without managing its lifecycle.
+
+    When ``True``, GEPA logs metrics and tables into the run that is already
+    active in the process (``wandb.run``) — it will not call ``wandb.init()``
+    on entry or ``wandb.finish()`` on exit.
+    """
+    wandb_step_metric: str | None = None
+    """Custom x-axis metric name for wandb charts.
+
+    When set, GEPA uses ``wandb.define_metric`` to declare a custom x-axis
+    for all its metrics, decoupling them from wandb's global monotonic step
+    counter.  The ``step`` value passed to ``log_metrics`` is injected as a
+    regular metric (under this name) instead of being passed as ``step=``.
+
+    **Required when embedding GEPA inside a host training loop** that manages
+    its own wandb step counter.  Without this, GEPA's ``step=1, 2, 3, ...``
+    collides with the host's ``step=100, 101, ...``, causing wandb to drop
+    GEPA's data.
+
+    Example::
+
+        TrackingConfig(
+            use_wandb=True,
+            wandb_attach_existing=True,
+            wandb_step_metric="gepa/iteration",
+        )
+    """
     use_mlflow: bool = False
     mlflow_tracking_uri: str | None = None
     mlflow_experiment_name: str | None = None
+    mlflow_attach_existing: bool = False
+    """Attach to an already-active MLflow run without managing its lifecycle.
+
+    When ``True``, GEPA logs into the run that is already active (via
+    ``mlflow.active_run()``) — it will not call ``mlflow.start_run()`` on
+    entry or ``mlflow.end_run()`` on exit.
+
+    Use this when embedding GEPA inside a training loop that manages its own
+    MLflow run::
+
+        import mlflow
+        with mlflow.start_run():          # caller owns this run
+            result = optimize_anything(
+                ...,
+                config=GEPAConfig(
+                    tracking=TrackingConfig(
+                        use_mlflow=True,
+                        mlflow_attach_existing=True,
+                    )
+                ),
+            )
+            mlflow.log_metric("train/loss", 0.1)  # still works
+    """
+    key_prefix: str = ""
+    """String prepended to every key/name logged to wandb and MLflow.
+
+    Applies uniformly to metric keys, config keys, summary keys, table names,
+    and HTML artifact keys.  Useful when running multiple GEPA optimizations in
+    the same wandb/MLflow run to keep their data namespaced::
+
+        TrackingConfig(
+            use_wandb=True,
+            wandb_attach_existing=True,
+            key_prefix="gepa/round2/",   # metrics become e.g. gepa/round2/val_score
+        )
+    """
 
 
 @dataclass
@@ -819,6 +884,24 @@ class GEPAConfig:
 
     # Complex callbacks that aren't serializable
     stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None
+    callbacks: "list[GEPACallback] | None" = None
+    """Observation callbacks for monitoring optimization progress.
+
+    Receive events like ``on_optimization_start``, ``on_iteration_end``,
+    ``on_candidate_accepted``, ``on_proposal_end``, etc.  See
+    :class:`~gepa.core.callbacks.GEPACallback` for the full protocol.
+
+    Example::
+
+        class MyCallback:
+            def on_candidate_accepted(self, event):
+                print(f"New candidate {event['new_candidate_idx']} accepted")
+
+        config = GEPAConfig(
+            callbacks=[MyCallback()],
+            engine=EngineConfig(max_metric_calls=100),
+        )
+    """
 
     def __post_init__(self):
         """Handle dicts passed in (e.g., from a JSON/YAML file)."""
@@ -1374,9 +1457,13 @@ def optimize_anything(
         use_wandb=config.tracking.use_wandb,
         wandb_api_key=config.tracking.wandb_api_key,
         wandb_init_kwargs=config.tracking.wandb_init_kwargs,
+        wandb_attach_existing=config.tracking.wandb_attach_existing,
+        wandb_step_metric=config.tracking.wandb_step_metric,
         use_mlflow=config.tracking.use_mlflow,
         mlflow_tracking_uri=config.tracking.mlflow_tracking_uri,
         mlflow_experiment_name=config.tracking.mlflow_experiment_name,
+        mlflow_attach_existing=config.tracking.mlflow_attach_existing,
+        key_prefix=config.tracking.key_prefix,
     )
 
     # --- 9. Build reflection prompt template from objective/background if provided ---
@@ -1437,6 +1524,7 @@ def optimize_anything(
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
+        callbacks=config.callbacks,
     )
 
     # Define evaluator function for merge proposer
@@ -1477,6 +1565,7 @@ def optimize_anything(
         frontier_type=config.engine.frontier_type,
         logger=config.tracking.logger,
         experiment_tracker=experiment_tracker,
+        callbacks=config.callbacks,
         track_best_outputs=config.engine.track_best_outputs,
         display_progress_bar=config.engine.display_progress_bar,
         raise_on_exception=config.engine.raise_on_exception,

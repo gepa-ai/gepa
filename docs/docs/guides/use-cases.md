@@ -91,21 +91,23 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: View cookbook](https://huggingface.co/learn/cookbook/en/dspy_gepa)
 
--   **Google ADK Agents Optimization**
+-   **Google ADK: Official Agent Optimization**
 
     ---
 
     ![Google ADK Training](../static/img/use-cases/google_adk.png){ .card-image }
 
-    Tutorial on optimizing **Google Agent Development Kit (ADK)** agents using GEPA for improved performance.
+    Google's Agent Development Kit (ADK) uses GEPA as its **built-in agent optimization engine**. The `adk optimize` CLI command runs a `GEPARootAgentPromptOptimizer` to automatically improve agent instructions based on evaluation results.
 
-    **Key Topics:**
+    **Key Features:**
 
-    - Optimizing agent SOPs (Standard Operating Procedures)
-    - Integrating GEPA with ADK workflows
-    - Production deployment patterns
+    - Official `adk optimize` CLI powered by GEPA
+    - `LocalEvalSampler` for running evaluations
+    - Automatic prompt rewriting via `GEPARootAgentPromptOptimizer`
 
-    [:material-arrow-right: View tutorial](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/)
+    [:material-arrow-right: Official ADK docs](https://adk.dev/optimize/)
+
+    [:material-arrow-right: Community tutorial](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/)
 
 -   **Comet-ml Opik Integration**
 
@@ -481,6 +483,24 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     - State-of-the-art on clinical error detection
 
     [:material-arrow-right: Read the paper](https://arxiv.org/abs/2602.22483)
+
+-   **What Do Prompts Reveal About Model Capabilities in Low-Resource Languages? (AfricaNLP 2026)**
+
+    ---
+
+    Ajayi & Ogundepo (AfricaNLP 2026) investigate what GEPA-optimized prompts reveal about LLM capabilities when applied to **low-resource African languages**, using prompt optimization as a lens into model behavior on underrepresented languages.
+
+    [:material-arrow-right: Read the paper](https://openreview.net/attachment?id=7JZmTp85Yf&name=pdf)
+
+    [:material-arrow-right: LinkedIn announcement](https://www.linkedin.com/feed/update/urn%3Ali%3Aactivity%3A7444797637414924289/?commentUrn=urn%3Ali%3Acomment%3A%28activity%3A7444797637414924289%2C7445145380280758273%29&dashCommentUrn=urn%3Ali%3Afsd%5Fcomment%3A%287445145380280758273%2Curn%3Ali%3Aactivity%3A7444797637414924289%29)
+
+-   **Beyond the Answer: Decoding the Behavior of LLMs as Scientific Reasoners (ICLR 2026 Workshop)**
+
+    ---
+
+    Pandey, Ye & Li (Post-AGI Science and Society Workshop, ICLR 2026) use a GEPA-based approach to systematically optimize prompts for scientific reasoning tasks, finding that reasoning gains correspond to **model-specific heuristics that fail to generalize** across systems — framing prompt optimization as a tool for model interpretability.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2603.28038)
 
 </div>
 
