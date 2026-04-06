@@ -483,6 +483,12 @@ class EngineConfig:
     parallel: bool = True
     max_workers: int | None = field(default_factory=lambda: os.cpu_count() or 32)
 
+    # Number of parallel proposal workers per optimization step.
+    # When > 1, multiple minibatches are sampled and proposed concurrently
+    # (each with its own evaluate-propose-evaluate pipeline), then acceptances
+    # are processed sequentially.
+    num_parallel_proposals: int = 1
+
     # Evaluation caching
     cache_evaluation: bool = False
     cache_evaluation_storage: CacheEvaluationStorage = "auto"
@@ -1585,6 +1591,7 @@ def optimize_anything(
         acceptance_criterion=acceptance_criterion_instance,
         use_cloudpickle=config.engine.use_cloudpickle,
         evaluation_cache=evaluation_cache,
+        num_parallel_proposals=config.engine.num_parallel_proposals,
     )
 
     # --- 15. Run optimization ---
