@@ -63,6 +63,7 @@ hide:
       <a href="https://github.com/NousResearch/hermes-agent-self-evolution" target="_blank">Nous Research</a>
       <span>NuBank</span>
       <span>Infosys</span>
+      <a href="https://sutro.sh/" target="_blank">Sutro</a>
       <span>Invitae</span>
       <span>Bespoke Labs</span>
       <!-- duplicate set for seamless loop -->
