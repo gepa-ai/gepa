@@ -29,6 +29,7 @@ class TrackingConfig:
     use_mlflow: bool = False
     mlflow_tracking_uri: str | None = None
     mlflow_experiment_name: str = "terrarium"
+    mlflow_run_name: str | None = None
 
 
 class TerrariumTracker:
@@ -52,7 +53,9 @@ class TerrariumTracker:
             use_mlflow=config.use_mlflow,
             mlflow_tracking_uri=config.mlflow_tracking_uri,
             mlflow_experiment_name=config.mlflow_experiment_name,
+            mlflow_attach_existing=True,
         )
+        self._owns_mlflow_run = False
 
     @property
     def active(self) -> bool:
@@ -63,6 +66,14 @@ class TerrariumTracker:
         if not self.active:
             return
         self._tracker.initialize()
+        # Start the mlflow run ourselves so we can set run_name,
+        # then let the tracker attach to it (mlflow_attach_existing=True).
+        if self.config.use_mlflow:
+            import mlflow
+
+            if mlflow.active_run() is None:
+                mlflow.start_run(run_name=self.config.mlflow_run_name)
+                self._owns_mlflow_run = True
         self._tracker.start_run()
         self._tracker.log_config(run_config)
 
@@ -86,6 +97,12 @@ class TerrariumTracker:
         if not self.active:
             return
         self._tracker.end_run()
+        if self._owns_mlflow_run:
+            import mlflow
+
+            if mlflow.active_run() is not None:
+                mlflow.end_run()
+            self._owns_mlflow_run = False
 
     def create_callback(self) -> TrackingCallback:
         """Create a GEPA callback that logs iteration-level metrics."""

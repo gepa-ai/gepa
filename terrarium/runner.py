@@ -135,6 +135,7 @@ def main() -> None:
     parser.add_argument("--mlflow", action="store_true", help="Enable mlflow tracking")
     parser.add_argument("--mlflow-tracking-uri", default=None, help="mlflow tracking URI")
     parser.add_argument("--mlflow-experiment", default="terrarium", help="mlflow experiment name (default: terrarium)")
+    parser.add_argument("--mlflow-run-name", default=None, help="mlflow run name")
     parser.add_argument("--max-concurrency", type=int, default=8, help="Max parallel evaluations (default: 8)")
 
     args = parser.parse_args()
@@ -148,6 +149,7 @@ def main() -> None:
             use_mlflow=args.mlflow,
             mlflow_tracking_uri=args.mlflow_tracking_uri,
             mlflow_experiment_name=args.mlflow_experiment,
+            mlflow_run_name=args.mlflow_run_name,
             wandb_tags=[args.task],
         )
 
