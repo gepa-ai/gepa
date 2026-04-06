@@ -84,9 +84,11 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self.cache_mode = cache_mode
         self.cache_dir = Path(cache_dir) if cache_dir else None
 
-        # Track top-K best evaluations per example for warm-start support
-        self._best_evals_by_example: dict[str, list[dict]] = {}  # keyed by _example_hash
-        self._best_evals_lock = threading.Lock()  # Thread safety for parallel execution
+        # Persistent optimization state — survives resume via adapter_state sync.
+        from gepa.optimize_anything import OptimizationState
+
+        self._opt_state = OptimizationState()
+        self._opt_state_lock = threading.Lock()  # Thread safety for parallel execution
 
         # Initialize evaluation cache
         self._eval_cache: dict[tuple[str, str], tuple[float, Any, dict]] = {}
@@ -102,25 +104,50 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Refiner uses LiteLLM directly via refiner_config.refiner_lm callable
         # No separate predictor needed - the LM callable is set up in optimize_anything.py
 
+    # --- Adapter state persistence ---
+
+    def get_adapter_state(self) -> dict[str, Any]:
+        """Snapshot adapter state for persistence in ``GEPAState.adapter_state``.
+
+        Called by the engine before each checkpoint save.
+        """
+        with self._opt_state_lock:
+            return {"opt_state": self._opt_state}
+
+    def set_adapter_state(self, state: dict[str, Any]) -> None:
+        """Restore adapter state from a previously persisted snapshot.
+
+        Called by the engine after loading ``GEPAState`` on resume.
+        On fresh runs ``state`` is ``{}`` — treated as no prior state.
+        """
+        from gepa.optimize_anything import OptimizationState
+
+        stored = state.get("opt_state")
+        with self._opt_state_lock:
+            self._opt_state = stored if isinstance(stored, OptimizationState) else OptimizationState()
+
+    # --- Best-evals tracking ---
+
     def _get_best_example_evals(self, example: object) -> list[dict]:
         """Get sorted top-K best evaluations for this example (thread-safe)."""
         key = self._example_hash(example)
-        with self._best_evals_lock:
+        with self._opt_state_lock:
             # Return a copy to avoid mutation issues
-            return list(self._best_evals_by_example.get(key, []))
+            return list(self._opt_state.best_evals_by_example.get(key, []))
 
     def _update_best_example_evals(self, example: object, score: float, side_info: "SideInfo") -> None:
         """Add evaluation to example's best evals, maintain sorted top-K (thread-safe)."""
         key = self._example_hash(example)
-        with self._best_evals_lock:
-            if key not in self._best_evals_by_example:
-                self._best_evals_by_example[key] = []
+        with self._opt_state_lock:
+            evals = self._opt_state.best_evals_by_example
+            if key not in evals:
+                evals[key] = []
 
-            self._best_evals_by_example[key].append({"score": score, "side_info": side_info})
+            evals[key].append({"score": score, "side_info": side_info})
 
             # Sort descending by score, keep top K
-            self._best_evals_by_example[key] = sorted(
-                self._best_evals_by_example[key],
+            evals[key] = sorted(
+                evals[key],
                 key=lambda x: x["score"],
                 reverse=True,
             )[: self.best_example_evals_k]
