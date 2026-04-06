@@ -31,8 +31,8 @@ from gepa.core.state import EvaluationCache, FrontierType, GEPAState, ValsetEval
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
-from gepa.proposer.merge import MergeProposer
 from gepa.proposer.base import CandidateProposal
+from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import (
     ProposalOutput,
     ReflectiveMutationProposer,
@@ -297,7 +297,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         old_sum = sum(proposal.subsample_scores_before or [])
         new_sum = sum(proposal.subsample_scores_after or [])
         _uses_builtin_criterion = isinstance(
-            self.acceptance_criterion, (StrictImprovementAcceptance, ImprovementOrEqualAcceptance)
+            self.acceptance_criterion, StrictImprovementAcceptance | ImprovementOrEqualAcceptance
         )
 
         if not self.acceptance_criterion.should_accept(proposal, state):
@@ -443,7 +443,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Step 3: Process acceptances sequentially
         any_accepted = False
-        for idx, (ctx, trace_entry, output) in enumerate(zip(contexts, trace_entries, outputs)):
+        for _idx, (ctx, trace_entry, output) in enumerate(zip(contexts, trace_entries, outputs, strict=False)):
             if output is None:
                 continue
             if self._process_proposal_output(output, ctx.iteration, trace_entry, state):

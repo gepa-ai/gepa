@@ -459,9 +459,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             ),
             eval_after=SubsampleEvaluation(
                 scores=new_scores,
-                outputs=outputs,
-                objective_scores=list(eval_new.objective_scores) if eval_new.objective_scores else None,
-                trajectories=eval_new.trajectories,
+                outputs=new_outputs,
+                objective_scores=list(eval_after.objective_scores) if eval_after.objective_scores else None,
+                trajectories=eval_after.trajectories,
             ),
             tag="reflective_mutation",
             metadata=_lm_metadata,
