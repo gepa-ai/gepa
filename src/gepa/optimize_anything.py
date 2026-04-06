@@ -1608,8 +1608,8 @@ def optimize_anything(
         evaluation_cache=evaluation_cache,
         num_parallel_proposals=_resolve_num_parallel_proposals(
             config.engine.num_parallel_proposals,
-            config.engine.max_workers,
-            config.reflection.reflection_minibatch_size,
+            config.engine.max_workers or (os.cpu_count() or 32),
+            config.reflection.reflection_minibatch_size or 1,
         ),
     )
 
