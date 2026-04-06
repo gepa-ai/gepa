@@ -397,6 +397,7 @@ Finally:
     - [TerminalBench Adapter](src/gepa/adapters/terminal_bench_adapter/) - Easily integrating GEPA into a Terminus, a sophisticated external agentic pipeline, and optimizing the agents' system prompt.
     - [AnyMaths Adapter](src/gepa/adapters/anymaths_adapter/) - Adapter for optimizing mathematical problem-solving and reasoning tasks. Contributed by [@egmaminta](www.linkedin.com/in/egmaminta).
 - **GEPA uses**
+    - [Nous Research Hermes Agent: evolutionary self-improvement with DSPy + GEPA](https://github.com/NousResearch/hermes-agent-self-evolution)
     - [Context Compression using GEPA](https://github.com/Laurian/context-compression-experiments-2508)
     - [GEPA Integration into SuperOptiX-AI](https://github.com/SuperagenticAI/gepa-eval)
     - [GEPA for Observable Javascript](https://observablehq.com/@tomlarkworthy/gepa)
