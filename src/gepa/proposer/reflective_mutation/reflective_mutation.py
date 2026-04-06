@@ -438,7 +438,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             ),
         )
 
-        total_evals += len(ctx.subsample_ids)
         trace_data["new_subsample_scores"] = new_scores
         new_sum = sum(new_scores)
         self.experiment_tracker.log_metrics(
