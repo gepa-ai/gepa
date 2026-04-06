@@ -487,7 +487,11 @@ class EngineConfig:
     # When > 1, multiple minibatches are sampled and proposed concurrently
     # (each with its own evaluate-propose-evaluate pipeline), then acceptances
     # are processed sequentially.
-    num_parallel_proposals: int = 1
+    # Set to "auto" to compute from max_workers and minibatch_size:
+    #   auto = max(1, max_workers // (2 * minibatch_size))
+    # Each proposal does ~2 eval batches (parent + new candidate), so this
+    # fills the worker pool without oversubscribing.
+    num_parallel_proposals: int | Literal["auto"] = 1
 
     # Evaluation caching
     cache_evaluation: bool = False
@@ -1090,6 +1094,21 @@ class EvaluatorWrapper:
         return self._wrapped(candidate, example=example, **kwargs)
 
 
+def _resolve_num_parallel_proposals(
+    value: int | Literal["auto"],
+    max_workers: int | None,
+    minibatch_size: int | None,
+) -> int:
+    """Resolve num_parallel_proposals, computing automatically if "auto"."""
+    if isinstance(value, int):
+        return value
+    workers = max_workers or (os.cpu_count() or 32)
+    mb = minibatch_size or 1
+    # Each proposal does ~2 eval batches (parent + new candidate), each of size mb.
+    # Divide workers by (2 * mb) to fill the pool without oversubscribing.
+    return max(1, workers // (2 * mb))
+
+
 def optimize_anything(
     seed_candidate: str | Candidate | None = None,
     *,
@@ -1591,7 +1610,11 @@ def optimize_anything(
         acceptance_criterion=acceptance_criterion_instance,
         use_cloudpickle=config.engine.use_cloudpickle,
         evaluation_cache=evaluation_cache,
-        num_parallel_proposals=config.engine.num_parallel_proposals,
+        num_parallel_proposals=_resolve_num_parallel_proposals(
+            config.engine.num_parallel_proposals,
+            config.engine.max_workers,
+            config.reflection.reflection_minibatch_size,
+        ),
     )
 
     # --- 15. Run optimization ---
