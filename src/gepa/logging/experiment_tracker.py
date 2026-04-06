@@ -231,9 +231,8 @@ class ExperimentTracker:
                 numeric_metrics = {self._p(k): float(v) for k, v in metrics.items() if isinstance(v, int | float)}
                 if numeric_metrics:
                     if self._mlflow_client and self._mlflow_run_id:
-                        self._mlflow_client.log_metrics(
-                            self._mlflow_run_id, numeric_metrics, step=step
-                        )
+                        for k, v in numeric_metrics.items():
+                            self._mlflow_client.log_metric(self._mlflow_run_id, k, v, step=step or 0)
                     else:
                         import mlflow  # type: ignore
                         mlflow.log_metrics(numeric_metrics, step=step)
@@ -262,7 +261,8 @@ class ExperimentTracker:
                 text = {self._p(k): str(v) for k, v in summary.items() if isinstance(v, str)}
                 if self._mlflow_client and self._mlflow_run_id:
                     if numeric:
-                        self._mlflow_client.log_metrics(self._mlflow_run_id, numeric)
+                        for k, v in numeric.items():
+                            self._mlflow_client.log_metric(self._mlflow_run_id, k, v)
                     if text:
                         for k, v in text.items():
                             self._mlflow_client.log_param(self._mlflow_run_id, f"summary/{k}", v)
