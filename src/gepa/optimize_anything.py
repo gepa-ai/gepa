@@ -1096,17 +1096,13 @@ class EvaluatorWrapper:
 
 def _resolve_num_parallel_proposals(
     value: int | Literal["auto"],
-    max_workers: int | None,
-    minibatch_size: int | None,
+    max_workers: int,
+    minibatch_size: int,
 ) -> int:
     """Resolve num_parallel_proposals, computing automatically if "auto"."""
     if isinstance(value, int):
         return value
-    workers = max_workers or (os.cpu_count() or 32)
-    mb = minibatch_size or 1
-    # Each proposal evaluates mb examples concurrently during its eval phases.
-    # N proposals × mb workers = total concurrent eval workers.
-    return max(1, workers // mb)
+    return max(1, max_workers // minibatch_size)
 
 
 def optimize_anything(
