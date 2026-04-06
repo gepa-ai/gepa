@@ -855,6 +855,29 @@ class TrackingConfig:
     """
 
 
+Backend = Literal["gepa", "skydiscover-evox", "skydiscover-adaevolve", "openevolve", "shinkaevolve"]
+"""Search backend to use for :func:`optimize_anything`.
+
+- ``"gepa"`` (default): GEPA's own Pareto-evolutionary search.  Supports
+  single-task, multi-task, and generalization modes.
+- ``"skydiscover-evox"``: EvoX co-evolutionary search via the ``skydiscover``
+  package.  **Single-task only** (``dataset`` and ``valset`` must be ``None``).
+- ``"skydiscover-adaevolve"``: AdaEvolve adaptive search via the
+  ``skydiscover`` package.  **Single-task only** (``dataset`` and ``valset``
+  must be ``None``).
+- ``"openevolve"``: AlphaEvolve-style open-source evolutionary search.
+  **Single-task only**.  Install with ``pip install openevolve``.
+- ``"shinkaevolve"``: ShinkaEvolve evolutionary search.
+  **Single-task only**.  Install with ``pip install shinka-evolve``.
+
+Install optional backends::
+
+    pip install skydiscover    # skydiscover-evox and skydiscover-adaevolve
+    pip install openevolve     # openevolve
+    pip install shinka-evolve   # shinkaevolve
+"""
+
+
 @dataclass
 class GEPAConfig:
     """Top-level configuration for :func:`optimize_anything`.
@@ -870,7 +893,18 @@ class GEPAConfig:
             reflection=ReflectionConfig(reflection_lm="openai/gpt-5.1"),
             refiner=RefinerConfig(max_refinements=2),
         )
+
+    To use an alternate backend::
+
+        config = GEPAConfig(
+            backend="skydiscover-evox",    # or "openevolve", "shinkaevolve"
+            engine=EngineConfig(max_metric_calls=50),
+        )
     """
+
+    # Search backend
+    backend: Backend = "gepa"
+    """Which search backend to use.  See :data:`Backend`."""
 
     # Component configurations
     engine: EngineConfig = field(default_factory=EngineConfig)
@@ -1078,6 +1112,384 @@ class EvaluatorWrapper:
         return self._wrapped(candidate, example=example, **kwargs)
 
 
+def _optimize_via_skydiscover(
+    backend: str,
+    seed_candidate: str | Candidate | None,
+    evaluator: Callable[..., Any],
+    dataset: list[DataInst] | None,
+    valset: list[DataInst] | None,
+    objective: str | None,
+    background: str | None,
+    config: "GEPAConfig",
+) -> "GEPAResult":
+    """Dispatch to a skydiscover search backend (evox or adaevolve).
+
+    skydiscover only supports single-task search mode (no dataset/valset).
+    Raises ``ValueError`` if ``dataset`` or ``valset`` are provided.
+    """
+    try:
+        from skydiscover import discover_solution  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise ImportError(
+            f"The '{backend}' backend requires the 'skydiscover' package. "
+            "Install it with: pip install skydiscover"
+        ) from exc
+
+    if dataset is not None or valset is not None:
+        raise ValueError(
+            f"Backend '{backend}' only supports single-task search mode. "
+            "Do not pass 'dataset' or 'valset' when using a skydiscover backend."
+        )
+
+    # Normalise seed to str
+    if seed_candidate is None:
+        seed_str: str | None = None
+    elif isinstance(seed_candidate, str):
+        seed_str = seed_candidate
+    elif isinstance(seed_candidate, dict):
+        if len(seed_candidate) == 1:
+            seed_str = next(iter(seed_candidate.values()))
+        else:
+            raise ValueError(
+                f"Backend '{backend}' requires a plain string candidate. "
+                "Pass seed_candidate as a str or a single-key dict."
+            )
+    else:
+        raise TypeError(f"Unsupported seed_candidate type for backend '{backend}': {type(seed_candidate)}")
+
+    # Map backend name -> skydiscover search algorithm name
+    _SEARCH_MAP = {
+        "skydiscover-evox": "evox",
+        "skydiscover-adaevolve": "adaevolve",
+    }
+    search_algo = _SEARCH_MAP[backend]
+
+    # Build a model name from reflection_lm if it's a string
+    model: str | None = None
+    if isinstance(config.reflection.reflection_lm, str):
+        model = config.reflection.reflection_lm
+
+    # Resolve iterations from engine config
+    iterations = config.engine.max_metric_calls or config.engine.max_candidate_proposals or 50
+
+    # Adapt the GEPA evaluator signature (candidate_str) -> (score, side_info)
+    # to the skydiscover signature (program_path: str) -> dict[str, float]
+
+    def skydiscover_evaluator(program_path: str) -> dict[str, Any]:
+        with open(program_path) as f:
+            candidate_text = f.read()
+        result = evaluator(candidate_text)
+        if isinstance(result, tuple):
+            score, _side = result[0], result[1]
+        else:
+            score = float(result)
+        return {"combined_score": float(score)}
+
+    sd_result = discover_solution(
+        evaluator=skydiscover_evaluator,
+        initial_solution=seed_str,
+        iterations=iterations,
+        search=search_algo,
+        model=model,
+        system_prompt=background or objective,
+        cleanup=True,
+    )
+
+    # Wrap in a GEPAResult for a consistent return type.
+    # We report two candidates: seed (index 0) and best (index 1).
+    initial_score = float(sd_result.initial_score) if sd_result.initial_score is not None else 0.0
+    best_score = float(sd_result.best_score)
+    seed_text = seed_str or ""
+    best_text = sd_result.best_solution or seed_text
+
+    if best_text != seed_text:
+        candidates_list = [
+            {_STR_CANDIDATE_KEY: seed_text},
+            {_STR_CANDIDATE_KEY: best_text},
+        ]
+        parents_list: list[list[int | None]] = [[None], [0]]
+        val_scores = [initial_score, best_score]
+    else:
+        # No improvement — return a single-candidate result
+        candidates_list = [{_STR_CANDIDATE_KEY: seed_text}]
+        parents_list: list[list[int | None]] = [[None]]
+        val_scores = [best_score]
+
+    return GEPAResult(
+        candidates=candidates_list,
+        parents=parents_list,
+        val_aggregate_scores=val_scores,
+        val_subscores=[{} for _ in candidates_list],
+        per_val_instance_best_candidates={},
+        discovery_eval_counts=[0] * len(candidates_list),
+        _str_candidate_key=_STR_CANDIDATE_KEY,
+    )
+
+
+def _wrap_to_gepa_result(
+    best_code: str,
+    best_score: float,
+    seed_text: str,
+    initial_score: float,
+) -> "GEPAResult":
+    """Build a minimal GEPAResult from a single best-code / best-score pair."""
+    if best_code and best_code != seed_text:
+        candidates_list = [
+            {_STR_CANDIDATE_KEY: seed_text},
+            {_STR_CANDIDATE_KEY: best_code},
+        ]
+        parents_list: list[list[int | None]] = [[None], [0]]
+        val_scores = [initial_score, best_score]
+    else:
+        candidates_list = [{_STR_CANDIDATE_KEY: seed_text}]
+        parents_list = [[None]]
+        val_scores = [best_score]
+    return GEPAResult(
+        candidates=candidates_list,
+        parents=parents_list,
+        val_aggregate_scores=val_scores,
+        val_subscores=[{} for _ in candidates_list],
+        per_val_instance_best_candidates={},
+        discovery_eval_counts=[0] * len(candidates_list),
+        _str_candidate_key=_STR_CANDIDATE_KEY,
+    )
+
+
+def _make_third_party_evaluator(
+    evaluator: Callable[..., Any],
+) -> Callable[[str], dict[str, Any]]:
+    """Wrap a GEPA evaluator ``(candidate_str) -> (score, side_info)``
+    into the file-path-based signature expected by third-party backends:
+    ``(program_path: str) -> {"combined_score": float, ...}``."""
+
+    def wrapped(program_path: str) -> dict[str, Any]:
+        with open(program_path) as f:
+            candidate_text = f.read()
+        result = evaluator(candidate_text)
+        if isinstance(result, tuple):
+            score = result[0]
+        else:
+            score = float(result)
+        return {"combined_score": float(score)}
+
+    return wrapped
+
+
+def _normalize_seed_to_str(backend: str, seed_candidate: "str | Candidate | None") -> str:
+    """Validate single-task mode and return the seed as a plain string."""
+    if seed_candidate is None:
+        return ""
+    if isinstance(seed_candidate, str):
+        return seed_candidate
+    if isinstance(seed_candidate, dict):
+        if len(seed_candidate) == 1:
+            return next(iter(seed_candidate.values()))
+        raise ValueError(
+            f"Backend '{backend}' requires a plain string candidate. "
+            "Pass seed_candidate as a str or a single-key dict."
+        )
+    raise TypeError(f"Unsupported seed_candidate type for backend '{backend}': {type(seed_candidate)}")
+
+
+def _optimize_via_openevolve(
+    seed_candidate: "str | Candidate | None",
+    evaluator: Callable[..., Any],
+    dataset: "list[DataInst] | None",
+    valset: "list[DataInst] | None",
+    objective: "str | None",
+    background: "str | None",
+    config: "GEPAConfig",
+) -> "GEPAResult":
+    """Dispatch to the OpenEvolve evolutionary search backend.
+
+    OpenEvolve evaluates candidates via a thread pool in the current process,
+    so any Python callable works as the evaluator.
+    **Single-task only** (``dataset`` and ``valset`` must be ``None``).
+
+    Install with: ``pip install openevolve``
+    """
+    try:
+        from openevolve import run_evolution  # type: ignore[import-not-found]
+        from openevolve.config import Config as OEConfig  # type: ignore[import-not-found]
+        from openevolve.config import LLMModelConfig
+    except ImportError as exc:
+        raise ImportError(
+            "The 'openevolve' backend requires the 'openevolve' package. "
+            "Install it with: pip install openevolve"
+        ) from exc
+
+    if dataset is not None or valset is not None:
+        raise ValueError(
+            "Backend 'openevolve' only supports single-task search mode. "
+            "Do not pass 'dataset' or 'valset' when using the openevolve backend."
+        )
+
+    seed_str = _normalize_seed_to_str("openevolve", seed_candidate)
+    iterations = config.engine.max_metric_calls or config.engine.max_candidate_proposals or 50
+
+    oe_config = OEConfig()
+    oe_config.max_iterations = iterations
+
+    model: str | None = None
+    if isinstance(config.reflection.reflection_lm, str):
+        model = config.reflection.reflection_lm
+
+    if model:
+        provider, bare_name = (model.split("/", 1) if "/" in model else ("openai", model))
+        oe_config.llm.models = [
+            LLMModelConfig(name=bare_name, api_base="https://api.openai.com/v1")
+        ]
+        oe_config.llm.evaluator_models = oe_config.llm.models.copy()
+
+    wrapped = _make_third_party_evaluator(evaluator)
+
+    oe_result = run_evolution(
+        initial_program=seed_str,
+        evaluator=wrapped,
+        config=oe_config,
+        iterations=iterations,
+    )
+
+    return _wrap_to_gepa_result(
+        best_code=oe_result.best_code or seed_str,
+        best_score=float(oe_result.best_score),
+        seed_text=seed_str,
+        initial_score=0.0,
+    )
+
+
+def _optimize_via_shinkaevolve(
+    seed_candidate: "str | Candidate | None",
+    evaluator: Callable[..., Any],
+    dataset: "list[DataInst] | None",
+    valset: "list[DataInst] | None",
+    objective: "str | None",
+    background: "str | None",
+    config: "GEPAConfig",
+) -> "GEPAResult":
+    """Dispatch to the ShinkaEvolve evolutionary search backend.
+
+    ShinkaEvolve runs the evaluator as a subprocess CLI script, so the
+    evaluator function's source code must be serializable via
+    ``inspect.getsource``.  Pass a module-level function (not a closure).
+    **Single-task only** (``dataset`` and ``valset`` must be ``None``).
+
+    Install with: ``pip install shinka-evolve``
+    """
+    import inspect
+    import tempfile
+    import textwrap
+
+    try:
+        from shinka.core import ShinkaEvolveRunner  # type: ignore[import-not-found]
+        from shinka.core.config import EvolutionConfig  # type: ignore[import-not-found]
+        from shinka.database import DatabaseConfig  # type: ignore[import-not-found]
+        from shinka.launch import LocalJobConfig  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise ImportError(
+            "The 'shinkaevolve' backend requires the 'ShinkaEvolve' package. "
+            "Install it with: pip install shinka-evolve"
+        ) from exc
+
+    if dataset is not None or valset is not None:
+        raise ValueError(
+            "Backend 'shinkaevolve' only supports single-task search mode. "
+            "Do not pass 'dataset' or 'valset' when using the shinkaevolve backend."
+        )
+
+    seed_str = _normalize_seed_to_str("shinkaevolve", seed_candidate)
+    iterations = config.engine.max_metric_calls or config.engine.max_candidate_proposals or 50
+
+    model: str | None = None
+    if isinstance(config.reflection.reflection_lm, str):
+        model = config.reflection.reflection_lm
+
+    # Build the evaluator script: serialize the user function + CLI wrapper.
+    try:
+        func_src = textwrap.dedent(inspect.getsource(evaluator))
+        func_name = evaluator.__name__
+    except (OSError, TypeError) as exc:
+        raise ValueError(
+            "The 'shinkaevolve' backend requires the evaluator function to have "
+            "serializable source code (inspect.getsource must succeed). "
+            "Define the evaluator at module level, not as a closure or lambda."
+        ) from exc
+
+    # Build a standalone evaluator script compatible with ShinkaEvolve's subprocess runner.
+    # ShinkaEvolve calls: python evaluator.py --program_path X --results_dir Y
+    # and reads results_dir/metrics.json and results_dir/correct.json.
+    evaluate_str = textwrap.dedent(f"""\
+        import json
+        import os
+        import sys
+
+        {func_src}
+
+        def evaluate(program_path):
+            with open(program_path) as _f:
+                candidate_text = _f.read()
+            result = {func_name}(candidate_text)
+            if isinstance(result, tuple):
+                score = float(result[0])
+            else:
+                score = float(result)
+            return {{"combined_score": score}}
+
+        if __name__ == "__main__":
+            import argparse
+            parser = argparse.ArgumentParser()
+            parser.add_argument("--program_path", required=True)
+            parser.add_argument("--results_dir", required=True)
+            args = parser.parse_args()
+            os.makedirs(args.results_dir, exist_ok=True)
+            metrics = evaluate(args.program_path)
+            with open(os.path.join(args.results_dir, "metrics.json"), "w") as _f:
+                json.dump(metrics, _f)
+            correct = metrics.get("combined_score", 0.0) > 0
+            with open(os.path.join(args.results_dir, "correct.json"), "w") as _f:
+                json.dump({{"correct": correct, "error": None}}, _f)
+    """)
+
+    with tempfile.TemporaryDirectory(prefix="gepa_shinka_") as tmp_dir:
+        evo_config = EvolutionConfig(
+            num_generations=iterations,
+            results_dir=tmp_dir,
+            job_type="local",
+            language="python",
+            llm_models=[model] if model else ["gpt-4.1"],
+        )
+        job_config = LocalJobConfig(eval_program_path="evaluator.py")
+        db_config = DatabaseConfig()
+
+        runner = ShinkaEvolveRunner(
+            evo_config=evo_config,
+            job_config=job_config,
+            db_config=db_config,
+            init_program_str=seed_str,
+            evaluate_str=evaluate_str,
+        )
+        runner.run()
+
+        assert runner.db is not None
+        best_sp = runner.db.get_best_program()
+        all_programs = runner.db.get_all_programs()
+        if best_sp is None and all_programs:
+            best_sp = max(
+                all_programs,
+                key=lambda p: float(getattr(p, "combined_score", 0) or 0),
+            )
+
+        best_code = best_sp.code if best_sp else seed_str
+        best_score = float(best_sp.combined_score or 0.0) if best_sp else 0.0
+
+    return _wrap_to_gepa_result(
+        best_code=best_code,
+        best_score=best_score,
+        seed_text=seed_str,
+        initial_score=0.0,
+    )
+
+
 def optimize_anything(
     seed_candidate: str | Candidate | None = None,
     *,
@@ -1196,6 +1608,39 @@ def optimize_anything(
     # Use default config if not provided
     if config is None:
         config = GEPAConfig()
+
+    # Dispatch to alternate backends before any GEPA-specific setup
+    if config.backend in ("skydiscover-evox", "skydiscover-adaevolve"):
+        return _optimize_via_skydiscover(
+            backend=config.backend,
+            seed_candidate=seed_candidate,
+            evaluator=evaluator,
+            dataset=dataset,
+            valset=valset,
+            objective=objective,
+            background=background,
+            config=config,
+        )
+    if config.backend == "openevolve":
+        return _optimize_via_openevolve(
+            seed_candidate=seed_candidate,
+            evaluator=evaluator,
+            dataset=dataset,
+            valset=valset,
+            objective=objective,
+            background=background,
+            config=config,
+        )
+    if config.backend == "shinkaevolve":
+        return _optimize_via_shinkaevolve(
+            seed_candidate=seed_candidate,
+            evaluator=evaluator,
+            dataset=dataset,
+            valset=valset,
+            objective=objective,
+            background=background,
+            config=config,
+        )
 
     # Detect seed generation mode: when seed_candidate is None, the LLM
     # will generate the initial candidate from the objective.
