@@ -443,10 +443,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 state.i += 1
                 state.full_program_trace.append({"i": state.i})
 
-                # Select session for this iteration (engine owns session lifecycle)
-                if self.session_manager is not None:
-                    self.session_manager.select()
-
                 # Notify callbacks of iteration start
                 notify_callbacks(
                     self.callbacks,

@@ -393,6 +393,7 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
+        session_manager=session_manager,  # select() — picks session before LM calls
     )
 
     def evaluator_fn(
@@ -434,7 +435,7 @@ def optimize(
         val_evaluation_policy=val_evaluation_policy,
         use_cloudpickle=use_cloudpickle,
         evaluation_cache=evaluation_cache,
-        session_manager=session_manager if reflection_lm_callable is not None else None,
+        session_manager=session_manager if reflection_lm_callable is not None else None,  # observe() — records outcome after eval
     )
 
     with experiment_tracker:

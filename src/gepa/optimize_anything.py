@@ -1517,6 +1517,7 @@ def optimize_anything(
         reflection_lm=dynamic_lm or config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
+        session_manager=session_manager,  # select() — picks session before LM calls
     )
 
     # Define evaluator function for merge proposer
@@ -1564,7 +1565,7 @@ def optimize_anything(
         val_evaluation_policy=config.engine.val_evaluation_policy,
         use_cloudpickle=config.engine.use_cloudpickle,
         evaluation_cache=evaluation_cache,
-        session_manager=session_manager if config.reflection.reflection_lm is not None else None,
+        session_manager=session_manager if config.reflection.reflection_lm is not None else None,  # observe() — records outcome after eval
     )
 
     # --- 15. Run optimization ---

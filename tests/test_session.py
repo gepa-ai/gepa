@@ -739,6 +739,26 @@ class TestOptimizeWithSessionStrategy:
 
         return mock_lm
 
+    def test_optimize_with_parent_linked_strategy(self):
+        """gepa.optimize() with session_strategy='parent_linked' completes.
+
+        Verifies that parent_candidate_idx flows from the proposer's
+        candidate selection through to SessionStrategy.select(ctx).
+        """
+        import gepa
+
+        result = gepa.optimize(
+            seed_candidate={"prompt": "initial short prompt"},
+            trainset=[{"id": i} for i in range(5)],
+            valset=[{"id": i} for i in range(5)],
+            adapter=self._make_minimal_adapter(),
+            max_metric_calls=30,
+            reflection_lm=self._make_mock_lm(),
+            session_strategy="parent_linked",
+        )
+        assert result is not None
+        assert result.total_metric_calls > 0
+
     def test_optimize_with_fork_strategy(self):
         """gepa.optimize() with session_strategy='fork' completes without error."""
         import gepa

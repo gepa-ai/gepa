@@ -56,6 +56,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
+        session_manager: Any | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -69,6 +70,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.reflection_lm = reflection_lm
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
+        self.session_manager = session_manager
 
         self.reflection_prompt_template = reflection_prompt_template
         # Track parameters for which we've already logged missing template warnings
@@ -153,6 +155,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
         curr_prog_id = self.candidate_selector.select_candidate_idx(state)
         curr_prog = state.program_candidates[curr_prog_id]
+
+        # Select session for this mutation — the LM calls below route through it
+        if self.session_manager is not None:
+            self.session_manager.select(parent_candidate_idx=curr_prog_id)
+
         state.full_program_trace[-1]["selected_program_candidate"] = curr_prog_id
         self.logger.log(
             f"Iteration {i}: Selected program {curr_prog_id} score: {state.program_full_scores_val_set[curr_prog_id]}"
