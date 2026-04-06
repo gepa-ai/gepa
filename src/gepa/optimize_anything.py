@@ -716,7 +716,7 @@ class ReflectionConfig:
     reflection_lm: LanguageModel | str | None = "openai/gpt-5.1"
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
-    session_strategy: Any | Literal["fork", "reset", "random", "round_robin"] = "reset"
+    session_strategy: str | Any | None = None
 
 
 @dataclass
@@ -1320,22 +1320,17 @@ def optimize_anything(
     if config.refiner is not None and config.refiner.refiner_lm is None:
         config.refiner.refiner_lm = config.reflection.reflection_lm
 
-    # Convert reflection_lm string to callable
-    if isinstance(config.reflection.reflection_lm, str):
-        if config.reflection.reflection_lm.startswith("claude_code/"):
-            from gepa.agents.claude_code import ClaudeCodeSession
-            from gepa.core.session import make_session_lm
+    # Convert reflection_lm to callable: CodingAgent → session-wrapped LM, str → litellm
+    from gepa.agents import CodingAgent
 
-            _model = config.reflection.reflection_lm.split("/", 1)[1]
-            config.reflection.reflection_lm = make_session_lm(ClaudeCodeSession(model=_model))  # type: ignore[assignment]
-        elif config.reflection.reflection_lm.startswith("opencode/"):
-            from gepa.agents.opencode import OpenCodeSession
-            from gepa.core.session import make_session_lm
+    if isinstance(config.reflection.reflection_lm, CodingAgent):
+        from gepa.core.session import make_session_lm
 
-            _model = config.reflection.reflection_lm.split("/", 1)[1]
-            config.reflection.reflection_lm = make_session_lm(OpenCodeSession(model=_model))  # type: ignore[assignment]
-        else:
-            config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
+        config.reflection.reflection_lm = make_session_lm(
+            config.reflection.reflection_lm.create_session()
+        )  # type: ignore[assignment]
+    elif isinstance(config.reflection.reflection_lm, str):
+        config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
 
     # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
     if config.refiner is not None:
@@ -1488,26 +1483,25 @@ def optimize_anything(
             InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
 
     # --- 11. Build session manager — engine owns lifecycle, proposer sees a plain LM ---
-    from gepa.core.session import LLMSession, SessionManager, make_session_lm, resolve_session_strategy
+    session_manager = None
+    dynamic_lm: LanguageModel | None = None
 
-    strategy = resolve_session_strategy(config.reflection.session_strategy)
-    _reflection_lm_for_session = config.reflection.reflection_lm
+    if config.reflection.session_strategy is not None and config.reflection.reflection_lm is not None:
+        from gepa.core.session import LLMSession, SessionManager, make_session_lm, resolve_session_strategy
 
-    def _session_api_call(messages: list[dict], **kwargs: Any) -> str:
-        """Bridge: LLMSession passes list[dict], but the underlying LM expects str."""
-        assert _reflection_lm_for_session is not None
-        last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-        return _reflection_lm_for_session(last_user)  # type: ignore[operator]
+        _strategy = resolve_session_strategy(config.reflection.session_strategy)
+        _reflection_lm_for_session = config.reflection.reflection_lm
 
-    session_manager = SessionManager(
-        create=lambda: LLMSession(system_prompt="", api_call=_session_api_call),
-        strategy=strategy,
-    )
-    dynamic_lm: LanguageModel | None = (
-        make_session_lm(session_manager.current_session, fallback=config.reflection.reflection_lm)  # type: ignore[assignment]
-        if config.reflection.reflection_lm is not None
-        else None
-    )
+        def _session_api_call(messages: list[dict], **kwargs: Any) -> str:
+            assert _reflection_lm_for_session is not None
+            last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+            return _reflection_lm_for_session(last_user)  # type: ignore[operator]
+
+        session_manager = SessionManager(
+            create=lambda: LLMSession(system_prompt="", api_call=_session_api_call),
+            strategy=_strategy,
+        )
+        dynamic_lm = make_session_lm(session_manager.current_session, fallback=config.reflection.reflection_lm)  # type: ignore[assignment]
 
     # --- 12. Build reflective proposer from ReflectionConfig ---
     reflective_proposer = ReflectiveMutationProposer(
@@ -1520,7 +1514,7 @@ def optimize_anything(
         perfect_score=config.reflection.perfect_score,
         skip_perfect_score=config.reflection.skip_perfect_score,
         experiment_tracker=experiment_tracker,
-        reflection_lm=dynamic_lm,
+        reflection_lm=dynamic_lm or config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
     )

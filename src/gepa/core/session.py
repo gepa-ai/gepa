@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import copy
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -65,7 +66,7 @@ class Session(Protocol):
 # ---------------------------------------------------------------------------
 
 
-class LLMSession:
+class LLMSession(Session):
     """Session backed by an in-memory message list -- works with any LLM API.
 
     ``send()`` appends a user message, calls the LLM, and appends the response.
@@ -129,7 +130,7 @@ class LLMSession:
         )
 
 
-class NullSession:
+class NullSession(Session):
     """No-op session for backward compatibility.
 
     All operations are safe to call but do nothing meaningful.
@@ -157,77 +158,132 @@ class NullSession:
 
 
 # ---------------------------------------------------------------------------
+# Session strategy -- data types
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SessionEntry:
+    """A session plus strategy-tracked metadata.
+
+    ``val_score`` is the aggregate validation score of the candidate that
+    was produced in this session.  ``None`` means unscored (e.g. before the
+    session has been observed, or when the strategy doesn't track scores).
+    """
+
+    session: Session
+    val_score: float | None = None
+
+
+@dataclass(frozen=True)
+class SessionContext:
+    """Context handed to ``SessionStrategy.select`` before a mutation.
+
+    Carries everything a strategy needs to decide which session to use:
+    the parent candidate (for lineage-aware strategies), the current
+    iteration, the read-only view of known sessions, and a factory for
+    brand-new sessions.
+    """
+
+    parent_candidate_idx: int | None
+    iteration: int
+    sessions: Mapping[int | str, SessionEntry]
+    create: Callable[[], Session]
+
+
+@dataclass(frozen=True)
+class SessionOutcome:
+    """Outcome of a mutation, handed to ``SessionStrategy.observe``.
+
+    Strategies use this to update their bookkeeping — typically binding a
+    newly-accepted candidate to the session that produced it.
+    """
+
+    candidate_idx: int | None
+    accepted: bool
+    session: Session
+    val_score: float | None = None
+
+
+# ---------------------------------------------------------------------------
 # Session strategy protocol
 # ---------------------------------------------------------------------------
 
 
 @runtime_checkable
 class SessionStrategy(Protocol):
-    """Policy that picks which session to use for the next mutation.
+    """Policy for picking and updating sessions across iterations.
 
-    At each iteration, the engine picks a parent candidate to mutate.
-    The strategy then decides: fork an existing session from the pool
-    (continue with context), or reset one (clean slate).
+    Two hooks:
 
-    Built-in strategies live in ``gepa.strategies.session_strategy``.
+    - ``select(ctx)`` — before each mutation, return the session to use.
+    - ``observe(outcome)`` — after each mutation, return a dict of
+      ``{key: SessionEntry}`` updates to merge into the manager's state.
+      Return an empty mapping to skip updates.
+
+    Strategies are pure: they never mutate shared state directly.  All
+    updates flow through the return value of ``observe``.
     """
 
-    def select(
-        self,
-        sessions: list[Session],
-        create: Callable[[], Session],
-    ) -> Session:
-        """Return the session to use for the next mutation.
+    def select(self, ctx: SessionContext) -> Session: ...
 
-        Parameters
-        ----------
-        sessions:
-            The pool of existing sessions (may be empty).
-        create:
-            Factory that creates the first session when the pool is empty.
-        """
-        ...
+    def observe(self, outcome: SessionOutcome) -> Mapping[int | str, SessionEntry]: ...
 
 
 # ---------------------------------------------------------------------------
-# Strategy resolution helper
+# Resolver
 # ---------------------------------------------------------------------------
 
 
 def resolve_session_strategy(strategy: str | SessionStrategy) -> SessionStrategy:
     """Convert a strategy name to a ``SessionStrategy`` instance.
 
-    Accepts a string (``"fork"``, ``"reset"``, ``"random"``, ``"round_robin"``)
-    or an already-instantiated ``SessionStrategy``.
+    Accepts a string (``"fork"``, ``"reset"``, ``"random"``, ``"round_robin"``,
+    ``"parent_linked"``) or an already-instantiated ``SessionStrategy``.
     """
-    if isinstance(strategy, str):
-        from gepa.strategies.session_strategy import AlwaysFork, AlwaysReset, RandomStrategy, RoundRobin
+    if not isinstance(strategy, str):
+        return strategy
+    from gepa.strategies.session_strategy import (
+        AlwaysFork,
+        AlwaysReset,
+        ParentLinked,
+        RandomStrategy,
+        RoundRobin,
+    )
 
-        factories: dict[str, type] = {
-            "fork": AlwaysFork,
-            "reset": AlwaysReset,
-            "random": RandomStrategy,
-            "round_robin": RoundRobin,
-        }
-        if strategy not in factories:
-            raise ValueError(
-                f"Unknown session_strategy: {strategy!r}. Supported: {', '.join(repr(k) for k in factories)}"
-            )
-        return factories[strategy]()
-    return strategy
+    strategies: dict[str, type] = {
+        "fork": AlwaysFork,
+        "reset": AlwaysReset,
+        "random": RandomStrategy,
+        "round_robin": RoundRobin,
+        "parent_linked": ParentLinked,
+    }
+    if strategy not in strategies:
+        raise ValueError(f"Unknown session_strategy: {strategy!r}. Supported: {list(strategies)}")
+    return strategies[strategy]()
 
 
 # ---------------------------------------------------------------------------
-# Session manager -- pool + strategy
+# Session manager -- keyed store + strategy
 # ---------------------------------------------------------------------------
 
 
 class SessionManager:
-    """Manages a pool of sessions with a pluggable strategy.
+    """Manages a keyed store of sessions with a pluggable strategy.
 
-    At each iteration the engine calls ``select()`` — the strategy picks
-    a session from the pool (fork) or resets one (fresh start).  The
-    returned session is used for the mutation via ``send()``.
+    The manager holds a ``dict[int | str, SessionEntry]``.  Strategies
+    decide how keys are assigned (candidate index, iteration number,
+    ``"global"``, etc.) via the ``observe`` return value.  The manager
+    never inspects keys — it only merges updates.
+
+    Lifecycle per iteration:
+
+    1. ``select(parent_candidate_idx)`` — build ``SessionContext`` and ask
+       the strategy which session to use.  The returned session becomes
+       ``current_session``.
+    2. The engine runs the mutation using the current session.
+    3. ``observe(candidate_idx, accepted, val_score)`` — build
+       ``SessionOutcome`` and merge the strategy's updates into the store.
 
     Example
     -------
@@ -238,8 +294,9 @@ class SessionManager:
         create = lambda: LLMSession(system_prompt="...", api_call=llm)
         manager = SessionManager(create=create, strategy=AlwaysFork())
 
-        session = manager.select()
+        session = manager.select(parent_candidate_idx=3)
         response = session.send("Improve the code...")
+        manager.observe(candidate_idx=7, accepted=True, val_score=0.87)
     """
 
     def __init__(
@@ -253,26 +310,55 @@ class SessionManager:
 
             strategy = AlwaysFork()
         self._strategy: SessionStrategy = strategy
-        self._sessions: list[Session] = []
+        self._sessions: dict[int | str, SessionEntry] = {}
+        self._iteration: int = 0
         self._current: Session | None = None
 
     @property
-    def sessions(self) -> list[Session]:
-        """The pool of sessions."""
-        return list(self._sessions)
+    def sessions(self) -> Mapping[int | str, SessionEntry]:
+        """Read-only view of the session store."""
+        return dict(self._sessions)
 
-    def select(self) -> Session:
+    @property
+    def iteration(self) -> int:
+        """The iteration counter, incremented on each ``select()`` call."""
+        return self._iteration
+
+    def select(self, parent_candidate_idx: int | None = None) -> Session:
         """Pick the session for the next mutation using the configured strategy."""
-        self._current = self._strategy.select(self._sessions, self._create)
-        if self._current not in self._sessions:
-            self._sessions.append(self._current)
+        ctx = SessionContext(
+            parent_candidate_idx=parent_candidate_idx,
+            iteration=self._iteration,
+            sessions=dict(self._sessions),
+            create=self._create,
+        )
+        self._current = self._strategy.select(ctx)
+        self._iteration += 1
         return self._current
+
+    def observe(
+        self,
+        candidate_idx: int | None,
+        accepted: bool,
+        val_score: float | None = None,
+    ) -> None:
+        """Notify the strategy of a mutation outcome and merge its updates."""
+        if self._current is None:
+            return
+        outcome = SessionOutcome(
+            candidate_idx=candidate_idx,
+            accepted=accepted,
+            session=self._current,
+            val_score=val_score,
+        )
+        updates = self._strategy.observe(outcome)
+        if updates:
+            self._sessions.update(updates)
 
     def current_session(self) -> Session:
         """Return the active session (set by the last ``select()`` call)."""
         if self._current is None:
             self._current = self._create()
-            self._sessions.append(self._current)
         return self._current
 
 

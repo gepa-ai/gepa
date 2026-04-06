@@ -58,7 +58,6 @@ class ClaudeCodeSession:
 
     @property
     def history(self) -> list[dict[str, Any]]:
-        # Claude Code manages history internally
         return []
 
     @property
@@ -75,9 +74,10 @@ class ClaudeCodeSession:
         cmd = [
             "claude",
             "-p",
-            "--model", self._model,
-            "--output-format", "json",
-            "--dangerously-skip-permissions",
+            "--model",
+            self._model,
+            "--output-format",
+            "json",
         ]
         if self._system_prompt:
             cmd += ["--system-prompt", self._system_prompt]
@@ -85,6 +85,19 @@ class ClaudeCodeSession:
             cmd += ["--max-budget-usd", str(self._max_budget_usd)]
         cmd += self._extra_flags
         return cmd
+
+    @staticmethod
+    def _extract_result(raw: str) -> dict[str, Any]:
+        """Parse Claude Code JSON output — handles both list and dict formats.
+
+        ``claude -p --output-format json`` returns a JSON **array** where the
+        last element is the result object containing ``result``, ``session_id``,
+        ``total_cost_usd``, ``is_error``, etc.
+        """
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return parsed[-1]  # type: ignore[no-any-return]
+        return parsed  # type: ignore[no-any-return]
 
     def send(self, content: str, **kwargs: Any) -> str:
         cmd = self._base_cmd() + [content]
@@ -96,13 +109,13 @@ class ClaudeCodeSession:
         if result.returncode != 0:
             raise RuntimeError(f"Claude Code failed (exit {result.returncode}): {result.stderr.strip()}")
 
-        output = json.loads(result.stdout)
+        output = self._extract_result(result.stdout)
 
         if output.get("is_error"):
             raise RuntimeError(f"Claude Code error: {output.get('result', 'unknown error')}")
 
         self._session_id = output["session_id"]
-        cost = output.get("cost_usd", 0.0)
+        cost = output.get("total_cost_usd") or output.get("cost_usd", 0.0)
         self._last_send_cost = cost
         self._total_cost_usd += cost
         return output["result"]
@@ -112,8 +125,9 @@ class ClaudeCodeSession:
             raise RuntimeError("Cannot fork a session that hasn't been used yet.")
 
         cmd = self._base_cmd() + [
-            "",
-            "--resume", self._session_id,
+            "Continue.",
+            "--resume",
+            self._session_id,
             "--fork-session",
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=self._timeout)
@@ -121,7 +135,7 @@ class ClaudeCodeSession:
         if result.returncode != 0:
             raise RuntimeError(f"Claude Code fork failed (exit {result.returncode}): {result.stderr.strip()}")
 
-        output = json.loads(result.stdout)
+        output = self._extract_result(result.stdout)
         return ClaudeCodeSession(
             model=self._model,
             system_prompt=self._system_prompt,

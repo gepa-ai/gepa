@@ -89,7 +89,7 @@ def optimize(
     raise_on_exception: bool = True,
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
     # Session management
-    session_strategy: Any | Literal["fork", "reset", "random", "round_robin"] = "reset",
+    session_strategy: str | Any | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -259,27 +259,19 @@ def optimize(
             + "GEPA will use the default proposer, which requires a reflection_lm to be specified."
         )
 
+    from gepa.agents import CodingAgent
+
     reflection_lm_callable: LanguageModel | None = None
-    _agent_session = None  # set if reflection_lm is an agent string
-    if isinstance(reflection_lm, str):
-        if reflection_lm.startswith("claude_code/"):
-            from gepa.agents.claude_code import ClaudeCodeSession
-            from gepa.core.session import make_session_lm
+    _agent_session = None  # set if reflection_lm is a CodingAgent
+    if isinstance(reflection_lm, CodingAgent):
+        from gepa.core.session import make_session_lm
 
-            model = reflection_lm.split("/", 1)[1]
-            _agent_session = ClaudeCodeSession(model=model)
-            reflection_lm_callable = make_session_lm(_agent_session)  # type: ignore[assignment]
-        elif reflection_lm.startswith("opencode/"):
-            from gepa.agents.opencode import OpenCodeSession
-            from gepa.core.session import make_session_lm
+        _agent_session = reflection_lm.create_session()
+        reflection_lm_callable = make_session_lm(_agent_session)  # type: ignore[assignment]
+    elif isinstance(reflection_lm, str):
+        from gepa.lm import LM
 
-            model = reflection_lm.split("/", 1)[1]
-            _agent_session = OpenCodeSession(model=model)
-            reflection_lm_callable = make_session_lm(_agent_session)  # type: ignore[assignment]
-        else:
-            from gepa.lm import LM
-
-            reflection_lm_callable = LM(reflection_lm)
+        reflection_lm_callable = LM(reflection_lm)
     else:
         reflection_lm_callable = reflection_lm
 
@@ -367,30 +359,25 @@ def optimize(
         evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
 
     # Build session manager — engine owns lifecycle, proposer sees a plain LM
-    from gepa.core.session import LLMSession, SessionManager, make_session_lm, resolve_session_strategy
+    session_manager = None
+    dynamic_lm: LanguageModel | None = None
 
-    strategy = resolve_session_strategy(session_strategy)
-    _reflection_lm_for_session = reflection_lm_callable
+    if session_strategy is not None and reflection_lm_callable is not None:
+        from gepa.core.session import LLMSession, SessionManager, make_session_lm, resolve_session_strategy
 
-    def _session_api_call(messages: list[dict[str, Any]], **kwargs: Any) -> str:
-        """Bridge: LLMSession passes list[dict], underlying LM expects str.
+        _strategy = resolve_session_strategy(session_strategy)
+        _reflection_lm_for_session = reflection_lm_callable
 
-        Extracts the last user message content and passes it as a plain string
-        so the underlying reflection_lm sees exactly what it would without sessions.
-        """
-        assert _reflection_lm_for_session is not None
-        last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-        return _reflection_lm_for_session(last_user)
+        def _session_api_call(messages: list[dict[str, Any]], **kwargs: Any) -> str:
+            assert _reflection_lm_for_session is not None
+            last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+            return _reflection_lm_for_session(last_user)
 
-    session_manager = SessionManager(
-        create=lambda: LLMSession(system_prompt="", api_call=_session_api_call),
-        strategy=strategy,
-    )
-    dynamic_lm: LanguageModel | None = (
-        make_session_lm(session_manager.current_session, fallback=reflection_lm_callable)  # type: ignore[assignment]
-        if reflection_lm_callable is not None
-        else None
-    )
+        session_manager = SessionManager(
+            create=lambda: LLMSession(system_prompt="", api_call=_session_api_call),
+            strategy=_strategy,
+        )
+        dynamic_lm = make_session_lm(session_manager.current_session, fallback=reflection_lm_callable)  # type: ignore[assignment]
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
@@ -402,7 +389,7 @@ def optimize(
         perfect_score=perfect_score,
         skip_perfect_score=skip_perfect_score,
         experiment_tracker=experiment_tracker,
-        reflection_lm=dynamic_lm,
+        reflection_lm=dynamic_lm or reflection_lm_callable,
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,

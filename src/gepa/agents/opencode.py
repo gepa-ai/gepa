@@ -7,23 +7,31 @@ from __future__ import annotations
 
 import json
 import subprocess
-import uuid  # used for fallback session_id
+import uuid
 from typing import Any
 
 
 class OpenCodeSession:
     """Session backed by OpenCode CLI.
 
-    Uses ``opencode run`` for non-interactive mode.  History is managed by
-    OpenCode internally via ``--session``.  ``fork()`` uses OpenCode's
-    native ``--fork``.  ``reset()`` creates a fresh process.
+    Uses ``opencode run --format json`` for non-interactive mode.  The CLI
+    emits newline-delimited JSON (NDJSON) events::
+
+        {"type": "step_start",  "sessionID": "...", ...}
+        {"type": "text",        "part": {"text": "..."}, ...}
+        {"type": "step_finish", "part": {"cost": 0.01, "tokens": {...}}, ...}
+
+    History is managed by OpenCode internally via ``--session``.
+    ``fork()`` uses ``--fork``.  ``reset()`` creates a fresh session.
 
     Parameters
     ----------
     model:
-        Model name (e.g. ``"sonnet"``, ``"gpt-4"``, etc.).
+        Full provider/model string passed to ``--model``
+        (e.g. ``"openrouter/anthropic/claude-sonnet-4.6"``).  See
+        ``opencode models`` for the list supported by your install.
     system_prompt:
-        System prompt passed via ``--system-prompt``.
+        System prompt passed via ``--system``.
     session_id:
         Existing session ID to resume.  ``None`` starts a new session.
     timeout:
@@ -34,7 +42,7 @@ class OpenCodeSession:
 
     def __init__(
         self,
-        model: str = "sonnet",
+        model: str = "openrouter/anthropic/claude-sonnet-4.6",
         *,
         system_prompt: str = "",
         session_id: str | None = None,
@@ -55,7 +63,6 @@ class OpenCodeSession:
 
     @property
     def history(self) -> list[dict[str, Any]]:
-        # OpenCode manages history internally
         return []
 
     @property
@@ -72,13 +79,47 @@ class OpenCodeSession:
         cmd = [
             "opencode",
             "run",
-            "--model", self._model,
-            "--format", "json",
+            "--model",
+            self._model,
+            "--format",
+            "json",
         ]
         if self._system_prompt:
-            cmd += ["--system-prompt", self._system_prompt]
+            cmd += ["--system", self._system_prompt]
         cmd += self._extra_flags
         return cmd
+
+    @staticmethod
+    def _parse_ndjson(raw: str) -> tuple[str, str, float]:
+        """Parse NDJSON events from ``opencode run --format json``.
+
+        Returns ``(session_id, result_text, cost)``.
+        """
+        session_id = ""
+        text_parts: list[str] = []
+        cost = 0.0
+
+        for line in raw.strip().splitlines():
+            if not line.strip():
+                continue
+            event = json.loads(line)
+            event_type = event.get("type", "")
+
+            if not session_id:
+                session_id = event.get("sessionID", "")
+
+            if event_type == "text":
+                part = event.get("part", {})
+                text_parts.append(part.get("text", ""))
+            elif event_type == "step_finish":
+                part = event.get("part", {})
+                cost += part.get("cost", 0.0)
+            elif event_type == "error":
+                error = event.get("error", {})
+                msg = error.get("data", {}).get("message", "unknown error")
+                raise RuntimeError(f"OpenCode error: {msg}")
+
+        return session_id, "".join(text_parts), cost
 
     def send(self, content: str, **kwargs: Any) -> str:
         cmd = self._base_cmd() + [content]
@@ -88,22 +129,29 @@ class OpenCodeSession:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=self._timeout)
 
         if result.returncode != 0:
+            if result.stdout.strip():
+                try:
+                    self._parse_ndjson(result.stdout)
+                except RuntimeError:
+                    raise
+                except Exception:
+                    pass
             raise RuntimeError(f"OpenCode failed (exit {result.returncode}): {result.stderr.strip()}")
 
-        output = json.loads(result.stdout)
-        self._session_id = output.get("session_id", self._session_id or uuid.uuid4().hex[:12])
-        cost = output.get("cost_usd", 0.0)
+        session_id, text, cost = self._parse_ndjson(result.stdout)
+        self._session_id = session_id or self._session_id or uuid.uuid4().hex[:12]
         self._last_send_cost = cost
         self._total_cost_usd += cost
-        return output.get("result", "")
+        return text
 
     def fork(self) -> OpenCodeSession:
         if self._session_id is None:
             raise RuntimeError("Cannot fork a session that hasn't been used yet.")
 
         cmd = self._base_cmd() + [
-            "",
-            "--session", self._session_id,
+            "Continue.",
+            "--session",
+            self._session_id,
             "--fork",
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=self._timeout)
@@ -111,11 +159,11 @@ class OpenCodeSession:
         if result.returncode != 0:
             raise RuntimeError(f"OpenCode fork failed (exit {result.returncode}): {result.stderr.strip()}")
 
-        output = json.loads(result.stdout)
+        session_id, _, _ = self._parse_ndjson(result.stdout)
         return OpenCodeSession(
             model=self._model,
             system_prompt=self._system_prompt,
-            session_id=output.get("session_id"),
+            session_id=session_id or None,
             timeout=self._timeout,
             extra_flags=self._extra_flags,
         )

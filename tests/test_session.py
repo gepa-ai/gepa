@@ -1,201 +1,53 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-"""Tests for gepa.core.session -- Session protocol and implementations."""
+"""Tests for gepa.core.session -- Session protocol, strategies, and manager."""
 
 from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+
+import pytest
 
 from gepa.core.session import (
     LLMSession,
     NullSession,
     Session,
+    SessionContext,
+    SessionEntry,
     SessionManager,
+    SessionOutcome,
     SessionStrategy,
     make_session_lm,
+    resolve_session_strategy,
 )
 from gepa.strategies.session_strategy import (
     AlwaysFork,
     AlwaysReset,
+    ParentLinked,
     RandomStrategy,
     RoundRobin,
 )
 
-
-class TestLLMSession:
-    def _make_echo_session(self, system_prompt: str = "You are helpful.") -> LLMSession:
-        """Create a session with a simple echo API call."""
-
-        def echo_api(messages: list[dict], **kwargs) -> str:
-            last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-            return f"echo: {last_user}"
-
-        return LLMSession(system_prompt=system_prompt, api_call=echo_api)
-
-    def test_protocol_compliance(self) -> None:
-        session = self._make_echo_session()
-        assert isinstance(session, Session)
-
-    def test_send_appends_messages(self) -> None:
-        session = self._make_echo_session()
-        response = session.send("hello")
-        assert response == "echo: hello"
-        assert len(session.history) == 2
-        assert session.history[0] == {"role": "user", "content": "hello"}
-        assert session.history[1] == {"role": "assistant", "content": "echo: hello"}
-
-    def test_send_multiple(self) -> None:
-        session = self._make_echo_session()
-        session.send("first")
-        session.send("second")
-        assert len(session.history) == 4
-
-    def test_fork_copies_history(self) -> None:
-        session = self._make_echo_session()
-        session.send("before fork")
-        forked = session.fork()
-
-        assert forked.session_id != session.session_id
-        assert forked.history == session.history
-
-    def test_fork_diverges(self) -> None:
-        session = self._make_echo_session()
-        session.send("shared")
-        forked = session.fork()
-
-        session.send("parent only")
-        forked.send("child only")
-
-        assert len(session.history) == 4
-        assert len(forked.history) == 4
-        assert session.history[-1]["content"] == "echo: parent only"
-        assert forked.history[-1]["content"] == "echo: child only"
-
-    def test_reset_creates_empty_session(self) -> None:
-        session = self._make_echo_session()
-        session.send("before reset")
-        new = session.reset()
-
-        assert new.session_id != session.session_id
-        assert len(new.history) == 0
-        assert len(session.history) == 2  # original untouched
-
-    def test_reset_preserves_backend(self) -> None:
-        session = self._make_echo_session()
-        session.send("setup")
-        new = session.reset()
-        response = new.send("test reset")
-        assert response == "echo: test reset"  # same API works
-
-    def test_history_is_copy(self) -> None:
-        session = self._make_echo_session()
-        session.send("hello")
-        history = session.history
-        history.clear()
-        assert len(session.history) == 2
-
-    def test_session_id_auto_generated(self) -> None:
-        session = self._make_echo_session()
-        assert len(session.session_id) > 0
-
-    def test_session_id_explicit(self) -> None:
-        def noop(messages, **kwargs):
-            return ""
-
-        session = LLMSession(system_prompt="", api_call=noop, session_id="my-id")
-        assert session.session_id == "my-id"
-
-    def test_api_call_receives_system_prompt(self) -> None:
-        received_messages = []
-
-        def capture_api(messages: list[dict], **kwargs) -> str:
-            received_messages.extend(messages)
-            return "ok"
-
-        session = LLMSession(system_prompt="Be concise.", api_call=capture_api)
-        session.send("test")
-        assert received_messages[0] == {"role": "system", "content": "Be concise."}
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
-class TestNullSession:
-    def test_protocol_compliance(self) -> None:
-        session = NullSession()
-        assert isinstance(session, Session)
+def _make_echo_session(system_prompt: str = "test", session_id: str | None = None) -> LLMSession:
+    """Create a session with a simple echo API call."""
 
-    def test_send_returns_empty(self) -> None:
-        session = NullSession()
-        assert session.send("anything") == ""
+    def echo_api(messages: list[dict], **kwargs) -> str:  # type: ignore[type-arg]
+        last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        return f"echo: {last_user}"
 
-    def test_history_empty(self) -> None:
-        session = NullSession()
-        session.send("something")
-        assert session.history == []
-
-    def test_fork_returns_new_null(self) -> None:
-        session = NullSession()
-        forked = session.fork()
-        assert isinstance(forked, NullSession)
-        assert forked.session_id != session.session_id
-
-    def test_reset_returns_new_null(self) -> None:
-        session = NullSession()
-        new = session.reset()
-        assert isinstance(new, NullSession)
-        assert new.session_id != session.session_id
+    return LLMSession(system_prompt=system_prompt, api_call=echo_api, session_id=session_id)
 
 
-class TestMakeSessionLm:
-    def _make_echo_session(self) -> LLMSession:
-        def echo_api(messages: list[dict], **kwargs) -> str:
-            last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-            return f"echo: {last_user}"
-
-        return LLMSession(system_prompt="test", api_call=echo_api)
-
-    def test_string_prompt(self) -> None:
-        session = self._make_echo_session()
-        lm = make_session_lm(session)
-        result = lm("hello")
-        assert result == "echo: hello"
-
-    def test_message_list_prompt(self) -> None:
-        session = self._make_echo_session()
-        lm = make_session_lm(session)
-        result = lm([{"role": "user", "content": "from list"}])
-        assert result == "echo: from list"
-
-    def test_session_accumulates_history(self) -> None:
-        session = self._make_echo_session()
-        lm = make_session_lm(session)
-        lm("first")
-        lm("second")
-        assert len(session.history) == 4  # 2 user + 2 assistant
-
-    def test_callable_satisfies_lm_protocol(self) -> None:
-        session = self._make_echo_session()
-        lm = make_session_lm(session)
-        assert callable(lm)
-
-    def test_dynamic_provider(self) -> None:
-        """make_session_lm accepts a callable that returns the current session."""
-        session_a = self._make_echo_session()
-        session_b = self._make_echo_session()
-        current = [session_a]  # mutable container for closure
-
-        lm = make_session_lm(lambda: current[0])
-        lm("to A")
-        assert len(session_a.history) == 2
-        assert len(session_b.history) == 0
-
-        current[0] = session_b
-        lm("to B")
-        assert len(session_a.history) == 2  # unchanged
-        assert len(session_b.history) == 2
-
-
-def _make_echo_factory(system_prompt: str = "test") -> tuple:
+def _make_echo_factory(system_prompt: str = "test") -> tuple[Callable[[], LLMSession], Callable[..., str]]:
     """Return (factory, echo_api) for building test sessions."""
 
-    def echo_api(messages: list[dict], **kwargs) -> str:
+    def echo_api(messages: list[dict], **kwargs) -> str:  # type: ignore[type-arg]
         last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
         return f"echo: {last_user}"
 
@@ -205,159 +57,494 @@ def _make_echo_factory(system_prompt: str = "test") -> tuple:
     return factory, echo_api
 
 
+# ===========================================================================
+# LLMSession
+# ===========================================================================
+
+
+class TestLLMSession:
+    def test_protocol_compliance(self):
+        session = _make_echo_session()
+        assert isinstance(session, Session)
+
+    def test_send_appends_messages(self):
+        session = _make_echo_session()
+        result = session.send("hello")
+        assert result == "echo: hello"
+        assert len(session.history) == 2
+        assert session.history[0] == {"role": "user", "content": "hello"}
+        assert session.history[1] == {"role": "assistant", "content": "echo: hello"}
+
+    def test_send_multiple(self):
+        session = _make_echo_session()
+        session.send("a")
+        session.send("b")
+        assert len(session.history) == 4
+
+    def test_fork_copies_history(self):
+        session = _make_echo_session()
+        session.send("hello")
+        forked = session.fork()
+        assert forked.history == session.history
+        assert forked.session_id != session.session_id
+
+    def test_fork_diverges(self):
+        session = _make_echo_session()
+        session.send("hello")
+        forked = session.fork()
+        forked.send("world")
+        assert len(forked.history) == 4
+        assert len(session.history) == 2
+
+    def test_reset_creates_empty_session(self):
+        session = _make_echo_session()
+        session.send("hello")
+        new = session.reset()
+        assert new.history == []
+        assert new.session_id != session.session_id
+
+    def test_reset_preserves_backend(self):
+        session = _make_echo_session(system_prompt="custom")
+        new = session.reset()
+        result = new.send("test")
+        assert result == "echo: test"
+
+    def test_history_is_copy(self):
+        session = _make_echo_session()
+        session.send("hello")
+        h = session.history
+        h.append({"role": "user", "content": "injected"})
+        assert len(session.history) == 2
+
+    def test_session_id_auto_generated(self):
+        s1 = _make_echo_session()
+        s2 = _make_echo_session()
+        assert s1.session_id != s2.session_id
+
+    def test_session_id_explicit(self):
+        session = _make_echo_session(session_id="my-id")
+        assert session.session_id == "my-id"
+
+    def test_api_call_receives_system_prompt(self):
+        received = []
+
+        def spy_api(messages, **kwargs):
+            received.append(messages)
+            return "ok"
+
+        session = LLMSession(system_prompt="sys", api_call=spy_api)
+        session.send("hello")
+        assert received[0][0] == {"role": "system", "content": "sys"}
+
+
+# ===========================================================================
+# NullSession
+# ===========================================================================
+
+
+class TestNullSession:
+    def test_protocol_compliance(self):
+        assert isinstance(NullSession(), Session)
+
+    def test_send_returns_empty(self):
+        assert NullSession().send("hello") == ""
+
+    def test_history_empty(self):
+        assert NullSession().history == []
+
+    def test_fork_returns_new_null(self):
+        s = NullSession()
+        f = s.fork()
+        assert isinstance(f, NullSession)
+        assert f.session_id != s.session_id
+
+    def test_reset_returns_new_null(self):
+        s = NullSession()
+        r = s.reset()
+        assert isinstance(r, NullSession)
+        assert r.session_id != s.session_id
+
+
+# ===========================================================================
+# make_session_lm
+# ===========================================================================
+
+
+class TestMakeSessionLm:
+    def test_string_prompt(self):
+        session = _make_echo_session()
+        lm = make_session_lm(session)
+        assert lm("hello") == "echo: hello"
+
+    def test_message_list_prompt(self):
+        session = _make_echo_session()
+        lm = make_session_lm(session)
+        result = lm([{"role": "user", "content": "hello"}])
+        assert result == "echo: hello"
+
+    def test_session_accumulates_history(self):
+        session = _make_echo_session()
+        lm = make_session_lm(session)
+        lm("a")
+        lm("b")
+        assert len(session.history) == 4
+
+    def test_callable_satisfies_lm_protocol(self):
+        session = _make_echo_session()
+        lm = make_session_lm(session)
+        assert callable(lm)
+
+    def test_dynamic_provider(self):
+        factory, _ = _make_echo_factory()
+        sessions: list[LLMSession] = []
+
+        def provider():
+            s = factory()
+            sessions.append(s)
+            return s
+
+        lm = make_session_lm(provider)
+        lm("hello")
+        assert len(sessions) == 1
+
+
+# ===========================================================================
+# SessionStrategy — protocol conformance
+# ===========================================================================
+
+
 class TestSessionStrategy:
-    def test_protocol_compliance(self) -> None:
+    def test_protocol_compliance(self):
         assert isinstance(AlwaysFork(), SessionStrategy)
         assert isinstance(AlwaysReset(), SessionStrategy)
         assert isinstance(RandomStrategy(), SessionStrategy)
         assert isinstance(RoundRobin(), SessionStrategy)
+        assert isinstance(ParentLinked(), SessionStrategy)
+
+
+def _ctx(
+    sessions: dict | None = None,
+    *,
+    parent_candidate_idx: int | None = None,
+    iteration: int = 0,
+    create: Callable[[], Session] | None = None,
+) -> SessionContext:
+    factory, _ = _make_echo_factory()
+    return SessionContext(
+        parent_candidate_idx=parent_candidate_idx,
+        iteration=iteration,
+        sessions=sessions or {},
+        create=create or factory,
+    )
+
+
+# ===========================================================================
+# Built-in strategies
+# ===========================================================================
+
+
+class TestAlwaysFork:
+    def test_empty_sessions_calls_create(self):
+        session = AlwaysFork().select(_ctx())
+        assert isinstance(session, LLMSession)
+        assert session.history == []
+
+    def test_forks_most_recent(self):
+        s1 = _make_echo_session()
+        s1.send("hello")
+        store = {0: SessionEntry(s1)}
+        forked = AlwaysFork().select(_ctx(store))
+        assert forked.history == s1.history
+        assert forked.session_id != s1.session_id
+
+    def test_observe_binds_on_accept(self):
+        session = _make_echo_session()
+        updates = AlwaysFork().observe(SessionOutcome(candidate_idx=7, accepted=True, session=session, val_score=0.8))
+        assert 7 in updates
+        assert updates[7].session is session
+        assert updates[7].val_score == 0.8
+
+    def test_observe_skips_on_reject(self):
+        session = _make_echo_session()
+        updates = AlwaysFork().observe(SessionOutcome(candidate_idx=3, accepted=False, session=session))
+        assert updates == {}
+
+    def test_observe_skips_if_no_candidate_idx(self):
+        session = _make_echo_session()
+        updates = AlwaysFork().observe(SessionOutcome(candidate_idx=None, accepted=True, session=session))
+        assert updates == {}
+
+
+class TestAlwaysReset:
+    def test_resets_most_recent(self):
+        s1 = _make_echo_session()
+        s1.send("hello")
+        store = {0: SessionEntry(s1)}
+        reset = AlwaysReset().select(_ctx(store))
+        assert reset.history == []
+        assert reset.session_id != s1.session_id
+
+    def test_empty_calls_create(self):
+        session = AlwaysReset().select(_ctx())
+        assert isinstance(session, LLMSession)
+
+
+class TestRandomStrategy:
+    def test_always_fork(self):
+        s1 = _make_echo_session()
+        s1.send("hello")
+        store = {0: SessionEntry(s1)}
+        result = RandomStrategy(fork_probability=1.0).select(_ctx(store))
+        assert result.history == s1.history
+
+    def test_always_reset(self):
+        s1 = _make_echo_session()
+        s1.send("hello")
+        store = {0: SessionEntry(s1)}
+        result = RandomStrategy(fork_probability=0.0).select(_ctx(store))
+        assert result.history == []
+
+
+class TestRoundRobin:
+    def test_alternates_fork_reset(self):
+        s1 = _make_echo_session()
+        s1.send("hello")
+        store = {0: SessionEntry(s1)}
+        rr = RoundRobin()
+        r1 = rr.select(_ctx(store))  # fork
+        r2 = rr.select(_ctx(store))  # reset
+        r3 = rr.select(_ctx(store))  # fork
+        assert len(r1.history) == 2
+        assert len(r2.history) == 0
+        assert len(r3.history) == 2
+
+
+class TestParentLinked:
+    def test_forks_from_parent(self):
+        parent = _make_echo_session()
+        parent.send("parent-msg")
+        other = _make_echo_session()
+        other.send("other")
+        store = {
+            5: SessionEntry(parent),
+            6: SessionEntry(other),
+        }
+        result = ParentLinked().select(_ctx(store, parent_candidate_idx=5))
+        assert result.history == parent.history
+        assert result.session_id != parent.session_id
+
+    def test_falls_back_to_most_recent_when_parent_unknown(self):
+        recent = _make_echo_session()
+        recent.send("recent")
+        store = {0: SessionEntry(recent)}
+        # parent_candidate_idx=99 not in store → fall back to most recent
+        result = ParentLinked().select(_ctx(store, parent_candidate_idx=99))
+        assert result.history == recent.history
+
+    def test_empty_store_calls_create(self):
+        result = ParentLinked().select(_ctx(parent_candidate_idx=5))
+        assert isinstance(result, LLMSession)
+
+    def test_sibling_mutations_are_independent(self):
+        parent = _make_echo_session()
+        parent.send("A->B")
+        store = {0: SessionEntry(parent)}
+        strategy = ParentLinked()
+        ctx = _ctx(store, parent_candidate_idx=0)
+        child1 = strategy.select(ctx)
+        child2 = strategy.select(ctx)
+        child1.send("child1-only")
+        child2.send("child2-only")
+        # Siblings don't interfere; parent untouched
+        assert len(parent.history) == 2
+        assert len(child1.history) == 4
+        assert len(child2.history) == 4
+        assert child1.history[-1]["content"] == "echo: child1-only"
+        assert child2.history[-1]["content"] == "echo: child2-only"
+
+
+# ===========================================================================
+# SessionManager — keyed store + strategy delegation
+# ===========================================================================
 
 
 class TestSessionManager:
-    def test_select_with_fork_strategy(self) -> None:
+    def test_default_strategy_is_fork(self):
+        factory, _ = _make_echo_factory()
+        manager = SessionManager(create=factory)
+        assert isinstance(manager._strategy, AlwaysFork)
+
+    def test_select_with_fork_strategy(self):
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory, strategy=AlwaysFork())
 
         s1 = manager.select()
         s1.send("first")
-        s1.send("second")
+        manager.observe(candidate_idx=0, accepted=True, val_score=0.5)
 
-        # Fork copies history into a new session
+        # Fork gives a new session seeded from s1's history
         s2 = manager.select()
         assert s2 is not s1
-        assert len(s2.history) == 4  # copied
+        assert s2.history == s1.history
 
-        # Original untouched by fork's future work
-        s2.send("diverged")
-        assert len(s1.history) == 4
-        assert len(s2.history) == 6
-
-    def test_select_with_reset_strategy(self) -> None:
+    def test_select_with_reset_strategy(self):
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory, strategy=AlwaysReset())
 
         s1 = manager.select()
         s1.send("hello")
+        manager.observe(candidate_idx=0, accepted=True)
 
-        # Reset gives a fresh session (no history, same backend)
         s2 = manager.select()
         assert s2 is not s1
-        assert len(s2.history) == 0
-        assert s2.send("works") == "echo: works"
+        assert s2.history == []
 
-    def test_select_with_random_strategy(self) -> None:
+    def test_observe_merges_into_store(self):
         factory, _ = _make_echo_factory()
-
-        # fork_probability=1.0 means always fork
-        manager = SessionManager(create=factory, strategy=RandomStrategy(fork_probability=1.0))
-        s1 = manager.select()
-        s1.send("hello")
-        s2 = manager.select()
-        assert len(s2.history) == 2  # forked — has history
-
-        # fork_probability=0.0 means always reset
-        manager2 = SessionManager(create=factory, strategy=RandomStrategy(fork_probability=0.0))
-        s3 = manager2.select()
-        s3.send("hello")
-        s4 = manager2.select()
-        assert len(s4.history) == 0  # reset — no history
-
-    def test_select_with_round_robin_strategy(self) -> None:
-        factory, _ = _make_echo_factory()
-        manager = SessionManager(create=factory, strategy=RoundRobin())
-
-        s1 = manager.select()  # create (empty pool)
-        s1.send("hello")
-
-        s2 = manager.select()  # fork (counter=1, odd)
-        assert len(s2.history) == 2  # has history
-
-        s2.send("more")
-        s3 = manager.select()  # reset (counter=2, even)
-        assert len(s3.history) == 0  # no history
-
-    def test_sessions_added_to_pool(self) -> None:
-        factory, _ = _make_echo_factory()
-        manager = SessionManager(create=factory, strategy=AlwaysReset())
+        manager = SessionManager(create=factory, strategy=AlwaysFork())
 
         manager.select()
-        manager.select()
-        manager.select()
+        manager.observe(candidate_idx=0, accepted=True, val_score=0.42)
 
-        assert len(manager.sessions) == 3
+        assert 0 in manager.sessions
+        assert manager.sessions[0].val_score == 0.42
 
-    def test_default_strategy_is_fork(self) -> None:
+    def test_observe_on_reject_does_not_bind(self):
+        factory, _ = _make_echo_factory()
+        manager = SessionManager(create=factory, strategy=AlwaysFork())
+
+        manager.select()
+        manager.observe(candidate_idx=0, accepted=False)
+
+        assert 0 not in manager.sessions
+
+    def test_iteration_counter_increments(self):
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory)
-        assert isinstance(manager._strategy, AlwaysFork)
+        assert manager.iteration == 0
+        manager.select()
+        assert manager.iteration == 1
+        manager.select()
+        assert manager.iteration == 2
 
-    def test_current_session(self) -> None:
-        factory, _ = _make_echo_factory()
-        manager = SessionManager(create=factory, strategy=AlwaysReset())
-
-        session = manager.select()
-        assert manager.current_session() is session
-
-    def test_current_session_creates_if_none(self) -> None:
+    def test_sessions_view_is_readonly_snapshot(self):
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory)
+        manager.select()
+        manager.observe(candidate_idx=0, accepted=True)
+        view = manager.sessions
+        # Mutating the returned view doesn't affect the manager
+        view.clear()  # type: ignore[attr-defined]
+        assert 0 in manager.sessions
 
-        session = manager.current_session()
-        assert session is not None
-        assert len(manager.sessions) == 1
-
-    def test_custom_strategy(self) -> None:
+    def test_current_session_creates_if_none(self):
         factory, _ = _make_echo_factory()
-        call_count = [0]
+        manager = SessionManager(create=factory)
+        s = manager.current_session()
+        assert isinstance(s, LLMSession)
 
-        class CountingStrategy:
-            def select(self, sessions, create):
-                call_count[0] += 1
-                return create()
+    def test_parent_linked_scenario(self):
+        """Full candidate-tree scenario using ParentLinked strategy.
 
-        manager = SessionManager(create=factory, strategy=CountingStrategy())
-        manager.select()
-        manager.select()
-        assert call_count[0] == 2
-
-    def test_pool_scenario(self) -> None:
-        """Full scenario matching the PR doc.
-
-        Candidate tree:           Session pool:
-
-              A                   S1: send(A)->B
-             / \\                  S1_fork: send(A)->B, send(B)->C
-            B   F                 S1_fork2: send(A)->B, send(B)->E
-           / \\                    S2 (reset): send(C)->D
-          C   E                   S3 (reset): send(A)->F
-          |
-          D
+        Candidate tree:   A -> B -> C
+                              \\-> D
         """
         factory, _ = _make_echo_factory()
+        manager = SessionManager(create=factory, strategy=ParentLinked())
 
-        # Iter 1: create first session, mutate A -> B
-        s1 = factory()
-        s1.send("mutate A")  # -> B
+        # Iter 1: root mutation -> candidate A (idx 0)
+        s_a = manager.select(parent_candidate_idx=None)
+        s_a.send("mutate root")
+        manager.observe(candidate_idx=0, accepted=True, val_score=0.3)
 
-        # Iter 2: fork S1, mutate B -> C (LLM sees A->B context)
-        s1_fork = s1.fork()
-        s1_fork.send("mutate B")  # -> C
+        # Iter 2: mutate A -> candidate B (idx 1), fork from A
+        s_b = manager.select(parent_candidate_idx=0)
+        s_b.send("mutate A")
+        manager.observe(candidate_idx=1, accepted=True, val_score=0.6)
 
-        # Iter 3: fork S1 again, mutate B -> E (different direction)
-        s1_fork2 = s1.fork()
-        s1_fork2.send("mutate B")  # -> E
+        # Iter 3: mutate B -> candidate C (idx 2), fork from B
+        s_c = manager.select(parent_candidate_idx=1)
+        s_c.send("mutate B")
+        manager.observe(candidate_idx=2, accepted=True, val_score=0.8)
 
-        # Iter 4: reset — fresh session, mutate A -> F
-        s3 = s1.reset()
-        s3.send("mutate A")  # -> F
+        # Iter 4: mutate B again -> candidate D (idx 3), fork from B (sibling of C)
+        s_d = manager.select(parent_candidate_idx=1)
+        s_d.send("mutate B sibling")
+        manager.observe(candidate_idx=3, accepted=True, val_score=0.7)
 
-        # Iter 5: reset from s1_fork, mutate C -> D
-        s2 = s1_fork.reset()
-        s2.send("mutate C")  # -> D
+        # All four candidates bound with their scores
+        assert set(manager.sessions.keys()) == {0, 1, 2, 3}
+        assert manager.sessions[2].val_score == 0.8
+        assert manager.sessions[3].val_score == 0.7
 
-        # S1 never mutated after forks
-        assert len(s1.history) == 2  # [A->B]
-        assert len(s1_fork.history) == 4  # [A->B, B->C]
-        assert len(s1_fork2.history) == 4  # [A->B, B->E]
-        assert len(s2.history) == 2  # [C->D]
-        assert len(s3.history) == 2  # [A->F]
+        # C and D both fork from B's session -> both inherit [root, A, B] history
+        # (6 messages each after their own send).  Parent B is untouched.
+        assert len(s_c.history) == 6
+        assert len(s_d.history) == 6
+        assert len(s_b.history) == 4
+
+    def test_val_score_tracking_across_iterations(self):
+        """Scores flow from observe() into the sessions store and can be read back."""
+        factory, _ = _make_echo_factory()
+        manager = SessionManager(create=factory, strategy=AlwaysFork())
+
+        manager.select()
+        manager.observe(candidate_idx=0, accepted=True, val_score=0.5)
+        manager.select()
+        manager.observe(candidate_idx=1, accepted=True, val_score=0.9)
+        manager.select()
+        manager.observe(candidate_idx=2, accepted=True, val_score=0.3)
+
+        best_idx = max(manager.sessions, key=lambda k: manager.sessions[k].val_score or 0)
+        assert best_idx == 1
+
+    def test_custom_strategy(self):
+        call_counts = {"select": 0, "observe": 0}
+
+        class CountingStrategy:
+            def select(self, ctx: SessionContext) -> Session:
+                call_counts["select"] += 1
+                return ctx.create()
+
+            def observe(self, outcome: SessionOutcome) -> Mapping[int | str, SessionEntry]:
+                call_counts["observe"] += 1
+                return {}
+
+        factory, _ = _make_echo_factory()
+        manager = SessionManager(create=factory, strategy=CountingStrategy())
+        manager.select()
+        manager.observe(candidate_idx=0, accepted=True)
+        manager.select()
+        manager.observe(candidate_idx=1, accepted=False)
+        assert call_counts["select"] == 2
+        assert call_counts["observe"] == 2
+
+
+# ===========================================================================
+# Resolver
+# ===========================================================================
+
+
+class TestResolveSessionStrategy:
+    def test_string_fork(self):
+        assert isinstance(resolve_session_strategy("fork"), AlwaysFork)
+
+    def test_string_reset(self):
+        assert isinstance(resolve_session_strategy("reset"), AlwaysReset)
+
+    def test_string_random(self):
+        assert isinstance(resolve_session_strategy("random"), RandomStrategy)
+
+    def test_string_round_robin(self):
+        assert isinstance(resolve_session_strategy("round_robin"), RoundRobin)
+
+    def test_string_parent_linked(self):
+        assert isinstance(resolve_session_strategy("parent_linked"), ParentLinked)
+
+    def test_passthrough(self):
+        strategy = AlwaysFork()
+        assert resolve_session_strategy(strategy) is strategy
+
+    def test_unknown_raises(self):
+        with pytest.raises(ValueError, match="Unknown session_strategy"):
+            resolve_session_strategy("nonexistent")
