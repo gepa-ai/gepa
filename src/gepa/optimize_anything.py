@@ -488,9 +488,9 @@ class EngineConfig:
     # (each with its own evaluate-propose-evaluate pipeline), then acceptances
     # are processed sequentially.
     # Set to "auto" to compute from max_workers and minibatch_size:
-    #   auto = max(1, max_workers // (2 * minibatch_size))
-    # Each proposal does ~2 eval batches (parent + new candidate), so this
-    # fills the worker pool without oversubscribing.
+    #   auto = max(1, max_workers // minibatch_size)
+    # Each proposal evaluates minibatch_size examples at a time, so this
+    # fills the worker pool across concurrent proposals.
     num_parallel_proposals: int | Literal["auto"] = 1
 
     # Evaluation caching
@@ -1104,9 +1104,9 @@ def _resolve_num_parallel_proposals(
         return value
     workers = max_workers or (os.cpu_count() or 32)
     mb = minibatch_size or 1
-    # Each proposal does ~2 eval batches (parent + new candidate), each of size mb.
-    # Divide workers by (2 * mb) to fill the pool without oversubscribing.
-    return max(1, workers // (2 * mb))
+    # Each proposal evaluates mb examples concurrently during its eval phases.
+    # N proposals × mb workers = total concurrent eval workers.
+    return max(1, workers // mb)
 
 
 def optimize_anything(
