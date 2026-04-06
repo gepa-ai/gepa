@@ -272,7 +272,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             objective_scores.append(objective_score)
 
         return EvaluationBatch(
-            outputs=outputs, scores=scores, trajectories=side_infos, objective_scores=objective_scores
+            outputs=outputs, scores=scores, trajectories=side_infos, objective_scores=objective_scores,
+            num_metric_calls=len(batch),
         )
 
     def _evaluate_with_refinement(

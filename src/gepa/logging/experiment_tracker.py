@@ -190,11 +190,15 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to log config to wandb: {e}")
 
-        if self.use_mlflow and self._mlflow_client and self._mlflow_run_id:
+        if self.use_mlflow:
             try:
                 str_params = {self._p(k): str(v) for k, v in safe_config.items()}
-                for k, v in str_params.items():
-                    self._mlflow_client.log_param(self._mlflow_run_id, k, v)
+                if self._mlflow_client and self._mlflow_run_id:
+                    for k, v in str_params.items():
+                        self._mlflow_client.log_param(self._mlflow_run_id, k, v)
+                else:
+                    import mlflow  # type: ignore
+                    mlflow.log_params(str_params)
             except Exception as e:
                 print(f"Warning: Failed to log config to mlflow: {e}")
 
@@ -222,13 +226,17 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to log to wandb: {e}")
 
-        if self.use_mlflow and self._mlflow_client and self._mlflow_run_id:
+        if self.use_mlflow:
             try:
                 numeric_metrics = {self._p(k): float(v) for k, v in metrics.items() if isinstance(v, int | float)}
                 if numeric_metrics:
-                    self._mlflow_client.log_metrics(
-                        self._mlflow_run_id, numeric_metrics, step=step
-                    )
+                    if self._mlflow_client and self._mlflow_run_id:
+                        self._mlflow_client.log_metrics(
+                            self._mlflow_run_id, numeric_metrics, step=step
+                        )
+                    else:
+                        import mlflow  # type: ignore
+                        mlflow.log_metrics(numeric_metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log to mlflow: {e}")
 
@@ -248,15 +256,22 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to log summary to wandb: {e}")
 
-        if self.use_mlflow and self._mlflow_client and self._mlflow_run_id:
+        if self.use_mlflow:
             try:
                 numeric = {self._p(k): float(v) for k, v in summary.items() if isinstance(v, int | float)}
                 text = {self._p(k): str(v) for k, v in summary.items() if isinstance(v, str)}
-                if numeric:
-                    self._mlflow_client.log_metrics(self._mlflow_run_id, numeric)
-                if text:
-                    for k, v in text.items():
-                        self._mlflow_client.log_param(self._mlflow_run_id, f"summary/{k}", v)
+                if self._mlflow_client and self._mlflow_run_id:
+                    if numeric:
+                        self._mlflow_client.log_metrics(self._mlflow_run_id, numeric)
+                    if text:
+                        for k, v in text.items():
+                            self._mlflow_client.log_param(self._mlflow_run_id, f"summary/{k}", v)
+                else:
+                    import mlflow  # type: ignore
+                    if numeric:
+                        mlflow.log_metrics(numeric)
+                    if text:
+                        mlflow.log_params({f"summary/{k}": v for k, v in text.items()})
             except Exception as e:
                 print(f"Warning: Failed to log summary to mlflow: {e}")
 
@@ -288,18 +303,17 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to log table to wandb: {e}")
 
-        if self.use_mlflow and self._mlflow_run_id:
+        if self.use_mlflow:
             try:
                 import mlflow  # type: ignore
 
-                # log_table needs the fluent API — ensure we're in the right run context
-                active = mlflow.active_run()
-                if active is None or active.info.run_id != self._mlflow_run_id:
-                    # Not in the owning thread; skip table logging to avoid creating a new run
-                    pass
-                else:
-                    table_dict = {col: [row[i] for row in data] for i, col in enumerate(columns)}
-                    mlflow.log_table(data=table_dict, artifact_file=f"{self._p(table_name)}.json")
+                if self._mlflow_run_id:
+                    # When we have a run_id, only log from the owning thread to avoid creating new runs
+                    active = mlflow.active_run()
+                    if active is None or active.info.run_id != self._mlflow_run_id:
+                        return
+                table_dict = {col: [row[i] for row in data] for i, col in enumerate(columns)}
+                mlflow.log_table(data=table_dict, artifact_file=f"{self._p(table_name)}.json")
             except Exception as e:
                 print(f"Warning: Failed to log table to mlflow: {e}")
 
@@ -322,14 +336,18 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to log HTML to wandb: {e}")
 
-        if self.use_mlflow and self._mlflow_client and self._mlflow_run_id:
+        if self.use_mlflow:
             try:
                 import tempfile
 
                 with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
                     f.write(html_content)
                     tmp_path = f.name
-                self._mlflow_client.log_artifact(self._mlflow_run_id, tmp_path, artifact_path=self._p(key))
+                if self._mlflow_client and self._mlflow_run_id:
+                    self._mlflow_client.log_artifact(self._mlflow_run_id, tmp_path, artifact_path=self._p(key))
+                else:
+                    import mlflow  # type: ignore
+                    mlflow.log_artifact(tmp_path, artifact_path=self._p(key))
             except Exception as e:
                 print(f"Warning: Failed to log HTML to mlflow: {e}")
 
@@ -369,8 +387,14 @@ class ExperimentTracker:
             except Exception:
                 pass
 
-        if self.use_mlflow and self._mlflow_run_id is not None:
-            return True
+        if self.use_mlflow:
+            try:
+                import mlflow  # type: ignore
+
+                if mlflow.active_run() is not None:
+                    return True
+            except Exception:
+                pass
 
         return False
 
