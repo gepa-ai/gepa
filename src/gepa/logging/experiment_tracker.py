@@ -293,7 +293,8 @@ class ExperimentTracker:
                 import mlflow  # type: ignore
 
                 # log_table needs the fluent API — ensure we're in the right run context
-                if mlflow.active_run() is None or mlflow.active_run().info.run_id != self._mlflow_run_id:
+                active = mlflow.active_run()
+                if active is None or active.info.run_id != self._mlflow_run_id:
                     # Not in the owning thread; skip table logging to avoid creating a new run
                     pass
                 else:

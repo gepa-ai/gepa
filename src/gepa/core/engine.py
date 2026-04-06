@@ -406,7 +406,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             if self._should_stop(state):
                 break
             state.i += 1
-            trace_entry = {"i": state.i}
+            trace_entry: dict[str, Any] = {"i": state.i}
             state.full_program_trace.append(trace_entry)
             ctx = self.reflective_proposer.prepare_proposal(state)
             trace_entry["selected_program_candidate"] = ctx.curr_prog_id
