@@ -691,3 +691,97 @@ class TestEndToEndLLMSession:
         # Current session has forked history from iter 0 + new message
         current = manager.current_session()
         assert len(current.history) == 4
+
+
+# ===========================================================================
+# Integration: gepa.optimize() with session_strategy
+# ===========================================================================
+
+
+class TestOptimizeWithSessionStrategy:
+    """Call gepa.optimize() with session_strategy to verify full wiring.
+
+    Uses a MinimalAdapter that forces the reflective-mutation path (no
+    propose_new_texts), and a deterministic mock LM.  The primary assertion
+    is that the optimization completes without error — proving that api.py's
+    session wiring, the engine's select()/observe() calls, and the proposer's
+    dynamic_lm all compose correctly.
+    """
+
+    @staticmethod
+    def _make_minimal_adapter():
+        """Adapter with evaluate + make_reflective_dataset only (no propose_new_texts)."""
+        from gepa.core.adapter import EvaluationBatch
+
+        class MinimalAdapter:
+            def evaluate(self, batch, candidate, capture_traces=False):
+                # Score based on prompt length — longer is better (deterministic)
+                text = candidate.get("prompt", "")
+                score = min(len(text) / 200, 1.0)
+                outputs = [{"text": text}] * len(batch)
+                scores = [score] * len(batch)
+                trajectories = [{"score": s} for s in scores] if capture_traces else None
+                return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
+
+            def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+                return {c: [{"feedback": "make it longer"}] for c in components_to_update}
+
+        return MinimalAdapter()
+
+    @staticmethod
+    def _make_mock_lm():
+        """Mock LM that returns a fenced code block with an improved prompt."""
+        call_count = [0]
+
+        def mock_lm(prompt):
+            call_count[0] += 1
+            return f"```\nThis is an improved prompt version {call_count[0]} that is deliberately longer to score higher in our length-based evaluation metric.\n```"
+
+        return mock_lm
+
+    def test_optimize_with_fork_strategy(self):
+        """gepa.optimize() with session_strategy='fork' completes without error."""
+        import gepa
+
+        result = gepa.optimize(
+            seed_candidate={"prompt": "initial short prompt"},
+            trainset=[{"id": i} for i in range(5)],
+            valset=[{"id": i} for i in range(5)],
+            adapter=self._make_minimal_adapter(),
+            max_metric_calls=30,
+            reflection_lm=self._make_mock_lm(),
+            session_strategy="fork",
+        )
+        assert result is not None
+        assert result.total_metric_calls > 0
+
+    def test_optimize_with_reset_strategy(self):
+        """gepa.optimize() with session_strategy='reset' (stateless) completes."""
+        import gepa
+
+        result = gepa.optimize(
+            seed_candidate={"prompt": "initial short prompt"},
+            trainset=[{"id": i} for i in range(5)],
+            valset=[{"id": i} for i in range(5)],
+            adapter=self._make_minimal_adapter(),
+            max_metric_calls=30,
+            reflection_lm=self._make_mock_lm(),
+            session_strategy="reset",
+        )
+        assert result is not None
+        assert result.total_metric_calls > 0
+
+    def test_optimize_without_session_strategy_unchanged(self):
+        """session_strategy=None (default) still works — backward compatibility."""
+        import gepa
+
+        result = gepa.optimize(
+            seed_candidate={"prompt": "initial short prompt"},
+            trainset=[{"id": i} for i in range(5)],
+            valset=[{"id": i} for i in range(5)],
+            adapter=self._make_minimal_adapter(),
+            max_metric_calls=30,
+            reflection_lm=self._make_mock_lm(),
+        )
+        assert result is not None
+        assert result.total_metric_calls > 0

@@ -151,7 +151,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         new_program: dict[str, str],
         state: GEPAState[RolloutOutput, DataId],
         parent_program_idx: list[int],
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, float]:
         num_metric_calls_by_discovery = state.total_num_evals
         valset_evaluation = self._evaluate_on_valset(new_program, state)
         state.num_full_ds_evals += 1
@@ -252,7 +252,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Update candidate tree visualization
         self._log_candidate_tree(state)
 
-        return new_program_idx, linear_pareto_front_program_idx
+        return new_program_idx, linear_pareto_front_program_idx, valset_score
 
     def run(self) -> GEPAState[RolloutOutput, DataId]:
         # Check tqdm availability if progress bar is enabled
@@ -485,7 +485,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
                             if new_sum >= max(parent_sums):
                                 # ACCEPTED: consume one merge attempt and record it
-                                new_idx, _ = self._run_full_eval_and_add(
+                                new_idx, _, new_val_score = self._run_full_eval_and_add(
                                     new_program=proposal.candidate,
                                     state=state,
                                     parent_program_idx=proposal.parent_program_ids,
@@ -514,6 +514,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                         parent_ids=proposal.parent_program_ids,
                                     ),
                                 )
+                                # Observe merge acceptance in session manager
+                                if self.session_manager is not None:
+                                    self.session_manager.observe(
+                                        candidate_idx=new_idx,
+                                        accepted=True,
+                                        val_score=new_val_score,
+                                    )
                                 continue  # skip reflective this iteration
                             else:
                                 # REJECTED: do NOT consume merges_due or total_merges_tested
@@ -563,6 +570,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                             reason=f"New subsample score {new_sum} not better than old score {old_sum}",
                         ),
                     )
+                    # Observe rejection in session manager
+                    if self.session_manager is not None:
+                        self.session_manager.observe(candidate_idx=None, accepted=False)
                     continue
                 else:
                     self.logger.log(
@@ -570,7 +580,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     )
 
                 # Accept: full eval + add
-                new_idx, _ = self._run_full_eval_and_add(
+                new_idx, _, new_val_score = self._run_full_eval_and_add(
                     new_program=proposal.candidate,
                     state=state,
                     parent_program_idx=proposal.parent_program_ids,
@@ -591,6 +601,14 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                         parent_ids=proposal.parent_program_ids,
                     ),
                 )
+
+                # Observe acceptance in session manager
+                if self.session_manager is not None:
+                    self.session_manager.observe(
+                        candidate_idx=new_idx,
+                        accepted=True,
+                        val_score=new_val_score,
+                    )
 
                 # Schedule merge attempts like original behavior
                 if self.merge_proposer is not None:
