@@ -36,7 +36,22 @@ from gepa.strategies.component_selector import (
     RoundRobinReflectionComponentSelector,
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
+from gepa.strategies.llm_candidate_selector import LLMCandidateSelector
 from gepa.utils import FileStopper, StopperProtocol
+
+
+def _make_llm_selector_api(
+    reflection_lm: LanguageModel | None,
+    rng: random.Random,
+    mode: Literal["best", "diverse"],
+) -> LLMCandidateSelector:
+    """Build an LLMCandidateSelector, validating that reflection_lm is available."""
+    if reflection_lm is None:
+        raise ValueError(
+            "reflection_lm is required for LLM candidate selection strategies ('llm', 'llm_diverse'). "
+            "Provide a model name or LanguageModel callable."
+        )
+    return LLMCandidateSelector(lm=reflection_lm, mode=mode, rng=rng)
 
 
 def optimize(
@@ -49,7 +64,7 @@ def optimize(
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
     candidate_selection_strategy: CandidateSelector
-    | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"] = "pareto",
+    | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto", "llm", "llm_diverse"] = "pareto",
     frontier_type: FrontierType = "instance",
     skip_perfect_score: bool = True,
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled",
@@ -134,7 +149,7 @@ def optimize(
 
     # Reflection-based configuration
     - reflection_lm: A `LanguageModel` instance that is used to reflect on the performance of the candidate program.
-    - candidate_selection_strategy: The strategy to use for selecting the candidate to update. Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'. Defaults to 'pareto'.
+    - candidate_selection_strategy: The strategy to use for selecting the candidate to update. Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto', 'llm', 'llm_diverse'. Defaults to 'pareto'.
     - frontier_type: Strategy for tracking Pareto frontiers. 'instance' tracks per validation example, 'objective' tracks per objective metric, 'hybrid' combines both, 'cartesian' tracks per (example, objective) pair. Defaults to 'instance'.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
     - batch_sampler: Strategy for selecting training examples. Can be a [BatchSampler](src/gepa/strategies/batch_sampler.py) instance or a string for a predefined strategy from ['epoch_shuffled']. Defaults to 'epoch_shuffled', which creates an [EpochShuffledBatchSampler](src/gepa/strategies/batch_sampler.py).
@@ -281,6 +296,8 @@ def optimize(
             "current_best": lambda: CurrentBestCandidateSelector(),
             "epsilon_greedy": lambda: EpsilonGreedyCandidateSelector(epsilon=0.1, rng=rng),
             "top_k_pareto": lambda: TopKParetoCandidateSelector(k=5, rng=rng),
+            "llm": lambda: _make_llm_selector_api(reflection_lm_callable, rng, mode="best"),
+            "llm_diverse": lambda: _make_llm_selector_api(reflection_lm_callable, rng, mode="diverse"),
         }
 
         try:
@@ -288,7 +305,7 @@ def optimize(
         except KeyError as exc:
             raise ValueError(
                 f"Unknown candidate_selector strategy: {candidate_selection_strategy}. "
-                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto'"
+                "Supported strategies: 'pareto', 'current_best', 'epsilon_greedy', 'top_k_pareto', 'llm', 'llm_diverse'"
             ) from exc
     elif isinstance(candidate_selection_strategy, CandidateSelector):
         candidate_selector = candidate_selection_strategy
