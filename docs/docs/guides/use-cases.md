@@ -151,6 +151,22 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
 <div class="grid cards" markdown>
 
+-   **Nous Research Hermes Agent: Self-Evolution**
+
+    ---
+
+    Nous Research's **Hermes Agent** uses DSPy + GEPA as its evolutionary self-improvement system, optimizing the agent's own skills, prompts, and code. It maintains populations of solutions, applies LLM-driven mutations targeted at specific failure cases, and selects based on fitness.
+
+    **Key Features:**
+
+    - Evolutionary self-improvement of agent skills and prompts
+    - Population-based optimization with fitness selection
+    - Targeted mutations driven by failure case analysis
+
+    [:material-arrow-right: View the repo](https://github.com/NousResearch/hermes-agent-self-evolution)
+
+    [:material-arrow-right: Announcement](https://x.com/NousResearch/status/2031137681439109147)
+
 -   **Production Incident Diagnosis**
 
     ---
