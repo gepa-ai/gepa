@@ -208,7 +208,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             ),
         )
         eval_curr = self.adapter.evaluate(minibatch, curr_prog, capture_traces=True)
-        state.increment_evals(len(subsample_ids))
+        state.increment_evals(eval_curr.num_metric_calls if eval_curr.num_metric_calls is not None else len(subsample_ids))
         state.full_program_trace[-1]["subsample_scores"] = eval_curr.scores
         notify_callbacks(
             self.callbacks,
@@ -387,7 +387,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             ),
         )
 
-        state.increment_evals(len(subsample_ids))
+        state.increment_evals(eval_new.num_metric_calls if eval_new.num_metric_calls is not None else len(subsample_ids))
         state.full_program_trace[-1]["new_subsample_scores"] = new_scores
 
         new_sum = sum(new_scores)
