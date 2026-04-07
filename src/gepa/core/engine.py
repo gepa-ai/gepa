@@ -34,6 +34,7 @@ from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import (
     ReflectiveMutationProposer,
 )
+from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import StopperProtocol
 
@@ -73,6 +74,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Budget and Stop Condition
         stop_callback: StopperProtocol | None = None,
         val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
+        # Acceptance criterion for reflective mutation proposals
+        acceptance_criterion: AcceptanceCriterion | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
     ):
@@ -113,6 +116,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if self.merge_proposer is not None:
             self.merge_proposer.last_iter_found_new_program = False
 
+        self.acceptance_criterion: AcceptanceCriterion = acceptance_criterion or StrictImprovementAcceptance()
         self.track_best_outputs = track_best_outputs
         self.display_progress_bar = display_progress_bar
         self.use_cloudpickle = use_cloudpickle
@@ -560,13 +564,20 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
                     continue
 
-                # Acceptance: require strict improvement on subsample
+                # Acceptance: delegate to configurable acceptance criterion
                 old_sum = sum(proposal.subsample_scores_before or [])
                 new_sum = sum(proposal.subsample_scores_after or [])
-                if new_sum <= old_sum:
-                    self.logger.log(
-                        f"Iteration {state.i + 1}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
-                    )
+                _uses_builtin_criterion = isinstance(
+                    self.acceptance_criterion, (StrictImprovementAcceptance, ImprovementOrEqualAcceptance)
+                )
+                if not self.acceptance_criterion.should_accept(proposal, state):
+                    if _uses_builtin_criterion:
+                        reject_msg = f"Iteration {state.i + 1}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
+                        reject_reason = f"New subsample score {new_sum} not better than old score {old_sum}"
+                    else:
+                        reject_msg = f"Iteration {state.i + 1}: Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum}), skipping"
+                        reject_reason = f"Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum})"
+                    self.logger.log(reject_msg)
                     # Log rejected proposal LM call to experiment tracker
                     self._log_proposal_lm_calls(state.i + 1, proposal, candidate_idx=-1)
                     # Notify candidate rejected
@@ -577,14 +588,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                             iteration=state.i + 1,
                             old_score=old_sum,
                             new_score=new_sum,
-                            reason=f"New subsample score {new_sum} not better than old score {old_sum}",
+                            reason=reject_reason,
                         ),
                     )
                     continue
                 else:
-                    self.logger.log(
-                        f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
-                    )
+                    if _uses_builtin_criterion:
+                        accept_msg = f"Iteration {state.i + 1}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
+                    else:
+                        accept_msg = f"Iteration {state.i + 1}: Candidate accepted (old_sum={old_sum}, new_sum={new_sum}). Continue to full eval and add to candidate pool."
+                    self.logger.log(accept_msg)
 
                 # Accept: full eval + add
                 new_idx, _ = self._run_full_eval_and_add(

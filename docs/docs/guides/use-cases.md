@@ -151,6 +151,22 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
 <div class="grid cards" markdown>
 
+-   **Nous Research Hermes Agent: Self-Evolution**
+
+    ---
+
+    Nous Research's **Hermes Agent** uses DSPy + GEPA as its evolutionary self-improvement system, optimizing the agent's own skills, prompts, and code. It maintains populations of solutions, applies LLM-driven mutations targeted at specific failure cases, and selects based on fitness.
+
+    **Key Features:**
+
+    - Evolutionary self-improvement of agent skills and prompts
+    - Population-based optimization with fitness selection
+    - Targeted mutations driven by failure case analysis
+
+    [:material-arrow-right: View the repo](https://github.com/NousResearch/hermes-agent-self-evolution)
+
+    [:material-arrow-right: Announcement](https://x.com/NousResearch/status/2031137681439109147)
+
 -   **Production Incident Diagnosis**
 
     ---
@@ -1066,6 +1082,7 @@ GEPA has gained significant attention in the global AI community, with tutorials
     - [GEPA Explained (Japanese)](https://youtu.be/P5mW0IbotlY) - Video explaining GEPA's reflective learning approach
     - [MLflow + GEPA on Databricks Free Edition](https://qiita.com/isanakamishiro2/items/f15c4c4c79bd22222ccf) - Qiita tutorial
     - [Naruto-Style Dialogues with GEPA](https://zenn.dev/cybernetics/articles/39fb763aca746c) - Creative application
+    - [GMO: GEPA Prompt Optimizer](https://recruit.group.gmo/engineer/jisedai/blog/gepa-prompt-optimizer/) - Tutorial with DSPy ReAct agent example by GMO Internet Group AI Lab
     - Multiple AI Daily News Japan features
 
 -   **Chinese AI Community**
