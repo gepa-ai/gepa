@@ -709,12 +709,14 @@ class ReflectionConfig:
     attention, and the Pareto frontier preserves specialized gains across
     iterations rather than averaging them away.
 
-    ``aggregation_method`` selects the strategy used to combine reflections
-    into a single context update:
-
-    - ``"naive"`` (default): all reflections are fed to the LM in one call
-      (standard GEPA behaviour).
-    - "combee" applies the improved aggregation in Combee paper. 
+    ``use_combee`` enables ComBEE parallel scan aggregation
+    (`paper <https://arxiv.org/abs/2505.03738>`_).  When ``True``, the
+    reflection step splits the minibatch into ``k = floor(sqrt(n))`` groups,
+    applies augmented shuffling, runs one LM call per group (Map), and
+    aggregates the ``k`` intermediate instructions into one final update
+    (Reduce).  This prevents context overload at large batch sizes.  Requires
+    ``reflection_minibatch_size >= 4``; with the default of 3, ``k=1`` and
+    ComBEE silently falls back to standard GEPA.  Default: ``False``.
     """
 
     skip_perfect_score: bool = False
@@ -725,7 +727,7 @@ class ReflectionConfig:
     reflection_lm: LanguageModel | str | None = "openai/gpt-5.1"
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
-    aggregation_method: Literal["naive", "combee"] = "naive"
+    use_combee: bool = False
 
 
 @dataclass
@@ -1497,7 +1499,7 @@ def optimize_anything(
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
-        aggregation_method=config.reflection.aggregation_method,
+        use_combee=config.reflection.use_combee,
         rng=rng,
     )
 

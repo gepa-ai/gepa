@@ -88,8 +88,9 @@ def optimize(
     seed: int = 0,
     raise_on_exception: bool = True,
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
-    # Aggregation method: "naive" (standard GEPA) or "combee" (parallel scan + augmented shuffle)
-    aggregation_method: Literal["naive", "combee"] = "naive",
+    # ComBEE parallel scan aggregation (https://arxiv.org/abs/2505.03738).
+    # Requires reflection_minibatch_size >= 4 to form k=floor(sqrt(n)) >= 2 groups.
+    use_combee: bool = False,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -182,10 +183,10 @@ def optimize(
     - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
     - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
 
-    # Aggregation method
-    - aggregation_method: Aggregation strategy for combining reflections into a context update.
-      "naive" (default) feeds all reflections to the LM in a single call (standard GEPA).
-       "combee" applies the improved aggregation in Combee paper
+    - use_combee: Enable ComBEE parallel scan aggregation (https://arxiv.org/abs/2505.03738).
+      When True, reflections are split into k=floor(sqrt(n)) groups (augmented shuffling + two-level
+      Map-Reduce) to avoid context overload at large batch sizes. Requires reflection_minibatch_size >= 4.
+      Default: False (standard GEPA behaviour).
     """
     # Validate seed_candidate is not None or empty
     if seed_candidate is None or not seed_candidate:
@@ -369,7 +370,7 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
-        aggregation_method=aggregation_method,
+        use_combee=use_combee,
         rng=rng,
     )
 

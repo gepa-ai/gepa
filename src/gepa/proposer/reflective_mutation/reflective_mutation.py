@@ -3,7 +3,7 @@
 
 import random
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal
+from typing import Any
 
 from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn, RolloutOutput, Trajectory
 from gepa.core.callbacks import (
@@ -57,8 +57,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
-        # ComBEE aggregation options
-        aggregation_method: Literal["naive", "combee"] = "naive",
+        # ComBEE aggregation options (see https://arxiv.org/abs/2505.03738)
+        # Requires reflection_minibatch_size to be set significantly larger than the
+        # default of 3; k = floor(sqrt(n)) groups are formed, so n >= 4 is needed
+        # for ComBEE to activate (n=3 gives k=1 and falls back to naive).
+        use_combee: bool = False,
         combee_duplication_factor: int = 2,
         combee_aggregation_prompt: str | None = None,
         rng: random.Random | None = None,
@@ -80,9 +83,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         # Track parameters for which we've already logged missing template warnings
         self._missing_template_warnings: set[str] = set()
 
-        if aggregation_method not in ("naive", "combee"):
-            raise ValueError(f"aggregation_method must be 'naive' or 'combee', got {aggregation_method!r}")
-        self.aggregation_method = aggregation_method
+        self.use_combee = use_combee
         self.combee_duplication_factor = combee_duplication_factor
         self._combee_aggregation_prompt = combee_aggregation_prompt or InstructionProposalSignature.default_aggregation_prompt_template
         self._rng = rng if rng is not None else random.Random(0)
@@ -179,7 +180,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         p = self.combee_duplication_factor
 
         new_texts: dict[str, str] = {}
-        prompts: dict[str, str | list[dict[str, Any]]] = {}
+        lm_prompts: dict[str, str | list[dict[str, Any]]] = {}
         raw_lm_outputs: dict[str, str] = {}
 
         for comp in components_to_update:
@@ -199,10 +200,10 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
             if k <= 1:
                 # Degenerate case: fall back to the standard single-group reflection
-                naive_texts, naive_prompts, naive_raw = self.propose_new_texts(candidate, {comp: records}, [comp])
+                naive_texts, naive_lm_prompts, naive_raw = self.propose_new_texts(candidate, {comp: records}, [comp])
                 if comp in naive_texts:
                     new_texts[comp] = naive_texts[comp]
-                    prompts[comp] = naive_prompts.get(comp, "")
+                    lm_prompts[comp] = naive_lm_prompts.get(comp, "")
                     raw_lm_outputs[comp] = naive_raw.get(comp, "")
                 continue
 
@@ -256,7 +257,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 {"Proposed Instruction Update": prop} for prop in group_proposals
             ]
 
-            result, prompt, raw_output = InstructionProposalSignature.run_with_metadata(
+            result, lm_prompt, raw_output = InstructionProposalSignature.run_with_metadata(
                 lm=self.reflection_lm,
                 input_dict={
                     "current_instruction_doc": candidate[comp],
@@ -265,10 +266,10 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 },
             )
             new_texts[comp] = result["new_instruction"]
-            prompts[comp] = prompt
+            lm_prompts[comp] = lm_prompt
             raw_lm_outputs[comp] = raw_output
 
-        return new_texts, prompts, raw_lm_outputs
+        return new_texts, lm_prompts, raw_lm_outputs
 
     def propose(self, state: GEPAState) -> CandidateProposal | None:
         i = state.i + 1
@@ -432,7 +433,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             # ComBEE is only used when reflection_lm is available and no custom
             # adapter / proposer overrides the proposal step (§3.1-3.2).
             use_combee = (
-                self.aggregation_method == "combee"
+                self.use_combee
                 and self.reflection_lm is not None
                 and self.adapter.propose_new_texts is None
                 and self.custom_candidate_proposer is None
