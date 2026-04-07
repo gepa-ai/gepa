@@ -1082,6 +1082,7 @@ GEPA has gained significant attention in the global AI community, with tutorials
     - [GEPA Explained (Japanese)](https://youtu.be/P5mW0IbotlY) - Video explaining GEPA's reflective learning approach
     - [MLflow + GEPA on Databricks Free Edition](https://qiita.com/isanakamishiro2/items/f15c4c4c79bd22222ccf) - Qiita tutorial
     - [Naruto-Style Dialogues with GEPA](https://zenn.dev/cybernetics/articles/39fb763aca746c) - Creative application
+    - [GMO: GEPA Prompt Optimizer](https://recruit.group.gmo/engineer/jisedai/blog/gepa-prompt-optimizer/) - Tutorial with DSPy ReAct agent example by GMO Internet Group AI Lab
     - Multiple AI Daily News Japan features
 
 -   **Chinese AI Community**
