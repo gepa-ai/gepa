@@ -57,7 +57,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
-        # ComBEE aggregation options (see https://arxiv.org/abs/2505.03738)
+        # ComBEE aggregation options (see https://arxiv.org/abs/2604.04247)
         # Requires reflection_minibatch_size to be set significantly larger than the
         # default of 3; k = floor(sqrt(n)) groups are formed, so n >= 4 is needed
         # for ComBEE to activate (n=3 gives k=1 and falls back to naive).
