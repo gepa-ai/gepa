@@ -19,12 +19,8 @@ from __future__ import annotations
 import random as random_module
 from collections.abc import Mapping
 
-from gepa.core.session import (
-    Session,
-    SessionContext,
-    SessionEntry,
-    SessionOutcome,
-)
+from gepa.core.session import Session
+from gepa.core.session_manager import SessionContext, SessionEntry, SessionOutcome
 
 
 def _most_recent(ctx: SessionContext) -> Session | None:

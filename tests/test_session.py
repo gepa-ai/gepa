@@ -13,6 +13,8 @@ from gepa.core.session import (
     LLMSession,
     NullSession,
     Session,
+)
+from gepa.core.session_manager import (
     SessionContext,
     SessionEntry,
     SessionManager,
@@ -670,7 +672,7 @@ class TestEndToEndLLMSession:
 
     def test_dynamic_lm_routes_through_session(self):
         """make_session_lm + SessionManager: the proposer's lm() call hits the current session."""
-        from gepa.core.session import make_session_lm
+        from gepa.core.session_manager import make_session_lm
 
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory, strategy=AlwaysFork())

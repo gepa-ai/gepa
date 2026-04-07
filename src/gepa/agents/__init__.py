@@ -18,7 +18,7 @@ Passing a ``CodingAgent`` as ``reflection_lm`` auto-wires the session
 machinery — no need to call ``create_session()`` or ``make_session_lm()``
 manually.  For advanced use cases (custom session pool), build it yourself::
 
-    from gepa.core.session import SessionManager
+    from gepa.core.session_manager import SessionManager
 
     manager = SessionManager(create=agent.create_session)
 """

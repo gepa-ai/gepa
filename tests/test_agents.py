@@ -700,7 +700,7 @@ class TestAgentsWithSessionManager:
 
     @patch("gepa.agents.claude_code.subprocess.run")
     def test_claude_code_in_session_manager(self, mock_run: MagicMock):
-        from gepa.core.session import SessionManager
+        from gepa.core.session_manager import SessionManager
 
         mock_run.return_value = _cc_result(stdout=_claude_ok(session_id="sess_1"))
 
@@ -718,7 +718,7 @@ class TestAgentsWithSessionManager:
 
     @patch("gepa.agents.opencode.subprocess.run")
     def test_opencode_in_session_manager(self, mock_run: MagicMock):
-        from gepa.core.session import SessionManager
+        from gepa.core.session_manager import SessionManager
 
         mock_run.return_value = _cc_result(stdout=_opencode_ndjson(session_id="oc_1"))
 
@@ -735,7 +735,7 @@ class TestAgentsWithSessionManager:
 
     @patch("gepa.agents.claude_code.subprocess.run")
     def test_make_session_lm_with_claude_code(self, mock_run: MagicMock):
-        from gepa.core.session import make_session_lm
+        from gepa.core.session_manager import make_session_lm
 
         mock_run.return_value = _cc_result(stdout=_claude_ok(result="Generated candidate"))
 
@@ -748,7 +748,7 @@ class TestAgentsWithSessionManager:
     @patch("gepa.agents.claude_code.subprocess.run")
     def test_coding_agent_as_session_factory(self, mock_run: MagicMock):
         """CodingAgent.create_session works as SessionManager factory."""
-        from gepa.core.session import SessionManager
+        from gepa.core.session_manager import SessionManager
 
         mock_run.return_value = _cc_result(stdout=_claude_ok(session_id="sess_factory"))
 
@@ -773,7 +773,7 @@ class TestAgentsWithSessionStrategy:
     @patch("gepa.agents.claude_code.subprocess.run")
     def test_agent_with_fork_strategy(self, mock_run: MagicMock):
         """Agent session can be forked via SessionManager with AlwaysFork."""
-        from gepa.core.session import SessionManager
+        from gepa.core.session_manager import SessionManager
         from gepa.strategies.session_strategy import AlwaysFork
 
         call_count = [0]
@@ -802,7 +802,7 @@ class TestAgentsWithSessionStrategy:
     @patch("gepa.agents.claude_code.subprocess.run")
     def test_agent_with_reset_strategy(self, mock_run: MagicMock):
         """Agent session can be reset via SessionManager with AlwaysReset."""
-        from gepa.core.session import SessionManager
+        from gepa.core.session_manager import SessionManager
         from gepa.strategies.session_strategy import AlwaysReset
 
         mock_run.return_value = _cc_result(stdout=_claude_ok())
@@ -826,7 +826,7 @@ class TestAgentsWithSessionStrategy:
     @patch("gepa.agents.claude_code.subprocess.run")
     def test_agent_with_string_strategy(self, mock_run: MagicMock):
         """Agent works with string-based session strategy."""
-        from gepa.core.session import SessionManager, resolve_session_strategy
+        from gepa.core.session_manager import SessionManager, resolve_session_strategy
 
         mock_run.return_value = _cc_result(stdout=_claude_ok())
 
@@ -857,7 +857,7 @@ class TestAgentAutoWire:
     @patch("gepa.agents.claude_code.subprocess.run")
     def test_api_auto_wires_coding_agent(self, mock_run: MagicMock):
         """api.py: isinstance(reflection_lm, CodingAgent) → make_session_lm(agent.create_session())."""
-        from gepa.core.session import make_session_lm
+        from gepa.core.session_manager import make_session_lm
 
         mock_run.return_value = _cc_result(stdout=_claude_ok(result="wired!"))
 
@@ -874,7 +874,7 @@ class TestAgentAutoWire:
     @patch("gepa.agents.opencode.subprocess.run")
     def test_api_auto_wires_opencode_agent(self, mock_run: MagicMock):
         """Same wiring path works for OpenCode agents."""
-        from gepa.core.session import make_session_lm
+        from gepa.core.session_manager import make_session_lm
 
         mock_run.return_value = _cc_result(stdout=_opencode_ndjson(text="wired opencode"))
 
@@ -895,7 +895,7 @@ class TestAgentWiring:
     @patch("gepa.agents.claude_code.subprocess.run")
     def test_coding_agent_creates_working_session(self, mock_run: MagicMock):
         """CodingAgent.create_session() + make_session_lm → callable LM."""
-        from gepa.core.session import make_session_lm
+        from gepa.core.session_manager import make_session_lm
 
         mock_run.return_value = _cc_result(stdout=_claude_ok(result="improved prompt v2"))
 
@@ -923,7 +923,7 @@ class TestAgentWiring:
     @patch("gepa.agents.claude_code.subprocess.run")
     def test_agent_with_session_strategy_wiring(self, mock_run: MagicMock):
         """Full wiring: agent string + session strategy → SessionManager → LM callable."""
-        from gepa.core.session import SessionManager, make_session_lm, resolve_session_strategy
+        from gepa.core.session_manager import SessionManager, make_session_lm, resolve_session_strategy
 
         call_count = [0]
 
@@ -971,7 +971,7 @@ class TestEndToEndClaudeCodeSession:
     @patch("gepa.agents.claude_code.subprocess.run")
     def test_fork_strategy_with_agent(self, mock_run: MagicMock):
         """AlwaysFork: agent sessions fork and accumulate across iterations."""
-        from gepa.core.session import SessionManager
+        from gepa.core.session_manager import SessionManager
         from gepa.strategies.session_strategy import AlwaysFork
 
         call_count = [0]
@@ -1023,7 +1023,7 @@ class TestEndToEndClaudeCodeSession:
         Candidate tree:   0 → 1 → 2
                               \\→ 3
         """
-        from gepa.core.session import SessionManager
+        from gepa.core.session_manager import SessionManager
         from gepa.strategies.session_strategy import ParentLinked
 
         call_count = [0]
@@ -1071,7 +1071,7 @@ class TestEndToEndClaudeCodeSession:
     @patch("gepa.agents.claude_code.subprocess.run")
     def test_cli_flags_correct_across_loop(self, mock_run: MagicMock):
         """Verify subprocess calls use --resume and --fork-session correctly."""
-        from gepa.core.session import SessionManager
+        from gepa.core.session_manager import SessionManager
         from gepa.strategies.session_strategy import AlwaysFork
 
         call_count = [0]
@@ -1121,7 +1121,7 @@ class TestEndToEndClaudeCodeSession:
     @patch("gepa.agents.claude_code.subprocess.run")
     def test_dynamic_lm_with_agent_session(self, mock_run: MagicMock):
         """make_session_lm routes proposer calls through the agent's current session."""
-        from gepa.core.session import SessionManager, make_session_lm
+        from gepa.core.session_manager import SessionManager, make_session_lm
         from gepa.strategies.session_strategy import AlwaysFork
 
         call_count = [0]

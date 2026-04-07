@@ -264,7 +264,7 @@ def optimize(
     reflection_lm_callable: LanguageModel | None = None
     _agent_session = None  # set if reflection_lm is a CodingAgent
     if isinstance(reflection_lm, CodingAgent):
-        from gepa.core.session import make_session_lm
+        from gepa.core.session_manager import make_session_lm
 
         _agent_session = reflection_lm.create_session()
         reflection_lm_callable = make_session_lm(_agent_session)  # type: ignore[assignment]
@@ -363,7 +363,8 @@ def optimize(
     dynamic_lm: LanguageModel | None = None
 
     if session_strategy is not None and reflection_lm_callable is not None:
-        from gepa.core.session import LLMSession, SessionManager, make_session_lm, resolve_session_strategy
+        from gepa.core.session import LLMSession
+        from gepa.core.session_manager import SessionManager, make_session_lm, resolve_session_strategy
 
         _strategy = resolve_session_strategy(session_strategy)
         _reflection_lm_for_session = reflection_lm_callable

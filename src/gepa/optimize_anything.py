@@ -1324,7 +1324,7 @@ def optimize_anything(
     from gepa.agents import CodingAgent
 
     if isinstance(config.reflection.reflection_lm, CodingAgent):
-        from gepa.core.session import make_session_lm
+        from gepa.core.session_manager import make_session_lm
 
         config.reflection.reflection_lm = make_session_lm(
             config.reflection.reflection_lm.create_session()
@@ -1487,7 +1487,8 @@ def optimize_anything(
     dynamic_lm: LanguageModel | None = None
 
     if config.reflection.session_strategy is not None and config.reflection.reflection_lm is not None:
-        from gepa.core.session import LLMSession, SessionManager, make_session_lm, resolve_session_strategy
+        from gepa.core.session import LLMSession
+        from gepa.core.session_manager import SessionManager, make_session_lm, resolve_session_strategy
 
         _strategy = resolve_session_strategy(config.reflection.session_strategy)
         _reflection_lm_for_session = config.reflection.reflection_lm
