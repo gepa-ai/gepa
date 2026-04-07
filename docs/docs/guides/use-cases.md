@@ -647,7 +647,7 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     - Persona generation
     - Tasks without ground-truth labels
 
-    [:material-arrow-right: Watch the talk](https://www.youtube.com/watch?v=H4o7h6ZbA4o)
+    [:material-arrow-right: Watch the talk](https://www.youtube.com/watch?v=gstt7E65FRM)
 
 -   **Program Synthesis & Kernel Optimization**
 
