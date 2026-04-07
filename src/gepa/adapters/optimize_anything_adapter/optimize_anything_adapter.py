@@ -271,8 +271,24 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
             objective_scores.append(objective_score)
 
+        # Count actual evaluator invocations.
+        # Without refinement: 1 call per example. With refinement: count from
+        # the attempt history already recorded in each side_info.
+        num_metric_calls = len(batch)
+        if self.refiner_config is not None:
+            num_metric_calls = 0
+            for si in side_infos:
+                rp_info = si.get("refiner_prompt_specific_info", {})
+                attempts = rp_info.get("Attempts", [])
+                # Each attempt with "side_info" represents an actual evaluator call
+                num_metric_calls += sum(1 for a in attempts if "side_info" in a)
+
         return EvaluationBatch(
-            outputs=outputs, scores=scores, trajectories=side_infos, objective_scores=objective_scores
+            outputs=outputs,
+            scores=scores,
+            trajectories=side_infos,
+            objective_scores=objective_scores,
+            num_metric_calls=num_metric_calls,
         )
 
     def _evaluate_with_refinement(
