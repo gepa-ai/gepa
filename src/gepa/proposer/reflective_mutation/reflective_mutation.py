@@ -20,7 +20,7 @@ from gepa.core.callbacks import (
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
-from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
+from gepa.proposer.base import CandidateProposal, ProposeNewCandidate, SubsampleEvaluation
 from gepa.proposer.reflective_mutation.base import (
     CandidateSelector,
     LanguageModel,
@@ -331,7 +331,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             ),
         )
         eval_curr = self.adapter.evaluate(minibatch, curr_prog, capture_traces=True)
-        state.increment_evals(len(subsample_ids))
+        state.increment_evals(eval_curr.num_metric_calls if eval_curr.num_metric_calls is not None else len(subsample_ids))
         state.full_program_trace[-1]["subsample_scores"] = eval_curr.scores
         notify_callbacks(
             self.callbacks,
@@ -475,15 +475,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             self.logger.log(traceback.format_exc())
             return None
 
-        # 4) Create candidate, evaluate on same minibatch (no need to capture traces)
+        # 4) Create candidate, evaluate on same minibatch (capture traces for acceptance criterion)
         new_candidate = curr_prog.copy()
         for pname, text in new_texts.items():
             assert pname in new_candidate, f"{pname} missing in candidate"
             new_candidate[pname] = text
-
-        def evaluator(b, c):
-            r = self.adapter.evaluate(b, c, capture_traces=False)
-            return r.outputs, r.scores, list(r.objective_scores) if r.objective_scores else None
 
         # Evaluate new candidate (not yet in state)
         notify_callbacks(
@@ -493,18 +489,23 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 iteration=i,
                 candidate_idx=None,
                 batch_size=len(minibatch),
-                capture_traces=False,
+                capture_traces=True,
                 parent_ids=[curr_prog_id],
                 inputs=minibatch,
                 is_seed_candidate=False,
             ),
         )
 
-        outputs_by_id, scores_by_id, objective_by_id, actual_evals_count = state.cached_evaluate_full(
-            new_candidate, subsample_ids, self.trainset.fetch, evaluator
-        )
-        new_scores = [scores_by_id[eid] for eid in subsample_ids]
-        outputs = [outputs_by_id[eid] for eid in subsample_ids]
+        eval_new = self.adapter.evaluate(minibatch, new_candidate, capture_traces=True)
+        new_scores = eval_new.scores
+        outputs = eval_new.outputs
+
+        # Populate evaluation cache with new candidate results
+        if state.evaluation_cache is not None:
+            new_objective_scores_list = list(eval_new.objective_scores) if eval_new.objective_scores else None
+            state.evaluation_cache.put_batch(
+                new_candidate, subsample_ids, eval_new.outputs, eval_new.scores, new_objective_scores_list
+            )
 
         notify_callbacks(
             self.callbacks,
@@ -513,16 +514,16 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 iteration=i,
                 candidate_idx=None,
                 scores=new_scores,
-                has_trajectories=False,
+                has_trajectories=bool(eval_new.trajectories),
                 parent_ids=[curr_prog_id],
                 outputs=outputs,
-                trajectories=None,
-                objective_scores=[objective_by_id[eid] for eid in subsample_ids] if objective_by_id else None,
+                trajectories=eval_new.trajectories,
+                objective_scores=list(eval_new.objective_scores) if eval_new.objective_scores else None,
                 is_seed_candidate=False,
             ),
         )
 
-        state.increment_evals(actual_evals_count)
+        state.increment_evals(eval_new.num_metric_calls if eval_new.num_metric_calls is not None else len(subsample_ids))
         state.full_program_trace[-1]["new_subsample_scores"] = new_scores
 
         new_sum = sum(new_scores)
@@ -541,6 +542,18 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             subsample_indices=subsample_ids,
             subsample_scores_before=eval_curr.scores,
             subsample_scores_after=new_scores,
+            eval_before=SubsampleEvaluation(
+                scores=eval_curr.scores,
+                outputs=eval_curr.outputs,
+                objective_scores=list(eval_curr.objective_scores) if eval_curr.objective_scores else None,
+                trajectories=eval_curr.trajectories,
+            ),
+            eval_after=SubsampleEvaluation(
+                scores=new_scores,
+                outputs=outputs,
+                objective_scores=list(eval_new.objective_scores) if eval_new.objective_scores else None,
+                trajectories=eval_new.trajectories,
+            ),
             tag="reflective_mutation",
             metadata=_lm_metadata,
         )

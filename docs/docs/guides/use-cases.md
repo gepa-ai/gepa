@@ -151,6 +151,22 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
 <div class="grid cards" markdown>
 
+-   **Nous Research Hermes Agent: Self-Evolution**
+
+    ---
+
+    Nous Research's **Hermes Agent** uses DSPy + GEPA as its evolutionary self-improvement system, optimizing the agent's own skills, prompts, and code. It maintains populations of solutions, applies LLM-driven mutations targeted at specific failure cases, and selects based on fitness.
+
+    **Key Features:**
+
+    - Evolutionary self-improvement of agent skills and prompts
+    - Population-based optimization with fitness selection
+    - Targeted mutations driven by failure case analysis
+
+    [:material-arrow-right: View the repo](https://github.com/NousResearch/hermes-agent-self-evolution)
+
+    [:material-arrow-right: Announcement](https://x.com/NousResearch/status/2031137681439109147)
+
 -   **Production Incident Diagnosis**
 
     ---
@@ -501,6 +517,20 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     Pandey, Ye & Li (Post-AGI Science and Society Workshop, ICLR 2026) use a GEPA-based approach to systematically optimize prompts for scientific reasoning tasks, finding that reasoning gains correspond to **model-specific heuristics that fail to generalize** across systems — framing prompt optimization as a tool for model interpretability.
 
     [:material-arrow-right: Read the paper](https://arxiv.org/abs/2603.28038)
+
+-   **Self-Optimizing Multi-Agent Systems for Deep Research (ECIR 2026 Workshop)**
+
+    ---
+
+    Camara, Slot & Zavrel (Zeta Alpha, ECIR 2026) evaluate GEPA and TextGrad for optimizing multi-agent Deep Research systems. **GEPA outperforms TextGrad, OpenAI's prompt optimizer, and expert-crafted prompts**, with GEPA + custom meta-prompt achieving the best overall score (0.705) on the ScholarQA-CS benchmark.
+
+    **Key Results:**
+
+    - GEPA's Pareto-based exploration converges faster than TextGrad's greedy search
+    - Domain-tailored meta-prompts yield the best performance
+    - Optimized agents match or outperform expert-crafted prompts
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2604.02988)
 
 </div>
 
@@ -1052,6 +1082,7 @@ GEPA has gained significant attention in the global AI community, with tutorials
     - [GEPA Explained (Japanese)](https://youtu.be/P5mW0IbotlY) - Video explaining GEPA's reflective learning approach
     - [MLflow + GEPA on Databricks Free Edition](https://qiita.com/isanakamishiro2/items/f15c4c4c79bd22222ccf) - Qiita tutorial
     - [Naruto-Style Dialogues with GEPA](https://zenn.dev/cybernetics/articles/39fb763aca746c) - Creative application
+    - [GMO: GEPA Prompt Optimizer](https://recruit.group.gmo/engineer/jisedai/blog/gepa-prompt-optimizer/) - Tutorial with DSPy ReAct agent example by GMO Internet Group AI Lab
     - Multiple AI Daily News Japan features
 
 -   **Chinese AI Community**

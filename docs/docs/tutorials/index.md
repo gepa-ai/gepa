@@ -59,6 +59,7 @@ For more tutorials, especially those focused on the DSPy integration, see:
 - [GEPA Explained (Japanese Video)](https://youtu.be/P5mW0IbotlY) - AIが反省し始めた？内省的学習法のGEPAの仕組み
 - [MLflow + GEPA on Databricks Free Edition (Japanese)](https://qiita.com/isanakamishiro2/items/f15c4c4c79bd22222ccf) - Qiita tutorial
 - [Naruto-Style Dialogues with GEPA (Japanese)](https://zenn.dev/cybernetics/articles/39fb763aca746c) - Creative application
+- [GMO: GEPA Prompt Optimizer (Japanese)](https://recruit.group.gmo/engineer/jisedai/blog/gepa-prompt-optimizer/) - DSPy ReAct agent tutorial by GMO Internet Group AI Lab
 - [GEPA Revolutionary Breakthrough (Chinese)](https://jieyibu.net/a/65905) - 35x efficiency improvement explained
 - [DSPy + GEPA Tutorial (HuggingFace Cookbook)](https://huggingface.co/learn/cookbook/en/dspy_gepa) - Featured by @TheDojoMX
 
