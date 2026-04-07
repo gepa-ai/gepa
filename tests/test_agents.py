@@ -193,22 +193,24 @@ class TestModelPassthrough:
 
 
 class TestOpenCodeSystemPrompt:
-    """Verify --system flag is passed correctly."""
+    """Verify system prompt is prepended to first message (opencode has no --system flag)."""
 
     @patch("gepa.agents.opencode.subprocess.run")
-    def test_system_prompt_in_cmd(self, mock_run: MagicMock):
+    def test_system_prompt_prepended_to_first_message(self, mock_run: MagicMock):
         mock_run.return_value = _cc_result(stdout=_opencode_ndjson())
         session = OpenCodeSession(model="sonnet", system_prompt="You are a code reviewer")
 
         session.send("Hello")
 
         cmd = mock_run.call_args[0][0]
-        assert "--system" in cmd
-        idx = cmd.index("--system")
-        assert cmd[idx + 1] == "You are a code reviewer"
+        assert "--system" not in cmd
+        # System prompt is prepended to the message content
+        message = cmd[-1]
+        assert "You are a code reviewer" in message
+        assert "Hello" in message
 
     @patch("gepa.agents.opencode.subprocess.run")
-    def test_no_system_flag_when_empty(self, mock_run: MagicMock):
+    def test_no_system_prefix_when_empty(self, mock_run: MagicMock):
         mock_run.return_value = _cc_result(stdout=_opencode_ndjson())
         session = OpenCodeSession(model="sonnet")
 

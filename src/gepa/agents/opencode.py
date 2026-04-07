@@ -84,8 +84,8 @@ class OpenCodeSession:
             "--format",
             "json",
         ]
-        if self._system_prompt:
-            cmd += ["--system", self._system_prompt]
+        # Note: opencode CLI does not support a --system flag.
+        # System prompt is prepended to the first user message in send().
         cmd += self._extra_flags
         return cmd
 
@@ -122,7 +122,10 @@ class OpenCodeSession:
         return session_id, "".join(text_parts), cost
 
     def send(self, content: str, **kwargs: Any) -> str:
-        cmd = self._base_cmd() + [content]
+        message = content
+        if self._system_prompt and self._session_id is None:
+            message = f"[System: {self._system_prompt}]\n\n{content}"
+        cmd = self._base_cmd() + [message]
         if self._session_id:
             cmd += ["--session", self._session_id]
 
