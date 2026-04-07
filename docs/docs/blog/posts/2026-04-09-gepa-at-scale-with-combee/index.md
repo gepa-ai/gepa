@@ -126,8 +126,8 @@ pip install -U gepa
 
 
 # Links
-Combee Official Paper: 
+Combee Official Paper: http://arxiv.org/abs/2604.04247
 
-Twitter/X Post: 
+Twitter/X Post: https://x.com/lihanc02/status/2041566310581309651
 
 Combee Implementation available for both ACE and GEPA.
