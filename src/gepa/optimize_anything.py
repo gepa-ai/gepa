@@ -710,7 +710,7 @@ class ReflectionConfig:
     iterations rather than averaging them away.
 
     ``use_combee`` enables ComBEE parallel scan aggregation
-    (`paper <https://arxiv.org/abs/2505.03738>`_).  When ``True``, the
+    (`paper <https://arxiv.org/abs/2604.04247>`_).  When ``True``, the
     reflection step splits the minibatch into ``k = floor(sqrt(n))`` groups,
     applies augmented shuffling, runs one LM call per group (Map), and
     aggregates the ``k`` intermediate instructions into one final update

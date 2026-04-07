@@ -1,6 +1,6 @@
 # ComBEE: Scalable Parallel Prompt Learning
 
-ComBEE ([paper](https://arxiv.org/abs/2505.03738)) is a Map-Shuffle-Reduce framework that prevents **context overload** when learning from large reflection batches. Enable it with `use_combee=True`.
+ComBEE ([paper](https://arxiv.org/abs/2604.04247)) is a Map-Shuffle-Reduce framework that prevents **context overload** when learning from large reflection batches. Enable it with `use_combee=True`.
 
 ---
 
@@ -78,4 +78,4 @@ result = optimize_anything(
 ## Reference
 
 > *Combee: Scaling Prompt Learning for Self-Improving Language Model Agents*  
-> [https://arxiv.org/abs/2505.03738](https://arxiv.org/abs/2505.03738)
+> [https://arxiv.org/abs/2604.04247](https://arxiv.org/abs/2604.04247)
