@@ -2,21 +2,6 @@
 
 ComBEE ([arXiv:2604.04247](https://arxiv.org/abs/2604.04247)) is a framework for scaling GEPA's reflection step to large batch sizes without quality degradation. Enable it with `use_combee=True`.
 
----
-
-## The Problem: Context Overload
-
-GEPA's standard reflection step feeds all minibatch traces to the reflection LM in a single call. This works well at small batch sizes, but degrades sharply as `reflection_minibatch_size` grows:
-
-| Batch size | Formula accuracy | FiNER accuracy |
-|---|---|---|
-| 1 | 87.0% | 76.0% |
-| 10 | ~83% | ~74% |
-| 100 | **72.5%** | **70.6%** |
-
-The aggregator LLM is not truncating — it retains broad, generic patterns while **discarding the specific, high-value insights** that drive downstream accuracy. The ComBEE paper calls this *context overload*.
-
----
 
 ## How ComBEE Works: Map-Shuffle-Reduce
 
@@ -42,15 +27,6 @@ A second LM call aggregates the `k` intermediate proposals into a single final c
 
 The choice `k = ⌊√n⌋` balances both levels: Level-1 processes `√n` traces per group, Level-2 aggregates `√n` proposals — both at the same scale.
 
----
-
-## Results
-
-On AppWorld (ReAct agent), ComBEE at batch size 40 achieves the **highest average score** across all methods, with a **12× training speedup** over the sequential baseline at comparable cost — while naive batch-40 degrades to barely above the no-learning baseline.
-
-On Terminal-Bench 2.0, ComBEE at batch size 30 recovers most of the sequential quality with a **17× speedup**. A key indicator: ComBEE's learned playbook retains 6,887 tokens vs. only 526 for naive batch-40, confirming that parallel scan aggregation preserves far more information.
-
----
 
 ## Usage
 
