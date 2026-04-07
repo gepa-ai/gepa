@@ -108,11 +108,11 @@ Combee's design transfers seamlessly across model families. Evaluating with GPT-
 
 ![GPT-OSS 120B Scaling Results](images/gptoss.png)
 
-## Why It Works: An Analogy to Distributed Training
+## How It Works: An Analogy to Distributed Training
 
-The intuition behind Combee draws from a direct analogy to distributed training of neural networks. In distributed SGD, multiple workers process data shards in parallel and aggregate gradients via collective communication. Naive aggregation of too many gradients at once can degrade convergence — a well-studied problem addressed by techniques like gradient compression, learning rate warmup, and critical batch size scheduling.
+The intuition behind Combee draws from an analogy to distributed training of neural networks. In distributed SGD, multiple workers process data shards in parallel and aggregate gradients via collective communication. Naive aggregation of too many gradients at once can degrade convergence — a well-studied problem addressed by techniques like gradient compression, learning rate warmup, and critical batch size scheduling.
 
-Prompt learning at scale faces a strikingly parallel challenge. Instead of gradients, agents produce **context updates** — textual learning signals encoding how the agent should behave on future tasks. Combee's parallel scan aggregation mirrors gradient aggregation strategies; augmented shuffling mirrors redundancy techniques; and the dynamic batch size controller mirrors critical batch size scheduling.
+Prompt learning at scale faces a strikingly similar challenge. Instead of gradients, agents produce **context updates** — textual learning signals encoding how the agent should behave on future tasks. Combee's parallel scan aggregation mirrors gradient aggregation strategies; augmented shuffling mirrors redundancy techniques; and the dynamic batch size controller mirrors critical batch size scheduling.
 
 The key insight is that **context is a first-class medium for scalable learning**, and many principles from distributed training — parallelism, aggregation strategies, communication efficiency — transfer directly to the prompt learning setting.
 
