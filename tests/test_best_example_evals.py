@@ -53,6 +53,7 @@ def create_fitness_fn_with_best_evals_tracking(call_log: list):
     return fitness_fn
 
 
+@pytest.mark.llm_call
 class TestExampleBestEvals:
     """Tests for OptimizationState / best_example_evals feature."""
 

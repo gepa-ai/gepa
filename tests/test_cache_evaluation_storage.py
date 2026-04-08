@@ -43,6 +43,7 @@ def create_fitness_fn(call_counter: dict):
     return fitness_fn
 
 
+@pytest.mark.llm_call
 class TestCacheEvaluationStorage:
     """Tests for cache_evaluation_storage parameter."""
 

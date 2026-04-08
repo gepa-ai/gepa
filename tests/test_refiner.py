@@ -111,6 +111,7 @@ def create_dataset_fitness_fn(call_counter: dict):
 DATASET = [{"golden": 40}, {"golden": 60}]
 
 
+@pytest.mark.llm_call
 class TestRefiner:
     """Tests for refiner functionality."""
 
@@ -605,6 +606,7 @@ class TestRefiner:
         assert score == -abs(50 - GOLDEN_NUMBER)
 
 
+@pytest.mark.llm_call
 class TestRefinerWithDataset:
     """Test refiner with a dataset (per-instance evaluation)."""
 
@@ -668,6 +670,7 @@ class TestRefinerWithDataset:
         print(f"Metric calls: {result.total_metric_calls}, Fitness calls: {call_counter['count']}")
 
 
+@pytest.mark.llm_call
 class TestRefinerFrontierTypes:
     """Test refiner with each frontier type using a dataset."""
 
