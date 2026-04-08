@@ -76,6 +76,11 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
 
     # --- Disk cache configuration ---
 
+    @property
+    def disk_cache_dir(self) -> Path | None:
+        """Return the disk cache directory, or None if disk caching is not enabled."""
+        return self._cache_dir
+
     def enable_disk_cache(self, cache_dir: str | Path) -> None:
         """Enable write-through disk persistence and load existing entries."""
         self._cache_dir = Path(cache_dir)
@@ -862,8 +867,8 @@ def initialize_gepa_state(
             gepa_state.evaluation_cache = evaluation_cache
         else:
             # Keep loaded cache entries but re-enable disk persistence if requested
-            if evaluation_cache._cache_dir is not None:
-                gepa_state.evaluation_cache.enable_disk_cache(evaluation_cache._cache_dir)
+            if evaluation_cache.disk_cache_dir is not None:
+                gepa_state.evaluation_cache.enable_disk_cache(evaluation_cache.disk_cache_dir)
     else:
         if run_dir is not None:
             write_eval_outputs_to_directory(
