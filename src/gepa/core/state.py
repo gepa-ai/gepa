@@ -791,17 +791,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         example_ids: list[DataId],
         fetcher: Callable[[list[DataId]], Any],
         evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
-    ) -> tuple[list[float], int]:
-        """Evaluate with optional caching. Returns (scores, num_actual_evals)."""
-        _, scores_by_id, _, num_actual_evals = self.cached_evaluate_full(candidate, example_ids, fetcher, evaluator)
-        return [scores_by_id[eid] for eid in example_ids], num_actual_evals
-
-    def cached_evaluate_full(
-        self,
-        candidate: dict[str, str],
-        example_ids: list[DataId],
-        fetcher: Callable[[list[DataId]], Any],
-        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
     ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
         """Evaluate with optional caching, returning full results."""
         if self.evaluation_cache is not None:

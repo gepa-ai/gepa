@@ -252,20 +252,13 @@ def _make_state(prog_val_scores, evaluator=None):
 
     # Add cached_evaluate method to match GEPAState interface (no caching for stubs)
     def cached_evaluate(candidate, example_ids, fetcher, eval_fn):
-        _, scores, _ = eval_fn(fetcher(example_ids), candidate)
-        return scores, len(example_ids)
-
-    state.cached_evaluate = cached_evaluate
-
-    # Add cached_evaluate_full method to match GEPAState interface (no caching for stubs)
-    def cached_evaluate_full(candidate, example_ids, fetcher, eval_fn):
         outputs, scores, obj_scores = eval_fn(fetcher(example_ids), candidate)
         outputs_by_id = dict(zip(example_ids, outputs, strict=False))
         scores_by_id = dict(zip(example_ids, scores, strict=False))
         objective_by_id = dict(zip(example_ids, obj_scores, strict=False)) if obj_scores else None
         return outputs_by_id, scores_by_id, objective_by_id, len(example_ids)
 
-    state.cached_evaluate_full = cached_evaluate_full
+    state.cached_evaluate = cached_evaluate
     return state
 
 
