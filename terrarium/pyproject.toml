@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=77.0.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "terrarium"
+version = "0.1.0"
+description = "Common evaluation infrastructure for evolving/auto-research systems."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+gepa = ["gepa"]
+
+[tool.setuptools]
+packages = ["terrarium", "terrarium.tasks", "terrarium.adapters"]
