@@ -3,105 +3,12 @@
 
 """Confidence-aware adapter for structured-output classification tasks.
 
-Motivation
-~~~~~~~~~~
-Standard prompt-optimization evaluates a candidate prompt by checking whether
-the model's answer matches the expected answer: correct → 1.0, wrong → 0.0.
-This binary signal **cannot distinguish** between a model that genuinely
-understands a category and one that merely *guesses correctly*.
+Uses token-level logprobs from ``llm-structured-confidence`` to detect
+and penalise lucky guesses, feeding rich confidence diagnostics into
+the reflection LLM.  Requires structured output with enum constraints
+and a model that supports ``logprobs=True``.
 
-Consider a prompt for transaction categorization: the model answers
-``"Bills/Electricity"`` and that happens to be correct.  But the token-level
-log-probabilities reveal that the runner-up was ``"Bills/Gas & Oil"`` at
-almost the same probability.  The model got lucky.  Under a purely binary
-metric, GEPA would keep this prompt -- it "works".  The next random seed or
-slight input variation will cause a misclassification.
-
-This adapter solves the problem by:
-
-1. **Extracting the joint logprob** (sum of per-token logprobs) for the
-   classification field via ``llm-structured-confidence``.
-2. **Blending** correctness with confidence via a pluggable
-   :class:`ScoringStrategy` so that lucky guesses are penalised.
-3. **Feeding confidence details into the reflective feedback** so the
-   reflection LLM knows *why* the model was uncertain and can propose
-   prompts that resolve specific ambiguities.
-
-Prerequisites
-~~~~~~~~~~~~~
-* **Structured output with enum constraints**: the adapter works best when
-  the LLM's ``response_format`` forces a JSON object with one or more
-  ``enum``-constrained string fields (e.g. ``{"category": "..."}``).  This
-  lets the logprobs reflect the model's distribution over the allowed
-  categories, rather than arbitrary free-text.
-* **Logprobs support**: the model must expose token-level logprobs.
-  OpenAI (``gpt-4.1``, ``gpt-4.1-mini``, ``o3-mini``, etc.) and
-  Google Gemini (``gemini-2.5-flash``, etc.) both support this via
-  ``logprobs=True``.
-
-Typical usage::
-
-    from gepa.adapters.confidence_adapter import ConfidenceAdapter, LinearBlendScoring
-    import gepa
-
-    adapter = ConfidenceAdapter(
-        model="openai/gpt-4.1-mini",
-        field_path="category_name",
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "classification",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "category_name": {
-                            "type": "string",
-                            "enum": ["Bills/Electricity", "Food & Drinks/Restaurants", ...],
-                        }
-                    },
-                    "required": ["category_name"],
-                    "additionalProperties": False,
-                },
-            },
-        },
-        scoring_strategy=LinearBlendScoring(low_confidence_threshold=0.99),
-        high_confidence_threshold=0.99,
-        low_confidence_threshold=0.90,
-    )
-
-    result = gepa.optimize(
-        seed_candidate={"system_prompt": seed_prompt},
-        trainset=trainset,
-        valset=valset,
-        adapter=adapter,
-        reflection_lm="openai/gpt-5",
-        max_metric_calls=15000,
-    )
-
-What the reflection LLM sees
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-With the default :class:`~gepa.adapters.default_adapter.DefaultAdapter`:
-
-    *"The generated response is incorrect.  The correct answer is
-    'Bills/Electricity'.  Ensure that the correct answer is included in the
-    response exactly as it is."*
-
-With :class:`ConfidenceAdapter`:
-
-    *"Correct but uncertain (73% probability).  Model answered
-    'Bills/Electricity' but was nearly split with alternatives.
-    Top alternatives: 'Bills/Gas & Oil' (24%).  The model cannot
-    reliably distinguish between these categories with the current
-    prompt."*
-
-Or:
-
-    *"WRONG — model has 95% certainty on 'Shopping/Electronics' but
-    the correct answer is 'Shopping/Video Games'.  The model has no
-    doubt about its wrong answer; the prompt is actively misleading it
-    for this type of input.  The prompt must add explicit rules to
-    disambiguate 'Shopping/Electronics' vs 'Shopping/Video Games'."*
+See the full guide: https://gepa-ai.github.io/gepa/guides/confidence-adapter/
 """
 
 from __future__ import annotations
@@ -458,6 +365,11 @@ class ConfidenceAdapter(GEPAAdapter[ConfidenceDataInst, ConfidenceTrajectory, Co
             import litellm
 
             self.litellm = litellm
+            if response_format is None:
+                raise ValueError(
+                    "response_format is required when model is a string (LiteLLM path). "
+                    "Provide a JSON schema with enum constraints for structured classification output."
+                )
         self.model = model
         self.field_path = field_path
         self.response_format = response_format

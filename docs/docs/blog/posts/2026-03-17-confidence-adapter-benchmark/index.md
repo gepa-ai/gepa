@@ -114,9 +114,9 @@ The [`llm-structured-confidence`](https://github.com/rodolfonobrega/llm-structur
 4. Returns a structured result with the predicted value, its probability, and the ranked alternatives with their probabilities
 
 ```python
-from llm_structured_confidence import extract_confidence
+from llm_structured_confidence import extract_logprobs
 
-conf = extract_confidence(response, field_path="category", response_schema=schema)
+conf = extract_logprobs(response, field_path="category", response_schema=schema)
 # conf = {
 #   "value": "surprise",
 #   "joint_probability": 0.4238,

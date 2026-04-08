@@ -296,11 +296,10 @@ strategy = SigmoidScoring(midpoint=0.95, steepness=50.0)
 
 ## Multi-Objective Optimization
 
-The adapter automatically exposes three objectives in `objective_scores`:
+The adapter automatically exposes two objectives in `objective_scores`:
 
 - `accuracy`: binary (1.0 if correct, 0.0 if not)
-- `logprob`: the joint logprob value
-- `probability`: `exp(logprob)`
+- `probability`: `exp(logprob)` — the joint probability of the predicted value
 
 When using GEPA's Pareto frontier, this enables selection of prompts that balance accuracy and confidence.
 

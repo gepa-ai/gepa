@@ -75,7 +75,11 @@ class ScoringStrategy(Protocol):
         ...
 
     def describe(self) -> str:
-        """Human-readable description used in logs and reflective feedback."""
+        """Human-readable description for logs and reflective feedback.
+
+        .. note:: Not currently called by the adapter, but available for
+           custom logging or user-facing diagnostics.
+        """
         ...
 
 
