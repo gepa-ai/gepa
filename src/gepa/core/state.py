@@ -236,6 +236,75 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
 
         return outputs_by_id, scores_by_id, objective_by_id, len(uncached_ids)
 
+    def evaluate_batch_with_cache(
+        self,
+        candidate: dict[str, str],
+        example_ids: list[DataId],
+        fetcher: Callable[[list[DataId]], Any],
+        evaluator: Callable[..., Any],
+        require_trajectories: bool = False,
+    ) -> tuple[Any, int]:
+        """Evaluate a batch using cache, returning an EvaluationBatch and the number of actual evals.
+
+        When ``require_trajectories=True``, cached entries that lack a trajectory
+        are treated as misses and re-evaluated.  This is used by the reflective
+        mutation proposer which needs trajectories for reflection.
+        """
+        from gepa.core.adapter import EvaluationBatch
+
+        cached, uncached_ids = self.get_batch(candidate, example_ids)
+
+        if require_trajectories:
+            # Entries without trajectories need re-evaluation
+            cached_valid = {eid: e for eid, e in cached.items() if e.trajectory is not None}
+            uncached_ids = uncached_ids + [eid for eid in cached if eid not in cached_valid]
+        else:
+            cached_valid = cached
+
+        # Evaluate uncached examples
+        if uncached_ids:
+            batch = fetcher(uncached_ids)
+            eval_fresh = evaluator(batch, candidate, capture_traces=require_trajectories)
+            obj_scores_list = list(eval_fresh.objective_scores) if eval_fresh.objective_scores else None
+            self.put_batch(
+                candidate, uncached_ids, eval_fresh.outputs, eval_fresh.scores,
+                obj_scores_list, trajectories=eval_fresh.trajectories,
+            )
+            fresh_by_id = {
+                eid: (eval_fresh.outputs[i], eval_fresh.scores[i],
+                      eval_fresh.trajectories[i] if eval_fresh.trajectories else None,
+                      eval_fresh.objective_scores[i] if eval_fresh.objective_scores else None)
+                for i, eid in enumerate(uncached_ids)
+            }
+            num_evals = eval_fresh.num_metric_calls if eval_fresh.num_metric_calls is not None else len(uncached_ids)
+        else:
+            fresh_by_id = {}
+            num_evals = 0
+
+        # Merge cached + fresh in original order
+        all_outputs, all_scores, all_trajs, all_obj = [], [], [], []
+        for eid in example_ids:
+            if eid in cached_valid:
+                e = cached_valid[eid]
+                all_outputs.append(e.output)
+                all_scores.append(e.score)
+                all_trajs.append(e.trajectory)
+                all_obj.append(e.objective_scores)
+            else:
+                out, score, traj, obj = fresh_by_id[eid]
+                all_outputs.append(out)
+                all_scores.append(score)
+                all_trajs.append(traj)
+                all_obj.append(obj)
+
+        result = EvaluationBatch(
+            outputs=all_outputs,
+            scores=all_scores,
+            trajectories=all_trajs if any(t is not None for t in all_trajs) else None,
+            objective_scores=all_obj if any(o is not None for o in all_obj) else None,
+        )
+        return result, num_evals
+
 
 @dataclass(slots=True)
 class ValsetEvaluation(Generic[RolloutOutput, DataId]):
