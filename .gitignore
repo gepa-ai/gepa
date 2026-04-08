@@ -214,4 +214,5 @@ __marimo__/
 
 # Experiments
 runs/
+outputs/
 gepa_terminus/
