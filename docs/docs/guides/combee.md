@@ -1,6 +1,6 @@
 # ComBEE: Scalable Parallel Prompt Learning
 
-ComBEE ([arXiv:2604.04247](https://arxiv.org/abs/2604.04247)) is a framework for scaling GEPA's reflection step to large batch sizes without quality degradation. Enable it with `use_combee=True`.
+ComBEE ([arXiv:2604.04247](https://arxiv.org/abs/2604.04247)) is a framework for scaling GEPA's reflection step to large batch sizes without quality degradation. Enable it with `use_combee=True` in `gepa.optimize`, or with `ReflectionConfig(combee=ComBEEConfig(use_combee=True))` in `optimize_anything`.
 
 
 ## How ComBEE Works: Map-Shuffle-Reduce
@@ -54,6 +54,7 @@ result = gepa.optimize(
 ```python
 import gepa.optimize_anything as oa
 from gepa.optimize_anything import optimize_anything, GEPAConfig, ReflectionConfig
+from gepa.optimize_anything import ComBEEConfig
 
 result = optimize_anything(
     seed_candidate="<your initial artifact>",
@@ -62,11 +63,18 @@ result = optimize_anything(
     config=GEPAConfig(
         reflection=ReflectionConfig(
             reflection_minibatch_size=40,
-            use_combee=True,
+            combee=ComBEEConfig(use_combee=True),
         )
     ),
 )
 ```
+
+### Advanced options
+
+Both APIs also expose ComBEE's optional tuning knobs:
+
+- `combee_duplication_factor` / `ComBEEConfig.duplication_factor`: augmented-shuffle duplication count `p` (default `2`)
+- `combee_aggregation_prompt` / `ComBEEConfig.aggregation_prompt_template`: override the Level-2 Reduce prompt
 
 ---
 

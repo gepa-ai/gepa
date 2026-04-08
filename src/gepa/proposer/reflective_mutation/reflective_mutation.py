@@ -168,7 +168,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
         components_to_update: list[str],
     ) -> tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]]:
-        """ComBEE parallel scan aggregation with augmented shuffling (paper §3.1-3.2).
+        """ComBEE parallel scan aggregation with augmented shuffling.
+
+        See ComBEE paper §3.1-3.2: https://arxiv.org/abs/2604.04247
 
         For each component:
           1. Augmented shuffle: duplicate each reflection p times, shuffle.
@@ -195,7 +197,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             records = list(reflective_dataset[comp])
             n = len(records)
 
-            # k = ⌊√n⌋ — default from paper §3.1
+            # k = ⌊√n⌋ — default from ComBEE paper §3.1:
+            # https://arxiv.org/abs/2604.04247
             k = max(1, int(n**0.5))
 
             if k <= 1:
