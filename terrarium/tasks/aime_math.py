@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from terrarium.registry import register_task
+from terrarium.registry import register_task_factory
 from terrarium.task import Example, Task
 
 DESCRIPTION = """\
@@ -106,22 +106,4 @@ def _make_task() -> Task:
     )
 
 
-# Lazy registration: the dataset is loaded on first access
-_task: Task | None = None
-
-
-def get_task() -> Task:
-    global _task
-    if _task is None:
-        _task = _make_task()
-    return _task
-
-
-# Register with a lightweight placeholder, replaced on first access
-TASK = register_task(Task(
-    name="aime_math",
-    description=DESCRIPTION,
-    initial_candidate=INITIAL_CANDIDATE,
-    eval_fn=evaluate,
-    metadata={"type": "generalization", "candidate_type": "prompt", "lazy": True},
-))
+register_task_factory("aime_math", _make_task)

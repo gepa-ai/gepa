@@ -22,7 +22,7 @@ POST /evaluate_examples
     in parallel, respecting the concurrency limit. Each example = 1 budget tick.
     Response: {"average_score": 1.23, "scores": {"a": 0.9, ...}, "budget": {...}}
     For single-task problems (no dataset), behaves like /evaluate.
-    Status 429 when budget exhausted mid-evaluation (partial results returned).
+    Status 429 when budget is insufficient to evaluate all requested examples.
 
 GET /status
     Response: {"budget": {...}, "task": "<name>", "best_score": 1.23}
@@ -169,45 +169,35 @@ class EvalServer:
                 "_budget": self.budget.status(),
             }
 
+        if self.budget.remaining < len(examples):
+            raise BudgetExhausted(
+                f"Not enough budget to evaluate all examples: {self.budget.remaining} remaining, {len(examples)} needed"
+            )
+
         scores: dict[str, float] = {}
         errors: dict[str, str] = {}
-        total = len(examples)
 
-        def _eval_one(ex: Example) -> tuple[str, float | None, str | None]:
+        def _eval_one(ex: Example) -> tuple[str, float, str | None]:
             try:
                 score, _ = self.evaluate(candidate, ex)
                 return (ex.id, score, None)
-            except BudgetExhausted:
-                return (ex.id, None, "budget_exhausted")
             except Exception as e:
-                return (ex.id, None, str(e))
+                return (ex.id, 0.0, str(e))
 
         futures = {self._pool.submit(_eval_one, ex): ex for ex in examples}
-        budget_hit = False
 
         for future in as_completed(futures):
             eid, score, err = future.result()
-            if err == "budget_exhausted":
-                budget_hit = True
-                # Cancel remaining futures (best-effort)
-                for f in futures:
-                    f.cancel()
-                break
-            elif err is not None:
+            if err is not None:
                 errors[eid] = err
             else:
-                assert score is not None
                 scores[eid] = score
 
-        if not scores:
-            raise BudgetExhausted("Budget exhausted before any examples could be evaluated")
-
-        avg = sum(scores.values()) / len(scores)
+        all_scores = {**scores, **{eid: 0.0 for eid in errors}}
+        avg = sum(all_scores.values()) / len(all_scores)
         info: dict[str, Any] = {
-            "scores": scores,
-            "num_evaluated": len(scores),
-            "num_total": total,
-            "partial": len(scores) < total or budget_hit,
+            "scores": all_scores,
+            "num_evaluated": len(examples),
             "_budget": self.budget.status(),
         }
         if errors:
@@ -317,8 +307,6 @@ class EvalServer:
                 "average_score": avg_score,
                 "scores": info.get("scores", {}),
                 "num_evaluated": info.get("num_evaluated", 1),
-                "num_total": info.get("num_total", 1),
-                "partial": info.get("partial", False),
                 "errors": info.get("errors", {}),
                 "budget": self.budget.status(),
             })

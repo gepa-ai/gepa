@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from terrarium.registry import register_task
+from terrarium.registry import register_task_factory
 from terrarium.task import Example, Task
 
 DESCRIPTION = """\
@@ -92,16 +92,23 @@ def evaluate(candidate: str, example: Example, model_id: str = "openrouter/googl
     }
 
 
-# Register with lightweight placeholder; dataset loaded lazily via _load_dataset()
-TASK = register_task(Task(
-    name="arc_agi",
-    description=DESCRIPTION,
-    initial_candidate=INITIAL_CANDIDATE,
-    eval_fn=evaluate,
-    metadata={
-        "type": "generalization",
-        "candidate_type": "code",
-        "lazy": True,
-        "objective": "Build an ARC-AGI agent that maximizes test accuracy.",
-    },
-))
+def _make_task() -> Task:
+    """Build the ARC-AGI task (lazy dataset loading)."""
+    train_set, val_set, test_set = _load_dataset()
+    return Task(
+        name="arc_agi",
+        description=DESCRIPTION,
+        initial_candidate=INITIAL_CANDIDATE,
+        eval_fn=evaluate,
+        train_set=train_set,
+        test_set=test_set,
+        metadata={
+            "type": "generalization",
+            "candidate_type": "code",
+            "val_set": val_set,
+            "objective": "Build an ARC-AGI agent that maximizes test accuracy.",
+        },
+    )
+
+
+register_task_factory("arc_agi", _make_task)
