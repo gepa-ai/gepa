@@ -80,9 +80,6 @@ gepa = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = [
-    "llm_call: tests that call LLM APIs (auto-mocked via conftest fixture)",
-]
 
 [tool.ruff]
 include = ["src/**/*.py"]

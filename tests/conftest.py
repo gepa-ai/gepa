@@ -1,9 +1,7 @@
 import json
 import os
 import random
-import re
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -100,55 +98,3 @@ def mocked_lms(recorder_dir):
 @pytest.fixture
 def rng():
     return random.Random(42)
-
-
-def _make_litellm_mock_response(content: str):
-    """Create a mock litellm.completion response."""
-    resp = MagicMock()
-    resp.choices = [MagicMock()]
-    resp.choices[0].message.content = content
-    resp.choices[0].finish_reason = "stop"
-    return resp
-
-
-@pytest.fixture(autouse=True)
-def _mock_litellm_for_llm_call_tests(request):
-    """Auto-mock litellm.completion for tests marked with @pytest.mark.llm_call.
-
-    Returns a JSON dict with randomized values that satisfies both the reflection
-    proposer (expects fenced code block) and the refiner (expects JSON dict).
-    """
-    marker = request.node.get_closest_marker("llm_call")
-    if marker is None:
-        yield
-        return
-
-    call_rng = random.Random(42)
-
-    def fake_completion(*_args, **kwargs):
-        messages = kwargs.get("messages", [])
-        last_content = messages[-1]["content"] if messages else ""
-
-        # Check for multi-param candidates
-        param_a_match = re.search(r'"param_a"\s*:\s*"(\d+)"', last_content)
-        param_b_match = re.search(r'"param_b"\s*:\s*"(\d+)"', last_content)
-        if param_a_match and param_b_match:
-            a = int(param_a_match.group(1)) + call_rng.randint(-5, 5)
-            b = 100 - a + call_rng.randint(-3, 3)
-            response_text = json.dumps({"param_a": str(a), "param_b": str(b)})
-        else:
-            # Each call returns a unique candidate so the cache can't stall budget
-            number_match = re.search(r'"number"\s*:\s*"(\d+)"', last_content)
-            if number_match:
-                old = int(number_match.group(1))
-                new_number = old + call_rng.randint(-10, 10)
-            else:
-                new_number = 42 + call_rng.randint(-10, 10)
-            response_text = json.dumps({"number": str(new_number)})
-
-        # Wrap in fenced block for reflection proposer compatibility
-        content = f"```\n{response_text}\n```"
-        return _make_litellm_mock_response(content)
-
-    with patch("litellm.completion", side_effect=fake_completion):
-        yield

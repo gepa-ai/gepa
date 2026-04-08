@@ -3,8 +3,12 @@
 
 """Tests for refiner functionality with the number guessing optimization scenario."""
 
+import json
+import random
+import re
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,6 +24,34 @@ from gepa.optimize_anything import (
 
 # Golden number to guess
 GOLDEN_NUMBER = 42
+
+
+@pytest.fixture(autouse=True)
+def _mock_litellm():
+    """Mock litellm.completion so tests don't need real API keys."""
+    call_rng = random.Random(42)
+
+    def fake_completion(*_args, **kwargs):
+        messages = kwargs.get("messages", [])
+        last_content = messages[-1]["content"] if messages else ""
+        param_a_match = re.search(r'"param_a"\s*:\s*"(\d+)"', last_content)
+        param_b_match = re.search(r'"param_b"\s*:\s*"(\d+)"', last_content)
+        if param_a_match and param_b_match:
+            a = int(param_a_match.group(1)) + call_rng.randint(-5, 5)
+            b = 100 - a + call_rng.randint(-3, 3)
+            text = json.dumps({"param_a": str(a), "param_b": str(b)})
+        else:
+            number_match = re.search(r'"number"\s*:\s*"(\d+)"', last_content)
+            old = int(number_match.group(1)) if number_match else 50
+            text = json.dumps({"number": str(old + call_rng.randint(-10, 10))})
+        resp = MagicMock()
+        resp.choices = [MagicMock()]
+        resp.choices[0].message.content = f"```\n{text}\n```"
+        resp.choices[0].finish_reason = "stop"
+        return resp
+
+    with patch("litellm.completion", side_effect=fake_completion):
+        yield
 
 
 def create_fitness_fn(call_counter: dict):
@@ -111,7 +143,7 @@ def create_dataset_fitness_fn(call_counter: dict):
 DATASET = [{"golden": 40}, {"golden": 60}]
 
 
-@pytest.mark.llm_call
+
 class TestRefiner:
     """Tests for refiner functionality."""
 
@@ -606,7 +638,7 @@ class TestRefiner:
         assert score == -abs(50 - GOLDEN_NUMBER)
 
 
-@pytest.mark.llm_call
+
 class TestRefinerWithDataset:
     """Test refiner with a dataset (per-instance evaluation)."""
 
@@ -670,7 +702,7 @@ class TestRefinerWithDataset:
         print(f"Metric calls: {result.total_metric_calls}, Fitness calls: {call_counter['count']}")
 
 
-@pytest.mark.llm_call
+
 class TestRefinerFrontierTypes:
     """Test refiner with each frontier type using a dataset."""
 

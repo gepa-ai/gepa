@@ -3,6 +3,11 @@
 
 """Tests for OptimizationState / best_example_evals warm-start feature."""
 
+import json
+import random
+import re
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from gepa.optimize_anything import (
@@ -53,7 +58,27 @@ def create_fitness_fn_with_best_evals_tracking(call_log: list):
     return fitness_fn
 
 
-@pytest.mark.llm_call
+@pytest.fixture(autouse=True)
+def _mock_litellm():
+    """Mock litellm.completion so tests don't need real API keys."""
+    call_rng = random.Random(42)
+
+    def fake_completion(*_args, **kwargs):
+        messages = kwargs.get("messages", [])
+        last_content = messages[-1]["content"] if messages else ""
+        number_match = re.search(r'"number"\s*:\s*"(\d+)"', last_content)
+        old = int(number_match.group(1)) if number_match else 50
+        text = json.dumps({"number": str(old + call_rng.randint(-10, 10))})
+        resp = MagicMock()
+        resp.choices = [MagicMock()]
+        resp.choices[0].message.content = f"```\n{text}\n```"
+        resp.choices[0].finish_reason = "stop"
+        return resp
+
+    with patch("litellm.completion", side_effect=fake_completion):
+        yield
+
+
 class TestExampleBestEvals:
     """Tests for OptimizationState / best_example_evals feature."""
 
