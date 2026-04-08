@@ -3,10 +3,13 @@
 
 """Tests for the evaluation caching functionality."""
 
+import tempfile
+import threading
 from pathlib import Path
 
 import pytest
 
+from gepa.core.adapter import EvaluationBatch
 from gepa.core.state import EvaluationCache
 
 # RECORDER_DIR paths for cached tests (imported lazily to avoid module conflicts)
@@ -67,6 +70,214 @@ class TestEvaluationCache:
         cache.put_batch(candidate, ["ex1", "ex2"], ["out1", "out2"], [0.5, 0.6], [{"acc": 0.9}, {"acc": 0.8}])
         assert cache.get(candidate, "ex1").score == 0.5
         assert cache.get(candidate, "ex2").objective_scores == {"acc": 0.8}
+
+
+class TestDiskCache:
+    """Tests for disk write-through caching."""
+
+    def test_disk_cache_writes_and_loads(self):
+        """Entries written with disk cache enabled should be loadable from a fresh cache."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache_dir = Path(tmp_dir) / "eval_cache"
+
+            # Write entries
+            cache1: EvaluationCache = EvaluationCache()
+            cache1.enable_disk_cache(cache_dir)
+            cache1.put({"prompt": "hello"}, "ex1", "out1", 0.9, {"acc": 0.95})
+            cache1.put({"prompt": "hello"}, "ex2", "out2", 0.8)
+
+            pkl_files = list(cache_dir.glob("*.pkl"))
+            assert len(pkl_files) == 2
+
+            # Load into a fresh cache
+            cache2: EvaluationCache = EvaluationCache()
+            cache2.enable_disk_cache(cache_dir)
+            assert cache2.get({"prompt": "hello"}, "ex1") is not None
+            assert cache2.get({"prompt": "hello"}, "ex1").score == 0.9
+            assert cache2.get({"prompt": "hello"}, "ex2").output == "out2"
+
+    def test_disk_cache_put_batch(self):
+        """put_batch should write individual .pkl files for each entry."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache_dir = Path(tmp_dir) / "eval_cache"
+            cache: EvaluationCache = EvaluationCache()
+            cache.enable_disk_cache(cache_dir)
+            cache.put_batch(
+                {"prompt": "test"}, ["ex1", "ex2", "ex3"],
+                ["o1", "o2", "o3"], [0.1, 0.2, 0.3],
+            )
+            assert len(list(cache_dir.glob("*.pkl"))) == 3
+
+    def test_disk_cache_atomic_write(self):
+        """No .tmp files should be left after successful writes."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cache_dir = Path(tmp_dir) / "eval_cache"
+            cache: EvaluationCache = EvaluationCache()
+            cache.enable_disk_cache(cache_dir)
+            cache.put({"p": "v"}, "ex1", "out", 1.0)
+            assert len(list(cache_dir.glob("*.tmp"))) == 0
+
+
+class TestTrajectoryCache:
+    """Tests for trajectory caching in EvaluationCache."""
+
+    def test_put_and_get_with_trajectory(self):
+        """Trajectories should be stored and retrievable."""
+        cache: EvaluationCache = EvaluationCache()
+        cache.put({"p": "v"}, "ex1", "out", 0.5, trajectory={"trace": [1, 2, 3]})
+        entry = cache.get({"p": "v"}, "ex1")
+        assert entry is not None
+        assert entry.trajectory == {"trace": [1, 2, 3]}
+
+    def test_put_batch_with_trajectories(self):
+        """put_batch should store trajectories when provided."""
+        cache: EvaluationCache = EvaluationCache()
+        cache.put_batch(
+            {"p": "v"}, ["ex1", "ex2"],
+            ["o1", "o2"], [0.5, 0.6],
+            trajectories=[{"t": 1}, {"t": 2}],
+        )
+        assert cache.get({"p": "v"}, "ex1").trajectory == {"t": 1}
+        assert cache.get({"p": "v"}, "ex2").trajectory == {"t": 2}
+
+    def test_entry_without_trajectory_is_none(self):
+        """Entries stored without trajectory should have trajectory=None."""
+        cache: EvaluationCache = EvaluationCache()
+        cache.put({"p": "v"}, "ex1", "out", 0.5)
+        assert cache.get({"p": "v"}, "ex1").trajectory is None
+
+
+class TestEvaluateBatchWithCache:
+    """Tests for evaluate_batch_with_cache method."""
+
+    @staticmethod
+    def _make_evaluator(call_log: list):
+        """Create a mock evaluator that tracks calls and returns EvaluationBatch."""
+        def evaluator(batch, candidate, capture_traces=False):
+            call_log.append({"batch_size": len(batch), "capture_traces": capture_traces})
+            outputs = [f"out_{i}" for i in range(len(batch))]
+            scores = [0.5 + i * 0.1 for i in range(len(batch))]
+            trajectories = [{"trace": i} for i in range(len(batch))] if capture_traces else None
+            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
+        return evaluator
+
+    @staticmethod
+    def _make_fetcher(data: dict):
+        """Create a fetcher that returns examples by ID."""
+        def fetcher(ids):
+            return [data[eid] for eid in ids]
+        return fetcher
+
+    def test_all_misses(self):
+        """When cache is empty, all examples should be evaluated."""
+        cache: EvaluationCache = EvaluationCache()
+        call_log = []
+        data = {"ex1": {"d": 1}, "ex2": {"d": 2}}
+
+        result, num_evals = cache.evaluate_batch_with_cache(
+            {"p": "v"}, ["ex1", "ex2"],
+            self._make_fetcher(data), self._make_evaluator(call_log),
+        )
+        assert num_evals == 2
+        assert len(call_log) == 1
+        assert result.outputs == ["out_0", "out_1"]
+
+    def test_all_hits(self):
+        """When all entries are cached, no evaluation should happen."""
+        cache: EvaluationCache = EvaluationCache()
+        cache.put({"p": "v"}, "ex1", "cached_out1", 0.9)
+        cache.put({"p": "v"}, "ex2", "cached_out2", 0.8)
+        call_log = []
+
+        result, num_evals = cache.evaluate_batch_with_cache(
+            {"p": "v"}, ["ex1", "ex2"],
+            self._make_fetcher({}), self._make_evaluator(call_log),
+        )
+        assert num_evals == 0
+        assert len(call_log) == 0
+        assert result.outputs == ["cached_out1", "cached_out2"]
+        assert result.scores == [0.9, 0.8]
+
+    def test_partial_hits(self):
+        """Mix of cached and uncached should only evaluate misses."""
+        cache: EvaluationCache = EvaluationCache()
+        cache.put({"p": "v"}, "ex1", "cached_out", 0.9)
+        call_log = []
+        data = {"ex2": {"d": 2}}
+
+        result, num_evals = cache.evaluate_batch_with_cache(
+            {"p": "v"}, ["ex1", "ex2"],
+            self._make_fetcher(data), self._make_evaluator(call_log),
+        )
+        assert num_evals == 1
+        assert len(call_log) == 1
+        assert call_log[0]["batch_size"] == 1
+        # Order preserved: ex1 from cache, ex2 from evaluator
+        assert result.outputs[0] == "cached_out"
+
+    def test_require_trajectories_re_evaluates_missing(self):
+        """With require_trajectories=True, entries without trajectories are re-evaluated."""
+        cache: EvaluationCache = EvaluationCache()
+        # Cache entry WITHOUT trajectory
+        cache.put({"p": "v"}, "ex1", "old_out", 0.5)
+        # Cache entry WITH trajectory
+        cache.put({"p": "v"}, "ex2", "traj_out", 0.7, trajectory={"trace": "ok"})
+        call_log = []
+        data = {"ex1": {"d": 1}}
+
+        result, num_evals = cache.evaluate_batch_with_cache(
+            {"p": "v"}, ["ex1", "ex2"],
+            self._make_fetcher(data), self._make_evaluator(call_log),
+            require_trajectories=True,
+        )
+        # ex1 should be re-evaluated (no trajectory), ex2 should be cached
+        assert num_evals == 1
+        assert len(call_log) == 1
+        assert call_log[0]["capture_traces"] is True
+        # ex2 should come from cache with its trajectory
+        assert result.scores[1] == 0.7
+        assert result.trajectories[1] == {"trace": "ok"}
+
+    def test_populates_cache_after_eval(self):
+        """Evaluated entries should be stored in cache for future hits."""
+        cache: EvaluationCache = EvaluationCache()
+        call_log = []
+        data = {"ex1": {"d": 1}}
+
+        cache.evaluate_batch_with_cache(
+            {"p": "v"}, ["ex1"],
+            self._make_fetcher(data), self._make_evaluator(call_log),
+        )
+        # Should now be cached
+        assert cache.get({"p": "v"}, "ex1") is not None
+        assert cache.get({"p": "v"}, "ex1").output == "out_0"
+
+
+class TestThreadSafety:
+    """Tests for thread-safe cache operations."""
+
+    def test_concurrent_puts(self):
+        """Concurrent puts from multiple threads should not lose entries."""
+        cache: EvaluationCache = EvaluationCache()
+        errors = []
+
+        def put_range(start, count):
+            try:
+                for i in range(start, start + count):
+                    cache.put({"p": "v"}, f"ex_{i}", f"out_{i}", float(i))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=put_range, args=(i * 100, 100)) for i in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+        # All 400 entries should be present
+        for i in range(400):
+            assert cache.get({"p": "v"}, f"ex_{i}") is not None
 
 
 class TestEvaluationCacheIntegration:
