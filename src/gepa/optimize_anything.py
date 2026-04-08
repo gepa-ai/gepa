@@ -495,6 +495,10 @@ class EngineConfig:
 
     # Evaluation caching
     cache_evaluation: bool = False
+    # Where to store cached evaluations:
+    #   "auto"   — "disk" when run_dir is set, "memory" otherwise
+    #   "memory" — in-process dict only (lost on exit)
+    #   "disk"   — write-through .pkl files in {run_dir}/eval_cache/ (requires run_dir)
     cache_evaluation_storage: CacheEvaluationStorage = "auto"
 
     # Track top-K best evaluations per example, passed to evaluator via OptimizationState
