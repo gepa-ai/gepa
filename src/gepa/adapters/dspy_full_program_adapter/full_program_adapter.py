@@ -8,6 +8,7 @@ from dspy.primitives import Example, Prediction
 from dspy.teleprompt.bootstrap_trace import TraceData
 
 from gepa import EvaluationBatch, GEPAAdapter
+from gepa.proposer.reflective_mutation.base import LanguageModel
 
 
 class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
@@ -15,7 +16,7 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self,
         task_lm: dspy.LM,
         metric_fn: Callable,
-        reflection_lm: dspy.LM,
+        reflection_lm: LanguageModel,
         failure_score=0.0,
         num_threads: int | None = None,
         add_format_failure_as_feedback: bool = False,
@@ -83,7 +84,9 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         program, feedback = self.build_program(candidate)
 
         if program is None:
-            return EvaluationBatch(outputs=None, scores=[self.failure_score for _ in batch], trajectories=feedback)
+            return EvaluationBatch(
+                outputs=[None for _ in batch], scores=[self.failure_score for _ in batch], trajectories=feedback
+            )
 
         if capture_traces:
             # bootstrap_trace_data-like flow with trace capture
