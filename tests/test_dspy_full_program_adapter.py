@@ -9,6 +9,10 @@ Covers two bugs:
 
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("dspy", reason="dspy is not installed — skipping DspyAdapter tests")
+
 from unittest.mock import MagicMock, patch
 
 import dspy
