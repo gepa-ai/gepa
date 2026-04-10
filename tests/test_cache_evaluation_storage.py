@@ -96,9 +96,11 @@ class TestCacheEvaluationStorage:
         )
 
         assert result is not None
-        # With caching, we should have fewer actual fitness_fn calls than metric calls
+        # With caching, actual fitness_fn calls should be <= metric calls
         # because duplicate candidates are served from cache
-        print(f"Metric calls: {result.total_metric_calls}, Actual fitness calls: {call_counter['count']}")
+        assert call_counter["count"] <= result.total_metric_calls, (
+            f"Cache should reduce calls: {call_counter['count']} actual vs {result.total_metric_calls} metric calls"
+        )
 
     def test_disk_cache_persists_across_runs(self):
         """Disk cache should persist and be loaded on subsequent runs."""
@@ -193,7 +195,9 @@ class TestCacheEvaluationStorage:
 
         assert result is not None
         # Every metric call should result in a fitness_fn call (no caching)
-        print(f"Metric calls: {result.total_metric_calls}, Actual fitness calls: {call_counter['count']}")
+        assert call_counter["count"] == result.total_metric_calls, (
+            f"Without cache, calls should match: {call_counter['count']} actual vs {result.total_metric_calls} metric"
+        )
 
     def test_auto_mode_uses_disk_when_run_dir_provided(self):
         """Auto mode should use disk cache when run_dir is provided."""

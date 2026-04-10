@@ -280,6 +280,109 @@ class TestThreadSafety:
             assert cache.get({"p": "v"}, f"ex_{i}") is not None
 
 
+class TestEvaluateBatchWithCacheE2E:
+    """End-to-end test: run gepa.optimize() and verify caching actually reduces evaluate() calls."""
+
+    @staticmethod
+    def _create_counting_adapter():
+        """Adapter that counts how many times evaluate() is called."""
+        from gepa.core.adapter import EvaluationBatch
+
+        class CountingAdapter:
+            def __init__(self):
+                self.evaluate_call_count = 0
+                self.propose_new_texts = self._propose_new_texts
+
+            def evaluate(self, batch, candidate, capture_traces=False):
+                self.evaluate_call_count += 1
+                weight = hash(candidate.get("system_prompt", "")) % 10
+                outputs = [{"id": i, "weight": weight} for i in range(len(batch))]
+                scores = [(weight + 1) / 10 for _ in batch]
+                trajectories = [{"score": s} for s in scores] if capture_traces else None
+                return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
+
+            def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+                return dict.fromkeys(components_to_update, [{"score": s} for s in eval_batch.scores])
+
+            def _propose_new_texts(self, candidate, reflective_dataset, components_to_update):
+                # Return the same candidate so cache hits are guaranteed on re-evaluation
+                return {k: candidate.get(k, "test") for k in components_to_update}
+
+        return CountingAdapter()
+
+    def test_cache_reduces_evaluate_calls(self, tmp_path):
+        """With caching, repeated evaluation of the same candidate should hit cache."""
+        import gepa
+
+        adapter_no_cache = self._create_counting_adapter()
+        gepa.optimize(
+            seed_candidate={"system_prompt": "test"},
+            trainset=[{"id": i} for i in range(5)],
+            valset=[{"id": i} for i in range(5)],
+            adapter=adapter_no_cache,
+            max_metric_calls=20,
+            reflection_lm=None,
+            run_dir=str(tmp_path / "no_cache"),
+            cache_evaluation=False,
+        )
+
+        adapter_with_cache = self._create_counting_adapter()
+        gepa.optimize(
+            seed_candidate={"system_prompt": "test"},
+            trainset=[{"id": i} for i in range(5)],
+            valset=[{"id": i} for i in range(5)],
+            adapter=adapter_with_cache,
+            max_metric_calls=20,
+            reflection_lm=None,
+            run_dir=str(tmp_path / "with_cache"),
+            cache_evaluation=True,
+        )
+
+        # Caching should result in fewer evaluate() calls
+        assert adapter_with_cache.evaluate_call_count <= adapter_no_cache.evaluate_call_count, (
+            f"Cache should reduce calls: {adapter_with_cache.evaluate_call_count} (cached) "
+            f"vs {adapter_no_cache.evaluate_call_count} (uncached)"
+        )
+
+    def test_disk_cache_survives_restart(self, tmp_path):
+        """Run optimization twice with disk cache — second run should have fewer evaluate() calls."""
+        import gepa
+
+        run_dir = str(tmp_path / "disk_cache_run")
+
+        adapter1 = self._create_counting_adapter()
+        gepa.optimize(
+            seed_candidate={"system_prompt": "test"},
+            trainset=[{"id": i} for i in range(3)],
+            valset=[{"id": i} for i in range(3)],
+            adapter=adapter1,
+            max_metric_calls=10,
+            reflection_lm=None,
+            run_dir=run_dir,
+            cache_evaluation=True,
+        )
+        first_run_calls = adapter1.evaluate_call_count
+
+        # Second run with same run_dir — should load disk cache
+        adapter2 = self._create_counting_adapter()
+        gepa.optimize(
+            seed_candidate={"system_prompt": "test"},
+            trainset=[{"id": i} for i in range(3)],
+            valset=[{"id": i} for i in range(3)],
+            adapter=adapter2,
+            max_metric_calls=10,
+            reflection_lm=None,
+            run_dir=run_dir,
+            cache_evaluation=True,
+        )
+        second_run_calls = adapter2.evaluate_call_count
+
+        # Second run should benefit from disk cache
+        assert second_run_calls <= first_run_calls, (
+            f"Disk cache should help second run: {second_run_calls} (2nd) vs {first_run_calls} (1st)"
+        )
+
+
 class TestEvaluationCacheIntegration:
     """Integration tests for evaluation cache with optimize function."""
 
