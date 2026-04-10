@@ -1375,7 +1375,7 @@ def optimize_anything(
 
         _coding_agent_ref = config.reflection.reflection_lm  # keep ref before overwrite
         config.reflection.reflection_lm = make_session_lm(
-            config.reflection.reflection_lm.create_session()
+            config.reflection.reflection_lm.create_session()  # type: ignore[union-attr]
         )  # type: ignore[assignment]
     elif isinstance(config.reflection.reflection_lm, str):
         config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
@@ -1590,7 +1590,7 @@ def optimize_anything(
         perfect_score=config.reflection.perfect_score,
         skip_perfect_score=config.reflection.skip_perfect_score,
         experiment_tracker=experiment_tracker,
-        reflection_lm=session_lm or config.reflection.reflection_lm,
+        reflection_lm=session_lm or config.reflection.reflection_lm,  # type: ignore[arg-type]
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
         callbacks=config.callbacks,
