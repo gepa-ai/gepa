@@ -107,6 +107,7 @@ def test_pareto_frontier_type(mocked_lms, recorder_dir, frontier_type):
         max_metric_calls=32,
         reflection_minibatch_size=3,
         display_progress_bar=False,
+        cache_evaluation=False,
     )
     assert gepa_result.total_metric_calls in [36, 48]
 

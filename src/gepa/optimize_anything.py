@@ -494,7 +494,7 @@ class EngineConfig:
     num_parallel_proposals: int | Literal["auto"] = 1
 
     # Evaluation caching
-    cache_evaluation: bool = False
+    cache_evaluation: bool = True
     cache_evaluation_storage: CacheEvaluationStorage = "auto"
 
     # Track top-K best evaluations per example, passed to evaluator via OptimizationState

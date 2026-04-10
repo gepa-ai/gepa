@@ -126,6 +126,7 @@ def test_incremental_eval_policy_handles_dynamic_valset(tmp_path):
         max_metric_calls=12,
         run_dir=str(tmp_path / "run"),
         val_evaluation_policy=RoundRobinSampleEvaluationPolicy(batch_size=2),
+        cache_evaluation=False,
     )
 
     assert val_loader.expansions == 1
