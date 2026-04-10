@@ -83,8 +83,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
         # Parallel proposals
         num_parallel_proposals: int = 1,
+        # Session management (engine owns session lifecycle)
+        session_manager: Any | None = None,
     ):
         self.logger = logger
+        self.session_manager = session_manager
         self.run_dir = run_dir
         self.callbacks = callbacks
 
@@ -177,7 +180,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         new_program: dict[str, str],
         state: GEPAState[RolloutOutput, DataId],
         parent_program_idx: list[int],
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, float]:
         num_metric_calls_by_discovery = state.total_num_evals
         valset_evaluation = self._evaluate_on_valset(new_program, state)
         state.num_full_ds_evals += 1
@@ -278,7 +281,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Update candidate tree visualization
         self._log_candidate_tree(state)
 
-        return new_program_idx, linear_pareto_front_program_idx
+        return new_program_idx, linear_pareto_front_program_idx, valset_score
 
     # ------------------------------------------------------------------
     # Reflective proposal acceptance (shared by single and parallel paths)
@@ -319,6 +322,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     reason=reject_reason,
                 ),
             )
+            # Observe rejection in session manager
+            if self.session_manager is not None:
+                self.session_manager.observe(candidate_idx=None, accepted=False)
             return False
 
         if _uses_builtin_criterion:
@@ -327,7 +333,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             accept_msg = f"Iteration {iteration}: Candidate accepted (old_sum={old_sum}, new_sum={new_sum}). Continue to full eval and add to candidate pool."
         self.logger.log(accept_msg)
 
-        new_idx, _ = self._run_full_eval_and_add(
+        new_idx, _, new_val_score = self._run_full_eval_and_add(
             new_program=proposal.candidate,
             state=state,
             parent_program_idx=proposal.parent_program_ids,
@@ -345,6 +351,15 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 parent_ids=proposal.parent_program_ids,
             ),
         )
+
+        # Observe acceptance in session manager
+        if self.session_manager is not None:
+            self.session_manager.observe(
+                candidate_idx=new_idx,
+                accepted=True,
+                val_score=new_val_score,
+            )
+
         return True
 
     def _process_proposal_output(
@@ -687,7 +702,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
                             if new_sum >= max(parent_sums):
                                 # ACCEPTED: consume one merge attempt and record it
-                                new_idx, _ = self._run_full_eval_and_add(
+                                new_idx, _, new_val_score = self._run_full_eval_and_add(
                                     new_program=proposal.candidate,
                                     state=state,
                                     parent_program_idx=proposal.parent_program_ids,
@@ -716,6 +731,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                         parent_ids=proposal.parent_program_ids,
                                     ),
                                 )
+                                # Observe merge acceptance in session manager
+                                if self.session_manager is not None:
+                                    self.session_manager.observe(
+                                        candidate_idx=new_idx,
+                                        accepted=True,
+                                        val_score=new_val_score,
+                                    )
                                 continue  # skip reflective this iteration
                             else:
                                 # REJECTED: do NOT consume merges_due or total_merges_tested

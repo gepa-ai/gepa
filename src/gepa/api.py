@@ -91,6 +91,8 @@ def optimize(
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
     acceptance_criterion: AcceptanceCriterion
     | Literal["strict_improvement", "improvement_or_equal"] = "strict_improvement",
+    # Session management
+    session_strategy: str | Any | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -260,13 +262,49 @@ def optimize(
             + "GEPA will use the default proposer, which requires a reflection_lm to be specified."
         )
 
+    from gepa.agents import CodingAgent
+
+    _is_coding_agent = isinstance(reflection_lm, CodingAgent)
     reflection_lm_callable: LanguageModel | None = None
     if isinstance(reflection_lm, str):
         from gepa.lm import LM
 
         reflection_lm_callable = LM(reflection_lm)
+    elif _is_coding_agent:
+        # CodingAgent always needs a session — create one even without session_strategy
+        from gepa.core.session_manager import make_session_lm
+
+        reflection_lm_callable = make_session_lm(reflection_lm.create_session())  # type: ignore[assignment]
     else:
         reflection_lm_callable = reflection_lm
+
+    # Build session manager — engine owns lifecycle, proposer sees a plain LM
+    session_manager = None
+    session_lm: LanguageModel | None = None
+
+    if session_strategy is not None and reflection_lm_callable is not None:
+        from gepa.core.session_manager import SessionManager, make_session_lm, resolve_session_strategy
+
+        _strategy = resolve_session_strategy(session_strategy)
+
+        if _is_coding_agent:
+            # CodingAgent provides native Sessions (ClaudeCode/OpenCode) — use directly
+            session_manager = SessionManager(
+                create=reflection_lm.create_session,  # type: ignore[union-attr]
+                strategy=_strategy,
+            )
+            session_lm = make_session_lm(session_manager.current_session)  # type: ignore[assignment]
+        else:
+            # Plain LM callable — wrap in LLMSession to get fork/reset
+            from gepa.core.session import LLMSession
+
+            session_manager = SessionManager(
+                # TODO: pass a meaningful system prompt — currently reflection instructions
+                #       are baked into the user message by the proposer.
+                create=lambda: LLMSession(system_prompt="", api_call=reflection_lm_callable),
+                strategy=_strategy,
+            )
+            session_lm = make_session_lm(session_manager.current_session, fallback=reflection_lm_callable)  # type: ignore[assignment]
 
     if logger is None:
         if run_dir is not None:
@@ -381,10 +419,11 @@ def optimize(
         perfect_score=perfect_score,
         skip_perfect_score=skip_perfect_score,
         experiment_tracker=experiment_tracker,
-        reflection_lm=reflection_lm_callable,
+        reflection_lm=session_lm or reflection_lm_callable,
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
+        session_manager=session_manager,  # select() — picks session before LM calls
     )
 
     def evaluator_fn(
@@ -427,6 +466,7 @@ def optimize(
         acceptance_criterion=acceptance_criterion_instance,
         use_cloudpickle=use_cloudpickle,
         evaluation_cache=evaluation_cache,
+        session_manager=session_manager if reflection_lm_callable is not None else None,  # observe() — records outcome after eval
     )
 
     with experiment_tracker:

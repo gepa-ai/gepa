@@ -469,9 +469,9 @@ class EngineConfig:
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
-    candidate_selection_strategy: CandidateSelector | Literal[
-        "pareto", "current_best", "epsilon_greedy", "top_k_pareto"
-    ] = "pareto"
+    candidate_selection_strategy: (
+        CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"]
+    ) = "pareto"
     frontier_type: FrontierType = "hybrid"
 
     # Acceptance criterion for reflective mutation proposals
@@ -639,9 +639,7 @@ def _build_seed_generation_prompt(
         examples = dataset[:3]
         example_lines = [f"- Example {i}: {ex}" for i, ex in enumerate(examples, 1)]
         sections.append(
-            "\n## Sample Inputs\n\n"
-            "The candidate will be evaluated on inputs like these:\n\n"
-            + "\n".join(example_lines)
+            "\n## Sample Inputs\n\nThe candidate will be evaluated on inputs like these:\n\n" + "\n".join(example_lines)
         )
 
     sections.append(
@@ -735,6 +733,7 @@ class ReflectionConfig:
     reflection_lm: LanguageModel | str | None = "openai/gpt-5.1"
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
+    session_strategy: str | Any | None = None
 
 
 @dataclass
@@ -1367,9 +1366,47 @@ def optimize_anything(
     if config.refiner is not None and config.refiner.refiner_lm is None:
         config.refiner.refiner_lm = config.reflection.reflection_lm
 
-    # Convert reflection_lm string to callable
-    if isinstance(config.reflection.reflection_lm, str):
+    # Convert reflection_lm to callable: CodingAgent → session-wrapped LM, str → litellm
+    from gepa.agents import CodingAgent
+
+    _is_coding_agent = isinstance(config.reflection.reflection_lm, CodingAgent)
+    if _is_coding_agent:
+        from gepa.core.session_manager import make_session_lm
+
+        _coding_agent_ref = config.reflection.reflection_lm  # keep ref before overwrite
+        config.reflection.reflection_lm = make_session_lm(
+            config.reflection.reflection_lm.create_session()  # type: ignore[union-attr]
+        )  # type: ignore[assignment]
+    elif isinstance(config.reflection.reflection_lm, str):
         config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
+
+    # Build session manager — engine owns lifecycle, proposer sees a plain LM
+    session_manager = None
+    session_lm: LanguageModel | None = None
+
+    if config.reflection.session_strategy is not None and (_is_coding_agent or config.reflection.reflection_lm is not None):
+        from gepa.core.session_manager import SessionManager, make_session_lm, resolve_session_strategy
+
+        _strategy = resolve_session_strategy(config.reflection.session_strategy)
+
+        if _is_coding_agent:
+            # CodingAgent provides native Sessions — use directly
+            session_manager = SessionManager(
+                create=_coding_agent_ref.create_session,  # type: ignore[union-attr]
+                strategy=_strategy,
+            )
+            session_lm = make_session_lm(session_manager.current_session)  # type: ignore[assignment]
+        else:
+            # Plain LM callable — wrap in LLMSession to get fork/reset
+            from gepa.core.session import LLMSession
+
+            session_manager = SessionManager(
+                # TODO: pass a meaningful system prompt — currently reflection instructions
+                #       are baked into the user message by the proposer.
+                create=lambda: LLMSession(system_prompt="", api_call=config.reflection.reflection_lm),  # type: ignore[arg-type]
+                strategy=_strategy,
+            )
+            session_lm = make_session_lm(session_manager.current_session, fallback=config.reflection.reflection_lm)  # type: ignore[assignment]
 
     # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
     if config.refiner is not None:
@@ -1553,10 +1590,11 @@ def optimize_anything(
         perfect_score=config.reflection.perfect_score,
         skip_perfect_score=config.reflection.skip_perfect_score,
         experiment_tracker=experiment_tracker,
-        reflection_lm=config.reflection.reflection_lm,
+        reflection_lm=session_lm or config.reflection.reflection_lm,  # type: ignore[arg-type]
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
         callbacks=config.callbacks,
+        session_manager=session_manager,  # select() — picks session before LM calls
     )
 
     # Define evaluator function for merge proposer
@@ -1611,6 +1649,7 @@ def optimize_anything(
             config.engine.max_workers or (os.cpu_count() or 32),
             config.reflection.reflection_minibatch_size or 1,
         ),
+        session_manager=session_manager if config.reflection.reflection_lm is not None else None,  # observe() — records outcome after eval
     )
 
     # --- 15. Run optimization ---
