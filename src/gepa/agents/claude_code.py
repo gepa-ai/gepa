@@ -9,8 +9,10 @@ import json
 import subprocess
 from typing import Any
 
+from gepa.core.session import Session
 
-class ClaudeCodeSession:
+
+class ClaudeCodeSession(Session):
     """Session backed by Claude Code CLI.
 
     Uses ``claude -p`` for non-interactive mode.  History is managed by

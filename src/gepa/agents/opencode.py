@@ -10,8 +10,10 @@ import subprocess
 import uuid
 from typing import Any
 
+from gepa.core.session import Session
 
-class OpenCodeSession:
+
+class OpenCodeSession(Session):
     """Session backed by OpenCode CLI.
 
     Uses ``opencode run --format json`` for non-interactive mode.  The CLI
