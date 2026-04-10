@@ -74,3 +74,58 @@ authors:
     description: Professor, UC Berkeley
     avatar: https://people.eecs.berkeley.edu/~sseshia/SanjitSeshia_webphoto.jpg
     url: https://people.eecs.berkeley.edu/~sseshia/
+  hanchen:
+    name: Hanchen Li
+    description: PhD Student, UC Berkeley
+    avatar: https://github.com/Hanchenli.png
+    url: https://x.com/lihanc02
+  runyuan:
+    name: Runyuan He
+    description: Visiting Student, UC Berkeley
+    avatar: https://github.com/RunyuanHe.png
+    url: https://runyuanhe.github.io/
+  qizheng:
+    name: Qizheng Zhang
+    description: PhD Student, Stanford University
+    avatar: https://github.com/qizheng-zhang.png
+    url: https://qizheng-zhang.github.io
+  changxiu:
+    name: Changxiu Ji
+    description: Undergraduate Student, Stanford University
+    avatar: https://github.com/changxiuji.png
+    url: https://github.com/changxiuji
+  qiuyang:
+    name: Qiuyang Mang
+    description: PhD Student, UC Berkeley
+    avatar: https://github.com/qiuyangmang.png
+    url: https://github.com/qiuyangmang
+  xiaokun:
+    name: Xiaokun Chen
+    description: Tensormesh
+    avatar: https://github.com/xiaokunchen.png
+    url: https://github.com/xiaokunchen
+  weiliang:
+    name: Wei-Liang Liao
+    description: Master Student, UC Berkeley
+    avatar: https://github.com/WeiLiangLiao.png
+    url: https://github.com/WeiLiangLiao
+  eric:
+    name: Eric Yang
+    description: Gradient Network
+    avatar: https://github.com/ericyang.png
+    url: https://github.com/ericyang
+  alvin:
+    name: Alvin Cheung
+    description: Professor, UC Berkeley EECS
+    avatar: https://github.com/AlvinCheung.png
+    url: https://people.eecs.berkeley.edu/~akcheung/
+  james:
+    name: James Zou
+    description: Professor, Stanford University
+    avatar: https://github.com/jamesyzou.png
+    url: https://www.james-zou.com/
+  kunle:
+    name: Kunle Olukotun
+    description: Professor, Stanford University
+    avatar: https://github.com/kunle.png
+    url: https://profiles.stanford.edu/kunle-olukotun
