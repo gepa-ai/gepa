@@ -397,6 +397,7 @@ Finally:
     - [TerminalBench Adapter](src/gepa/adapters/terminal_bench_adapter/) - Easily integrating GEPA into a Terminus, a sophisticated external agentic pipeline, and optimizing the agents' system prompt.
     - [AnyMaths Adapter](src/gepa/adapters/anymaths_adapter/) - Adapter for optimizing mathematical problem-solving and reasoning tasks. Contributed by [@egmaminta](www.linkedin.com/in/egmaminta).
 - **GEPA uses**
+    - [Nous Research Hermes Agent: evolutionary self-improvement with DSPy + GEPA](https://github.com/NousResearch/hermes-agent-self-evolution)
     - [Context Compression using GEPA](https://github.com/Laurian/context-compression-experiments-2508)
     - [GEPA Integration into SuperOptiX-AI](https://github.com/SuperagenticAI/gepa-eval)
     - [GEPA for Observable Javascript](https://observablehq.com/@tomlarkworthy/gepa)
@@ -420,6 +421,7 @@ Finally:
     - [OpenAI Cookbook showing how to build self-evolving agents using GEPA](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining)
     - [What Do Prompts Reveal About Model Capabilities in Low-Resource Languages? (AfricaNLP 2026)](https://openreview.net/attachment?id=7JZmTp85Yf&name=pdf)
     - [Beyond the Answer: Decoding the Behavior of LLMs as Scientific Reasoners (ICLR 2026 Workshop)](https://arxiv.org/abs/2603.28038)
+    - [Self-Optimizing Multi-Agent Systems for Deep Research (ECIR 2026 Workshop) — GEPA outperforms TextGrad and expert-crafted prompts](https://arxiv.org/abs/2604.02988)
 
 ---
 

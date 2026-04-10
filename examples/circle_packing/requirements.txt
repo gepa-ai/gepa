@@ -51,4 +51,4 @@ psutil>=5.9.0  # For process management and timeout handling
 # Logging & tracking
 wandb>=0.17.0
 matplotlib>=3.7.5
-litellm==1.80.0
+litellm==1.83.0
