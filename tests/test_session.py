@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 
 import pytest
 
@@ -16,9 +16,8 @@ from gepa.core.session import (
 )
 from gepa.core.session_manager import (
     SessionContext,
-    SessionEntry,
+    SessionRecord,
     SessionManager,
-    SessionOutcome,
     SessionStrategy,
     make_session_lm,
     resolve_session_strategy,
@@ -254,34 +253,40 @@ class TestAlwaysFork:
     def test_forks_most_recent(self):
         s1 = _make_echo_session()
         s1.send("hello")
-        store = {0: SessionEntry(s1)}
+        store = {0: SessionRecord(s1)}
         forked = AlwaysFork().select(_ctx(store))
         assert forked.history == s1.history
         assert forked.session_id != s1.session_id
 
     def test_observe_binds_on_accept(self):
-        session = _make_echo_session()
-        updates = AlwaysFork().observe(SessionOutcome(candidate_idx=7, accepted=True, session=session, val_score=0.8))
-        assert 7 in updates
-        assert updates[7].session is session
-        assert updates[7].val_score == 0.8
+        """Accepted candidates are stored in the session map via SessionManager."""
+        manager = SessionManager(create=_make_echo_session, strategy=AlwaysFork())
+        session = manager.select()
+        manager.observe(candidate_idx=7, accepted=True, val_score=0.8)
+        assert 7 in manager.sessions
+        assert manager.sessions[7].session is session
+        assert manager.sessions[7].val_score == 0.8
 
     def test_observe_skips_on_reject(self):
-        session = _make_echo_session()
-        updates = AlwaysFork().observe(SessionOutcome(candidate_idx=3, accepted=False, session=session))
-        assert updates == {}
+        """Rejected candidates are not stored."""
+        manager = SessionManager(create=_make_echo_session, strategy=AlwaysFork())
+        manager.select()
+        manager.observe(candidate_idx=3, accepted=False)
+        assert 3 not in manager.sessions
 
     def test_observe_skips_if_no_candidate_idx(self):
-        session = _make_echo_session()
-        updates = AlwaysFork().observe(SessionOutcome(candidate_idx=None, accepted=True, session=session))
-        assert updates == {}
+        """Candidates with no idx are not stored."""
+        manager = SessionManager(create=_make_echo_session, strategy=AlwaysFork())
+        manager.select()
+        manager.observe(candidate_idx=None, accepted=True)
+        assert len(manager.sessions) == 0
 
 
 class TestAlwaysReset:
     def test_resets_most_recent(self):
         s1 = _make_echo_session()
         s1.send("hello")
-        store = {0: SessionEntry(s1)}
+        store = {0: SessionRecord(s1)}
         reset = AlwaysReset().select(_ctx(store))
         assert reset.history == []
         assert reset.session_id != s1.session_id
@@ -295,14 +300,14 @@ class TestRandomStrategy:
     def test_always_fork(self):
         s1 = _make_echo_session()
         s1.send("hello")
-        store = {0: SessionEntry(s1)}
+        store = {0: SessionRecord(s1)}
         result = RandomStrategy(fork_probability=1.0).select(_ctx(store))
         assert result.history == s1.history
 
     def test_always_reset(self):
         s1 = _make_echo_session()
         s1.send("hello")
-        store = {0: SessionEntry(s1)}
+        store = {0: SessionRecord(s1)}
         result = RandomStrategy(fork_probability=0.0).select(_ctx(store))
         assert result.history == []
 
@@ -311,7 +316,7 @@ class TestRoundRobin:
     def test_alternates_fork_reset(self):
         s1 = _make_echo_session()
         s1.send("hello")
-        store = {0: SessionEntry(s1)}
+        store = {0: SessionRecord(s1)}
         rr = RoundRobin()
         r1 = rr.select(_ctx(store))  # fork
         r2 = rr.select(_ctx(store))  # reset
@@ -328,8 +333,8 @@ class TestParentLinked:
         other = _make_echo_session()
         other.send("other")
         store = {
-            5: SessionEntry(parent),
-            6: SessionEntry(other),
+            5: SessionRecord(parent),
+            6: SessionRecord(other),
         }
         result = ParentLinked().select(_ctx(store, parent_candidate_idx=5))
         assert result.history == parent.history
@@ -338,7 +343,7 @@ class TestParentLinked:
     def test_falls_back_to_most_recent_when_parent_unknown(self):
         recent = _make_echo_session()
         recent.send("recent")
-        store = {0: SessionEntry(recent)}
+        store = {0: SessionRecord(recent)}
         # parent_candidate_idx=99 not in store → fall back to most recent
         result = ParentLinked().select(_ctx(store, parent_candidate_idx=99))
         assert result.history == recent.history
@@ -350,7 +355,7 @@ class TestParentLinked:
     def test_sibling_mutations_are_independent(self):
         parent = _make_echo_session()
         parent.send("A->B")
-        store = {0: SessionEntry(parent)}
+        store = {0: SessionRecord(parent)}
         strategy = ParentLinked()
         ctx = _ctx(store, parent_candidate_idx=0)
         child1 = strategy.select(ctx)
@@ -501,16 +506,13 @@ class TestSessionManager:
         assert best_idx == 1
 
     def test_custom_strategy(self):
-        call_counts = {"select": 0, "observe": 0}
+        select_count = 0
 
         class CountingStrategy:
             def select(self, ctx: SessionContext) -> Session:
-                call_counts["select"] += 1
+                nonlocal select_count
+                select_count += 1
                 return ctx.create()
-
-            def observe(self, outcome: SessionOutcome) -> Mapping[int | str, SessionEntry]:
-                call_counts["observe"] += 1
-                return {}
 
         factory, _ = _make_echo_factory()
         manager = SessionManager(create=factory, strategy=CountingStrategy())
@@ -518,8 +520,9 @@ class TestSessionManager:
         manager.observe(candidate_idx=0, accepted=True)
         manager.select()
         manager.observe(candidate_idx=1, accepted=False)
-        assert call_counts["select"] == 2
-        assert call_counts["observe"] == 2
+        assert select_count == 2
+        assert 0 in manager.sessions  # accepted
+        assert 1 not in manager.sessions  # rejected
 
 
 # ===========================================================================

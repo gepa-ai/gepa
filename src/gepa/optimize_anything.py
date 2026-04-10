@@ -1369,14 +1369,44 @@ def optimize_anything(
     # Convert reflection_lm to callable: CodingAgent → session-wrapped LM, str → litellm
     from gepa.agents import CodingAgent
 
-    if isinstance(config.reflection.reflection_lm, CodingAgent):
+    _is_coding_agent = isinstance(config.reflection.reflection_lm, CodingAgent)
+    if _is_coding_agent:
         from gepa.core.session_manager import make_session_lm
 
+        _coding_agent_ref = config.reflection.reflection_lm  # keep ref before overwrite
         config.reflection.reflection_lm = make_session_lm(
             config.reflection.reflection_lm.create_session()
         )  # type: ignore[assignment]
     elif isinstance(config.reflection.reflection_lm, str):
         config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
+
+    # Build session manager — engine owns lifecycle, proposer sees a plain LM
+    session_manager = None
+    session_lm: LanguageModel | None = None
+
+    if config.reflection.session_strategy is not None and (_is_coding_agent or config.reflection.reflection_lm is not None):
+        from gepa.core.session_manager import SessionManager, make_session_lm, resolve_session_strategy
+
+        _strategy = resolve_session_strategy(config.reflection.session_strategy)
+
+        if _is_coding_agent:
+            # CodingAgent provides native Sessions — use directly
+            session_manager = SessionManager(
+                create=_coding_agent_ref.create_session,  # type: ignore[union-attr]
+                strategy=_strategy,
+            )
+            session_lm = make_session_lm(session_manager.current_session)  # type: ignore[assignment]
+        else:
+            # Plain LM callable — wrap in LLMSession to get fork/reset
+            from gepa.core.session import LLMSession
+
+            session_manager = SessionManager(
+                # TODO: pass a meaningful system prompt — currently reflection instructions
+                #       are baked into the user message by the proposer.
+                create=lambda: LLMSession(system_prompt="", api_call=config.reflection.reflection_lm),  # type: ignore[arg-type]
+                strategy=_strategy,
+            )
+            session_lm = make_session_lm(session_manager.current_session, fallback=config.reflection.reflection_lm)  # type: ignore[assignment]
 
     # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
     if config.refiner is not None:
@@ -1549,29 +1579,7 @@ def optimize_anything(
         else:
             InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
 
-    # --- 11. Build session manager — engine owns lifecycle, proposer sees a plain LM ---
-    session_manager = None
-    dynamic_lm: LanguageModel | None = None
-
-    if config.reflection.session_strategy is not None and config.reflection.reflection_lm is not None:
-        from gepa.core.session import LLMSession
-        from gepa.core.session_manager import SessionManager, make_session_lm, resolve_session_strategy
-
-        _strategy = resolve_session_strategy(config.reflection.session_strategy)
-        _reflection_lm_for_session = config.reflection.reflection_lm
-
-        def _session_api_call(messages: list[dict], **kwargs: Any) -> str:
-            assert _reflection_lm_for_session is not None
-            last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-            return _reflection_lm_for_session(last_user)  # type: ignore[operator]
-
-        session_manager = SessionManager(
-            create=lambda: LLMSession(system_prompt="", api_call=_session_api_call),
-            strategy=_strategy,
-        )
-        dynamic_lm = make_session_lm(session_manager.current_session, fallback=config.reflection.reflection_lm)  # type: ignore[assignment]
-
-    # --- 12. Build reflective proposer from ReflectionConfig ---
+    # --- 11. Build reflective proposer from ReflectionConfig ---
     reflective_proposer = ReflectiveMutationProposer(
         logger=config.tracking.logger,
         trainset=train_loader,
@@ -1582,7 +1590,7 @@ def optimize_anything(
         perfect_score=config.reflection.perfect_score,
         skip_perfect_score=config.reflection.skip_perfect_score,
         experiment_tracker=experiment_tracker,
-        reflection_lm=dynamic_lm or config.reflection.reflection_lm,
+        reflection_lm=session_lm or config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
         callbacks=config.callbacks,

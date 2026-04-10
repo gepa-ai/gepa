@@ -22,16 +22,25 @@ from gepa.core.session import Session
 
 
 @dataclass(frozen=True)
-class SessionEntry:
+class SessionRecord:
     """A session plus strategy-tracked metadata.
 
-    ``val_score`` is the aggregate validation score of the candidate that
-    was produced in this session.  ``None`` means unscored (e.g. before the
-    session has been observed, or when the strategy doesn't track scores).
+    Attributes
+    ----------
+    session:
+        The session instance bound to this candidate.
+    val_score:
+        Aggregate validation score of the candidate produced in this
+        session.  ``None`` before observation or when the strategy
+        doesn't track scores.
+    created_at:
+        The ``SessionManager`` selection counter at the time this entry
+        was created (i.e. which ``select()`` call produced it).
     """
 
     session: Session
     val_score: float | None = None
+    created_at: int | None = None
 
 
 @dataclass(frozen=True)
@@ -56,30 +65,8 @@ class SessionContext:
 
     parent_candidate_idx: int | None
     iteration: int
-    sessions: Mapping[int | str, SessionEntry]
+    sessions: Mapping[int | str, SessionRecord]
     create: Callable[[], Session]
-
-
-@dataclass(frozen=True)
-class SessionOutcome:
-    """Result of a mutation, passed to ``SessionStrategy.observe``.
-
-    Attributes
-    ----------
-    candidate_idx:
-        Index of the newly produced candidate, or ``None`` if rejected.
-    accepted:
-        Whether the candidate was accepted into the frontier.
-    session:
-        The session that was used for this mutation.
-    val_score:
-        Validation score of the candidate (``None`` if rejected or unknown).
-    """
-
-    candidate_idx: int | None
-    accepted: bool
-    session: Session
-    val_score: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -89,22 +76,18 @@ class SessionOutcome:
 
 @runtime_checkable
 class SessionStrategy(Protocol):
-    """Policy for picking and updating sessions across iterations.
+    """Policy for picking a session before each mutation.
 
-    Two hooks:
+    One hook:
 
     - ``select(ctx)`` — before each mutation, return the session to use.
-    - ``observe(outcome)`` — after each mutation, return a dict of
-      ``{key: SessionEntry}`` updates to merge into the manager's store.
-      Return an empty mapping to skip updates.
 
-    Strategies are pure: they never mutate shared state directly.  All
-    updates flow through the return value of ``observe``.
+    Bookkeeping (storing accepted candidates, tracking scores) is handled
+    by ``SessionManager.observe()`` — strategies only decide *which*
+    session to use.
     """
 
     def select(self, ctx: SessionContext) -> Session: ...
-
-    def observe(self, outcome: SessionOutcome) -> Mapping[int | str, SessionEntry]: ...
 
 
 # ---------------------------------------------------------------------------
@@ -116,13 +99,14 @@ def resolve_session_strategy(strategy: str | SessionStrategy) -> SessionStrategy
     """Convert a strategy name to a ``SessionStrategy`` instance.
 
     Accepts a string (``"fork"``, ``"reset"``, ``"random"``, ``"round_robin"``,
-    ``"parent_linked"``) or an already-instantiated ``SessionStrategy``.
+    ``"parent_linked"``, ``"best_score"``) or an already-instantiated ``SessionStrategy``.
     """
     if not isinstance(strategy, str):
         return strategy
     from gepa.strategies.session_strategy import (
         AlwaysFork,
         AlwaysReset,
+        BestScore,
         ParentLinked,
         RandomStrategy,
         RoundRobin,
@@ -134,6 +118,7 @@ def resolve_session_strategy(strategy: str | SessionStrategy) -> SessionStrategy
         "random": RandomStrategy,
         "round_robin": RoundRobin,
         "parent_linked": ParentLinked,
+        "best_score": BestScore,
     }
     if strategy not in strategies:
         raise ValueError(f"Unknown session_strategy: {strategy!r}. Supported: {list(strategies)}")
@@ -148,10 +133,8 @@ def resolve_session_strategy(strategy: str | SessionStrategy) -> SessionStrategy
 class SessionManager:
     """Manages a keyed store of sessions with a pluggable strategy.
 
-    The manager holds a ``dict[int | str, SessionEntry]``.  Strategies
-    decide how keys are assigned (candidate index, iteration number,
-    ``"global"``, etc.) via the ``observe`` return value.  The manager
-    never inspects keys — it only merges updates.
+    The manager holds a ``dict[int | str, SessionRecord]``.  Accepted
+    candidates are stored by index; rejected candidates are not stored.
 
     Lifecycle per iteration:
 
@@ -159,8 +142,8 @@ class SessionManager:
        the strategy which session to use.  The returned session becomes
        ``current_session``.
     2. The proposer runs the mutation using the current session.
-    3. ``observe(candidate_idx, accepted, val_score)`` — build
-       ``SessionOutcome`` and merge the strategy's updates into the store.
+    3. ``observe(candidate_idx, accepted, val_score)`` — store accepted
+       candidates in the session map.
 
     Example
     -------
@@ -187,12 +170,12 @@ class SessionManager:
 
             strategy = AlwaysFork()
         self._strategy: SessionStrategy = strategy
-        self._sessions: dict[int | str, SessionEntry] = {}
+        self._sessions: dict[int | str, SessionRecord] = {}
         self._iteration: int = 0
         self._current: Session | None = None
 
     @property
-    def sessions(self) -> Mapping[int | str, SessionEntry]:
+    def sessions(self) -> Mapping[int | str, SessionRecord]:
         """Read-only view of the session store."""
         return dict(self._sessions)
 
@@ -219,18 +202,15 @@ class SessionManager:
         accepted: bool,
         val_score: float | None = None,
     ) -> None:
-        """Notify the strategy of a mutation outcome and merge its updates."""
+        """Record a mutation outcome.  Accepted candidates are stored in the session map."""
         if self._current is None:
             return
-        outcome = SessionOutcome(
-            candidate_idx=candidate_idx,
-            accepted=accepted,
-            session=self._current,
-            val_score=val_score,
-        )
-        updates = self._strategy.observe(outcome)
-        if updates:
-            self._sessions.update(updates)
+        if accepted and candidate_idx is not None:
+            self._sessions[candidate_idx] = SessionRecord(
+                session=self._current,
+                val_score=val_score,
+                created_at=self._iteration - 1,
+            )
 
     def current_session(self) -> Session:
         """Return the active session (set by the last ``select()`` call)."""

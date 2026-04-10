@@ -3,24 +3,21 @@
 
 """Built-in session strategies.
 
-A ``SessionStrategy`` has two hooks:
+A ``SessionStrategy`` has one hook:
 
 - ``select(ctx)`` — pick the session to use for the next mutation.
-- ``observe(outcome)`` — return dict updates to merge into the manager's
-  session store after the mutation completes.
 
-Strategies are pure: all state changes flow through ``observe``'s return
-value.  Default strategies bind newly-accepted candidates by index, so
-the store doubles as a candidate → session map over time.
+Bookkeeping (storing accepted candidates, tracking scores) is handled
+by ``SessionManager.observe()`` — strategies only decide *which*
+session to use.
 """
 
 from __future__ import annotations
 
 import random as random_module
-from collections.abc import Mapping
 
 from gepa.core.session import Session
-from gepa.core.session_manager import SessionContext, SessionEntry, SessionOutcome
+from gepa.core.session_manager import SessionContext, SessionStrategy
 
 
 def _most_recent(ctx: SessionContext) -> Session | None:
@@ -32,14 +29,7 @@ def _most_recent(ctx: SessionContext) -> Session | None:
     return last_entry.session
 
 
-def _bind_on_accept(outcome: SessionOutcome) -> Mapping[int | str, SessionEntry]:
-    """Default observe: bind accepted candidates to their session."""
-    if not outcome.accepted or outcome.candidate_idx is None:
-        return {}
-    return {outcome.candidate_idx: SessionEntry(outcome.session, outcome.val_score)}
-
-
-class AlwaysFork:
+class AlwaysFork(SessionStrategy):
     """Fork the most recent session -- copy history, diverge after.
 
     Creates an independent copy of the most recent session.  The parent
@@ -51,11 +41,8 @@ class AlwaysFork:
         parent = _most_recent(ctx)
         return parent.fork() if parent is not None else ctx.create()
 
-    def observe(self, outcome: SessionOutcome) -> Mapping[int | str, SessionEntry]:
-        return _bind_on_accept(outcome)
 
-
-class AlwaysReset:
+class AlwaysReset(SessionStrategy):
     """Reset from the most recent session -- no history.
 
     Creates a new session with the same backend config but no conversation
@@ -67,11 +54,8 @@ class AlwaysReset:
         parent = _most_recent(ctx)
         return parent.reset() if parent is not None else ctx.create()
 
-    def observe(self, outcome: SessionOutcome) -> Mapping[int | str, SessionEntry]:
-        return _bind_on_accept(outcome)
 
-
-class RandomStrategy:
+class RandomStrategy(SessionStrategy):
     """Randomly fork or reset from the most recent session.
 
     Parameters
@@ -91,11 +75,8 @@ class RandomStrategy:
             return parent.fork()
         return parent.reset()
 
-    def observe(self, outcome: SessionOutcome) -> Mapping[int | str, SessionEntry]:
-        return _bind_on_accept(outcome)
 
-
-class RoundRobin:
+class RoundRobin(SessionStrategy):
     """Alternate between fork and reset.  Starts with fork."""
 
     def __init__(self) -> None:
@@ -110,11 +91,8 @@ class RoundRobin:
             return parent.fork()
         return parent.reset()
 
-    def observe(self, outcome: SessionOutcome) -> Mapping[int | str, SessionEntry]:
-        return _bind_on_accept(outcome)
 
-
-class ParentLinked:
+class ParentLinked(SessionStrategy):
     """Fork from the parent candidate's session -- lineage-aware.
 
     The session store doubles as a candidate → session map: each accepted
@@ -136,5 +114,20 @@ class ParentLinked:
         parent = _most_recent(ctx)
         return parent.fork() if parent is not None else ctx.create()
 
-    def observe(self, outcome: SessionOutcome) -> Mapping[int | str, SessionEntry]:
-        return _bind_on_accept(outcome)
+
+class BestScore(SessionStrategy):
+    """Fork from the session with the highest validation score.
+
+    Picks the session whose candidate scored best on the val set and
+    forks it.  Falls back to the most recent session if no scores are
+    available yet (first iteration).
+    """
+
+    def select(self, ctx: SessionContext) -> Session:
+        scored = [(k, e) for k, e in ctx.sessions.items() if e.val_score is not None]
+        if scored:
+            _, best_entry = max(scored, key=lambda x: x[1].val_score)  # type: ignore[arg-type]
+            return best_entry.session.fork()
+        # No scores yet — fall back to most recent
+        parent = _most_recent(ctx)
+        return parent.fork() if parent is not None else ctx.create()

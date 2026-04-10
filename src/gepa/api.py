@@ -264,19 +264,47 @@ def optimize(
 
     from gepa.agents import CodingAgent
 
+    _is_coding_agent = isinstance(reflection_lm, CodingAgent)
     reflection_lm_callable: LanguageModel | None = None
-    _agent_session = None  # set if reflection_lm is a CodingAgent
-    if isinstance(reflection_lm, CodingAgent):
-        from gepa.core.session_manager import make_session_lm
-
-        _agent_session = reflection_lm.create_session()
-        reflection_lm_callable = make_session_lm(_agent_session)  # type: ignore[assignment]
-    elif isinstance(reflection_lm, str):
+    if isinstance(reflection_lm, str):
         from gepa.lm import LM
 
         reflection_lm_callable = LM(reflection_lm)
+    elif _is_coding_agent:
+        # CodingAgent always needs a session — create one even without session_strategy
+        from gepa.core.session_manager import make_session_lm
+
+        reflection_lm_callable = make_session_lm(reflection_lm.create_session())  # type: ignore[assignment]
     else:
         reflection_lm_callable = reflection_lm
+
+    # Build session manager — engine owns lifecycle, proposer sees a plain LM
+    session_manager = None
+    session_lm: LanguageModel | None = None
+
+    if session_strategy is not None and reflection_lm_callable is not None:
+        from gepa.core.session_manager import SessionManager, make_session_lm, resolve_session_strategy
+
+        _strategy = resolve_session_strategy(session_strategy)
+
+        if _is_coding_agent:
+            # CodingAgent provides native Sessions (ClaudeCode/OpenCode) — use directly
+            session_manager = SessionManager(
+                create=reflection_lm.create_session,  # type: ignore[union-attr]
+                strategy=_strategy,
+            )
+            session_lm = make_session_lm(session_manager.current_session)  # type: ignore[assignment]
+        else:
+            # Plain LM callable — wrap in LLMSession to get fork/reset
+            from gepa.core.session import LLMSession
+
+            session_manager = SessionManager(
+                # TODO: pass a meaningful system prompt — currently reflection instructions
+                #       are baked into the user message by the proposer.
+                create=lambda: LLMSession(system_prompt="", api_call=reflection_lm_callable),
+                strategy=_strategy,
+            )
+            session_lm = make_session_lm(session_manager.current_session, fallback=reflection_lm_callable)  # type: ignore[assignment]
 
     if logger is None:
         if run_dir is not None:
@@ -381,28 +409,6 @@ def optimize(
     if cache_evaluation:
         evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
 
-    # Build session manager — engine owns lifecycle, proposer sees a plain LM
-    session_manager = None
-    dynamic_lm: LanguageModel | None = None
-
-    if session_strategy is not None and reflection_lm_callable is not None:
-        from gepa.core.session import LLMSession
-        from gepa.core.session_manager import SessionManager, make_session_lm, resolve_session_strategy
-
-        _strategy = resolve_session_strategy(session_strategy)
-        _reflection_lm_for_session = reflection_lm_callable
-
-        def _session_api_call(messages: list[dict[str, Any]], **kwargs: Any) -> str:
-            assert _reflection_lm_for_session is not None
-            last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-            return _reflection_lm_for_session(last_user)
-
-        session_manager = SessionManager(
-            create=lambda: LLMSession(system_prompt="", api_call=_session_api_call),
-            strategy=_strategy,
-        )
-        dynamic_lm = make_session_lm(session_manager.current_session, fallback=reflection_lm_callable)  # type: ignore[assignment]
-
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
         trainset=train_loader,
@@ -413,7 +419,7 @@ def optimize(
         perfect_score=perfect_score,
         skip_perfect_score=skip_perfect_score,
         experiment_tracker=experiment_tracker,
-        reflection_lm=dynamic_lm or reflection_lm_callable,
+        reflection_lm=session_lm or reflection_lm_callable,
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
