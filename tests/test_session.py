@@ -796,6 +796,22 @@ class TestOptimizeWithSessionStrategy:
         assert result is not None
         assert result.total_metric_calls > 0
 
+    def test_optimize_with_best_score_strategy(self):
+        """gepa.optimize() with session_strategy='best_score' completes."""
+        import gepa
+
+        result = gepa.optimize(
+            seed_candidate={"prompt": "initial short prompt"},
+            trainset=[{"id": i} for i in range(5)],
+            valset=[{"id": i} for i in range(5)],
+            adapter=self._make_minimal_adapter(),
+            max_metric_calls=30,
+            reflection_lm=self._make_mock_lm(),
+            session_strategy="best_score",
+        )
+        assert result is not None
+        assert result.total_metric_calls > 0
+
     def test_optimize_without_session_strategy_unchanged(self):
         """session_strategy=None (default) still works — backward compatibility."""
         import gepa
