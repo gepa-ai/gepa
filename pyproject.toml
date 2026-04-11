@@ -37,6 +37,11 @@ full = [
     "pydantic>=2.12.0; python_version >= '3.14'",
     "tiktoken>=0.12.0; python_version >= '3.14'",
 ]
+confidence = [
+    "llm-structured-confidence>=0.4.5",
+    "litellm>=1.64.0; python_version < '3.14'",
+    "litellm>=1.81.0; python_version >= '3.14'",
+]
 dspy = []
 test = [
     "gepa[full]",
@@ -139,3 +144,4 @@ ban-relative-imports = "all"
 ]
 "__init__.py" = ["F401"]  # Init files can be empty
 "src/gepa/gskill/**/*.py" = ["E402"]  # gskill suppresses logging before imports
+"examples/**/*.py" = ["E402"]  # Jupyter-notebook-style scripts import mid-file
