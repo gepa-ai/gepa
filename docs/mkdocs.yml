@@ -27,6 +27,7 @@ nav:
         - Candidate Selection Strategies: guides/candidate-selection.md
         - Acceptance Criterion: guides/acceptance-criterion.md
         - Using Callbacks: guides/callbacks.md
+        - Cost & Token Tracking: guides/cost-tracking.md
         - Experiment Tracking: guides/experiment-tracking.md
         - Using Claude Code as a Proposer: guides/claude-cli-as-proposer.md
         - gskill: guides/gskill.md
