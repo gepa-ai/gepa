@@ -191,7 +191,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     # Reflection LM cost tracking (USD). Parallel lists so every proposal — accepted
     # or rejected — has a (metric_calls, cost) point for post-hoc plotting.
     reflection_cost_by_candidate: list[float]
-    reflection_cost_rejected: list[float]
+    reflection_cost_by_rejected: list[float]
     num_metric_calls_at_rejection: list[int]
 
     def __init__(
@@ -261,7 +261,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
         # Reflection cost tracking: seed candidate has zero reflection cost.
         self.reflection_cost_by_candidate = [0.0]
-        self.reflection_cost_rejected = []
+        self.reflection_cost_by_rejected = []
         self.num_metric_calls_at_rejection = []
 
     def is_consistent(self) -> bool:
@@ -271,7 +271,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         assert len(self.program_candidates) == len(self.prog_candidate_objective_scores)
         assert len(self.program_candidates) == len(self.num_metric_calls_by_discovery)
         assert len(self.program_candidates) == len(self.reflection_cost_by_candidate)
-        assert len(self.reflection_cost_rejected) == len(self.num_metric_calls_at_rejection)
+        assert len(self.reflection_cost_by_rejected) == len(self.num_metric_calls_at_rejection)
 
         assert len(self.pareto_front_valset) == len(self.program_at_pareto_front_valset)
         assert set(self.pareto_front_valset.keys()) == set(self.program_at_pareto_front_valset.keys())
@@ -432,10 +432,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             d["adapter_state"] = {}
         if "reflection_cost_by_candidate" not in d:
             d["reflection_cost_by_candidate"] = [0.0] * num_candidates
-        if "reflection_cost_rejected" not in d:
-            d["reflection_cost_rejected"] = []
+        if "reflection_cost_by_rejected" not in d:
+            d["reflection_cost_by_rejected"] = []
         if "num_metric_calls_at_rejection" not in d:
-            d["num_metric_calls_at_rejection"] = [0] * len(d.get("reflection_cost_rejected", []))
+            d["num_metric_calls_at_rejection"] = [0] * len(d.get("reflection_cost_by_rejected", []))
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
@@ -466,7 +466,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     @property
     def total_reflection_cost(self) -> float:
         """Total reflection LM cost (USD) across accepted + rejected proposals."""
-        return sum(self.reflection_cost_by_candidate) + sum(self.reflection_cost_rejected)
+        return sum(self.reflection_cost_by_candidate) + sum(self.reflection_cost_by_rejected)
 
     @property
     def valset_evaluations(self) -> dict[DataId, list[ProgramIdx]]:

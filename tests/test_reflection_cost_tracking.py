@@ -138,7 +138,7 @@ def _assert_cost_invariants(state, cost_per_call: float) -> None:
     """Shared invariants for E2E runs: parallel-list lengths, per-entry
     equality to ``cost_per_call``, and total-cost conservation."""
     by_candidate: list[float] = list(state.reflection_cost_by_candidate)
-    rejected: list[float] = list(state.reflection_cost_rejected)
+    rejected: list[float] = list(state.reflection_cost_by_rejected)
     rejected_calls: list[int] = list(state.num_metric_calls_at_rejection)
 
     assert len(by_candidate) == len(state.program_candidates)
