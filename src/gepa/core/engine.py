@@ -177,6 +177,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         new_program: dict[str, str],
         state: GEPAState[RolloutOutput, DataId],
         parent_program_idx: list[int],
+        reflection_cost: float = 0.0,
     ) -> tuple[int, int]:
         num_metric_calls_by_discovery = state.total_num_evals
         valset_evaluation = self._evaluate_on_valset(new_program, state)
@@ -194,6 +195,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             valset_evaluation=valset_evaluation,
             run_dir=self.run_dir,
             num_metric_calls_by_discovery_of_new_program=num_metric_calls_by_discovery,
+            reflection_cost_of_new_program=reflection_cost,
         )
 
         # Compute best program immediately after state update (before callbacks)
@@ -309,6 +311,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 reject_reason = f"Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum})"
             self.logger.log(reject_msg)
             self._log_proposal_lm_calls(iteration, proposal, candidate_idx=-1)
+            # Record rejected-proposal reflection cost so plots can include it.
+            state.reflection_cost_rejected.append(proposal.reflection_cost)
+            state.num_metric_calls_at_rejection.append(state.total_num_evals)
             notify_callbacks(
                 self.callbacks,
                 "on_candidate_rejected",
@@ -331,6 +336,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             new_program=proposal.candidate,
             state=state,
             parent_program_idx=proposal.parent_program_ids,
+            reflection_cost=proposal.reflection_cost,
         )
 
         self._log_proposal_lm_calls(iteration, proposal, candidate_idx=new_idx)

@@ -366,9 +366,18 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 ),
             )
 
+            # Reset per-thread cost accumulator before the reflection call so
+            # we can attribute exactly this proposal's cost (parallel-safe).
+            reset_cost = getattr(self.reflection_lm, "reset_call_cost", None)
+            if reset_cost is not None:
+                reset_cost()
+
             new_texts, prompts, raw_lm_outputs = self.propose_new_texts(
                 ctx.curr_prog, reflective_dataset, predictor_names_to_update
             )
+
+            get_cost = getattr(self.reflection_lm, "get_call_cost", None)
+            reflection_cost = get_cost() if get_cost is not None else 0.0
 
             notify_callbacks(
                 self.callbacks,
@@ -464,6 +473,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             ),
             tag="reflective_mutation",
             metadata=_lm_metadata,
+            reflection_cost=reflection_cost,
         )
         return ProposalOutput(proposal=proposal, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry)
 

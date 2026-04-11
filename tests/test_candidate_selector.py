@@ -46,6 +46,9 @@ def mock_state():
     state.num_metric_calls_by_discovery.append(0)
     state.num_metric_calls_by_discovery.append(0)
 
+    state.reflection_cost_by_candidate.append(0.0)
+    state.reflection_cost_by_candidate.append(0.0)
+
     # Update pareto front to include all candidates
     for i in range(len(state.pareto_front_valset)):
         state.program_at_pareto_front_valset[i] = {0, 1, 2}
