@@ -464,6 +464,11 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         return avg, num_samples
 
     @property
+    def total_reflection_cost(self) -> float:
+        """Total reflection LM cost (USD) across accepted + rejected proposals."""
+        return sum(self.reflection_cost_by_candidate) + sum(self.reflection_cost_rejected)
+
+    @property
     def valset_evaluations(self) -> dict[DataId, list[ProgramIdx]]:
         """
         Valset examples by id and programs that have evaluated them. Keys include only validation
