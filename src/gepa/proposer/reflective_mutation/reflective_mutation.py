@@ -122,20 +122,32 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         candidate: dict[str, str],
         reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
         components_to_update: list[str],
-    ) -> tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]]:
+    ) -> tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str], float]:
         """Propose new instruction texts for the given components.
 
         Returns:
-            A tuple of (new_texts, prompts, raw_lm_outputs) where each is a
-            dict keyed by component name.  When the adapter or a custom proposer
-            handles the call, prompts and raw_lm_outputs are empty dicts.
+            A tuple of (new_texts, prompts, raw_lm_outputs, reflection_cost_usd)
+            where the first three are dicts keyed by component name and the last
+            is the total USD cost of reflection LM calls made for this proposal.
+            When the adapter or a custom proposer handles the call, prompts and
+            raw_lm_outputs are empty dicts and reflection_cost is ``0.0``.
         """
         empty: dict[str, str | list[dict[str, Any]]] = {}
         if self.adapter.propose_new_texts is not None:
-            return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update), empty, {}
+            return (
+                self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update),
+                empty,
+                {},
+                0.0,
+            )
 
         if self.custom_candidate_proposer is not None:
-            return self.custom_candidate_proposer(candidate, reflective_dataset, components_to_update), empty, {}
+            return (
+                self.custom_candidate_proposer(candidate, reflective_dataset, components_to_update),
+                empty,
+                {},
+                0.0,
+            )
 
         if self.reflection_lm is None:
             raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
@@ -143,6 +155,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         new_texts: dict[str, str] = {}
         prompts: dict[str, str | list[dict[str, Any]]] = {}
         raw_lm_outputs: dict[str, str] = {}
+        total_cost = 0.0
         for name in components_to_update:
             # Gracefully handle cases where a selected component has no data in reflective_dataset
             if name not in reflective_dataset or not reflective_dataset.get(name):
@@ -166,7 +179,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 # Use the single template for all parameters
                 prompt_template = self.reflection_prompt_template
 
-            result, prompt, raw_output = InstructionProposalSignature.run_with_metadata(
+            result, prompt, raw_output, call_cost = InstructionProposalSignature.run_with_metadata(
                 lm=self.reflection_lm,
                 input_dict={
                     "current_instruction_doc": base_instruction,
@@ -177,7 +190,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             new_texts[name] = result["new_instruction"]
             prompts[name] = prompt
             raw_lm_outputs[name] = raw_output
-        return new_texts, prompts, raw_lm_outputs
+            total_cost += call_cost
+        return new_texts, prompts, raw_lm_outputs, total_cost
 
     def prepare_proposal(self, state: GEPAState) -> ProposalContext:
         """Select parent candidate and sample minibatch. Must be called sequentially.
@@ -366,18 +380,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 ),
             )
 
-            # Reset per-thread cost accumulator before the reflection call so
-            # we can attribute exactly this proposal's cost (parallel-safe).
-            reset_cost = getattr(self.reflection_lm, "reset_call_cost", None)
-            if reset_cost is not None:
-                reset_cost()
-
-            new_texts, prompts, raw_lm_outputs = self.propose_new_texts(
+            new_texts, prompts, raw_lm_outputs, reflection_cost = self.propose_new_texts(
                 ctx.curr_prog, reflective_dataset, predictor_names_to_update
             )
-
-            get_cost = getattr(self.reflection_lm, "get_call_cost", None)
-            reflection_cost = get_cost() if get_cost is not None else 0.0
 
             notify_callbacks(
                 self.callbacks,

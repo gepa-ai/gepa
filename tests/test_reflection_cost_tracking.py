@@ -16,6 +16,7 @@ Exercises three layers:
 from __future__ import annotations
 
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -63,97 +64,112 @@ class _StateCapture:
 # ---------------------------------------------------------------------------
 
 
-class TestLMCostTracking:
-    """Verify per-thread cost accumulation, reset, and isolation on ``LM``."""
+class TestLMCallWithCost:
+    """Verify ``LM.call_with_cost`` returns (text, cost) and degrades gracefully."""
 
     @patch("litellm.completion_cost")
     @patch("litellm.completion")
-    def test_initial_cost_is_zero(self, mock_completion, mock_cost):
-        mock_completion.return_value = _fake_completion_response()
-        mock_cost.return_value = 0.01
-        lm = LM("openai/gpt-4.1-mini")
-        assert lm.get_call_cost() == 0.0
-
-    @patch("litellm.completion_cost")
-    @patch("litellm.completion")
-    def test_single_call_accumulates(self, mock_completion, mock_cost):
-        mock_completion.return_value = _fake_completion_response()
+    def test_returns_text_and_cost(self, mock_completion, mock_cost):
+        mock_completion.return_value = _fake_completion_response("```\nresult\n```")
         mock_cost.return_value = 0.007
         lm = LM("openai/gpt-4.1-mini")
-        lm("hello")
-        assert lm.get_call_cost() == pytest.approx(0.007)
+        text, cost = lm.call_with_cost("hello")
+        assert text == "```\nresult\n```"
+        assert cost == pytest.approx(0.007)
 
     @patch("litellm.completion_cost")
     @patch("litellm.completion")
-    def test_multiple_calls_accumulate(self, mock_completion, mock_cost):
-        mock_completion.return_value = _fake_completion_response()
+    def test_call_still_returns_plain_str(self, mock_completion, mock_cost):
+        """Backward compat: ``lm("prompt")`` still returns a bare string."""
+        mock_completion.return_value = _fake_completion_response("plain text")
         mock_cost.return_value = 0.01
         lm = LM("openai/gpt-4.1-mini")
-        for _ in range(5):
-            lm("prompt")
-        assert lm.get_call_cost() == pytest.approx(0.05)
+        result = lm("hello")
+        assert result == "plain text"
+        assert isinstance(result, str)
 
     @patch("litellm.completion_cost")
     @patch("litellm.completion")
-    def test_reset_zeros_counter(self, mock_completion, mock_cost):
+    def test_parallel_calls_each_return_own_cost(self, mock_completion, mock_cost):
+        """Each call_with_cost invocation is self-contained.
+
+        With a return-value-driven contract, there's no shared mutable state
+        between workers, so each call's cost is the cost of *that* call. We
+        exercise the concurrency path to witness no cross-worker leakage.
+        """
         mock_completion.return_value = _fake_completion_response()
-        mock_cost.return_value = 0.01
-        lm = LM("openai/gpt-4.1-mini")
-        lm("a")
-        lm("b")
-        assert lm.get_call_cost() == pytest.approx(0.02)
-        lm.reset_call_cost()
-        assert lm.get_call_cost() == 0.0
-        lm("c")
-        assert lm.get_call_cost() == pytest.approx(0.01)
+        # Alternate cost per call so we can spot any cross-attribution.
+        cost_sequence = iter([0.001, 0.002, 0.003, 0.004, 0.005] * 4)
+        cost_lock = threading.Lock()
 
-    @patch("litellm.completion_cost")
-    @patch("litellm.completion")
-    def test_thread_local_isolation(self, mock_completion, mock_cost):
-        """Two threads sharing one LM must not see each other's cost."""
-        mock_completion.return_value = _fake_completion_response()
-        mock_cost.return_value = 0.005
+        def _next_cost(*_args, **_kwargs):
+            with cost_lock:
+                return next(cost_sequence)
+
+        mock_cost.side_effect = _next_cost
 
         lm = LM("openai/gpt-4.1-mini")
-        results: dict[str, float] = {}
-        barrier = threading.Barrier(2)
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = [pool.submit(lm.call_with_cost, f"prompt-{i}") for i in range(20)]
+            results = [f.result() for f in futures]
 
-        def worker(name: str, n_calls: int) -> None:
-            lm.reset_call_cost()
-            barrier.wait()  # force both threads to run concurrently
-            for _ in range(n_calls):
-                lm("prompt")
-            results[name] = lm.get_call_cost()
-
-        t1 = threading.Thread(target=worker, args=("A", 3))
-        t2 = threading.Thread(target=worker, args=("B", 5))
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
-
-        assert results["A"] == pytest.approx(0.015)  # 3 * 0.005
-        assert results["B"] == pytest.approx(0.025)  # 5 * 0.005
+        costs = [cost for _text, cost in results]
+        # All 20 call sites got a cost; every cost is one of our expected values.
+        assert len(costs) == 20
+        assert all(c in (0.001, 0.002, 0.003, 0.004, 0.005) for c in costs)
+        # Grand-total conservation.
+        assert sum(costs) == pytest.approx(4 * (0.001 + 0.002 + 0.003 + 0.004 + 0.005))
 
     @patch("litellm.completion_cost")
     @patch("litellm.completion")
     def test_completion_cost_exception_handled(self, mock_completion, mock_cost):
         """Models where litellm.completion_cost raises still complete calls with 0.0."""
-        mock_completion.return_value = _fake_completion_response()
+        mock_completion.return_value = _fake_completion_response("ok")
         mock_cost.side_effect = Exception("unknown model pricing")
         lm = LM("unknown/my-self-hosted-model")
-        lm("hello")
-        assert lm.get_call_cost() == 0.0
+        text, cost = lm.call_with_cost("hello")
+        assert text == "ok"
+        assert cost == 0.0
 
     @patch("litellm.completion_cost")
     @patch("litellm.completion")
     def test_completion_cost_none_handled(self, mock_completion, mock_cost):
         """litellm sometimes returns None for cost — treated as 0.0."""
-        mock_completion.return_value = _fake_completion_response()
+        mock_completion.return_value = _fake_completion_response("ok")
         mock_cost.return_value = None
         lm = LM("openai/gpt-4.1-mini")
-        lm("hello")
-        assert lm.get_call_cost() == 0.0
+        text, cost = lm.call_with_cost("hello")
+        assert text == "ok"
+        assert cost == 0.0
+
+    def test_plain_callable_bypasses_call_with_cost(self):
+        """A plain-callable reflection_lm (no ``call_with_cost``) still works.
+
+        ``run_with_metadata`` falls back to ``lm(prompt)`` with cost 0.0 when
+        the callable doesn't expose the method. This preserves the public
+        ``LanguageModel`` protocol for users who pass a bare function.
+        """
+        from gepa.strategies.instruction_proposal import InstructionProposalSignature
+
+        calls: list[str] = []
+
+        def plain_lm(prompt):
+            calls.append(prompt)
+            return "```\nnew_instruction: better text\n```"
+
+        assert not hasattr(plain_lm, "call_with_cost")
+
+        result, _full_prompt, _raw, cost = InstructionProposalSignature.run_with_metadata(
+            lm=plain_lm,
+            input_dict={
+                "current_instruction_doc": "old",
+                "dataset_with_feedback": [{"input": "x", "output": "y"}],
+                "prompt_template": None,
+            },
+        )
+        assert len(calls) == 1
+        assert cost == 0.0  # no cost data available from plain callable
+        assert result is not None
 
 
 # ---------------------------------------------------------------------------
