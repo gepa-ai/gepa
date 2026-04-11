@@ -66,6 +66,7 @@ def optimize(
     merge_val_overlap_floor: int = 5,
     # Budget and Stop Condition
     max_metric_calls: int | None = None,
+    max_reflection_cost: float | None = None,
     stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None,
     # Logging and Callbacks
     logger: LoggerProtocol | None = None,
@@ -230,10 +231,12 @@ def optimize(
         max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
         stop_callbacks_list.append(max_calls_stopper)
 
+    # max_reflection_cost stopper is deferred until reflection_lm is resolved (below)
+
     # Assert that at least one stopping condition is provided
-    if not stop_callbacks_list:
+    if not stop_callbacks_list and max_reflection_cost is None:
         raise ValueError(
-            "The user must provide at least one of stop_callbacks or max_metric_calls to specify a stopping condition."
+            "The user must provide at least one of stop_callbacks, max_metric_calls, or max_reflection_cost to specify a stopping condition."
         )
 
     # Create composite stopper if multiple stoppers, or use single stopper
@@ -265,8 +268,19 @@ def optimize(
         from gepa.lm import LM
 
         reflection_lm_callable = LM(reflection_lm)
+    elif reflection_lm is not None:
+        from gepa.lm import TrackingLM
+
+        reflection_lm_callable = TrackingLM(reflection_lm) if not hasattr(reflection_lm, "total_cost") else reflection_lm
     else:
-        reflection_lm_callable = reflection_lm
+        reflection_lm_callable = None
+
+    # Add max_reflection_cost stopper now that the LM reference is resolved
+    if max_reflection_cost is not None:
+        from gepa.utils import MaxReflectionCostStopper
+
+        cost_stopper = MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_lm_callable)
+        stop_callbacks_list.append(cost_stopper)
 
     if logger is None:
         if run_dir is not None:

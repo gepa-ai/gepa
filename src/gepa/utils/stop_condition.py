@@ -173,6 +173,23 @@ class MaxMetricCallsStopper(StopperProtocol):
         return gepa_state.total_num_evals >= self.max_metric_calls
 
 
+class MaxReflectionCostStopper(StopperProtocol):
+    """Stop once the reflection LM's cumulative cost (USD) reaches a budget.
+
+    Reads ``lm.total_cost`` from the :class:`~gepa.lm.LM` instance passed
+    at construction time.  Custom callables wrapped in ``TrackingLM``
+    always report ``0.0`` cost and never trip this stopper.
+    """
+
+    def __init__(self, max_reflection_cost_usd: float, reflection_lm: object | None = None):
+        self.max_reflection_cost_usd = max_reflection_cost_usd
+        self._reflection_lm = reflection_lm
+
+    def __call__(self, gepa_state: GEPAState) -> bool:
+        cost = getattr(self._reflection_lm, "total_cost", 0.0)
+        return cost >= self.max_reflection_cost_usd
+
+
 class MaxCandidateProposalsStopper(StopperProtocol):
     """
     Stop callback that stops after a maximum number of candidate proposals.

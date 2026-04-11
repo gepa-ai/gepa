@@ -466,6 +466,7 @@ class EngineConfig:
     # Simple stopping conditions
     max_metric_calls: int | None = None
     max_candidate_proposals: int | None = None
+    max_reflection_cost: float | None = None
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
@@ -1370,6 +1371,19 @@ def optimize_anything(
     # Convert reflection_lm string to callable
     if isinstance(config.reflection.reflection_lm, str):
         config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
+    elif config.reflection.reflection_lm is not None and not hasattr(config.reflection.reflection_lm, "total_cost"):
+        from gepa.lm import TrackingLM
+
+        config.reflection.reflection_lm = TrackingLM(config.reflection.reflection_lm)
+
+    # Add max_reflection_cost stopper now that the LM reference is resolved
+    if config.engine.max_reflection_cost is not None:
+        from gepa.utils import MaxReflectionCostStopper
+
+        cost_stopper = MaxReflectionCostStopper(
+            config.engine.max_reflection_cost, reflection_lm=config.reflection.reflection_lm
+        )
+        stop_callbacks_list.append(cost_stopper)
 
     # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
     if config.refiner is not None:
