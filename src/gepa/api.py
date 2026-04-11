@@ -66,7 +66,6 @@ def optimize(
     merge_val_overlap_floor: int = 5,
     # Budget and Stop Condition
     max_metric_calls: int | None = None,
-    max_reflection_cost: float | None = None,
     stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None,
     # Logging and Callbacks
     logger: LoggerProtocol | None = None,
@@ -156,9 +155,8 @@ def optimize(
     - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before attempting a merge subsample. Only relevant when using `val_evaluation_policy` other than `full_eval`.
 
     # Budget and Stop Condition
-    - max_metric_calls: Optional maximum number of metric calls to perform. If not provided, stop_callbacks or max_reflection_cost must be provided.
-    - max_reflection_cost: Optional USD budget for reflection LM calls. Summed across accepted + rejected proposals via `state.total_reflection_cost`. Only counts costs the reflection LM actually reports (e.g. via `LM.call_with_cost`); custom callables that don't expose cost tracking contribute 0.0 and never trip this stopper.
-    - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single StopperProtocol or a list or tuple of StopperProtocol instances. Examples: FileStopper, TimeoutStopCondition, SignalStopper, NoImprovementStopper, or custom stopping logic. If not provided, max_metric_calls or max_reflection_cost must be provided.
+    - max_metric_calls: Optional maximum number of metric calls to perform. If not provided, stop_callbacks must be provided.
+    - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single StopperProtocol or a list or tuple of StopperProtocol instances. Examples: FileStopper, TimeoutStopCondition, SignalStopper, NoImprovementStopper, or custom stopping logic. If not provided, max_metric_calls must be provided.
 
     # Logging and Callbacks
     - logger: A `LoggerProtocol` instance that is used to log the progress of the optimization.
@@ -232,17 +230,10 @@ def optimize(
         max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
         stop_callbacks_list.append(max_calls_stopper)
 
-    # Add max_reflection_cost stopper if provided
-    if max_reflection_cost is not None:
-        from gepa.utils import MaxReflectionCostStopper
-
-        cost_stopper = MaxReflectionCostStopper(max_reflection_cost)
-        stop_callbacks_list.append(cost_stopper)
-
     # Assert that at least one stopping condition is provided
     if not stop_callbacks_list:
         raise ValueError(
-            "The user must provide at least one of stop_callbacks, max_metric_calls, or max_reflection_cost to specify a stopping condition."
+            "The user must provide at least one of stop_callbacks or max_metric_calls to specify a stopping condition."
         )
 
     # Create composite stopper if multiple stoppers, or use single stopper
