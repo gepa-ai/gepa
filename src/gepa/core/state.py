@@ -203,44 +203,6 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         for eid, entry in entries:
             self._save_to_disk(h, eid, entry)
 
-    def evaluate_with_cache_full(
-        self,
-        candidate: dict[str, str],
-        example_ids: list[DataId],
-        fetcher: Callable[[list[DataId]], Any],
-        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
-    ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
-        """
-        Evaluate using cache, returning full results.
-
-        Returns (outputs_by_id, scores_by_id, objective_scores_by_id, num_actual_evals).
-        """
-        cached, uncached_ids = self.get_batch(candidate, example_ids)
-
-        outputs_by_id: dict[DataId, RolloutOutput] = {eid: c.output for eid, c in cached.items()}
-        scores_by_id: dict[DataId, float] = {eid: c.score for eid, c in cached.items()}
-        objective_by_id: dict[DataId, ObjectiveScores] | None = None
-
-        # Populate objective scores from cache
-        for eid, c in cached.items():
-            if c.objective_scores is not None:
-                objective_by_id = objective_by_id or {}
-                objective_by_id[eid] = c.objective_scores
-
-        # Evaluate uncached examples (outside the lock — evaluation can be slow)
-        if uncached_ids:
-            batch = fetcher(uncached_ids)
-            outputs, scores, obj_scores = evaluator(batch, candidate)
-            for idx, eid in enumerate(uncached_ids):
-                outputs_by_id[eid] = outputs[idx]
-                scores_by_id[eid] = scores[idx]
-                if obj_scores is not None:
-                    objective_by_id = objective_by_id or {}
-                    objective_by_id[eid] = obj_scores[idx]
-            self.put_batch(candidate, uncached_ids, outputs, scores, obj_scores)
-
-        return outputs_by_id, scores_by_id, objective_by_id, len(uncached_ids)
-
     def evaluate_batch_with_cache(
         self,
         candidate: dict[str, str],
@@ -792,15 +754,35 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         fetcher: Callable[[list[DataId]], Any],
         evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
     ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
-        """Evaluate with optional caching, returning full results."""
+        """Evaluate with optional caching, returning full results keyed by example id."""
+        from gepa.core.adapter import EvaluationBatch
+
+        # Adapt the tuple-returning evaluator to the EvaluationBatch signature
+        # expected by EvaluationCache.evaluate_batch_with_cache.
+        def adapted(batch: Any, cand: dict[str, str], capture_traces: bool = False) -> EvaluationBatch:
+            outputs, scores, obj_scores = evaluator(batch, cand)
+            return EvaluationBatch(
+                outputs=outputs,
+                scores=scores,
+                objective_scores=list(obj_scores) if obj_scores else None,
+            )
+
         if self.evaluation_cache is not None:
-            return self.evaluation_cache.evaluate_with_cache_full(candidate, example_ids, fetcher, evaluator)
-        batch = fetcher(example_ids)
-        outputs, scores, objective_scores = evaluator(batch, candidate)
-        outputs_by_id = dict(zip(example_ids, outputs, strict=False))
-        scores_by_id = dict(zip(example_ids, scores, strict=False))
-        objective_by_id = dict(zip(example_ids, objective_scores, strict=False)) if objective_scores else None
-        return outputs_by_id, scores_by_id, objective_by_id, len(example_ids)
+            eval_batch, num_evals = self.evaluation_cache.evaluate_batch_with_cache(
+                candidate, example_ids, fetcher, adapted, require_trajectories=False,
+            )
+        else:
+            batch = fetcher(example_ids)
+            eval_batch = adapted(batch, candidate)
+            num_evals = len(example_ids)
+
+        outputs_by_id = dict(zip(example_ids, eval_batch.outputs, strict=False))
+        scores_by_id = dict(zip(example_ids, eval_batch.scores, strict=False))
+        objective_by_id = (
+            dict(zip(example_ids, eval_batch.objective_scores, strict=False))
+            if eval_batch.objective_scores else None
+        )
+        return outputs_by_id, scores_by_id, objective_by_id, num_evals
 
 
 def write_eval_scores_to_directory(scores: dict[DataId, float], output_dir: str) -> None:
