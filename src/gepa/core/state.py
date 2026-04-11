@@ -150,7 +150,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     returned by :func:`~gepa.optimize_anything.optimize_anything`.
     """
 
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 6
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 5
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
     _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
 
@@ -187,12 +187,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     # Opaque bag for adapter-specific persistent state.
     # Core GEPA never inspects this; adapters read/write via get_adapter_state()/set_adapter_state().
     adapter_state: dict[str, Any]
-
-    # Reflection LM cost tracking (USD). Parallel lists so every proposal — accepted
-    # or rejected — has a (metric_calls, cost) point for post-hoc plotting.
-    reflection_cost_by_candidate: list[float]
-    reflection_cost_by_rejected: list[float]
-    num_metric_calls_at_rejection: list[int]
 
     def __init__(
         self,
@@ -259,19 +253,12 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.evaluation_cache = evaluation_cache
         self.adapter_state: dict[str, Any] = {}
 
-        # Reflection cost tracking: seed candidate has zero reflection cost.
-        self.reflection_cost_by_candidate = [0.0]
-        self.reflection_cost_by_rejected = []
-        self.num_metric_calls_at_rejection = []
-
     def is_consistent(self) -> bool:
         assert len(self.program_candidates) == len(self.parent_program_for_candidate)
         assert len(self.program_candidates) == len(self.named_predictor_id_to_update_next_for_program_candidate)
         assert len(self.program_candidates) == len(self.prog_candidate_val_subscores)
         assert len(self.program_candidates) == len(self.prog_candidate_objective_scores)
         assert len(self.program_candidates) == len(self.num_metric_calls_by_discovery)
-        assert len(self.program_candidates) == len(self.reflection_cost_by_candidate)
-        assert len(self.reflection_cost_by_rejected) == len(self.num_metric_calls_at_rejection)
 
         assert len(self.pareto_front_valset) == len(self.program_at_pareto_front_valset)
         assert set(self.pareto_front_valset.keys()) == set(self.program_at_pareto_front_valset.keys())
@@ -430,12 +417,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             d["evaluation_cache"] = None
         if "adapter_state" not in d:
             d["adapter_state"] = {}
-        if "reflection_cost_by_candidate" not in d:
-            d["reflection_cost_by_candidate"] = [0.0] * num_candidates
-        if "reflection_cost_by_rejected" not in d:
-            d["reflection_cost_by_rejected"] = []
-        if "num_metric_calls_at_rejection" not in d:
-            d["num_metric_calls_at_rejection"] = [0] * len(d.get("reflection_cost_by_rejected", []))
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
@@ -462,11 +443,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         num_samples = len(scores)
         avg = sum(scores.values()) / num_samples
         return avg, num_samples
-
-    @property
-    def total_reflection_cost(self) -> float:
-        """Total reflection LM cost (USD) across accepted + rejected proposals."""
-        return sum(self.reflection_cost_by_candidate) + sum(self.reflection_cost_by_rejected)
 
     @property
     def valset_evaluations(self) -> dict[DataId, list[ProgramIdx]]:
@@ -555,12 +531,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         valset_evaluation: ValsetEvaluation,
         run_dir: str | None,
         num_metric_calls_by_discovery_of_new_program: int,
-        reflection_cost_of_new_program: float = 0.0,
     ) -> ProgramIdx:
         new_program_idx = len(self.program_candidates)
         self.program_candidates.append(dict(new_program))
         self.num_metric_calls_by_discovery.append(num_metric_calls_by_discovery_of_new_program)
-        self.reflection_cost_by_candidate.append(reflection_cost_of_new_program)
 
         max_predictor_id = max(
             [self.named_predictor_id_to_update_next_for_program_candidate[p] for p in parent_program_idx],
