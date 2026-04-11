@@ -21,6 +21,7 @@ The returned callable conforms to the ``LanguageModel`` protocol
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,14 @@ class LM:
             **kwargs,
         }
 
+        self._cumulative_cost: float = 0.0
+        self._cost_lock = threading.Lock()
+
+    @property
+    def cost(self) -> float:
+        """Cumulative USD cost across all calls made through this instance."""
+        return self._cumulative_cost
+
     def _check_truncation(self, choices: list[Any]) -> None:
         if any(getattr(c, "finish_reason", None) == "length" for c in choices):
             max_tok = self.completion_kwargs.get("max_tokens") or self.completion_kwargs.get("max_completion_tokens")
@@ -91,6 +100,14 @@ class LM:
 
         # Non-streaming calls always return ModelResponse (not CustomStreamWrapper)
         self._check_truncation(completion.choices)  # type: ignore[union-attr]
+
+        try:
+            call_cost = litellm.completion_cost(completion_response=completion) or 0.0  # type: ignore[attr-defined]
+        except Exception:
+            call_cost = 0.0
+        with self._cost_lock:
+            self._cumulative_cost += call_cost
+
         return completion.choices[0].message.content  # type: ignore[union-attr]
 
     def batch_complete(
@@ -120,10 +137,17 @@ class LM:
             **merged,
         )
 
+        batch_cost = 0.0
         results: list[str] = []
         for resp in responses:
             self._check_truncation(resp.choices)
             results.append(resp.choices[0].message.content.strip())
+            try:
+                batch_cost += litellm.completion_cost(completion_response=resp) or 0.0  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        with self._cost_lock:
+            self._cumulative_cost += batch_cost
 
         return results
 
@@ -132,3 +156,26 @@ class LM:
         for k, v in self.completion_kwargs.items():
             params.append(f"{k}={v!r}")
         return f"LM({', '.join(params)})"
+
+
+class CostTrackingLM:
+    """Wrap any ``LanguageModel`` callable with a ``.cost`` property.
+
+    For custom callables that don't go through LiteLLM, the actual cost
+    is unobservable — ``.cost`` stays ``0.0``.  This wrapper exists so that
+    code that reads ``.cost`` (e.g. :class:`~gepa.utils.MaxReflectionCostStopper`)
+    works uniformly without type-checking the LM.
+    """
+
+    def __init__(self, lm: Any):
+        self._inner = lm
+
+    @property
+    def cost(self) -> float:
+        return getattr(self._inner, "cost", 0.0)
+
+    def __call__(self, prompt: str | list[dict[str, Any]]) -> str:
+        return self._inner(prompt)
+
+    def __repr__(self) -> str:
+        return f"CostTrackingLM({self._inner!r})"

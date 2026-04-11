@@ -466,18 +466,19 @@ class EngineConfig:
     # Simple stopping conditions
     max_metric_calls: int | None = None
     max_candidate_proposals: int | None = None
+    max_reflection_cost: float | None = None
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
-    candidate_selection_strategy: CandidateSelector | Literal[
-        "pareto", "current_best", "epsilon_greedy", "top_k_pareto"
-    ] = "pareto"
+    candidate_selection_strategy: (
+        CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"]
+    ) = "pareto"
     frontier_type: FrontierType = "hybrid"
 
     # Acceptance criterion for reflective mutation proposals
-    acceptance_criterion: AcceptanceCriterion | Literal[
-        "strict_improvement", "improvement_or_equal"
-    ] = "strict_improvement"
+    acceptance_criterion: AcceptanceCriterion | Literal["strict_improvement", "improvement_or_equal"] = (
+        "strict_improvement"
+    )
 
     # Parallelization settings for evaluation
     parallel: bool = True
@@ -639,9 +640,7 @@ def _build_seed_generation_prompt(
         examples = dataset[:3]
         example_lines = [f"- Example {i}: {ex}" for i, ex in enumerate(examples, 1)]
         sections.append(
-            "\n## Sample Inputs\n\n"
-            "The candidate will be evaluated on inputs like these:\n\n"
-            + "\n".join(example_lines)
+            "\n## Sample Inputs\n\nThe candidate will be evaluated on inputs like these:\n\n" + "\n".join(example_lines)
         )
 
     sections.append(
@@ -1307,50 +1306,6 @@ def optimize_anything(
     val_loader = ensure_loader(valset) if valset is not None else train_loader
 
     # --- 1. Build stoppers from the EngineConfig and root config ---
-    stop_callbacks_list: list[StopperProtocol] = []
-
-    # Add custom stop callbacks if provided
-    if config.stop_callbacks is not None:
-        if isinstance(config.stop_callbacks, Sequence):
-            stop_callbacks_list.extend(config.stop_callbacks)
-        else:
-            stop_callbacks_list.append(config.stop_callbacks)
-
-    # Add file stopper if run_dir is provided
-    if config.engine.run_dir is not None:
-        stop_file_path = os.path.join(config.engine.run_dir, "gepa.stop")
-        file_stopper = FileStopper(stop_file_path)
-        stop_callbacks_list.append(file_stopper)
-
-    # Add max_metric_calls stopper if provided
-    if config.engine.max_metric_calls is not None:
-        from gepa.utils import MaxMetricCallsStopper
-
-        max_calls_stopper = MaxMetricCallsStopper(config.engine.max_metric_calls)
-        stop_callbacks_list.append(max_calls_stopper)
-
-    # Add max_candidate_proposals stopper if provided
-    if config.engine.max_candidate_proposals is not None:
-        from gepa.utils import MaxCandidateProposalsStopper
-
-        proposals_stopper = MaxCandidateProposalsStopper(config.engine.max_candidate_proposals)
-        stop_callbacks_list.append(proposals_stopper)
-
-    # Assert that at least one stopping condition is provided
-    if not stop_callbacks_list:
-        raise ValueError(
-            "At least one stopping condition must be provided via config.engine.max_metric_calls or config.stop_callbacks."
-        )
-
-    # Create composite stopper if multiple stoppers, or use single stopper
-    stop_callback: StopperProtocol
-    if len(stop_callbacks_list) == 1:
-        stop_callback = stop_callbacks_list[0]
-    else:
-        from gepa.utils import CompositeStopper
-
-        stop_callback = CompositeStopper(*stop_callbacks_list)
-
     # --- 2. Validate and setup reflection LM ---
     if needs_seed_generation and config.reflection.reflection_lm is None:
         raise ValueError(
@@ -1370,6 +1325,48 @@ def optimize_anything(
     # Convert reflection_lm string to callable
     if isinstance(config.reflection.reflection_lm, str):
         config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
+
+    # --- Build stoppers (all in one place, after LM conversion) ---
+    stop_callbacks_list: list[StopperProtocol] = []
+
+    if config.stop_callbacks is not None:
+        if isinstance(config.stop_callbacks, Sequence):
+            stop_callbacks_list.extend(config.stop_callbacks)
+        else:
+            stop_callbacks_list.append(config.stop_callbacks)
+
+    if config.engine.run_dir is not None:
+        stop_callbacks_list.append(FileStopper(os.path.join(config.engine.run_dir, "gepa.stop")))
+
+    if config.engine.max_metric_calls is not None:
+        from gepa.utils import MaxMetricCallsStopper
+
+        stop_callbacks_list.append(MaxMetricCallsStopper(config.engine.max_metric_calls))
+
+    if config.engine.max_candidate_proposals is not None:
+        from gepa.utils import MaxCandidateProposalsStopper
+
+        stop_callbacks_list.append(MaxCandidateProposalsStopper(config.engine.max_candidate_proposals))
+
+    if config.engine.max_reflection_cost is not None and config.reflection.reflection_lm is not None:
+        from gepa.utils import MaxReflectionCostStopper
+
+        stop_callbacks_list.append(
+            MaxReflectionCostStopper(config.engine.max_reflection_cost, [config.reflection.reflection_lm])
+        )
+
+    if not stop_callbacks_list:
+        raise ValueError(
+            "At least one stopping condition must be provided via config.engine.max_metric_calls or config.stop_callbacks."
+        )
+
+    stop_callback: StopperProtocol
+    if len(stop_callbacks_list) == 1:
+        stop_callback = stop_callbacks_list[0]
+    else:
+        from gepa.utils import CompositeStopper
+
+        stop_callback = CompositeStopper(*stop_callbacks_list)
 
     # Convert refiner_lm string to LiteLLM callable (if refiner is enabled)
     if config.refiner is not None:
