@@ -41,6 +41,27 @@ class TestLMCostTracking:
         assert lm.total_tokens_in == 200
         assert lm.total_tokens_out == 100
 
+    @patch("litellm.batch_completion")
+    @patch("litellm.completion_cost", return_value=0.002)
+    def test_batch_complete_accumulates_cost(self, mock_cost, mock_batch):
+        resp1 = MagicMock()
+        resp1.choices = [MagicMock()]
+        resp1.choices[0].message.content = " answer1 "
+        resp1.choices[0].finish_reason = "stop"
+        resp1.usage = MagicMock(prompt_tokens=50, completion_tokens=20)
+        resp2 = MagicMock()
+        resp2.choices = [MagicMock()]
+        resp2.choices[0].message.content = " answer2 "
+        resp2.choices[0].finish_reason = "stop"
+        resp2.usage = MagicMock(prompt_tokens=60, completion_tokens=30)
+        mock_batch.return_value = [resp1, resp2]
+
+        lm = LM("openai/gpt-4.1-mini")
+        lm.batch_complete([[{"role": "user", "content": "q1"}], [{"role": "user", "content": "q2"}]])
+        assert lm.total_cost == pytest.approx(0.004)
+        assert lm.total_tokens_in == 110
+        assert lm.total_tokens_out == 50
+
     @patch("litellm.completion")
     @patch("litellm.completion_cost", side_effect=Exception("unknown model"))
     def test_unknown_model_cost_is_zero(self, mock_cost, mock_completion):

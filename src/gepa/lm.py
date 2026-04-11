@@ -21,6 +21,7 @@ The returned callable conforms to the ``LanguageModel`` protocol
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ class LM:
         self._total_cost: float = 0.0
         self._total_tokens_in: int = 0
         self._total_tokens_out: int = 0
+        self._cost_lock = threading.Lock()
 
         self.completion_kwargs: dict[str, Any] = {
             **({"temperature": temperature} if temperature is not None else {}),
@@ -115,13 +117,16 @@ class LM:
             cost = litellm.completion_cost(completion_response=completion) or 0.0  # type: ignore[attr-defined]
         except Exception:
             cost = 0.0
-        self._total_cost += cost
 
         # Accumulate token usage
         usage = getattr(completion, "usage", None)
-        if usage is not None:
-            self._total_tokens_in += getattr(usage, "prompt_tokens", 0) or 0
-            self._total_tokens_out += getattr(usage, "completion_tokens", 0) or 0
+        tokens_in = (getattr(usage, "prompt_tokens", 0) or 0) if usage is not None else 0
+        tokens_out = (getattr(usage, "completion_tokens", 0) or 0) if usage is not None else 0
+
+        with self._cost_lock:
+            self._total_cost += cost
+            self._total_tokens_in += tokens_in
+            self._total_tokens_out += tokens_out
 
         return completion.choices[0].message.content  # type: ignore[union-attr]
 
@@ -152,10 +157,26 @@ class LM:
             **merged,
         )
 
+        batch_cost = 0.0
+        batch_tokens_in = 0
+        batch_tokens_out = 0
         results: list[str] = []
         for resp in responses:
             self._check_truncation(resp.choices)
             results.append(resp.choices[0].message.content.strip())
+            try:
+                batch_cost += litellm.completion_cost(completion_response=resp) or 0.0  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            usage = getattr(resp, "usage", None)
+            if usage is not None:
+                batch_tokens_in += getattr(usage, "prompt_tokens", 0) or 0
+                batch_tokens_out += getattr(usage, "completion_tokens", 0) or 0
+
+        with self._cost_lock:
+            self._total_cost += batch_cost
+            self._total_tokens_in += batch_tokens_in
+            self._total_tokens_out += batch_tokens_out
 
         return results
 
