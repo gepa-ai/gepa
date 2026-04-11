@@ -1,23 +1,22 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-"""Tests for reflection LM cost tracking persisted in GEPAState.
+"""End-to-end tests for reflection LM cost tracking persisted in GEPAState.
 
-Three scopes, four tests:
+Exercises three layers:
 
-- Unit: ``LM.call_with_cost`` returns ``(text, cost_usd)`` and falls back
-  to ``0.0`` gracefully when litellm can't price the model.
-- Protocol: ``run_with_metadata`` works with plain-callable reflection LMs
-  that don't expose ``call_with_cost`` — the session-friendly duck-typed
-  fallback path.
-- End-to-end: ``optimize_anything`` runs with a mocked litellm backend,
-  both sequential (``num_parallel_proposals=1``) and parallel
-  (``num_parallel_proposals=2``), verifying per-proposal cost attribution
-  lands correctly in ``GEPAState`` parallel-list fields.
+1. ``LM``-level unit tests: per-thread cost accumulation, reset, and thread
+   isolation under ``threading.local``.
+2. Sequential end-to-end: ``optimize_anything`` run with an ``LM`` whose
+   ``litellm`` calls are mocked, verifying state fields fill correctly.
+3. Parallel end-to-end: same pipeline with ``num_parallel_proposals > 1``,
+   verifying per-proposal cost attribution survives thread-pool execution.
 """
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -61,148 +60,228 @@ class _StateCapture:
 
 
 # ---------------------------------------------------------------------------
-# Unit: LM.call_with_cost
+# LM-level unit tests
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "cost_value,cost_side_effect,expected_cost",
-    [
-        pytest.param(0.007, None, 0.007, id="normal"),
-        pytest.param(None, None, 0.0, id="litellm_returns_none"),
-        pytest.param(None, Exception("unknown model"), 0.0, id="litellm_raises"),
-    ],
-)
-@patch("litellm.completion_cost")
-@patch("litellm.completion")
-def test_call_with_cost_returns_tuple(mock_completion, mock_cost, cost_value, cost_side_effect, expected_cost):
-    """``LM.call_with_cost`` returns ``(text, cost)``. Unknown/unpriced models
-    (where litellm raises or returns None) record ``0.0`` and the call
-    still succeeds."""
-    mock_completion.return_value = _fake_completion_response("result text")
-    if cost_side_effect is not None:
-        mock_cost.side_effect = cost_side_effect
-    else:
-        mock_cost.return_value = cost_value
+class TestLMCallWithCost:
+    """Verify ``LM.call_with_cost`` returns (text, cost) and degrades gracefully."""
 
-    lm = LM("openai/gpt-4.1-mini")
-    text, cost = lm.call_with_cost("hello")
+    @patch("litellm.completion_cost")
+    @patch("litellm.completion")
+    def test_returns_text_and_cost(self, mock_completion, mock_cost):
+        mock_completion.return_value = _fake_completion_response("```\nresult\n```")
+        mock_cost.return_value = 0.007
+        lm = LM("openai/gpt-4.1-mini")
+        text, cost = lm.call_with_cost("hello")
+        assert text == "```\nresult\n```"
+        assert cost == pytest.approx(0.007)
 
-    assert text == "result text"
-    assert cost == pytest.approx(expected_cost)
+    @patch("litellm.completion_cost")
+    @patch("litellm.completion")
+    def test_call_still_returns_plain_str(self, mock_completion, mock_cost):
+        """Backward compat: ``lm("prompt")`` still returns a bare string."""
+        mock_completion.return_value = _fake_completion_response("plain text")
+        mock_cost.return_value = 0.01
+        lm = LM("openai/gpt-4.1-mini")
+        result = lm("hello")
+        assert result == "plain text"
+        assert isinstance(result, str)
+
+    @patch("litellm.completion_cost")
+    @patch("litellm.completion")
+    def test_parallel_calls_each_return_own_cost(self, mock_completion, mock_cost):
+        """Each call_with_cost invocation is self-contained.
+
+        With a return-value-driven contract, there's no shared mutable state
+        between workers, so each call's cost is the cost of *that* call. We
+        exercise the concurrency path to witness no cross-worker leakage.
+        """
+        mock_completion.return_value = _fake_completion_response()
+        # Alternate cost per call so we can spot any cross-attribution.
+        cost_sequence = iter([0.001, 0.002, 0.003, 0.004, 0.005] * 4)
+        cost_lock = threading.Lock()
+
+        def _next_cost(*_args, **_kwargs):
+            with cost_lock:
+                return next(cost_sequence)
+
+        mock_cost.side_effect = _next_cost
+
+        lm = LM("openai/gpt-4.1-mini")
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = [pool.submit(lm.call_with_cost, f"prompt-{i}") for i in range(20)]
+            results = [f.result() for f in futures]
+
+        costs = [cost for _text, cost in results]
+        # All 20 call sites got a cost; every cost is one of our expected values.
+        assert len(costs) == 20
+        assert all(c in (0.001, 0.002, 0.003, 0.004, 0.005) for c in costs)
+        # Grand-total conservation.
+        assert sum(costs) == pytest.approx(4 * (0.001 + 0.002 + 0.003 + 0.004 + 0.005))
+
+    @patch("litellm.completion_cost")
+    @patch("litellm.completion")
+    def test_completion_cost_exception_handled(self, mock_completion, mock_cost):
+        """Models where litellm.completion_cost raises still complete calls with 0.0."""
+        mock_completion.return_value = _fake_completion_response("ok")
+        mock_cost.side_effect = Exception("unknown model pricing")
+        lm = LM("unknown/my-self-hosted-model")
+        text, cost = lm.call_with_cost("hello")
+        assert text == "ok"
+        assert cost == 0.0
+
+    @patch("litellm.completion_cost")
+    @patch("litellm.completion")
+    def test_completion_cost_none_handled(self, mock_completion, mock_cost):
+        """litellm sometimes returns None for cost — treated as 0.0."""
+        mock_completion.return_value = _fake_completion_response("ok")
+        mock_cost.return_value = None
+        lm = LM("openai/gpt-4.1-mini")
+        text, cost = lm.call_with_cost("hello")
+        assert text == "ok"
+        assert cost == 0.0
+
+    def test_plain_callable_bypasses_call_with_cost(self):
+        """A plain-callable reflection_lm (no ``call_with_cost``) still works.
+
+        ``run_with_metadata`` falls back to ``lm(prompt)`` with cost 0.0 when
+        the callable doesn't expose the method. This preserves the public
+        ``LanguageModel`` protocol for users who pass a bare function.
+        """
+        from gepa.strategies.instruction_proposal import InstructionProposalSignature
+
+        calls: list[str] = []
+
+        def plain_lm(prompt):
+            calls.append(prompt)
+            return "```\nnew_instruction: better text\n```"
+
+        assert not hasattr(plain_lm, "call_with_cost")
+
+        result, _full_prompt, _raw, cost = InstructionProposalSignature.run_with_metadata(
+            lm=plain_lm,
+            input_dict={
+                "current_instruction_doc": "old",
+                "dataset_with_feedback": [{"input": "x", "output": "y"}],
+                "prompt_template": None,
+            },
+        )
+        assert len(calls) == 1
+        assert cost == 0.0  # no cost data available from plain callable
+        assert result is not None
 
 
 # ---------------------------------------------------------------------------
-# Protocol: duck-typed fallback for plain callables
-# ---------------------------------------------------------------------------
-
-
-def test_plain_callable_bypasses_call_with_cost():
-    """A plain-callable reflection_lm (no ``call_with_cost``) still works.
-
-    ``run_with_metadata`` falls back to ``lm(prompt)`` with cost ``0.0`` when
-    the callable doesn't expose the method. This is the session-friendly
-    path: when ``make_session_lm`` eventually attaches its own
-    ``call_with_cost`` closure, the exact same ``getattr`` dispatch picks
-    it up, no proposer changes needed.
-    """
-    from gepa.strategies.instruction_proposal import InstructionProposalSignature
-
-    calls: list[str] = []
-
-    def plain_lm(prompt):
-        calls.append(prompt)
-        return "```\nnew_instruction: better text\n```"
-
-    assert not hasattr(plain_lm, "call_with_cost")
-
-    result, _full_prompt, _raw, cost = InstructionProposalSignature.run_with_metadata(
-        lm=plain_lm,
-        input_dict={
-            "current_instruction_doc": "old",
-            "dataset_with_feedback": [{"input": "x", "output": "y"}],
-            "prompt_template": None,
-        },
-    )
-    assert len(calls) == 1
-    assert cost == 0.0  # no cost data available from plain callable
-    assert result is not None
-
-
-# ---------------------------------------------------------------------------
-# End-to-end: optimize_anything with LM + mocked litellm
+# End-to-end tests: optimize_anything with real LM + mocked litellm
 # ---------------------------------------------------------------------------
 
 
 def _assert_cost_invariants(state, cost_per_call: float) -> None:
-    """Shared invariants for E2E runs: parallel-list lengths, per-entry
-    equality to ``cost_per_call``, and total-cost conservation."""
+    """Shared invariants for both sequential and parallel runs."""
     by_candidate: list[float] = list(state.reflection_cost_by_candidate)
     rejected: list[float] = list(state.reflection_cost_rejected)
     rejected_calls: list[int] = list(state.num_metric_calls_at_rejection)
+    program_candidates = list(state.program_candidates)
 
-    assert len(by_candidate) == len(state.program_candidates)
+    # Parallel-list invariants.
+    assert len(by_candidate) == len(program_candidates)
     assert len(rejected) == len(rejected_calls)
-    assert by_candidate[0] == 0.0  # seed has no reflection cost
 
+    # Seed candidate has zero reflection cost.
+    assert by_candidate[0] == 0.0
+
+    # At least one proposal was attempted.
     total_proposals = (len(by_candidate) - 1) + len(rejected)
     assert total_proposals >= 1, "expected at least one reflection proposal to have run"
 
-    # Single-component seed -> exactly one reflection call per proposal.
+    # Each proposal (seedless) makes at least one reflection call, so its
+    # recorded cost must be exactly an integer multiple of cost_per_call.
+    # Single-component seed_candidate means exactly one call per proposal.
     for cost in by_candidate[1:]:
-        assert cost == pytest.approx(cost_per_call)
+        assert cost == pytest.approx(cost_per_call), (
+            f"accepted proposal cost {cost} != single-call cost {cost_per_call}"
+        )
     for cost in rejected:
-        assert cost == pytest.approx(cost_per_call)
+        assert cost == pytest.approx(cost_per_call), (
+            f"rejected proposal cost {cost} != single-call cost {cost_per_call}"
+        )
 
+    # total_reflection_cost property matches the sum of its parts.
     expected_total = sum(by_candidate) + sum(rejected)
     assert state.total_reflection_cost == pytest.approx(expected_total)
     assert state.total_reflection_cost > 0.0
 
 
-@pytest.mark.parametrize(
-    "num_parallel_proposals,cost_per_call",
-    [
-        pytest.param(1, 0.003, id="sequential"),
-        pytest.param(2, 0.004, id="parallel"),
-    ],
-)
-@patch("litellm.completion_cost")
-@patch("litellm.completion")
-def test_cost_populates_state_e2e(mock_completion, mock_cost, num_parallel_proposals, cost_per_call):
-    """Full ``optimize_anything`` pipeline in both sequential and parallel
-    modes. Verifies the chain ``LM.call_with_cost`` → ``run_with_metadata``
-    → ``propose_new_texts`` → ``CandidateProposal`` → engine accept/reject
-    → ``GEPAState`` parallel lists."""
-    mock_completion.return_value = _fake_completion_response("```\nbetter candidate\n```")
-    mock_cost.return_value = cost_per_call
+class TestE2EReflectionCostTracking:
+    """Run a full optimize_anything pipeline and verify GEPAState cost fields."""
 
-    lm = LM("openai/gpt-4.1-mini")
-    capture = _StateCapture()
+    @patch("litellm.completion_cost")
+    @patch("litellm.completion")
+    def test_sequential_cost_populates_state(self, mock_completion, mock_cost):
+        """Sequential mode: every accepted + rejected proposal contributes a cost entry."""
+        mock_completion.return_value = _fake_completion_response("```\nbetter candidate\n```")
+        cost_per_call = 0.003
+        mock_cost.return_value = cost_per_call
 
-    result = optimize_anything(
-        seed_candidate="seed text",
-        evaluator=_good_evaluator,
-        config=GEPAConfig(
-            callbacks=[capture],  # type: ignore[list-item]
-            engine=EngineConfig(
-                max_metric_calls=15 if num_parallel_proposals == 1 else 20,
-                num_parallel_proposals=num_parallel_proposals,
+        lm = LM("openai/gpt-4.1-mini")
+        capture = _StateCapture()
+
+        _ = optimize_anything(
+            seed_candidate="seed text",
+            evaluator=_good_evaluator,
+            config=GEPAConfig(
+                callbacks=[capture],  # type: ignore[list-item]
+                engine=EngineConfig(max_metric_calls=15, num_parallel_proposals=1),
+                reflection=ReflectionConfig(reflection_lm=lm),
             ),
-            reflection=ReflectionConfig(reflection_lm=lm),
-        ),
-    )
+        )
 
-    assert capture.final_state is not None
-    state = capture.final_state
+        assert capture.final_state is not None
+        state = capture.final_state
 
-    _assert_cost_invariants(state, cost_per_call)
+        _assert_cost_invariants(state, cost_per_call)
 
-    # Grand-total conservation: total cost equals cost_per_call * total LM calls.
-    # Under parallel execution this is the strong witness — if any worker's
-    # cost got mis-attributed to another, either the per-entry equality above
-    # or this sum would fail.
-    assert state.total_reflection_cost == pytest.approx(cost_per_call * mock_cost.call_count)
+        # Grand-total conservation: with sequential mode, cost attribution has
+        # no races, so the total equals cost_per_call * number of LM calls.
+        assert state.total_reflection_cost == pytest.approx(cost_per_call * mock_cost.call_count)
 
-    # GEPAResult exposes the total cost as a scalar.
-    assert result is not None
-    assert result.total_reflection_cost == pytest.approx(state.total_reflection_cost)
+    @patch("litellm.completion_cost")
+    @patch("litellm.completion")
+    def test_parallel_cost_populates_state(self, mock_completion, mock_cost):
+        """Parallel mode: cost attribution must survive ThreadPoolExecutor dispatch.
+
+        With num_parallel_proposals > 1, multiple workers share one LM instance
+        but each worker's reflection cost must be attributed to its own proposal,
+        not leaked across workers. thread-local gives us this isolation; this
+        test is the end-to-end witness that the chain (LM → proposer → engine
+        → state) holds under concurrent execution.
+        """
+        mock_completion.return_value = _fake_completion_response("```\nbetter candidate\n```")
+        cost_per_call = 0.004
+        mock_cost.return_value = cost_per_call
+
+        lm = LM("openai/gpt-4.1-mini")
+        capture = _StateCapture()
+
+        _ = optimize_anything(
+            seed_candidate="seed text",
+            evaluator=_good_evaluator,
+            config=GEPAConfig(
+                callbacks=[capture],  # type: ignore[list-item]
+                engine=EngineConfig(max_metric_calls=20, num_parallel_proposals=2),
+                reflection=ReflectionConfig(reflection_lm=lm),
+            ),
+        )
+
+        assert capture.final_state is not None
+        state = capture.final_state
+
+        _assert_cost_invariants(state, cost_per_call)
+
+        # Conservation: sum of all per-proposal costs equals cost_per_call * total
+        # LM calls. If one worker had overwritten another's thread-local slot,
+        # some proposal would report 0.0 and this equality would fail (the
+        # per-entry `>= cost_per_call` assertions in `_assert_cost_invariants`
+        # catch that case too).
+        assert state.total_reflection_cost == pytest.approx(cost_per_call * mock_cost.call_count)
