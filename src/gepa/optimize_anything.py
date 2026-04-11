@@ -466,6 +466,9 @@ class EngineConfig:
     # Simple stopping conditions
     max_metric_calls: int | None = None
     max_candidate_proposals: int | None = None
+    # USD budget for reflection LM calls. When the total across accepted +
+    # rejected proposals reaches this value, optimization stops.
+    max_reflection_cost: float | None = None
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
@@ -1335,6 +1338,13 @@ def optimize_anything(
 
         proposals_stopper = MaxCandidateProposalsStopper(config.engine.max_candidate_proposals)
         stop_callbacks_list.append(proposals_stopper)
+
+    # Add max_reflection_cost stopper if provided
+    if config.engine.max_reflection_cost is not None:
+        from gepa.utils import MaxReflectionCostStopper
+
+        cost_stopper = MaxReflectionCostStopper(config.engine.max_reflection_cost)
+        stop_callbacks_list.append(cost_stopper)
 
     # Assert that at least one stopping condition is provided
     if not stop_callbacks_list:

@@ -41,6 +41,9 @@ class CandidateProposal(Generic[DataId]):
     # Free-form metadata for logging/trace
     tag: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Reflection LM cost (USD) spent to produce this proposal. 0.0 when the
+    # reflection LM doesn't expose cost tracking (e.g. custom callables).
+    reflection_cost: float = 0.0
 
 
 class ProposeNewCandidate(Protocol[DataId]):

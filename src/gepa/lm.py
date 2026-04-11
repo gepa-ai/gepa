@@ -73,7 +73,13 @@ class LM:
                 "Consider increasing max_tokens for better results."
             )
 
-    def __call__(self, prompt: str | list[dict[str, Any]]) -> str:
+    def call_with_cost(self, prompt: str | list[dict[str, Any]]) -> tuple[str, float]:
+        """Make one completion call and return ``(text, cost_usd)``.
+
+        Cost is computed via ``litellm.completion_cost(...)``. For self-hosted
+        or unknown models where litellm has no pricing data, the cost is
+        recorded as ``0.0`` — the call itself still succeeds.
+        """
         import litellm
 
         if isinstance(prompt, str):
@@ -91,7 +97,18 @@ class LM:
 
         # Non-streaming calls always return ModelResponse (not CustomStreamWrapper)
         self._check_truncation(completion.choices)  # type: ignore[union-attr]
-        return completion.choices[0].message.content  # type: ignore[union-attr]
+
+        try:
+            cost = litellm.completion_cost(completion_response=completion) or 0.0  # type: ignore[attr-defined]
+        except Exception:
+            cost = 0.0
+
+        return completion.choices[0].message.content, cost  # type: ignore[union-attr]
+
+    def __call__(self, prompt: str | list[dict[str, Any]]) -> str:
+        """Return the completion text. Thin wrapper over :meth:`call_with_cost`."""
+        text, _cost = self.call_with_cost(prompt)
+        return text
 
     def batch_complete(
         self, messages_list: list[list[dict[str, Any]]], max_workers: int = 10, **kwargs: Any
