@@ -21,6 +21,7 @@ The returned callable conforms to the ``LanguageModel`` protocol
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,18 @@ class LM:
             **kwargs,
         }
 
+        # Thread-local cost accumulator so parallel proposal workers can each
+        # read back the cost of their own calls without racing on a shared counter.
+        self._local = threading.local()
+
+    def reset_call_cost(self) -> None:
+        """Reset the current thread's accumulated call cost to zero."""
+        self._local.cost = 0.0
+
+    def get_call_cost(self) -> float:
+        """Return cost (USD) accumulated on the current thread since last reset."""
+        return getattr(self._local, "cost", 0.0)
+
     def _check_truncation(self, choices: list[Any]) -> None:
         if any(getattr(c, "finish_reason", None) == "length" for c in choices):
             max_tok = self.completion_kwargs.get("max_tokens") or self.completion_kwargs.get("max_completion_tokens")
@@ -73,13 +86,7 @@ class LM:
                 "Consider increasing max_tokens for better results."
             )
 
-    def call_with_cost(self, prompt: str | list[dict[str, Any]]) -> tuple[str, float]:
-        """Make one completion call and return ``(text, cost_usd)``.
-
-        Cost is computed via ``litellm.completion_cost(...)``. For self-hosted
-        or unknown models where litellm has no pricing data, the cost is
-        recorded as ``0.0`` — the call itself still succeeds.
-        """
+    def __call__(self, prompt: str | list[dict[str, Any]]) -> str:
         import litellm
 
         if isinstance(prompt, str):
@@ -98,17 +105,15 @@ class LM:
         # Non-streaming calls always return ModelResponse (not CustomStreamWrapper)
         self._check_truncation(completion.choices)  # type: ignore[union-attr]
 
+        # Accumulate cost into the current thread's slot. Unknown/self-hosted
+        # models raise from completion_cost; swallow and record 0.0.
         try:
-            cost = litellm.completion_cost(completion_response=completion) or 0.0  # type: ignore[attr-defined]
+            call_cost = litellm.completion_cost(completion_response=completion) or 0.0  # type: ignore[attr-defined]
         except Exception:
-            cost = 0.0
+            call_cost = 0.0
+        self._local.cost = getattr(self._local, "cost", 0.0) + call_cost
 
-        return completion.choices[0].message.content, cost  # type: ignore[union-attr]
-
-    def __call__(self, prompt: str | list[dict[str, Any]]) -> str:
-        """Return the completion text. Thin wrapper over :meth:`call_with_cost`."""
-        text, _cost = self.call_with_cost(prompt)
-        return text
+        return completion.choices[0].message.content  # type: ignore[union-attr]
 
     def batch_complete(
         self, messages_list: list[list[dict[str, Any]]], max_workers: int = 10, **kwargs: Any
