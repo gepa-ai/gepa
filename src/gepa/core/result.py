@@ -57,6 +57,11 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
     run_dir: str | None = None
     seed: int | None = None
 
+    # Total reflection LM cost (USD) across accepted + rejected proposals.
+    # ``0.0`` when the reflection LM doesn't expose cost tracking
+    # (e.g. custom non-litellm callables).
+    total_reflection_cost: float = 0.0
+
     # When set, best_candidate unwraps the dict to return a plain str.
     # This is the internal dict key used to wrap str seed_candidates.
     _str_candidate_key: str | None = None
@@ -144,6 +149,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             "seed": self.seed,
             "_str_candidate_key": self._str_candidate_key,
             "best_idx": self.best_idx,
+            "total_reflection_cost": self.total_reflection_cost,
             "validation_schema_version": GEPAResult._VALIDATION_SCHEMA_VERSION,
         }
 
@@ -173,6 +179,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             "run_dir": d.get("run_dir"),
             "seed": d.get("seed"),
             "_str_candidate_key": d.get("_str_candidate_key"),
+            "total_reflection_cost": float(d.get("total_reflection_cost", 0.0)),
         }
 
     @staticmethod
@@ -268,4 +275,5 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             run_dir=run_dir,
             seed=seed,
             _str_candidate_key=str_candidate_key,
+            total_reflection_cost=float(getattr(state, "total_reflection_cost", 0.0)),
         )
