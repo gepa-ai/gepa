@@ -179,7 +179,7 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             "run_dir": d.get("run_dir"),
             "seed": d.get("seed"),
             "_str_candidate_key": d.get("_str_candidate_key"),
-            "total_reflection_cost": float(d.get("total_reflection_cost", 0.0)),
+            "total_reflection_cost": d.get("total_reflection_cost", 0.0),
         }
 
     @staticmethod
@@ -275,5 +275,5 @@ class GEPAResult(Generic[RolloutOutput, DataId]):
             run_dir=run_dir,
             seed=seed,
             _str_candidate_key=str_candidate_key,
-            total_reflection_cost=float(getattr(state, "total_reflection_cost", 0.0)),
+            total_reflection_cost=getattr(state, "total_reflection_cost", 0.0),
         )
