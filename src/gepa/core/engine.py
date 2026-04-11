@@ -312,7 +312,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.logger.log(reject_msg)
             self._log_proposal_lm_calls(iteration, proposal, candidate_idx=-1)
             # Record rejected-proposal reflection cost so plots can include it.
-            state.reflection_cost_by_rejected.append(proposal.reflection_cost)
+            state.reflection_cost_rejected.append(proposal.reflection_cost)
             state.num_metric_calls_at_rejection.append(state.total_num_evals)
             notify_callbacks(
                 self.callbacks,
