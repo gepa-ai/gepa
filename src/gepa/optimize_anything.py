@@ -157,6 +157,64 @@ Candidate = dict[str, OptimizableParam]
 CacheEvaluationStorage = Literal["memory", "disk", "auto"]
 
 
+@dataclass
+class CodeCandidate:
+    """Seed candidate for coding mode — optimizes code in a git repository.
+
+    When passed as ``seed_candidate`` to :func:`optimize_anything`, the system
+    enters coding mode where candidates are ``{repo_path: branch_name}`` dicts.
+
+    For multi-repo optimization, pass a list of ``CodeCandidate`` objects as
+    ``seed_candidate`` — each repo becomes a component that can be optimized
+    independently (like multi-component text optimization).
+
+    For non-git directories, the repo is auto-initialized with ``git init``.
+
+    Example::
+
+        from gepa.optimize_anything import optimize_anything, CodeCandidate
+
+        # Single repo
+        result = optimize_anything(
+            seed_candidate=CodeCandidate(
+                repo_path="/path/to/my/repo",
+                coding_agent="claude_code",
+            ),
+            evaluator=run_tests,
+            objective="Fix the failing unit tests.",
+        )
+        print(result.best_candidate)  # {"/path/to/my/repo": "gepa/iter_5"}
+
+        # Multiple repos (multi-component, different base branches)
+        result = optimize_anything(
+            seed_candidate=[
+                CodeCandidate(repo_path="/path/to/backend", base_branch="main"),
+                CodeCandidate(repo_path="/path/to/frontend", base_branch="dev"),
+            ],
+            evaluator=run_integration_tests,
+            objective="Optimize the full-stack application.",
+        )
+
+    Args:
+        repo_path: Path to the git repository to optimize.
+        base_branch: Starting branch (default ``"main"``).
+            Non-git directories are auto-initialized with this branch name.
+        coding_agent: Which coding agent to use for proposals.
+            ``"bash"`` — agentic LM with a bash tool in a loop.
+            ``"claude_code"`` — delegates to ``claude -p`` CLI.
+            Or pass a custom :class:`CodingAgentProtocol` instance.
+        model: LiteLLM model name for the bash agent.
+            Ignored when ``coding_agent="claude_code"``.
+        branch_prefix: Prefix for branches created during optimization.
+    """
+
+    repo_path: str
+    base_branch: str = "main"
+    coding_agent: Literal["bash", "claude_code"] | Any = "bash"
+    model: str = "openai/gpt-5.1"
+    branch_prefix: str = "gepa"
+
+
 # Sentinel object for single-instance mode
 class _SingleInstanceSentinel:
     """Sentinel object used to represent single-instance optimization mode."""
@@ -1107,7 +1165,7 @@ def _resolve_num_parallel_proposals(
 
 
 def optimize_anything(
-    seed_candidate: str | Candidate | None = None,
+    seed_candidate: str | Candidate | CodeCandidate | list[CodeCandidate] | None = None,
     *,
     evaluator: Callable[..., Any],
     dataset: list[DataInst] | None = None,
@@ -1225,23 +1283,79 @@ def optimize_anything(
     if config is None:
         config = GEPAConfig()
 
-    # Detect seed generation mode: when seed_candidate is None, the LLM
-    # will generate the initial candidate from the objective.
-    needs_seed_generation = False
-    if seed_candidate is None:
-        needs_seed_generation = True
-        str_candidate_mode = True
-        if not objective or not objective.strip():
-            raise ValueError(
-                "'objective' is required when seed_candidate is None. "
-                "The reflection LLM needs the objective to generate an initial candidate."
-            )
-        seed_candidate = {_STR_CANDIDATE_KEY: ""}  # placeholder until LLM generates it
+    # --- Coding mode: CodeCandidate or list[CodeCandidate] triggers git-branch-based optimization ---
+    code_candidate_mode = isinstance(seed_candidate, CodeCandidate) or (
+        isinstance(seed_candidate, list) and len(seed_candidate) > 0 and isinstance(seed_candidate[0], CodeCandidate)
+    )
+
+    if code_candidate_mode:
+        from gepa.adapters.coding_adapter import BashCodingAgent, ClaudeCodeAgent, GitRepo
+
+        # Normalize to list of CodeCandidate
+        if isinstance(seed_candidate, CodeCandidate):
+            code_candidates = [seed_candidate]
+        else:
+            assert isinstance(seed_candidate, list)
+            code_candidates = seed_candidate
+
+        # Ensure each directory is a git repo (auto-init if needed)
+        repos: dict[str, GitRepo] = {}
+        base_branches: dict[str, str] = {}
+        for cc in code_candidates:
+            repos[cc.repo_path] = GitRepo.ensure_repo(cc.repo_path, initial_branch=cc.base_branch)
+            base_branches[cc.repo_path] = cc.base_branch
+
+        # Resolve coding agent from the first CodeCandidate
+        first_cc = code_candidates[0]
+        if isinstance(first_cc.coding_agent, str):
+            if first_cc.coding_agent == "claude_code":
+                resolved_coding_agent = ClaudeCodeAgent()
+            elif first_cc.coding_agent == "bash":
+                resolved_coding_agent = BashCodingAgent(model=first_cc.model)
+            else:
+                raise ValueError(
+                    f"Unknown coding_agent: {first_cc.coding_agent!r}. "
+                    "Use 'bash', 'claude_code', or pass a CodingAgentProtocol instance."
+                )
+        else:
+            resolved_coding_agent = first_cc.coding_agent
+
+        # Build seed candidate: {repo_path: base_branch} for each repo
+        seed_candidate = {cc.repo_path: cc.base_branch for cc in code_candidates}
+        str_candidate_mode = False
+        needs_seed_generation = False
+
+        # Use "all" module selector for single repo, "round_robin" for multi
+        if len(code_candidates) == 1:
+            config.reflection.module_selector = "all"
+        # Disable merge proposer for coding mode
+        config.merge = None
+        # Disable refiner (not applicable to coding mode)
+        config.refiner = None
+
     else:
-        # Normalize seed_candidate: str -> {_STR_CANDIDATE_KEY: str}
-        str_candidate_mode = isinstance(seed_candidate, str)
-        if isinstance(seed_candidate, str):
-            seed_candidate = {_STR_CANDIDATE_KEY: seed_candidate}
+        # --- Standard text mode (original behavior) ---
+
+        # Detect seed generation mode: when seed_candidate is None, the LLM
+        # will generate the initial candidate from the objective.
+        needs_seed_generation = False
+        if seed_candidate is None:
+            needs_seed_generation = True
+            str_candidate_mode = True
+            if not objective or not objective.strip():
+                raise ValueError(
+                    "'objective' is required when seed_candidate is None. "
+                    "The reflection LLM needs the objective to generate an initial candidate."
+                )
+            seed_candidate = {_STR_CANDIDATE_KEY: ""}  # placeholder until LLM generates it
+        else:
+            # Normalize seed_candidate: str -> {_STR_CANDIDATE_KEY: str}
+            str_candidate_mode = isinstance(seed_candidate, str)
+            if isinstance(seed_candidate, str):
+                seed_candidate = {_STR_CANDIDATE_KEY: seed_candidate}
+
+    # At this point seed_candidate is always a dict[str, str] (normalized above)
+    assert isinstance(seed_candidate, dict)
 
     # Detect single-instance mode: when both dataset=None and valset=None
     single_instance_mode = dataset is None and valset is None
@@ -1258,50 +1372,77 @@ def optimize_anything(
     else:
         effective_dataset = dataset if dataset is not None else [None]  # type: ignore[list-item]
 
-    # Wrap the evaluator to handle signature normalization, log/stdout capture, etc.
-    wrapped_evaluator = EvaluatorWrapper(
-        evaluator,
-        single_instance_mode,
-        capture_stdio=config.engine.capture_stdio,
-        str_candidate_mode=str_candidate_mode,
-        raise_on_exception=config.engine.raise_on_exception,
-    )
+    # --- Build adapter ---
+    if code_candidate_mode:
+        from gepa.adapters.coding_adapter import CodingAdapter
 
-    # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
-    if not config.engine.cache_evaluation:
-        resolved_cache_mode = "off"
-        if config.engine.cache_evaluation_storage != "auto":
-            warnings.warn(
-                f"cache_evaluation_storage={config.engine.cache_evaluation_storage!r} is set but "
-                f"cache_evaluation=False, so caching is disabled. Set cache_evaluation=True to "
-                f"enable caching with the specified storage mode.",
-                stacklevel=2,
-            )
-    elif config.engine.cache_evaluation_storage == "auto":
-        resolved_cache_mode = "disk" if config.engine.run_dir else "memory"
+        wrapped_evaluator = EvaluatorWrapper(
+            evaluator,
+            single_instance_mode,
+            capture_stdio=config.engine.capture_stdio,
+            str_candidate_mode=False,
+            raise_on_exception=config.engine.raise_on_exception,
+        )
+
+        active_adapter: GEPAAdapter = CodingAdapter(
+            evaluator=wrapped_evaluator,
+            parallel=config.engine.parallel,
+            max_workers=config.engine.max_workers,
+            best_example_evals_k=config.engine.best_example_evals_k,
+            objective=objective,
+            background=background,
+            cache_mode="off",
+            coding_agent=resolved_coding_agent,  # type: ignore[possibly-undefined]
+            repos=repos,  # type: ignore[possibly-undefined]
+            base_branches=base_branches,  # type: ignore[possibly-undefined]
+            branch_prefix=first_cc.branch_prefix,  # type: ignore[possibly-undefined]
+        )
+
     else:
-        resolved_cache_mode = config.engine.cache_evaluation_storage
+        # Text mode: wrap evaluator, enable caching, etc.
+        wrapped_evaluator = EvaluatorWrapper(
+            evaluator,
+            single_instance_mode,
+            capture_stdio=config.engine.capture_stdio,
+            str_candidate_mode=str_candidate_mode,
+            raise_on_exception=config.engine.raise_on_exception,
+        )
 
-    # Validate disk mode requires run_dir
-    if resolved_cache_mode == "disk" and not config.engine.run_dir:
-        raise ValueError("cache_evaluation_storage='disk' requires run_dir in EngineConfig")
+        # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
+        if not config.engine.cache_evaluation:
+            resolved_cache_mode = "off"
+            if config.engine.cache_evaluation_storage != "auto":
+                warnings.warn(
+                    f"cache_evaluation_storage={config.engine.cache_evaluation_storage!r} is set but "
+                    f"cache_evaluation=False, so caching is disabled. Set cache_evaluation=True to "
+                    f"enable caching with the specified storage mode.",
+                    stacklevel=2,
+                )
+        elif config.engine.cache_evaluation_storage == "auto":
+            resolved_cache_mode = "disk" if config.engine.run_dir else "memory"
+        else:
+            resolved_cache_mode = config.engine.cache_evaluation_storage
 
-    # Configure cloudpickle for code execution subprocess serialization
-    from gepa.utils.code_execution import set_use_cloudpickle
+        # Validate disk mode requires run_dir
+        if resolved_cache_mode == "disk" and not config.engine.run_dir:
+            raise ValueError("cache_evaluation_storage='disk' requires run_dir in EngineConfig")
 
-    set_use_cloudpickle(config.engine.use_cloudpickle)
+        # Configure cloudpickle for code execution subprocess serialization
+        from gepa.utils.code_execution import set_use_cloudpickle
 
-    active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
-        evaluator=wrapped_evaluator,
-        parallel=config.engine.parallel,
-        max_workers=config.engine.max_workers,
-        refiner_config=config.refiner,
-        best_example_evals_k=config.engine.best_example_evals_k,
-        objective=objective,
-        background=background,
-        cache_mode=resolved_cache_mode,
-        cache_dir=config.engine.run_dir,
-    )
+        set_use_cloudpickle(config.engine.use_cloudpickle)
+
+        active_adapter = OptimizeAnythingAdapter(
+            evaluator=wrapped_evaluator,
+            parallel=config.engine.parallel,
+            max_workers=config.engine.max_workers,
+            refiner_config=config.refiner,
+            best_example_evals_k=config.engine.best_example_evals_k,
+            objective=objective,
+            background=background,
+            cache_mode=resolved_cache_mode,
+            cache_dir=config.engine.run_dir,
+        )
 
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(effective_dataset)
@@ -1501,48 +1642,58 @@ def optimize_anything(
     )
 
     # --- 9. Build reflection prompt template from objective/background if provided ---
-    # Check for conflicting configuration: user cannot provide both objective/background
-    # AND a custom reflection_prompt_template (these are mutually exclusive approaches)
-    user_provided_custom_template = (
-        config.reflection.reflection_prompt_template is not None
-        and config.reflection.reflection_prompt_template != optimize_anything_reflection_prompt_template
-    )
-    # Treat empty strings as "not provided" - only non-empty strings count
-    user_provided_objective_or_background = bool(objective) or bool(background)
-
-    if user_provided_custom_template and user_provided_objective_or_background:
-        raise ValueError(
-            "Cannot specify both 'objective'/'background' parameters and a custom "
-            "'config.reflection.reflection_prompt_template'. These are mutually exclusive options. "
-            "Either use objective/background to auto-generate a reflection prompt, or provide "
-            "your own custom template via config.reflection.reflection_prompt_template."
+    # In coding mode, the adapter handles proposal via its own propose_new_texts;
+    # skip reflection prompt template logic entirely.
+    if not code_candidate_mode:
+        # Check for conflicting configuration: user cannot provide both objective/background
+        # AND a custom reflection_prompt_template (these are mutually exclusive approaches)
+        user_provided_custom_template = (
+            config.reflection.reflection_prompt_template is not None
+            and config.reflection.reflection_prompt_template != optimize_anything_reflection_prompt_template
         )
+        # Treat empty strings as "not provided" - only non-empty strings count
+        user_provided_objective_or_background = bool(objective) or bool(background)
 
-    # If objective or background are provided, build a custom reflection prompt template
-    # with those values filled in, creating a template with <curr_param> and <side_info> placeholders
-    if user_provided_objective_or_background:
-        config.reflection.reflection_prompt_template = _build_reflection_prompt_template(
-            objective=objective, background=background
-        )
+        if user_provided_custom_template and user_provided_objective_or_background:
+            raise ValueError(
+                "Cannot specify both 'objective'/'background' parameters and a custom "
+                "'config.reflection.reflection_prompt_template'. These are mutually exclusive options. "
+                "Either use objective/background to auto-generate a reflection prompt, or provide "
+                "your own custom template via config.reflection.reflection_prompt_template."
+            )
 
-    # --- 10. Validate reflection prompt template ---
-    if config.reflection.reflection_prompt_template is not None:
-        assert not (active_adapter is not None and getattr(active_adapter, "propose_new_texts", None) is not None), (
-            f"Adapter {active_adapter!s} provides its own propose_new_texts method; "
-            "reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
-        )
+        # If objective or background are provided, build a custom reflection prompt template
+        # with those values filled in, creating a template with <curr_param> and <side_info> placeholders
+        if user_provided_objective_or_background:
+            config.reflection.reflection_prompt_template = _build_reflection_prompt_template(
+                objective=objective, background=background
+            )
 
-        # Validate template(s) - can be a single string or dict of templates
-        from gepa.strategies.instruction_proposal import InstructionProposalSignature
+        # --- 10. Validate reflection prompt template ---
+        if config.reflection.reflection_prompt_template is not None:
+            assert not (
+                active_adapter is not None and getattr(active_adapter, "propose_new_texts", None) is not None
+            ), (
+                f"Adapter {active_adapter!s} provides its own propose_new_texts method; "
+                "reflection_prompt_template will be ignored. Set reflection_prompt_template to None."
+            )
 
-        if isinstance(config.reflection.reflection_prompt_template, dict):
-            for param_name, template in config.reflection.reflection_prompt_template.items():
-                try:
-                    InstructionProposalSignature.validate_prompt_template(template)
-                except ValueError as e:
-                    raise ValueError(f"Invalid reflection_prompt_template for parameter '{param_name}': {e}") from e
-        else:
-            InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
+            # Validate template(s) - can be a single string or dict of templates
+            from gepa.strategies.instruction_proposal import InstructionProposalSignature
+
+            if isinstance(config.reflection.reflection_prompt_template, dict):
+                for param_name, template in config.reflection.reflection_prompt_template.items():
+                    try:
+                        InstructionProposalSignature.validate_prompt_template(template)
+                    except ValueError as e:
+                        raise ValueError(
+                            f"Invalid reflection_prompt_template for parameter '{param_name}': {e}"
+                        ) from e
+            else:
+                InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
+    else:
+        # Coding mode: disable reflection prompt template (adapter handles proposal)
+        config.reflection.reflection_prompt_template = None
 
     # --- 11. Build reflective proposer from ReflectionConfig ---
     reflective_proposer = ReflectiveMutationProposer(
