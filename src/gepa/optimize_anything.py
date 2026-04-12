@@ -484,16 +484,6 @@ class EngineConfig:
     parallel: bool = True
     max_workers: int | None = field(default_factory=lambda: os.cpu_count() or 32)
 
-    # Number of parallel proposal workers per optimization step.
-    # When > 1, multiple minibatches are sampled and proposed concurrently
-    # (each with its own evaluate-propose-evaluate pipeline), then acceptances
-    # are processed sequentially.
-    # Set to "auto" to compute from max_workers and minibatch_size:
-    #   auto = max(1, max_workers // minibatch_size)
-    # Each proposal evaluates minibatch_size examples at a time, so this
-    # fills the worker pool across concurrent proposals.
-    num_parallel_proposals: int | Literal["auto"] = 1
-
     # Evaluation caching
     cache_evaluation: bool = False
     cache_evaluation_storage: CacheEvaluationStorage = "auto"
@@ -514,6 +504,12 @@ class EngineConfig:
     # internally by libraries. For those, use oa.log() or capture subprocess
     # output manually and pass it to oa.log().
     capture_stdio: bool = False
+
+    # Batch-based parallel proposals configuration.
+    # When parallel_sampling_strategy is set, the engine uses batch-based
+    # parallel proposals instead of the default sequential path.
+    parallel_sampling_strategy: Any | None = None
+    parallel_selection_strategy: Any | None = None
 
 
 def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
@@ -1095,21 +1091,11 @@ class EvaluatorWrapper:
         return self._wrapped(candidate, example=example, **kwargs)
 
 
-def _resolve_num_parallel_proposals(
-    value: int | Literal["auto"],
-    max_workers: int,
-    minibatch_size: int,
-) -> int:
-    """Resolve num_parallel_proposals, computing automatically if "auto"."""
-    if isinstance(value, int):
-        return value
-    return max(1, max_workers // minibatch_size)
-
-
 def optimize_anything(
     seed_candidate: str | Candidate | None = None,
     *,
     evaluator: Callable[..., Any],
+    batch_evaluator: Callable[..., Any] | None = None,
     dataset: list[DataInst] | None = None,
     valset: list[DataInst] | None = None,
     objective: str | None = None,
@@ -1301,6 +1287,7 @@ def optimize_anything(
         background=background,
         cache_mode=resolved_cache_mode,
         cache_dir=config.engine.run_dir,
+        batch_evaluator=batch_evaluator,
     )
 
     # Normalize datasets to DataLoader instances
@@ -1586,7 +1573,17 @@ def optimize_anything(
     if config.engine.cache_evaluation:
         evaluation_cache = EvaluationCache[Any, Any]()
 
-    # --- 14. Build the main engine from EngineConfig ---
+    # --- 14. Build parallel config if specified ---
+    parallel_config = None
+    if config.engine.parallel_sampling_strategy is not None:
+        from gepa.proposer.parallel import AllImprovements, ParallelConfig
+
+        parallel_config = ParallelConfig(
+            sampling_strategy=config.engine.parallel_sampling_strategy,
+            selection_strategy=config.engine.parallel_selection_strategy or AllImprovements(),
+        )
+
+    # --- 15. Build the main engine from EngineConfig ---
     engine = GEPAEngine(
         adapter=active_adapter,
         run_dir=config.engine.run_dir,
@@ -1608,14 +1605,10 @@ def optimize_anything(
         acceptance_criterion=acceptance_criterion_instance,
         use_cloudpickle=config.engine.use_cloudpickle,
         evaluation_cache=evaluation_cache,
-        num_parallel_proposals=_resolve_num_parallel_proposals(
-            config.engine.num_parallel_proposals,
-            config.engine.max_workers or (os.cpu_count() or 32),
-            config.reflection.reflection_minibatch_size or 1,
-        ),
+        parallel_config=parallel_config,
     )
 
-    # --- 15. Run optimization ---
+    # --- 16. Run optimization ---
     logger = config.tracking.logger
     with experiment_tracker:
         if isinstance(logger, Logger):
