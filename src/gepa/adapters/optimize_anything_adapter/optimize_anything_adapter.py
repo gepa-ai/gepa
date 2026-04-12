@@ -331,20 +331,15 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Normalize each result to (score, output, side_info)
         normalized: list[tuple[float, Any, dict[str, Any]]] = []
         for r in raw_results:
-            if isinstance(r, tuple):
-                if len(r) == 2:
-                    score, side_info = r
-                    si = side_info if isinstance(side_info, dict) else {}
-                    normalized.append((float(score), (score, None, si), si))
-                elif len(r) >= 3:
-                    score, output, side_info = r[0], r[1], r[2]
-                    si = side_info if isinstance(side_info, dict) else {}
-                    normalized.append((float(score), output, si))
-                else:
-                    score = float(r[0])
-                    normalized.append((score, (score, None, {}), {}))
+            r_seq: list[Any] = list(r) if isinstance(r, (list, tuple)) else [r]
+            if len(r_seq) >= 3:
+                si = r_seq[2] if isinstance(r_seq[2], dict) else {}
+                normalized.append((float(r_seq[0]), r_seq[1], si))
+            elif len(r_seq) == 2:
+                si = r_seq[1] if isinstance(r_seq[1], dict) else {}
+                normalized.append((float(r_seq[0]), (r_seq[0], None, si), si))
             else:
-                score = float(r)
+                score = float(r_seq[0])
                 normalized.append((score, (score, None, {}), {}))
 
         # Group by item index and build EvaluationBatch per item
