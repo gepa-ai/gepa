@@ -1109,7 +1109,8 @@ def _resolve_num_parallel_proposals(
 def optimize_anything(
     seed_candidate: str | Candidate | None = None,
     *,
-    evaluator: Callable[..., Any],
+    evaluator: Callable[..., Any] | None = None,
+    batch_evaluator: Callable[..., Any] | None = None,
     dataset: list[DataInst] | None = None,
     valset: list[DataInst] | None = None,
     objective: str | None = None,
@@ -1152,7 +1153,22 @@ def optimize_anything(
               exploratory tasks where you know *what good looks like* but not
               where to begin.
 
-        evaluator: Scoring function.  Returns ``(score, side_info)`` or ``score``.
+        evaluator: Per-example scoring function.  Returns ``(score, side_info)``
+            or ``score``.  Optional when ``batch_evaluator`` is provided, but at
+            least one of the two must be given.  When both are given, only
+            ``batch_evaluator`` is used for evaluation batches; ``evaluator``
+            is never called.  ``oa.log()`` and ``capture_stdio`` only work
+            with ``evaluator`` — they are incompatible with ``batch_evaluator``
+            (a ``ValueError`` is raised if ``capture_stdio=True`` is set
+            alongside ``batch_evaluator``).
+        batch_evaluator: Optional batch scoring function.  When provided, GEPA
+            calls ``batch_evaluator([(candidate, example), ...])`` for each
+            evaluation batch instead of dispatching examples individually via
+            the thread pool.  Useful when you want full control over batching
+            — e.g. vectorized inference, batched API calls, or GPU pipelines.
+            Must return a list of results aligned with the input list, where
+            each result is ``(score, side_info)`` or just ``score``.
+            Incompatible with ``capture_stdio=True`` and ``oa.log()``.
             See :class:`Evaluator`.  Diagnostic output via ``oa.log()`` is
             automatically captured as Actionable Side Information (ASI).
             For richer diagnostics, return a ``(score, dict)`` tuple with
@@ -1225,6 +1241,55 @@ def optimize_anything(
     if config is None:
         config = GEPAConfig()
 
+    # Validate evaluator / batch_evaluator
+    if evaluator is None and batch_evaluator is None:
+        raise ValueError(
+            "Either 'evaluator' or 'batch_evaluator' must be provided. "
+            "Pass a per-example evaluator, a batch evaluator, or both."
+        )
+    if evaluator is not None and batch_evaluator is not None:
+        # Both provided: batch_evaluator handles batches, evaluator is unused
+        # but we keep it for the EvaluatorWrapper stub below.
+        pass
+
+    # batch_evaluator is incompatible with oa.log() / capture_stdio because GEPA
+    # never calls the single evaluator, so no LogContext is set.  oa.log() would
+    # silently discard all output and capture_stdio would never capture anything.
+    if batch_evaluator is not None:
+        if config.engine.capture_stdio:
+            raise ValueError(
+                "capture_stdio=True is incompatible with batch_evaluator. "
+                "GEPA does not call the single evaluator when batch_evaluator "
+                "is provided, so stdout/stderr capture has no effect. "
+                "Capture output inside your batch_evaluator and return it in side_info."
+            )
+        # oa.log() inside an evaluator passed alongside batch_evaluator also has
+        # no effect because GEPA never calls that evaluator.  If the user passes
+        # only batch_evaluator (no evaluator), we catch that below.  If they pass
+        # both, we warn loudly here so they know oa.log() won't be captured.
+        if evaluator is not None:
+            warnings.warn(
+                "Both 'evaluator' and 'batch_evaluator' were provided. "
+                "GEPA will use batch_evaluator for all evaluation batches and "
+                "will never call evaluator directly. Any oa.log() calls or "
+                "print() statements inside evaluator will not be captured. "
+                "Move diagnostic logging into batch_evaluator and include it "
+                "in the returned side_info dicts.",
+                stacklevel=2,
+            )
+
+    # When only batch_evaluator is given, create a stub evaluator that raises
+    # clearly if ever called — it should never be invoked by GEPA, but guards
+    # against unexpected code paths.
+    if evaluator is None:
+        def _batch_only_stub(*_args: Any, **_kwargs: Any) -> Any:
+            raise RuntimeError(
+                "GEPA attempted to call the single evaluator but only "
+                "'batch_evaluator' was provided.  This is a bug — please "
+                "file an issue at https://github.com/gepa-ai/gepa/issues."
+            )
+        evaluator = _batch_only_stub
+
     # Detect seed generation mode: when seed_candidate is None, the LLM
     # will generate the initial candidate from the objective.
     needs_seed_generation = False
@@ -1293,6 +1358,7 @@ def optimize_anything(
 
     active_adapter: GEPAAdapter = OptimizeAnythingAdapter(
         evaluator=wrapped_evaluator,
+        batch_evaluator=batch_evaluator,
         parallel=config.engine.parallel,
         max_workers=config.engine.max_workers,
         refiner_config=config.refiner,
