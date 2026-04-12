@@ -77,6 +77,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         acceptance_criterion: AcceptanceCriterion | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
+        # Batch-based parallel proposals configuration
+        parallel_config: Any | None = None,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -120,6 +122,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.display_progress_bar = display_progress_bar
         self.use_cloudpickle = use_cloudpickle
 
+        self.parallel_config = parallel_config
         self.raise_on_exception = raise_on_exception
         self.val_evaluation_policy: EvaluationPolicy[DataId, DataInst] = (
             val_evaluation_policy if val_evaluation_policy is not None else FullEvaluationPolicy()
@@ -629,19 +632,57 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     self.merge_proposer.last_iter_found_new_program = False
 
                 # 2) Reflective mutation proposer
-                proposal = self.reflective_proposer.propose(state)
-                if proposal is None:
-                    self.logger.log(
-                        f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate"
+                if self.parallel_config is not None:
+                    from gepa.proposer.parallel import propose_batch
+
+                    accepted_proposals = propose_batch(
+                        proposer=self.reflective_proposer,
+                        adapter=self.adapter,
+                        state=state,
+                        sampling_strategy=self.parallel_config.sampling_strategy,
+                        selection_strategy=self.parallel_config.selection_strategy,
+                        acceptance_criterion=self.acceptance_criterion,
+                        logger=self.logger,
+                        experiment_tracker=self.experiment_tracker,
+                        callbacks=self.callbacks,
                     )
-                    continue
+                    for prop in accepted_proposals:
+                        new_idx, _ = self._run_full_eval_and_add(
+                            new_program=prop.candidate,
+                            state=state,
+                            parent_program_idx=prop.parent_program_ids,
+                        )
+                        proposal_accepted = True
+                        self._log_proposal_lm_calls(state.i + 1, prop, candidate_idx=new_idx)
+                        notify_callbacks(
+                            self.callbacks,
+                            "on_candidate_accepted",
+                            CandidateAcceptedEvent(
+                                iteration=state.i + 1,
+                                new_candidate_idx=new_idx,
+                                new_score=sum(prop.subsample_scores_after or []),
+                                parent_ids=prop.parent_program_ids,
+                            ),
+                        )
+                    if proposal_accepted and self.merge_proposer is not None:
+                        self.merge_proposer.last_iter_found_new_program = True
+                        if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
+                            self.merge_proposer.merges_due += 1
+                else:
+                    # Sequential path (default)
+                    proposal = self.reflective_proposer.propose(state)
+                    if proposal is None:
+                        self.logger.log(
+                            f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate"
+                        )
+                        continue
 
-                proposal_accepted = self._accept_reflective_proposal(proposal, state.i + 1, state)
+                    proposal_accepted = self._accept_reflective_proposal(proposal, state.i + 1, state)
 
-                if proposal_accepted and self.merge_proposer is not None:
-                    self.merge_proposer.last_iter_found_new_program = True
-                    if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
-                        self.merge_proposer.merges_due += 1
+                    if proposal_accepted and self.merge_proposer is not None:
+                        self.merge_proposer.last_iter_found_new_program = True
+                        if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
+                            self.merge_proposer.merges_due += 1
 
             except Exception as e:
                 self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
