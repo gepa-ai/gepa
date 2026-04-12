@@ -92,6 +92,11 @@ def optimize(
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
     acceptance_criterion: AcceptanceCriterion
     | Literal["strict_improvement", "improvement_or_equal"] = "strict_improvement",
+    # ComBEE parallel scan aggregation (https://arxiv.org/abs/2604.04247).
+    # Requires reflection_minibatch_size >= 4 to form k=floor(sqrt(n)) >= 2 groups.
+    use_combee: bool = False,
+    combee_duplication_factor: int = 2,
+    combee_aggregation_prompt: str | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -183,6 +188,14 @@ def optimize(
     - seed: The seed to use for the random number generator.
     - val_evaluation_policy: Strategy controlling which validation ids to score each iteration and which candidate is currently best. Supported strings: "full_eval" (evaluate every id each time) Passing None defaults to "full_eval".
     - raise_on_exception: Whether to propagate proposer/evaluator exceptions instead of stopping gracefully.
+
+    - use_combee: Enable ComBEE parallel scan aggregation (https://arxiv.org/abs/2604.04247).
+      When True, reflections are split into k=floor(sqrt(n)) groups (augmented shuffling + two-level
+      Map-Reduce) to avoid context overload at large batch sizes. Requires reflection_minibatch_size >= 4.
+      Default: False (standard GEPA behaviour).
+    - combee_duplication_factor: Augmented-shuffle duplication count `p` used by ComBEE. Default: 2.
+    - combee_aggregation_prompt: Optional custom Level-2 Reduce prompt used to combine the intermediate
+      ComBEE proposals. Default: None (use GEPA's built-in aggregation prompt).
     """
     # Validate seed_candidate is not None or empty
     if seed_candidate is None or not seed_candidate:
@@ -388,6 +401,10 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
+        use_combee=use_combee,
+        combee_duplication_factor=combee_duplication_factor,
+        combee_aggregation_prompt=combee_aggregation_prompt,
+        rng=rng,
     )
 
     def evaluator_fn(

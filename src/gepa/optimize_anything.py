@@ -713,6 +713,32 @@ Provide the new parameter value within ``` blocks."""
 
 # --- Component 2: Proposer Configurations ---
 @dataclass
+class ComBEEConfig:
+    """Controls optional ComBEE aggregation for reflection updates.
+
+    ``use_combee`` enables ComBEE parallel scan aggregation
+    (`paper <https://arxiv.org/abs/2604.04247>`_). When enabled, the
+    reflection step applies augmented shuffling, splits the minibatch into
+    ``k = floor(sqrt(n))`` groups, runs one LM call per group (Map), and
+    aggregates the ``k`` intermediate instructions into one final update
+    (Reduce). This prevents context overload at large batch sizes.
+
+    ComBEE requires ``reflection_minibatch_size >= 4``; with the default of 3,
+    ``k=1`` and it silently falls back to standard GEPA.
+
+    ``duplication_factor`` is the augmented-shuffle duplication count ``p``.
+    The paper default is ``2``.
+
+    ``aggregation_prompt_template`` optionally overrides the Level-2 Reduce
+    prompt used to synthesize the intermediate proposals.
+    """
+
+    use_combee: bool = False
+    duplication_factor: int = 2
+    aggregation_prompt_template: str | None = None
+
+
+@dataclass
 class ReflectionConfig:
     """Controls how the LLM proposes improved candidates each iteration.
 
@@ -726,6 +752,10 @@ class ReflectionConfig:
     targeted improvements on that subset.  Over iterations, all examples get
     attention, and the Pareto frontier preserves specialized gains across
     iterations rather than averaging them away.
+
+    ``combee`` controls the optional ComBEE aggregation stage. ComBEE requires
+    ``reflection_minibatch_size >= 4``; with the default of 3, ``k=1`` and it
+    silently falls back to standard GEPA.
     """
 
     skip_perfect_score: bool = False
@@ -736,6 +766,7 @@ class ReflectionConfig:
     reflection_lm: LanguageModel | str | None = "openai/gpt-5.1"
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
+    combee: ComBEEConfig = field(default_factory=ComBEEConfig)
 
 
 @dataclass
@@ -1558,6 +1589,10 @@ def optimize_anything(
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
+        use_combee=config.reflection.combee.use_combee,
+        combee_duplication_factor=config.reflection.combee.duplication_factor,
+        combee_aggregation_prompt=config.reflection.combee.aggregation_prompt_template,
+        rng=rng,
         callbacks=config.callbacks,
     )
 

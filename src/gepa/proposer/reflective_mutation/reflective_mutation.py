@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import random
 import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -86,6 +87,14 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
+        # ComBEE aggregation options (see https://arxiv.org/abs/2604.04247)
+        # Requires reflection_minibatch_size to be set significantly larger than the
+        # default of 3; k = floor(sqrt(n)) groups are formed, so n >= 4 is needed
+        # for ComBEE to activate (n=3 gives k=1 and falls back to naive).
+        use_combee: bool = False,
+        combee_duplication_factor: int = 2,
+        combee_aggregation_prompt: str | None = None,
+        rng: random.Random | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -104,6 +113,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.reflection_prompt_template = reflection_prompt_template
         # Track parameters for which we've already logged missing template warnings
         self._missing_template_warnings: set[str] = set()
+
+        self.use_combee = use_combee
+        self.combee_duplication_factor = combee_duplication_factor
+        self._combee_aggregation_prompt = combee_aggregation_prompt or InstructionProposalSignature.default_aggregation_prompt_template
+        self._rng = rng if rng is not None else random.Random(0)
 
         if isinstance(reflection_prompt_template, dict):
             for _param_name, template in reflection_prompt_template.items():
@@ -178,6 +192,118 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             prompts[name] = prompt
             raw_lm_outputs[name] = raw_output
         return new_texts, prompts, raw_lm_outputs
+
+    def _propose_new_texts_combee(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
+        components_to_update: list[str],
+    ) -> tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]]:
+        """ComBEE parallel scan aggregation with augmented shuffling.
+
+        See ComBEE paper §3.1-3.2: https://arxiv.org/abs/2604.04247
+
+        For each component:
+          1. Augmented shuffle: duplicate each reflection p times, shuffle.
+          2. Split into k = ⌊√n⌋ groups (n = number of original reflections).
+          3. Level-1 (Map): call the reflection LM once per group to get k intermediate instructions.
+          4. Level-2 (Reduce): aggregate the k intermediate instructions into one final instruction.
+        """
+        assert self.reflection_lm is not None, "reflection_lm is required for ComBEE aggregation"
+        p = self.combee_duplication_factor
+
+        new_texts: dict[str, str] = {}
+        lm_prompts: dict[str, str | list[dict[str, Any]]] = {}
+        raw_lm_outputs: dict[str, str] = {}
+
+        for comp in components_to_update:
+            if comp not in reflective_dataset or not reflective_dataset.get(comp):
+                self.logger.log(f"Component '{comp}' is not in reflective dataset. Skipping.")
+                continue
+
+            if comp not in candidate:
+                self.logger.log(f"Component '{comp}' is missing from candidate. Skipping.")
+                continue
+
+            records = list(reflective_dataset[comp])
+            n = len(records)
+
+            # k = ⌊√n⌋ — default from ComBEE paper §3.1:
+            # https://arxiv.org/abs/2604.04247
+            k = max(1, int(n**0.5))
+
+            if k <= 1:
+                # Degenerate case: fall back to the standard single-group reflection
+                naive_texts, naive_lm_prompts, naive_raw = self.propose_new_texts(candidate, {comp: records}, [comp])
+                if comp in naive_texts:
+                    new_texts[comp] = naive_texts[comp]
+                    lm_prompts[comp] = naive_lm_prompts.get(comp, "")
+                    raw_lm_outputs[comp] = naive_raw.get(comp, "")
+                continue
+
+            # --- Augmented shuffle (paper §3.2) ---
+            # Duplicate each reflection p times, then shuffle the full augmented list.
+            augmented: list[Mapping[str, Any]] = records * p
+            self._rng.shuffle(augmented)
+            total_aug = len(augmented)  # = p * n
+
+            # Determine per-component prompt template (level-1 uses the user template)
+            if isinstance(self.reflection_prompt_template, dict):
+                level1_prompt_template = self.reflection_prompt_template.get(comp)
+            else:
+                level1_prompt_template = self.reflection_prompt_template
+
+            # --- Level-1 (Map): one LM call per group ---
+            base_group_size = total_aug // k
+            remainder = total_aug % k
+            group_proposals: list[str] = []
+            offset = 0
+            for i in range(k):
+                size = base_group_size + (1 if i < remainder else 0)
+                group_records = augmented[offset : offset + size]
+                offset += size
+
+                if not group_records:
+                    continue
+
+                result, _, _ = InstructionProposalSignature.run_with_metadata(
+                    lm=self.reflection_lm,
+                    input_dict={
+                        "current_instruction_doc": candidate[comp],
+                        "dataset_with_feedback": group_records,
+                        "prompt_template": level1_prompt_template,
+                    },
+                )
+                group_proposals.append(result["new_instruction"])
+
+            if not group_proposals:
+                continue
+
+            if len(group_proposals) == 1:
+                # Only one valid group produced a proposal — skip the aggregation step
+                new_texts[comp] = group_proposals[0]
+                continue
+
+            # --- Level-2 (Reduce): aggregate k proposals into one final instruction ---
+            # Each proposal is treated as a single-field record so it renders cleanly
+            # inside the aggregation prompt's <side_info> block.
+            agg_records: list[Mapping[str, Any]] = [
+                {"Proposed Instruction Update": prop} for prop in group_proposals
+            ]
+
+            result, lm_prompt, raw_output = InstructionProposalSignature.run_with_metadata(
+                lm=self.reflection_lm,
+                input_dict={
+                    "current_instruction_doc": candidate[comp],
+                    "dataset_with_feedback": agg_records,
+                    "prompt_template": self._combee_aggregation_prompt,
+                },
+            )
+            new_texts[comp] = result["new_instruction"]
+            lm_prompts[comp] = lm_prompt
+            raw_lm_outputs[comp] = raw_output
+
+        return new_texts, lm_prompts, raw_lm_outputs
 
     def prepare_proposal(self, state: GEPAState) -> ProposalContext:
         """Select parent candidate and sample minibatch. Must be called sequentially.
@@ -366,9 +492,22 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 ),
             )
 
-            new_texts, prompts, raw_lm_outputs = self.propose_new_texts(
-                ctx.curr_prog, reflective_dataset, predictor_names_to_update
+            # ComBEE is only used when reflection_lm is available and no custom
+            # adapter / proposer overrides the proposal step (§3.1-3.2).
+            use_combee = (
+                self.use_combee
+                and self.reflection_lm is not None
+                and self.adapter.propose_new_texts is None
+                and self.custom_candidate_proposer is None
             )
+            if use_combee:
+                new_texts, prompts, raw_lm_outputs = self._propose_new_texts_combee(
+                    ctx.curr_prog, reflective_dataset, predictor_names_to_update
+                )
+            else:
+                new_texts, prompts, raw_lm_outputs = self.propose_new_texts(
+                    ctx.curr_prog, reflective_dataset, predictor_names_to_update
+                )
 
             notify_callbacks(
                 self.callbacks,
