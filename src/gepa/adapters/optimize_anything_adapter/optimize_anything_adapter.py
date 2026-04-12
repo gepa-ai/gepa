@@ -73,8 +73,10 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         background: str | None = None,
         cache_mode: str = "memory",  # "off", "memory", "disk"
         cache_dir: str | Path | None = None,
+        batch_evaluator: Callable[..., Any] | None = None,
     ):
         self.evaluator = evaluator
+        self._batch_evaluator = batch_evaluator
         self.parallel = parallel
         self.max_workers = max_workers
         self.refiner_config = refiner_config
@@ -290,6 +292,92 @@ class OptimizeAnythingAdapter(GEPAAdapter):
             objective_scores=objective_scores,
             num_metric_calls=num_metric_calls,
         )
+
+    def batch_evaluate(
+        self,
+        items: list[tuple[dict[str, str], list]],
+        capture_traces: bool = False,
+    ) -> list[EvaluationBatch]:
+        """Evaluate multiple (candidate, batch) pairs.
+
+        When a ``batch_evaluator`` was provided at construction time, all
+        (candidate, example) pairs are flattened into a single call to the
+        user's batch function.  Otherwise falls back to sequential
+        ``evaluate()`` calls.
+        """
+        if self._batch_evaluator is not None:
+            return self._batch_evaluate_via_user_fn(items, capture_traces)
+        return [self.evaluate(batch, candidate, capture_traces=capture_traces) for candidate, batch in items]
+
+    def _batch_evaluate_via_user_fn(
+        self,
+        items: list[tuple[dict[str, str], list]],
+        capture_traces: bool,
+    ) -> list[EvaluationBatch]:
+        """Flatten all (candidate, example) pairs, call batch_evaluator once, repackage."""
+        assert self._batch_evaluator is not None
+
+        pairs: list[tuple[dict[str, str], Any]] = []
+        pair_to_item_idx: list[int] = []
+        for item_idx, (candidate, batch) in enumerate(items):
+            for example in batch:
+                pairs.append((candidate, example))
+                pair_to_item_idx.append(item_idx)
+
+        raw_results = self._batch_evaluator(pairs)
+        if len(raw_results) != len(pairs):
+            raise ValueError(f"batch_evaluator returned {len(raw_results)} results but expected {len(pairs)}")
+
+        # Normalize each result to (score, output, side_info)
+        normalized: list[tuple[float, Any, dict[str, Any]]] = []
+        for r in raw_results:
+            if isinstance(r, tuple):
+                if len(r) == 2:
+                    score, side_info = r
+                    si = side_info if isinstance(side_info, dict) else {}
+                    normalized.append((float(score), (score, None, si), si))
+                elif len(r) >= 3:
+                    score, output, side_info = r[0], r[1], r[2]
+                    si = side_info if isinstance(side_info, dict) else {}
+                    normalized.append((float(score), output, si))
+                else:
+                    score = float(r[0])
+                    normalized.append((score, (score, None, {}), {}))
+            else:
+                score = float(r)
+                normalized.append((score, (score, None, {}), {}))
+
+        # Group by item index and build EvaluationBatch per item
+        results_by_item: dict[int, list[tuple[float, Any, dict[str, Any]]]] = {}
+        for pair_idx, norm in enumerate(normalized):
+            item_idx = pair_to_item_idx[pair_idx]
+            results_by_item.setdefault(item_idx, []).append(norm)
+
+        eval_batches: list[EvaluationBatch] = []
+        for item_idx in range(len(items)):
+            item_results = results_by_item.get(item_idx, [])
+            scores = [s for s, _, _ in item_results]
+            outputs = [o for _, o, _ in item_results]
+            side_infos: list[dict[str, Any]] = [si for _, _, si in item_results]
+
+            objective_scores: list[dict[str, float]] = []
+            for si in side_infos:
+                obj: dict[str, float] = {}
+                if isinstance(si, dict) and "scores" in si:
+                    obj.update(si["scores"])
+                objective_scores.append(obj)
+
+            eval_batches.append(
+                EvaluationBatch(
+                    outputs=outputs,
+                    scores=scores,
+                    trajectories=side_infos if capture_traces else None,
+                    objective_scores=objective_scores,
+                    num_metric_calls=len(item_results),
+                )
+            )
+
+        return eval_batches
 
     def _evaluate_with_refinement(
         self,

@@ -193,3 +193,29 @@ class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
         ...
 
     propose_new_texts: ProposalFn | None = None
+
+    # Optional batch evaluation: adapters that support evaluating multiple
+    # (candidate, batch) pairs in a single call can implement batch_evaluate.
+    # The engine uses this for parallel proposals.  When not implemented,
+    # the engine falls back to sequential evaluate() calls via
+    # default_batch_evaluate().
+    #
+    # Signature:
+    #   batch_evaluate(
+    #       self,
+    #       items: list[tuple[dict[str, str], list[DataInst]]],
+    #       capture_traces: bool = False,
+    #   ) -> list[EvaluationBatch[Trajectory, RolloutOutput]]
+
+
+def default_batch_evaluate(
+    adapter: GEPAAdapter,
+    items: list[tuple[dict[str, str], list]],
+    capture_traces: bool = False,
+) -> list[EvaluationBatch]:
+    """Default sequential batch_evaluate implementation.
+
+    Calls ``adapter.evaluate()`` once per (candidate, batch) pair.
+    Adapters can implement ``batch_evaluate()`` directly for true batching.
+    """
+    return [adapter.evaluate(batch, candidate, capture_traces=capture_traces) for candidate, batch in items]

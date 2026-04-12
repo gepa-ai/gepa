@@ -1089,6 +1089,7 @@ def optimize_anything(
     seed_candidate: str | Candidate | None = None,
     *,
     evaluator: Callable[..., Any],
+    batch_evaluator: Callable[..., Any] | None = None,
     dataset: list[DataInst] | None = None,
     valset: list[DataInst] | None = None,
     objective: str | None = None,
@@ -1280,6 +1281,7 @@ def optimize_anything(
         background=background,
         cache_mode=resolved_cache_mode,
         cache_dir=config.engine.run_dir,
+        batch_evaluator=batch_evaluator,
     )
 
     # Normalize datasets to DataLoader instances
