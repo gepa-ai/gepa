@@ -66,6 +66,7 @@ def optimize(
     merge_val_overlap_floor: int = 5,
     # Budget and Stop Condition
     max_metric_calls: int | None = None,
+    max_reflection_cost: float | None = None,
     stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None,
     # Logging and Callbacks
     logger: LoggerProtocol | None = None,
@@ -208,43 +209,6 @@ def optimize(
     train_loader = ensure_loader(trainset)
     val_loader = ensure_loader(valset) if valset is not None else train_loader
 
-    # Comprehensive stop_callback logic
-    # Convert stop_callbacks to a list if it's not already
-    stop_callbacks_list: list[StopperProtocol] = []
-    if stop_callbacks is not None:
-        if isinstance(stop_callbacks, Sequence):
-            stop_callbacks_list.extend(stop_callbacks)
-        else:
-            stop_callbacks_list.append(stop_callbacks)
-
-    # Add file stopper if run_dir is provided
-    if run_dir is not None:
-        stop_file_path = os.path.join(run_dir, "gepa.stop")
-        file_stopper = FileStopper(stop_file_path)
-        stop_callbacks_list.append(file_stopper)
-
-    # Add max_metric_calls stopper if provided
-    if max_metric_calls is not None:
-        from gepa.utils import MaxMetricCallsStopper
-
-        max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
-        stop_callbacks_list.append(max_calls_stopper)
-
-    # Assert that at least one stopping condition is provided
-    if not stop_callbacks_list:
-        raise ValueError(
-            "The user must provide at least one of stop_callbacks or max_metric_calls to specify a stopping condition."
-        )
-
-    # Create composite stopper if multiple stoppers, or use single stopper
-    stop_callback: StopperProtocol
-    if len(stop_callbacks_list) == 1:
-        stop_callback = stop_callbacks_list[0]
-    else:
-        from gepa.utils import CompositeStopper
-
-        stop_callback = CompositeStopper(*stop_callbacks_list)
-
     # Validate that only one custom proposal method is provided
     adapter_has_propose = hasattr(active_adapter, "propose_new_texts") and active_adapter.propose_new_texts is not None
     if adapter_has_propose and custom_candidate_proposer is not None:
@@ -260,13 +224,52 @@ def optimize(
             + "GEPA will use the default proposer, which requires a reflection_lm to be specified."
         )
 
+    # Resolve reflection LM before building stoppers so cost stopper can reference it
     reflection_lm_callable: LanguageModel | None = None
     if isinstance(reflection_lm, str):
         from gepa.lm import LM
 
         reflection_lm_callable = LM(reflection_lm)
+    elif reflection_lm is not None:
+        from gepa.lm import TrackingLM
+
+        reflection_lm_callable = TrackingLM(reflection_lm) if not hasattr(reflection_lm, "total_cost") else reflection_lm
     else:
-        reflection_lm_callable = reflection_lm
+        reflection_lm_callable = None
+
+    # --- Build stoppers (all in one place, after LM conversion) ---
+    stop_callbacks_list: list[StopperProtocol] = []
+    if stop_callbacks is not None:
+        if isinstance(stop_callbacks, Sequence):
+            stop_callbacks_list.extend(stop_callbacks)
+        else:
+            stop_callbacks_list.append(stop_callbacks)
+
+    if run_dir is not None:
+        stop_callbacks_list.append(FileStopper(os.path.join(run_dir, "gepa.stop")))
+
+    if max_metric_calls is not None:
+        from gepa.utils import MaxMetricCallsStopper
+
+        stop_callbacks_list.append(MaxMetricCallsStopper(max_metric_calls))
+
+    if max_reflection_cost is not None:
+        from gepa.utils import MaxReflectionCostStopper
+
+        stop_callbacks_list.append(MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_lm_callable))
+
+    if not stop_callbacks_list:
+        raise ValueError(
+            "The user must provide at least one of stop_callbacks, max_metric_calls, or max_reflection_cost to specify a stopping condition."
+        )
+
+    stop_callback: StopperProtocol
+    if len(stop_callbacks_list) == 1:
+        stop_callback = stop_callbacks_list[0]
+    else:
+        from gepa.utils import CompositeStopper
+
+        stop_callback = CompositeStopper(*stop_callbacks_list)
 
     if logger is None:
         if run_dir is not None:
