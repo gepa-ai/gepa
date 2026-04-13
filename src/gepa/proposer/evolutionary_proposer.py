@@ -55,6 +55,7 @@ def make_children_for_generation(
     best_quality_parent = max(
         frontier_candidates, key=lambda c: frontier_evals[c.candidate_id].summary['correctness']
     )
+    print(f"Best quality parent: {best_quality_parent}")
 
     # helper: choose a second parent emphasizing diversity
     def pick_second_parent() -> Candidate:
@@ -94,33 +95,36 @@ def make_children_for_generation(
                 )
                 # TODO(Cathy): Add logic here to add these to good variant.
                 if not_relevant or not variants:
+                    print(f"Not relevant or no variants for module {module}")
                     # module freeze logic lives outside (track streak; stop choosing module later)
                     continue
 
                 # create one child per variant (bounded)
                 for v in variants[: max(1, (offspring_count - len(children)))]:
+                    print(f"Creating child for module {module}")
+                    print(f"Variant: {v}")
                     child = apply_single_module_edit(parent, module, v)
                     children.append(child)
                     if len(children) >= offspring_count:
                         break
 
         # ---- 2) crossover: combine two parents
-        elif r < p_mutation + p_crossover:
-            a = random.choice(frontier_candidates)
-            b = pick_second_parent()
-            child = crossover(a, b, module_specs=a.module_specs, global_cap=a.global_token_cap)
-            children.append(child)
-
-        # ---- 3) pool injection: swap a module with a known-good text
-        else:
-            parent = random.choice(frontier_candidates)
-            module_to_swap = random.choice(MODULES)
-            pool = adapter.good_module_options.get(module_to_swap, [])
-            if not pool:
-                continue
-            new_text = random.choice(pool)
-            child = apply_single_module_edit(parent, module_to_swap, new_text)
-            children.append(child)
+        # elif r < p_mutation + p_crossover:
+        #     a = random.choice(frontier_candidates)
+        #     b = pick_second_parent()
+        #     child = crossover(a, b, module_specs=a.module_specs, global_cap=a.global_token_cap)
+        #     children.append(child)
+        #
+        # # ---- 3) pool injection: swap a module with a known-good text
+        # else:
+        #     parent = random.choice(frontier_candidates)
+        #     module_to_swap = random.choice(MODULES)
+        #     pool = adapter.good_module_options.get(module_to_swap, [])
+        #     if not pool:
+        #         continue
+        #     new_text = random.choice(pool)
+        #     child = apply_single_module_edit(parent, module_to_swap, new_text)
+        #     children.append(child)
 
     return children
 
@@ -175,9 +179,6 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
         self.p_crossover = p_crossover
         self.p_pool_inject = p_pool_inject
 
-        # Cache AL adapter evaluations for frontier candidates across iterations
-        self._al_eval_cache: dict[str, CandidateEval] = {}
-
         # Store batch data for eval set (trainset is just metadata for eval set runs)
         # Extract first batch from trainset
         from typing import cast, Dict, List
@@ -220,6 +221,8 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
         if not frontier_idxs_sorted:
             self.logger.log(f"Iteration {i}: No frontier programs found")
             return None
+        else:
+            self.logger.log(f"Iteration {i}: Found the following frontier programs {frontier_idxs_sorted}")
 
         # 2. Convert frontier programs to Candidate objects and evaluate with AL adapter
         frontier_candidates: list[Candidate] = []
@@ -232,12 +235,9 @@ class EvolutionaryProposer(ProposeNewCandidate[DataId]):
             prog_idx_to_cand_id[idx] = cand.candidate_id
             frontier_candidates.append(cand)
 
-            if cand.candidate_id not in self._al_eval_cache:
-                al_eval = self.al_adapter.evaluate(
-                    self._batch_data, program, capture_traces=True
-                )
-                self._al_eval_cache[cand.candidate_id] = al_eval
-            frontier_evals[cand.candidate_id] = self._al_eval_cache[cand.candidate_id]
+            frontier_evals[cand.candidate_id] = self.al_adapter.evaluate(
+                self._batch_data, program, capture_traces=True
+            )
 
         # 3. Generate children using evolutionary strategies
         children = make_children_for_generation(

@@ -127,10 +127,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         program: dict[str, str],
         state: GEPAState[RolloutOutput, DataId],
     ) -> ValsetEvaluation[RolloutOutput, DataId]:
-        print("Evalute on valset")
         valset = self.valset
         assert valset is not None
 
+        # TODO(Cathy): Add valset evaluation policy - select half.
         val_ids = self.val_evaluation_policy.get_eval_batch(valset, state)
 
         outputs_by_val_idx, scores_by_val_idx, objective_by_val_idx, num_actual_evals = state.cached_evaluate_full(

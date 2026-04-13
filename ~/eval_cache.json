@@ -1,12 +1,92 @@
 {
   "eval_cache": {
-    "[\"Glean Chat Multiturn V2 Small\", \"20260320\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1774839568",
-    "[\"Glean Chat Multiturn V2 Small\", \"20260320\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1774839572"
+    "[\"Glean Chat V2 Small\", \"20260315\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1775242142",
+    "[\"Glean Chat V2 Small\", \"20260315\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1775242148",
+    "[\"Glean Chat V2 Small\", \"20260316\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1775243684",
+    "[\"Glean Chat V2 Small\", \"20260316\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1775243688",
+    "[\"Glean Chat V2 Small\", \"20260318\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1775245242",
+    "[\"Glean Chat V2 Small\", \"20260318\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1775245246",
+    "[\"Glean Chat V2 Small\", \"20260320\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1775246809",
+    "[\"Glean Chat V2 Small\", \"20260320\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1775246815",
+    "[\"Glean Chat V2 Small\", \"20260325\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1775248372",
+    "[\"Glean Chat V2 Small\", \"20260325\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1775248376",
+    "[\"Glean Chat V2 Small\", \"20260403\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1775252064",
+    "[\"Glean Chat V2 Small\", \"20260403\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1775252068",
+    "[\"Fast Search Small\", \"20260315\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1775521763",
+    "[\"Fast Search Small\", \"20260315\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1775521768",
+    "[\"Glean Chat Multiturn V2 Small\", \"20260315\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1775973696",
+    "[\"Glean Chat Multiturn V2 Small\", \"20260315\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1775973702",
+    "[\"Glean Chat Multiturn V2 Small\", \"20260403\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1776022894",
+    "[\"Glean Chat Multiturn V2 Small\", \"20260403\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1776022899",
+    "[\"Glean Chat Multiturn V2 Small\", \"20260406\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1776038070",
+    "[\"Glean Chat Multiturn V2 Small\", \"20260406\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1776038076",
+    "[\"AI Answers Small\", \"20260403\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1776038383",
+    "[\"AI Answers Small\", \"20260403\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1776038388",
+    "[\"AI Answers Small\", \"20260406\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1776039931",
+    "[\"AI Answers Small\", \"20260406\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1776039936",
+    "[\"AI Answers Small\", \"20260408\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1776041495",
+    "[\"AI Answers Small\", \"20260408\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1776041500",
+    "[\"AI Answers Small\", \"20260410\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1776043040",
+    "[\"AI Answers Small\", \"20260410\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1776043045",
+    "[\"AI Answers Small\", \"20260412\", \"gpt\", \"3070257bbe5f1340\"]": "gepa_gpt_3070257bbe5f1340_1776044597",
+    "[\"AI Answers Small\", \"20260412\", \"fast\", \"1ad33e85e6067b04\"]": "gepa_fast_1ad33e85e6067b04_1776044604"
   },
   "judge_triggered": [
     [
-      "gepa_gpt_3070257bbe5f1340_1774839568",
-      "gepa_fast_1ad33e85e6067b04_1774839572"
+      "gepa_gpt_3070257bbe5f1340_1775248372",
+      "gepa_fast_1ad33e85e6067b04_1775248376"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1776041495",
+      "gepa_fast_1ad33e85e6067b04_1776041500"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1776022894",
+      "gepa_fast_1ad33e85e6067b04_1776022899"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1775246809",
+      "gepa_fast_1ad33e85e6067b04_1775246815"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1775245242",
+      "gepa_fast_1ad33e85e6067b04_1775245246"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1776039931",
+      "gepa_fast_1ad33e85e6067b04_1776039936"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1775973696",
+      "gepa_fast_1ad33e85e6067b04_1775973702"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1776038383",
+      "gepa_fast_1ad33e85e6067b04_1776038388"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1775252064",
+      "gepa_fast_1ad33e85e6067b04_1775252068"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1776044597",
+      "gepa_fast_1ad33e85e6067b04_1776044604"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1775521763",
+      "gepa_fast_1ad33e85e6067b04_1775521768"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1776043040",
+      "gepa_fast_1ad33e85e6067b04_1776043045"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1775243684",
+      "gepa_fast_1ad33e85e6067b04_1775243688"
+    ],
+    [
+      "gepa_gpt_3070257bbe5f1340_1775242142",
+      "gepa_fast_1ad33e85e6067b04_1775242148"
     ]
   ]
 }

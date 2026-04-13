@@ -157,8 +157,8 @@ class ReflectiveExampleOutputs(TypedDict):
     """Generated outputs for a reflective example."""
     student_answer: str
     teacher_answer: str
-    student_tools: str
-    teacher_tools: str
+    student_tools: list[str]
+    teacher_tools: list[str]
 
 class ReflectiveExampleMetrics(TypedDict):
     """Metrics for a reflective example."""
@@ -207,7 +207,6 @@ class ALRunner:
         self,
         api_url: str = "https://apps-gke.glean.com/debug/cortex/evalruns",
         cookie: Optional[str] = None,
-
         deployment_ids: Optional[List[str]] = None,
         cache_file: Optional[str] = None,
     ):
@@ -361,6 +360,7 @@ class ALRunner:
         # Build headers
         headers = {
             "accept": "*/*",
+            "content-type": "application/json",
             "origin": "https://dev.glean.com",
             "referer": "https://dev.glean.com/",
             "sec-ch-ua": '"Not:A-Brand";v="99", "Google Chrome";v="145", "Chromium";v="145"',
@@ -374,6 +374,8 @@ class ALRunner:
 
         if self.cookie:
             headers["cookie"] = self.cookie
+        else:
+            raise ValueError("No cookie provided for ALRunner")
 
         # Step 1: Make request to create the eval run
         print(f"Creating eval run {eval_id} for {eval_set_name}:{eval_set_version}...")
@@ -506,7 +508,7 @@ class Judge:
             print("Waiting for judge to finish by sleeping for 10 mins")
             time.sleep(600)
         else:
-            print(f"Skipping judge trigger (already triggered), fetching results for {teacher_eval_id} vs {student_eval_id}...")
+            print(f"Skipping judge trigger (already triggered), fetching results for {teacher_eval_id} vs {student_eval_id}.")
 
         judge_result = self._get_full_judge_results(student_eval_id, teacher_eval_id, headers)
 
@@ -528,7 +530,6 @@ class Judge:
         analysis_response.raise_for_status()
         result_data = analysis_response.json()
 
-        print("Getting full judge results")
         entries = result_data.get("entries", [])
 
         deployments = []
@@ -539,7 +540,6 @@ class Judge:
         output_tokens_map = dict()
         tools_invocations_map = dict()
         for entry in entries:
-            print("Processing entry: ", str(entry))
             has_error = False
             for eval_run_entry in entry.get("evalRunEntries", []):
                 if eval_run_entry.get("errorMessage"):
@@ -578,7 +578,6 @@ class Judge:
 
         # Extract trace information for each (entryId, evalId) pair
         for item in details_data:
-            print("Processing item: ", str(item))
             if item.get("error"):
                 print(f"Error in details data: {item.get('error')}")
                 continue
@@ -603,15 +602,13 @@ class Judge:
                 if not run_response.get("output"):
                     print(f"Error in run response: {run_response.get('errorMessage')}")
                     continue
-                print("Processing run response: ", str(run_response))
                 eval_id = run_response.get("runId")
                 trace_id = run_response.get("outputTrace", {}).get("id", "")
                 metadata = run_response.get("metadata", {})
-                print(f'Run response metadata: {metadata}')
                 finish_time_ms = metadata.get("finishTimeMillis", "")
-                correctness_score = correctness_scores.get((entry_id, eval_id), 0)
                 answer = run_response.get("output").get("chatResponseInfo", {}).get("actResponse", "")
                 query = item.get("evalSetEntry", {}).get("input", {}).get("query")
+                print(f'Got query: {query}')
 
                 if entry_id and eval_id and trace_id and finish_time_ms:
                     trace_info: TraceInfo = {
@@ -619,7 +616,6 @@ class Judge:
                         "trace_id": trace_id,
                         "finish_time_millis": finish_time_ms,
                         "deployment_id": deployment_id,
-                        "correctness_score": correctness_score,
                         # Execution details
                         "query": query,
                         "answer": answer,
@@ -633,7 +629,11 @@ class Judge:
                     duration = durations_map.get((entry_id, eval_id), 0)
                     if duration > 0:
                         trace_info["latency_ms"] = duration
-                    trace_infos.append(trace_info)
+                    if eval_id == student_eval_id and correctness_scores.get((entry_id, eval_id)) is not None:
+                        trace_info["correctness_score"] = correctness_scores.get((entry_id, eval_id))
+                        trace_infos.append(trace_info)
+                    elif eval_id == teacher_eval_id:
+                        trace_infos.append(trace_info)
 
             trace_map[entry_id] = trace_infos
 
@@ -667,14 +667,18 @@ class Judge:
 
                     # Store the detailed trace
                     trace_info["spans"] = detailed_trace.get("trace", {}).get("spans")
-                    print(f"Fetched detailed trace for entry {entry_id}, eval {eval_id}")
 
         # Average correctness across all entries
         correctness_score_list = []
         for entry_id, trace_infos in trace_map.items():
             for trace_info in trace_infos:
                 if trace_info.get("eval_id") == student_eval_id:
-                    correctness_score_list.append(trace_info.get("correctness_score", 0.0))
+                    curr_score = 0
+                    if trace_info.get("correctness_score"):
+                        curr_score = trace_info.get("correctness_score")
+                    else:
+                        print(f'Get a none correctness score for trace {trace_info.get("eval_id")}')
+                    correctness_score_list.append(curr_score)
         correctness = sum(correctness_score_list) / len(correctness_score_list) if correctness_score_list else 0.0
         tool_alignment = get_tool_alignment(trace_map, student_eval_id, teacher_eval_id)
 
@@ -1246,6 +1250,7 @@ class AssistantALAdapter:
 
         return result
 
+    # TODO(Cathy): Implement this
     def _compute_module_relevance(
         self,
         module_name: str,
@@ -1253,35 +1258,7 @@ class AssistantALAdapter:
         score: float
     ) -> float:
         """Compute how relevant this example is for improving the given module."""
-        correctness = trajectory.get("objective_scores", {})["correctness"]
-        tool_alignment = trajectory.get("objective_scores", {})["tool_alignment"]
-        grounding = trajectory.get("objective_scores", {})["grounding"]
-
-        output = trajectory["output"]
-        tool_errors = output["student_tool_errors"]
-        loops = output["student_loops"]
-
-        # Module-specific relevance scoring
-        if module_name.startswith("TOOL_USAGE"):
-            # Focus on tool selection and alignment issues
-            primary_mismatch = self._check_primary_tool_mismatch(output)
-            return float(primary_mismatch) * 2.0 + (1.0 - tool_alignment)
-
-        elif module_name == "FORMATTING":
-            # Focus on grounding and formatting issues
-            return float(grounding < 0.75) + float(tool_errors > 0) * 0.5
-
-        elif module_name == "PERSISTENCE":
-            # Focus on correctness, grounding, and exploration
-            low_exploration = float(loops < 2)
-            return float(correctness < 0.75) + float(grounding < 0.75) + low_exploration * 0.2
-
-        elif module_name == "GLOBAL_ROLE":
-            # Focus on overall correctness and tone
-            return float(correctness < 0.85)
-
-        # Default: use inverse of score
-        return 1.0 - score
+        return 1.0
 
     def _check_primary_tool_mismatch(self, output: ALRolloutOutput) -> bool:
         """Check if student and teacher used different primary tools."""
@@ -1327,8 +1304,8 @@ class AssistantALAdapter:
         output = trajectory["output"]
 
         # Determine which tool types were used
-        student_tools = [evt["tool_type"] for evt in output["student_tool_events"]]
-        teacher_tools = [evt["tool_type"] for evt in output["teacher_tool_events"]]
+        student_tools = output["student_tool_events"]
+        teacher_tools = output["teacher_tool_events"]
 
         # Build feedback based on metrics
         feedback_parts = []
@@ -1336,10 +1313,6 @@ class AssistantALAdapter:
         if trajectory.get("objective_scores", {})["correctness"] < 0.75:
             feedback_parts.append(
                 f"Correctness issue: Student scored {trajectory.get("objective_scores", {})['correctness']:.2f}. "
-                f"Student tool evant: {output["student_tool_events"]}"
-                f"Teacher tool event: {output["teacher_tool_events"]}"
-                f"Student answer: '{output['student_answer']}...'. "
-                f"Teacher answer: '{output['teacher_answer']}...'."
             )
 
         if trajectory.get("objective_scores", {})["tool_alignment"] < 0.5:
@@ -1370,8 +1343,8 @@ class AssistantALAdapter:
             "Generated Outputs": {
                 "student_answer": output["student_answer"],
                 "teacher_answer": output["teacher_answer"],
-                "student_tools": str(student_tools),
-                "teacher_tools": str(teacher_tools),
+                "student_tools": student_tools,
+                "teacher_tools": teacher_tools,
             },
             "Feedback": feedback,
             "Metrics": {
@@ -1437,15 +1410,16 @@ class AssistantALAdapter:
         # Build reflective dataset payload (minimal but high-signal)
         ex_blocks = []
         for r in reflective_examples:
+            print(f"Processing reflective example: {r}")
             ex_blocks.append(
                 f"---\n"
-                f"QUERY: {r['Inputs']['entry_id']}\n"
+                f"QUERY: {r['Inputs']['query']}\n"
                 f"TEACHER_ANSWER: {r['Generated Outputs']['teacher_answer']}\n"
                 f"STUDENT_ANSWER: {r['Generated Outputs']['student_answer']}\n"
                 f"TEACHER_TOOLS: {r['Generated Outputs']['teacher_tools']}\n"
                 f"STUDENT_TOOLS: {r['Generated Outputs']['student_tools']}\n"
                 f"JUDGE: correctness={r['Metrics']['correctness']:.2f}, grounding={r['Metrics']['grounding']:.2f}\n"
-                f"FEEDBACK: {r['Feedback']}\n"
+                # f"FEEDBACK: {r['Feedback']}\n"
             )
         if len(components_to_update) != 1:
             return None
@@ -1464,6 +1438,10 @@ class AssistantALAdapter:
             f"   - WHY: one sentence\n"
             f"4) Keep token budget in mind; do not bloat.\n"
         )
+        print("***BEGIN PROMPT***")
+        print(prompt)
+        print("***END OF PROMPT***")
+        time.sleep(1000)
 
         raw = reflection_llm(prompt).strip()
         if raw == "NOT_RELEVANT":

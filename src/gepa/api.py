@@ -40,42 +40,15 @@ from gepa.strategies.component_selector import (
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
 
-
 def optimize(
     seed_candidate: dict[str, str],
     trainset: list[DataInst] | DataLoader[DataId, DataInst],
     valset: list[DataInst] | DataLoader[DataId, DataInst] | None = None,
     adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None,
-    task_lm: str | ChatCompletionCallable | None = None,
-    evaluator: Evaluator | None = None,
+    logger: LoggerProtocol = StdOutLogger(),
     frontier_type: FrontierType = "instance",
     perfect_score: float = 1.0,
-    use_merge: bool = False,
-    max_merge_invocations: int = 5,
-    merge_val_overlap_floor: int = 5,
-    # Budget and Stop Condition
-    max_metric_calls: int | None = None,
-    stop_callbacks: StopperProtocol | Sequence[StopperProtocol] | None = None,
-    # Logging and Callbacks
-    logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
-    callbacks: "list[GEPACallback] | None" = None,
-    use_wandb: bool = False,
-    wandb_api_key: str | None = None,
-    wandb_init_kwargs: dict[str, Any] | None = None,
-    use_mlflow: bool = False,
-    mlflow_tracking_uri: str | None = None,
-    mlflow_experiment_name: str | None = None,
-    track_best_outputs: bool = False,
-    display_progress_bar: bool = False,
-    use_cloudpickle: bool = False,
-    # Evaluation caching
-    cache_evaluation: bool = False,
-    # Reproducibility
-    seed: int = 0,
-    raise_on_exception: bool = True,
-    val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
-    # Custom proposer (e.g., EvolutionaryProposer)
     proposer: ProposeNewCandidate | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
@@ -171,22 +144,7 @@ def optimize(
     if seed_candidate is None or not seed_candidate:
         raise ValueError("seed_candidate must contain at least one component text.")
 
-    active_adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None
-    if adapter is None:
-        assert task_lm is not None, (
-            "Since no adapter is provided, GEPA requires a task LM to be provided. Please set the `task_lm` parameter."
-        )
-        active_adapter = cast(
-            GEPAAdapter[DataInst, Trajectory, RolloutOutput], DefaultAdapter(model=task_lm, evaluator=evaluator)
-        )
-    else:
-        assert task_lm is None, (
-            "Since an adapter is provided, GEPA does not require a task LM to be provided. Please set the `task_lm` parameter to None."
-        )
-        assert evaluator is None, (
-            "Since an adapter is provided, GEPA does not require an evaluator to be provided. Please set the `evaluator` parameter to None."
-        )
-        active_adapter = adapter
+    active_adapter = adapter
 
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(trainset)
@@ -194,88 +152,39 @@ def optimize(
 
     # Comprehensive stop_callback logic
     # Convert stop_callbacks to a list if it's not already
-    stop_callbacks_list: list[StopperProtocol] = []
-    if stop_callbacks is not None:
-        if isinstance(stop_callbacks, Sequence):
-            stop_callbacks_list.extend(stop_callbacks)
-        else:
-            stop_callbacks_list.append(stop_callbacks)
+    # stop_callbacks_list: list[StopperProtocol] = []
+    # if stop_callbacks is not None:
+    #     if isinstance(stop_callbacks, Sequence):
+    #         stop_callbacks_list.extend(stop_callbacks)
+    #     else:
+    #         stop_callbacks_list.append(stop_callbacks)
 
     # Add file stopper if run_dir is provided
-    if run_dir is not None:
-        stop_file_path = os.path.join(run_dir, "gepa.stop")
-        file_stopper = FileStopper(stop_file_path)
-        stop_callbacks_list.append(file_stopper)
-
-    # Add max_metric_calls stopper if provided
-    if max_metric_calls is not None:
-        from gepa.utils import MaxMetricCallsStopper
-
-        max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
-        stop_callbacks_list.append(max_calls_stopper)
-
-    # Assert that at least one stopping condition is provided
-    if not stop_callbacks_list:
-        raise ValueError(
-            "The user must provide at least one of stop_callbacks or max_metric_calls to specify a stopping condition."
-        )
-
-    # Create composite stopper if multiple stoppers, or use single stopper
-    stop_callback: StopperProtocol
-    if len(stop_callbacks_list) == 1:
-        stop_callback = stop_callbacks_list[0]
-    else:
-        from gepa.utils import CompositeStopper
-
-        stop_callback = CompositeStopper(*stop_callbacks_list)
-
-    if logger is None:
-        logger = StdOutLogger()
-
-    rng = random.Random(seed)
-
-    if val_evaluation_policy is None or val_evaluation_policy == "full_eval":
-        val_evaluation_policy = FullEvaluationPolicy()
-    elif not isinstance(val_evaluation_policy, EvaluationPolicy):
-        raise ValueError(
-            f"val_evaluation_policy should be one of 'full_eval' or an instance of EvaluationPolicy, but got {type(val_evaluation_policy)}"
-        )
+    # if run_dir is not None:
+    #     stop_file_path = os.path.join(run_dir, "gepa.stop")
+    #     file_stopper = FileStopper(stop_file_path)
+    #     stop_callbacks_list.append(file_stopper)
+    #
+    # # Add max_metric_calls stopper if provided
+    # if max_metric_calls is not None:
+    #     from gepa.utils import MaxMetricCallsStopper
+    #
+    #     max_calls_stopper = MaxMetricCallsStopper(max_metric_calls)
+    #     stop_callbacks_list.append(max_calls_stopper)
+    #
+    # # Assert that at least one stopping condition is provided
+    # if not stop_callbacks_list:
+    #     raise ValueError(
+    #         "The user must provide at least one of stop_callbacks or max_metric_calls to specify a stopping condition."
+    #     )
 
     experiment_tracker = create_experiment_tracker(
-        use_wandb=use_wandb,
-        wandb_api_key=wandb_api_key,
-        wandb_init_kwargs=wandb_init_kwargs,
-        use_mlflow=use_mlflow,
-        mlflow_tracking_uri=mlflow_tracking_uri,
-        mlflow_experiment_name=mlflow_experiment_name,
+        use_wandb=False,
+        use_mlflow=False,
     )
-
-    # Create evaluation cache if enabled
-    evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None
-    if cache_evaluation:
-        evaluation_cache = EvaluationCache[RolloutOutput, DataId]()
 
     # Build proposer: use the custom one if provided, otherwise create ReflectiveMutationProposer
     active_proposer = proposer
-
-    def evaluator_fn(
-        inputs: list[DataInst], prog: dict[str, str]
-    ) -> tuple[list[RolloutOutput], list[float], Sequence[dict[str, float]] | None]:
-        eval_out = active_adapter.evaluate(inputs, prog, capture_traces=False)
-        return eval_out.outputs, eval_out.scores, eval_out.objective_scores
-
-    merge_proposer: MergeProposer | None = None
-    if use_merge:
-        merge_proposer = MergeProposer(
-            logger=logger,
-            valset=val_loader,
-            evaluator=evaluator_fn,
-            use_merge=use_merge,
-            max_merge_invocations=max_merge_invocations,
-            rng=rng,
-            val_overlap_floor=merge_val_overlap_floor,
-            callbacks=callbacks,
-        )
 
     engine = GEPAEngine(
         adapter=active_adapter,
@@ -283,30 +192,18 @@ def optimize(
         valset=val_loader,
         seed_candidate=seed_candidate,
         perfect_score=perfect_score,
-        seed=seed,
+        seed=0,
         reflective_proposer=active_proposer,
-        merge_proposer=merge_proposer,
+        merge_proposer=None,
         frontier_type=frontier_type,
         logger=logger,
         experiment_tracker=experiment_tracker,
-        callbacks=callbacks,
-        track_best_outputs=track_best_outputs,
-        display_progress_bar=display_progress_bar,
-        raise_on_exception=raise_on_exception,
-        stop_callback=stop_callback,
-        val_evaluation_policy=val_evaluation_policy,
-        use_cloudpickle=use_cloudpickle,
-        evaluation_cache=evaluation_cache,
     )
 
     with experiment_tracker:
-        if isinstance(logger, Logger):
-            with logger:
-                state = engine.run()
-        else:
-            state = engine.run()
+        state = engine.run()
 
-    return GEPAResult.from_state(state, run_dir=run_dir, seed=seed)
+    return GEPAResult.from_state(state, run_dir=run_dir, seed=0)
 
 
 def main() -> None:
@@ -337,13 +234,11 @@ def main() -> None:
     )
     parser.add_argument("--max_metric_calls", type=int, default=10, help="Maximum number of metric calls (default: 10)")
     parser.add_argument("--run_dir", type=Path, default=None, help="Directory for run artifacts and resume")
-    parser.add_argument("--model", type=str, default='fast', help="Student model name (default: claude)")
+    parser.add_argument("--student_model", type=str, default='fast', help="Student model name (default: claude)")
     parser.add_argument("--teacher_model", type=str, default="gpt", help="Teacher model name (default: gpt)")
-    parser.add_argument("--reflection_lm", type=str, default="gpt-5.1", help="Model for reflection LLM (default: gpt-5.1")
+    parser.add_argument("--reflection_lm_model", type=str, default="gpt-5.1", help="Model for reflection LLM (default: gpt-5.1")
     parser.add_argument("--global_token_cap", type=int, default=4096, help="Global token cap for candidates (default: 4096)")
-    parser.add_argument("--seed", type=int, default=0, help="Random seed (default: 0)")
     parser.add_argument("--cookie", type=str, default=None, help="Cookie string for Glean API authentication")
-    parser.add_argument("--api_url", type=str, default="https://apps-gke.glean.com/debug/cortex/evalruns", help="Glean API URL")
     args = parser.parse_args()
 
     # Load seed_candidate (JSON string or path)
@@ -377,9 +272,9 @@ def main() -> None:
     # Important: We don't have separate "train" and "val" sets. We train ON eval runs.
     # Mini-batch sampling = running on a small eval set (Small)
     # Full evaluation = running on a larger eval set (Medium/Large)
-    SCREEN_EVAL_SET_NAME = "Glean Chat Multiturn V2 Small"  # For screening/mini-batch
+    SCREEN_EVAL_SET_NAME = "AI Answers Small"  # For screening/mini-batch
     # TODO(Cathy): Update this to use the correct eval set name
-    FULL_EVAL_SET_NAME = "Glean Chat Multiturn V2 Small"   # For full evaluation
+    FULL_EVAL_SET_NAME = "AI Answers Small"   # For full evaluation
 
     # Create multiple ALDataInst objects with different eval_set_versions (dates)
     # Each represents a complete eval set snapshot from different dates
@@ -387,13 +282,11 @@ def main() -> None:
 
     # Screening/training eval sets - multiple dates for diverse mini-batch sampling
     eval_versions = [
-        # "20260308",  # March 8, 2026
-        # "20260310",  # March 10, 2026
-        # "20260312",  # March 12, 2026
-        # "20260314",  # March 14, 2026
-        # "20260316",  # March 16, 2026
-        # "20260318",
-        "20260320"
+        "20260403",  # March 16, 2026
+        "20260406",
+        "20260408",
+        "20260410",
+        "20260412",
     ]
 
     screen_evalset: list[ALDataInst] = [
@@ -419,7 +312,6 @@ def main() -> None:
 
     al_adapter = AssistantALAdapter(
         runner=ALRunner(
-            api_url=args.api_url,
             cookie=args.cookie,
         ),
         judge=Judge(
@@ -431,7 +323,7 @@ def main() -> None:
             tools_min=0.7,
             max_student_tokens=100000
         ),
-        student_model=args.model,
+        student_model=args.student_model,
         cache_file="~/eval_cache.json"
     )
 
@@ -445,7 +337,7 @@ def main() -> None:
     experiment_tracker = create_experiment_tracker()
 
     # Reflection LLM callable
-    reflection_lm_name = args.reflection_lm
+    reflection_lm_name = args.reflection_lm_model
     MAX_TOKENS = 4096
 
     def reflection_llm(prompt: str) -> str:
@@ -455,7 +347,7 @@ def main() -> None:
             completion = openai.chat.completions.create(
                 model=reflection_lm_name,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0,
+                reasoning_effort="none",
                 max_completion_tokens=MAX_TOKENS,
             )
             content = completion.choices[0].message.content
@@ -471,7 +363,7 @@ def main() -> None:
         al_adapter=al_adapter,
         reflection_llm=reflection_llm,
         experiment_tracker=experiment_tracker,
-        model=args.model,
+        model=args.student_model,
         module_specs=module_specs,
         global_token_cap=args.global_token_cap,
         baseline_prompt_hash=baseline_prompt_hash,
@@ -483,9 +375,11 @@ def main() -> None:
         valset=full_evalset,
         adapter=al_adapter,
         proposer=proposer,
-        max_metric_calls=args.max_metric_calls,
-        run_dir=str(args.run_dir) if args.run_dir else None,
-        seed=args.seed,
+        logger=logger,
+        # max_metric_calls=args.max_metric_calls,
+        run_dir=None,
+        # run_dir=str(args.run_dir) if args.run_dir else None,
+        frontier_type="objective",
     )
 
 
