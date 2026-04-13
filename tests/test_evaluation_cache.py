@@ -295,9 +295,8 @@ class TestEvaluateBatchWithCacheE2E:
 
             def evaluate(self, batch, candidate, capture_traces=False):
                 self.evaluate_call_count += 1
-                weight = hash(candidate.get("system_prompt", "")) % 10
-                outputs = [{"id": i, "weight": weight} for i in range(len(batch))]
-                scores = [(weight + 1) / 10 for _ in batch]
+                outputs = [{"id": i} for i in range(len(batch))]
+                scores = [0.5 for _ in batch]  # deterministic, non-perfect score
                 trajectories = [{"score": s} for s in scores] if capture_traces else None
                 return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
 
