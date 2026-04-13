@@ -12,7 +12,9 @@ internal engine.  It handles:
 - **Reflective dataset**: formats evaluation results for the reflection LLM
 """
 
+import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import pickle
@@ -75,6 +77,10 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         cache_dir: str | Path | None = None,
     ):
         self.evaluator = evaluator
+        # Detect async evaluator: EvaluatorWrapper exposes .is_async; fall back to inspect.
+        self._evaluator_is_async: bool = getattr(evaluator, "is_async", inspect.iscoroutinefunction(evaluator))
+        self._capture_stdio = bool(getattr(evaluator, "capture_stdio", False))
+        self._can_run_async_batch_concurrently = self._evaluator_is_async and not self._capture_stdio
         self.parallel = parallel
         self.max_workers = max_workers
         self.refiner_config = refiner_config
@@ -178,36 +184,76 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         return OptimizationState(best_example_evals=self._get_best_example_evals(example))
 
+    def _eval_kwargs(self, example: Any) -> dict[str, Any]:
+        """Build kwargs dict for evaluator invocation."""
+        return {"example": example, "opt_state": self._build_opt_state(example)}
+
+    async def _call_evaluator_async(
+        self,
+        candidate: "Candidate",
+        example: Any,
+    ) -> tuple[float, Any, dict]:
+        """Async evaluator call with cache semantics (mirrors _call_evaluator)."""
+        kwargs = self._eval_kwargs(example)
+        if self.cache_mode == "off":
+            return await self.evaluator.async_call(candidate, **kwargs)  # type: ignore[union-attr]
+
+        cache_key = self._cache_key(candidate, example)
+        with self._eval_cache_lock:
+            if cache_key in self._eval_cache:
+                return self._eval_cache[cache_key]
+
+        result = await self.evaluator.async_call(candidate, **kwargs)  # type: ignore[union-attr]
+
+        with self._eval_cache_lock:
+            self._eval_cache[cache_key] = result
+            if self.cache_mode == "disk":
+                self._save_cache_entry(cache_key, result)
+
+        return result
+
+    def _evaluate_batch_async(
+        self, candidate: "Candidate", batch: list[Any]
+    ) -> list[tuple[float, Any, dict]]:
+        """Evaluate a full batch concurrently via async gather/TaskGroup."""
+        from gepa.optimize_anything import _run_coroutine
+
+        async def _run() -> list[tuple[float, Any, dict]]:
+            coroutines = [self._call_evaluator_async(candidate, example) for example in batch]
+            task_group_cls = getattr(asyncio, "TaskGroup", None)
+            if task_group_cls is None:
+                return list(await asyncio.gather(*coroutines))
+
+            results: list[tuple[float, Any, dict] | None] = [None] * len(coroutines)
+
+            async def _store(i: int, coro: Any) -> None:
+                results[i] = await coro
+
+            async with task_group_cls() as tg:
+                for i, coro in enumerate(coroutines):
+                    tg.create_task(_store(i, coro))
+
+            return [r for r in results if r is not None]
+
+        return _run_coroutine(_run())
+
     def _call_evaluator(
         self,
         candidate: "Candidate",
         example: Any,
     ) -> tuple[float, Any, dict]:
         """Call evaluator with optional caching."""
-        # No caching
+        kwargs = self._eval_kwargs(example)
         if self.cache_mode == "off":
-            return self.evaluator(
-                candidate,
-                example=example,
-                opt_state=self._build_opt_state(example),
-            )
+            return self.evaluator(candidate, **kwargs)
 
-        # Build cache key
         cache_key = self._cache_key(candidate, example)
-
-        # Check cache (thread-safe)
         with self._eval_cache_lock:
             if cache_key in self._eval_cache:
                 return self._eval_cache[cache_key]
 
-        # Cache miss - call evaluator
-        result = self.evaluator(
-            candidate,
-            example=example,
-            opt_state=self._build_opt_state(example),
-        )
+        result = self.evaluator(candidate, **kwargs)
 
-        # Store in cache (thread-safe)
         with self._eval_cache_lock:
             self._eval_cache[cache_key] = result
             if self.cache_mode == "disk":
@@ -231,7 +277,14 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Backward compatibility: if refiner_config is None, use old behavior
         if self.refiner_config is None:
             # Old path: direct evaluation without refinement
-            if self.parallel and len(batch) > 1:
+            if self._can_run_async_batch_concurrently and len(batch) > 1:
+                # Async evaluator with multiple examples: gather concurrently.
+                # This gives true async parallelism within the evaluation step
+                # while preserving wrapper semantics and caching.
+                # TODO (issue #61): when the engine is fully async, remove this
+                # branch — the engine itself will await the async evaluator directly.
+                raw_results = self._evaluate_batch_async(candidate, batch)
+            elif self.parallel and len(batch) > 1:
                 raw_results = self._evaluate_parallel(batch, candidate)
             else:
                 raw_results = [self._call_evaluator(candidate, example) for example in batch]

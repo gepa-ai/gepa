@@ -1,6 +1,9 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import asyncio
+import functools
+import inspect
 import os
 import random
 from collections.abc import Sequence
@@ -21,6 +24,7 @@ from gepa.core.result import GEPAResult
 from gepa.core.state import EvaluationCache, FrontierType
 from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
+from gepa.optimize_anything import _run_coroutine
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
@@ -38,6 +42,28 @@ from gepa.strategies.component_selector import (
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
+
+
+class _AsyncEvaluateAdapterBridge:
+    """Sync facade that bridges an adapter with ``async def evaluate()``."""
+
+    def __init__(self, adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput]) -> None:
+        self._adapter = adapter
+
+    def evaluate(self, batch: list[DataInst], candidate: dict[str, str], capture_traces: bool = False) -> Any:
+        return _run_coroutine(self._adapter.evaluate(batch, candidate, capture_traces=capture_traces))
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._adapter, name)
+
+
+def _normalize_adapter(
+    adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput],
+) -> GEPAAdapter[DataInst, Trajectory, RolloutOutput]:
+    """Wrap async adapter.evaluate() to match the engine's sync contract."""
+    if inspect.iscoroutinefunction(getattr(adapter, "evaluate", None)):
+        return cast(GEPAAdapter[DataInst, Trajectory, RolloutOutput], _AsyncEvaluateAdapterBridge(adapter))
+    return adapter
 
 
 def optimize(
@@ -203,7 +229,7 @@ def optimize(
         assert evaluator is None, (
             "Since an adapter is provided, GEPA does not require an evaluator to be provided. Please set the `evaluator` parameter to None."
         )
-        active_adapter = adapter
+        active_adapter = _normalize_adapter(adapter)
 
     # Normalize datasets to DataLoader instances
     train_loader = ensure_loader(trainset)
@@ -440,3 +466,47 @@ def optimize(
             state = engine.run()
 
     return GEPAResult.from_state(state, run_dir=run_dir, seed=seed)
+
+
+async def aoptimize(
+    seed_candidate: dict[str, str],
+    trainset: "list[DataInst] | DataLoader[DataId, DataInst]",
+    valset: "list[DataInst] | DataLoader[DataId, DataInst] | None" = None,
+    adapter: "GEPAAdapter | None" = None,
+    reflection_lm: "str | Any | None" = None,
+    **kwargs: Any,
+) -> "GEPAResult":
+    """Async entry point for :func:`optimize`.
+
+    Runs optimization in a thread-pool executor so the calling event loop
+    is not blocked. Accepts normal GEPA adapters and adapters whose
+    ``evaluate()`` method is ``async def``. Async adapter evaluation is
+    bridged to the engine's synchronous contract; other adapter hooks remain
+    synchronous.
+
+    All parameters are identical to :func:`optimize`.
+
+    Example::
+
+        result = await gepa.aoptimize(
+            seed_candidate={"system_prompt": "..."},
+            trainset=train_data,
+            valset=val_data,
+            adapter=MyAsyncAdapter(),
+        )
+
+    # TODO (issue #61): when GEPAEngine.run() becomes ``async def``, this
+    # wrapper can be removed and aoptimize can call the engine directly
+    # with ``await``, eliminating the thread-pool overhead.
+    """
+    loop = asyncio.get_running_loop()
+    fn = functools.partial(
+        optimize,
+        seed_candidate,
+        trainset,
+        valset=valset,
+        adapter=adapter,
+        reflection_lm=reflection_lm,
+        **kwargs,
+    )
+    return await loop.run_in_executor(None, fn)
