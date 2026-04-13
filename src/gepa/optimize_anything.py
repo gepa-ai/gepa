@@ -496,6 +496,10 @@ class EngineConfig:
 
     # Evaluation caching
     cache_evaluation: bool = False
+    # Where to store cached evaluations:
+    #   "auto"   — "disk" when run_dir is set, "memory" otherwise
+    #   "memory" — in-process dict only (lost on exit)
+    #   "disk"   — write-through .pkl files in {run_dir}/eval_cache/ (requires run_dir)
     cache_evaluation_storage: CacheEvaluationStorage = "auto"
 
     # Track top-K best evaluations per example, passed to evaluator via OptimizationState
@@ -1267,9 +1271,10 @@ def optimize_anything(
         raise_on_exception=config.engine.raise_on_exception,
     )
 
-    # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
+    # Resolve cache storage mode: cache_evaluation controls on/off,
+    # cache_evaluation_storage controls where ("memory", "disk", or "auto").
     if not config.engine.cache_evaluation:
-        resolved_cache_mode = "off"
+        resolved_cache_storage = "off"
         if config.engine.cache_evaluation_storage != "auto":
             warnings.warn(
                 f"cache_evaluation_storage={config.engine.cache_evaluation_storage!r} is set but "
@@ -1278,12 +1283,11 @@ def optimize_anything(
                 stacklevel=2,
             )
     elif config.engine.cache_evaluation_storage == "auto":
-        resolved_cache_mode = "disk" if config.engine.run_dir else "memory"
+        resolved_cache_storage = "disk" if config.engine.run_dir else "memory"
     else:
-        resolved_cache_mode = config.engine.cache_evaluation_storage
+        resolved_cache_storage = config.engine.cache_evaluation_storage
 
-    # Validate disk mode requires run_dir
-    if resolved_cache_mode == "disk" and not config.engine.run_dir:
+    if resolved_cache_storage == "disk" and not config.engine.run_dir:
         raise ValueError("cache_evaluation_storage='disk' requires run_dir in EngineConfig")
 
     # Configure cloudpickle for code execution subprocess serialization
@@ -1299,8 +1303,6 @@ def optimize_anything(
         best_example_evals_k=config.engine.best_example_evals_k,
         objective=objective,
         background=background,
-        cache_mode=resolved_cache_mode,
-        cache_dir=config.engine.run_dir,
     )
 
     # Normalize datasets to DataLoader instances
@@ -1585,6 +1587,8 @@ def optimize_anything(
     evaluation_cache: EvaluationCache[Any, Any] | None = None
     if config.engine.cache_evaluation:
         evaluation_cache = EvaluationCache[Any, Any]()
+        if resolved_cache_storage == "disk" and config.engine.run_dir:
+            evaluation_cache.enable_disk_cache(os.path.join(config.engine.run_dir, "eval_cache"))
 
     # --- 14. Build the main engine from EngineConfig ---
     engine = GEPAEngine(

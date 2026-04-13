@@ -3,8 +3,12 @@
 
 """Tests for adapter-level fitness function caching (cache_evaluation_storage)."""
 
+import json
+import random
+import re
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -43,6 +47,27 @@ def create_fitness_fn(call_counter: dict):
     return fitness_fn
 
 
+@pytest.fixture(autouse=True)
+def _mock_litellm():
+    """Mock litellm.completion so tests don't need real API keys."""
+    call_rng = random.Random(42)
+
+    def fake_completion(*_args, **kwargs):
+        messages = kwargs.get("messages", [])
+        last_content = messages[-1]["content"] if messages else ""
+        number_match = re.search(r'"number"\s*:\s*"(\d+)"', last_content)
+        old = int(number_match.group(1)) if number_match else 50
+        text = json.dumps({"number": str(old + call_rng.randint(-10, 10))})
+        resp = MagicMock()
+        resp.choices = [MagicMock()]
+        resp.choices[0].message.content = f"```\n{text}\n```"
+        resp.choices[0].finish_reason = "stop"
+        return resp
+
+    with patch("litellm.completion", side_effect=fake_completion):
+        yield
+
+
 class TestCacheEvaluationStorage:
     """Tests for cache_evaluation_storage parameter."""
 
@@ -71,9 +96,11 @@ class TestCacheEvaluationStorage:
         )
 
         assert result is not None
-        # With caching, we should have fewer actual fitness_fn calls than metric calls
+        # With caching, actual fitness_fn calls should be <= metric calls
         # because duplicate candidates are served from cache
-        print(f"Metric calls: {result.total_metric_calls}, Actual fitness calls: {call_counter['count']}")
+        assert call_counter["count"] <= result.total_metric_calls, (
+            f"Cache should reduce calls: {call_counter['count']} actual vs {result.total_metric_calls} metric calls"
+        )
 
     def test_disk_cache_persists_across_runs(self):
         """Disk cache should persist and be loaded on subsequent runs."""
@@ -106,7 +133,7 @@ class TestCacheEvaluationStorage:
             print(f"First run - Metric calls: {result1.total_metric_calls}, Actual fitness calls: {first_run_calls}")
 
             # Verify cache files were created
-            cache_dir = Path(tmp_dir) / "fitness_cache"
+            cache_dir = Path(tmp_dir) / "eval_cache"
             assert cache_dir.exists(), "Cache directory should be created"
             cache_files = list(cache_dir.glob("*.pkl"))
             assert len(cache_files) > 0, "Cache files should be created"
@@ -168,7 +195,9 @@ class TestCacheEvaluationStorage:
 
         assert result is not None
         # Every metric call should result in a fitness_fn call (no caching)
-        print(f"Metric calls: {result.total_metric_calls}, Actual fitness calls: {call_counter['count']}")
+        assert call_counter["count"] == result.total_metric_calls, (
+            f"Without cache, calls should match: {call_counter['count']} actual vs {result.total_metric_calls} metric"
+        )
 
     def test_auto_mode_uses_disk_when_run_dir_provided(self):
         """Auto mode should use disk cache when run_dir is provided."""
@@ -196,7 +225,7 @@ class TestCacheEvaluationStorage:
             )
 
             # Verify cache files were created (disk mode)
-            cache_dir = Path(tmp_dir) / "fitness_cache"
+            cache_dir = Path(tmp_dir) / "eval_cache"
             assert cache_dir.exists(), "Auto mode with run_dir should use disk cache"
 
     def test_auto_mode_uses_memory_when_no_run_dir(self):

@@ -3,11 +3,17 @@
 
 import hashlib
 import json
+import logging
 import os
+import pickle
+import threading
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, ClassVar, Generic, Literal, TypeAlias
+
+_logger = logging.getLogger(__name__)
 
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
@@ -40,17 +46,107 @@ class CachedEvaluation(Generic[RolloutOutput]):
     output: RolloutOutput
     score: float
     objective_scores: ObjectiveScores | None
+    trajectory: Any | None = None
+
+    def __setstate__(self, state: dict) -> None:
+        """Handle deserialization of old cache entries without trajectory field."""
+        if "trajectory" not in state:
+            state["trajectory"] = None
+        self.__dict__.update(state)
 
 
 @dataclass
 class EvaluationCache(Generic[RolloutOutput, DataId]):
-    """Cache for storing evaluation results of (candidate, example) pairs."""
+    """Cache for storing evaluation results of (candidate, example) pairs.
+
+    Thread-safe: all reads and writes are protected by an internal lock,
+    making this safe for use from adapters with parallel evaluation.
+
+    Supports optional disk write-through via ``cache_dir``.  When set,
+    every ``put`` / ``put_batch`` is immediately persisted as a pickle
+    file so that results survive mid-iteration crashes.  On startup the
+    directory is scanned and entries are loaded into the in-memory dict.
+    """
 
     _cache: dict[CacheKey, CachedEvaluation[RolloutOutput]] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        self._lock = threading.Lock()
+        self._cache_dir: Path | None = None
+
+    # --- Disk cache configuration ---
+
+    @property
+    def disk_cache_dir(self) -> Path | None:
+        """Return the disk cache directory, or None if disk caching is not enabled."""
+        return self._cache_dir
+
+    def enable_disk_cache(self, cache_dir: str | Path) -> None:
+        """Enable write-through disk persistence and load existing entries."""
+        self._cache_dir = Path(cache_dir)
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._load_from_disk()
+
+    def _data_id_key(self, data_id: DataId) -> str:
+        """Produce a short, filename-safe hash for a DataId."""
+        return hashlib.sha256(str(data_id).encode()).hexdigest()[:16]
+
+    def _disk_filename(self, cand_hash: CandidateHash, data_id: DataId) -> str:
+        return f"{cand_hash[:16]}_{self._data_id_key(data_id)}.pkl"
+
+    def _save_to_disk(self, cand_hash: CandidateHash, data_id: DataId, entry: CachedEvaluation) -> None:
+        if self._cache_dir is None:
+            return
+        filepath = self._cache_dir / self._disk_filename(cand_hash, data_id)
+        tmp_path = filepath.with_suffix(".tmp")
+        try:
+            with open(tmp_path, "wb") as f:
+                pickle.dump({"key": (cand_hash, data_id), "value": entry}, f)
+            tmp_path.replace(filepath)  # atomic on POSIX
+        except Exception as exc:
+            tmp_path.unlink(missing_ok=True)
+            _logger.warning("Failed to write cache entry %s: %s", filepath, exc)
+
+    def _load_from_disk(self) -> None:
+        if self._cache_dir is None:
+            return
+        loaded = 0
+        for cache_file in self._cache_dir.glob("*.pkl"):
+            try:
+                with open(cache_file, "rb") as f:
+                    data = pickle.load(f)
+                key: CacheKey = data["key"]
+                value: CachedEvaluation = data["value"]
+                if key not in self._cache:
+                    self._cache[key] = value
+                    loaded += 1
+            except Exception as exc:
+                _logger.warning("Failed to load cache file %s: %s", cache_file, exc)
+        if loaded:
+            _logger.info("Loaded %d entries from disk cache at %s", loaded, self._cache_dir)
+
+    # --- Serialization (pickle) ---
+
+    def __getstate__(self) -> dict:
+        """Exclude non-picklable lock and runtime cache_dir from serialization."""
+        state = self.__dict__.copy()
+        state.pop("_lock", None)
+        state.pop("_cache_dir", None)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """Restore lock and reset cache_dir after deserialization."""
+        self.__dict__.update(state)
+        self._lock = threading.Lock()
+        self._cache_dir = None  # Must be re-enabled via enable_disk_cache()
+
+    # --- Cache operations ---
+
     def get(self, candidate: dict[str, str], example_id: DataId) -> CachedEvaluation[RolloutOutput] | None:
         """Retrieve cached evaluation result if it exists."""
-        return self._cache.get((_candidate_hash(candidate), example_id))
+        key = (_candidate_hash(candidate), example_id)
+        with self._lock:
+            return self._cache.get(key)
 
     def put(
         self,
@@ -59,9 +155,14 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         output: RolloutOutput,
         score: float,
         objective_scores: ObjectiveScores | None = None,
+        trajectory: Any | None = None,
     ) -> None:
         """Store an evaluation result in the cache."""
-        self._cache[(_candidate_hash(candidate), example_id)] = CachedEvaluation(output, score, objective_scores)
+        h = _candidate_hash(candidate)
+        entry = CachedEvaluation(output, score, objective_scores, trajectory)
+        with self._lock:
+            self._cache[(h, example_id)] = entry
+        self._save_to_disk(h, example_id, entry)
 
     def get_batch(
         self, candidate: dict[str, str], example_ids: list[DataId]
@@ -69,11 +170,12 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         """Look up cached results for a batch. Returns (cached_results, uncached_ids)."""
         h = _candidate_hash(candidate)
         cached, uncached = {}, []
-        for eid in example_ids:
-            if entry := self._cache.get((h, eid)):
-                cached[eid] = entry
-            else:
-                uncached.append(eid)
+        with self._lock:
+            for eid in example_ids:
+                if entry := self._cache.get((h, eid)):
+                    cached[eid] = entry
+                else:
+                    uncached.append(eid)
         return cached, uncached
 
     def put_batch(
@@ -83,51 +185,92 @@ class EvaluationCache(Generic[RolloutOutput, DataId]):
         outputs: list[RolloutOutput],
         scores: list[float],
         objective_scores_list: Sequence[ObjectiveScores] | None = None,
+        trajectories: list[Any] | None = None,
     ) -> None:
         """Store evaluation results for a batch of examples."""
         h = _candidate_hash(candidate)
-        for i, eid in enumerate(example_ids):
-            self._cache[(h, eid)] = CachedEvaluation(
-                outputs[i], scores[i], objective_scores_list[i] if objective_scores_list else None
-            )
+        entries = []
+        with self._lock:
+            for i, eid in enumerate(example_ids):
+                entry = CachedEvaluation(
+                    outputs[i],
+                    scores[i],
+                    objective_scores_list[i] if objective_scores_list else None,
+                    trajectories[i] if trajectories else None,
+                )
+                self._cache[(h, eid)] = entry
+                entries.append((eid, entry))
+        for eid, entry in entries:
+            self._save_to_disk(h, eid, entry)
 
-    def evaluate_with_cache_full(
+    def evaluate_batch_with_cache(
         self,
         candidate: dict[str, str],
         example_ids: list[DataId],
         fetcher: Callable[[list[DataId]], Any],
-        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
-    ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
-        """
-        Evaluate using cache, returning full results.
+        evaluator: Callable[..., Any],
+        require_trajectories: bool = False,
+    ) -> tuple[Any, int]:
+        """Evaluate a batch using cache, returning an EvaluationBatch and the number of actual evals.
 
-        Returns (outputs_by_id, scores_by_id, objective_scores_by_id, num_actual_evals).
+        When ``require_trajectories=True``, cached entries that lack a trajectory
+        are treated as misses and re-evaluated.  This is used by the reflective
+        mutation proposer which needs trajectories for reflection.
         """
+        from gepa.core.adapter import EvaluationBatch
+
         cached, uncached_ids = self.get_batch(candidate, example_ids)
 
-        outputs_by_id: dict[DataId, RolloutOutput] = {eid: c.output for eid, c in cached.items()}
-        scores_by_id: dict[DataId, float] = {eid: c.score for eid, c in cached.items()}
-        objective_by_id: dict[DataId, ObjectiveScores] | None = None
-
-        # Populate objective scores from cache
-        for eid, c in cached.items():
-            if c.objective_scores is not None:
-                objective_by_id = objective_by_id or {}
-                objective_by_id[eid] = c.objective_scores
+        if require_trajectories:
+            # Entries without trajectories need re-evaluation
+            cached_valid = {eid: e for eid, e in cached.items() if e.trajectory is not None}
+            uncached_ids = uncached_ids + [eid for eid in cached if eid not in cached_valid]
+        else:
+            cached_valid = cached
 
         # Evaluate uncached examples
         if uncached_ids:
             batch = fetcher(uncached_ids)
-            outputs, scores, obj_scores = evaluator(batch, candidate)
-            for idx, eid in enumerate(uncached_ids):
-                outputs_by_id[eid] = outputs[idx]
-                scores_by_id[eid] = scores[idx]
-                if obj_scores is not None:
-                    objective_by_id = objective_by_id or {}
-                    objective_by_id[eid] = obj_scores[idx]
-            self.put_batch(candidate, uncached_ids, outputs, scores, obj_scores)
+            eval_fresh = evaluator(batch, candidate, capture_traces=require_trajectories)
+            obj_scores_list = list(eval_fresh.objective_scores) if eval_fresh.objective_scores else None
+            self.put_batch(
+                candidate, uncached_ids, eval_fresh.outputs, eval_fresh.scores,
+                obj_scores_list, trajectories=eval_fresh.trajectories,
+            )
+            fresh_by_id = {
+                eid: (eval_fresh.outputs[i], eval_fresh.scores[i],
+                      eval_fresh.trajectories[i] if eval_fresh.trajectories else None,
+                      eval_fresh.objective_scores[i] if eval_fresh.objective_scores else None)
+                for i, eid in enumerate(uncached_ids)
+            }
+            num_evals = eval_fresh.num_metric_calls if eval_fresh.num_metric_calls is not None else len(uncached_ids)
+        else:
+            fresh_by_id = {}
+            num_evals = 0
 
-        return outputs_by_id, scores_by_id, objective_by_id, len(uncached_ids)
+        # Merge cached + fresh in original order
+        all_outputs, all_scores, all_trajs, all_obj = [], [], [], []
+        for eid in example_ids:
+            if eid in cached_valid:
+                e = cached_valid[eid]
+                all_outputs.append(e.output)
+                all_scores.append(e.score)
+                all_trajs.append(e.trajectory)
+                all_obj.append(e.objective_scores)
+            else:
+                out, score, traj, obj = fresh_by_id[eid]
+                all_outputs.append(out)
+                all_scores.append(score)
+                all_trajs.append(traj)
+                all_obj.append(obj)
+
+        result = EvaluationBatch(
+            outputs=all_outputs,
+            scores=all_scores,
+            trajectories=all_trajs if any(t is not None for t in all_trajs) else None,
+            objective_scores=all_obj if any(o is not None for o in all_obj) else None,
+        )
+        return result, num_evals
 
 
 @dataclass(slots=True)
@@ -610,27 +753,36 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         example_ids: list[DataId],
         fetcher: Callable[[list[DataId]], Any],
         evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
-    ) -> tuple[list[float], int]:
-        """Evaluate with optional caching. Returns (scores, num_actual_evals)."""
-        _, scores_by_id, _, num_actual_evals = self.cached_evaluate_full(candidate, example_ids, fetcher, evaluator)
-        return [scores_by_id[eid] for eid in example_ids], num_actual_evals
-
-    def cached_evaluate_full(
-        self,
-        candidate: dict[str, str],
-        example_ids: list[DataId],
-        fetcher: Callable[[list[DataId]], Any],
-        evaluator: Callable[[Any, dict[str, str]], tuple[Any, list[float], Sequence[ObjectiveScores] | None]],
     ) -> tuple[dict[DataId, RolloutOutput], dict[DataId, float], dict[DataId, ObjectiveScores] | None, int]:
-        """Evaluate with optional caching, returning full results."""
+        """Evaluate with optional caching, returning full results keyed by example id."""
+        from gepa.core.adapter import EvaluationBatch
+
+        # Adapt the tuple-returning evaluator to the EvaluationBatch signature
+        # expected by EvaluationCache.evaluate_batch_with_cache.
+        def adapted(batch: Any, cand: dict[str, str], capture_traces: bool = False) -> EvaluationBatch:
+            outputs, scores, obj_scores = evaluator(batch, cand)
+            return EvaluationBatch(
+                outputs=outputs,
+                scores=scores,
+                objective_scores=list(obj_scores) if obj_scores else None,
+            )
+
         if self.evaluation_cache is not None:
-            return self.evaluation_cache.evaluate_with_cache_full(candidate, example_ids, fetcher, evaluator)
-        batch = fetcher(example_ids)
-        outputs, scores, objective_scores = evaluator(batch, candidate)
-        outputs_by_id = dict(zip(example_ids, outputs, strict=False))
-        scores_by_id = dict(zip(example_ids, scores, strict=False))
-        objective_by_id = dict(zip(example_ids, objective_scores, strict=False)) if objective_scores else None
-        return outputs_by_id, scores_by_id, objective_by_id, len(example_ids)
+            eval_batch, num_evals = self.evaluation_cache.evaluate_batch_with_cache(
+                candidate, example_ids, fetcher, adapted, require_trajectories=False,
+            )
+        else:
+            batch = fetcher(example_ids)
+            eval_batch = adapted(batch, candidate)
+            num_evals = len(example_ids)
+
+        outputs_by_id = dict(zip(example_ids, eval_batch.outputs, strict=False))
+        scores_by_id = dict(zip(example_ids, eval_batch.scores, strict=False))
+        objective_by_id = (
+            dict(zip(example_ids, eval_batch.objective_scores, strict=False))
+            if eval_batch.objective_scores else None
+        )
+        return outputs_by_id, scores_by_id, objective_by_id, num_evals
 
 
 def write_eval_scores_to_directory(scores: dict[DataId, float], output_dir: str) -> None:
@@ -684,7 +836,10 @@ def initialize_gepa_state(
             gepa_state.evaluation_cache = None
         elif gepa_state.evaluation_cache is None:
             gepa_state.evaluation_cache = evaluation_cache
-        # else: keep the loaded cache (gepa_state.evaluation_cache is already set)
+        else:
+            # Keep loaded cache entries but re-enable disk persistence if requested
+            if evaluation_cache.disk_cache_dir is not None:
+                gepa_state.evaluation_cache.enable_disk_cache(evaluation_cache.disk_cache_dir)
     else:
         if run_dir is not None:
             write_eval_outputs_to_directory(

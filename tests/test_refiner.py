@@ -3,8 +3,12 @@
 
 """Tests for refiner functionality with the number guessing optimization scenario."""
 
+import json
+import random
+import re
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,6 +24,34 @@ from gepa.optimize_anything import (
 
 # Golden number to guess
 GOLDEN_NUMBER = 42
+
+
+@pytest.fixture(autouse=True)
+def _mock_litellm():
+    """Mock litellm.completion so tests don't need real API keys."""
+    call_rng = random.Random(42)
+
+    def fake_completion(*_args, **kwargs):
+        messages = kwargs.get("messages", [])
+        last_content = messages[-1]["content"] if messages else ""
+        param_a_match = re.search(r'"param_a"\s*:\s*"(\d+)"', last_content)
+        param_b_match = re.search(r'"param_b"\s*:\s*"(\d+)"', last_content)
+        if param_a_match and param_b_match:
+            a = int(param_a_match.group(1)) + call_rng.randint(-5, 5)
+            b = 100 - a + call_rng.randint(-3, 3)
+            text = json.dumps({"param_a": str(a), "param_b": str(b)})
+        else:
+            number_match = re.search(r'"number"\s*:\s*"(\d+)"', last_content)
+            old = int(number_match.group(1)) if number_match else 50
+            text = json.dumps({"number": str(old + call_rng.randint(-10, 10))})
+        resp = MagicMock()
+        resp.choices = [MagicMock()]
+        resp.choices[0].message.content = f"```\n{text}\n```"
+        resp.choices[0].finish_reason = "stop"
+        return resp
+
+    with patch("litellm.completion", side_effect=fake_completion):
+        yield
 
 
 def create_fitness_fn(call_counter: dict):
@@ -109,6 +141,7 @@ def create_dataset_fitness_fn(call_counter: dict):
 
 # Dataset: two golden numbers — candidate must compromise
 DATASET = [{"golden": 40}, {"golden": 60}]
+
 
 
 class TestRefiner:
@@ -218,11 +251,9 @@ class TestRefiner:
             print(f"Best candidate: {result.best_candidate}")
             print(f"Best score: {result.val_aggregate_scores[result.best_idx]}")
 
-            # Verify cache files created
-            cache_dir = Path(tmp_dir) / "fitness_cache"
-            assert cache_dir.exists()
-            cache_files = list(cache_dir.glob("*.pkl"))
-            print(f"Cache files: {len(cache_files)}")
+            # Verify state file created (cache persists via gepa_state.bin)
+            state_file = Path(tmp_dir) / "gepa_state.bin"
+            assert state_file.exists()
 
     def test_refiner_cache_reduces_calls(self):
         """Test that caching reduces actual fitness_fn calls with refiner."""
@@ -387,7 +418,6 @@ class TestRefiner:
             evaluator=wrapped,
             parallel=False,
             refiner_config=refiner_config,
-            cache_mode="off",
         )
 
         # Build candidate with refiner_prompt (as optimize_anything would auto-inject)
@@ -458,7 +488,6 @@ class TestRefiner:
             evaluator=wrapped,
             parallel=False,
             refiner_config=refiner_config,
-            cache_mode="off",
         )
 
         # Deliberately bad seed — far from target
@@ -522,7 +551,6 @@ class TestRefiner:
             evaluator=wrapped,
             parallel=False,
             refiner_config=refiner_config,
-            cache_mode="off",
         )
 
         # Seed already near-perfect — refiner shouldn't make it worse
@@ -581,7 +609,6 @@ class TestRefiner:
             evaluator=wrapped,
             parallel=False,
             refiner_config=refiner_config,
-            cache_mode="off",
         )
 
         candidate = {
@@ -609,6 +636,7 @@ class TestRefiner:
 
         # Score should equal the original (no refinement improved)
         assert score == -abs(50 - GOLDEN_NUMBER)
+
 
 
 class TestRefinerWithDataset:
@@ -672,6 +700,7 @@ class TestRefinerWithDataset:
         best_score = result.val_aggregate_scores[result.best_idx]
         print(f"\n[Dataset mode] Best: {result.best_candidate['number']}, Score: {best_score}")
         print(f"Metric calls: {result.total_metric_calls}, Fitness calls: {call_counter['count']}")
+
 
 
 class TestRefinerFrontierTypes:
@@ -749,7 +778,6 @@ class TestRefinerFrontierTypes:
             evaluator=raw_fitness_fn,
             parallel=False,
             refiner_config=refiner_config,
-            cache_mode="off",
         )
 
         candidate = {
@@ -809,7 +837,6 @@ if __name__ == "__main__":
         engine=EngineConfig(
             max_metric_calls=5,
             cache_evaluation=True,
-            cache_evaluation_storage="memory",
         ),
         reflection=ReflectionConfig(
             reflection_lm="openrouter/openai/gpt-5-nano",

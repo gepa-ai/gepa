@@ -161,7 +161,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         val_ids = self.val_evaluation_policy.get_eval_batch(valset, state)
 
-        outputs_by_val_idx, scores_by_val_idx, objective_by_val_idx, num_actual_evals = state.cached_evaluate_full(
+        outputs_by_val_idx, scores_by_val_idx, objective_by_val_idx, num_actual_evals = state.cached_evaluate(
             program, list(val_ids), valset.fetch, self.evaluator
         )
         state.increment_evals(num_actual_evals)
