@@ -48,6 +48,49 @@ except ImportError:
     tqdm = None
 
 
+def _try_json_serialize(obj: Any) -> Any:
+    """Best-effort JSON-safe conversion. Returns obj if serializable, else str(obj)."""
+    if obj is None or isinstance(obj, str | int | float | bool):
+        return obj
+    if isinstance(obj, dict):
+        return {str(k): _try_json_serialize(v) for k, v in obj.items()}
+    if isinstance(obj, list | tuple):
+        return [_try_json_serialize(v) for v in obj]
+    try:
+        import json
+
+        json.dumps(obj)
+        return obj
+    except (TypeError, ValueError, OverflowError):
+        return str(obj)
+
+
+def _record_proposal_evals(trace_entry: dict, proposal: "CandidateProposal") -> None:
+    """Capture evaluation side_info from a proposal into the iteration trace.
+
+    This records the subsample evaluation data (scores, outputs, trajectories/
+    side_info) for both the parent and the child candidate so that agents
+    reading ``gepa_state.json`` have the feedback needed to propose better
+    candidates.
+    """
+    if proposal.eval_before is not None:
+        eb = proposal.eval_before
+        trace_entry["eval_before"] = {
+            "scores": eb.scores,
+            "outputs": _try_json_serialize(eb.outputs),
+            "objective_scores": eb.objective_scores,
+            "trajectories": _try_json_serialize(eb.trajectories),
+        }
+    if proposal.eval_after is not None:
+        ea = proposal.eval_after
+        trace_entry["eval_after"] = {
+            "scores": ea.scores,
+            "outputs": _try_json_serialize(ea.outputs),
+            "objective_scores": ea.objective_scores,
+            "trajectories": _try_json_serialize(ea.trajectories),
+        }
+
+
 class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     """Orchestrates the optimization loop using pluggable candidate proposers."""
 
@@ -365,7 +408,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.logger.log(f"Iteration {iteration}: Reflective mutation did not propose a new candidate")
             return False
 
+        # Capture evaluation side_info into the trace for agent consumption
+        _record_proposal_evals(trace_entry, output.proposal)
+
         accepted = self._accept_reflective_proposal(output.proposal, iteration, state)
+        trace_entry["proposal_accepted"] = accepted
+        trace_entry["proposed_candidate"] = output.proposal.candidate
 
         if accepted and self.merge_proposer is not None:
             self.merge_proposer.last_iter_found_new_program = True

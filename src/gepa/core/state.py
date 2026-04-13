@@ -345,6 +345,115 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if self.program_candidates:
             self._atomic_write_json(run_dir, "candidates.json", self.program_candidates)
 
+        # Save comprehensive agent-readable state
+        self._save_agent_state(run_dir)
+
+    def _save_agent_state(self, run_dir: str) -> None:
+        """Write a comprehensive JSON export of the optimization state.
+
+        Designed for consumption by autonomous agents (e.g. Claude Code) that
+        need the full picture — all candidates, per-datapoint scores, Pareto
+        frontiers, lineage, and evaluation history — in a single readable file.
+        """
+        num_candidates = len(self.program_candidates)
+
+        # --- Build per-candidate records ---
+        candidates = []
+        for idx in range(num_candidates):
+            avg_score, coverage = self.get_program_average_val_subset(idx)
+            val_scores = self.prog_candidate_val_subscores[idx]
+            obj_scores = self.prog_candidate_objective_scores[idx]
+            parents = self.parent_program_for_candidate[idx]
+            metric_calls = self.num_metric_calls_by_discovery[idx] if idx < len(self.num_metric_calls_by_discovery) else None
+
+            candidates.append({
+                "idx": idx,
+                "texts": self.program_candidates[idx],
+                "parent_ids": [p for p in parents if p is not None],
+                "avg_val_score": avg_score,
+                "num_val_scored": coverage,
+                "metric_calls_to_discover": metric_calls,
+                "val_scores": {str(k): v for k, v in val_scores.items()},
+                "objective_scores": obj_scores if obj_scores else {},
+            })
+
+        # --- Build Pareto frontier ---
+        pareto: dict[str, Any] = {}
+
+        if self.frontier_type in ("instance", "hybrid"):
+            instance_front: dict[str, Any] = {}
+            for val_id, best_score in self.pareto_front_valset.items():
+                best_progs = sorted(self.program_at_pareto_front_valset.get(val_id, set()))
+                instance_front[str(val_id)] = {
+                    "best_score": best_score,
+                    "best_candidates": best_progs,
+                }
+            pareto["instance_front"] = instance_front
+
+        if self.frontier_type in ("objective", "hybrid"):
+            obj_front: dict[str, Any] = {}
+            for obj_name, best_score in self.objective_pareto_front.items():
+                best_progs = sorted(self.program_at_pareto_front_objectives.get(obj_name, set()))
+                obj_front[obj_name] = {
+                    "best_score": best_score,
+                    "best_candidates": best_progs,
+                }
+            pareto["objective_front"] = obj_front
+
+        if self.frontier_type == "cartesian":
+            cartesian_front: dict[str, Any] = {}
+            for key, best_score in self.pareto_front_cartesian.items():
+                best_progs = sorted(self.program_at_pareto_front_cartesian.get(key, set()))
+                cartesian_front[str(key)] = {
+                    "best_score": best_score,
+                    "best_candidates": best_progs,
+                }
+            pareto["cartesian_front"] = cartesian_front
+
+        # --- Derived analytics ---
+        # Hardest validation examples (lowest best score on Pareto front)
+        hardest: list[dict[str, Any]] = []
+        if self.pareto_front_valset:
+            sorted_examples = sorted(self.pareto_front_valset.items(), key=lambda x: x[1])
+            for val_id, score in sorted_examples[:20]:
+                best_progs = sorted(self.program_at_pareto_front_valset.get(val_id, set()))
+                hardest.append({
+                    "val_id": str(val_id),
+                    "best_score": score,
+                    "best_candidates": best_progs,
+                })
+
+        # Best candidate
+        full_scores = self.program_full_scores_val_set
+        best_idx = int(max(range(num_candidates), key=lambda i: full_scores[i])) if num_candidates > 0 else 0
+
+        # All candidates on the Pareto front (unique across all frontier keys)
+        front_candidates: set[int] = set()
+        front_map = self.get_pareto_front_mapping()
+        for prog_set in front_map.values():
+            front_candidates.update(prog_set)
+
+        state_export: dict[str, Any] = {
+            "schema_version": 1,
+            "iteration": self.i,
+            "total_metric_calls": self.total_num_evals,
+            "num_full_val_evals": self.num_full_ds_evals,
+            "frontier_type": self.frontier_type,
+            "component_names": self.list_of_named_predictors,
+            "summary": {
+                "num_candidates": num_candidates,
+                "best_candidate_idx": best_idx,
+                "best_avg_score": full_scores[best_idx] if num_candidates > 0 else None,
+                "pareto_front_candidate_idxs": sorted(front_candidates),
+                "hardest_examples": hardest,
+            },
+            "candidates": candidates,
+            "pareto_front": pareto,
+            "iteration_log": self.full_program_trace,
+        }
+
+        self._atomic_write_json(run_dir, "gepa_state.json", state_export)
+
     @staticmethod
     def load(run_dir: str) -> "GEPAState[RolloutOutput, DataId]":
         with open(os.path.join(run_dir, "gepa_state.bin"), "rb") as f:

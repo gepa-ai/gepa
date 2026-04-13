@@ -115,6 +115,61 @@ def test_gepa_state_save_and_initialize(run_dir):
     assert state.__dict__ == result.__dict__
 
 
+def test_agent_state_json_export(run_dir):
+    """save() writes a comprehensive gepa_state.json for agent consumption."""
+    seed = {"system_prompt": "You are helpful."}
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: "out0", 1: "out1", 2: "out2"},
+        scores_by_val_id={0: 0.3, 1: 0.7, 2: 0.5},
+        objective_scores_by_val_id={
+            0: {"accuracy": 0.3, "latency": 0.9},
+            1: {"accuracy": 0.7, "latency": 0.8},
+            2: {"accuracy": 0.5, "latency": 0.7},
+        },
+    )
+
+    state = state_mod.GEPAState(seed, valset_out, frontier_type="hybrid")
+    state.total_num_evals = 10
+    state.num_full_ds_evals = 1
+    state.save(run_dir)
+
+    import json
+
+    agent_state_path = os.path.join(str(run_dir), "gepa_state.json")
+    assert os.path.exists(agent_state_path)
+    with open(agent_state_path) as f:
+        data = json.load(f)
+
+    # Check top-level structure
+    assert data["schema_version"] == 1
+    assert data["frontier_type"] == "hybrid"
+    assert "candidates" in data
+    assert "pareto_front" in data
+    assert "summary" in data
+    assert "iteration_log" in data
+
+    # Check candidate data
+    assert len(data["candidates"]) == 1
+    cand = data["candidates"][0]
+    assert cand["idx"] == 0
+    assert cand["texts"] == {"system_prompt": "You are helpful."}
+    assert cand["avg_val_score"] > 0
+    assert cand["num_val_scored"] == 3
+    assert "0" in cand["val_scores"]
+    assert cand["val_scores"]["0"] == 0.3
+
+    # Check Pareto front
+    assert "instance_front" in data["pareto_front"]
+    assert "objective_front" in data["pareto_front"]
+
+    # Check summary
+    assert data["summary"]["num_candidates"] == 1
+    assert data["summary"]["best_candidate_idx"] == 0
+    assert len(data["summary"]["hardest_examples"]) > 0
+    # Hardest example should be val_id=0 with score 0.3
+    assert data["summary"]["hardest_examples"][0]["best_score"] == 0.3
+
+
 def test_budget_hooks_excluded_from_serialization(run_dir):
     """Budget hooks are runtime-only and should not be serialized."""
     seed = {"model": "m"}
