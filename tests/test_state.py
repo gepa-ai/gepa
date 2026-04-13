@@ -141,7 +141,7 @@ def test_agent_state_json_export(run_dir):
         data = json.load(f)
 
     # Check top-level structure
-    assert data["schema_version"] == 1
+    assert data["schema_version"] == 2
     assert data["frontier_type"] == "hybrid"
     assert "candidates" in data
     assert "pareto_front" in data
@@ -168,6 +168,69 @@ def test_agent_state_json_export(run_dir):
     assert len(data["summary"]["hardest_examples"]) > 0
     # Hardest example should be val_id=0 with score 0.3
     assert data["summary"]["hardest_examples"][0]["best_score"] == 0.3
+
+    # Check rejected_proposals section exists
+    assert "rejected_proposals" in data
+    assert isinstance(data["rejected_proposals"], list)
+
+    # Check evaluation_cache field exists (None since cache not enabled)
+    assert "evaluation_cache" in data
+
+
+def test_agent_state_with_cache_and_rejection(run_dir):
+    """Agent state exports evaluation cache and rejected proposals."""
+    seed = {"prompt": "hello"}
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: "out0", 1: "out1"},
+        scores_by_val_id={0: 0.5, 1: 0.5},
+        objective_scores_by_val_id=None,
+    )
+    state = state_mod.GEPAState(seed, valset_out)
+    state.total_num_evals = 10
+    state.num_full_ds_evals = 1
+
+    # Enable evaluation cache and populate it
+    state.evaluation_cache = state_mod.EvaluationCache()
+    state.evaluation_cache.put({"prompt": "hello"}, 0, "cached_output_0", 0.5)
+    state.evaluation_cache.put({"prompt": "hello"}, 1, "cached_output_1", 0.5)
+
+    # Simulate a rejected proposal in the trace
+    state.full_program_trace.append({
+        "i": 0,
+        "selected_program_candidate": 0,
+        "subsample_ids": [0],
+        "subsample_scores": [0.5],
+        "new_subsample_scores": [0.3],
+        "proposal_accepted": False,
+        "proposed_candidate": {"prompt": "rejected attempt"},
+        "eval_before": {"scores": [0.5], "trajectories": ["trace_before"]},
+        "eval_after": {"scores": [0.3], "trajectories": ["trace_after"]},
+    })
+
+    state.save(run_dir)
+
+    import json
+
+    with open(os.path.join(str(run_dir), "gepa_state.json")) as f:
+        data = json.load(f)
+
+    # Check evaluation cache
+    assert data["evaluation_cache"] is not None
+    assert "0" in data["evaluation_cache"]  # candidate idx 0
+    assert "0" in data["evaluation_cache"]["0"]  # val_id 0
+    assert data["evaluation_cache"]["0"]["0"]["score"] == 0.5
+    assert data["evaluation_cache"]["0"]["0"]["output"] == "cached_output_0"
+
+    # Check rejected proposals
+    assert len(data["rejected_proposals"]) == 1
+    rej = data["rejected_proposals"][0]
+    assert rej["candidate"] == {"prompt": "rejected attempt"}
+    assert rej["parent_ids"] == [0]
+    assert rej["subsample_ids"] == [0]
+    assert rej["subsample_scores_before"] == [0.5]
+    assert rej["subsample_scores_after"] == [0.3]
+    assert rej["eval_before"]["trajectories"] == ["trace_before"]
+    assert rej["eval_after"]["trajectories"] == ["trace_after"]
 
 
 def test_budget_hooks_excluded_from_serialization(run_dir):

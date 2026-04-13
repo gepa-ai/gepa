@@ -28,6 +28,7 @@ from gepa.core.callbacks import (
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import EvaluationCache, FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
+from gepa.gepa_utils import try_json_serialize
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
@@ -48,23 +49,6 @@ except ImportError:
     tqdm = None
 
 
-def _try_json_serialize(obj: Any) -> Any:
-    """Best-effort JSON-safe conversion. Returns obj if serializable, else str(obj)."""
-    if obj is None or isinstance(obj, str | int | float | bool):
-        return obj
-    if isinstance(obj, dict):
-        return {str(k): _try_json_serialize(v) for k, v in obj.items()}
-    if isinstance(obj, list | tuple):
-        return [_try_json_serialize(v) for v in obj]
-    try:
-        import json
-
-        json.dumps(obj)
-        return obj
-    except (TypeError, ValueError, OverflowError):
-        return str(obj)
-
-
 def _record_proposal_evals(trace_entry: dict, proposal: "CandidateProposal") -> None:
     """Capture evaluation side_info from a proposal into the iteration trace.
 
@@ -77,17 +61,17 @@ def _record_proposal_evals(trace_entry: dict, proposal: "CandidateProposal") -> 
         eb = proposal.eval_before
         trace_entry["eval_before"] = {
             "scores": eb.scores,
-            "outputs": _try_json_serialize(eb.outputs),
+            "outputs": try_json_serialize(eb.outputs),
             "objective_scores": eb.objective_scores,
-            "trajectories": _try_json_serialize(eb.trajectories),
+            "trajectories": try_json_serialize(eb.trajectories),
         }
     if proposal.eval_after is not None:
         ea = proposal.eval_after
         trace_entry["eval_after"] = {
             "scores": ea.scores,
-            "outputs": _try_json_serialize(ea.outputs),
+            "outputs": try_json_serialize(ea.outputs),
             "objective_scores": ea.objective_scores,
-            "trajectories": _try_json_serialize(ea.trajectories),
+            "trajectories": try_json_serialize(ea.trajectories),
         }
 
 

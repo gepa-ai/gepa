@@ -11,7 +11,7 @@ from typing import Any, ClassVar, Generic, Literal, TypeAlias
 
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
-from gepa.gepa_utils import json_default
+from gepa.gepa_utils import json_default, try_json_serialize
 from gepa.logging.logger import LoggerProtocol
 
 # Types for GEPAState
@@ -433,8 +433,40 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         for prog_set in front_map.values():
             front_candidates.update(prog_set)
 
+        # --- Evaluation cache export ---
+        cache_export: dict[str, dict[str, Any]] = {}
+        if self.evaluation_cache is not None:
+            for idx, cand in enumerate(self.program_candidates):
+                cand_entries: dict[str, Any] = {}
+                # Check all known val_ids for this candidate
+                for val_id in self.prog_candidate_val_subscores[idx]:
+                    cached = self.evaluation_cache.get(cand, val_id)
+                    if cached is not None:
+                        cand_entries[str(val_id)] = {
+                            "score": cached.score,
+                            "output": try_json_serialize(cached.output),
+                            "objective_scores": cached.objective_scores,
+                        }
+                if cand_entries:
+                    cache_export[str(idx)] = cand_entries
+
+        # --- Rejected proposals (extracted from iteration log) ---
+        rejected_proposals: list[dict[str, Any]] = []
+        for entry in self.full_program_trace:
+            if entry.get("proposal_accepted") is False and "proposed_candidate" in entry:
+                rejected_proposals.append({
+                    "iteration": entry.get("i"),
+                    "candidate": entry["proposed_candidate"],
+                    "parent_ids": [entry.get("selected_program_candidate")],
+                    "subsample_ids": entry.get("subsample_ids"),
+                    "subsample_scores_before": entry.get("subsample_scores"),
+                    "subsample_scores_after": entry.get("new_subsample_scores"),
+                    "eval_before": entry.get("eval_before"),
+                    "eval_after": entry.get("eval_after"),
+                })
+
         state_export: dict[str, Any] = {
-            "schema_version": 1,
+            "schema_version": 2,
             "iteration": self.i,
             "total_metric_calls": self.total_num_evals,
             "num_full_val_evals": self.num_full_ds_evals,
@@ -449,6 +481,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             },
             "candidates": candidates,
             "pareto_front": pareto,
+            "rejected_proposals": rejected_proposals,
+            "evaluation_cache": cache_export if cache_export else None,
             "iteration_log": self.full_program_trace,
         }
 
