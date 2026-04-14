@@ -77,7 +77,7 @@ class ALRolloutOutput(TypedDict):
     query: str
     # Student execution results
     student_answer: str
-    student_tool_events: List[Dict[str, Any]]  # Serialized ToolEvent objects
+    student_tool_events: List[str]
     student_loops: int
     student_tool_calls: int
     student_tool_errors: int
@@ -87,7 +87,7 @@ class ALRolloutOutput(TypedDict):
 
     # Teacher execution results (for comparison)
     teacher_answer: str
-    teacher_tool_events: List[Dict[str, Any]]
+    teacher_tool_events: List[str]
     teacher_loops: int
     teacher_tool_calls: int
     teacher_input_tokens: int
@@ -785,6 +785,19 @@ def process_raw_typed_value(raw: str | dict):
 
     return parsed
 
+def extract_tool_names_from_spans(spans: list[dict[str, Any]] | None) -> list[str]:
+    """Extract tool names from trace spans."""
+    if not spans:
+        return []
+    names = []
+    for span in spans:
+        if "Execute Action" in span.get("name", ""):
+            parts = span["name"].split(": ")
+            if len(parts) >= 2 and parts[1] != "Personal Knowledge Vault Retrieve":
+                names.append(parts[1])
+    return names
+
+
 def parse_tool_usage(span: dict) -> tuple[str, dict]:
     parts = span['name'].split(": ")
     if len(parts) < 2:
@@ -1105,9 +1118,9 @@ class AssistantALAdapter:
                     "deployment_id": student_trace["deployment_id"],
                     "query": student_trace["query"],
                     "student_answer": student_trace["answer"],
-                    "student_tool_events": student_trace["tool_events"],
+                    "student_tool_events": extract_tool_names_from_spans(student_trace.get("spans")),
                     "student_loops": student_trace["num_loops"],
-                    "student_tool_calls": student_trace["num_tool_calls"],
+                    "student_tool_calls": len(extract_tool_names_from_spans(student_trace.get("spans"))),
                     "student_tool_errors": student_trace["num_tool_errors"],
                     "student_input_tokens": student_trace["input_tokens"],
                     "student_output_tokens": student_trace["output_tokens"],
@@ -1115,7 +1128,7 @@ class AssistantALAdapter:
 
                     # Teacher execution
                     "teacher_answer": teacher_trace["answer"],
-                    "teacher_tool_events": teacher_trace["tool_events"],
+                    "teacher_tool_events": extract_tool_names_from_spans(teacher_trace.get("spans")),
                     "teacher_loops": teacher_trace["num_loops"],
                     "teacher_tool_calls": teacher_trace["num_tool_calls"],
                     "teacher_input_tokens": teacher_trace["input_tokens"],
@@ -1269,8 +1282,8 @@ class AssistantALAdapter:
             return len(student_tools) != len(teacher_tools)
 
         # Primary tool = first tool used
-        student_primary = student_tools[0].get("tool_type", "")
-        teacher_primary = teacher_tools[0].get("tool_type", "")
+        student_primary = student_tools[0]
+        teacher_primary = teacher_tools[0]
 
         return student_primary != teacher_primary
 
