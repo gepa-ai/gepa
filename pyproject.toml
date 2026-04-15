@@ -31,6 +31,7 @@ full = [
     "wandb; python_version < '3.14'",
     # Python 3.14+ (higher floors / alternative packages needed for compatibility)
     "datasets>=4.5.0; python_version >= '3.14'",
+    "pandas>=2.3.3; python_version >= '3.14'",
     "mlflow-skinny>=3.11.1; python_version >= '3.14'",
     "wandb>=0.23.0; python_version >= '3.14'",
     "pyarrow>=22.0.0; python_version >= '3.14'",
