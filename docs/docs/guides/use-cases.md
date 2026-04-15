@@ -1061,6 +1061,14 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the tutorial](https://www.rajapatnaik.com/blog/2025/10/20/sql-generator)
 
+-   **Optimizing GEPA for Production (Decagon)**
+
+    ---
+
+    Decagon's test-driven approach to deploying GEPA in production, with 19+ ablation experiments on a classification task. Covers data efficiency sweet spots (20-100 examples outperform larger datasets), reflection model selection, and length regularization for 4x prompt compression.
+
+    [:material-arrow-right: Read the blog](https://decagon.ai/blog/optimizing-gepa-for-production)
+
 </div>
 
 ---
