@@ -203,17 +203,15 @@ class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
 
     propose_new_texts: ProposalFn | None = None
 
-    batch_evaluate: BatchEvaluateFn | None = None
-    """Optional batch evaluation for multiple (candidate, batch) pairs.
-
-    Adapters that support evaluating several candidates in one call can
-    set this field.  When ``None``, the engine falls back to
-    :func:`default_batch_evaluate` which calls ``evaluate()`` per item.
-
-    Unlike ``evaluate()``, ``batch_evaluate`` always returns full results
-    including trajectories (``capture_traces`` is not exposed — adapters
-    should always populate trajectories).
-    """
+    # Optional: adapters can implement batch_evaluate to evaluate multiple
+    # (candidate, batch) pairs in a single call.  When not present, the
+    # proposer falls back to default_batch_evaluate() which calls evaluate()
+    # sequentially.  Unlike evaluate(), batch_evaluate always returns full
+    # results including trajectories.
+    #
+    # def batch_evaluate(
+    #     self, items: list[tuple[Candidate, list[DataInst]]],
+    # ) -> list[EvaluationBatch[Trajectory, RolloutOutput]]: ...
 
 
 def default_batch_evaluate(
