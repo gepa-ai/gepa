@@ -203,14 +203,14 @@ class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
     # Signature:
     #   batch_evaluate(
     #       self,
-    #       items: list[tuple[dict[str, str], list[DataInst]]],
+    #       items: list[tuple[Candidate, list[DataInst]]],
     #       capture_traces: bool = False,
     #   ) -> list[EvaluationBatch[Trajectory, RolloutOutput]]
 
 
 def default_batch_evaluate(
     adapter: GEPAAdapter,
-    items: list[tuple[dict[str, str], list]],
+    items: list[tuple[Candidate, list]],
     capture_traces: bool = False,
 ) -> list[EvaluationBatch]:
     """Default sequential batch_evaluate implementation.

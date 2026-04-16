@@ -233,7 +233,7 @@ def propose_batch(
         return []
 
     # Stage 2: Batch evaluate parents (deduplicated)
-    unique_keys: dict[tuple[str, tuple], tuple[dict[str, str], list]] = {}
+    unique_keys: dict[tuple[str, tuple], tuple[dict[str, str], list[Any]]] = {}
     task_to_key: list[tuple[str, tuple]] = []
     for task in tasks:
         key = (_candidate_hash(task.parent_candidate), tuple(task.minibatch_ids))

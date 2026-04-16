@@ -295,7 +295,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
     def batch_evaluate(
         self,
-        items: list[tuple[dict[str, str], list]],
+        items: list[tuple["Candidate", list]],
         capture_traces: bool = False,
     ) -> list[EvaluationBatch]:
         """Evaluate multiple (candidate, batch) pairs.
@@ -311,7 +311,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
     def _batch_evaluate_via_user_fn(
         self,
-        items: list[tuple[dict[str, str], list]],
+        items: list[tuple["Candidate", list]],
         capture_traces: bool,
     ) -> list[EvaluationBatch]:
         """Flatten all (candidate, example) pairs, call batch_evaluator once, repackage."""
@@ -331,7 +331,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Normalize each result to (score, output, side_info)
         normalized: list[tuple[float, Any, dict[str, Any]]] = []
         for r in raw_results:
-            r_seq: list[Any] = list(r) if isinstance(r, (list, tuple)) else [r]
+            r_seq: list[Any] = list(r) if isinstance(r, list | tuple) else [r]
             if len(r_seq) >= 3:
                 si = r_seq[2] if isinstance(r_seq[2], dict) else {}
                 normalized.append((float(r_seq[0]), r_seq[1], si))
