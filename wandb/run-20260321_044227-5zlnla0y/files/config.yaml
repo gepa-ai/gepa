@@ -1,0 +1,114 @@
+_wandb:
+    value:
+        cli_version: 0.24.0
+        e:
+            qus7n6ww0b5l45v3ocsiyb4kjg7k2jhr:
+                cpu_count: 32
+                cpu_count_logical: 64
+                disk:
+                    /:
+                        total: "1888830910464"
+                        used: "114201894912"
+                email: lakshyaaagrawal@berkeley.edu
+                executable: /data/home/lakshyaaagrawal/gepa/.venv/bin/python3
+                git:
+                    commit: 8185fdb4b6b5d9d43a69277f4e0ab1127b1b1a3c
+                    remote: https://github.com/gepa-ai/gepa.git
+                host: slurm-login-68b9cd64df-qvjnx
+                memory:
+                    total: "803131645952"
+                os: Linux-6.8.0-1044-nvidia-x86_64-with-glibc2.35
+                program: /tmp/e2e_wandb_embedded.py
+                python: CPython 3.14.3
+                root: /data/home/lakshyaaagrawal/gepa
+                startedAt: "2026-03-21T04:42:27.819869Z"
+                writerId: qus7n6ww0b5l45v3ocsiyb4kjg7k2jhr
+        m:
+            - "1": gepa_step_20/iteration
+              "6":
+                - 3
+              "7": []
+            - "1": train/step
+              "6":
+                - 3
+              "7": []
+            - "1": gepa_step_10/iteration
+              "6":
+                - 3
+              "7": []
+            - "2": train/*
+              "5": 2
+              "6":
+                - 1
+              "7": []
+            - "2": gepa_step_10/*
+              "5": 3
+              "6":
+                - 1
+              "7": []
+            - "2": gepa_step_20/*
+              "5": 1
+              "6":
+                - 1
+              "7": []
+        python_version: 3.14.3
+        t:
+            "2":
+                - 95
+            "3":
+                - 2
+                - 7
+                - 13
+                - 62
+            "4": 3.14.3
+            "5": 0.24.0
+            "12": 0.24.0
+            "13": linux-x86_64
+gepa_step_10/frontier_type:
+    value: hybrid
+gepa_step_10/has_merge_proposer:
+    value: false
+gepa_step_10/perfect_score:
+    value: null
+gepa_step_10/raise_on_exception:
+    value: false
+gepa_step_10/run_dir:
+    value: null
+gepa_step_10/seed:
+    value: 0
+gepa_step_10/seed_candidate_components:
+    value: '[''current_candidate'']'
+gepa_step_10/track_best_outputs:
+    value: false
+gepa_step_10/trainset_size:
+    value: 1
+gepa_step_10/use_cloudpickle:
+    value: true
+gepa_step_10/val_evaluation_policy:
+    value: FullEvaluationPolicy
+gepa_step_10/valset_size:
+    value: 1
+gepa_step_20/frontier_type:
+    value: hybrid
+gepa_step_20/has_merge_proposer:
+    value: false
+gepa_step_20/perfect_score:
+    value: null
+gepa_step_20/raise_on_exception:
+    value: false
+gepa_step_20/run_dir:
+    value: null
+gepa_step_20/seed:
+    value: 0
+gepa_step_20/seed_candidate_components:
+    value: '[''current_candidate'']'
+gepa_step_20/track_best_outputs:
+    value: false
+gepa_step_20/trainset_size:
+    value: 1
+gepa_step_20/use_cloudpickle:
+    value: true
+gepa_step_20/val_evaluation_policy:
+    value: FullEvaluationPolicy
+gepa_step_20/valset_size:
+    value: 1

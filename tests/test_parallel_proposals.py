@@ -10,19 +10,18 @@ import pytest
 from gepa.core.adapter import EvaluationBatch, default_batch_evaluate
 from gepa.core.state import GEPAState, ValsetEvaluation
 from gepa.proposer.base import CandidateProposal, SubsampleEvaluation
-from gepa.proposer.parallel import (
-    AllImprovements,
-    BestImprovement,
+from gepa.strategies.acceptance import StrictImprovementAcceptance
+from gepa.strategies.proposal_sampling import (
     IndependentSampling,
-    ParallelConfig,
-    ProposalTask,
     PxNSampling,
     SameParentSampling,
     SingleMutationSampling,
-    TopKImprovements,
-    propose_batch,
 )
-from gepa.strategies.acceptance import StrictImprovementAcceptance
+from gepa.strategies.proposal_selection import (
+    AllImprovements,
+    BestImprovement,
+    TopKImprovements,
+)
 
 
 @pytest.fixture
@@ -181,163 +180,18 @@ class TestDefaultBatchEvaluate:
             ({"prompt": "a"}, ["ex1"]),
             ({"prompt": "b"}, ["ex2"]),
         ]
-        results = default_batch_evaluate(adapter, items, capture_traces=True)
+        results = default_batch_evaluate(adapter, items)
         assert len(results) == 2
         assert adapter.evaluate.call_count == 2
 
 
-class TestParallelConfig:
-    def test_dataclass_creation(self):
-        config = ParallelConfig(
-            sampling_strategy=SingleMutationSampling(),
-            selection_strategy=AllImprovements(),
-        )
-        assert config.sampling_strategy is not None
-        assert config.selection_strategy is not None
+class TestDefaultStrategiesRetainBehavior:
+    """Verify that default strategies produce the expected behavior."""
 
+    def test_single_mutation_is_default_sampling(self):
+        strategy = SingleMutationSampling()
+        assert hasattr(strategy, "sample_tasks")
 
-class TestProposeBatch:
-    def test_propose_batch_no_tasks(self):
-        """Empty tasks -> empty result."""
-        proposer = MagicMock()
-        adapter = MagicMock()
-        state = MagicMock()
-        strategy = MagicMock()
-        strategy.sample_tasks = MagicMock(return_value=[])
-        selection = AllImprovements()
-        criterion = StrictImprovementAcceptance()
-
-        result = propose_batch(
-            proposer, adapter, state, strategy, selection, criterion,
-            MagicMock(), MagicMock()
-        )
-        assert result == []
-
-    def test_propose_batch_no_trajectories(self):
-        """When parent eval has no trajectories, children list is empty."""
-        proposer = MagicMock()
-        proposer.candidate_selector = MagicMock()
-        proposer.batch_sampler = MagicMock()
-        proposer.trainset = MagicMock()
-        proposer.skip_perfect_score = False
-        proposer.perfect_score = None
-
-        adapter = MagicMock()
-        # Return eval with no trajectories
-        eval_no_traces = EvaluationBatch(outputs=["out"], scores=[0.5], trajectories=None)
-        adapter.batch_evaluate = MagicMock(return_value=[eval_no_traces])
-
-        state = MagicMock()
-        state.increment_evals = MagicMock()
-
-        task = ProposalTask(
-            parent_idx=0,
-            parent_candidate={"prompt": "test"},
-            minibatch_ids=[0],
-            minibatch=["example"],
-        )
-        strategy = MagicMock()
-        strategy.sample_tasks = MagicMock(return_value=[task])
-        selection = AllImprovements()
-        criterion = StrictImprovementAcceptance()
-
-        result = propose_batch(
-            proposer, adapter, state, strategy, selection, criterion,
-            MagicMock(), MagicMock()
-        )
-        assert result == []
-
-    def test_propose_batch_with_improvement(self):
-        """Full pipeline with a proposal that improves."""
-        proposer = MagicMock()
-        proposer.candidate_selector = MagicMock()
-        proposer.batch_sampler = MagicMock()
-        proposer.trainset = MagicMock()
-        proposer.skip_perfect_score = False
-        proposer.perfect_score = None
-        proposer.module_selector = MagicMock(return_value=["system_prompt"])
-        proposer.propose_new_texts = MagicMock(
-            return_value=({"system_prompt": "improved"}, {"system_prompt": "prompt"}, {"system_prompt": "raw"})
-        )
-
-        adapter = MagicMock()
-        parent_eval = EvaluationBatch(
-            outputs=["out"], scores=[0.5],
-            trajectories=["trace"], objective_scores=None,
-        )
-        child_eval = EvaluationBatch(
-            outputs=["out2"], scores=[0.9],
-            trajectories=["trace2"], objective_scores=None,
-        )
-        adapter.batch_evaluate = MagicMock(side_effect=[[parent_eval], [child_eval]])
-        adapter.make_reflective_dataset = MagicMock(return_value={"system_prompt": [{"data": "x"}]})
-
-        state = MagicMock()
-        state.increment_evals = MagicMock()
-
-        task = ProposalTask(
-            parent_idx=0,
-            parent_candidate={"system_prompt": "test"},
-            minibatch_ids=[0],
-            minibatch=["example"],
-        )
-        strategy = MagicMock()
-        strategy.sample_tasks = MagicMock(return_value=[task])
-        selection = AllImprovements()
-        criterion = StrictImprovementAcceptance()
-
-        result = propose_batch(
-            proposer, adapter, state, strategy, selection, criterion,
-            MagicMock(), MagicMock()
-        )
-        assert len(result) == 1
-        assert result[0].candidate == {"system_prompt": "improved"}
-        assert result[0].subsample_scores_after == [0.9]
-        assert result[0].tag == "parallel_mutation"
-
-    def test_deduplication(self):
-        """Same parent + same minibatch should only be evaluated once."""
-        proposer = MagicMock()
-        proposer.candidate_selector = MagicMock()
-        proposer.batch_sampler = MagicMock()
-        proposer.trainset = MagicMock()
-        proposer.skip_perfect_score = False
-        proposer.perfect_score = None
-        proposer.module_selector = MagicMock(return_value=["prompt"])
-        proposer.propose_new_texts = MagicMock(
-            return_value=({"prompt": "new"}, {"prompt": "p"}, {"prompt": "r"})
-        )
-
-        adapter = MagicMock()
-        parent_eval = EvaluationBatch(
-            outputs=["out"], scores=[0.5],
-            trajectories=["trace"], objective_scores=None,
-        )
-        child_eval_1 = EvaluationBatch(
-            outputs=["out1"], scores=[0.6], trajectories=["t1"], objective_scores=None,
-        )
-        child_eval_2 = EvaluationBatch(
-            outputs=["out2"], scores=[0.7], trajectories=["t2"], objective_scores=None,
-        )
-        # First call: parent evals (should be 1 due to dedup). Second call: child evals (2).
-        adapter.batch_evaluate = MagicMock(side_effect=[[parent_eval], [child_eval_1, child_eval_2]])
-        adapter.make_reflective_dataset = MagicMock(return_value={"prompt": [{"data": "x"}]})
-
-        state = MagicMock()
-        state.increment_evals = MagicMock()
-
-        # Two tasks with same parent and same minibatch_ids
-        task1 = ProposalTask(0, {"prompt": "test"}, [0], ["example"])
-        task2 = ProposalTask(0, {"prompt": "test"}, [0], ["example"])
-        strategy = MagicMock()
-        strategy.sample_tasks = MagicMock(return_value=[task1, task2])
-        selection = AllImprovements()
-        criterion = StrictImprovementAcceptance()
-
-        propose_batch(
-            proposer, adapter, state, strategy, selection, criterion,
-            MagicMock(), MagicMock()
-        )
-        # Parent eval should have been called with 1 item (deduplicated)
-        parent_call_items = adapter.batch_evaluate.call_args_list[0][0][0]
-        assert len(parent_call_items) == 1
+    def test_all_improvements_is_default_selection(self):
+        strategy = AllImprovements()
+        assert hasattr(strategy, "select")

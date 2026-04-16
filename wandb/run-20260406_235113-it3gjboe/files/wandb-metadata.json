@@ -1,0 +1,28 @@
+{
+  "os": "Linux-6.8.0-1044-nvidia-x86_64-with-glibc2.35",
+  "python": "CPython 3.14.3",
+  "startedAt": "2026-04-06T23:51:13.139654Z",
+  "program": "/data/home/lakshyaaagrawal/gepa/test_wandb_proposals.py",
+  "codePath": "test_wandb_proposals.py",
+  "codePathLocal": "test_wandb_proposals.py",
+  "git": {
+    "remote": "https://github.com/gepa-ai/gepa.git",
+    "commit": "1b220a21001c70c6a44c1dba4b730491709b0b08"
+  },
+  "email": "lakshyaaagrawal@berkeley.edu",
+  "root": "/data/home/lakshyaaagrawal/gepa",
+  "host": "slurm-login-68b9cd64df-stcfj",
+  "executable": "/data/home/lakshyaaagrawal/gepa/.venv/bin/python3",
+  "cpu_count": 32,
+  "cpu_count_logical": 64,
+  "disk": {
+    "/": {
+      "total": "1888830910464",
+      "used": "138207973376"
+    }
+  },
+  "memory": {
+    "total": "803131650048"
+  },
+  "writerId": "fe8m3hzu3ezg8687f9uk0osnnuslhy1v"
+}

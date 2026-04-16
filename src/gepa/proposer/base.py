@@ -44,10 +44,11 @@ class CandidateProposal(Generic[DataId]):
 
 
 class ProposeNewCandidate(Protocol[DataId]):
-    """
-    Strategy that receives the current optimizer state and proposes a new candidate or returns None.
-    It may compute subsample evaluations, set trace fields in state, etc.
-    The engine will handle acceptance and full eval unless the strategy already did those and encoded in metadata.
+    """Strategy that proposes candidates from the current optimizer state.
+
+    Returns a list of accepted proposals (may be empty). The engine runs
+    full valset evaluation and adds each accepted proposal to the candidate
+    pool.
     """
 
-    def propose(self, state: GEPAState[Any, DataId]) -> CandidateProposal | None: ...
+    def propose(self, state: GEPAState[Any, DataId]) -> list[CandidateProposal]: ...

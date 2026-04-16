@@ -35,6 +35,15 @@ class EvaluationBatch(Generic[Trajectory, RolloutOutput]):
     num_metric_calls: int | None = None
 
 
+class BatchEvaluateFn(Protocol):
+    """Protocol for batch evaluation of multiple (candidate, batch) pairs."""
+
+    def __call__(
+        self,
+        items: list[tuple[Candidate, list]],
+    ) -> list["EvaluationBatch"]: ...
+
+
 class ProposalFn(Protocol):
     def __call__(
         self,
@@ -194,28 +203,27 @@ class GEPAAdapter(Protocol[DataInst, Trajectory, RolloutOutput]):
 
     propose_new_texts: ProposalFn | None = None
 
-    # Optional batch evaluation: adapters that support evaluating multiple
-    # (candidate, batch) pairs in a single call can implement batch_evaluate.
-    # The engine uses this for parallel proposals.  When not implemented,
-    # the engine falls back to sequential evaluate() calls via
-    # default_batch_evaluate().
-    #
-    # Signature:
-    #   batch_evaluate(
-    #       self,
-    #       items: list[tuple[Candidate, list[DataInst]]],
-    #       capture_traces: bool = False,
-    #   ) -> list[EvaluationBatch[Trajectory, RolloutOutput]]
+    batch_evaluate: BatchEvaluateFn | None = None
+    """Optional batch evaluation for multiple (candidate, batch) pairs.
+
+    Adapters that support evaluating several candidates in one call can
+    set this field.  When ``None``, the engine falls back to
+    :func:`default_batch_evaluate` which calls ``evaluate()`` per item.
+
+    Unlike ``evaluate()``, ``batch_evaluate`` always returns full results
+    including trajectories (``capture_traces`` is not exposed — adapters
+    should always populate trajectories).
+    """
 
 
 def default_batch_evaluate(
     adapter: GEPAAdapter,
     items: list[tuple[Candidate, list]],
-    capture_traces: bool = False,
 ) -> list[EvaluationBatch]:
-    """Default sequential batch_evaluate implementation.
+    """Default sequential batch_evaluate fallback.
 
-    Calls ``adapter.evaluate()`` once per (candidate, batch) pair.
-    Adapters can implement ``batch_evaluate()`` directly for true batching.
+    Calls ``adapter.evaluate()`` once per (candidate, batch) pair with
+    ``capture_traces=True``.  Adapters can implement ``batch_evaluate``
+    directly for true batching or parallelism.
     """
-    return [adapter.evaluate(batch, candidate, capture_traces=capture_traces) for candidate, batch in items]
+    return [adapter.evaluate(batch, candidate, capture_traces=True) for candidate, batch in items]

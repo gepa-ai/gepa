@@ -296,23 +296,21 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def batch_evaluate(
         self,
         items: list[tuple["Candidate", list]],
-        capture_traces: bool = False,
     ) -> list[EvaluationBatch]:
         """Evaluate multiple (candidate, batch) pairs.
 
         When a ``batch_evaluator`` was provided at construction time, all
         (candidate, example) pairs are flattened into a single call to the
         user's batch function.  Otherwise falls back to sequential
-        ``evaluate()`` calls.
+        ``evaluate()`` calls.  Always captures traces.
         """
         if self._batch_evaluator is not None:
-            return self._batch_evaluate_via_user_fn(items, capture_traces)
-        return [self.evaluate(batch, candidate, capture_traces=capture_traces) for candidate, batch in items]
+            return self._batch_evaluate_via_user_fn(items)
+        return [self.evaluate(batch, candidate, capture_traces=True) for candidate, batch in items]
 
     def _batch_evaluate_via_user_fn(
         self,
         items: list[tuple["Candidate", list]],
-        capture_traces: bool,
     ) -> list[EvaluationBatch]:
         """Flatten all (candidate, example) pairs, call batch_evaluator once, repackage."""
         assert self._batch_evaluator is not None
@@ -366,7 +364,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 EvaluationBatch(
                     outputs=outputs,
                     scores=scores,
-                    trajectories=side_infos if capture_traces else None,
+                    trajectories=side_infos,
                     objective_scores=objective_scores,
                     num_metric_calls=len(item_results),
                 )

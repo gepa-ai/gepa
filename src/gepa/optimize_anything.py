@@ -505,11 +505,10 @@ class EngineConfig:
     # output manually and pass it to oa.log().
     capture_stdio: bool = False
 
-    # Batch-based parallel proposals configuration.
-    # When parallel_sampling_strategy is set, the engine uses batch-based
-    # parallel proposals instead of the default sequential path.
-    parallel_sampling_strategy: Any | None = None
-    parallel_selection_strategy: Any | None = None
+    # Proposal strategies (default: 1 parent, 1 mutation per iteration).
+    # Swap in a different SamplingStrategy to propose multiple candidates.
+    sampling_strategy: Any | None = None
+    selection_strategy: Any | None = None
 
 
 def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
@@ -1558,6 +1557,9 @@ def optimize_anything(
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
         callbacks=config.callbacks,
+        acceptance_criterion=acceptance_criterion_instance,
+        sampling_strategy=config.engine.sampling_strategy,
+        selection_strategy=config.engine.selection_strategy,
     )
 
     # Define evaluator function for merge proposer
@@ -1585,17 +1587,7 @@ def optimize_anything(
     if config.engine.cache_evaluation:
         evaluation_cache = EvaluationCache[Any, Any]()
 
-    # --- 14. Build parallel config if specified ---
-    parallel_config = None
-    if config.engine.parallel_sampling_strategy is not None:
-        from gepa.proposer.parallel import AllImprovements, ParallelConfig
-
-        parallel_config = ParallelConfig(
-            sampling_strategy=config.engine.parallel_sampling_strategy,
-            selection_strategy=config.engine.parallel_selection_strategy or AllImprovements(),
-        )
-
-    # --- 15. Build the main engine from EngineConfig ---
+    # --- 14. Build the main engine from EngineConfig ---
     engine = GEPAEngine(
         adapter=active_adapter,
         run_dir=config.engine.run_dir,
@@ -1617,7 +1609,6 @@ def optimize_anything(
         acceptance_criterion=acceptance_criterion_instance,
         use_cloudpickle=config.engine.use_cloudpickle,
         evaluation_cache=evaluation_cache,
-        parallel_config=parallel_config,
     )
 
     # --- 16. Run optimization ---
