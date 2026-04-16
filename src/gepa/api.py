@@ -49,6 +49,7 @@ def optimize(
     evaluator: Evaluator | None = None,
     # Reflection-based configuration
     reflection_lm: LanguageModel | str | None = None,
+    reflection_lm_kwargs: dict[str, Any] | None = None,
     candidate_selection_strategy: CandidateSelector
     | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"] = "pareto",
     frontier_type: FrontierType = "instance",
@@ -229,7 +230,7 @@ def optimize(
     if isinstance(reflection_lm, str):
         from gepa.lm import LM
 
-        reflection_lm_callable = LM(reflection_lm)
+        reflection_lm_callable = LM(reflection_lm, **(reflection_lm_kwargs or {}))
     elif reflection_lm is not None:
         from gepa.lm import TrackingLM
 

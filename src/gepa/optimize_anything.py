@@ -734,6 +734,11 @@ class ReflectionConfig:
     reflection_minibatch_size: int | None = None  # Default: 1 for single-instance mode, 3 otherwise
     module_selector: ReflectionComponentSelector | Literal["round_robin", "all"] = "round_robin"
     reflection_lm: LanguageModel | str | None = "openai/gpt-5.1"
+    reflection_lm_kwargs: dict[str, Any] | None = None
+    """Extra keyword arguments forwarded to ``litellm.completion`` when
+    ``reflection_lm`` is a model name string (e.g.
+    ``{"reasoning_effort": "high", "temperature": 0.7}``).
+    Ignored when ``reflection_lm`` is already a callable."""
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
 
@@ -942,7 +947,7 @@ class GEPAConfig:
         return GEPAConfig(**d)
 
 
-def make_litellm_lm(model_name: str) -> LanguageModel:
+def make_litellm_lm(model_name: str, **kwargs: Any) -> LanguageModel:
     """Convert a LiteLLM model name string to a :class:`LanguageModel` callable.
 
     The returned callable conforms to the ``LanguageModel`` protocol and
@@ -952,10 +957,15 @@ def make_litellm_lm(model_name: str) -> LanguageModel:
     Uses :class:`gepa.lm.LM` which handles reasoning model detection
     (o1/o3/o4/gpt-5), retries with exponential backoff, truncation
     warnings, and ``drop_params=True`` for cross-model compatibility.
+
+    Args:
+        model_name: LiteLLM model identifier (e.g. ``"openai/gpt-5"``).
+        **kwargs: Extra keyword arguments forwarded to ``litellm.completion``
+            (e.g. ``reasoning_effort="high"``, ``temperature=0.7``).
     """
     from gepa.lm import LM
 
-    return LM(model_name)
+    return LM(model_name, **kwargs)
 
 
 class EvaluatorWrapper:
@@ -1325,7 +1335,9 @@ def optimize_anything(
 
     # Convert reflection_lm string to callable
     if isinstance(config.reflection.reflection_lm, str):
-        config.reflection.reflection_lm = make_litellm_lm(config.reflection.reflection_lm)
+        config.reflection.reflection_lm = make_litellm_lm(
+            config.reflection.reflection_lm, **(config.reflection.reflection_lm_kwargs or {})
+        )
     elif config.reflection.reflection_lm is not None and not hasattr(config.reflection.reflection_lm, "total_cost"):
         from gepa.lm import TrackingLM
 
