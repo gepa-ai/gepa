@@ -1,1 +1,0 @@
-{"columns": ["iteration", "candidate_idx", "parent_ids", "valset_score", "is_best", "text:current_candidate"], "data": [[1, 1, "[0]", 0.5, true, "31415926535897932384"]]}

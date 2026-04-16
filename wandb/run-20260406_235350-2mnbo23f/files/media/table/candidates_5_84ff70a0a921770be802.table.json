@@ -1,1 +1,0 @@
-{"columns": ["iteration", "candidate_idx", "parent_ids", "valset_score", "is_best", "text:instructions"], "data": [[5, 1, "[0]", 0.6, false, "Answer each question directly and concisely. Attempt 5."]]}
