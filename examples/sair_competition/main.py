@@ -43,6 +43,7 @@ from gepa.optimize_anything import (
     EngineConfig,
     GEPAConfig,
     ReflectionConfig,
+    TrackingConfig,
     optimize_anything,
 )
 
@@ -357,6 +358,10 @@ def main():
             engine=EngineConfig(
                 max_metric_calls=1500,
                 seed=42,
+                run_dir=str(DATA_DIR / "run"),
+            ),
+            tracking=TrackingConfig(
+                use_wandb=True,
             ),
         ),
     )
