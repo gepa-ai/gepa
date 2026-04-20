@@ -38,8 +38,8 @@ uv run python -m examples.sair_competition.main
 
 `prepare_data.py` downloads the public problem subsets from [HuggingFace](https://huggingface.co/datasets/SAIRfoundation/equational-theories-selected-problems) and builds:
 
-- **Valset (300 problems × 3 models = 900 examples)**: Balanced 50/50 TRUE/FALSE, sampled proportionally across difficulty levels (normal, hard1, hard2, hard3). Designed to approximate the private final evaluation distribution.
-- **Trainset (1369 problems × 3 models = 4107 examples)**: All remaining problems.
+- **Valset (300 examples)**: 300 problems, each assigned to one model (round-robin, 100 per model). Balanced 50/50 TRUE/FALSE, sampled proportionally across difficulty levels (normal, hard1, hard2, hard3).
+- **Trainset (4107 examples)**: All remaining 1369 problems × 3 models. Full 3x expansion gives the reflection LM feedback from all three models during training.
 
 The train/val split is done before model expansion — no equation pair appears in both splits.
 

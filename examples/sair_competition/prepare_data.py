@@ -85,6 +85,22 @@ def _expand_with_models(problems: list[dict]) -> list[dict]:
     return expanded
 
 
+def _assign_one_model_per_problem(problems: list[dict]) -> list[dict]:
+    """Assign each problem to one model (round-robin), keeping ~equal model distribution."""
+    expanded = []
+    for i, p in enumerate(problems):
+        m = MODELS[i % len(MODELS)]
+        expanded.append({
+            "id": p["id"],
+            "equation1": p["equation1"],
+            "equation2": p["equation2"],
+            "answer": p["answer"],
+            "model": m["model"],
+            "model_alias": m["alias"],
+        })
+    return expanded
+
+
 def main():
     rng = random.Random(SEED)
 
@@ -111,8 +127,9 @@ def main():
     rng.shuffle(all_val)
     rng.shuffle(all_train)
 
-    # Expand with models
-    val_expanded = _expand_with_models(all_val)
+    # Val: one model per problem (300 examples total, ~100 per model)
+    # Train: all three models per problem (full signal for reflection)
+    val_expanded = _assign_one_model_per_problem(all_val)
     train_expanded = _expand_with_models(all_train)
 
     # Write output
@@ -127,10 +144,8 @@ def main():
     val_true = sum(1 for p in all_val if p["answer"])
     val_false = len(all_val) - val_true
     print("\n--- Summary ---")
-    print(f"Val problems (before model expansion): {len(all_val)} ({val_true} TRUE, {val_false} FALSE)")
-    print(f"Val examples (after 3x model expansion): {len(val_expanded)}")
-    print(f"Train problems (before model expansion): {len(all_train)}")
-    print(f"Train examples (after 3x model expansion): {len(train_expanded)}")
+    print(f"Val: {len(val_expanded)} examples ({val_true} TRUE, {val_false} FALSE, 1 model per problem)")
+    print(f"Train: {len(train_expanded)} examples ({len(all_train)} problems x 3 models)")
     print("\nWritten to:")
     print(f"  {val_path}")
     print(f"  {train_path}")
