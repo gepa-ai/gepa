@@ -1,0 +1,900 @@
+{"id": "hard2_0126", "equation1": "x = ((y * (z * x)) * w) * x", "equation2": "x * x = y * (x * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0126", "equation1": "x = ((y * (z * x)) * w) * x", "equation2": "x * x = y * (x * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0126", "equation1": "x = ((y * (z * x)) * w) * x", "equation2": "x * x = y * (x * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0957", "equation1": "(x * x) * y = (z * x) * y", "equation2": "x = ((y * z) * (w * u)) * z", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0957", "equation1": "(x * x) * y = (z * x) * y", "equation2": "x = ((y * z) * (w * u)) * z", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0957", "equation1": "(x * x) * y = (z * x) * y", "equation2": "x = ((y * z) * (w * u)) * z", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0119", "equation1": "x = y * (x * (y * (y * z)))", "equation2": "x = ((x * x) * y) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0119", "equation1": "x = y * (x * (y * (y * z)))", "equation2": "x = ((x * x) * y) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0119", "equation1": "x = y * (x * (y * (y * z)))", "equation2": "x = ((x * x) * y) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0019", "equation1": "x = y * (y * (z * x))", "equation2": "x = y * (((z * w) * y) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0019", "equation1": "x = y * (y * (z * x))", "equation2": "x = y * (((z * w) * y) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0019", "equation1": "x = y * (y * (z * x))", "equation2": "x = y * (((z * w) * y) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0052", "equation1": "x * y = z * (y * z)", "equation2": "x * y = (x * z) * (x * w)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0052", "equation1": "x * y = z * (y * z)", "equation2": "x * y = (x * z) * (x * w)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0052", "equation1": "x * y = z * (y * z)", "equation2": "x * y = (x * z) * (x * w)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0328", "equation1": "x = ((y * (z * x)) * w) * y", "equation2": "x = x * (((x * y) * x) * y)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0328", "equation1": "x = ((y * (z * x)) * w) * y", "equation2": "x = x * (((x * y) * x) * y)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0328", "equation1": "x = ((y * (z * x)) * w) * y", "equation2": "x = x * (((x * y) * x) * y)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0169", "equation1": "x = ((y * z) * (x * z)) * w", "equation2": "x = ((y * y) * (z * y)) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0169", "equation1": "x = ((y * z) * (x * z)) * w", "equation2": "x = ((y * y) * (z * y)) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0169", "equation1": "x = ((y * z) * (x * z)) * w", "equation2": "x = ((y * y) * (z * y)) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0430", "equation1": "x = (y * x) * (z * (w * y))", "equation2": "x = ((y * x) * x) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0430", "equation1": "x = (y * x) * (z * (w * y))", "equation2": "x = ((y * x) * x) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0430", "equation1": "x = (y * x) * (z * (w * y))", "equation2": "x = ((y * x) * x) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0005", "equation1": "x = y * ((z * (z * x)) * y)", "equation2": "x = (x * ((x * y) * y)) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0005", "equation1": "x = y * ((z * (z * x)) * y)", "equation2": "x = (x * ((x * y) * y)) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0005", "equation1": "x = y * ((z * (z * x)) * y)", "equation2": "x = (x * ((x * y) * y)) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0531", "equation1": "x * y = (z * (w * x)) * w", "equation2": "x = (y * x) * (z * (z * z))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0531", "equation1": "x * y = (z * (w * x)) * w", "equation2": "x = (y * x) * (z * (z * z))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0531", "equation1": "x * y = (z * (w * x)) * w", "equation2": "x = (y * x) * (z * (z * z))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard1_0030", "equation1": "x = (y * (x * (y * x))) * y", "equation2": "x * (x * y) = z * (y * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard1_0030", "equation1": "x = (y * (x * (y * x))) * y", "equation2": "x * (x * y) = z * (y * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard1_0030", "equation1": "x = (y * (x * (y * x))) * y", "equation2": "x * (x * y) = z * (y * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0074", "equation1": "x * y = (z * (w * x)) * z", "equation2": "x = y * (z * (z * (z * x)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0074", "equation1": "x * y = (z * (w * x)) * z", "equation2": "x = y * (z * (z * (z * x)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0074", "equation1": "x * y = (z * (w * x)) * z", "equation2": "x = y * (z * (z * (z * x)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0473", "equation1": "x * (y * x) = z * (w * x)", "equation2": "x = y * (x * (z * (z * w)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0473", "equation1": "x * (y * x) = z * (w * x)", "equation2": "x = y * (x * (z * (z * w)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0473", "equation1": "x * (y * x) = z * (w * x)", "equation2": "x = y * (x * (z * (z * w)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0450", "equation1": "x * (x * x) = (y * x) * y", "equation2": "x = (y * (y * (z * z))) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0450", "equation1": "x * (x * x) = (y * x) * y", "equation2": "x = (y * (y * (z * z))) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0450", "equation1": "x * (x * x) = (y * x) * y", "equation2": "x = (y * (y * (z * z))) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0179", "equation1": "x * y = z * (w * (x * u))", "equation2": "x = y * (z * (z * (z * x)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0179", "equation1": "x * y = z * (w * (x * u))", "equation2": "x = y * (z * (z * (z * x)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0179", "equation1": "x * y = z * (w * (x * u))", "equation2": "x = y * (z * (z * (z * x)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0405", "equation1": "x = (y * ((x * z) * y)) * x", "equation2": "x * (y * y) = x * (z * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0405", "equation1": "x = (y * ((x * z) * y)) * x", "equation2": "x * (y * y) = x * (z * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0405", "equation1": "x = (y * ((x * z) * y)) * x", "equation2": "x * (y * y) = x * (z * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0940", "equation1": "x = y * (z * (x * (w * u)))", "equation2": "x * x = (y * z) * (z * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0940", "equation1": "x = y * (z * (x * (w * u)))", "equation2": "x * x = (y * z) * (z * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0940", "equation1": "x = y * (z * (x * (w * u)))", "equation2": "x * x = (y * z) * (z * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0396", "equation1": "x = y * ((y * (y * y)) * y)", "equation2": "x * (y * y) = (y * x) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0396", "equation1": "x = y * ((y * (y * y)) * y)", "equation2": "x * (y * y) = (y * x) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0396", "equation1": "x = y * ((y * (y * y)) * y)", "equation2": "x * (y * y) = (y * x) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0806", "equation1": "x * y = x * ((y * x) * x)", "equation2": "x = (y * (y * z)) * (x * y)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0806", "equation1": "x * y = x * ((y * x) * x)", "equation2": "x = (y * (y * z)) * (x * y)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0806", "equation1": "x * y = x * ((y * x) * x)", "equation2": "x = (y * (y * z)) * (x * y)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0008", "equation1": "x * x = y * z", "equation2": "x * (x * y) = (y * x) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0008", "equation1": "x * x = y * z", "equation2": "x * (x * y) = (y * x) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0008", "equation1": "x * x = y * z", "equation2": "x * (x * y) = (y * x) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0082", "equation1": "x = x * (x * ((y * z) * x))", "equation2": "x = ((x * x) * (x * y)) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0082", "equation1": "x = x * (x * ((y * z) * x))", "equation2": "x = ((x * x) * (x * y)) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0082", "equation1": "x = x * (x * ((y * z) * x))", "equation2": "x = ((x * x) * (x * y)) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0302", "equation1": "x = ((x * (x * y)) * x) * x", "equation2": "x = ((x * (y * z)) * y) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0302", "equation1": "x = ((x * (x * y)) * x) * x", "equation2": "x = ((x * (y * z)) * y) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0302", "equation1": "x = ((x * (x * y)) * x) * x", "equation2": "x = ((x * (y * z)) * y) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0592", "equation1": "x = (y * y) * ((x * z) * z)", "equation2": "x = (x * y) * (y * (y * y))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0592", "equation1": "x = (y * y) * ((x * z) * z)", "equation2": "x = (x * y) * (y * (y * y))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0592", "equation1": "x = (y * y) * ((x * z) * z)", "equation2": "x = (x * y) * (y * (y * y))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0974", "equation1": "x = y * ((z * x) * (w * x))", "equation2": "x = (((x * y) * x) * x) * y", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0974", "equation1": "x = y * ((z * x) * (w * x))", "equation2": "x = (((x * y) * x) * x) * y", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0974", "equation1": "x = y * ((z * x) * (w * x))", "equation2": "x = (((x * y) * x) * x) * y", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0024", "equation1": "x = x * ((y * z) * z)", "equation2": "x = (x * (y * (z * y))) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0024", "equation1": "x = x * ((y * z) * z)", "equation2": "x = (x * (y * (z * y))) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0024", "equation1": "x = x * ((y * z) * z)", "equation2": "x = (x * (y * (z * y))) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0912", "equation1": "x = (y * y) * (z * (x * z))", "equation2": "x = ((y * (x * x)) * x) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0912", "equation1": "x = (y * y) * (z * (x * z))", "equation2": "x = ((y * (x * x)) * x) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0912", "equation1": "x = (y * y) * (z * (x * z))", "equation2": "x = ((y * (x * x)) * x) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0287", "equation1": "x = ((y * z) * (x * y)) * y", "equation2": "x * y = (x * (z * z)) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0287", "equation1": "x = ((y * z) * (x * y)) * y", "equation2": "x * y = (x * (z * z)) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0287", "equation1": "x = ((y * z) * (x * y)) * y", "equation2": "x * y = (x * (z * z)) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0777", "equation1": "x = ((y * x) * y) * (x * x)", "equation2": "x = y * ((z * w) * (z * x))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0777", "equation1": "x = ((y * x) * y) * (x * x)", "equation2": "x = y * ((z * w) * (z * x))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0777", "equation1": "x = ((y * x) * y) * (x * x)", "equation2": "x = y * ((z * w) * (z * x))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0303", "equation1": "x = (y * (z * x)) * z", "equation2": "x = y * (((z * x) * x) * y)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0303", "equation1": "x = (y * (z * x)) * z", "equation2": "x = y * (((z * x) * x) * y)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0303", "equation1": "x = (y * (z * x)) * z", "equation2": "x = y * (((z * x) * x) * y)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0123", "equation1": "x = (y * z) * ((y * w) * w)", "equation2": "x * y = ((z * y) * y) * w", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0123", "equation1": "x = (y * z) * ((y * w) * w)", "equation2": "x * y = ((z * y) * y) * w", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0123", "equation1": "x = (y * z) * ((y * w) * w)", "equation2": "x * y = ((z * y) * y) * w", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0173", "equation1": "x = (y * z) * (z * (z * y))", "equation2": "x * y = (x * (y * x)) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0173", "equation1": "x = (y * z) * (z * (z * y))", "equation2": "x * y = (x * (y * x)) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0173", "equation1": "x = (y * z) * (z * (z * y))", "equation2": "x * y = (x * (y * x)) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0309", "equation1": "x = ((y * (y * z)) * z) * z", "equation2": "x * y = y * (z * (w * z))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0309", "equation1": "x = ((y * (y * z)) * z) * z", "equation2": "x * y = y * (z * (w * z))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0309", "equation1": "x = ((y * (y * z)) * z) * z", "equation2": "x * y = y * (z * (w * z))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0010", "equation1": "x * y = (z * w) * (w * z)", "equation2": "(x * x) * y = (y * x) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0010", "equation1": "x * y = (z * w) * (w * z)", "equation2": "(x * x) * y = (y * x) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0010", "equation1": "x * y = (z * w) * (w * z)", "equation2": "(x * x) * y = (y * x) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0655", "equation1": "x = (((y * x) * y) * z) * z", "equation2": "x = y * (x * ((x * y) * z))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0655", "equation1": "x = (((y * x) * y) * z) * z", "equation2": "x = y * (x * ((x * y) * z))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0655", "equation1": "x = (((y * x) * y) * z) * z", "equation2": "x = y * (x * ((x * y) * z))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0030", "equation1": "x = x * (y * ((z * x) * x))", "equation2": "x * y = ((y * z) * x) * y", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0030", "equation1": "x = x * (y * ((z * x) * x))", "equation2": "x * y = ((y * z) * x) * y", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0030", "equation1": "x = x * (y * ((z * x) * x))", "equation2": "x * y = ((y * z) * x) * y", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0689", "equation1": "x * y = (y * (z * w)) * z", "equation2": "x = (y * y) * (y * (z * y))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0689", "equation1": "x * y = (y * (z * w)) * z", "equation2": "x = (y * y) * (y * (z * y))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0689", "equation1": "x * y = (y * (z * w)) * z", "equation2": "x = (y * y) * (y * (z * y))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0204", "equation1": "x = (y * (y * (x * y))) * y", "equation2": "x * y = (y * x) * (z * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0204", "equation1": "x = (y * (y * (x * y))) * y", "equation2": "x * y = (y * x) * (z * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0204", "equation1": "x = (y * (y * (x * y))) * y", "equation2": "x * y = (y * x) * (z * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0083", "equation1": "x = (y * ((x * z) * x)) * y", "equation2": "x = (y * z) * ((x * y) * w)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0083", "equation1": "x = (y * ((x * z) * x)) * y", "equation2": "x = (y * z) * ((x * y) * w)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0083", "equation1": "x = (y * ((x * z) * x)) * y", "equation2": "x = (y * z) * ((x * y) * w)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0135", "equation1": "x = ((y * (z * y)) * z) * y", "equation2": "x = (x * x) * (y * y)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0135", "equation1": "x = ((y * (z * y)) * z) * y", "equation2": "x = (x * x) * (y * y)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0135", "equation1": "x = ((y * (z * y)) * z) * y", "equation2": "x = (x * x) * (y * y)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0064", "equation1": "x = (y * z) * (z * (x * y))", "equation2": "x = y * (z * (y * (z * x)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0064", "equation1": "x = (y * z) * (z * (x * y))", "equation2": "x = y * (z * (y * (z * x)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0064", "equation1": "x = (y * z) * (z * (x * y))", "equation2": "x = y * (z * (y * (z * x)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0111", "equation1": "x = (x * (y * (z * w))) * y", "equation2": "(x * x) * y = (z * w) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0111", "equation1": "x = (x * (y * (z * w))) * y", "equation2": "(x * x) * y = (z * w) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0111", "equation1": "x = (x * (y * (z * w))) * y", "equation2": "(x * x) * y = (z * w) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0407", "equation1": "x = ((y * z) * (z * w)) * y", "equation2": "x * y = (x * x) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0407", "equation1": "x = ((y * z) * (z * w)) * y", "equation2": "x * y = (x * x) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0407", "equation1": "x = ((y * z) * (z * w)) * y", "equation2": "x * y = (x * x) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0812", "equation1": "x * y = z * ((x * w) * z)", "equation2": "x = (y * z) * ((x * w) * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0812", "equation1": "x * y = z * ((x * w) * z)", "equation2": "x = (y * z) * ((x * w) * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0812", "equation1": "x * y = z * ((x * w) * z)", "equation2": "x = (y * z) * ((x * w) * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0917", "equation1": "x = y * ((z * (y * x)) * y)", "equation2": "(x * y) * y = (y * z) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0917", "equation1": "x = y * ((z * (y * x)) * y)", "equation2": "(x * y) * y = (y * z) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0917", "equation1": "x = y * ((z * (y * x)) * y)", "equation2": "(x * y) * y = (y * z) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0411", "equation1": "x = ((y * x) * x) * (y * x)", "equation2": "x = (x * y) * (y * (x * y))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0411", "equation1": "x = ((y * x) * x) * (y * x)", "equation2": "x = (x * y) * (y * (x * y))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0411", "equation1": "x = ((y * x) * x) * (y * x)", "equation2": "x = (x * y) * (y * (x * y))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0069", "equation1": "x = ((y * (z * z)) * x) * w", "equation2": "(x * y) * z = (y * x) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0069", "equation1": "x = ((y * (z * z)) * x) * w", "equation2": "(x * y) * z = (y * x) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0069", "equation1": "x = ((y * (z * z)) * x) * w", "equation2": "(x * y) * z = (y * x) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0155", "equation1": "x = y * ((z * w) * (u * w))", "equation2": "x = ((y * y) * (z * x)) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0155", "equation1": "x = y * ((z * w) * (u * w))", "equation2": "x = ((y * y) * (z * x)) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0155", "equation1": "x = y * ((z * w) * (u * w))", "equation2": "x = ((y * y) * (z * x)) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard1_0005", "equation1": "x = ((y * z) * (z * x)) * y", "equation2": "x * x = (y * (y * y)) * y", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard1_0005", "equation1": "x = ((y * z) * (z * x)) * y", "equation2": "x * x = (y * (y * y)) * y", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard1_0005", "equation1": "x = ((y * z) * (z * x)) * y", "equation2": "x * x = (y * (y * y)) * y", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0251", "equation1": "x = (x * (y * (y * y))) * z", "equation2": "x = (x * (y * x)) * (y * y)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0251", "equation1": "x = (x * (y * (y * y))) * z", "equation2": "x = (x * (y * x)) * (y * y)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0251", "equation1": "x = (x * (y * (y * y))) * z", "equation2": "x = (x * (y * x)) * (y * y)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0286", "equation1": "x * y = (y * y) * (x * x)", "equation2": "x = y * ((z * (y * y)) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0286", "equation1": "x * y = (y * y) * (x * x)", "equation2": "x = y * ((z * (y * y)) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0286", "equation1": "x * y = (y * y) * (x * x)", "equation2": "x = y * ((z * (y * y)) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0443", "equation1": "x * y = ((x * x) * z) * x", "equation2": "x = (y * z) * ((x * w) * u)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0443", "equation1": "x * y = ((x * x) * z) * x", "equation2": "x = (y * z) * ((x * w) * u)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0443", "equation1": "x * y = ((x * x) * z) * x", "equation2": "x = (y * z) * ((x * w) * u)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0122", "equation1": "x = y * ((y * (y * x)) * x)", "equation2": "x = y * (((z * x) * x) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0122", "equation1": "x = y * ((y * (y * x)) * x)", "equation2": "x = y * (((z * x) * x) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0122", "equation1": "x = y * ((y * (y * x)) * x)", "equation2": "x = y * (((z * x) * x) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0081", "equation1": "x = (y * (x * (x * z))) * w", "equation2": "x = x * (y * ((x * y) * y))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0081", "equation1": "x = (y * (x * (x * z))) * w", "equation2": "x = x * (y * ((x * y) * y))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0081", "equation1": "x = (y * (x * (x * z))) * w", "equation2": "x = x * (y * ((x * y) * y))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0289", "equation1": "x = (y * x) * ((z * w) * z)", "equation2": "x * y = (x * x) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0289", "equation1": "x = (y * x) * ((z * w) * z)", "equation2": "x * y = (x * x) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0289", "equation1": "x = (y * x) * ((z * w) * z)", "equation2": "x * y = (x * x) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0160", "equation1": "x = y * ((x * y) * (z * z))", "equation2": "x = (y * ((x * x) * x)) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0160", "equation1": "x = y * ((x * y) * (z * z))", "equation2": "x = (y * ((x * x) * x)) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0160", "equation1": "x = y * ((x * y) * (z * z))", "equation2": "x = (y * ((x * x) * x)) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0754", "equation1": "x = (y * (z * z)) * (w * y)", "equation2": "x = (y * (x * x)) * (x * z)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0754", "equation1": "x = (y * (z * z)) * (w * y)", "equation2": "x = (y * (x * x)) * (x * z)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0754", "equation1": "x = (y * (z * z)) * (w * y)", "equation2": "x = (y * (x * x)) * (x * z)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0567", "equation1": "x = y * (z * ((x * w) * u))", "equation2": "x = (x * (y * y)) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0567", "equation1": "x = y * (z * ((x * w) * u))", "equation2": "x = (x * (y * y)) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0567", "equation1": "x = y * (z * ((x * w) * u))", "equation2": "x = (x * (y * y)) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0398", "equation1": "x * (y * z) = (w * w) * y", "equation2": "x * (y * y) = y * (x * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0398", "equation1": "x * (y * z) = (w * w) * y", "equation2": "x * (y * y) = y * (x * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0398", "equation1": "x * (y * z) = (w * w) * y", "equation2": "x * (y * y) = y * (x * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0466", "equation1": "x = y * y", "equation2": "x * x = (y * z) * (w * z)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0466", "equation1": "x = y * y", "equation2": "x * x = (y * z) * (w * z)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0466", "equation1": "x = y * y", "equation2": "x * x = (y * z) * (w * z)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0859", "equation1": "x * y = (x * z) * (z * x)", "equation2": "x * y = (z * w) * w", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0859", "equation1": "x * y = (x * z) * (z * x)", "equation2": "x * y = (z * w) * w", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0859", "equation1": "x * y = (x * z) * (z * x)", "equation2": "x * y = (z * w) * w", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0247", "equation1": "x = (x * (y * (x * x))) * z", "equation2": "x = (x * ((y * z) * z)) * w", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0247", "equation1": "x = (x * (y * (x * x))) * z", "equation2": "x = (x * ((y * z) * z)) * w", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0247", "equation1": "x = (x * (y * (x * x))) * z", "equation2": "x = (x * ((y * z) * z)) * w", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0248", "equation1": "x = (x * (y * (x * y))) * y", "equation2": "(x * x) * x = (x * x) * y", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0248", "equation1": "x = (x * (y * (x * y))) * y", "equation2": "(x * x) * x = (x * x) * y", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0248", "equation1": "x = (x * (y * (x * y))) * y", "equation2": "(x * x) * x = (x * x) * y", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0683", "equation1": "x * (y * z) = (w * x) * x", "equation2": "x = (y * (z * x)) * (y * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0683", "equation1": "x * (y * z) = (w * x) * x", "equation2": "x = (y * (z * x)) * (y * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0683", "equation1": "x * (y * z) = (w * x) * x", "equation2": "x = (y * (z * x)) * (y * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0827", "equation1": "x = y * ((z * (w * w)) * z)", "equation2": "x = (((y * z) * z) * x) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0827", "equation1": "x = y * ((z * (w * w)) * z)", "equation2": "x = (((y * z) * z) * x) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0827", "equation1": "x = y * ((z * (w * w)) * z)", "equation2": "x = (((y * z) * z) * x) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0379", "equation1": "x * (y * z) = y * (w * u)", "equation2": "x * (y * y) = z * (w * u)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0379", "equation1": "x * (y * z) = y * (w * u)", "equation2": "x * (y * y) = z * (w * u)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0379", "equation1": "x * (y * z) = y * (w * u)", "equation2": "x * (y * y) = z * (w * u)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0256", "equation1": "x = (y * (z * (z * w))) * x", "equation2": "x = (x * ((y * x) * x)) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0256", "equation1": "x = (y * (z * (z * w))) * x", "equation2": "x = (x * ((y * x) * x)) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0256", "equation1": "x = (y * (z * (z * w))) * x", "equation2": "x = (x * ((y * x) * x)) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0170", "equation1": "x = (y * (y * z)) * (y * z)", "equation2": "x = y * (((x * z) * z) * w)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0170", "equation1": "x = (y * (y * z)) * (y * z)", "equation2": "x = y * (((x * z) * z) * w)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0170", "equation1": "x = (y * (y * z)) * (y * z)", "equation2": "x = y * (((x * z) * z) * w)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0001", "equation1": "x = y * x", "equation2": "x = x * (x * ((y * z) * x))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0001", "equation1": "x = y * x", "equation2": "x = x * (x * ((y * z) * x))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0001", "equation1": "x = y * x", "equation2": "x = x * (x * ((y * z) * x))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0544", "equation1": "x = y * (z * (w * (u * w)))", "equation2": "x * x = (x * (y * z)) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0544", "equation1": "x = y * (z * (w * (u * w)))", "equation2": "x * x = (x * (y * z)) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0544", "equation1": "x = y * (z * (w * (u * w)))", "equation2": "x * x = (x * (y * z)) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0470", "equation1": "x = (y * (z * w)) * (y * z)", "equation2": "x = (x * (y * x)) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0470", "equation1": "x = (y * (z * w)) * (y * z)", "equation2": "x = (x * (y * x)) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0470", "equation1": "x = (y * (z * w)) * (y * z)", "equation2": "x = (x * (y * x)) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0028", "equation1": "x * y = y * ((y * z) * x)", "equation2": "x * y = ((z * x) * y) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0028", "equation1": "x * y = y * ((y * z) * x)", "equation2": "x * y = ((z * x) * y) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0028", "equation1": "x * y = y * ((y * z) * x)", "equation2": "x * y = ((z * x) * y) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0353", "equation1": "x * y = y * (x * (z * y))", "equation2": "(x * y) * z = (y * w) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0353", "equation1": "x * y = y * (x * (z * y))", "equation2": "(x * y) * z = (y * w) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0353", "equation1": "x * y = y * (x * (z * y))", "equation2": "(x * y) * z = (y * w) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0386", "equation1": "x * x = ((y * z) * z) * z", "equation2": "x * x = (x * x) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0386", "equation1": "x * x = ((y * z) * z) * z", "equation2": "x * x = (x * x) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0386", "equation1": "x * x = ((y * z) * z) * z", "equation2": "x * x = (x * x) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0601", "equation1": "x = y * ((z * (z * w)) * x)", "equation2": "x * y = (y * (x * x)) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0601", "equation1": "x = y * ((z * (z * w)) * x)", "equation2": "x * y = (y * (x * x)) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0601", "equation1": "x = y * ((z * (z * w)) * x)", "equation2": "x * y = (y * (x * x)) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0006", "equation1": "x * y = ((z * w) * u) * y", "equation2": "x = x * ((y * x) * (y * z))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0006", "equation1": "x * y = ((z * w) * u) * y", "equation2": "x = x * ((y * x) * (y * z))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0006", "equation1": "x * y = ((z * w) * u) * y", "equation2": "x = x * ((y * x) * (y * z))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0291", "equation1": "x = ((y * x) * (z * w)) * x", "equation2": "x * (y * y) = z * (w * y)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0291", "equation1": "x = ((y * x) * (z * w)) * x", "equation2": "x * (y * y) = z * (w * y)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0291", "equation1": "x = ((y * x) * (z * w)) * x", "equation2": "x * (y * y) = z * (w * y)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0130", "equation1": "x = x * ((y * (x * x)) * z)", "equation2": "x * y = x * ((z * y) * y)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0130", "equation1": "x = x * ((y * (x * x)) * z)", "equation2": "x * y = x * ((z * y) * y)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0130", "equation1": "x = x * ((y * (x * x)) * z)", "equation2": "x * y = x * ((z * y) * y)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0735", "equation1": "x = (y * z) * (z * (z * y))", "equation2": "x = y * (z * ((w * y) * z))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0735", "equation1": "x = (y * z) * (z * (z * y))", "equation2": "x = y * (z * ((w * y) * z))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0735", "equation1": "x = (y * z) * (z * (z * y))", "equation2": "x = y * (z * ((w * y) * z))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0620", "equation1": "x = (y * (z * w)) * (x * x)", "equation2": "x * y = ((x * z) * z) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0620", "equation1": "x = (y * (z * w)) * (x * x)", "equation2": "x * y = ((x * z) * z) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0620", "equation1": "x = (y * (z * w)) * (x * x)", "equation2": "x * y = ((x * z) * z) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0167", "equation1": "x * x = x * (y * (z * x))", "equation2": "x = (((y * y) * x) * z) * y", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0167", "equation1": "x * x = x * (y * (z * x))", "equation2": "x = (((y * y) * x) * z) * y", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0167", "equation1": "x * x = x * (y * (z * x))", "equation2": "x = (((y * y) * x) * z) * y", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0114", "equation1": "x = y * ((y * y) * (z * x))", "equation2": "x = (x * y) * (x * (y * x))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0114", "equation1": "x = y * ((y * y) * (z * x))", "equation2": "x = (x * y) * (x * (y * x))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0114", "equation1": "x = y * ((y * y) * (z * x))", "equation2": "x = (x * y) * (x * (y * x))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0388", "equation1": "x * y = ((z * x) * w) * y", "equation2": "x * y = (z * x) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0388", "equation1": "x * y = ((z * x) * w) * y", "equation2": "x * y = (z * x) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0388", "equation1": "x * y = ((z * x) * w) * y", "equation2": "x * y = (z * x) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0121", "equation1": "x = y * ((z * w) * (x * x))", "equation2": "x = (y * ((z * w) * z)) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0121", "equation1": "x = y * ((z * w) * (x * x))", "equation2": "x = (y * ((z * w) * z)) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0121", "equation1": "x = y * ((z * w) * (x * x))", "equation2": "x = (y * ((z * w) * z)) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0550", "equation1": "x * x = (y * z) * y", "equation2": "x = y * (((z * w) * w) * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0550", "equation1": "x * x = (y * z) * y", "equation2": "x = y * (((z * w) * w) * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0550", "equation1": "x * x = (y * z) * y", "equation2": "x = y * (((z * w) * w) * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0600", "equation1": "x = (y * y) * (z * (y * w))", "equation2": "x = (y * (y * (z * w))) * w", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0600", "equation1": "x = (y * y) * (z * (y * w))", "equation2": "x = (y * (y * (z * w))) * w", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0600", "equation1": "x = (y * y) * (z * (y * w))", "equation2": "x = (y * (y * (z * w))) * w", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0351", "equation1": "x = y * (z * (w * y))", "equation2": "x * y = z * (w * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0351", "equation1": "x = y * (z * (w * y))", "equation2": "x * y = z * (w * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0351", "equation1": "x = y * (z * (w * y))", "equation2": "x * y = z * (w * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0579", "equation1": "x = (y * y) * ((x * y) * y)", "equation2": "x * y = y * ((z * w) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0579", "equation1": "x = (y * y) * ((x * y) * y)", "equation2": "x * y = y * ((z * w) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0579", "equation1": "x = (y * y) * ((x * y) * y)", "equation2": "x * y = y * ((z * w) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0883", "equation1": "x = ((y * z) * (w * y)) * x", "equation2": "x * (y * z) = (x * y) * y", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0883", "equation1": "x = ((y * z) * (w * y)) * x", "equation2": "x * (y * z) = (x * y) * y", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0883", "equation1": "x = ((y * z) * (w * y)) * x", "equation2": "x * (y * z) = (x * y) * y", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0091", "equation1": "x = y * (((x * z) * x) * w)", "equation2": "x = ((y * (y * y)) * x) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0091", "equation1": "x = y * (((x * z) * x) * w)", "equation2": "x = ((y * (y * y)) * x) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0091", "equation1": "x = y * (((x * z) * x) * w)", "equation2": "x = ((y * (y * y)) * x) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0715", "equation1": "x = (((y * x) * x) * z) * w", "equation2": "x = y * ((y * z) * (x * y))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0715", "equation1": "x = (((y * x) * x) * z) * w", "equation2": "x = y * ((y * z) * (x * y))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0715", "equation1": "x = (((y * x) * x) * z) * w", "equation2": "x = y * ((y * z) * (x * y))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0178", "equation1": "x = x * ((y * z) * (x * y))", "equation2": "x = x * ((y * y) * (z * y))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0178", "equation1": "x = x * ((y * z) * (x * y))", "equation2": "x = x * ((y * y) * (z * y))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0178", "equation1": "x = x * ((y * z) * (x * y))", "equation2": "x = x * ((y * y) * (z * y))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0209", "equation1": "x = (y * (z * x)) * (z * x)", "equation2": "x = ((y * z) * z) * (w * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0209", "equation1": "x = (y * (z * x)) * (z * x)", "equation2": "x = ((y * z) * z) * (w * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0209", "equation1": "x = (y * (z * x)) * (z * x)", "equation2": "x = ((y * z) * z) * (w * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0771", "equation1": "x * y = z * ((z * y) * x)", "equation2": "x = (x * x) * (x * y)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0771", "equation1": "x * y = z * ((z * y) * x)", "equation2": "x = (x * x) * (x * y)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0771", "equation1": "x * y = z * ((z * y) * x)", "equation2": "x = (x * x) * (x * y)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0645", "equation1": "x = y * ((z * (w * y)) * w)", "equation2": "x = x * (y * (z * (y * x)))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0645", "equation1": "x = y * ((z * (w * y)) * w)", "equation2": "x = x * (y * (z * (y * x)))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0645", "equation1": "x = y * ((z * (w * y)) * w)", "equation2": "x = x * (y * (z * (y * x)))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0970", "equation1": "x = x * (y * (x * (y * x)))", "equation2": "x = y * ((z * (y * w)) * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0970", "equation1": "x = x * (y * (x * (y * x)))", "equation2": "x = y * ((z * (y * w)) * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0970", "equation1": "x = x * (y * (x * (y * x)))", "equation2": "x = y * ((z * (y * w)) * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0331", "equation1": "x = (y * ((x * z) * z)) * w", "equation2": "x = (y * (z * y)) * (w * y)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0331", "equation1": "x = (y * ((x * z) * z)) * w", "equation2": "x = (y * (z * y)) * (w * y)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0331", "equation1": "x = (y * ((x * z) * z)) * w", "equation2": "x = (y * (z * y)) * (w * y)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0533", "equation1": "x * (y * x) = z * (x * x)", "equation2": "x * y = x * ((z * y) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0533", "equation1": "x * (y * x) = z * (x * x)", "equation2": "x * y = x * ((z * y) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0533", "equation1": "x * (y * x) = z * (x * x)", "equation2": "x * y = x * ((z * y) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0518", "equation1": "x = (x * (x * x)) * (x * y)", "equation2": "x * y = y * ((y * z) * y)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0518", "equation1": "x = (x * (x * x)) * (x * y)", "equation2": "x * y = y * ((y * z) * y)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0518", "equation1": "x = (x * (x * x)) * (x * y)", "equation2": "x * y = y * ((y * z) * y)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0742", "equation1": "x = (((y * z) * w) * u) * w", "equation2": "x = (y * (z * (x * y))) * w", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0742", "equation1": "x = (((y * z) * w) * u) * w", "equation2": "x = (y * (z * (x * y))) * w", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0742", "equation1": "x = (((y * z) * w) * u) * w", "equation2": "x = (y * (z * (x * y))) * w", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0398", "equation1": "x = (y * z) * ((w * z) * w)", "equation2": "x = x * (y * ((y * y) * z))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0398", "equation1": "x = (y * z) * ((w * z) * w)", "equation2": "x = x * (y * ((y * y) * z))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0398", "equation1": "x = (y * z) * ((w * z) * w)", "equation2": "x = x * (y * ((y * y) * z))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0950", "equation1": "x * y = (x * x) * (y * y)", "equation2": "x * x = x * (y * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0950", "equation1": "x * y = (x * x) * (y * y)", "equation2": "x * x = x * (y * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0950", "equation1": "x * y = (x * x) * (y * y)", "equation2": "x * x = x * (y * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0093", "equation1": "x = y * (y * ((y * x) * y))", "equation2": "x = y * ((x * (x * y)) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0093", "equation1": "x = y * (y * ((y * x) * y))", "equation2": "x = y * ((x * (x * y)) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0093", "equation1": "x = y * (y * ((y * x) * y))", "equation2": "x = y * ((x * (x * y)) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard1_0069", "equation1": "x = ((y * y) * z) * x", "equation2": "x = y * (y * (z * (w * x)))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard1_0069", "equation1": "x = ((y * y) * z) * x", "equation2": "x = y * (y * (z * (w * x)))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard1_0069", "equation1": "x = ((y * y) * z) * x", "equation2": "x = y * (y * (z * (w * x)))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard1_0006", "equation1": "x * x = (x * y) * z", "equation2": "x * x = (y * z) * w", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard1_0006", "equation1": "x * x = (x * y) * z", "equation2": "x * x = (y * z) * w", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard1_0006", "equation1": "x * x = (x * y) * z", "equation2": "x * x = (y * z) * w", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0736", "equation1": "x * x = (y * (x * z)) * x", "equation2": "x * y = y * (x * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0736", "equation1": "x * x = (y * (x * z)) * x", "equation2": "x * y = y * (x * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0736", "equation1": "x * x = (y * (x * z)) * x", "equation2": "x * y = y * (x * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0345", "equation1": "x * x = y * (x * (z * w))", "equation2": "x * (y * x) = x * (y * y)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0345", "equation1": "x * x = y * (x * (z * w))", "equation2": "x * (y * x) = x * (y * y)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0345", "equation1": "x * x = y * (x * (z * w))", "equation2": "x * (y * x) = x * (y * y)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0396", "equation1": "x * (y * z) = (w * x) * y", "equation2": "x * (y * z) = (x * w) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0396", "equation1": "x * (y * z) = (w * x) * y", "equation2": "x * (y * z) = (x * w) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0396", "equation1": "x * (y * z) = (w * x) * y", "equation2": "x * (y * z) = (x * w) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0232", "equation1": "x = (y * ((x * z) * y)) * y", "equation2": "x = (y * (x * z)) * (x * w)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0232", "equation1": "x = (y * ((x * z) * y)) * y", "equation2": "x = (y * (x * z)) * (x * w)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0232", "equation1": "x = (y * ((x * z) * y)) * y", "equation2": "x = (y * (x * z)) * (x * w)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0513", "equation1": "x = x * (y * ((z * y) * x))", "equation2": "x = x * ((y * z) * w)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0513", "equation1": "x = x * (y * ((z * y) * x))", "equation2": "x = x * ((y * z) * w)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0513", "equation1": "x = x * (y * ((z * y) * x))", "equation2": "x = x * ((y * z) * w)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0112", "equation1": "x = y * ((y * x) * (x * x))", "equation2": "x = x * (((x * y) * y) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0112", "equation1": "x = y * ((y * x) * (x * x))", "equation2": "x = x * (((x * y) * y) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0112", "equation1": "x = y * ((y * x) * (x * x))", "equation2": "x = x * (((x * y) * y) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0161", "equation1": "(x * y) * x = (z * w) * u", "equation2": "x * (x * x) = x * (y * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0161", "equation1": "(x * y) * x = (z * w) * u", "equation2": "x * (x * x) = x * (y * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0161", "equation1": "(x * y) * x = (z * w) * u", "equation2": "x * (x * x) = x * (y * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0217", "equation1": "x = ((x * x) * y) * (z * w)", "equation2": "x = (x * (y * z)) * y", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0217", "equation1": "x = ((x * x) * y) * (z * w)", "equation2": "x = (x * (y * z)) * y", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0217", "equation1": "x = ((x * x) * y) * (z * w)", "equation2": "x = (x * (y * z)) * y", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0132", "equation1": "x = y * ((z * (x * z)) * z)", "equation2": "x = (y * (y * z)) * (y * z)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0132", "equation1": "x = y * ((z * (x * z)) * z)", "equation2": "x = (y * (y * z)) * (y * z)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0132", "equation1": "x = y * ((z * (x * z)) * z)", "equation2": "x = (y * (y * z)) * (y * z)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0585", "equation1": "x = y * (((z * w) * y) * u)", "equation2": "x * y = ((z * x) * w) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0585", "equation1": "x = y * (((z * w) * y) * u)", "equation2": "x * y = ((z * x) * w) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0585", "equation1": "x = y * (((z * w) * y) * u)", "equation2": "x * y = ((z * x) * w) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0071", "equation1": "x = y * (y * (y * (x * y)))", "equation2": "x = ((y * y) * x) * (z * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0071", "equation1": "x = y * (y * (y * (x * y)))", "equation2": "x = ((y * y) * x) * (z * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0071", "equation1": "x = y * (y * (y * (x * y)))", "equation2": "x = ((y * y) * x) * (z * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0977", "equation1": "x = (((y * x) * z) * z) * y", "equation2": "(x * y) * y = (y * z) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0977", "equation1": "x = (((y * x) * z) * z) * y", "equation2": "(x * y) * y = (y * z) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0977", "equation1": "x = (((y * x) * z) * z) * y", "equation2": "(x * y) * y = (y * z) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0177", "equation1": "x = (y * ((y * x) * x)) * y", "equation2": "x = (y * (x * (z * y))) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0177", "equation1": "x = (y * ((y * x) * x)) * y", "equation2": "x = (y * (x * (z * y))) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0177", "equation1": "x = (y * ((y * x) * x)) * y", "equation2": "x = (y * (x * (z * y))) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0024", "equation1": "x * (y * x) = (z * z) * y", "equation2": "x = y * (((z * x) * x) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0024", "equation1": "x * (y * x) = (z * z) * y", "equation2": "x = y * (((z * x) * x) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0024", "equation1": "x * (y * x) = (z * z) * y", "equation2": "x = y * (((z * x) * x) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0009", "equation1": "x = x * (x * (x * y))", "equation2": "x = (x * (y * (x * x))) * z", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0009", "equation1": "x = x * (x * (x * y))", "equation2": "x = (x * (y * (x * x))) * z", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0009", "equation1": "x = x * (x * (x * y))", "equation2": "x = (x * (y * (x * x))) * z", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0193", "equation1": "x * x = y * ((x * z) * w)", "equation2": "x = y * (y * (z * (w * x)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0193", "equation1": "x * x = y * ((x * z) * w)", "equation2": "x = y * (y * (z * (w * x)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0193", "equation1": "x * x = y * ((x * z) * w)", "equation2": "x = y * (y * (z * (w * x)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0210", "equation1": "x = (y * (z * x)) * (w * x)", "equation2": "x = ((x * y) * y) * (y * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0210", "equation1": "x = (y * (z * x)) * (w * x)", "equation2": "x = ((x * y) * y) * (y * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0210", "equation1": "x = (y * (z * x)) * (w * x)", "equation2": "x = ((x * y) * y) * (y * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0850", "equation1": "x * y = (x * (z * z)) * w", "equation2": "x = (y * (z * w)) * (w * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0850", "equation1": "x * y = (x * (z * z)) * w", "equation2": "x = (y * (z * w)) * (w * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0850", "equation1": "x * y = (x * (z * z)) * w", "equation2": "x = (y * (z * w)) * (w * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0192", "equation1": "x = x * (y * ((y * z) * y))", "equation2": "x * (x * y) = x * (z * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0192", "equation1": "x = x * (y * ((y * z) * y))", "equation2": "x * (x * y) = x * (z * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0192", "equation1": "x = x * (y * ((y * z) * y))", "equation2": "x * (x * y) = x * (z * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0139", "equation1": "x = y * ((x * x) * (x * x))", "equation2": "x = (y * y) * (z * y)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0139", "equation1": "x = y * ((x * x) * (x * x))", "equation2": "x = (y * y) * (z * y)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0139", "equation1": "x = y * ((x * x) * (x * x))", "equation2": "x = (y * y) * (z * y)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard1_0033", "equation1": "x = ((y * (z * y)) * y) * x", "equation2": "x = (y * ((z * w) * y)) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard1_0033", "equation1": "x = ((y * (z * y)) * y) * x", "equation2": "x = (y * ((z * w) * y)) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard1_0033", "equation1": "x = ((y * (z * y)) * y) * x", "equation2": "x = (y * ((z * w) * y)) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0057", "equation1": "x = y * ((z * (w * w)) * x)", "equation2": "x = ((y * z) * y) * (y * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0057", "equation1": "x = y * ((z * (w * w)) * x)", "equation2": "x = ((y * z) * y) * (y * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0057", "equation1": "x = y * ((z * (w * w)) * x)", "equation2": "x = ((y * z) * y) * (y * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0346", "equation1": "x = (((y * x) * x) * z) * y", "equation2": "x = x * (y * (z * (y * x)))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0346", "equation1": "x = (((y * x) * x) * z) * y", "equation2": "x = x * (y * (z * (y * x)))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0346", "equation1": "x = (((y * x) * x) * z) * y", "equation2": "x = x * (y * (z * (y * x)))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0234", "equation1": "x = ((y * y) * x) * (x * z)", "equation2": "x = y * ((y * x) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0234", "equation1": "x = ((y * y) * x) * (x * z)", "equation2": "x = y * ((y * x) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0234", "equation1": "x = ((y * y) * x) * (x * z)", "equation2": "x = y * ((y * x) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard1_0003", "equation1": "x = ((y * y) * z) * x", "equation2": "x = x * (((y * x) * x) * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard1_0003", "equation1": "x = ((y * y) * z) * x", "equation2": "x = x * (((y * x) * x) * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard1_0003", "equation1": "x = ((y * y) * z) * x", "equation2": "x = x * (((y * x) * x) * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0090", "equation1": "x = x * (y * ((z * z) * w))", "equation2": "x = (x * (y * x)) * (x * y)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0090", "equation1": "x = x * (y * ((z * z) * w))", "equation2": "x = (x * (y * x)) * (x * y)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0090", "equation1": "x = x * (y * ((z * z) * w))", "equation2": "x = (x * (y * x)) * (x * y)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0115", "equation1": "x = ((y * (z * x)) * x) * w", "equation2": "x = x * ((y * (y * x)) * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0115", "equation1": "x = ((y * (z * x)) * x) * w", "equation2": "x = x * ((y * (y * x)) * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0115", "equation1": "x = ((y * (z * x)) * x) * w", "equation2": "x = x * ((y * (y * x)) * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0929", "equation1": "x = (y * z) * (y * (y * w))", "equation2": "x = y * (((x * z) * x) * w)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0929", "equation1": "x = (y * z) * (y * (y * w))", "equation2": "x = y * (((x * z) * x) * w)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0929", "equation1": "x = (y * z) * (y * (y * w))", "equation2": "x = y * (((x * z) * x) * w)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0206", "equation1": "x = (y * (y * x)) * (y * x)", "equation2": "x * y = x * (z * (w * y))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0206", "equation1": "x = (y * (y * x)) * (y * x)", "equation2": "x * y = x * (z * (w * y))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0206", "equation1": "x = (y * (y * x)) * (y * x)", "equation2": "x * y = x * (z * (w * y))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0046", "equation1": "x = ((y * z) * y) * x", "equation2": "x = (y * (x * (z * z))) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0046", "equation1": "x = ((y * z) * y) * x", "equation2": "x = (y * (x * (z * z))) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0046", "equation1": "x = ((y * z) * y) * x", "equation2": "x = (y * (x * (z * z))) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0343", "equation1": "x * x = y * (x * (x * z))", "equation2": "x * x = ((y * y) * y) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0343", "equation1": "x * x = y * (x * (x * z))", "equation2": "x * x = ((y * y) * y) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0343", "equation1": "x * x = y * (x * (x * z))", "equation2": "x * x = ((y * y) * y) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0042", "equation1": "x = (y * (z * x)) * (w * y)", "equation2": "x * x = y * (z * (w * y))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0042", "equation1": "x = (y * (z * x)) * (w * y)", "equation2": "x * x = y * (z * (w * y))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0042", "equation1": "x = (y * (z * x)) * (w * y)", "equation2": "x * x = y * (z * (w * y))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0235", "equation1": "x = (y * z) * (x * (x * z))", "equation2": "x = x * (x * (x * (y * x)))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0235", "equation1": "x = (y * z) * (x * (x * z))", "equation2": "x = x * (x * (x * (y * x)))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0235", "equation1": "x = (y * z) * (x * (x * z))", "equation2": "x = x * (x * (x * (y * x)))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0320", "equation1": "x = y * (y * z)", "equation2": "(x * y) * x = (z * y) * w", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0320", "equation1": "x = y * (y * z)", "equation2": "(x * y) * x = (z * y) * w", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0320", "equation1": "x = y * (y * z)", "equation2": "(x * y) * x = (z * y) * w", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0159", "equation1": "x = y * (((y * z) * z) * x)", "equation2": "(x * y) * x = (y * x) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0159", "equation1": "x = y * (((y * z) * z) * x)", "equation2": "(x * y) * x = (y * x) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0159", "equation1": "x = y * (((y * z) * z) * x)", "equation2": "(x * y) * x = (y * x) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0154", "equation1": "x = ((y * (z * y)) * x) * w", "equation2": "x = x * (((y * y) * x) * z)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0154", "equation1": "x = ((y * (z * y)) * x) * w", "equation2": "x = x * (((y * y) * x) * z)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0154", "equation1": "x = ((y * (z * y)) * x) * w", "equation2": "x = x * (((y * y) * x) * z)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0330", "equation1": "x = (((x * y) * z) * x) * y", "equation2": "x = (x * (y * (x * z))) * w", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0330", "equation1": "x = (((x * y) * z) * x) * y", "equation2": "x = (x * (y * (x * z))) * w", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0330", "equation1": "x = (((x * y) * z) * x) * y", "equation2": "x = (x * (y * (x * z))) * w", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0262", "equation1": "x = (y * ((z * w) * x)) * w", "equation2": "x * (y * x) = (y * x) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0262", "equation1": "x = (y * ((z * w) * x)) * w", "equation2": "x * (y * x) = (y * x) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0262", "equation1": "x = (y * ((z * w) * x)) * w", "equation2": "x * (y * x) = (y * x) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0027", "equation1": "x = y * ((z * (y * y)) * x)", "equation2": "x = (y * z) * ((x * z) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0027", "equation1": "x = y * ((z * (y * y)) * x)", "equation2": "x = (y * z) * ((x * z) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0027", "equation1": "x = y * ((z * (y * y)) * x)", "equation2": "x = (y * z) * ((x * z) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0332", "equation1": "x * x = ((x * y) * z) * y", "equation2": "x = y * ((y * z) * (w * u))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0332", "equation1": "x * x = ((x * y) * z) * y", "equation2": "x = y * ((y * z) * (w * u))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0332", "equation1": "x * x = ((x * y) * z) * y", "equation2": "x = y * ((y * z) * (w * u))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0093", "equation1": "x = y * ((z * z) * (z * y))", "equation2": "x = ((y * z) * (z * y)) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0093", "equation1": "x = y * ((z * z) * (z * y))", "equation2": "x = ((y * z) * (z * y)) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0093", "equation1": "x = y * ((z * z) * (z * y))", "equation2": "x = ((y * z) * (z * y)) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0872", "equation1": "x * x = y * (x * (z * y))", "equation2": "x = y * ((z * (z * y)) * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0872", "equation1": "x * x = y * (x * (z * y))", "equation2": "x = y * ((z * (z * y)) * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0872", "equation1": "x * x = y * (x * (z * y))", "equation2": "x = y * ((z * (z * y)) * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0059", "equation1": "x = x * (y * ((z * z) * z))", "equation2": "x = ((y * (z * w)) * w) * z", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0059", "equation1": "x = x * (y * ((z * z) * z))", "equation2": "x = ((y * (z * w)) * w) * z", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0059", "equation1": "x = x * (y * ((z * z) * z))", "equation2": "x = ((y * (z * w)) * w) * z", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0853", "equation1": "x * y = z * (x * (w * x))", "equation2": "x = ((y * x) * z) * (x * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0853", "equation1": "x * y = z * (x * (w * x))", "equation2": "x = ((y * x) * z) * (x * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0853", "equation1": "x * y = z * (x * (w * x))", "equation2": "x = ((y * x) * z) * (x * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0084", "equation1": "x * (y * z) = (z * y) * y", "equation2": "x * (y * z) = (y * z) * w", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0084", "equation1": "x * (y * z) = (z * y) * y", "equation2": "x * (y * z) = (y * z) * w", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0084", "equation1": "x * (y * z) = (z * y) * y", "equation2": "x * (y * z) = (y * z) * w", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0144", "equation1": "x * x = ((y * z) * w) * u", "equation2": "x * y = (y * z) * (y * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0144", "equation1": "x * x = ((y * z) * w) * u", "equation2": "x * y = (y * z) * (y * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0144", "equation1": "x * x = ((y * z) * w) * u", "equation2": "x * y = (y * z) * (y * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0419", "equation1": "x = y * ((z * w) * u)", "equation2": "x * y = (x * (z * z)) * w", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0419", "equation1": "x = y * ((z * w) * u)", "equation2": "x * y = (x * (z * z)) * w", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0419", "equation1": "x = y * ((z * w) * u)", "equation2": "x * y = (x * (z * z)) * w", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0481", "equation1": "x * y = z * (z * (y * x))", "equation2": "x = (y * (y * (x * x))) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0481", "equation1": "x * y = z * (z * (y * x))", "equation2": "x = (y * (y * (x * x))) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0481", "equation1": "x * y = z * (z * (y * x))", "equation2": "x = (y * (y * (x * x))) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0586", "equation1": "x * x = (y * (z * w)) * z", "equation2": "x * y = (y * (x * z)) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0586", "equation1": "x * x = (y * (z * w)) * z", "equation2": "x * y = (y * (x * z)) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0586", "equation1": "x * x = (y * (z * w)) * z", "equation2": "x * y = (y * (x * z)) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0786", "equation1": "x = (y * y) * (z * (w * x))", "equation2": "x = y * (x * (z * (w * w)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0786", "equation1": "x = (y * y) * (z * (w * x))", "equation2": "x = y * (x * (z * (w * w)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0786", "equation1": "x = (y * y) * (z * (w * x))", "equation2": "x = y * (x * (z * (w * w)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0239", "equation1": "x = (y * (y * (y * y))) * x", "equation2": "x = (y * (z * x)) * (z * w)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0239", "equation1": "x = (y * (y * (y * y))) * x", "equation2": "x = (y * (z * x)) * (z * w)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0239", "equation1": "x = (y * (y * (y * y))) * x", "equation2": "x = (y * (z * x)) * (z * w)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0127", "equation1": "x = y * (((x * x) * x) * z)", "equation2": "x = x * ((y * z) * (y * z))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0127", "equation1": "x = y * (((x * x) * x) * z)", "equation2": "x = x * ((y * z) * (y * z))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0127", "equation1": "x = y * (((x * x) * x) * z)", "equation2": "x = x * ((y * z) * (y * z))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0118", "equation1": "x = (x * ((x * y) * y)) * y", "equation2": "x = (x * y) * (x * (y * z))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0118", "equation1": "x = (x * ((x * y) * y)) * y", "equation2": "x = (x * y) * (x * (y * z))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0118", "equation1": "x = (x * ((x * y) * y)) * y", "equation2": "x = (x * y) * (x * (y * z))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0076", "equation1": "x = ((y * z) * (x * w)) * u", "equation2": "x = y * (x * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0076", "equation1": "x = ((y * z) * (x * w)) * u", "equation2": "x = y * (x * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0076", "equation1": "x = ((y * z) * (x * w)) * u", "equation2": "x = y * (x * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0036", "equation1": "x * x = ((x * y) * y) * y", "equation2": "x * x = y * (x * (y * y))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0036", "equation1": "x * x = ((x * y) * y) * y", "equation2": "x * x = y * (x * (y * y))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0036", "equation1": "x * x = ((x * y) * y) * y", "equation2": "x * x = y * (x * (y * y))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0271", "equation1": "x = (y * ((z * x) * z)) * x", "equation2": "x = ((y * z) * w) * (w * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0271", "equation1": "x = (y * ((z * x) * z)) * x", "equation2": "x = ((y * z) * w) * (w * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0271", "equation1": "x = (y * ((z * x) * z)) * x", "equation2": "x = ((y * z) * w) * (w * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0054", "equation1": "x = (y * y) * y", "equation2": "x * y = (y * y) * (y * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0054", "equation1": "x = (y * y) * y", "equation2": "x * y = (y * y) * (y * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0054", "equation1": "x = (y * y) * y", "equation2": "x * y = (y * y) * (y * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0874", "equation1": "x = (y * z) * ((y * w) * w)", "equation2": "x = (x * y) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0874", "equation1": "x = (y * z) * ((y * w) * w)", "equation2": "x = (x * y) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0874", "equation1": "x = (y * z) * ((y * w) * w)", "equation2": "x = (x * y) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0612", "equation1": "x * (y * z) = (y * z) * w", "equation2": "x = (x * x) * (y * (y * y))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0612", "equation1": "x * (y * z) = (y * z) * w", "equation2": "x = (x * x) * (y * (y * y))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0612", "equation1": "x * (y * z) = (y * z) * w", "equation2": "x = (x * x) * (y * (y * y))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0896", "equation1": "x = y * (z * (x * (y * w)))", "equation2": "x = (x * (y * (z * y))) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0896", "equation1": "x = y * (z * (x * (y * w)))", "equation2": "x = (x * (y * (z * y))) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0896", "equation1": "x = y * (z * (x * (y * w)))", "equation2": "x = (x * (y * (z * y))) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0995", "equation1": "x = ((y * x) * (z * y)) * x", "equation2": "x = y * (((z * x) * x) * w)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0995", "equation1": "x = ((y * x) * (z * y)) * x", "equation2": "x = y * (((z * x) * x) * w)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0995", "equation1": "x = ((y * x) * (z * y)) * x", "equation2": "x = y * (((z * x) * x) * w)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0131", "equation1": "x = ((y * (z * z)) * x) * w", "equation2": "x = y * ((z * (x * y)) * z)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0131", "equation1": "x = ((y * (z * z)) * x) * w", "equation2": "x = y * ((z * (x * y)) * z)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0131", "equation1": "x = ((y * (z * z)) * x) * w", "equation2": "x = y * ((z * (x * y)) * z)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0385", "equation1": "x * x = ((y * y) * z) * w", "equation2": "x * x = (x * x) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0385", "equation1": "x * x = ((y * y) * z) * w", "equation2": "x * x = (x * x) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0385", "equation1": "x * x = ((y * y) * z) * w", "equation2": "x * x = (x * x) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0007", "equation1": "x = (y * z) * (z * (w * z))", "equation2": "x * y = z * (w * (y * z))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0007", "equation1": "x = (y * z) * (z * (w * z))", "equation2": "x * y = z * (w * (y * z))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0007", "equation1": "x = (y * z) * (z * (w * z))", "equation2": "x * y = z * (w * (y * z))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard1_0034", "equation1": "x * y = (y * x) * z", "equation2": "x * y = z * ((w * y) * y)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard1_0034", "equation1": "x * y = (y * x) * z", "equation2": "x * y = z * ((w * y) * y)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard1_0034", "equation1": "x * y = (y * x) * z", "equation2": "x * y = z * ((w * y) * y)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0071", "equation1": "x * x = ((y * z) * w) * u", "equation2": "x * y = z * (y * (w * x))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0071", "equation1": "x * x = ((y * z) * w) * u", "equation2": "x * y = z * (y * (w * x))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0071", "equation1": "x * x = ((y * z) * w) * u", "equation2": "x * y = z * (y * (w * x))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0575", "equation1": "x = x * (x * (y * (y * y)))", "equation2": "x = ((x * (y * z)) * w) * w", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0575", "equation1": "x = x * (x * (y * (y * y)))", "equation2": "x = ((x * (y * z)) * w) * w", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0575", "equation1": "x = x * (x * (y * (y * y)))", "equation2": "x = ((x * (y * z)) * w) * w", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0011", "equation1": "x = y * (y * ((z * x) * y))", "equation2": "x = ((y * y) * x) * (z * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0011", "equation1": "x = y * (y * ((z * x) * y))", "equation2": "x = ((y * y) * x) * (z * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0011", "equation1": "x = y * (y * ((z * x) * y))", "equation2": "x = ((y * y) * x) * (z * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0781", "equation1": "x = y * (z * ((w * u) * x))", "equation2": "(x * y) * x = (z * x) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0781", "equation1": "x = y * (z * ((w * u) * x))", "equation2": "(x * y) * x = (z * x) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0781", "equation1": "x = y * (z * ((w * u) * x))", "equation2": "(x * y) * x = (z * x) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0733", "equation1": "x = y * (y * ((y * y) * y))", "equation2": "x = (x * ((x * y) * y)) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0733", "equation1": "x = y * (y * ((y * y) * y))", "equation2": "x = (x * ((x * y) * y)) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0733", "equation1": "x = y * (y * ((y * y) * y))", "equation2": "x = (x * ((x * y) * y)) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0861", "equation1": "x = (y * ((z * z) * x)) * w", "equation2": "x = ((x * (y * x)) * x) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0861", "equation1": "x = (y * ((z * z) * x)) * w", "equation2": "x = ((x * (y * x)) * x) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0861", "equation1": "x = (y * ((z * z) * x)) * w", "equation2": "x = ((x * (y * x)) * x) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0145", "equation1": "x = (y * ((y * x) * z)) * w", "equation2": "x = (y * ((y * y) * x)) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0145", "equation1": "x = (y * ((y * x) * z)) * w", "equation2": "x = (y * ((y * y) * x)) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0145", "equation1": "x = (y * ((y * x) * z)) * w", "equation2": "x = (y * ((y * y) * x)) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0067", "equation1": "x = x * (y * (z * (y * w)))", "equation2": "x = x * (x * ((x * x) * y))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0067", "equation1": "x = x * (y * (z * (y * w)))", "equation2": "x = x * (x * ((x * x) * y))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0067", "equation1": "x = x * (y * (z * (y * w)))", "equation2": "x = x * (x * ((x * x) * y))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0404", "equation1": "x = (y * x) * (z * (x * y))", "equation2": "x = (((y * z) * w) * u) * w", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0404", "equation1": "x = (y * x) * (z * (x * y))", "equation2": "x = (((y * z) * w) * u) * w", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0404", "equation1": "x = (y * x) * (z * (x * y))", "equation2": "x = (((y * z) * w) * u) * w", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0116", "equation1": "x = (y * z) * ((y * w) * x)", "equation2": "x = (y * ((z * x) * y)) * z", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0116", "equation1": "x = (y * z) * ((y * w) * x)", "equation2": "x = (y * ((z * x) * y)) * z", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0116", "equation1": "x = (y * z) * ((y * w) * x)", "equation2": "x = (y * ((z * x) * y)) * z", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0081", "equation1": "x = x * (x * ((y * y) * y))", "equation2": "x = x * ((y * (x * x)) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0081", "equation1": "x = x * (x * ((y * y) * y))", "equation2": "x = x * ((y * (x * x)) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0081", "equation1": "x = x * (x * ((y * y) * y))", "equation2": "x = x * ((y * (x * x)) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0104", "equation1": "x = x * ((x * y) * (z * y))", "equation2": "x * (y * y) = (x * z) * z", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0104", "equation1": "x = x * ((x * y) * (z * y))", "equation2": "x * (y * y) = (x * z) * z", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0104", "equation1": "x = x * ((x * y) * (z * y))", "equation2": "x * (y * y) = (x * z) * z", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0996", "equation1": "x * y = x * (z * (z * z))", "equation2": "x = ((y * x) * z) * (w * w)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0996", "equation1": "x * y = x * (z * (z * z))", "equation2": "x = ((y * x) * z) * (w * w)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0996", "equation1": "x * y = x * (z * (z * z))", "equation2": "x = ((y * x) * z) * (w * w)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0150", "equation1": "x = x * (((y * x) * y) * z)", "equation2": "x = x * ((y * (z * w)) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0150", "equation1": "x = x * (((y * x) * y) * z)", "equation2": "x = x * ((y * (z * w)) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0150", "equation1": "x = x * (((y * x) * y) * z)", "equation2": "x = x * ((y * (z * w)) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0576", "equation1": "x = (((y * x) * z) * z) * w", "equation2": "x = ((y * y) * (y * x)) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0576", "equation1": "x = (((y * x) * z) * z) * w", "equation2": "x = ((y * y) * (y * x)) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0576", "equation1": "x = (((y * x) * z) * z) * w", "equation2": "x = ((y * y) * (y * x)) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0279", "equation1": "x = (y * x) * (z * (z * x))", "equation2": "(x * x) * y = (z * y) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0279", "equation1": "x = (y * x) * (z * (z * x))", "equation2": "(x * x) * y = (z * y) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0279", "equation1": "x = (y * x) * (z * (z * x))", "equation2": "(x * x) * y = (z * y) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0493", "equation1": "x = y * ((z * x) * (w * x))", "equation2": "x = y * (x * (y * (y * x)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0493", "equation1": "x = y * ((z * x) * (w * x))", "equation2": "x = y * (x * (y * (y * x)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0493", "equation1": "x = y * ((z * x) * (w * x))", "equation2": "x = y * (x * (y * (y * x)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0304", "equation1": "x = ((x * (x * y)) * z) * y", "equation2": "x = (x * y) * ((x * y) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0304", "equation1": "x = ((x * (x * y)) * z) * y", "equation2": "x = (x * y) * ((x * y) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0304", "equation1": "x = ((x * (x * y)) * z) * y", "equation2": "x = (x * y) * ((x * y) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0164", "equation1": "x * (y * z) = (x * z) * z", "equation2": "x = (y * (y * (y * y))) * y", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0164", "equation1": "x * (y * z) = (x * z) * z", "equation2": "x = (y * (y * (y * y))) * y", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0164", "equation1": "x * (y * z) = (x * z) * z", "equation2": "x = (y * (y * (y * y))) * y", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0519", "equation1": "x * y = (x * x) * (z * w)", "equation2": "x = ((x * y) * z) * (w * w)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0519", "equation1": "x * y = (x * x) * (z * w)", "equation2": "x = ((x * y) * z) * (w * w)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0519", "equation1": "x * y = (x * x) * (z * w)", "equation2": "x = ((x * y) * z) * (w * w)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0845", "equation1": "x = (x * x) * (y * (y * z))", "equation2": "x * y = y * ((y * y) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0845", "equation1": "x = (x * x) * (y * (y * z))", "equation2": "x * y = y * ((y * y) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0845", "equation1": "x = (x * x) * (y * (y * z))", "equation2": "x * y = y * ((y * y) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard1_0012", "equation1": "(x * y) * x = (z * w) * u", "equation2": "x * (x * x) = x * (y * y)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard1_0012", "equation1": "(x * y) * x = (z * w) * u", "equation2": "x * (x * x) = x * (y * y)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard1_0012", "equation1": "(x * y) * x = (z * w) * u", "equation2": "x * (x * x) = x * (y * y)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0038", "equation1": "x = (x * (x * y)) * z", "equation2": "x * x = x * (x * (y * y))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0038", "equation1": "x = (x * (x * y)) * z", "equation2": "x * x = x * (x * (y * y))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0038", "equation1": "x = (x * (x * y)) * z", "equation2": "x * x = x * (x * (y * y))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard1_0044", "equation1": "x = (y * (y * z)) * x", "equation2": "x = (((x * y) * x) * x) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard1_0044", "equation1": "x = (y * (y * z)) * x", "equation2": "x = (((x * y) * x) * x) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard1_0044", "equation1": "x = (y * (y * z)) * x", "equation2": "x = (((x * y) * x) * x) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0297", "equation1": "x = (y * (y * (y * z))) * z", "equation2": "x * y = ((x * z) * w) * w", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0297", "equation1": "x = (y * (y * (y * z))) * z", "equation2": "x * y = ((x * z) * w) * w", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0297", "equation1": "x = (y * (y * (y * z))) * z", "equation2": "x * y = ((x * z) * w) * w", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0195", "equation1": "x * (x * y) = (z * y) * w", "equation2": "x * (y * x) = (z * z) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0195", "equation1": "x * (x * y) = (z * y) * w", "equation2": "x * (y * x) = (z * z) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0195", "equation1": "x * (x * y) = (z * y) * w", "equation2": "x * (y * x) = (z * z) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0782", "equation1": "x = (y * ((y * y) * y)) * y", "equation2": "x * y = z * ((w * y) * u)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0782", "equation1": "x = (y * ((y * y) * y)) * y", "equation2": "x * y = z * ((w * y) * u)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0782", "equation1": "x = (y * ((y * y) * y)) * y", "equation2": "x * y = z * ((w * y) * u)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0034", "equation1": "x * y = (y * (x * z)) * z", "equation2": "x * y = y * ((z * z) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0034", "equation1": "x * y = (y * (x * z)) * z", "equation2": "x * y = y * ((z * z) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0034", "equation1": "x * y = (y * (x * z)) * z", "equation2": "x * y = y * ((z * z) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0087", "equation1": "x * (x * y) = (z * y) * w", "equation2": "x * (x * y) = y * (z * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0087", "equation1": "x * (x * y) = (z * y) * w", "equation2": "x * (x * y) = y * (z * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0087", "equation1": "x * (x * y) = (z * y) * w", "equation2": "x * (x * y) = y * (z * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0629", "equation1": "x = (y * z) * (w * (y * u))", "equation2": "x * x = (x * (y * z)) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0629", "equation1": "x = (y * z) * (w * (y * u))", "equation2": "x * x = (x * (y * z)) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0629", "equation1": "x = (y * z) * (w * (y * u))", "equation2": "x * x = (x * (y * z)) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard1_0063", "equation1": "x = ((y * z) * w) * x", "equation2": "x = y * ((z * (w * u)) * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard1_0063", "equation1": "x = ((y * z) * w) * x", "equation2": "x = y * ((z * (w * u)) * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard1_0063", "equation1": "x = ((y * z) * w) * x", "equation2": "x = y * ((z * (w * u)) * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0012", "equation1": "x = x * (y * (x * x))", "equation2": "x * x = (x * y) * (x * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0012", "equation1": "x = x * (y * (x * x))", "equation2": "x * x = (x * y) * (x * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0012", "equation1": "x = x * (y * (x * x))", "equation2": "x * x = (x * y) * (x * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0475", "equation1": "x = (y * x) * (z * (w * y))", "equation2": "x = x * (y * (x * (z * y)))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0475", "equation1": "x = (y * x) * (z * (w * y))", "equation2": "x = x * (y * (x * (z * y)))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0475", "equation1": "x = (y * x) * (z * (w * y))", "equation2": "x = x * (y * (x * (z * y)))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0179", "equation1": "x = (y * z) * (z * (x * x))", "equation2": "x = (y * ((z * x) * y)) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0179", "equation1": "x = (y * z) * (z * (x * x))", "equation2": "x = (y * ((z * x) * y)) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0179", "equation1": "x = (y * z) * (z * (x * x))", "equation2": "x = (y * ((z * x) * y)) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0105", "equation1": "x = y * ((y * z) * y)", "equation2": "x = y * (((x * x) * z) * y)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0105", "equation1": "x = y * ((y * z) * y)", "equation2": "x = y * (((x * x) * z) * y)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0105", "equation1": "x = y * ((y * z) * y)", "equation2": "x = y * (((x * x) * z) * y)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0259", "equation1": "x = (x * ((y * x) * z)) * z", "equation2": "x = (x * (y * (z * x))) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0259", "equation1": "x = (x * ((y * x) * z)) * z", "equation2": "x = (x * (y * (z * x))) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0259", "equation1": "x = (x * ((y * x) * z)) * z", "equation2": "x = (x * (y * (z * x))) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0117", "equation1": "x = ((y * x) * (y * z)) * z", "equation2": "x = ((y * x) * y) * (x * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0117", "equation1": "x = ((y * x) * (y * z)) * z", "equation2": "x = ((y * x) * y) * (x * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0117", "equation1": "x = ((y * x) * (y * z)) * z", "equation2": "x = ((y * x) * y) * (x * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0885", "equation1": "x * y = z * (x * (z * y))", "equation2": "x = (y * ((x * y) * y)) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0885", "equation1": "x * y = z * (x * (z * y))", "equation2": "x = (y * ((x * y) * y)) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0885", "equation1": "x * y = z * (x * (z * y))", "equation2": "x = (y * ((x * y) * y)) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0019", "equation1": "x * y = z * (w * (u * y))", "equation2": "x = ((y * x) * z) * (z * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0019", "equation1": "x * y = z * (w * (u * y))", "equation2": "x = ((y * x) * z) * (z * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0019", "equation1": "x * y = z * (w * (u * y))", "equation2": "x = ((y * x) * z) * (z * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0895", "equation1": "x = (y * ((z * z) * y)) * z", "equation2": "x * (y * z) = (w * x) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0895", "equation1": "x = (y * ((z * z) * y)) * z", "equation2": "x * (y * z) = (w * x) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0895", "equation1": "x = (y * ((z * z) * y)) * z", "equation2": "x * (y * z) = (w * x) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0325", "equation1": "x * y = z * ((z * x) * z)", "equation2": "x * x = y * (x * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0325", "equation1": "x * y = z * ((z * x) * z)", "equation2": "x * x = y * (x * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0325", "equation1": "x * y = z * ((z * x) * z)", "equation2": "x * x = y * (x * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0237", "equation1": "x = ((y * y) * x) * (x * z)", "equation2": "x * y = (x * z) * (x * w)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0237", "equation1": "x = ((y * y) * x) * (x * z)", "equation2": "x * y = (x * z) * (x * w)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0237", "equation1": "x = ((y * y) * x) * (x * z)", "equation2": "x * y = (x * z) * (x * w)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0543", "equation1": "x * (y * x) = (z * z) * w", "equation2": "x * y = (y * y) * (z * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0543", "equation1": "x * (y * x) = (z * z) * w", "equation2": "x * y = (y * y) * (z * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0543", "equation1": "x * (y * x) = (z * z) * w", "equation2": "x * y = (y * y) * (z * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0113", "equation1": "x = y * ((y * y) * (x * x))", "equation2": "x = x * (((y * x) * x) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0113", "equation1": "x = y * ((y * y) * (x * x))", "equation2": "x = x * (((y * x) * x) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0113", "equation1": "x = y * ((y * y) * (x * x))", "equation2": "x = x * (((y * x) * x) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0285", "equation1": "x = ((x * y) * (y * z)) * w", "equation2": "x * y = x * ((x * z) * z)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0285", "equation1": "x = ((x * y) * (y * z)) * w", "equation2": "x * y = x * ((x * z) * z)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0285", "equation1": "x = ((x * y) * (y * z)) * w", "equation2": "x * y = x * ((x * z) * z)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0075", "equation1": "x = y * (z * (x * (z * x)))", "equation2": "x = ((x * x) * y) * (y * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0075", "equation1": "x = y * (z * (x * (z * x)))", "equation2": "x = ((x * x) * y) * (y * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0075", "equation1": "x = y * (z * (x * (z * x)))", "equation2": "x = ((x * x) * y) * (y * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard1_0001", "equation1": "x = y * (y * ((x * y) * x))", "equation2": "x * y = ((z * x) * w) * y", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard1_0001", "equation1": "x = y * (y * ((x * y) * x))", "equation2": "x * y = ((z * x) * w) * y", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard1_0001", "equation1": "x = y * (y * ((x * y) * x))", "equation2": "x * y = ((z * x) * w) * y", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0025", "equation1": "x = y * ((y * x) * x)", "equation2": "x = (y * z) * ((y * y) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0025", "equation1": "x = y * ((y * x) * x)", "equation2": "x = (y * z) * ((y * y) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0025", "equation1": "x = y * ((y * x) * x)", "equation2": "x = (y * z) * ((y * y) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0377", "equation1": "x = ((y * x) * x) * (z * x)", "equation2": "x = (x * (y * x)) * (x * y)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0377", "equation1": "x = ((y * x) * x) * (z * x)", "equation2": "x = (x * (y * x)) * (x * y)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0377", "equation1": "x = ((y * x) * x) * (z * x)", "equation2": "x = (x * (y * x)) * (x * y)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0172", "equation1": "x = (y * y) * (x * (z * x))", "equation2": "x = y * (x * (z * (x * x)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0172", "equation1": "x = (y * y) * (x * (z * x))", "equation2": "x = y * (x * (z * (x * x)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0172", "equation1": "x = (y * y) * (x * (z * x))", "equation2": "x = y * (x * (z * (x * x)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0062", "equation1": "x = x * (x * (y * (y * x)))", "equation2": "x = x * ((y * y) * (x * x))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0062", "equation1": "x = x * (x * (y * (y * x)))", "equation2": "x = x * ((y * y) * (x * x))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0062", "equation1": "x = x * (x * (y * (y * x)))", "equation2": "x = x * ((y * y) * (x * x))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0373", "equation1": "x = x * (((y * z) * z) * w)", "equation2": "x * x = ((y * z) * z) * z", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0373", "equation1": "x = x * (((y * z) * z) * w)", "equation2": "x * x = ((y * z) * z) * z", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0373", "equation1": "x = x * (((y * z) * z) * w)", "equation2": "x * x = ((y * z) * z) * z", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0324", "equation1": "x = ((y * (z * w)) * z) * x", "equation2": "x = x * (((x * y) * x) * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0324", "equation1": "x = ((y * (z * w)) * z) * x", "equation2": "x = x * (((x * y) * x) * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0324", "equation1": "x = ((y * (z * w)) * z) * x", "equation2": "x = x * (((x * y) * x) * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0643", "equation1": "x * y = y * ((y * y) * x)", "equation2": "x = ((x * y) * x) * (z * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0643", "equation1": "x * y = y * ((y * y) * x)", "equation2": "x = ((x * y) * x) * (z * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0643", "equation1": "x * y = y * ((y * y) * x)", "equation2": "x = ((x * y) * x) * (z * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0395", "equation1": "x = (y * z) * (y * (w * x))", "equation2": "x = ((y * z) * (w * z)) * y", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0395", "equation1": "x = (y * z) * (y * (w * x))", "equation2": "x = ((y * z) * (w * z)) * y", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0395", "equation1": "x = (y * z) * (y * (w * x))", "equation2": "x = ((y * z) * (w * z)) * y", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0765", "equation1": "x = (y * x) * ((z * y) * w)", "equation2": "x = (((y * z) * w) * x) * w", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0765", "equation1": "x = (y * x) * ((z * y) * w)", "equation2": "x = (((y * z) * w) * x) * w", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0765", "equation1": "x = (y * x) * ((z * y) * w)", "equation2": "x = (((y * z) * w) * x) * w", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0068", "equation1": "x * (x * y) = (z * w) * u", "equation2": "x * (y * z) = y * (x * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0068", "equation1": "x * (x * y) = (z * w) * u", "equation2": "x * (y * z) = y * (x * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0068", "equation1": "x * (x * y) = (z * w) * u", "equation2": "x * (y * z) = y * (x * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0139", "equation1": "x = y * ((x * (x * x)) * x)", "equation2": "x = x * ((y * y) * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0139", "equation1": "x = y * ((x * (x * x)) * x)", "equation2": "x = x * ((y * y) * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0139", "equation1": "x = y * ((x * (x * x)) * x)", "equation2": "x = x * ((y * y) * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0261", "equation1": "x = (x * ((y * z) * y)) * w", "equation2": "x = (x * y) * (z * (x * x))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0261", "equation1": "x = (x * ((y * z) * y)) * w", "equation2": "x = (x * y) * (z * (x * x))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0261", "equation1": "x = (x * ((y * z) * y)) * w", "equation2": "x = (x * y) * (z * (x * x))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0477", "equation1": "x = y * (((y * z) * w) * w)", "equation2": "x = y * ((z * y) * (y * y))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0477", "equation1": "x = y * (((y * z) * w) * w)", "equation2": "x = y * ((z * y) * (y * y))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0477", "equation1": "x = y * (((y * z) * w) * w)", "equation2": "x = y * ((z * y) * (y * y))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0666", "equation1": "x = y * (y * (z * (z * y)))", "equation2": "x = y * ((y * (y * z)) * z)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0666", "equation1": "x = y * (y * (z * (z * y)))", "equation2": "x = y * ((y * (y * z)) * z)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0666", "equation1": "x = y * (y * (z * (z * y)))", "equation2": "x = y * ((y * (y * z)) * z)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0043", "equation1": "x = ((x * (x * y)) * y) * y", "equation2": "x * (y * x) = x * (y * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0043", "equation1": "x = ((x * (x * y)) * y) * y", "equation2": "x * (y * x) = x * (y * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0043", "equation1": "x = ((x * (x * y)) * y) * y", "equation2": "x * (y * x) = x * (y * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0432", "equation1": "x = ((x * y) * (y * x)) * x", "equation2": "x = ((y * x) * z) * (y * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0432", "equation1": "x = ((x * y) * (y * x)) * x", "equation2": "x = ((y * x) * z) * (y * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0432", "equation1": "x = ((x * y) * (y * x)) * x", "equation2": "x = ((y * x) * z) * (y * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0077", "equation1": "x = y * (z * (y * (x * x)))", "equation2": "x * y = (x * (z * x)) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0077", "equation1": "x = y * (z * (y * (x * x)))", "equation2": "x * y = (x * (z * x)) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0077", "equation1": "x = y * (z * (y * (x * x)))", "equation2": "x * y = (x * (z * x)) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0656", "equation1": "x * y = (z * (z * z)) * w", "equation2": "x * x = (y * y) * (x * z)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0656", "equation1": "x * y = (z * (z * z)) * w", "equation2": "x * x = (y * y) * (x * z)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0656", "equation1": "x * y = (z * (z * z)) * w", "equation2": "x * x = (y * y) * (x * z)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0119", "equation1": "x = (y * (z * w)) * (y * x)", "equation2": "x = x * (((y * z) * w) * w)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0119", "equation1": "x = (y * (z * w)) * (y * x)", "equation2": "x = x * (((y * z) * w) * w)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0119", "equation1": "x = (y * (z * w)) * (y * x)", "equation2": "x = x * (((y * z) * w) * w)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0693", "equation1": "x * (y * x) = z * (w * x)", "equation2": "x = (y * (x * (x * z))) * z", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0693", "equation1": "x * (y * x) = z * (w * x)", "equation2": "x = (y * (x * (x * z))) * z", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0693", "equation1": "x * (y * x) = z * (w * x)", "equation2": "x = (y * (x * (x * z))) * z", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0230", "equation1": "x = y * ((z * (z * w)) * z)", "equation2": "x * y = x * (z * (w * z))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0230", "equation1": "x = y * ((z * (z * w)) * z)", "equation2": "x * y = x * (z * (w * z))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0230", "equation1": "x = y * ((z * (z * w)) * z)", "equation2": "x * y = x * (z * (w * z))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0397", "equation1": "x = (y * ((z * w) * u)) * u", "equation2": "x = y * (x * ((z * z) * y))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0397", "equation1": "x = (y * ((z * w) * u)) * u", "equation2": "x = y * (x * ((z * z) * y))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0397", "equation1": "x = (y * ((z * w) * u)) * u", "equation2": "x = y * (x * ((z * z) * y))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0982", "equation1": "x * y = (x * z) * (y * x)", "equation2": "x = y * (((z * y) * z) * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0982", "equation1": "x * y = (x * z) * (y * x)", "equation2": "x = y * (((z * y) * z) * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0982", "equation1": "x * y = (x * z) * (y * x)", "equation2": "x = y * (((z * y) * z) * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0034", "equation1": "x = (y * y) * (x * x)", "equation2": "x = y * ((x * (z * y)) * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0034", "equation1": "x = (y * y) * (x * x)", "equation2": "x = y * ((x * (z * y)) * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0034", "equation1": "x = (y * y) * (x * x)", "equation2": "x = y * ((x * (z * y)) * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0953", "equation1": "x = ((y * z) * (z * y)) * z", "equation2": "x = (y * (x * (x * z))) * w", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0953", "equation1": "x = ((y * z) * (z * y)) * z", "equation2": "x = (y * (x * (x * z))) * w", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0953", "equation1": "x = ((y * z) * (z * y)) * z", "equation2": "x = (y * (x * (x * z))) * w", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0437", "equation1": "x * (x * y) = (x * z) * y", "equation2": "x = (y * ((x * z) * z)) * z", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0437", "equation1": "x * (x * y) = (x * z) * y", "equation2": "x = (y * ((x * z) * z)) * z", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0437", "equation1": "x * (x * y) = (x * z) * y", "equation2": "x = (y * ((x * z) * z)) * z", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0171", "equation1": "x * y = z * (y * (x * w))", "equation2": "x * y = (x * x) * (y * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0171", "equation1": "x * y = z * (y * (x * w))", "equation2": "x * y = (x * x) * (y * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0171", "equation1": "x * y = z * (y * (x * w))", "equation2": "x * y = (x * x) * (y * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0039", "equation1": "x = y * ((y * (x * x)) * z)", "equation2": "x = ((x * (y * z)) * z) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0039", "equation1": "x = y * ((y * (x * x)) * z)", "equation2": "x = ((x * (y * z)) * z) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0039", "equation1": "x = y * ((y * (x * x)) * z)", "equation2": "x = ((x * (y * z)) * z) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0657", "equation1": "x = ((y * z) * (y * w)) * y", "equation2": "x = x * ((y * z) * (w * z))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0657", "equation1": "x = ((y * z) * (y * w)) * y", "equation2": "x = x * ((y * z) * (w * z))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0657", "equation1": "x = ((y * z) * (y * w)) * y", "equation2": "x = x * ((y * z) * (w * z))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0627", "equation1": "x = ((x * y) * (z * w)) * z", "equation2": "x = (y * ((x * y) * x)) * z", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0627", "equation1": "x = ((x * y) * (z * w)) * z", "equation2": "x = (y * ((x * y) * x)) * z", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0627", "equation1": "x = ((x * y) * (z * w)) * z", "equation2": "x = (y * ((x * y) * x)) * z", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0309", "equation1": "x = ((x * (y * z)) * y) * y", "equation2": "x * y = x * ((x * z) * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0309", "equation1": "x = ((x * (y * z)) * y) * y", "equation2": "x * y = x * ((x * z) * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0309", "equation1": "x = ((x * (y * z)) * y) * y", "equation2": "x * y = x * ((x * z) * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0281", "equation1": "x = ((x * y) * (y * z)) * w", "equation2": "x = x * (x * (y * (x * y)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0281", "equation1": "x = ((x * y) * (y * z)) * w", "equation2": "x = x * (x * (y * (x * y)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0281", "equation1": "x = ((x * y) * (y * z)) * w", "equation2": "x = x * (x * (y * (x * y)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0308", "equation1": "x = y * (y * ((z * w) * z))", "equation2": "x * x = (y * (y * y)) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0308", "equation1": "x = y * (y * ((z * w) * z))", "equation2": "x * x = (y * (y * y)) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0308", "equation1": "x = y * (y * ((z * w) * z))", "equation2": "x * x = (y * (y * y)) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0569", "equation1": "x * x = (x * (y * x)) * y", "equation2": "x = (y * (z * (x * z))) * y", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0569", "equation1": "x * x = (x * (y * x)) * y", "equation2": "x = (y * (z * (x * z))) * y", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0569", "equation1": "x * x = (x * (y * x)) * y", "equation2": "x = (y * (z * (x * z))) * y", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0205", "equation1": "x = (y * (x * x)) * (z * x)", "equation2": "x * x = (x * (y * z)) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0205", "equation1": "x = (y * (x * x)) * (z * x)", "equation2": "x * x = (x * (y * z)) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0205", "equation1": "x = (y * (x * x)) * (z * x)", "equation2": "x * x = (x * (y * z)) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0023", "equation1": "x = (y * (x * (z * x))) * y", "equation2": "x * y = x * ((z * w) * z)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0023", "equation1": "x = (y * (x * (z * x))) * y", "equation2": "x * y = x * ((z * w) * z)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0023", "equation1": "x = (y * (x * (z * x))) * y", "equation2": "x * y = x * ((z * w) * z)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0828", "equation1": "x * y = x * (z * (z * x))", "equation2": "(x * x) * x = (y * z) * y", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0828", "equation1": "x * y = x * (z * (z * x))", "equation2": "(x * x) * x = (y * z) * y", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0828", "equation1": "x * y = x * (z * (z * x))", "equation2": "(x * x) * x = (y * z) * y", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0341", "equation1": "x = (((y * z) * w) * u) * x", "equation2": "x = (y * (z * (y * z))) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0341", "equation1": "x = (((y * z) * w) * u) * x", "equation2": "x = (y * (z * (y * z))) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0341", "equation1": "x = (((y * z) * w) * u) * x", "equation2": "x = (y * (z * (y * z))) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0157", "equation1": "x = (x * ((x * y) * y)) * y", "equation2": "x * y = ((x * z) * x) * w", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0157", "equation1": "x = (x * ((x * y) * y)) * y", "equation2": "x * y = ((x * z) * x) * w", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0157", "equation1": "x = (x * ((x * y) * y)) * y", "equation2": "x * y = ((x * z) * x) * w", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0165", "equation1": "x * x = (y * y) * y", "equation2": "x = (x * (y * x)) * (z * w)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0165", "equation1": "x * x = (y * y) * y", "equation2": "x = (x * (y * x)) * (z * w)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0165", "equation1": "x * x = (y * y) * y", "equation2": "x = (x * (y * x)) * (z * w)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0252", "equation1": "x = (x * (y * (y * y))) * z", "equation2": "x = (x * (y * y)) * (z * w)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0252", "equation1": "x = (x * (y * (y * y))) * z", "equation2": "x = (x * (y * y)) * (z * w)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0252", "equation1": "x = (x * (y * (y * y))) * z", "equation2": "x = (x * (y * y)) * (z * w)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0048", "equation1": "x = ((y * z) * z) * x", "equation2": "x * (y * z) = (w * y) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0048", "equation1": "x = ((y * z) * z) * x", "equation2": "x * (y * z) = (w * y) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0048", "equation1": "x = ((y * z) * z) * x", "equation2": "x * (y * z) = (w * y) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0053", "equation1": "x * y = z * (y * z)", "equation2": "x * (y * z) = y * (w * z)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0053", "equation1": "x * y = z * (y * z)", "equation2": "x * (y * z) = y * (w * z)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0053", "equation1": "x * y = z * (y * z)", "equation2": "x * (y * z) = y * (w * z)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0456", "equation1": "x = x * (((x * y) * y) * z)", "equation2": "x = y * (z * (x * (w * w)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0456", "equation1": "x = x * (((x * y) * y) * z)", "equation2": "x = y * (z * (x * (w * w)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0456", "equation1": "x = x * (((x * y) * y) * z)", "equation2": "x = y * (z * (x * (w * w)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0428", "equation1": "x = y * (y * ((y * z) * z))", "equation2": "x = y * (z * ((w * y) * x))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0428", "equation1": "x = y * (y * ((y * z) * z))", "equation2": "x = y * (z * ((w * y) * x))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0428", "equation1": "x = y * (y * ((y * z) * z))", "equation2": "x = y * (z * ((w * y) * x))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0401", "equation1": "x = (y * ((x * z) * x)) * w", "equation2": "x * y = y * (y * (z * z))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0401", "equation1": "x = (y * ((x * z) * x)) * w", "equation2": "x * y = y * (y * (z * z))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0401", "equation1": "x = (y * ((x * z) * x)) * w", "equation2": "x * y = y * (y * (z * z))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0862", "equation1": "x = y * (y * (y * (z * y)))", "equation2": "x * x = y * (z * (w * y))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0862", "equation1": "x = y * (y * (y * (z * y)))", "equation2": "x * x = y * (z * (w * y))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0862", "equation1": "x = y * (y * (y * (z * y)))", "equation2": "x * x = y * (z * (w * y))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0905", "equation1": "x * y = (y * (z * z)) * x", "equation2": "x = y * ((z * (z * w)) * w)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0905", "equation1": "x * y = (y * (z * z)) * x", "equation2": "x = y * ((z * (z * w)) * w)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0905", "equation1": "x * y = (y * (z * z)) * x", "equation2": "x = y * ((z * (z * w)) * w)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0617", "equation1": "x * x = y * (x * (x * x))", "equation2": "x = ((y * z) * (w * u)) * z", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0617", "equation1": "x * x = y * (x * (x * x))", "equation2": "x = ((y * z) * (w * u)) * z", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0617", "equation1": "x * x = y * (x * (x * x))", "equation2": "x = ((y * z) * (w * u)) * z", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0813", "equation1": "x = (y * (y * x)) * (z * y)", "equation2": "x = (((y * z) * w) * y) * u", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0813", "equation1": "x = (y * (y * x)) * (z * y)", "equation2": "x = (((y * z) * w) * y) * u", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0813", "equation1": "x = (y * (y * x)) * (z * y)", "equation2": "x = (((y * z) * w) * y) * u", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0888", "equation1": "x = (y * y) * (x * (y * z))", "equation2": "x = x * (((y * x) * z) * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0888", "equation1": "x = (y * y) * (x * (y * z))", "equation2": "x = x * (((y * x) * z) * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0888", "equation1": "x = (y * y) * (x * (y * z))", "equation2": "x = x * (((y * x) * z) * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0149", "equation1": "x * y = z * ((x * w) * u)", "equation2": "x = (y * (z * w)) * (u * u)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0149", "equation1": "x * y = z * ((x * w) * u)", "equation2": "x = (y * (z * w)) * (u * u)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0149", "equation1": "x * y = z * ((x * w) * u)", "equation2": "x = (y * (z * w)) * (u * u)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0816", "equation1": "x = (y * ((x * x) * x)) * z", "equation2": "(x * x) * y = (y * x) * y", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0816", "equation1": "x = (y * ((x * x) * x)) * z", "equation2": "(x * x) * y = (y * x) * y", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0816", "equation1": "x = (y * ((x * x) * x)) * z", "equation2": "(x * x) * y = (y * x) * y", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0364", "equation1": "x = ((y * x) * x) * (x * x)", "equation2": "x = y * (((y * z) * z) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0364", "equation1": "x = ((y * x) * x) * (x * x)", "equation2": "x = y * (((y * z) * z) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0364", "equation1": "x = ((y * x) * x) * (x * x)", "equation2": "x = y * (((y * z) * z) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0088", "equation1": "x = (x * x) * ((y * z) * z)", "equation2": "x = y * (z * (z * (z * z)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0088", "equation1": "x = (x * x) * ((y * z) * z)", "equation2": "x = y * (z * (z * (z * z)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0088", "equation1": "x = (x * x) * ((y * z) * z)", "equation2": "x = y * (z * (z * (z * z)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0759", "equation1": "(x * x) * y = (z * x) * x", "equation2": "x = y * (((y * z) * x) * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0759", "equation1": "(x * x) * y = (z * x) * x", "equation2": "x = y * (((y * z) * x) * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0759", "equation1": "(x * x) * y = (z * x) * x", "equation2": "x = y * (((y * z) * x) * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0146", "equation1": "x = y * ((z * (z * x)) * y)", "equation2": "x = (x * x) * (x * (y * y))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0146", "equation1": "x = y * ((z * (z * x)) * y)", "equation2": "x = (x * x) * (x * (y * y))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0146", "equation1": "x = y * ((z * (z * x)) * y)", "equation2": "x = (x * x) * (x * (y * y))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0276", "equation1": "x = ((x * x) * (y * x)) * z", "equation2": "x * y = (x * (y * z)) * w", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0276", "equation1": "x = ((x * x) * (y * x)) * z", "equation2": "x * y = (x * (y * z)) * w", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0276", "equation1": "x = ((x * x) * (y * x)) * z", "equation2": "x * y = (x * (y * z)) * w", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0171", "equation1": "x = (y * x) * (z * (w * x))", "equation2": "x = ((y * y) * y) * (z * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0171", "equation1": "x = (y * x) * (z * (w * x))", "equation2": "x = ((y * y) * y) * (z * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0171", "equation1": "x = (y * x) * (z * (w * x))", "equation2": "x = ((y * y) * y) * (z * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0158", "equation1": "x = y * (((y * z) * x) * x)", "equation2": "x = y * ((z * (x * x)) * x)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0158", "equation1": "x = y * (((y * z) * x) * x)", "equation2": "x = y * ((z * (x * x)) * x)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0158", "equation1": "x = y * (((y * z) * x) * x)", "equation2": "x = y * ((z * (x * x)) * x)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0282", "equation1": "x = x * (((y * z) * z) * w)", "equation2": "x * x = (x * (y * z)) * z", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0282", "equation1": "x = x * (((y * z) * z) * w)", "equation2": "x * x = (x * (y * z)) * z", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0282", "equation1": "x = x * (((y * z) * z) * w)", "equation2": "x * x = (x * (y * z)) * z", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0674", "equation1": "x = (y * y) * ((x * y) * z)", "equation2": "x = x * (y * (x * y))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0674", "equation1": "x = (y * y) * ((x * y) * z)", "equation2": "x = x * (y * (x * y))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0674", "equation1": "x = (y * y) * ((x * y) * z)", "equation2": "x = x * (y * (x * y))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0936", "equation1": "x * y = (y * y) * x", "equation2": "x * (x * y) = (z * y) * w", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0936", "equation1": "x * y = (y * y) * x", "equation2": "x * (x * y) = (z * y) * w", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0936", "equation1": "x * y = (y * y) * x", "equation2": "x * (x * y) = (z * y) * w", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0102", "equation1": "(x * x) * x = (x * y) * y", "equation2": "x = y * (z * ((w * y) * z))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0102", "equation1": "(x * x) * x = (x * y) * y", "equation2": "x = y * (z * ((w * y) * z))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0102", "equation1": "(x * x) * x = (x * y) * y", "equation2": "x = y * (z * ((w * y) * z))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0015", "equation1": "x * y = ((z * y) * z) * w", "equation2": "x = y * (y * (z * (z * z)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0015", "equation1": "x * y = ((z * y) * z) * w", "equation2": "x = y * (y * (z * (z * z)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0015", "equation1": "x * y = ((z * y) * z) * w", "equation2": "x = y * (y * (z * (z * z)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0368", "equation1": "x = y * (z * (z * (w * x)))", "equation2": "x = (((y * z) * y) * z) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0368", "equation1": "x = y * (z * (z * (w * x)))", "equation2": "x = (((y * z) * y) * z) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0368", "equation1": "x = y * (z * (z * (w * x)))", "equation2": "x = (((y * z) * y) * z) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0140", "equation1": "x = x * (y * (z * (w * z)))", "equation2": "x = (x * ((x * y) * y)) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0140", "equation1": "x = x * (y * (z * (w * z)))", "equation2": "x = (x * ((x * y) * y)) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0140", "equation1": "x = x * (y * (z * (w * z)))", "equation2": "x = (x * ((x * y) * y)) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0734", "equation1": "x = (y * z) * ((z * z) * z)", "equation2": "x = y * (x * (y * (z * x)))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0734", "equation1": "x = (y * z) * ((z * z) * z)", "equation2": "x = y * (x * (y * (z * x)))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0734", "equation1": "x = (y * z) * ((z * z) * z)", "equation2": "x = y * (x * (y * (z * x)))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0086", "equation1": "x = x * (y * ((y * z) * y))", "equation2": "x * y = ((x * z) * y) * w", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0086", "equation1": "x = x * (y * ((y * z) * y))", "equation2": "x * y = ((x * z) * y) * w", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0086", "equation1": "x = x * (y * ((y * z) * y))", "equation2": "x * y = ((x * z) * y) * w", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0017", "equation1": "x = y * (x * (y * (y * z)))", "equation2": "x = ((y * (z * w)) * z) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0017", "equation1": "x = y * (x * (y * (y * z)))", "equation2": "x = ((y * (z * w)) * z) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0017", "equation1": "x = y * (x * (y * (y * z)))", "equation2": "x = ((y * (z * w)) * z) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0184", "equation1": "x = (x * y) * ((y * z) * y)", "equation2": "x = (((x * y) * y) * y) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0184", "equation1": "x = (x * y) * ((y * z) * y)", "equation2": "x = (((x * y) * y) * y) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0184", "equation1": "x = (x * y) * ((y * z) * y)", "equation2": "x = (((x * y) * y) * y) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0130", "equation1": "x = (y * (x * (z * y))) * x", "equation2": "x = y * ((y * (z * x)) * z)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0130", "equation1": "x = (y * (x * (z * y))) * x", "equation2": "x = y * ((y * (z * x)) * z)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0130", "equation1": "x = (y * (x * (z * y))) * x", "equation2": "x = y * ((y * (z * x)) * z)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0090", "equation1": "x = (y * (z * (z * x))) * x", "equation2": "x = (x * ((y * x) * x)) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0090", "equation1": "x = (y * (z * (z * x))) * x", "equation2": "x = (x * ((y * x) * x)) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0090", "equation1": "x = (y * (z * (z * x))) * x", "equation2": "x = (x * ((y * x) * x)) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0187", "equation1": "x = (y * z) * (z * x)", "equation2": "x = y * ((y * (z * y)) * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0187", "equation1": "x = (y * z) * (z * x)", "equation2": "x = y * ((y * (z * y)) * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0187", "equation1": "x = (y * z) * (z * x)", "equation2": "x = y * ((y * (z * y)) * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0259", "equation1": "x = y * ((y * y) * (y * z))", "equation2": "x = (y * z) * (w * (x * z))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0259", "equation1": "x = y * ((y * y) * (y * z))", "equation2": "x = (y * z) * (w * (x * z))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0259", "equation1": "x = y * ((y * y) * (y * z))", "equation2": "x = (y * z) * (w * (x * z))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard1_0056", "equation1": "x = (y * (y * z)) * (w * x)", "equation2": "x = y * (z * (w * (u * x)))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard1_0056", "equation1": "x = (y * (y * z)) * (w * x)", "equation2": "x = y * (z * (w * (u * x)))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard1_0056", "equation1": "x = (y * (y * z)) * (w * x)", "equation2": "x = y * (z * (w * (u * x)))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard3_0378", "equation1": "x * y = (z * y) * (z * y)", "equation2": "x * y = (z * w) * (w * y)", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard3_0378", "equation1": "x * y = (z * y) * (z * y)", "equation2": "x * y = (z * w) * (w * y)", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard3_0378", "equation1": "x * y = (z * y) * (z * y)", "equation2": "x * y = (z * w) * (w * y)", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0160", "equation1": "x = y * (z * (w * (z * z)))", "equation2": "x = (y * (z * w)) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0160", "equation1": "x = y * (z * (w * (z * z)))", "equation2": "x = (y * (z * w)) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0160", "equation1": "x = y * (z * (w * (z * z)))", "equation2": "x = (y * (z * w)) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0725", "equation1": "x = (x * (y * x)) * (y * z)", "equation2": "x = x * (x * (y * (z * w)))", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0725", "equation1": "x = (x * (y * x)) * (y * z)", "equation2": "x = x * (x * (y * (z * w)))", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0725", "equation1": "x = (x * (y * x)) * (y * z)", "equation2": "x = x * (x * (y * (z * w)))", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0802", "equation1": "x = (((y * y) * z) * w) * x", "equation2": "x = ((y * (x * y)) * x) * x", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0802", "equation1": "x = (((y * y) * z) * w) * x", "equation2": "x = ((y * (x * y)) * x) * x", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0802", "equation1": "x = (((y * y) * z) * w) * x", "equation2": "x = ((y * (x * y)) * x) * x", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0049", "equation1": "x = y * (((z * w) * x) * y)", "equation2": "x = x * (y * ((x * x) * x))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0049", "equation1": "x = y * (((z * w) * x) * y)", "equation2": "x = x * (y * ((x * x) * x))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0049", "equation1": "x = y * (((z * w) * x) * y)", "equation2": "x = x * (y * ((x * x) * x))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0219", "equation1": "x = y * (x * (y * (x * z)))", "equation2": "x * x = y * (x * (z * y))", "answer": true, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0219", "equation1": "x = y * (x * (y * (x * z)))", "equation2": "x * x = y * (x * (z * y))", "answer": true, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0219", "equation1": "x = y * (x * (y * (x * z)))", "equation2": "x * x = y * (x * (z * y))", "answer": true, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "normal_0708", "equation1": "x * y = x * (z * (x * w))", "equation2": "x = y * (z * x)", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "normal_0708", "equation1": "x * y = x * (z * (x * w))", "equation2": "x = y * (z * x)", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "normal_0708", "equation1": "x * y = x * (z * (x * w))", "equation2": "x = y * (z * x)", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
+{"id": "hard2_0100", "equation1": "x = (x * ((x * y) * y)) * y", "equation2": "x * y = ((x * y) * y) * x", "answer": false, "model": "openai/gpt-oss-120b", "model_alias": "gpt-oss-120b"}
+{"id": "hard2_0100", "equation1": "x = (x * ((x * y) * y)) * y", "equation2": "x * y = ((x * y) * y) * x", "answer": false, "model": "meta-llama/llama-3.3-70b-instruct", "model_alias": "llama-3-3-70b-instruct"}
+{"id": "hard2_0100", "equation1": "x = (x * ((x * y) * y)) * y", "equation2": "x * y = ((x * y) * y) * x", "answer": false, "model": "google/gemma-4-31b-it", "model_alias": "gemma-4-31b-it"}
