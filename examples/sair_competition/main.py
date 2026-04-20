@@ -273,11 +273,11 @@ def evaluate(candidate: str, example: dict[str, Any]) -> tuple[float, dict[str, 
         "equation1": equation1,
         "equation2": equation2,
         "expected": expected,
-        "verdict": verdict,
+        "extracted_verdict": verdict,
         "correct": correct,
+        "full_response": result["text"],
         "tokens_in": result["tokens_in"],
         "tokens_out": result["tokens_out"],
-        "prompt_bytes": prompt_bytes,
     }
 
     if result["error"]:
@@ -290,13 +290,7 @@ def evaluate(candidate: str, example: dict[str, Any]) -> tuple[float, dict[str, 
         oa.log(f"[{model_alias}] WRONG on {example['id']}: expected={expected} got={verdict}")
         oa.log(f"  Eq1: {equation1}")
         oa.log(f"  Eq2: {equation2}")
-        reasoning_match = re.search(
-            r"REASONING:\s*(.+?)(?=\n(?:PROOF|COUNTEREXAMPLE|$))",
-            result["text"],
-            re.DOTALL,
-        )
-        if reasoning_match:
-            oa.log(f"  Reasoning: {reasoning_match.group(1).strip()[:500]}")
+        oa.log(f"  Response: {result['text'][:500]}")
 
     return score, side_info
 
