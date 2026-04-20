@@ -402,6 +402,14 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Watch the presentation](https://youtu.be/c39fJ2WAj6A?t=6386)
 
+-   **LLMs Are Optimizing Themselves (Matei Zaharia)**
+
+    ---
+
+    Matei Zaharia (Databricks CTO, UC Berkeley) discusses how LLMs are increasingly optimizing themselves through reflective prompt evolution and automated search, arguing this represents a fundamental shift in how AI systems improve.
+
+    [:material-arrow-right: Watch the talk](https://www.youtube.com/watch?v=CtU21gc4gbk)
+
 -   **NeurIPS 2025 Workshop: 12.5% → 62.5% Gains**
 
     ---
