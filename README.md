@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/assets/gepa_logo_with_text.svg" alt="GEPA Logo" width="450">
+  <img src="https://raw.githubusercontent.com/gepa-ai/gepa/refs/heads/main/docs/docs/assets/gepa_logo_with_text.svg" alt="GEPA Logo" width="450">
 </p>
 
 <p align="center">
