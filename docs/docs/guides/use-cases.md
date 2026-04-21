@@ -418,6 +418,16 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Watch the talk](https://www.youtube.com/watch?v=0bkwd9OYqfk)
 
+-   **Judge the Judge: Building LLM Evaluators That Actually Work with GEPA (AI Engineer)**
+
+    ---
+
+    Mahmoud Mabrouk (CEO, Agenta AI) walks through building a calibrated LLM-as-a-judge — from capturing ground truth to optimizing with GEPA and assessing the judge. Presented at AI Engineer conference, April 2026.
+
+    [:material-arrow-right: Watch the workshop](https://www.youtube.com/watch?v=X4dEHRzBLmc)
+
+    [:material-arrow-right: Workshop repo](https://github.com/Agenta-AI/judge-the-judge)
+
 -   **NeurIPS 2025 Workshop: 12.5% → 62.5% Gains**
 
     ---
