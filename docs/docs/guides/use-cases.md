@@ -410,6 +410,14 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Watch the talk](https://www.youtube.com/watch?v=CtU21gc4gbk)
 
+-   **Why Are Prompt Optimizers Still So Underrated? (Chris Potts)**
+
+    ---
+
+    Chris Potts discusses GEPA at the Bay Area DSPy Meetup (November 2025), making the case for why prompt optimizers are underappreciated and how GEPA's reflective evolution approach changes the optimization landscape.
+
+    [:material-arrow-right: Watch the talk](https://www.youtube.com/watch?v=0bkwd9OYqfk)
+
 -   **NeurIPS 2025 Workshop: 12.5% → 62.5% Gains**
 
     ---
