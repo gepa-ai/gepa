@@ -313,7 +313,12 @@ BACKGROUND = (
     "does Equation 2 necessarily hold too?\n\n"
     "The cheatsheet is inserted between the task description and the output "
     "format in the prompt. The task description and output format are already "
-    "provided — the cheatsheet should not repeat them."
+    "provided — the cheatsheet should not repeat them.\n\n"
+    "The most effective cheatsheets define a procedure the model can follow: "
+    "extract structural features from the two equations (e.g. variable counts, "
+    "nesting depth, symmetry properties), then apply decision rules based on "
+    "those features. The model reads the cheatsheet, computes the features for "
+    "the given equations, and follows the rules to reach a verdict."
 )
 
 
