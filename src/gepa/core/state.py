@@ -12,7 +12,7 @@ from typing import Any, ClassVar, Generic, Literal, TypeAlias
 
 from gepa.core.adapter import RolloutOutput
 from gepa.core.data_loader import DataId
-from gepa.gepa_utils import json_default, try_json_serialize
+from gepa.gepa_utils import json_default
 from gepa.logging.logger import LoggerProtocol
 
 # Types for GEPAState
@@ -146,6 +146,9 @@ class ValsetEvaluation(Generic[RolloutOutput, DataId]):
     outputs_by_val_id: dict[DataId, RolloutOutput]
     scores_by_val_id: dict[DataId, float]
     objective_scores_by_val_id: dict[DataId, ObjectiveScores] | None = None
+    # Populated only when the engine is run with ``write_agent_state=True`` —
+    # full valset trajectories are expensive, so default eval paths skip them.
+    trajectories_by_val_id: dict[DataId, Any] | None = None
 
 
 class GEPAState(Generic[RolloutOutput, DataId]):
@@ -389,7 +392,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self._save_pareto_dir(run_dir)
         self._save_iterations_dir(run_dir)
         self._save_rejected_proposals_dir(run_dir)
-        self._save_eval_cache_dir(run_dir)
         self._save_index(run_dir)
 
     def _save_candidates_dir(self, run_dir: str) -> None:
@@ -499,24 +501,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 },
             )
 
-    def _save_eval_cache_dir(self, run_dir: str) -> None:
-        if self.evaluation_cache is None:
-            return
-        for idx, cand in enumerate(self.program_candidates):
-            cand_entries: dict[str, Any] = {}
-            for val_id in self.prog_candidate_val_subscores[idx]:
-                cached = self.evaluation_cache.get(cand, val_id)
-                if cached is not None:
-                    cand_entries[str(val_id)] = {
-                        "score": cached.score,
-                        "output": try_json_serialize(cached.output),
-                        "objective_scores": cached.objective_scores,
-                    }
-            if cand_entries:
-                self._atomic_write_json(
-                    run_dir, f"eval_cache/{idx:05d}.json", cand_entries
-                )
-
     def _save_index(self, run_dir: str) -> None:
         """Write the small top-level index that points at the rest of the tree."""
         num_candidates = len(self.program_candidates)
@@ -562,7 +546,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 "pareto_dir": "pareto/",
                 "iterations_dir": "iterations/",
                 "rejected_proposals_dir": "rejected_proposals/",
-                "eval_cache_dir": "eval_cache/",
             },
         }
 

@@ -199,8 +199,8 @@ def test_agent_state_default_off(run_dir):
     assert (run_dir_path / "gepa_state.bin").exists()
 
 
-def test_agent_state_cache_and_rejected_proposals(run_dir):
-    """eval_cache/ and rejected_proposals/ get their own per-item files."""
+def test_agent_state_rejected_proposals(run_dir):
+    """rejected_proposals/ and iterations/ get their own per-item files."""
     seed = {"prompt": "hello"}
     valset_out = ValsetEvaluation(
         outputs_by_val_id={0: "out0", 1: "out1"},
@@ -210,10 +210,6 @@ def test_agent_state_cache_and_rejected_proposals(run_dir):
     state = state_mod.GEPAState(seed, valset_out)
     state.total_num_evals = 10
     state.num_full_ds_evals = 1
-
-    state.evaluation_cache = state_mod.EvaluationCache()
-    state.evaluation_cache.put({"prompt": "hello"}, 0, "cached_output_0", 0.5)
-    state.evaluation_cache.put({"prompt": "hello"}, 1, "cached_output_1", 0.5)
 
     state.full_program_trace.append({
         "i": 7,
@@ -230,15 +226,6 @@ def test_agent_state_cache_and_rejected_proposals(run_dir):
     state.save(run_dir, write_agent_state=True)
 
     run_dir_path = Path(str(run_dir))
-
-    # Eval cache: one file per candidate, keyed by val_id inside.
-    cache_file = run_dir_path / "eval_cache" / "00000.json"
-    assert cache_file.exists()
-    with open(cache_file) as f:
-        cache = json.load(f)
-    assert cache["0"]["score"] == 0.5
-    assert cache["0"]["output"] == "cached_output_0"
-    assert cache["1"]["output"] == "cached_output_1"
 
     # Rejected proposal: one file per rejecting iteration.
     rej_file = run_dir_path / "rejected_proposals" / "00007.json"
@@ -260,6 +247,100 @@ def test_agent_state_cache_and_rejected_proposals(run_dir):
         iter_entry = json.load(f)
     assert iter_entry["i"] == 7
     assert iter_entry["proposal_accepted"] is False
+
+    # Eval cache is no longer exported to the tree.
+    assert not (run_dir_path / "eval_cache").exists()
+    index = json.loads((run_dir_path / "gepa_state.json").read_text())
+    assert "eval_cache_dir" not in index["layout"]
+
+
+def test_agent_state_e2e_writes_per_candidate_outputs_and_trajectories(run_dir):
+    """Running the engine with write_agent_state=True writes per-candidate
+    outputs/ and trajectories/ alongside the directory tree."""
+    import gepa as gepa_mod
+
+    trainset = [{"id": i, "difficulty": i + 2} for i in range(2)]
+    valset = [{"id": i, "difficulty": i + 2} for i in range(2)]
+
+    class DummyAdapter:
+        def evaluate(self, batch, candidate, capture_traces=False):
+            weight = int(candidate["system_prompt"].split("=")[-1])
+            outputs = [{"id": item["id"], "weight": weight} for item in batch]
+            scores = [min(1.0, (weight + 1) / item["difficulty"]) for item in batch]
+            trajectories = (
+                [{"score": s, "weight": weight} for s in scores] if capture_traces else None
+            )
+            return EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
+
+        def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+            return dict.fromkeys(components_to_update, [{"score": s} for s in eval_batch.scores])
+
+        def propose_new_texts(self, candidate, reflective_dataset, components_to_update):
+            weight = int(candidate["system_prompt"].split("=")[-1])
+            return dict.fromkeys(components_to_update, f"weight={weight + 1}")
+
+    gepa_mod.optimize(
+        seed_candidate={"system_prompt": "weight=0"},
+        trainset=trainset,
+        valset=valset,
+        adapter=DummyAdapter(),
+        reflection_lm=None,
+        max_metric_calls=6,
+        run_dir=str(run_dir),
+        write_agent_state=True,
+    )
+
+    run_dir_path = Path(str(run_dir))
+
+    # Seed (idx 0) outputs and trajectories written.
+    assert (run_dir_path / "candidates" / "00000" / "outputs" / "0.json").exists()
+    assert (run_dir_path / "candidates" / "00000" / "outputs" / "1.json").exists()
+    assert (run_dir_path / "candidates" / "00000" / "trajectories" / "0.json").exists()
+    with open(run_dir_path / "candidates" / "00000" / "outputs" / "0.json") as f:
+        seed_out = json.load(f)
+    assert seed_out == {"id": 0, "weight": 0}
+    with open(run_dir_path / "candidates" / "00000" / "trajectories" / "0.json") as f:
+        seed_traj = json.load(f)
+    assert seed_traj["weight"] == 0
+
+    # At least one accepted descendant candidate should also have outputs.
+    cand_dirs = sorted((run_dir_path / "candidates").iterdir())
+    assert len(cand_dirs) >= 2
+    for cand_dir in cand_dirs[1:]:
+        assert (cand_dir / "outputs" / "0.json").exists()
+        assert (cand_dir / "trajectories" / "0.json").exists()
+
+
+def test_agent_state_off_does_not_write_outputs(run_dir):
+    """With write_agent_state=False (default), no outputs/ subtree is produced."""
+    import gepa as gepa_mod
+
+    trainset = [{"id": 0, "difficulty": 2}]
+    valset = [{"id": 0, "difficulty": 2}]
+
+    class DummyAdapter:
+        def evaluate(self, batch, candidate, capture_traces=False):
+            return EvaluationBatch(outputs=[{"id": 0}], scores=[0.5], trajectories=None)
+
+        def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+            return dict.fromkeys(components_to_update, [{"score": 0.5}])
+
+        def propose_new_texts(self, candidate, reflective_dataset, components_to_update):
+            return dict.fromkeys(components_to_update, "new")
+
+    gepa_mod.optimize(
+        seed_candidate={"system_prompt": "x"},
+        trainset=trainset,
+        valset=valset,
+        adapter=DummyAdapter(),
+        reflection_lm=None,
+        max_metric_calls=2,
+        run_dir=str(run_dir),
+    )
+
+    run_dir_path = Path(str(run_dir))
+    assert not (run_dir_path / "candidates").exists()
+    assert not (run_dir_path / "gepa_state.json").exists()
 
 
 def test_agent_state_sanitizes_component_names(run_dir):
