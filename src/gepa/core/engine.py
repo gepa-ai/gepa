@@ -101,6 +101,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         display_progress_bar: bool = False,
         raise_on_exception: bool = True,
         use_cloudpickle: bool = False,
+        write_agent_state: bool = False,
         # Budget and Stop Condition
         stop_callback: StopperProtocol | None = None,
         val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
@@ -152,6 +153,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.track_best_outputs = track_best_outputs
         self.display_progress_bar = display_progress_bar
         self.use_cloudpickle = use_cloudpickle
+        self.write_agent_state = write_agent_state
 
         self.num_parallel_proposals = num_parallel_proposals
         self.raise_on_exception = raise_on_exception
@@ -393,11 +395,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             return False
 
         # Capture evaluation side_info into the trace for agent consumption
-        _record_proposal_evals(trace_entry, output.proposal)
+        if self.write_agent_state:
+            _record_proposal_evals(trace_entry, output.proposal)
 
         accepted = self._accept_reflective_proposal(output.proposal, iteration, state)
-        trace_entry["proposal_accepted"] = accepted
-        trace_entry["proposed_candidate"] = output.proposal.candidate
+        if self.write_agent_state:
+            trace_entry["proposal_accepted"] = accepted
+            trace_entry["proposed_candidate"] = output.proposal.candidate
 
         if accepted and self.merge_proposer is not None:
             self.merge_proposer.last_iter_found_new_program = True
@@ -668,7 +672,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             iteration_started = False
             try:
                 self._sync_adapter_state_to_state(state)
-                state.save(self.run_dir, use_cloudpickle=self.use_cloudpickle)
+                state.save(
+                    self.run_dir,
+                    use_cloudpickle=self.use_cloudpickle,
+                    write_agent_state=self.write_agent_state,
+                )
                 notify_callbacks(
                     self.callbacks,
                     "on_state_saved",
@@ -816,7 +824,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             progress_bar.close()
 
         self._sync_adapter_state_to_state(state)
-        state.save(self.run_dir, use_cloudpickle=self.use_cloudpickle)
+        state.save(
+            self.run_dir,
+            use_cloudpickle=self.use_cloudpickle,
+            write_agent_state=self.write_agent_state,
+        )
 
         # Notify optimization end
         best_candidate_idx = self.val_evaluation_policy.get_best_program(state)

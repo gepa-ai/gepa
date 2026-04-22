@@ -462,6 +462,11 @@ class EngineConfig:
     raise_on_exception: bool = True
     use_cloudpickle: bool = True
     track_best_outputs: bool = True
+    # Write an agent-readable directory tree (candidates/, pareto/, iterations/,
+    # rejected_proposals/, eval_cache/) under ``run_dir`` on every save. Default
+    # off — when enabled, each iteration records extra eval trace payloads so
+    # the rejected_proposals files have before/after scores and trajectories.
+    write_agent_state: bool = False
 
     # Simple stopping conditions
     max_metric_calls: int | None = None
@@ -1607,6 +1612,7 @@ def optimize_anything(
         val_evaluation_policy=config.engine.val_evaluation_policy,
         acceptance_criterion=acceptance_criterion_instance,
         use_cloudpickle=config.engine.use_cloudpickle,
+        write_agent_state=config.engine.write_agent_state,
         evaluation_cache=evaluation_cache,
         num_parallel_proposals=_resolve_num_parallel_proposals(
             config.engine.num_parallel_proposals,

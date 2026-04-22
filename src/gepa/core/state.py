@@ -4,6 +4,7 @@
 import hashlib
 import json
 import os
+import re
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -31,6 +32,14 @@ CacheKey: TypeAlias = tuple[CandidateHash, DataId]
 def _candidate_hash(candidate: dict[str, str]) -> CandidateHash:
     """Compute a deterministic hash of a candidate dictionary."""
     return hashlib.sha256(json.dumps(sorted(candidate.items())).encode()).hexdigest()
+
+
+_COMPONENT_NAME_SANITIZER = re.compile(r"[^A-Za-z0-9_.-]")
+
+
+def _sanitize_component_name(name: str) -> str:
+    """Collapse component names to filesystem-safe characters."""
+    return _COMPONENT_NAME_SANITIZER.sub("_", name)
 
 
 @dataclass
@@ -296,14 +305,33 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             for hook in hooks:
                 hook(self.total_num_evals, count)
 
-    def _atomic_write_json(self, run_dir: str, filename: str, data: Any) -> None:
-        target_path = os.path.join(run_dir, filename)
+    def _atomic_write_json(self, run_dir: str, rel_path: str, data: Any) -> None:
+        target_path = os.path.join(run_dir, rel_path)
+        parent = os.path.dirname(target_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         tmp_path = target_path + ".tmp"
         with open(tmp_path, "w") as f:
             json.dump(data, f, indent=2, default=json_default)
         os.replace(tmp_path, target_path)
 
-    def save(self, run_dir: str | None, *, use_cloudpickle: bool = False) -> None:
+    def _atomic_write_text(self, run_dir: str, rel_path: str, data: str) -> None:
+        target_path = os.path.join(run_dir, rel_path)
+        parent = os.path.dirname(target_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        tmp_path = target_path + ".tmp"
+        with open(tmp_path, "w") as f:
+            f.write(data)
+        os.replace(tmp_path, target_path)
+
+    def save(
+        self,
+        run_dir: str | None,
+        *,
+        use_cloudpickle: bool = False,
+        write_agent_state: bool = False,
+    ) -> None:
         if run_dir is None:
             return
         if use_cloudpickle:
@@ -345,41 +373,71 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if self.program_candidates:
             self._atomic_write_json(run_dir, "candidates.json", self.program_candidates)
 
-        # Save comprehensive agent-readable state
-        self._save_agent_state(run_dir)
+        # Opt-in directory layout for agent consumption
+        if write_agent_state:
+            self._save_agent_directory(run_dir)
 
-    def _save_agent_state(self, run_dir: str) -> None:
-        """Write a comprehensive JSON export of the optimization state.
+    def _save_agent_directory(self, run_dir: str) -> None:
+        """Write agent-readable state as a directory of small files.
 
-        Designed for consumption by autonomous agents (e.g. Claude Code) that
-        need the full picture — all candidates, per-datapoint scores, Pareto
-        frontiers, lineage, and evaluation history — in a single readable file.
+        Partitions the run's state into discrete JSON/text files so an agent
+        (e.g. Claude Code) can navigate it without loading a monolithic blob
+        into its context. The pickled ``gepa_state.bin`` remains the source of
+        truth for resume; this tree is output-only.
         """
-        num_candidates = len(self.program_candidates)
+        self._save_candidates_dir(run_dir)
+        self._save_pareto_dir(run_dir)
+        self._save_iterations_dir(run_dir)
+        self._save_rejected_proposals_dir(run_dir)
+        self._save_eval_cache_dir(run_dir)
+        self._save_index(run_dir)
 
-        # --- Build per-candidate records ---
-        candidates = []
-        for idx in range(num_candidates):
+    def _save_candidates_dir(self, run_dir: str) -> None:
+        for idx in range(len(self.program_candidates)):
             avg_score, coverage = self.get_program_average_val_subset(idx)
-            val_scores = self.prog_candidate_val_subscores[idx]
-            obj_scores = self.prog_candidate_objective_scores[idx]
             parents = self.parent_program_for_candidate[idx]
-            metric_calls = self.num_metric_calls_by_discovery[idx] if idx < len(self.num_metric_calls_by_discovery) else None
+            metric_calls = (
+                self.num_metric_calls_by_discovery[idx]
+                if idx < len(self.num_metric_calls_by_discovery)
+                else None
+            )
+            obj_scores = self.prog_candidate_objective_scores[idx]
+            base = f"candidates/{idx:05d}"
+            self._atomic_write_json(
+                run_dir,
+                f"{base}/meta.json",
+                {
+                    "idx": idx,
+                    "parent_ids": [p for p in parents if p is not None],
+                    "avg_val_score": avg_score,
+                    "num_val_scored": coverage,
+                    "metric_calls_to_discover": metric_calls,
+                    "objective_scores": obj_scores if obj_scores else {},
+                },
+            )
+            val_scores = self.prog_candidate_val_subscores[idx]
+            self._atomic_write_json(
+                run_dir,
+                f"{base}/val_scores.json",
+                {str(k): v for k, v in val_scores.items()},
+            )
+            self._save_components(run_dir, idx)
 
-            candidates.append({
-                "idx": idx,
-                "texts": self.program_candidates[idx],
-                "parent_ids": [p for p in parents if p is not None],
-                "avg_val_score": avg_score,
-                "num_val_scored": coverage,
-                "metric_calls_to_discover": metric_calls,
-                "val_scores": {str(k): v for k, v in val_scores.items()},
-                "objective_scores": obj_scores if obj_scores else {},
-            })
+    def _save_components(self, run_dir: str, idx: int) -> None:
+        cand = self.program_candidates[idx]
+        base = f"candidates/{idx:05d}/components"
+        index_map: dict[str, str] = {}
+        used: set[str] = set()
+        for i, (name, text) in enumerate(cand.items()):
+            safe = _sanitize_component_name(name)
+            if not safe or safe in used:
+                safe = f"component_{i:02d}"
+            used.add(safe)
+            index_map[name] = f"{safe}.txt"
+            self._atomic_write_text(run_dir, f"{base}/{safe}.txt", text)
+        self._atomic_write_json(run_dir, f"{base}/_index.json", index_map)
 
-        # --- Build Pareto frontier ---
-        pareto: dict[str, Any] = {}
-
+    def _save_pareto_dir(self, run_dir: str) -> None:
         if self.frontier_type in ("instance", "hybrid"):
             instance_front: dict[str, Any] = {}
             for val_id, best_score in self.pareto_front_valset.items():
@@ -388,7 +446,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                     "best_score": best_score,
                     "best_candidates": best_progs,
                 }
-            pareto["instance_front"] = instance_front
+            self._atomic_write_json(run_dir, "pareto/instance_front.json", instance_front)
 
         if self.frontier_type in ("objective", "hybrid"):
             obj_front: dict[str, Any] = {}
@@ -398,7 +456,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                     "best_score": best_score,
                     "best_candidates": best_progs,
                 }
-            pareto["objective_front"] = obj_front
+            self._atomic_write_json(run_dir, "pareto/objective_front.json", obj_front)
 
         if self.frontier_type == "cartesian":
             cartesian_front: dict[str, Any] = {}
@@ -408,10 +466,61 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                     "best_score": best_score,
                     "best_candidates": best_progs,
                 }
-            pareto["cartesian_front"] = cartesian_front
+            self._atomic_write_json(run_dir, "pareto/cartesian_front.json", cartesian_front)
 
-        # --- Derived analytics ---
-        # Hardest validation examples (lowest best score on Pareto front)
+    def _save_iterations_dir(self, run_dir: str) -> None:
+        for entry in self.full_program_trace:
+            i = entry.get("i")
+            if i is None:
+                continue
+            self._atomic_write_json(run_dir, f"iterations/{i:05d}.json", entry)
+
+    def _save_rejected_proposals_dir(self, run_dir: str) -> None:
+        for entry in self.full_program_trace:
+            if entry.get("proposal_accepted") is not False:
+                continue
+            if "proposed_candidate" not in entry:
+                continue
+            i = entry.get("i")
+            if i is None:
+                continue
+            self._atomic_write_json(
+                run_dir,
+                f"rejected_proposals/{i:05d}.json",
+                {
+                    "iteration": i,
+                    "candidate": entry["proposed_candidate"],
+                    "parent_ids": [entry.get("selected_program_candidate")],
+                    "subsample_ids": entry.get("subsample_ids"),
+                    "subsample_scores_before": entry.get("subsample_scores"),
+                    "subsample_scores_after": entry.get("new_subsample_scores"),
+                    "eval_before": entry.get("eval_before"),
+                    "eval_after": entry.get("eval_after"),
+                },
+            )
+
+    def _save_eval_cache_dir(self, run_dir: str) -> None:
+        if self.evaluation_cache is None:
+            return
+        for idx, cand in enumerate(self.program_candidates):
+            cand_entries: dict[str, Any] = {}
+            for val_id in self.prog_candidate_val_subscores[idx]:
+                cached = self.evaluation_cache.get(cand, val_id)
+                if cached is not None:
+                    cand_entries[str(val_id)] = {
+                        "score": cached.score,
+                        "output": try_json_serialize(cached.output),
+                        "objective_scores": cached.objective_scores,
+                    }
+            if cand_entries:
+                self._atomic_write_json(
+                    run_dir, f"eval_cache/{idx:05d}.json", cand_entries
+                )
+
+    def _save_index(self, run_dir: str) -> None:
+        """Write the small top-level index that points at the rest of the tree."""
+        num_candidates = len(self.program_candidates)
+
         hardest: list[dict[str, Any]] = []
         if self.pareto_front_valset:
             sorted_examples = sorted(self.pareto_front_valset.items(), key=lambda x: x[1])
@@ -423,49 +532,18 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                     "best_candidates": best_progs,
                 })
 
-        # Best candidate
         full_scores = self.program_full_scores_val_set
-        best_idx = int(max(range(num_candidates), key=lambda i: full_scores[i])) if num_candidates > 0 else 0
+        best_idx = (
+            int(max(range(num_candidates), key=lambda i: full_scores[i]))
+            if num_candidates > 0
+            else 0
+        )
 
-        # All candidates on the Pareto front (unique across all frontier keys)
         front_candidates: set[int] = set()
-        front_map = self.get_pareto_front_mapping()
-        for prog_set in front_map.values():
+        for prog_set in self.get_pareto_front_mapping().values():
             front_candidates.update(prog_set)
 
-        # --- Evaluation cache export ---
-        cache_export: dict[str, dict[str, Any]] = {}
-        if self.evaluation_cache is not None:
-            for idx, cand in enumerate(self.program_candidates):
-                cand_entries: dict[str, Any] = {}
-                # Check all known val_ids for this candidate
-                for val_id in self.prog_candidate_val_subscores[idx]:
-                    cached = self.evaluation_cache.get(cand, val_id)
-                    if cached is not None:
-                        cand_entries[str(val_id)] = {
-                            "score": cached.score,
-                            "output": try_json_serialize(cached.output),
-                            "objective_scores": cached.objective_scores,
-                        }
-                if cand_entries:
-                    cache_export[str(idx)] = cand_entries
-
-        # --- Rejected proposals (extracted from iteration log) ---
-        rejected_proposals: list[dict[str, Any]] = []
-        for entry in self.full_program_trace:
-            if entry.get("proposal_accepted") is False and "proposed_candidate" in entry:
-                rejected_proposals.append({
-                    "iteration": entry.get("i"),
-                    "candidate": entry["proposed_candidate"],
-                    "parent_ids": [entry.get("selected_program_candidate")],
-                    "subsample_ids": entry.get("subsample_ids"),
-                    "subsample_scores_before": entry.get("subsample_scores"),
-                    "subsample_scores_after": entry.get("new_subsample_scores"),
-                    "eval_before": entry.get("eval_before"),
-                    "eval_after": entry.get("eval_after"),
-                })
-
-        state_export: dict[str, Any] = {
+        index: dict[str, Any] = {
             "schema_version": 2,
             "iteration": self.i,
             "total_metric_calls": self.total_num_evals,
@@ -479,14 +557,16 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 "pareto_front_candidate_idxs": sorted(front_candidates),
                 "hardest_examples": hardest,
             },
-            "candidates": candidates,
-            "pareto_front": pareto,
-            "rejected_proposals": rejected_proposals,
-            "evaluation_cache": cache_export if cache_export else None,
-            "iteration_log": self.full_program_trace,
+            "layout": {
+                "candidates_dir": "candidates/",
+                "pareto_dir": "pareto/",
+                "iterations_dir": "iterations/",
+                "rejected_proposals_dir": "rejected_proposals/",
+                "eval_cache_dir": "eval_cache/",
+            },
         }
 
-        self._atomic_write_json(run_dir, "gepa_state.json", state_export)
+        self._atomic_write_json(run_dir, "gepa_state.json", index)
 
     @staticmethod
     def load(run_dir: str) -> "GEPAState[RolloutOutput, DataId]":

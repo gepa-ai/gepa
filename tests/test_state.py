@@ -115,8 +115,8 @@ def test_gepa_state_save_and_initialize(run_dir):
     assert state.__dict__ == result.__dict__
 
 
-def test_agent_state_json_export(run_dir):
-    """save() writes a comprehensive gepa_state.json for agent consumption."""
+def test_agent_state_directory_layout(run_dir):
+    """save(write_agent_state=True) writes a directory tree of small files."""
     seed = {"system_prompt": "You are helpful."}
     valset_out = ValsetEvaluation(
         outputs_by_val_id={0: "out0", 1: "out1", 2: "out2"},
@@ -131,54 +131,76 @@ def test_agent_state_json_export(run_dir):
     state = state_mod.GEPAState(seed, valset_out, frontier_type="hybrid")
     state.total_num_evals = 10
     state.num_full_ds_evals = 1
-    state.save(run_dir)
+    state.save(run_dir, write_agent_state=True)
 
-    import json
+    run_dir_path = Path(str(run_dir))
 
-    agent_state_path = os.path.join(str(run_dir), "gepa_state.json")
-    assert os.path.exists(agent_state_path)
-    with open(agent_state_path) as f:
-        data = json.load(f)
+    # Top-level index is the small navigation file.
+    with open(run_dir_path / "gepa_state.json") as f:
+        index = json.load(f)
+    assert index["schema_version"] == 2
+    assert index["frontier_type"] == "hybrid"
+    assert index["iteration"] == state.i
+    assert index["component_names"] == ["system_prompt"]
+    assert index["summary"]["num_candidates"] == 1
+    assert index["summary"]["best_candidate_idx"] == 0
+    assert index["summary"]["hardest_examples"][0]["best_score"] == 0.3
+    assert "candidates_dir" in index["layout"]
+    # Bulky payloads must not live in the index.
+    assert "candidates" not in index
+    assert "iteration_log" not in index
+    assert "rejected_proposals" not in index
 
-    # Check top-level structure
-    assert data["schema_version"] == 2
-    assert data["frontier_type"] == "hybrid"
-    assert "candidates" in data
-    assert "pareto_front" in data
-    assert "summary" in data
-    assert "iteration_log" in data
+    # Candidate subtree.
+    cand_meta_path = run_dir_path / "candidates" / "00000" / "meta.json"
+    assert cand_meta_path.exists()
+    with open(cand_meta_path) as f:
+        meta = json.load(f)
+    assert meta["idx"] == 0
+    assert meta["num_val_scored"] == 3
+    assert meta["parent_ids"] == []
+    assert meta["avg_val_score"] == pytest.approx(0.5)
 
-    # Check candidate data
-    assert len(data["candidates"]) == 1
-    cand = data["candidates"][0]
-    assert cand["idx"] == 0
-    assert cand["texts"] == {"system_prompt": "You are helpful."}
-    assert cand["avg_val_score"] > 0
-    assert cand["num_val_scored"] == 3
-    assert "0" in cand["val_scores"]
-    assert cand["val_scores"]["0"] == 0.3
+    with open(run_dir_path / "candidates" / "00000" / "val_scores.json") as f:
+        val_scores = json.load(f)
+    assert val_scores == {"0": 0.3, "1": 0.7, "2": 0.5}
 
-    # Check Pareto front
-    assert "instance_front" in data["pareto_front"]
-    assert "objective_front" in data["pareto_front"]
+    # Component text lives as raw .txt, mapped from real name via _index.json.
+    with open(run_dir_path / "candidates" / "00000" / "components" / "_index.json") as f:
+        comp_index = json.load(f)
+    assert comp_index == {"system_prompt": "system_prompt.txt"}
+    comp_path = run_dir_path / "candidates" / "00000" / "components" / "system_prompt.txt"
+    assert comp_path.read_text() == "You are helpful."
 
-    # Check summary
-    assert data["summary"]["num_candidates"] == 1
-    assert data["summary"]["best_candidate_idx"] == 0
-    assert len(data["summary"]["hardest_examples"]) > 0
-    # Hardest example should be val_id=0 with score 0.3
-    assert data["summary"]["hardest_examples"][0]["best_score"] == 0.3
-
-    # Check rejected_proposals section exists
-    assert "rejected_proposals" in data
-    assert isinstance(data["rejected_proposals"], list)
-
-    # Check evaluation_cache field exists (None since cache not enabled)
-    assert "evaluation_cache" in data
+    # Pareto subtree — only files matching frontier_type should exist.
+    assert (run_dir_path / "pareto" / "instance_front.json").exists()
+    assert (run_dir_path / "pareto" / "objective_front.json").exists()
+    assert not (run_dir_path / "pareto" / "cartesian_front.json").exists()
 
 
-def test_agent_state_with_cache_and_rejection(run_dir):
-    """Agent state exports evaluation cache and rejected proposals."""
+def test_agent_state_default_off(run_dir):
+    """save() without write_agent_state=True does not create the agent tree."""
+    seed = {"system_prompt": "hi"}
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: "out"},
+        scores_by_val_id={0: 0.5},
+        objective_scores_by_val_id=None,
+    )
+    state = state_mod.GEPAState(seed, valset_out)
+    state.total_num_evals = 1
+    state.num_full_ds_evals = 1
+    state.save(run_dir)  # default: write_agent_state=False
+
+    run_dir_path = Path(str(run_dir))
+    assert not (run_dir_path / "gepa_state.json").exists()
+    assert not (run_dir_path / "candidates").exists()
+    assert not (run_dir_path / "pareto").exists()
+    # Legacy outputs still produced.
+    assert (run_dir_path / "gepa_state.bin").exists()
+
+
+def test_agent_state_cache_and_rejected_proposals(run_dir):
+    """eval_cache/ and rejected_proposals/ get their own per-item files."""
     seed = {"prompt": "hello"}
     valset_out = ValsetEvaluation(
         outputs_by_val_id={0: "out0", 1: "out1"},
@@ -189,14 +211,12 @@ def test_agent_state_with_cache_and_rejection(run_dir):
     state.total_num_evals = 10
     state.num_full_ds_evals = 1
 
-    # Enable evaluation cache and populate it
     state.evaluation_cache = state_mod.EvaluationCache()
     state.evaluation_cache.put({"prompt": "hello"}, 0, "cached_output_0", 0.5)
     state.evaluation_cache.put({"prompt": "hello"}, 1, "cached_output_1", 0.5)
 
-    # Simulate a rejected proposal in the trace
     state.full_program_trace.append({
-        "i": 0,
+        "i": 7,
         "selected_program_candidate": 0,
         "subsample_ids": [0],
         "subsample_scores": [0.5],
@@ -207,30 +227,63 @@ def test_agent_state_with_cache_and_rejection(run_dir):
         "eval_after": {"scores": [0.3], "trajectories": ["trace_after"]},
     })
 
-    state.save(run_dir)
+    state.save(run_dir, write_agent_state=True)
 
-    import json
+    run_dir_path = Path(str(run_dir))
 
-    with open(os.path.join(str(run_dir), "gepa_state.json")) as f:
-        data = json.load(f)
+    # Eval cache: one file per candidate, keyed by val_id inside.
+    cache_file = run_dir_path / "eval_cache" / "00000.json"
+    assert cache_file.exists()
+    with open(cache_file) as f:
+        cache = json.load(f)
+    assert cache["0"]["score"] == 0.5
+    assert cache["0"]["output"] == "cached_output_0"
+    assert cache["1"]["output"] == "cached_output_1"
 
-    # Check evaluation cache
-    assert data["evaluation_cache"] is not None
-    assert "0" in data["evaluation_cache"]  # candidate idx 0
-    assert "0" in data["evaluation_cache"]["0"]  # val_id 0
-    assert data["evaluation_cache"]["0"]["0"]["score"] == 0.5
-    assert data["evaluation_cache"]["0"]["0"]["output"] == "cached_output_0"
-
-    # Check rejected proposals
-    assert len(data["rejected_proposals"]) == 1
-    rej = data["rejected_proposals"][0]
+    # Rejected proposal: one file per rejecting iteration.
+    rej_file = run_dir_path / "rejected_proposals" / "00007.json"
+    assert rej_file.exists()
+    with open(rej_file) as f:
+        rej = json.load(f)
+    assert rej["iteration"] == 7
     assert rej["candidate"] == {"prompt": "rejected attempt"}
     assert rej["parent_ids"] == [0]
-    assert rej["subsample_ids"] == [0]
     assert rej["subsample_scores_before"] == [0.5]
     assert rej["subsample_scores_after"] == [0.3]
     assert rej["eval_before"]["trajectories"] == ["trace_before"]
     assert rej["eval_after"]["trajectories"] == ["trace_after"]
+
+    # Iteration trace file for the same iteration also written.
+    iter_file = run_dir_path / "iterations" / "00007.json"
+    assert iter_file.exists()
+    with open(iter_file) as f:
+        iter_entry = json.load(f)
+    assert iter_entry["i"] == 7
+    assert iter_entry["proposal_accepted"] is False
+
+
+def test_agent_state_sanitizes_component_names(run_dir):
+    """Component names with unsafe filesystem chars get sanitized; _index.json preserves the real name."""
+    seed = {"sys/prompt v1": "hello", "sys prompt": "world"}
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: "out"},
+        scores_by_val_id={0: 0.5},
+        objective_scores_by_val_id=None,
+    )
+    state = state_mod.GEPAState(seed, valset_out)
+    state.total_num_evals = 1
+    state.num_full_ds_evals = 1
+    state.save(run_dir, write_agent_state=True)
+
+    comp_dir = Path(str(run_dir)) / "candidates" / "00000" / "components"
+    with open(comp_dir / "_index.json") as f:
+        index = json.load(f)
+    # Real names preserved as keys; slashes and spaces become underscores in filenames.
+    assert set(index.keys()) == {"sys/prompt v1", "sys prompt"}
+    for real_name, fname in index.items():
+        assert "/" not in fname
+        assert " " not in fname
+        assert (comp_dir / fname).read_text() == seed[real_name]
 
 
 def test_budget_hooks_excluded_from_serialization(run_dir):
