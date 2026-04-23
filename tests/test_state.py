@@ -116,7 +116,11 @@ def test_gepa_state_save_and_initialize(run_dir):
 
 
 def test_agent_state_directory_layout(run_dir):
-    """save(write_agent_state=True) writes a directory tree of small files."""
+    """save(write_agent_state=True) writes a unified iterations/ tree.
+
+    Seed lands at iterations/00000/ (is_seed=True); there are no separate
+    ``candidates/`` or ``rejected_proposals/`` trees any more.
+    """
     seed = {"system_prompt": "You are helpful."}
     valset_out = ValsetEvaluation(
         outputs_by_val_id={0: "out0", 1: "out1", 2: "out2"},
@@ -138,44 +142,54 @@ def test_agent_state_directory_layout(run_dir):
     # Top-level index is the small navigation file.
     with open(run_dir_path / "gepa_state.json") as f:
         index = json.load(f)
-    assert index["schema_version"] == 2
+    assert index["schema_version"] == 3
     assert index["frontier_type"] == "hybrid"
     assert index["iteration"] == state.i
     assert index["component_names"] == ["system_prompt"]
-    assert index["summary"]["num_candidates"] == 1
-    assert index["summary"]["best_candidate_idx"] == 0
+    assert index["summary"]["num_iterations"] == 1
+    assert index["summary"]["best_iteration_id"] == 0
     assert index["summary"]["hardest_examples"][0]["best_score"] == 0.3
-    assert "candidates_dir" in index["layout"]
-    # Bulky payloads must not live in the index.
-    assert "candidates" not in index
-    assert "iteration_log" not in index
-    assert "rejected_proposals" not in index
+    assert index["layout"] == {"iterations_dir": "iterations/", "pareto_dir": "pareto/"}
 
-    # Candidate subtree.
-    cand_meta_path = run_dir_path / "candidates" / "00000" / "meta.json"
-    assert cand_meta_path.exists()
-    with open(cand_meta_path) as f:
+    # Legacy trees must be absent.
+    assert not (run_dir_path / "candidates").exists()
+    assert not (run_dir_path / "rejected_proposals").exists()
+
+    # Seed iteration subtree.
+    seed_meta_path = run_dir_path / "iterations" / "00000" / "meta.json"
+    assert seed_meta_path.exists()
+    with open(seed_meta_path) as f:
         meta = json.load(f)
-    assert meta["idx"] == 0
+    assert meta["iteration_id"] == 0
+    assert meta["is_seed"] is True
+    assert meta["accepted"] is True
+    assert meta["candidate_idx"] == 0
     assert meta["num_val_scored"] == 3
-    assert meta["parent_ids"] == []
+    assert meta["parent_iteration_ids"] == []
     assert meta["avg_val_score"] == pytest.approx(0.5)
 
-    with open(run_dir_path / "candidates" / "00000" / "val_scores.json") as f:
+    with open(run_dir_path / "iterations" / "00000" / "val_scores.json") as f:
         val_scores = json.load(f)
     assert val_scores == {"0": 0.3, "1": 0.7, "2": 0.5}
 
     # Component text lives as raw .txt, mapped from real name via _index.json.
-    with open(run_dir_path / "candidates" / "00000" / "components" / "_index.json") as f:
+    with open(run_dir_path / "iterations" / "00000" / "components" / "_index.json") as f:
         comp_index = json.load(f)
     assert comp_index == {"system_prompt": "system_prompt.txt"}
-    comp_path = run_dir_path / "candidates" / "00000" / "components" / "system_prompt.txt"
+    comp_path = run_dir_path / "iterations" / "00000" / "components" / "system_prompt.txt"
     assert comp_path.read_text() == "You are helpful."
 
     # Pareto subtree — only files matching frontier_type should exist.
     assert (run_dir_path / "pareto" / "instance_front.json").exists()
     assert (run_dir_path / "pareto" / "objective_front.json").exists()
     assert not (run_dir_path / "pareto" / "cartesian_front.json").exists()
+
+    # Pareto files now key on iteration ids, not candidate idxs.
+    with open(run_dir_path / "pareto" / "instance_front.json") as f:
+        front = json.load(f)
+    for entry in front.values():
+        assert "best_iteration_ids" in entry
+        assert "best_candidates" not in entry
 
 
 def test_agent_state_default_off(run_dir):
@@ -193,14 +207,17 @@ def test_agent_state_default_off(run_dir):
 
     run_dir_path = Path(str(run_dir))
     assert not (run_dir_path / "gepa_state.json").exists()
-    assert not (run_dir_path / "candidates").exists()
+    assert not (run_dir_path / "iterations").exists()
     assert not (run_dir_path / "pareto").exists()
     # Legacy outputs still produced.
     assert (run_dir_path / "gepa_state.bin").exists()
 
 
 def test_agent_state_rejected_proposals(run_dir):
-    """rejected_proposals/ and iterations/ get their own per-item files."""
+    """Rejected proposals live under iterations/NNNNN/ alongside accepted ones.
+
+    On-disk iteration id = trace ``i`` + 1 (seed owns id 0).
+    """
     seed = {"prompt": "hello"}
     valset_out = ValsetEvaluation(
         outputs_by_val_id={0: "out0", 1: "out1"},
@@ -227,36 +244,40 @@ def test_agent_state_rejected_proposals(run_dir):
 
     run_dir_path = Path(str(run_dir))
 
-    # Rejected proposal: one file per rejecting iteration.
-    rej_file = run_dir_path / "rejected_proposals" / "00007.json"
-    assert rej_file.exists()
-    with open(rej_file) as f:
-        rej = json.load(f)
-    assert rej["iteration"] == 7
-    assert rej["candidate"] == {"prompt": "rejected attempt"}
-    assert rej["parent_ids"] == [0]
-    assert rej["subsample_scores_before"] == [0.5]
-    assert rej["subsample_scores_after"] == [0.3]
-    assert rej["eval_before"]["trajectories"] == ["trace_before"]
-    assert rej["eval_after"]["trajectories"] == ["trace_after"]
+    iter_dir = run_dir_path / "iterations" / "00008"
+    assert iter_dir.is_dir()
 
-    # Iteration trace file for the same iteration also written.
-    iter_file = run_dir_path / "iterations" / "00007.json"
-    assert iter_file.exists()
-    with open(iter_file) as f:
-        iter_entry = json.load(f)
-    assert iter_entry["i"] == 7
-    assert iter_entry["proposal_accepted"] is False
+    with open(iter_dir / "meta.json") as f:
+        meta = json.load(f)
+    assert meta["iteration_id"] == 8
+    assert meta["trace_i"] == 7
+    assert meta["accepted"] is False
+    assert meta["candidate_idx"] is None
+    assert meta["parent_iteration_ids"] == [0]
+    assert meta["subsample_scores_before"] == [0.5]
+    assert meta["subsample_scores_after"] == [0.3]
+    assert "avg_val_score" not in meta  # rejected: no full valset eval
 
-    # Eval cache is no longer exported to the tree.
-    assert not (run_dir_path / "eval_cache").exists()
-    index = json.loads((run_dir_path / "gepa_state.json").read_text())
-    assert "eval_cache_dir" not in index["layout"]
+    # Components archived even for rejected proposals.
+    comp_path = iter_dir / "components" / "prompt.txt"
+    assert comp_path.exists()
+    assert comp_path.read_text() == "rejected attempt"
+
+    # Raw trace entry kept alongside for debugging.
+    with open(iter_dir / "trace.json") as f:
+        trace = json.load(f)
+    assert trace["i"] == 7
+    assert trace["proposal_accepted"] is False
+    assert trace["eval_before"]["trajectories"] == ["trace_before"]
+
+    # Legacy trees gone.
+    assert not (run_dir_path / "rejected_proposals").exists()
+    assert not (run_dir_path / "candidates").exists()
 
 
-def test_agent_state_e2e_writes_per_candidate_outputs_and_trajectories(run_dir):
-    """Running the engine with write_agent_state=True writes per-candidate
-    outputs/ and trajectories/ alongside the directory tree."""
+def test_agent_state_e2e_writes_per_iteration_outputs_and_trajectories(run_dir):
+    """Running the engine with write_agent_state=True writes per-iteration
+    outputs/ and trajectories/ under iterations/<iter_id>/."""
     import gepa as gepa_mod
 
     trainset = [{"id": i, "difficulty": i + 2} for i in range(2)]
@@ -292,23 +313,26 @@ def test_agent_state_e2e_writes_per_candidate_outputs_and_trajectories(run_dir):
 
     run_dir_path = Path(str(run_dir))
 
-    # Seed (idx 0) outputs and trajectories written.
-    assert (run_dir_path / "candidates" / "00000" / "outputs" / "0.json").exists()
-    assert (run_dir_path / "candidates" / "00000" / "outputs" / "1.json").exists()
-    assert (run_dir_path / "candidates" / "00000" / "trajectories" / "0.json").exists()
-    with open(run_dir_path / "candidates" / "00000" / "outputs" / "0.json") as f:
+    # Seed at iterations/00000/ — outputs and trajectories present.
+    assert (run_dir_path / "iterations" / "00000" / "outputs" / "0.json").exists()
+    assert (run_dir_path / "iterations" / "00000" / "outputs" / "1.json").exists()
+    assert (run_dir_path / "iterations" / "00000" / "trajectories" / "0.json").exists()
+    with open(run_dir_path / "iterations" / "00000" / "outputs" / "0.json") as f:
         seed_out = json.load(f)
     assert seed_out == {"id": 0, "weight": 0}
-    with open(run_dir_path / "candidates" / "00000" / "trajectories" / "0.json") as f:
+    with open(run_dir_path / "iterations" / "00000" / "trajectories" / "0.json") as f:
         seed_traj = json.load(f)
     assert seed_traj["weight"] == 0
 
-    # At least one accepted descendant candidate should also have outputs.
-    cand_dirs = sorted((run_dir_path / "candidates").iterdir())
-    assert len(cand_dirs) >= 2
-    for cand_dir in cand_dirs[1:]:
-        assert (cand_dir / "outputs" / "0.json").exists()
-        assert (cand_dir / "trajectories" / "0.json").exists()
+    # At least one accepted descendant iteration should also have outputs.
+    iter_dirs = sorted(d for d in (run_dir_path / "iterations").iterdir() if d.is_dir())
+    assert len(iter_dirs) >= 2
+    accepted_with_outputs = [
+        d for d in iter_dirs[1:] if (d / "outputs" / "0.json").exists()
+    ]
+    assert accepted_with_outputs, "at least one accepted proposal should have outputs"
+    for iter_dir in accepted_with_outputs:
+        assert (iter_dir / "trajectories" / "0.json").exists()
 
 
 def test_agent_state_off_does_not_write_outputs(run_dir):
@@ -339,7 +363,7 @@ def test_agent_state_off_does_not_write_outputs(run_dir):
     )
 
     run_dir_path = Path(str(run_dir))
-    assert not (run_dir_path / "candidates").exists()
+    assert not (run_dir_path / "iterations").exists()
     assert not (run_dir_path / "gepa_state.json").exists()
 
 
@@ -356,7 +380,7 @@ def test_agent_state_sanitizes_component_names(run_dir):
     state.num_full_ds_evals = 1
     state.save(run_dir, write_agent_state=True)
 
-    comp_dir = Path(str(run_dir)) / "candidates" / "00000" / "components"
+    comp_dir = Path(str(run_dir)) / "iterations" / "00000" / "components"
     with open(comp_dir / "_index.json") as f:
         index = json.load(f)
     # Real names preserved as keys; slashes and spaces become underscores in filenames.
@@ -556,20 +580,30 @@ def test_adapter_state_save_and_load(run_dir):
     assert loaded.adapter_state == {"key": "value", "nested": {"a": [1, 2, 3]}}
 
 
-def test_upgrade_state_dict_adds_adapter_state():
-    """Migration adds adapter_state={} when missing (v4 → v5)."""
+def test_upgrade_state_dict_adds_missing_fields():
+    """Migration fills in adapter_state + iteration_ids_by_candidate_idx (v5 → v6)."""
     d = {
-        "program_candidates": [{"a": "b"}],
-        "prog_candidate_objective_scores": [{}],
+        "program_candidates": [{"a": "b"}, {"a": "c"}],
+        "prog_candidate_objective_scores": [{}, {}],
         "objective_pareto_front": {},
         "program_at_pareto_front_objectives": {},
         "frontier_type": "instance",
         "pareto_front_cartesian": {},
         "program_at_pareto_front_cartesian": {},
         "evaluation_cache": None,
+        "full_program_trace": [
+            {
+                "i": 3,
+                "proposal_accepted": True,
+                "new_program_idx": 1,
+            }
+        ],
     }
     state_mod.GEPAState._upgrade_state_dict(d)
     assert d["adapter_state"] == {}
+    # Seed (candidate_idx 0) → iteration id 0; accepted candidate_idx 1
+    # discovered at trace i=3 → iteration id 4.
+    assert d["iteration_ids_by_candidate_idx"] == [0, 4]
     assert d["validation_schema_version"] == state_mod.GEPAState._VALIDATION_SCHEMA_VERSION
 
 

@@ -181,20 +181,23 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if setter is not None:
             setter(state.adapter_state)
 
-    def _write_agent_candidate_files(
+    def _write_agent_iteration_files(
         self,
-        candidate_idx: int,
+        iteration_id: int,
         valset_evaluation: ValsetEvaluation[RolloutOutput, DataId],
     ) -> None:
-        """Write per-val_id outputs and trajectories for an accepted candidate.
+        """Write per-val_id outputs/trajectories for an iteration's full valset eval.
 
         Called only when ``write_agent_state`` is enabled and ``run_dir`` is
-        set. Produces ``candidates/<idx>/outputs/<val_id>.json`` and, when the
-        valset evaluation captured them, ``candidates/<idx>/trajectories/<val_id>.json``.
+        set. Produces ``iterations/<iter_id>/outputs/<val_id>.json`` and, when
+        the valset evaluation captured them,
+        ``iterations/<iter_id>/trajectories/<val_id>.json``. The iteration id
+        is ``0`` for the seed and ``state.i + 1`` for accepted loop proposals
+        (the same numbering ``GEPAState._save_agent_directory`` uses).
         """
         if not self.write_agent_state or self.run_dir is None:
             return
-        base = os.path.join(self.run_dir, "candidates", f"{candidate_idx:05d}")
+        base = os.path.join(self.run_dir, "iterations", f"{iteration_id:05d}")
         outputs = valset_evaluation.outputs_by_val_id or {}
         if outputs:
             out_dir = os.path.join(base, "outputs")
@@ -263,7 +266,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         new_program: dict[str, str],
         state: GEPAState[RolloutOutput, DataId],
         parent_program_idx: list[int],
+        iteration: int | None = None,
     ) -> tuple[int, int]:
+        # ``iteration`` is the 1-indexed display/on-disk iteration id for the
+        # proposal being processed — same numbering ``ctx.iteration`` uses
+        # (``state.i + 1`` in sequential mode; the context's pre-stamped
+        # value in parallel mode). Defaults to ``state.i + 1`` so merge and
+        # other callers that don't thread it through still get the right
+        # value.
+        if iteration is None:
+            iteration = state.i + 1
         num_metric_calls_by_discovery = state.total_num_evals
         valset_evaluation = self._evaluate_on_valset(new_program, state)
         state.num_full_ds_evals += 1
@@ -280,9 +292,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             valset_evaluation=valset_evaluation,
             run_dir=self.run_dir,
             num_metric_calls_by_discovery_of_new_program=num_metric_calls_by_discovery,
+            iteration=iteration,
         )
 
-        self._write_agent_candidate_files(new_program_idx, valset_evaluation)
+        # ``iteration`` is already the on-disk iteration id (1-indexed,
+        # matching ``ctx.iteration`` and the numbering
+        # ``GEPAState._save_agent_directory`` uses). No shift needed.
+        self._write_agent_iteration_files(iteration, valset_evaluation)
 
         # Compute best program immediately after state update (before callbacks)
         # to ensure is_best_program reflects the updated Pareto front
@@ -419,6 +435,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             new_program=proposal.candidate,
             state=state,
             parent_program_idx=proposal.parent_program_ids,
+            iteration=iteration,
         )
 
         self._log_proposal_lm_calls(iteration, proposal, candidate_idx=new_idx)
@@ -653,9 +670,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             evaluation_cache=self._initial_evaluation_cache,
         )
 
-        # Seed lands at idx 0; persist its outputs/trajectories alongside
-        # subsequent candidates when agent state is enabled.
-        self._write_agent_candidate_files(0, seed_valset_evaluation)
+        # Seed is iteration id 0 — outputs/trajectories go under
+        # iterations/00000/ alongside subsequent loop iterations.
+        self._write_agent_iteration_files(0, seed_valset_evaluation)
 
         # Restore adapter state from persisted state (only has effect on resume)
         self._sync_state_to_adapter(state)
