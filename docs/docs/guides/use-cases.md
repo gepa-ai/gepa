@@ -1095,6 +1095,22 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the blog](https://decagon.ai/blog/optimizing-gepa-for-production)
 
+-   **$0 Reproducible GEPA Examples: How a 1.2B Model Got +25 Points**
+
+    ---
+
+    Three end-to-end GEPA runs (RAG QA with citations, multi-step math reasoning, typed invoice extraction) entirely on OpenRouter's free tier — zero spend, single-seed reproducibility. Demonstrates a surprising saturation lesson: larger task LMs often leave GEPA with nothing to optimize because every minibatch is already all-correct. Using a 1.2B task LM (Liquid LFM 2.5) lifted math reasoning from **45% → 70%** through 5 accepted mutations.
+
+    **Key insights:**
+
+    - **Baseline saturation:** GLM 4.5 Air (32B) and Ministral 8B both accept zero mutations on grade-school math — no failure signal means no reflection
+    - **Task-LM matching matters:** Pick a model that fails on enough examples to generate signal, not the largest available
+    - **Format problems vs knowledge problems:** On RAG QA, GEPA's +18.85pt gain came from teaching consistent citation emission, not new knowledge
+
+    [:material-arrow-right: Read the writeup](https://codeandcontext.ai/inside-the-examples-how-gepa-lifted-a-1-2b-model-by-25-points/)
+
+    [:material-arrow-right: Clone and reproduce](https://github.com/intertwine/dspy-agent-skills)
+
 </div>
 
 ---
