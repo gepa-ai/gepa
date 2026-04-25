@@ -167,6 +167,8 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Announcement](https://x.com/NousResearch/status/2031137681439109147)
 
+    [:material-arrow-right: Deep dive: "The Agent That Rewrites Itself"](https://soap628.com/blog/hermes-agent-self-evolution/) by Zihao Wang (Fudan University) — analysis of GEPA's reflective mutation, Pareto-based selection, and how Hermes uses GEPA to autonomously evolve agent skills
+
 -   **Production Incident Diagnosis**
 
     ---
