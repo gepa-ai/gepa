@@ -1,0 +1,26 @@
+name: walkthrough-smoke
+
+on:
+  push:
+    paths:
+      - 'walkthrough.ipynb'
+      - 'artifacts/**'
+      - 'requirements.txt'
+      - 'scripts/build_walkthrough.py'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt nbconvert
+      - name: Execute notebook (reviewer mode, <60s)
+        run: |
+          jupyter nbconvert --to notebook --execute walkthrough.ipynb \
+            --output /tmp/executed.ipynb \
+            --ExecutePreprocessor.timeout=60

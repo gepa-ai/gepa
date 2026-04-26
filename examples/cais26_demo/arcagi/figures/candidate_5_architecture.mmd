@@ -1,0 +1,25 @@
+flowchart LR
+    A["Inputs<br/>train pairs + test grids"]
+    B["Generate code<br/>LLM writes transform(grid)"]
+    C{"Passes all<br/>training pairs?"}
+    D["Repair code<br/>with failure feedback<br/>(up to 2x)"]
+    E["Run best code<br/>on test input"]
+    F["Fallback predict<br/>LLM returns direct JSON output"]
+    G["Output<br/>attempt 1 + attempt 2"]
+
+    A --> B --> C
+    C -->|yes| E --> G
+    C -->|no| D --> C
+    A --> F --> G
+
+    classDef io fill:#dbeafe,stroke:#1d4ed8,stroke-width:1.5px,color:#0f172a;
+    classDef main fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px,color:#0f172a;
+    classDef check fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#0f172a;
+    classDef fallback fill:#fee2e2,stroke:#dc2626,stroke-width:1.5px,color:#0f172a;
+    classDef out fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#0f172a;
+
+    class A io;
+    class B,D,E main;
+    class C check;
+    class F fallback;
+    class G out;

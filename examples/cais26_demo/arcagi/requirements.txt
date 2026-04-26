@@ -1,0 +1,10 @@
+# Reviewer mode (offline, no network calls):
+matplotlib>=3.7
+numpy>=1.24
+notebook>=7.0
+
+# Booth mode only (set DEMO=True + OPENROUTER_API_KEY):
+litellm>=1.50
+
+# Optimize-from-scratch mode only (set OPTIMIZE_LIVE=True + OPENROUTER_API_KEY):
+gepa==0.1.1

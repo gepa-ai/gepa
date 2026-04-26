@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="560" viewBox="0 0 1280 560" role="img" aria-labelledby="title desc">
+  <title id="title">Optimized ARC-AGI Candidate</title>
+  <desc id="desc">Pipeline diagram for the optimized ARC-AGI candidate discovered by GEPA.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#334155"/>
+    </marker>
+    <style>
+      .title { font: 700 28px Helvetica, Arial, sans-serif; fill: #0f172a; }
+      .label { font: 700 16px Helvetica, Arial, sans-serif; fill: #0f172a; }
+      .body { font: 500 15px Helvetica, Arial, sans-serif; fill: #1e293b; }
+      .small { font: 500 13px Helvetica, Arial, sans-serif; fill: #334155; }
+      .box { rx: 18; ry: 18; stroke-width: 2.5; }
+      .node { rx: 14; ry: 14; fill: #ffffff; stroke: #94a3b8; stroke-width: 2; }
+      .arrow { stroke: #334155; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .yesno { font: 700 13px Helvetica, Arial, sans-serif; fill: #334155; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1280" height="560" fill="#f8fafc"/>
+  <text x="54" y="58" class="title">Optimized ARC-AGI Candidate</text>
+  <text x="54" y="86" class="small">GEPA evolves a code-writing, code-checking, self-repairing solver with a fallback prediction path.</text>
+
+  <rect class="box" x="50" y="130" width="150" height="130" fill="#e0f2fe" stroke="#0284c7"/>
+  <text x="74" y="162" class="label">Input</text>
+  <text x="74" y="196" class="body">train_inputs</text>
+  <text x="74" y="222" class="body">train_outputs</text>
+  <text x="74" y="248" class="body">test_inputs</text>
+
+  <rect class="box" x="240" y="112" width="240" height="166" fill="#ecfeff" stroke="#0891b2"/>
+  <text x="264" y="144" class="label">Programmer</text>
+  <rect class="node" x="264" y="168" width="192" height="42"/>
+  <text x="280" y="194" class="body">Prompt expert ARC solver</text>
+  <rect class="node" x="264" y="220" width="88" height="42"/>
+  <text x="286" y="246" class="body">Generate</text>
+  <rect class="node" x="368" y="220" width="88" height="42"/>
+  <text x="389" y="246" class="body">Extract code</text>
+
+  <rect class="box" x="520" y="94" width="264" height="202" fill="#fff7ed" stroke="#f97316"/>
+  <text x="544" y="126" class="label">Validator</text>
+  <rect class="node" x="544" y="150" width="216" height="42"/>
+  <text x="579" y="176" class="body">Run on training examples</text>
+  <rect class="node" x="544" y="204" width="92" height="52"/>
+  <text x="567" y="236" class="body">Pass?</text>
+  <rect class="node" x="668" y="204" width="92" height="52"/>
+  <text x="701" y="236" class="body">Fix</text>
+  <text x="676" y="274" class="small">feedback-driven repair</text>
+
+  <rect class="box" x="824" y="130" width="168" height="130" fill="#ecfdf5" stroke="#16a34a"/>
+  <text x="848" y="162" class="label">Execute</text>
+  <rect class="node" x="848" y="188" width="120" height="46"/>
+  <text x="882" y="216" class="body">Run on test</text>
+
+  <rect class="box" x="824" y="318" width="206" height="150" fill="#faf5ff" stroke="#9333ea"/>
+  <text x="848" y="350" class="label">Fallback</text>
+  <rect class="node" x="848" y="378" width="158" height="42"/>
+  <text x="873" y="404" class="body">Direct prediction prompt</text>
+  <rect class="node" x="848" y="426" width="92" height="42"/>
+  <text x="878" y="452" class="body">Predict</text>
+
+  <rect class="box" x="1080" y="188" width="148" height="126" fill="#f0fdf4" stroke="#16a34a"/>
+  <text x="1104" y="220" class="label">Output</text>
+  <rect class="node" x="1104" y="242" width="100" height="46"/>
+  <text x="1123" y="270" class="body">2 attempts</text>
+
+  <path class="arrow" d="M200 195 C216 195, 220 195, 240 195"/>
+  <path class="arrow" d="M480 195 C500 195, 504 171, 520 171"/>
+  <path class="arrow" d="M760 171 C788 171, 796 211, 824 211"/>
+  <path class="arrow" d="M968 211 C1012 211, 1034 265, 1080 265"/>
+  <path class="arrow" d="M200 228 C472 228, 648 394, 848 394"/>
+  <path class="arrow" d="M940 447 C1010 447, 1024 288, 1080 288"/>
+  <path class="arrow" d="M636 230 C652 230, 654 230, 668 230"/>
+  <path class="arrow" d="M714 204 C714 184, 650 184, 650 192"/>
+
+  <text x="776" y="194" class="yesno">yes</text>
+  <text x="694" y="194" class="yesno">no</text>
+  <text x="720" y="286" class="small">up to 2 repair rounds</text>
+</svg>
