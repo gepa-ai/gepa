@@ -1,0 +1,22 @@
+{
+  "run_id": "run_blevesearch_20260131_131944_d7b877",
+  "start_time": "2026-01-31T13:19:44.400653",
+  "api": "optimize_anything",
+  "repo": "blevesearch__bleve",
+  "model": "gpt-5-mini",
+  "reflection_model": "gpt-5.2-pro",
+  "train_size": 200,
+  "val_size": 50,
+  "test_size": 100,
+  "max_metric_calls": 300,
+  "workers": 16,
+  "seed": 42,
+  "timeout": 43200,
+  "resumed_from": "/home/eecs/shangyin/gepa-SWEsmith/gepa_results/logs/run_blevesearch_20260131_013620_2fba02",
+  "run_pre_optimization_testset": false,
+  "run_post_optimization_testset": false,
+  "execution_mode": "docker",
+  "wandb": true,
+  "wandb_project": "gepa-swesmith",
+  "proposer": "loop"
+}

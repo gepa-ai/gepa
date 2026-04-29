@@ -1,0 +1,53 @@
+MERGED SKILL SET (Repo Bugfix / CI Container)
+
+1) Classify the task correctly (repo bugfix, not sysadmin)
+- Treat as a repository debugging task in a CI-like container.
+- Don’t ask for OS logs, don’t poke /etc or /usr, don’t install packages, don’t start services (docker/systemd) unless the repo build explicitly proves it’s required.
+
+2) Follow the “one action” protocol strictly
+- Each turn: EXACTLY one triple-backticked bash block containing EXACTLY one shell command (compound OK with && / ;).
+- Keep command output small (use head/tail/sed -n where relevant).
+- Final step: output only `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
+
+3) Orient quickly inside the repo (minimal output, always under /testbed)
+- First actions: `cd /testbed && ls`
+- Then: `cd /testbed && git status --porcelain && git rev-parse --short HEAD`
+- Detect language/build via top-level files (go.mod, package.json, pyproject.toml, etc.).
+- Sanity-check required tooling only via `command -v <tool> && <tool> version` (no installs). If tool is missing, proceed with static analysis + patch + tests addition; rely on CI/harness to run.
+
+4) Run tests early and iterate from failures (tests are the bug report)
+- Start broad when feasible: `cd /testbed && go test ./...` (or project equivalent).
+- Narrow quickly:
+  - package: `go test ./path/to/pkg`
+  - single test: `go test ./path/to/pkg -run TestName -count=1` (add -v only if needed)
+- For panics: follow the stack trace top frame in repo code first.
+- For mismatches: use “expected vs got” to locate the producing function and invariants.
+
+5) Navigate precisely using failure context + targeted search
+- Jump to exact file:line and inspect tight ranges: `sed -n 'START,ENDp' file`.
+- Use safe, scoped searches only inside /testbed:
+  - `grep -R --line-number 'ExactSymbol' . --include='*.go' | head`
+  - limit by likely directories/packages before broadening.
+- Use Task ID as a hint: search exact token, then split/related terms.
+
+6) Debug with domain-aware strategies (Go/token filters/stemmers as example)
+- Don’t rewrite algorithms into simplistic “toy” logic; preserve intent and APIs.
+- Look for classic Unicode/UTF-8 pitfalls:
+  - byte indices mixed with rune counts
+  - slicing mid-rune, len-based underflow, negative indices, unguarded len-k
+- Fix by making indexing consistent (operate on []rune or maintain byte-safe indices via utf8 helpers), plus bounds guards as needed.
+
+7) Make minimal, reviewable changes and verify continuously
+- Change one behavior at a time; rerun the smallest reproducing test after each change.
+- Add focused unit tests when coverage is missing; keep them in the same package and table-driven where sensible (include short words + accented/Unicode edge cases).
+- Avoid scratch main.go files in repo root.
+
+8) Go hygiene (when editing Go)
+- Run `gofmt -w <files>` on touched files.
+- Ensure imports are correct (no unused imports).
+- Prefer preserving public interfaces; adjust internal logic unless tests demand API changes.
+
+9) Patch hygiene before finishing
+- Inspect changes: `cd /testbed && git diff`
+- Don’t commit; leave working tree changes only.
+- After fix, rerun broader tests (package then `./...`) if time permits.

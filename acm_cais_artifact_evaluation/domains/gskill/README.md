@@ -119,6 +119,60 @@ Results saved to `gepa_results/logs/run_<timestamp>_<id>/`:
 - `cost_summary.txt` - Cost breakdown (agent vs reflection)
 - `gepa_state.bin` - State for resumption
 
+## Offline Review
+
+This artifact now includes saved offline evidence under `offline_runs/`, so reviewers can inspect the main claims without spending API credits.
+
+### Saved GEPA training runs
+
+- `offline_runs/gepa_skills_training/run_blevesearch_20260131_131944_d7b877/`
+  - baseline test score `0.19`
+  - optimized test score `0.85`
+  - total metric calls `300`
+- `offline_runs/gepa_skills_training/run_pallets_20260131_152447_4347c2/`
+  - baseline test score `0.38`
+  - optimized test score `0.59`
+  - total metric calls `307`
+
+Each run includes:
+
+- `summary.json`
+- `config.json`
+- `baseline_test_results.json`
+- `optimized_test_results.json`
+- `terminal.log`
+- `proposer_calls/`
+- `prompts/best_skills.txt`
+- `gepa_state.bin`
+
+### Saved Claude Code evaluation runs
+
+`offline_runs/claude_code_eval/` contains post-hoc evaluations of the learned skills on held-out tasks.
+
+Key pass-rate comparisons from the bundled `summary.json` files:
+
+| Run | Passed / Total | Pass rate |
+|---|---:|---:|
+| `run_blevesearch_haiku` | 46 / 58 | 79.31% |
+| `run_blevesearch_haiku_with_real_skills` | 58 / 58 | 100.00% |
+| `run_blevesearch_sonnet` | 55 / 58 | 94.83% |
+| `run_blevesearch_sonnet_with_real_skills` | 58 / 58 | 100.00% |
+| `run_pallets_haiku` | 62 / 66 | 93.94% |
+| `run_pallets_haiku_with_real_skills` | 65 / 66 | 98.48% |
+| `run_pallets_sonnet` | 66 / 66 | 100.00% |
+| `run_pallets_sonnet_with_real_skills` | 66 / 66 | 100.00% |
+
+Each saved evaluation run also includes:
+
+- `results.jsonl` with per-instance outcomes
+- `test_ids.txt`
+- `source_config.json`
+- `skills_raw.txt` and `SKILL.md` for the skill-enabled runs
+
+## Limitation
+
+These offline runs are strong evidence for analysis and inspection, but a full end-to-end rerun of training or Claude Code evaluation still depends on Docker plus external model access.
+
 ## References
 
 - [SWE-smith](https://swesmith.com)

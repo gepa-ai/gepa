@@ -1,0 +1,17 @@
+{
+  "experiment_start": "2026-01-31T13:19:44.400653",
+  "experiment_end": "2026-01-31T14:51:34.187480",
+  "total_eval_batches": 0,
+  "unique_prompts_tested": 0,
+  "comparison": {},
+  "best_prompt_hash": "1e50adf6",
+  "prompts_seen": [],
+  "extra_info": {
+    "best_score": 0.84,
+    "num_candidates": 3,
+    "total_metric_calls": 300,
+    "final_skills_length": 3198,
+    "baseline_test_score": 0.19,
+    "optimized_test_score": 0.85
+  }
+}

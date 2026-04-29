@@ -1,0 +1,22 @@
+{
+  "run_id": "run_pallets_20260131_152447_4347c2",
+  "start_time": "2026-01-31T15:24:47.708587",
+  "api": "optimize_anything",
+  "repo": "pallets__jinja",
+  "model": "gpt-5-mini",
+  "reflection_model": "gpt-5.2-pro",
+  "train_size": 200,
+  "val_size": 50,
+  "test_size": 100,
+  "max_metric_calls": 300,
+  "workers": 16,
+  "seed": 42,
+  "timeout": 43200,
+  "resumed_from": null,
+  "run_pre_optimization_testset": false,
+  "run_post_optimization_testset": false,
+  "execution_mode": "docker",
+  "wandb": true,
+  "wandb_project": "gepa-swesmith",
+  "proposer": "batch"
+}

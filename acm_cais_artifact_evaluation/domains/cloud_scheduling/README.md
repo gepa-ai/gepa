@@ -7,6 +7,16 @@
 
 Both top the ADRS leaderboard, outperforming OpenEvolve, ShinkaEvolve, and expert-designed heuristics.
 
+## Offline Review
+
+If you do not want to spend API credits, there is now a partial offline path:
+
+- `cloudcast/offline_logs/cloudcast_output.log` — saved late-stage optimization log with candidate code proposals, score changes, and raw-cost numbers.
+- `cloudcast/optimization_trajectory.png` / `.pdf` — paper plot.
+- `can_be_late/optimization_trajectory.png` / `.pdf` — paper plot.
+
+The CloudCast log is the strongest offline evidence in this domain. `Can't Be Late` still has code, real traces, and the paper plot, but does not yet include an equally rich saved trajectory bundle in this artifact folder.
+
 ## Code (this folder)
 
 | Subfolder | Contents |
