@@ -69,7 +69,14 @@ class GepaBackend:
 
     def run(self, task: Task, server: EvalServer) -> Result:
         from gepa.lm import LM
-        from gepa.optimize_anything import GEPAConfig, optimize_anything
+        from gepa.optimize_anything import (
+            EngineConfig,
+            GEPAConfig,
+            MergeConfig,
+            RefinerConfig,
+            ReflectionConfig,
+            optimize_anything,
+        )
 
         budget = server.budget
 
@@ -111,11 +118,14 @@ class GepaBackend:
 
             stop_callbacks.append(MaxReflectionCostStopper(budget.max_token_cost, reflection_lm=reflection_lm))
 
+        # Build GEPA's nested dataclasses explicitly. GEPAConfig.__post_init__
+        # also accepts dicts, but its type annotations don't, so passing dicts
+        # is a runtime feature pyright can't see.
         config = GEPAConfig(
-            engine=engine_kwargs,
-            reflection=reflection_kwargs,
-            merge=self.merge,
-            refiner=self.refiner,
+            engine=EngineConfig(**engine_kwargs),
+            reflection=ReflectionConfig(**reflection_kwargs),
+            merge=MergeConfig(**self.merge) if self.merge else None,
+            refiner=RefinerConfig(**self.refiner) if self.refiner else None,
             callbacks=callbacks or None,
             stop_callbacks=stop_callbacks or None,
         )
@@ -158,8 +168,14 @@ class GepaBackend:
                 adapter_cost = cost_callback.cost_log[-1]["reflection_cost"]
 
         if gepa_result is not None:
+            # gepa_result.best_candidate is str | dict[str,str]; we always pass
+            # a str seed_candidate, so the runtime value is str — but the typing
+            # admits the dict form. Coerce so omni's Result stays str-typed.
+            best = gepa_result.best_candidate
+            if isinstance(best, dict):
+                best = next(iter(best.values()), "")
             return Result(
-                best_candidate=gepa_result.best_candidate,
+                best_candidate=best,
                 best_score=gepa_result.val_aggregate_scores[gepa_result.best_idx],
                 total_evals=server.budget.used,
                 eval_log=server.eval_log,
