@@ -11,57 +11,61 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from gepa.omni._helpers import warn_unknown_config_keys
 from gepa.omni.backend import Result
 from gepa.omni.budget import BudgetExhausted
 
 if TYPE_CHECKING:
+    from gepa.omni.config import OmniConfig
     from gepa.omni.eval_server import EvalServer
     from gepa.omni.task import Task
+
+
+# Keys this backend understands inside ``OmniConfig.config``.
+_GEPA_CONFIG_KEYS: tuple[str, ...] = (
+    "engine",
+    "reflection",
+    "merge",
+    "refiner",
+    "objective",
+    "background",
+    "reflection_lm_kwargs",
+    "callbacks",
+)
 
 
 class GepaBackend:
     """Runs GEPA's ``optimize_anything`` against an omni task.
 
-    Config layout mirrors :class:`gepa.optimize_anything.GEPAConfig`:
+    Backend-specific keys read from ``OmniConfig.config`` (all optional):
 
-    - ``engine``: kwargs for ``EngineConfig``
-    - ``reflection``: kwargs for ``ReflectionConfig``
-    - ``merge``: kwargs for ``MergeConfig`` (or ``None`` to disable)
-    - ``refiner``: kwargs for ``RefinerConfig`` (or ``None`` to disable)
-
-    Plus top-level forwards (``stop_at_score``, ``max_thinking_tokens``,
-    ``reflection_lm_kwargs``, ``objective``, ``background``). The api injects
-    ``run_dir`` and ``max_metric_calls`` (= ``max_evals``).
+    - ``engine``: kwargs for :class:`gepa.optimize_anything.EngineConfig`.
+    - ``reflection``: kwargs for :class:`~gepa.optimize_anything.ReflectionConfig`.
+    - ``merge``: kwargs for :class:`~gepa.optimize_anything.MergeConfig` (or ``None``).
+    - ``refiner``: kwargs for :class:`~gepa.optimize_anything.RefinerConfig` (or ``None``).
+    - ``objective``, ``background``: override ``task.objective`` / ``task.background``.
+    - ``reflection_lm_kwargs``: extra kwargs for ``gepa.lm.LM(...)``.
+    - ``callbacks``: list of GEPA callbacks.
     """
 
     name = "gepa"
 
-    def __init__(
-        self,
-        *,
-        run_dir: str | None = None,
-        engine: dict[str, Any] | None = None,
-        reflection: dict[str, Any] | None = None,
-        merge: dict[str, Any] | None = None,
-        refiner: dict[str, Any] | None = None,
-        objective: str | None = None,
-        background: str | None = None,
-        callbacks: list[Any] | None = None,
-        reflection_lm_kwargs: dict[str, Any] | None = None,
-        stop_at_score: float | None = None,
-        max_thinking_tokens: int | None = None,
-    ) -> None:
-        self.run_dir = run_dir
-        self.engine = dict(engine) if engine else {}
-        self.reflection = dict(reflection) if reflection else {}
-        self.merge = dict(merge) if merge else None
-        self.refiner = dict(refiner) if refiner else None
-        self.objective = objective
-        self.background = background
-        self.callbacks = callbacks or []
-        self.reflection_lm_kwargs = dict(reflection_lm_kwargs) if reflection_lm_kwargs else {}
-        self.stop_at_score = stop_at_score
-        self.max_thinking_tokens = max_thinking_tokens
+    def __init__(self, config: OmniConfig) -> None:
+        extras = config.config
+        warn_unknown_config_keys(self.name, extras, _GEPA_CONFIG_KEYS)
+        # Cross-cutting (read directly off OmniConfig)
+        self.run_dir = config.run_dir
+        self.stop_at_score = config.stop_at_score
+        self.max_thinking_tokens = config.max_thinking_tokens
+        # Backend-specific (read out of config.config)
+        self.engine: dict[str, Any] = dict(extras.get("engine") or {})
+        self.reflection: dict[str, Any] = dict(extras.get("reflection") or {})
+        self.merge: dict[str, Any] | None = dict(extras["merge"]) if extras.get("merge") else None
+        self.refiner: dict[str, Any] | None = dict(extras["refiner"]) if extras.get("refiner") else None
+        self.objective: str | None = extras.get("objective")
+        self.background: str | None = extras.get("background")
+        self.callbacks: list[Any] = list(extras.get("callbacks") or [])
+        self.reflection_lm_kwargs: dict[str, Any] = dict(extras.get("reflection_lm_kwargs") or {})
 
     def run(self, task: Task, server: EvalServer) -> Result:
         from gepa.lm import LM

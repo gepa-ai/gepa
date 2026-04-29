@@ -8,9 +8,14 @@ directly (in-process) or POST to ``server.url`` (subprocess). Budget /
 concurrency / tracking all live in the eval server, so all backends share the
 same evaluation surface for free.
 
-Backends consume a backend-specific config at construction time. The omni api
-will instantiate ``Backend(**config)`` when the caller passes ``backend="<name>"``,
-or use the backend object directly when a constructed instance is passed.
+Construction goes through ``__init__(config: OmniConfig)``. Each backend
+reads cross-cutting fields directly (``config.run_dir``, ``config.stop_at_score``,
+…) and pops backend-specific keys from ``config.config``, storing what it
+needs on ``self``. ``run`` reads ``self.*``. The api never injects
+attributes after construction.
+
+Backends should warn (or raise) about unknown keys in ``config.config``
+themselves — they're the only ones who know what they consume.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
+    from gepa.omni.config import OmniConfig
     from gepa.omni.eval_server import EvalServer
     from gepa.omni.task import Task
 
@@ -27,17 +33,22 @@ if TYPE_CHECKING:
 class Backend(Protocol):
     """Contract every backend implements.
 
-    The api calls :meth:`run` with a task and an eval server, then optionally
-    :meth:`process_result` for any post-run artifact persistence.
-
-    Backends that need a ``run_dir`` for artifacts should declare an attribute
-    of that name and let the api inject ``<output_dir>/<backend_name>``.
-    Top-level config (``max_token_cost``, ``effort``, ``max_thinking_tokens``,
-    ``stop_at_score``, ``sandbox``) propagates the same way: the api looks for
-    matching attribute names on the backend and sets them when not already set.
+    Construction takes an :class:`OmniConfig`; the api calls :meth:`run` with
+    a task and an eval server, then :meth:`process_result` for post-run
+    artifact persistence.
     """
 
     name: str
+
+    def __init__(self, config: OmniConfig) -> None:
+        """Configure the backend from a single :class:`OmniConfig`.
+
+        Read cross-cutting fields directly (``config.run_dir``,
+        ``config.stop_at_score``, …) and pop backend-specific keys from
+        ``config.config`` onto ``self``. Warn (or raise) on unknown keys in
+        ``config.config`` to surface typos.
+        """
+        ...
 
     def run(self, task: Task, server: EvalServer) -> Result:
         """Run optimization and return the best candidate.
@@ -46,7 +57,6 @@ class Backend(Protocol):
             task: Task definition.
             server: The eval server. Call ``server.evaluate(candidate)`` for
                 in-process eval, or use ``server.url`` for HTTP-based eval.
-                Raises ``BudgetExhausted`` when the eval budget is exhausted.
                 ``server.budget.max_token_cost`` carries the LLM-spend cap.
         """
         ...
@@ -55,7 +65,7 @@ class Backend(Protocol):
         """Persist backend-specific artifacts under ``output_dir`` after :meth:`run`.
 
         Default is a no-op. Backends that produced files, transcripts, or
-        workspaces during ``run`` should override this to copy/write them.
+        workspaces should override this to copy/write them.
         """
         return
 

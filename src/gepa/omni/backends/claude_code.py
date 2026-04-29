@@ -20,13 +20,18 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from gepa.omni._helpers import warn_unknown_config_keys
 from gepa.omni.backend import Result
 from gepa.omni.budget import BudgetTracker
 from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix
 
 if TYPE_CHECKING:
+    from gepa.omni.config import OmniConfig
     from gepa.omni.eval_server import EvalServer
     from gepa.omni.task import Task
+
+
+_CC_CONFIG_KEYS: tuple[str, ...] = ("model",)
 
 
 EVAL_SCRIPT_SINGLE = """\
@@ -242,34 +247,22 @@ def _materialize_sandbox(
 class ClaudeCodeBackend:
     """Black-box Claude Code optimizer.
 
-    Args:
-        model: Claude model id (e.g. ``"sonnet"``, ``"opus"``).
-        run_dir: Workspace dir for candidate/eval-script files. The api injects
-            ``<output_dir>/claude_code/`` when ``None``.
-        effort: ``claude --effort low|medium|high|max`` (or ``None``).
-        stop_at_score: Score threshold communicated to the agent in program.md.
-        max_thinking_tokens: Fixed thinking-token budget. Mutex with ``effort``.
-        sandbox: Wrap subprocess in bwrap (Linux). ``None`` = api default.
+    Backend-specific keys read from ``OmniConfig.config``:
+
+    - ``model``: Claude model id (e.g. ``"sonnet"``, ``"opus"``). Default ``"sonnet"``.
     """
 
     name = "claude_code"
 
-    def __init__(
-        self,
-        *,
-        model: str = "sonnet",
-        run_dir: str | None = None,
-        effort: str | None = None,
-        stop_at_score: float | None = None,
-        max_thinking_tokens: int | None = None,
-        sandbox: bool | None = None,
-    ) -> None:
-        self.model = model
-        self.run_dir = run_dir
-        self.effort = effort
-        self.stop_at_score = stop_at_score
-        self.max_thinking_tokens = max_thinking_tokens
-        self.sandbox = sandbox
+    def __init__(self, config: OmniConfig) -> None:
+        extras = config.config
+        warn_unknown_config_keys(self.name, extras, _CC_CONFIG_KEYS)
+        self.model: str = extras.get("model", "sonnet")
+        self.run_dir = config.run_dir
+        self.effort = config.effort
+        self.stop_at_score = config.stop_at_score
+        self.max_thinking_tokens = config.max_thinking_tokens
+        self.sandbox = config.sandbox
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
 
     def run(self, task: Task, server: EvalServer) -> Result:

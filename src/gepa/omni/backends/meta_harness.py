@@ -20,13 +20,18 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from gepa.omni._helpers import warn_unknown_config_keys
 from gepa.omni.backend import Result
 from gepa.omni.budget import BudgetExhausted, BudgetTracker
 from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix
 
 if TYPE_CHECKING:
+    from gepa.omni.config import OmniConfig
     from gepa.omni.eval_server import EvalServer
     from gepa.omni.task import Task
+
+
+_MH_CONFIG_KEYS: tuple[str, ...] = ("model", "max_iterations", "max_candidates_per_iter")
 
 
 SKILL_MD = """\
@@ -363,40 +368,28 @@ def _log(*parts: str) -> None:
 class MetaHarnessBackend:
     """Iterative meta-harness optimizer.
 
-    Args:
-        model: Proposer model. Defaults to ``"opus"`` (paper setup).
-        run_dir: Workspace directory. The api injects ``<output_dir>/meta_harness/``
-            when ``None``.
-        effort: ``claude --effort``.
-        max_iterations: Hard cap on proposer sessions. ``None`` = until budget.
-        max_candidates_per_iter: Upper bound on candidates per iteration.
-        stop_at_score: Score threshold for early stop.
-        max_thinking_tokens: Fixed thinking-token budget. Mutex with ``effort``.
-        sandbox: Wrap subprocesses in bwrap.
+    Backend-specific keys read from ``OmniConfig.config``:
+
+    - ``model``: Proposer model. Default ``"opus"``.
+    - ``max_iterations``: Hard cap on proposer sessions. ``None`` = until budget.
+        Default ``10``.
+    - ``max_candidates_per_iter``: Upper bound on candidates per iteration.
+        Default ``3``.
     """
 
     name = "meta_harness"
 
-    def __init__(
-        self,
-        *,
-        model: str = "opus",
-        run_dir: str | None = None,
-        effort: str | None = None,
-        max_iterations: int | None = 10,
-        max_candidates_per_iter: int = 3,
-        stop_at_score: float | None = None,
-        max_thinking_tokens: int | None = None,
-        sandbox: bool | None = None,
-    ) -> None:
-        self.model = model
-        self.run_dir = run_dir
-        self.effort = effort
-        self.max_iterations = max_iterations
-        self.max_candidates_per_iter = max(1, int(max_candidates_per_iter))
-        self.stop_at_score = stop_at_score
-        self.max_thinking_tokens = max_thinking_tokens
-        self.sandbox = sandbox
+    def __init__(self, config: OmniConfig) -> None:
+        extras = config.config
+        warn_unknown_config_keys(self.name, extras, _MH_CONFIG_KEYS)
+        self.model: str = extras.get("model", "opus")
+        self.max_iterations: int | None = extras.get("max_iterations", 10)
+        self.max_candidates_per_iter: int = max(1, int(extras.get("max_candidates_per_iter", 3)))
+        self.run_dir = config.run_dir
+        self.effort = config.effort
+        self.stop_at_score = config.stop_at_score
+        self.max_thinking_tokens = config.max_thinking_tokens
+        self.sandbox = config.sandbox
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
 
     def run(self, task: Task, server: EvalServer) -> Result:

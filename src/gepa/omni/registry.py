@@ -1,11 +1,9 @@
 """Registries for backends and tasks.
 
-Backends are registered by string name → class. The api resolves
-``backend="gepa"`` → ``GepaBackend`` and instantiates with the user's config.
+Backends register a string name → class; the api resolves ``backend="gepa"``
+to the class and calls ``cls.from_config(omni_config)``.
 
-Tasks may also be registered for Hydra-driven runs. Task factories return a
-fully-populated :class:`Task` (with ``eval_fn`` set when applicable) so a
-single ``task=<name>`` resolves both the task spec and its evaluator.
+Tasks may also be registered by name for convenience.
 """
 
 from __future__ import annotations
@@ -14,7 +12,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from gepa.omni.backend import Backend
     from gepa.omni.task import Task
 
 _BACKENDS: dict[str, type] = {}
@@ -75,19 +72,3 @@ def get_task(name: str) -> Task:
 
 def list_tasks() -> list[str]:
     return sorted(set(_TASKS) | set(_TASK_FACTORIES))
-
-
-def make_backend(spec: str | Backend, config: dict | None = None) -> Backend:
-    """Resolve a backend spec into an instance.
-
-    - ``spec`` is a string: look up the registered class and instantiate with
-      ``**config``.
-    - ``spec`` is already a Backend instance: return as-is. ``config`` is
-      ignored (the caller already configured the backend).
-    """
-    from gepa.omni.backend import Backend as _Backend  # noqa: F401 — runtime check
-
-    if isinstance(spec, str):
-        cls = get_backend_cls(spec)
-        return cls(**(config or {}))
-    return spec
