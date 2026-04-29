@@ -18,9 +18,9 @@ import subprocess
 import tempfile
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from gepa.omni._helpers import warn_unknown_config_keys
+from gepa.omni._helpers import example_to_json, warn_unknown_config_keys
 from gepa.omni.backend import Result
 from gepa.omni.budget import BudgetTracker
 from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix
@@ -214,11 +214,12 @@ def _build_program_md(task: Task, budget: BudgetTracker, *, perfect_score: float
 def _materialize_sandbox(
     work_dir: Path,
     task: Task,
-    server_url: str,
+    server: EvalServer,
     budget: BudgetTracker,
     *,
     perfect_score: float | None = None,
 ) -> None:
+    server_url = server.url
     work_dir.mkdir(parents=True, exist_ok=True)
     (work_dir / "program.md").write_text(_build_program_md(task, budget, perfect_score=perfect_score))
     (work_dir / "candidate.txt").write_text(task.initial_candidate)
@@ -237,11 +238,8 @@ def _materialize_sandbox(
     if task.train_set:
         train_dir = work_dir / "train"
         train_dir.mkdir(exist_ok=True)
-        for ex in task.train_set:
-            data: dict[str, Any] = {"id": ex.id, "inputs": ex.inputs}
-            if ex.expected is not None:
-                data["expected"] = ex.expected
-            (train_dir / f"{ex.id}.json").write_text(json.dumps(data, indent=2))
+        for eid, ex in server.iter_split("train"):
+            (train_dir / f"{eid}.json").write_text(json.dumps(example_to_json(eid, ex), indent=2, default=str))
 
 
 class ClaudeCodeBackend:
@@ -275,7 +273,7 @@ class ClaudeCodeBackend:
             self._pending_tempdir = tempfile.TemporaryDirectory(prefix="omni_cc_")
             work_dir = Path(self._pending_tempdir.name)
 
-        _materialize_sandbox(work_dir, task, server.url, budget, perfect_score=self.stop_at_score)
+        _materialize_sandbox(work_dir, task, server, budget, perfect_score=self.stop_at_score)
 
         candidate_file = work_dir / "candidate.txt"
         best_file = work_dir / "best_candidate.txt"

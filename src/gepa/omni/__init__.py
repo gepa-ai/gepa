@@ -35,7 +35,7 @@ from gepa.omni.registry import (
     register_task,
     register_task_factory,
 )
-from gepa.omni.task import EvalFn, Example, Task
+from gepa.omni.task import EvalFn, Task
 
 __all__ = [
     "Backend",
@@ -43,7 +43,6 @@ __all__ = [
     "BudgetTracker",
     "EvalFn",
     "EvalServer",
-    "Example",
     "OmniConfig",
     "Result",
     "Task",

@@ -34,16 +34,29 @@ from __future__ import annotations
 import json
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 
 from gepa.omni.budget import BudgetExhausted, BudgetTracker
-from gepa.omni.task import EvalFn, Example, Task
+from gepa.omni.task import EvalFn, Task
 
 DEFAULT_MAX_CONCURRENCY = 8
+
+
+def _resolve_id(item: Any, fallback: str) -> str:
+    """Return ``item``'s stable id if it has one, else ``fallback``.
+
+    Recognizes ``item["id"]`` (mapping key) and ``item.id`` (attribute).
+    """
+    if isinstance(item, Mapping):
+        if "id" in item:
+            return str(item["id"])
+    elif hasattr(item, "id"):
+        return str(item.id)
+    return fallback
 
 
 class EvalServer:
@@ -97,11 +110,21 @@ class EvalServer:
             self._evals_dir.mkdir(exist_ok=True)
         self._eval_semaphore = threading.Semaphore(max_concurrency)
 
-        self._examples: dict[str, Example] = {}
-        for dataset in (task.train_set, task.val_set, task.test_set):
-            if dataset:
-                for ex in dataset:
-                    self._examples[ex.id] = ex
+        self._examples: dict[str, Any] = {}
+        self._split_ids: dict[str, list[str]] = {"train": [], "val": [], "test": []}
+        for split_name, dataset in (
+            ("train", task.train_set),
+            ("val", task.val_set),
+            ("test", task.test_set),
+        ):
+            if not dataset:
+                continue
+            for i, item in enumerate(dataset):
+                eid = _resolve_id(item, f"{split_name}_{i}")
+                if eid in self._examples and self._examples[eid] is not item:
+                    eid = f"{split_name}_{i}"
+                self._examples[eid] = item
+                self._split_ids[split_name].append(eid)
 
         self._pool = ThreadPoolExecutor(max_workers=max_concurrency)
         self._server: HTTPServer | None = None
@@ -109,7 +132,12 @@ class EvalServer:
 
     # ── Direct Python API (used by in-process backends like GEPA) ───────
 
-    def evaluate(self, candidate: str, example: Example | None = None) -> tuple[float, dict[str, Any]]:
+    def iter_split(self, split: str) -> Iterator[tuple[str, Any]]:
+        """Yield ``(id, item)`` pairs for the given split (``train``/``val``/``test``)."""
+        for eid in self._split_ids.get(split, []):
+            yield eid, self._examples[eid]
+
+    def evaluate(self, candidate: str, example: Any | None = None) -> tuple[float, dict[str, Any]]:
         """Evaluate a candidate with budget enforcement.
 
         Raises:
@@ -159,20 +187,17 @@ class EvalServer:
                 "_budget": self.budget.status(),
             }
 
-        examples: list[Example] = []
+        examples: list[tuple[str, Any]] = []
         if example_ids is not None:
             for eid in example_ids:
                 if eid in self._examples:
-                    examples.append(self._examples[eid])
+                    examples.append((eid, self._examples[eid]))
         elif split is not None:
-            if split in ("train", "all") and self.task.train_set:
-                examples.extend(self.task.train_set)
-            if split in ("val", "all") and self.task.val_set:
-                examples.extend(self.task.val_set)
-            if split in ("test", "all") and self.task.test_set:
-                examples.extend(self.task.test_set)
+            splits = ("train", "val", "test") if split == "all" else (split,)
+            for s in splits:
+                examples.extend(self.iter_split(s))
         elif self.task.train_set:
-            examples.extend(self.task.train_set)
+            examples.extend(self.iter_split("train"))
 
         if not examples:
             score, info = self.evaluate(candidate)
@@ -194,14 +219,14 @@ class EvalServer:
         infos: dict[str, dict[str, Any]] = {}
         errors: dict[str, str] = {}
 
-        def _eval_one(ex: Example) -> tuple[str, float, dict[str, Any] | None, str | None]:
+        def _eval_one(eid: str, ex: Any) -> tuple[str, float, dict[str, Any] | None, str | None]:
             try:
                 score, info = self.evaluate(candidate, ex)
-                return (ex.id, score, info, None)
+                return (eid, score, info, None)
             except Exception as e:
-                return (ex.id, 0.0, None, str(e))
+                return (eid, 0.0, None, str(e))
 
-        futures = {self._pool.submit(_eval_one, ex): ex for ex in examples}
+        futures = {self._pool.submit(_eval_one, eid, ex): eid for eid, ex in examples}
         for future in as_completed(futures):
             eid, score, ex_info, err = future.result()
             if err is not None:
@@ -227,8 +252,7 @@ class EvalServer:
         """Evaluate ``candidate`` on the hidden ``val_set`` and log progress."""
         if not self.task.val_set:
             raise ValueError("validate() requires a task with val_set")
-        val_ids = [ex.id for ex in self.task.val_set]
-        avg_score, _ = self.evaluate_examples(candidate, example_ids=val_ids)
+        avg_score, _ = self.evaluate_examples(candidate, example_ids=list(self._split_ids["val"]))
         return self.log_progress(avg_score, candidate=candidate)
 
     def log_progress(

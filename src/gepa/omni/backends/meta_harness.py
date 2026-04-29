@@ -20,7 +20,7 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from gepa.omni._helpers import warn_unknown_config_keys
+from gepa.omni._helpers import example_to_json, warn_unknown_config_keys
 from gepa.omni.backend import Result
 from gepa.omni.budget import BudgetExhausted, BudgetTracker
 from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix
@@ -122,7 +122,7 @@ def _build_task_md(task: Task) -> str:
     return f"# Task: {task.name}\n\n{optional}## Evaluation model\n\n{eval_section}\n"
 
 
-def _materialize_sandbox(work_dir: Path, task: Task, budget: BudgetTracker) -> None:
+def _materialize_sandbox(work_dir: Path, task: Task, server: EvalServer, budget: BudgetTracker) -> None:
     del budget
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -162,11 +162,8 @@ def _materialize_sandbox(work_dir: Path, task: Task, budget: BudgetTracker) -> N
     if task.train_set:
         train_dir = work_dir / "train"
         train_dir.mkdir(exist_ok=True)
-        for ex in task.train_set:
-            data: dict[str, Any] = {"id": ex.id, "inputs": ex.inputs}
-            if ex.expected is not None:
-                data["expected"] = ex.expected
-            (train_dir / f"{ex.id}.json").write_text(json.dumps(data, indent=2))
+        for eid, ex in server.iter_split("train"):
+            (train_dir / f"{eid}.json").write_text(json.dumps(example_to_json(eid, ex), indent=2, default=str))
 
 
 def _run_proposer(
@@ -402,7 +399,7 @@ class MetaHarnessBackend:
             self._pending_tempdir = tempfile.TemporaryDirectory(prefix="omni_mh_")
             work_dir = Path(self._pending_tempdir.name)
 
-        _materialize_sandbox(work_dir, task, budget)
+        _materialize_sandbox(work_dir, task, server, budget)
 
         state_dir = work_dir / "state"
         frontier_path = state_dir / "frontier.json"

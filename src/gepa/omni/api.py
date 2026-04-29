@@ -118,12 +118,12 @@ def optimize_anything(
     if task.test_set and result.best_candidate:
         eval_fn: Callable[..., tuple[float, dict[str, Any]]] = server.eval_fn
         test_scores: dict[str, float] = {}
-        for ex in task.test_set:
+        for eid, ex in server.iter_split("test"):
             try:
                 score, _ = eval_fn(result.best_candidate, ex)
-                test_scores[ex.id] = score
+                test_scores[eid] = score
             except Exception:
-                test_scores[ex.id] = 0.0
+                test_scores[eid] = 0.0
         result.metadata["test_scores"] = test_scores
         result.metadata["test_score"] = sum(test_scores.values()) / len(test_scores) if test_scores else 0.0
 
