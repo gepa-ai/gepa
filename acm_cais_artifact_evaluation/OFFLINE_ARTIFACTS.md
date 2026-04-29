@@ -31,6 +31,35 @@ These domains already include concrete saved trajectories or checkpoints:
 
 ## Quick Numbers Reviewers Can Verify Offline
 
+### AIME
+
+In `domains/aime_math/logs/run.log`:
+
+- `Iteration 0: Base program full valset score: 0.4666666666666667`
+- `Iteration 33: Best valset aggregate score so far: 0.5777777777777777`
+- `Average Metric: 14.0 / 30 (46.7%)`
+- `Average Metric: 18.0 / 30 (60.0%)`
+- `Test score improved from 46.67% to 60.00%!`
+
+This single `run.log` contains both the validation trajectory and the paper-matching test-improvement line.
+
+### ARC-AGI
+
+In `domains/arc_agi/logs/run.log`:
+
+- `Iteration 0: Base program full valset score: 0.565 over 200 / 200 examples`
+- `Iteration 30: Best valset aggregate score so far: 0.935`
+
+In `domains/arc_agi/logs/test_run.log`:
+
+- `Seed: 130/400 solved (32.5%), cost=$26.65`
+- `Best: 358/400 solved (89.5%), cost=$57.82`
+- `Seed:  130/400 (32.5%)`
+- `Best:  358/400 (89.5%)`
+- `Δ:     +57.0%`
+
+For ARC-AGI, the validation trajectory is in `run.log`, while the headline paper claim is in `test_run.log`.
+
 ### CloudCast
 
 In `domains/cloud_scheduling/cloudcast/offline_logs/cloudcast_output.log`:
