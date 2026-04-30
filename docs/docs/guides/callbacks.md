@@ -323,7 +323,8 @@ Pass a list directly — GEPA calls each in order:
 
 ```python
 result = gepa.optimize(
-    ...
+    seed_candidate=seed_candidate,
+    trainset=trainset,
     callbacks=[
         ProgressCallback(),
         LMCallLogger(),

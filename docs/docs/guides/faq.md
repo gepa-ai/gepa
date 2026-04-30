@@ -212,7 +212,7 @@ def subjective_metric(example, pred, trace=None):
     )
     return dspy.Prediction(score=evaluation.score, feedback=evaluation.feedback)
 
-optimizer = dspy.GEPA(metric=subjective_metric, ...)
+optimizer = dspy.GEPA(metric=subjective_metric, reflection_lm=dspy.LM("openai/gpt-5"))
 ```
 
 See the [Papillon tutorial](https://dspy.ai/tutorials/gepa_papillon/) for a complete example.
@@ -372,10 +372,8 @@ Two strategies:
 
 **1. Constrain the reflection prompt** to make smaller edits. Customize the `reflection_prompt_template` to instruct the LM to make minimal changes:
 
-```python
-result = gepa.optimize(
-    ...
-    reflection_prompt_template="""
+````python
+template = """
 I provided an assistant with the following instructions:
 ```
 <curr_param>
@@ -387,9 +385,14 @@ Here are examples where it underperformed, with feedback:
 Make the **smallest possible targeted edit** to fix the identified failure mode.
 Preserve all existing correct behavior. Do not rewrite from scratch.
 Provide the updated instructions within ``` blocks.
-""",
+"""
+
+result = gepa.optimize(
+    seed_candidate=seed_candidate,
+    trainset=trainset,
+    reflection_prompt_template=template,
 )
-```
+````
 
 **2. Build an instruction library** — write a set of human-authored rule bullets, and let GEPA select which to include. Implement this via a custom `ProposalFn` that proposes subsets of your rule library rather than generating new text wholesale.
 
@@ -558,7 +561,7 @@ Overfitting in GEPA can appear in two distinct ways:
 **1. Score overfitting** — the candidate scores well on train but poorly on validation. Fix: ensure you have a **separate validation set**:
 
 ```python
-optimizer = dspy.GEPA(metric=metric, ...)
+optimizer = dspy.GEPA(metric=metric, reflection_lm=dspy.LM("openai/gpt-5"))
 optimized = optimizer.compile(program, trainset=train_data, valset=val_data)
 ```
 

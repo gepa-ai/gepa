@@ -153,6 +153,7 @@ The full API signature:
 ```python
 def optimize_anything(
     seed_candidate: str | dict[str, str] | None = None,  # Starting artifact (or None for seedless)
+    *,
     evaluator: Callable,                    # Score + ASI
     dataset: list | None = None,            # Training examples (modes 2 & 3)
     valset: list | None = None,             # Validation set (mode 3)

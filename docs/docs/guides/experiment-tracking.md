@@ -45,7 +45,12 @@ GEPA integrates with [Weights & Biases](https://wandb.ai) and [MLflow](https://m
 
     ```python
     result = gepa.optimize(
-        ...
+        seed_candidate=seed_candidate,
+        trainset=trainset,
+        valset=valset,
+        adapter=adapter,
+        reflection_lm="openai/gpt-5",
+        max_metric_calls=200,
         use_wandb=True,
         use_mlflow=True,
         mlflow_experiment_name="my-gepa-run",
@@ -163,7 +168,8 @@ Any kwargs accepted by [`wandb.init()`](https://docs.wandb.ai/ref/python/init) c
 
 ```python
 gepa.optimize(
-    ...
+    seed_candidate=seed_candidate,
+    trainset=trainset,
     use_wandb=True,
     wandb_init_kwargs={
         "project": "prompt-optimization",
@@ -201,7 +207,8 @@ import mlflow
 
 with mlflow.start_run(run_name="my-run"):
     result = gepa.optimize(
-        ...
+        seed_candidate=seed_candidate,
+        trainset=trainset,
         use_mlflow=True,  # GEPA detects the active run and logs into it
     )
 ```
@@ -245,7 +252,7 @@ silently fail.
 
     result = gepa.optimize(
         seed_candidate={"system_prompt": "..."},
-        ...
+        trainset=trainset,
         use_wandb=True,
         wandb_attach_existing=True,   # skip init() + finish()
     )

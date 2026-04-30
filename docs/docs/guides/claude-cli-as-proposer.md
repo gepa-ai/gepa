@@ -64,7 +64,11 @@ config = GEPAConfig(
     ),
 )
 
-result = optimize_anything(config=config, ...)
+result = optimize_anything(
+    seed_candidate=...,
+    evaluator=...,
+    config=config,
+)
 ```
 
 ## Using `claude -p` as Both Task LM and Reflection LM
