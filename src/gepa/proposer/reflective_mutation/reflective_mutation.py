@@ -122,20 +122,37 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         candidate: dict[str, str],
         reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
         components_to_update: list[str],
+        *,
+        metadata: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]]:
         """Propose new instruction texts for the given components.
 
+        ``metadata`` is an open-ended context dict forwarded unconditionally
+        to ``custom_candidate_proposer``. Keys GEPA currently supplies:
+        ``"iteration"`` — the 1-indexed iteration number (same value shown
+        in ``Iteration N:`` log lines; equals ``state.i + 1`` and the
+        on-disk ``iterations/NNNNN/`` id) — and ``"parent_iteration_id"``
+        (on-disk iteration id of the parent candidate). The adapter-owned
+        ``propose_new_texts`` path keeps its legacy 3-positional signature.
+
         Returns:
             A tuple of (new_texts, prompts, raw_lm_outputs) where each is a
-            dict keyed by component name.  When the adapter or a custom proposer
-            handles the call, prompts and raw_lm_outputs are empty dicts.
+            dict keyed by component name. When the adapter or a custom
+            proposer handles the call, prompts and raw_lm_outputs are empty
+            dicts.
         """
         empty: dict[str, str | list[dict[str, Any]]] = {}
         if self.adapter.propose_new_texts is not None:
             return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update), empty, {}
 
         if self.custom_candidate_proposer is not None:
-            return self.custom_candidate_proposer(candidate, reflective_dataset, components_to_update), empty, {}
+            new_texts = self.custom_candidate_proposer(
+                candidate,
+                reflective_dataset,
+                components_to_update,
+                metadata=metadata,
+            )
+            return new_texts, empty, {}
 
         if self.reflection_lm is None:
             raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
@@ -366,8 +383,19 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 ),
             )
 
+            # Context dict forwarded to custom proposers. Resolve the
+            # parent's on-disk iteration id (what the agent sees under
+            # ``iterations/NNNNN/``) rather than leaking the internal
+            # candidate idx through the API surface.
+            parent_iteration_id = state.iteration_id_for_candidate_idx(ctx.curr_prog_id)
             new_texts, prompts, raw_lm_outputs = self.propose_new_texts(
-                ctx.curr_prog, reflective_dataset, predictor_names_to_update
+                ctx.curr_prog,
+                reflective_dataset,
+                predictor_names_to_update,
+                metadata={
+                    "iteration": ctx.iteration,
+                    "parent_iteration_id": parent_iteration_id,
+                },
             )
 
             notify_callbacks(
