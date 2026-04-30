@@ -25,6 +25,12 @@ from gepa.omni.api import optimize_anything
 from gepa.omni.backend import Backend, Result
 from gepa.omni.budget import BudgetExhausted, BudgetTracker
 from gepa.omni.config import OmniConfig
+from gepa.omni.ensemble import (
+    optimize_best_of,
+    optimize_parallel,
+    optimize_sequential,
+    optimize_vote,
+)
 from gepa.omni.eval_server import EvalServer
 from gepa.omni.registry import (
     get_backend_cls,
@@ -51,6 +57,10 @@ __all__ = [
     "list_backends",
     "list_tasks",
     "optimize_anything",
+    "optimize_best_of",
+    "optimize_parallel",
+    "optimize_sequential",
+    "optimize_vote",
     "register_backend",
     "register_task",
     "register_task_factory",
