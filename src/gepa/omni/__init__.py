@@ -32,6 +32,7 @@ from gepa.omni.ensemble import (
     optimize_vote,
 )
 from gepa.omni.eval_server import EvalServer
+from gepa.omni.proposers import ClaudeCodeAgentProposer
 from gepa.omni.registry import (
     get_backend_cls,
     get_task,
@@ -47,6 +48,7 @@ __all__ = [
     "Backend",
     "BudgetExhausted",
     "BudgetTracker",
+    "ClaudeCodeAgentProposer",
     "EvalFn",
     "EvalServer",
     "OmniConfig",

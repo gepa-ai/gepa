@@ -31,6 +31,7 @@ _GEPA_CONFIG_KEYS: tuple[str, ...] = (
     "background",
     "reflection_lm_kwargs",
     "callbacks",
+    "claude_code_agent",
 )
 
 
@@ -46,6 +47,13 @@ class GepaBackend:
     - ``objective``, ``background``: override ``task.objective`` / ``task.background``.
     - ``reflection_lm_kwargs``: extra kwargs for ``gepa.lm.LM(...)``.
     - ``callbacks``: list of GEPA callbacks.
+    - ``claude_code_agent``: kwargs forwarded to
+      :class:`~gepa.omni.proposers.ClaudeCodeAgentProposer`. When set, GEPA's
+      reflection step is replaced by a Claude Code subprocess that reads the
+      agent-readable run-dir tree (``write_agent_state`` is auto-enabled);
+      ``run_dir``, ``max_thinking_tokens``, ``effort``, and ``sandbox`` come
+      from the surrounding :class:`OmniConfig`. Mutually exclusive with
+      ``reflection.custom_candidate_proposer``.
     """
 
     name = "gepa"
@@ -56,7 +64,9 @@ class GepaBackend:
         # Cross-cutting (read directly off OmniConfig)
         self.run_dir = config.run_dir
         self.stop_at_score = config.stop_at_score
+        self.effort = config.effort
         self.max_thinking_tokens = config.max_thinking_tokens
+        self.sandbox = config.sandbox
         # Backend-specific (read out of config.config)
         self.engine: dict[str, Any] = dict(extras.get("engine") or {})
         self.reflection: dict[str, Any] = dict(extras.get("reflection") or {})
@@ -66,6 +76,9 @@ class GepaBackend:
         self.background: str | None = extras.get("background")
         self.callbacks: list[Any] = list(extras.get("callbacks") or [])
         self.reflection_lm_kwargs: dict[str, Any] = dict(extras.get("reflection_lm_kwargs") or {})
+        self.claude_code_agent: dict[str, Any] | None = (
+            dict(extras["claude_code_agent"]) if extras.get("claude_code_agent") else None
+        )
 
     def run(self, task: Task, server: EvalServer) -> Result:
         from gepa.lm import LM
@@ -79,9 +92,23 @@ class GepaBackend:
         )
 
         budget = server.budget
+        objective = self.objective or task.objective
+        background = self.background or task.background
 
         reflection_kwargs = dict(self.reflection)
         reflection_lm: Any | None = None
+        agent_proposer: Any | None = None
+        if self.claude_code_agent is not None:
+            if reflection_kwargs.get("custom_candidate_proposer") is not None:
+                raise ValueError("claude_code_agent is mutually exclusive with reflection.custom_candidate_proposer")
+            if self.run_dir is None:
+                raise ValueError("claude_code_agent requires OmniConfig.run_dir to be set")
+            agent_proposer = self._build_claude_code_agent(objective, background)
+            reflection_kwargs["custom_candidate_proposer"] = agent_proposer
+            # The proposer reads <run_dir>/iterations/, <run_dir>/pareto/.
+            # The state.save() pass that writes them is gated on this flag.
+            reflection_kwargs.setdefault("reflection_lm", None)
+
         if "reflection_lm" in reflection_kwargs:
             lm_name = reflection_kwargs["reflection_lm"]
             if isinstance(lm_name, str):
@@ -97,26 +124,30 @@ class GepaBackend:
             "run_dir": self.run_dir,
             "max_metric_calls": budget.max_evals,
         }
-        if budget.max_token_cost is not None and reflection_lm is None:
+        if agent_proposer is not None:
+            # Proposer reads iterations/, pareto/, history.md off run_dir.
+            engine_kwargs["write_agent_state"] = True
+        if budget.max_token_cost is not None and reflection_lm is None and agent_proposer is None:
             engine_kwargs["max_reflection_cost"] = budget.max_token_cost
 
         callbacks = list(self.callbacks)
         cost_callback: _ReflectionCostCallback | None = None
-        if reflection_lm is not None:
-            cost_callback = _ReflectionCostCallback(reflection_lm, server.tracker, output_dir=self.run_dir)
+        cost_source = reflection_lm if reflection_lm is not None else agent_proposer
+        if cost_source is not None:
+            cost_callback = _ReflectionCostCallback(cost_source, server.tracker, output_dir=self.run_dir)
             callbacks.append(cost_callback)
         if task.val_set:
-            callbacks.append(_ProgressCallback(server, reflection_lm=reflection_lm))
+            callbacks.append(_ProgressCallback(server, reflection_lm=cost_source))
 
         stop_callbacks: list[Any] = []
         if self.stop_at_score is not None:
             from gepa.utils.stop_condition import ScoreThresholdStopper
 
             stop_callbacks.append(ScoreThresholdStopper(self.stop_at_score))
-        if budget.max_token_cost is not None and reflection_lm is not None:
+        if budget.max_token_cost is not None and cost_source is not None:
             from gepa.utils.stop_condition import MaxReflectionCostStopper
 
-            stop_callbacks.append(MaxReflectionCostStopper(budget.max_token_cost, reflection_lm=reflection_lm))
+            stop_callbacks.append(MaxReflectionCostStopper(budget.max_token_cost, reflection_lm=cost_source))
 
         # Build GEPA's nested dataclasses explicitly. GEPAConfig.__post_init__
         # also accepts dicts, but its type annotations don't, so passing dicts
@@ -148,8 +179,6 @@ class GepaBackend:
             if "val_set" in task.metadata:
                 oa_kwargs.setdefault("valset", task.metadata["val_set"])
 
-        objective = self.objective or task.objective
-        background = self.background or task.background
         if objective:
             oa_kwargs["objective"] = objective
         if background:
@@ -191,6 +220,33 @@ class GepaBackend:
 
     def process_result(self, result: Result, output_dir: Path) -> None:
         return
+
+    def _build_claude_code_agent(self, objective: str | None, background: str | None) -> Any:
+        """Construct a :class:`ClaudeCodeAgentProposer` from this backend's config.
+
+        ``OmniConfig.run_dir``, ``effort``, ``max_thinking_tokens``, and
+        ``sandbox`` flow in from the surrounding config. Anything in
+        ``OmniConfig.config["claude_code_agent"]`` overrides those defaults
+        (e.g. set ``"sandbox": False`` to override the global, or
+        ``"max_budget_usd"`` for a per-proposer USD cap that doesn't apply
+        to the eval server's budget). ``objective`` / ``background`` default
+        to the values resolved against the task; explicit keys override.
+        """
+        from gepa.omni.proposers import ClaudeCodeAgentProposer
+
+        cfg = dict(self.claude_code_agent or {})
+        kwargs: dict[str, Any] = {
+            "model": cfg.pop("model", "sonnet"),
+            "run_dir": cfg.pop("run_dir", self.run_dir),
+            "objective": cfg.pop("objective", objective),
+            "background": cfg.pop("background", background),
+            "effort": cfg.pop("effort", self.effort),
+            "max_thinking_tokens": cfg.pop("max_thinking_tokens", self.max_thinking_tokens),
+            "sandbox": cfg.pop("sandbox", self.sandbox),
+        }
+        # Pass through anything else verbatim (max_budget_usd, subdir_prefix, ...).
+        kwargs.update(cfg)
+        return ClaudeCodeAgentProposer(**kwargs)
 
 
 class _ReflectionCostCallback:

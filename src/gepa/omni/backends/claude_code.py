@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -22,6 +21,7 @@ from typing import TYPE_CHECKING
 
 from gepa.omni._helpers import example_to_json, warn_unknown_config_keys
 from gepa.omni.backend import Result
+from gepa.omni.backends.claude_utils import copy_session_transcript
 from gepa.omni.budget import BudgetTracker
 from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix
 
@@ -337,30 +337,12 @@ class ClaudeCodeBackend:
     def process_result(self, result: Result, output_dir: Path) -> None:
         work_dir = Path(result.metadata["work_dir"])
         session_id = result.metadata["session_id"]
-        _copy_session_transcript(work_dir, session_id, output_dir / "sessions")
+        copy_session_transcript(work_dir, session_id, output_dir / "sessions")
         if not _is_under(work_dir, output_dir):
             shutil.copytree(work_dir, output_dir / "work", dirs_exist_ok=True)
         if self._pending_tempdir is not None:
             self._pending_tempdir.cleanup()
             self._pending_tempdir = None
-
-
-_SLUG_RE = re.compile(r"[^A-Za-z0-9-]")
-
-
-def _claude_project_slug(cwd: Path) -> str:
-    return _SLUG_RE.sub("-", str(cwd.resolve()))
-
-
-def _copy_session_transcript(cwd: Path, session_id: str, dst_dir: Path) -> None:
-    src = Path.home() / ".claude" / "projects" / _claude_project_slug(cwd) / f"{session_id}.jsonl"
-    if not src.exists():
-        return
-    dst_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        shutil.copy2(src, dst_dir / src.name)
-    except OSError:
-        pass
 
 
 def _is_under(child: Path, parent: Path) -> bool:
