@@ -31,11 +31,13 @@ The simplest way to use GEPA is with the built-in `DefaultAdapter` for single-tu
 ```python
 import gepa
 
-# Define your training data
-# Each example should have an input and expected output
+# The DefaultAdapter expects each example as a TypedDict with three fields:
+#   input               — the user question
+#   additional_context  — dict of extra context (can be empty {})
+#   answer              — the expected answer (used for substring match)
 trainset = [
-    {"question": "What is 2+2?", "answer": "4"},
-    {"question": "What is the capital of France?", "answer": "Paris"},
+    {"input": "What is 2+2?", "additional_context": {}, "answer": "4"},
+    {"input": "What is the capital of France?", "additional_context": {}, "answer": "Paris"},
     # ... more examples
 ]
 
@@ -53,9 +55,9 @@ result = gepa.optimize(
     max_metric_calls=50,                # Budget
 )
 
-# Get the optimized prompt
+# Get the optimized prompt and best score
 print("Best prompt:", result.best_candidate['system_prompt'])
-print("Best score:", result.best_score)
+print("Best score:", result.val_aggregate_scores[result.best_idx])
 ```
 
 ### Option 2: Using optimize_anything
@@ -168,10 +170,14 @@ For more detailed examples, see the [dspy.GEPA tutorials](https://dspy.ai/tutori
 The `GEPAResult` object contains:
 
 ```python
-result.best_candidate    # Dict[str, str] - the optimized text components
-result.best_score        # float - validation score of best candidate
-result.pareto_frontier   # List of candidates on the Pareto frontier
-result.history           # Optimization history
+result.best_candidate                          # the optimized text components (or str when seed was a str)
+result.best_idx                                # int — index of the best candidate
+result.val_aggregate_scores                    # list[float] — per-candidate average validation score
+result.val_aggregate_scores[result.best_idx]   # float — best score
+result.candidates                              # list of all explored candidates
+result.per_val_instance_best_candidates        # dict mapping val_id -> set of candidates on the Pareto frontier
+result.total_metric_calls                      # int — total evaluation calls used
+result.run_dir                                 # str | None — run directory if one was set
 ```
 
 ## Configuration Options
@@ -187,7 +193,7 @@ result = gepa.optimize(
     # ... other args ...
     max_metric_calls=100,                          # Stop after 100 evaluations
     stop_callbacks=[
-        TimeoutStopCondition(seconds=3600),        # Or after 1 hour
+        TimeoutStopCondition(timeout_seconds=3600),  # Or after 1 hour
         NoImprovementStopper(max_iterations_without_improvement=10),         # Or after 10 iterations without improvement
     ],
 )
