@@ -17,13 +17,15 @@ POST /evaluate
 
 POST /evaluate_examples
     Body: {"candidate": "<text>", "example_ids": ["a","b","c"]}
-       or {"candidate": "<text>", "split": "train"|"val"|"test"|"all"}
+       or {"candidate": "<text>"}                # default: full agent-visible pool
     Evaluates the candidate on the requested examples in parallel,
     respecting the concurrency limit. Each example = 1 budget tick.
 
-POST /validate
-    Body: {"candidate": "<text>"}
-    Aggregates over the hidden ``val_set`` (individual scores hidden).
+    The agent-visible pool is ``train_set + val_set`` (val merged in so
+    backends/agents see one combined set). The ``test_set`` is sealed —
+    HTTP callers cannot reach it via this endpoint. The in-process Python
+    API (:meth:`evaluate_examples`) is unrestricted; the runner uses it
+    directly for held-out test reporting.
 
 GET /status   → {"budget": {...}, "task": "...", "best_score": ..., ...}
 GET /task     → task metadata (name/objective/background/initial_candidate/...)
@@ -413,6 +415,10 @@ class EvalServer:
         except Exception:
             pass
 
+    def _agent_visible_ids(self) -> list[str]:
+        """Train + val ids combined. Agents see one merged set; test is sealed."""
+        return list(self._split_ids["train"]) + list(self._split_ids["val"])
+
     def _handle_evaluate(self, handler: BaseHTTPRequestHandler) -> None:
         body = self._read_body(handler)
         candidate = body.get("candidate", "")
@@ -421,6 +427,17 @@ class EvalServer:
         if self.budget.exhausted:
             self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
             return
+
+        # Reject any example_id outside the agent-visible pool (train+val).
+        # Single-task tasks have no examples, so example_id is ignored there.
+        if example_id is not None and self.task.has_dataset:
+            if example_id not in set(self._agent_visible_ids()):
+                self._send_json(
+                    handler,
+                    {"error": f"Unknown or sealed example_id: {example_id!r}"},
+                    status=400,
+                )
+                return
 
         try:
             example = self._examples.get(example_id) if example_id else None
@@ -435,18 +452,32 @@ class EvalServer:
         body = self._read_body(handler)
         candidate = body.get("candidate", "")
         example_ids = body.get("example_ids")
-        split = body.get("split", "train")
 
         if self.budget.exhausted:
             self._send_json(handler, {"error": "Budget exhausted", "budget": self.budget.status()}, status=429)
             return
 
+        # The HTTP endpoint speaks only the agent-visible pool (train+val).
+        # ``split`` is no longer a parameter — agents either default to the
+        # whole visible pool or pass explicit ``example_ids`` from it. Any
+        # example_id outside the visible pool is rejected so test ids and
+        # any other hidden splits cannot be probed.
+        visible = set(self._agent_visible_ids())
+        if example_ids is not None:
+            invalid = [eid for eid in example_ids if eid not in visible]
+            if invalid:
+                self._send_json(
+                    handler,
+                    {"error": f"Unknown or sealed example_ids: {invalid[:5]}"},
+                    status=400,
+                )
+                return
+            target_ids: list[str] = list(example_ids)
+        else:
+            target_ids = self._agent_visible_ids()
+
         try:
-            avg_score, info = self.evaluate_examples(
-                candidate,
-                example_ids=example_ids,
-                split=split if example_ids is None else None,
-            )
+            avg_score, info = self.evaluate_examples(candidate, example_ids=target_ids)
             self._send_json(
                 handler,
                 {
@@ -493,6 +524,10 @@ class EvalServer:
         )
 
     def _handle_task_info(self, handler: BaseHTTPRequestHandler) -> None:
+        # Report only the agent-visible pool. train_size = train+val combined;
+        # val_size/test_size are zeroed so an HTTP caller cannot infer that
+        # any held-out split exists.
+        visible_size = len(self._agent_visible_ids()) if self.task.has_dataset else 0
         self._send_json(
             handler,
             {
@@ -501,9 +536,9 @@ class EvalServer:
                 "background": self.task.background,
                 "initial_candidate": self.task.initial_candidate,
                 "has_dataset": self.task.has_dataset,
-                "train_size": len(self.task.train_set) if self.task.train_set else 0,
-                "val_size": len(self.task.val_set) if self.task.val_set else 0,
-                "test_size": len(self.task.test_set) if self.task.test_set else 0,
+                "train_size": visible_size,
+                "val_size": 0,
+                "test_size": 0,
                 "metadata": {k: v for k, v in self.task.metadata.items() if isinstance(v, str | int | float | bool)},
             },
         )

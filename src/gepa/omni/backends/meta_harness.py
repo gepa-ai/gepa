@@ -177,15 +177,13 @@ def _build_task_md(task: Task) -> str:
     if task.background:
         optional += f"## Background\n{task.background}\n\n"
     if task.has_dataset and task.train_set:
-        val_note = (
-            f" (plus a hidden val set of {len(task.val_set)} examples; not visible to the proposer)"
-            if task.val_set
-            else ""
-        )
+        # Combined visible pool = train + val; the proposer sees one merged
+        # "training" set and never knows val existed.
+        train_size = len(task.train_set) + (len(task.val_set) if task.val_set else 0)
         eval_section = (
-            f"This is a **dataset / generalization** task with {len(task.train_set)} training examples"
-            f"{val_note}. The outer loop scores each candidate on the full training split; "
-            f"each example costs 1 unit of the evaluation budget."
+            f"This is a **dataset / generalization** task with {train_size} training examples. "
+            "The outer loop scores each candidate on the full training split; "
+            "each example costs 1 unit of the evaluation budget."
         )
     else:
         eval_section = (
@@ -235,8 +233,14 @@ def _materialize_sandbox(work_dir: Path, task: Task, server: EvalServer, budget:
     if task.train_set:
         train_dir = work_dir / "train"
         train_dir.mkdir(exist_ok=True)
-        for eid, ex in server.iter_split("train"):
-            (train_dir / f"{eid}.json").write_text(json.dumps(example_to_json(eid, ex), indent=2, default=str))
+        # Materialize train + val together as a single visible pool. The
+        # proposer sees one combined "training" set and never knows val
+        # existed; test stays sealed at the eval-server HTTP layer.
+        for split in ("train", "val"):
+            for eid, ex in server.iter_split(split):
+                (train_dir / f"{eid}.json").write_text(
+                    json.dumps(example_to_json(eid, ex), indent=2, default=str)
+                )
 
 
 def _run_proposer(
@@ -393,14 +397,16 @@ def _load_candidate(work_dir: Path, relpath: str) -> str | None:
 
 
 def _score_candidate(server: EvalServer, task: Task, candidate: str) -> tuple[float, dict[str, Any]]:
-    """Score a candidate via the eval server. Dataset tasks prefer val split
-    (matches the other backends' search-loop convention); fall back to train
-    if no val_set; single-task → evaluate()."""
-    if task.has_dataset:
-        if task.val_set:
-            return server.evaluate_examples(candidate, split="val")
-        if task.train_set:
-            return server.evaluate_examples(candidate, split="train")
+    """Score a candidate via the eval server.
+
+    Dataset tasks: evaluate on the combined train+val pool — the proposer's
+    visible set. Test is sealed and never used here. Single-task →
+    :meth:`evaluate`.
+    """
+    if task.has_dataset and task.train_set:
+        ids = [eid for eid, _ in server.iter_split("train")]
+        ids += [eid for eid, _ in server.iter_split("val")]
+        return server.evaluate_examples(candidate, example_ids=ids)
     return server.evaluate(candidate)
 
 

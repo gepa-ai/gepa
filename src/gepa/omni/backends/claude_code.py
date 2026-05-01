@@ -2,10 +2,17 @@
 
 The api creates an :class:`EvalServer` and starts its HTTP endpoint. This
 backend launches one ``claude --print`` session inside a work_dir laid out
-with ``program.md``, ``candidate.txt``, ``best_candidate.txt``, and
-``eval.sh`` / ``validate.sh`` scripts that POST to the eval server. Budget
-enforcement happens server-side (HTTP 429 on exhaustion); LLM cost is bounded
-via ``--max-budget-usd``.
+with ``program.md``, ``candidate.txt``, ``best_candidate.txt``, and an
+``eval.sh`` script that POSTs to the eval server. Budget enforcement happens
+server-side (HTTP 429 on exhaustion); LLM cost is bounded via
+``--max-budget-usd``.
+
+Train/val handling: the agent sees one combined set. When the task has both
+train and val splits, both are materialized into ``train/<id>.json`` and
+``eval.sh`` scores against the combined pool. The agent never knows val
+existed; the test set is sealed at the eval server's HTTP layer and is
+reachable only via the in-process Python API (used by the runner for
+held-out reporting).
 """
 
 from __future__ import annotations
@@ -52,42 +59,26 @@ if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
 
 EVAL_SCRIPT_DATASET = """\
 #!/usr/bin/env bash
-# Usage: ./eval.sh <candidate_file> [split]
-#        ./eval.sh <candidate_file> --ids id1,id2,id3
+# Usage: ./eval.sh <candidate_file>                   # all training examples
+#        ./eval.sh <candidate_file> --ids id1,id2,id3 # specific examples
 set -euo pipefail
 CANDIDATE_FILE="$1"; shift
 SERVER_URL="{server_url}"
 CANDIDATE=$(cat "$CANDIDATE_FILE")
-IDS=""; SPLIT="train"
+IDS=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --ids) IDS="$2"; shift 2 ;;
-        *) SPLIT="$1"; shift ;;
+        *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
 done
 if [ -n "$IDS" ]; then
     IDS_JSON=$(echo "$IDS" | jq -R 'split(",")')
     BODY=$(jq -n --arg c "$CANDIDATE" --argjson ids "$IDS_JSON" '{{candidate: $c, example_ids: $ids}}')
 else
-    BODY=$(jq -n --arg c "$CANDIDATE" --arg s "$SPLIT" '{{candidate: $c, split: $s}}')
+    BODY=$(jq -n --arg c "$CANDIDATE" '{{candidate: $c}}')
 fi
 RESPONSE=$(curl -s -w "\\n%{{http_code}}" -X POST "$SERVER_URL/evaluate_examples" \\
-    -H "Content-Type: application/json" -d "$BODY")
-HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-BODY=$(echo "$RESPONSE" | sed '$d')
-echo "$BODY"
-if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
-"""
-
-VALIDATE_SCRIPT = """\
-#!/usr/bin/env bash
-# Usage: ./validate.sh <candidate_file>
-set -euo pipefail
-CANDIDATE_FILE="$1"
-SERVER_URL="{server_url}"
-CANDIDATE=$(cat "$CANDIDATE_FILE")
-BODY=$(jq -n --arg c "$CANDIDATE" '{{candidate: $c}}')
-RESPONSE=$(curl -s -w "\\n%{{http_code}}" -X POST "$SERVER_URL/validate" \\
     -H "Content-Type: application/json" -d "$BODY")
 HTTP_CODE=$(echo "$RESPONSE" | tail -1)
 BODY=$(echo "$RESPONSE" | sed '$d')
@@ -128,7 +119,7 @@ Training examples are in `train/` as individual JSON files.
 
 # Evaluate on specific examples
 ./eval.sh candidate.txt --ids example_0,example_1,example_2
-```{cost_line}{val_section}"""
+```{cost_line}"""
 
 _EVAL_SINGLE = """\
 ## Evaluation
@@ -136,15 +127,6 @@ This is a **single-task** optimization.
 ```bash
 ./eval.sh candidate.txt
 ```{cost_line}"""
-
-_VAL_SECTION = """
-### Validation
-There is a hidden validation set ({val_size} examples).
-You cannot see individual val examples or their scores.
-```bash
-./validate.sh candidate.txt
-```
-Returns only the aggregate val_score.{val_cost}"""
 
 
 def _budget_section(budget: BudgetTracker) -> str:
@@ -164,47 +146,30 @@ def _budget_section(budget: BudgetTracker) -> str:
 def _strategy_section(task: Task) -> str:
     """Explicit experiment loop, in the spirit of karpathy/autoresearch.
 
-    Three modes, picked by what splits the task has:
-      - train_set + val_set → ``./validate.sh`` is the per-iteration signal;
-        ``train/`` is materialized for diagnostic inspection (``--ids``) only.
-      - train_set only      → ``./eval.sh`` on the train split is the signal.
-      - no dataset          → ``./eval.sh`` runs the single-task ``eval_fn``.
+    Two modes:
+      - dataset task  → ``./eval.sh`` on the full training pool is the signal.
+      - single task   → ``./eval.sh`` runs the single-task ``eval_fn``.
     """
     has_train_dir = task.has_dataset and bool(task.train_set)
-    use_val_signal = has_train_dir and bool(task.val_set)
-
-    score_cmd = "./validate.sh candidate.txt" if use_val_signal else "./eval.sh candidate.txt"
-    score_label = "val_score" if use_val_signal else "score"
-
-    note = (
-        "**Note:** training examples are materialized under `train/` for inspection. "
-        "Spot-check specific examples on demand with "
-        "`./eval.sh candidate.txt --ids id1,id2,id3` to diagnose failures.\n\n"
-        if use_val_signal
-        else ""
-    )
 
     if has_train_dir:
-        baseline_note = f"note the {score_label}"
         edit_step = (
             "2. **Hypothesize and edit.** Read failures in `train/` "
             "(spot-check with `./eval.sh candidate.txt --ids id1,id2` if useful), "
             "form a hypothesis, edit `candidate.txt`."
         )
     else:
-        baseline_note = "note the score and any judge feedback"
         edit_step = (
             "2. **Hypothesize and edit.** Use the judge feedback from the prior eval, "
             "form a hypothesis, edit `candidate.txt`."
         )
 
     return (
-        "Run this as an explicit experiment loop forever, until you hit the max score (if there is one)."
-        f"{note}"
-        f"1. **Baseline.** Run `{score_cmd}` on the seed; {baseline_note}.\n"
+        "Run this as an explicit experiment loop forever, until you hit the max score (if there is one).\n"
+        "1. **Baseline.** Run `./eval.sh candidate.txt` on the seed; note the score and any judge feedback.\n"
         f"{edit_step}\n"
-        f"3. **Score.** Run `{score_cmd}`.\n"
-        f"4. **Keep or discard.** If {score_label} improved over the best so far, "
+        "3. **Score.** Run `./eval.sh candidate.txt`.\n"
+        "4. **Keep or discard.** If the score improved over the best so far, "
         "`cp candidate.txt best_candidate.txt`. "
         "Otherwise `cp best_candidate.txt candidate.txt` to revert.\n"
         "5. Repeat from step 2"
@@ -222,13 +187,12 @@ def _perfect_score_section(perfect_score: float | None) -> str:
 
 
 def _rules_section(task: Task, budget: BudgetTracker) -> str:
-    scripts = "eval.sh, validate.sh" if task.val_set else "eval.sh"
-    val_rule = "\n- You cannot see the validation examples." if task.val_set else ""
+    del task
     exhaust_rule = (
         "\n- When the budget is exhausted, scripts return BUDGET_EXHAUSTED." if budget.max_evals is not None else ""
     )
     return (
-        f"- You cannot modify {scripts} or the server.{val_rule}\n"
+        "- You cannot modify eval.sh or the server.\n"
         f"- Focus on meaningful improvements each iteration.{exhaust_rule}"
     )
 
@@ -243,22 +207,16 @@ def _build_program_md(task: Task, budget: BudgetTracker, *, perfect_score: float
     has_eval_budget = budget.max_evals is not None
 
     if task.has_dataset and task.train_set:
-        train_size = len(task.train_set)
+        # Combined visible pool = train + val. Agent never knows val existed.
+        train_size = len(task.train_set) + (len(task.val_set) if task.val_set else 0)
         cost_line = (
             f"\nEach example costs 1 budget unit. A full train eval costs {train_size} units."
             if has_eval_budget
             else ""
         )
-        if task.val_set:
-            val_size = len(task.val_set)
-            val_cost = f" Costs {val_size} budget units." if has_eval_budget else ""
-            val_section = "\n" + _VAL_SECTION.format(val_size=val_size, val_cost=val_cost)
-        else:
-            val_section = ""
         eval_section = _EVAL_GENERALIZATION.format(
             train_size=train_size,
             cost_line=cost_line,
-            val_section=val_section,
         )
     else:
         cost_line = "\nEach eval costs 1 budget unit." if has_eval_budget else ""
@@ -294,16 +252,17 @@ def _materialize_sandbox(
     eval_script.write_text(eval_template.format(server_url=server_url))
     eval_script.chmod(0o755)
 
-    if task.val_set:
-        validate_script = work_dir / "validate.sh"
-        validate_script.write_text(VALIDATE_SCRIPT.format(server_url=server_url))
-        validate_script.chmod(0o755)
-
     if task.train_set:
         train_dir = work_dir / "train"
         train_dir.mkdir(exist_ok=True)
-        for eid, ex in server.iter_split("train"):
-            (train_dir / f"{eid}.json").write_text(json.dumps(example_to_json(eid, ex), indent=2, default=str))
+        # Materialize train + val together as a single visible pool. The agent
+        # sees one combined "training" set and never knows val existed; test
+        # is sealed at the eval-server HTTP layer.
+        for split in ("train", "val"):
+            for eid, ex in server.iter_split(split):
+                (train_dir / f"{eid}.json").write_text(
+                    json.dumps(example_to_json(eid, ex), indent=2, default=str)
+                )
 
 
 class ClaudeCodeBackend:
@@ -352,7 +311,6 @@ class ClaudeCodeBackend:
         candidate_file = work_dir / "candidate.txt"
         best_file = work_dir / "best_candidate.txt"
         eval_script = work_dir / "eval.sh"
-        validate_script = work_dir / "validate.sh"
 
         prompt = (
             f"Read program.md for full task instructions. "
@@ -360,8 +318,6 @@ class ClaudeCodeBackend:
             f"Write your best candidate to {best_file}. "
             f"Use {eval_script} to evaluate."
         )
-        if task.val_set:
-            prompt += f" Use {validate_script} to check validation score."
 
         session_id = str(uuid.uuid4())
         cmd: list[str] = bwrap_prefix(work_dir) if self.sandbox else []
