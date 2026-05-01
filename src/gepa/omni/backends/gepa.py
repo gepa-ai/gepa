@@ -181,8 +181,10 @@ class GepaBackend:
         if task.has_dataset:
             if task.train_set:
                 oa_kwargs["dataset"] = task.train_set
-            if task.test_set:
-                oa_kwargs["valset"] = task.test_set
+            # val_set only — test_set is a held-out split reserved for
+            # post-run eval and must never leak into the optimization loop.
+            if task.val_set:
+                oa_kwargs["valset"] = task.val_set
             if "val_set" in task.metadata:
                 oa_kwargs.setdefault("valset", task.metadata["val_set"])
 

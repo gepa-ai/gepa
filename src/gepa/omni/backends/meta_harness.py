@@ -42,40 +42,93 @@ description: Run one iteration of candidate evolution for a task. Called by the 
 
 # Meta-Harness (Candidate Evolution)
 
-Run ONE iteration of candidate evolution. Do all work in the main session — do NOT delegate to subagents.
+Run ONE iteration of candidate evolution. Do all work in the main session — do NOT delegate to subagents. Constraints get lost when you delegate, leading to parameter-only changes and skipped prototyping.
 
-**You do NOT run benchmarks.** You analyze results, prototype changes, and write new candidate files. The outer loop (the meta_harness backend) handles benchmarking.
+**You do NOT run benchmarks.** You analyze results, prototype changes, and write new candidate files. The outer loop (the meta_harness backend) handles benchmarking separately.
 
 ## CRITICAL CONSTRAINTS
 
 - You MUST implement up to `max_candidates` new candidates every iteration (cap given in the task prompt; aim for 3 unless told otherwise).
-- Do NOT abort early. ALWAYS complete all steps including prototyping.
+- Do NOT write "the frontier is optimal" or "stop iterating", or abort early.
+- ALWAYS complete all steps including prototyping.
 - Design candidates as a mix of exploitation and exploration.
 
 ### Anti-parameter-tuning rules
 
-The most common failure mode is creating candidates that are just parameter variants of existing ones. Check `evolution_summary.jsonl` for what's been tried. Good candidates change a fundamental mechanism: a new algorithmic approach, a new prompt architecture, a new control-flow strategy, or a new representation. Bad candidates just tune numbers.
+The most common failure mode is creating candidates that are just parameter variants of existing ones. Check `evolution_summary.jsonl` for what's been tried — parameter sweeps (constants, thresholds, length caps, retry counts) almost always regress or tie.
+
+**Good candidates change a fundamental mechanism:**
+
+- A new algorithmic approach (e.g. a different solver structure, a different decomposition)
+- A new prompt architecture (e.g. organize by failure clusters instead of listing rules sequentially)
+- A new control-flow strategy (e.g. multi-pass refinement vs. single-shot, conditional branching on input shape)
+- A new representation (e.g. tabular vs. narrative, normalized vs. raw)
+
+**Bad candidates just tune numbers.** If the candidate text differs from a previous one only by changing constants, it's a parameter variant. Rewrite with a genuinely novel mechanism.
+
+**Combining ideas is valid.** Take one mechanism from candidate A and another from candidate B, or draw on published approaches.
+
+If the last 3 iterations explored the same axis (prompt wording, retrieval count, etc.), pick a different axis.
 
 ### Anti-overfitting rules
 
 - **No example-specific hints.** Do not hardcode knowledge about specific test inputs you've seen. Candidates must be general-purpose.
 - **Never echo example identifiers** in candidate code, prompts, or comments.
+- **General patterns are OK.** Rules like "favor short outputs when ambiguous" or "validate the parse before submitting" are fine — they apply broadly.
+
+## Budget
+
+Token-cost and eval-count budgets are enforced by the backend, not by you. Don't try to ration evals or refuse to propose because "budget might run out" — if the cap is reached, the backend simply stops spawning new proposer sessions. Your only job is to produce strong candidates this iteration.
 
 ## WORKFLOW
 
+**Do ALL steps yourself in the main session.**
+
+### Step 0: Post-eval reports (write if missing)
+
+Check the reports directory (path in the task prompt's "Run directories" section). For each past iteration that has results in `evolution_summary.jsonl` but NO report, write one. Each report should be **<=30 lines** covering: what changed, which candidates improved/regressed and why, and a takeaway for future iterations.
+
 ### Step 1: Analyze
 
-Read all state files: `task.md`, `evolution_summary.jsonl`, `frontier.json`, `agents/baseline.txt`, top-scoring `agents/iter*.txt` files, and `state/eval_traces/<candidate_name>/*.json` for failure analysis.
+1. **Read all state files:**
+   - `task.md` — task objective + background + evaluation model
+   - `evolution_summary.jsonl` — what's been tried (one JSON per candidate)
+   - `frontier.json` — current best candidate and best score
+   - `agents/baseline.txt` — the seed candidate
+   - top-scoring `agents/iter*.txt` files
+   - `state/eval_traces/<candidate_name>/*.json` — per-eval records from the
+     eval server for every previously-scored candidate. **This is the most
+     important source for failure analysis.** Each JSON contains the full
+     `info` dict (compile errors, judge messages, per-example scores for
+     dataset tasks, logs, status). Read the traces of the best-and-worst
+     candidates to understand *why* they scored as they did before designing
+     new candidates.
+
+2. Formulate hypotheses — each must be falsifiable and target a different mechanism.
 
 ### Step 2: Prototype — MANDATORY
 
-Sketch the core idea in `scratch/` first. Try 2-3 variants and compare before picking the best one. Delete sketches when done.
+**You MUST prototype your mechanism before writing the final candidate.** Do NOT skip this step. Candidates that skip prototyping tend to have bugs or produce no improvement.
+
+For each candidate:
+
+1. Write a sketch in `scratch/` (inside the run's work dir) that exercises the core idea in isolation (run code candidates manually; for prompt candidates, at least re-read and self-critique).
+2. Try 2-3 variants and compare before picking the best one.
+3. Delete sketches when done.
 
 ### Step 3: Implement
 
-Copy a top-performing existing candidate (or `agents/baseline.txt`) as a starting point, then make targeted modifications. Self-critique: re-read the file and verify the candidate is genuinely novel, not a parameter variant.
+For each candidate:
+
+1. Copy a top-performing existing candidate (or `agents/baseline.txt`) as a starting point, then make targeted modifications. Copy-then-edit ensures correct formatting and proven structure.
+2. Implement the new mechanism according to your hypothesis.
+3. **Self-critique (mandatory):** After writing, re-read the file and check: does this candidate introduce a genuinely NEW mechanism, or is it just a parameter variant? If only constants differ from the base, REWRITE with a truly novel mechanism.
+
+The benchmark auto-discovers files in `agents/` — you don't need to register candidates anywhere else.
 
 ### Step 4: Write pending_eval.json
+
+Write to the path specified in the task prompt (NOT hardcoded — it may be in a run-specific subdirectory):
 
 ```json
 {
@@ -87,13 +140,33 @@ Copy a top-performing existing candidate (or `agents/baseline.txt`) as a startin
       "hypothesis": "<falsifiable claim>",
       "axis": "exploitation|exploration",
       "base": "<what it builds on>",
-      "components": ["tag1", "tag2"]
+      "components": ["tag1", "tag2", "..."]
     }
   ]
 }
 ```
 
-A candidate is the **entire text content of a single file** at `agents/iter<N>_<name>.txt`. Use `Write` (not `Edit`) for new candidate files. `agents/baseline.txt` is the seed; treat it as read-only.
+Output: `CANDIDATES: <name1>, <name2>, <name3>`
+
+## Candidate format
+
+A candidate is the **entire text content of a single file** at `agents/iter<N>_<name>.txt`. Whatever you write there — code, a prompt, JSON, whatever the task expects — is what the eval server scores. Read `task.md` to learn what shape the task expects.
+
+- Use `Write` (not `Edit`) to create new candidate files.
+- `agents/baseline.txt` is the seed; treat it as read-only.
+- Don't write outside `agents/` or the pending_eval.json path.
+
+## evolution_summary.jsonl Format
+
+One JSON object per line, one line per evaluated candidate:
+
+```json
+{"iteration": 1, "name": "example_candidate", "score": 45.0, "axis": "exploitation", "hypothesis": "...", "delta": +2.1, "outcome": "45.00 (+2.1)", "components": ["tag1", "tag2"]}
+```
+
+## Component Analysis
+
+Treat `evolution_summary.jsonl`, `frontier.json`, and any prior `agents/iter*.txt` files as the only shipped history sources.
 """
 
 
@@ -228,7 +301,7 @@ def _run_proposer(
     proc = subprocess.run(cmd, cwd=str(work_dir), env=env, capture_output=True, text=True)
     (log_dir / f"iter{iteration}_stdout.json").write_text(proc.stdout or "")
     (log_dir / f"iter{iteration}_stderr.txt").write_text(proc.stderr or "")
-    cost_usd = _parse_proposer_cost(proc.stdout or "")
+    cost_usd, result_payload = _parse_proposer_result(proc.stdout or "")
 
     (log_dir / f"iter{iteration}_meta.json").write_text(
         json.dumps(
@@ -237,7 +310,17 @@ def _run_proposer(
                 "session_id": session_id,
                 "exit_code": proc.returncode,
                 "cost_usd": cost_usd,
+                "cmd": cmd,
                 "stderr_tail": (proc.stderr or "")[-2000:],
+                # Echo a few top-level result fields so a reviewer doesn't have
+                # to jump into stdout.json.
+                "result_summary": {
+                    "duration_ms": result_payload.get("duration_ms"),
+                    "num_turns": result_payload.get("num_turns"),
+                    "usage": result_payload.get("usage"),
+                    "is_error": result_payload.get("is_error"),
+                    "subtype": result_payload.get("subtype"),
+                },
             },
             indent=2,
         )
@@ -245,15 +328,41 @@ def _run_proposer(
     return proc.returncode, cost_usd, session_id
 
 
-def _parse_proposer_cost(stdout: str) -> float:
+def _parse_proposer_result(stdout: str) -> tuple[float, dict[str, Any]]:
+    """Extract (cost_usd, result_payload) from ``claude --output-format json``.
+
+    The CLI prints exactly one JSON object to stdout once the session ends:
+
+        {
+          "type": "result",
+          "subtype": "success",
+          "is_error": false,
+          "session_id": "...",
+          "total_cost_usd": 0.1234,
+          "duration_ms": 12345,
+          "num_turns": 7,
+          "usage": {"input_tokens": ..., "output_tokens": ...},
+          "result": "<final assistant text>"
+        }
+
+    A missing / malformed payload indicates the CLI crashed before the end of
+    the session. Cost is reported as 0 in that case; the caller already
+    surfaces the subprocess exit code + stderr tail in the iteration meta
+    file, so the user has enough to diagnose.
+    """
+    payload: dict[str, Any] = {}
     stdout = (stdout or "").strip()
-    if not stdout:
-        return 0.0
+    if stdout:
+        try:
+            payload = json.loads(stdout)
+        except (json.JSONDecodeError, ValueError):
+            payload = {}
+
     try:
-        payload = json.loads(stdout)
-        return float(payload.get("total_cost_usd", 0.0) or 0.0)
-    except (json.JSONDecodeError, ValueError, TypeError):
-        return 0.0
+        cost = float(payload.get("total_cost_usd", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        cost = 0.0
+    return cost, payload
 
 
 def _read_pending(pending_path: Path) -> list[dict[str, Any]]:
