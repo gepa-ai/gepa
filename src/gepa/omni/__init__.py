@@ -21,7 +21,7 @@ Quickstart::
     )
 """
 
-from gepa.omni.api import optimize_anything
+from gepa.omni.api import optimize_anything, optimize_anything_with_server
 from gepa.omni.backend import Backend, Result
 from gepa.omni.budget import BudgetExhausted, BudgetTracker
 from gepa.omni.config import OmniConfig
@@ -59,6 +59,7 @@ __all__ = [
     "list_backends",
     "list_tasks",
     "optimize_anything",
+    "optimize_anything_with_server",
     "optimize_best_of",
     "optimize_parallel",
     "optimize_sequential",

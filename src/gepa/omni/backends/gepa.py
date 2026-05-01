@@ -225,7 +225,7 @@ class GepaBackend:
             metadata={"adapter_cost": adapter_cost, **reflection_meta},
         )
 
-    def process_result(self, result: Result, output_dir: Path) -> None:
+    def process_result(self, result: Result, output_dir: Path | None) -> None:
         return
 
     def _build_claude_code_agent(self, objective: str | None, background: str | None) -> Any:

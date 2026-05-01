@@ -61,11 +61,16 @@ class Backend(Protocol):
         """
         ...
 
-    def process_result(self, result: Result, output_dir: Path) -> None:
+    def process_result(self, result: Result, output_dir: Path | None) -> None:
         """Persist backend-specific artifacts under ``output_dir`` after :meth:`run`.
 
         Default is a no-op. Backends that produced files, transcripts, or
         workspaces should override this to copy/write them.
+
+        ``output_dir`` is ``None`` when the caller (typically via
+        :func:`optimize_anything_with_server`) built an :class:`EvalServer`
+        without an ``output_dir`` — backends that need a destination must
+        no-op in that case rather than crashing.
         """
         return
 

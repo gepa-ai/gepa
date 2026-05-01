@@ -752,7 +752,14 @@ class MetaHarnessBackend:
             },
         )
 
-    def process_result(self, result: Result, output_dir: Path) -> None:
+    def process_result(self, result: Result, output_dir: Path | None) -> None:
+        if output_dir is None:
+            # Caller-owned EvalServer without a configured output_dir: nowhere
+            # to copy transcripts/work to. Still clean up our tempdir.
+            if self._pending_tempdir is not None:
+                self._pending_tempdir.cleanup()
+                self._pending_tempdir = None
+            return
         work_dir = Path(result.metadata.get("work_dir", ""))
         session_ids: list[str] = result.metadata.get("session_ids", []) or []
         transcripts_dir = output_dir / "sessions"

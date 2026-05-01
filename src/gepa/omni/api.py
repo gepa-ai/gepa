@@ -3,6 +3,16 @@
 A single optimization call dispatches to any registered backend (GEPA,
 Claude Code, Meta-Harness, …) over a shared eval-server contract.
 
+Two entry points:
+
+- :func:`optimize_anything` — convenience. Build a server from
+  ``(task, evaluate, config)``, run it, return the result.
+- :func:`optimize_anything_with_server` — primitive. Caller owns the
+  ``EvalServer`` (construction + ``start()`` + ``stop()``). Useful when an
+  outer framework (e.g. terrarium) already manages the eval server's
+  budget, output dir, and tracker, and just wants omni's backend
+  dispatching layered on top.
+
 Example::
 
     from gepa.omni import OmniConfig, Task, optimize_anything
@@ -11,11 +21,7 @@ Example::
         return run(candidate), {}
 
     result = optimize_anything(
-        task=Task(
-            name="my_task",
-            initial_candidate="...",
-            objective="Maximize foo.",
-        ),
+        task=Task(name="my_task", initial_candidate="...", objective="Maximize foo."),
         evaluate=evaluate,
         config=OmniConfig(
             backend="gepa",
@@ -30,10 +36,8 @@ from __future__ import annotations
 
 import time
 import warnings
-from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from gepa.omni.backend import Backend, Result
 from gepa.omni.budget import BudgetExhausted, BudgetTracker
@@ -70,10 +74,8 @@ def optimize_anything(
     if config.effort is not None and config.max_thinking_tokens is not None:
         raise ValueError("config.effort and config.max_thinking_tokens are mutually exclusive")
 
-    backend_obj = _build_backend(config)
-
-    out_path = _resolve_output_dir(config.output_dir, task=task, backend_name=backend_obj.name)
-
+    backend = _build_backend(config)
+    out_path = _resolve_output_dir(config.output_dir, task=task, backend_name=backend.name)
     budget = BudgetTracker(max_evals=config.max_evals, max_token_cost=config.max_token_cost)
     server = EvalServer(
         task,
@@ -83,40 +85,102 @@ def optimize_anything(
         max_concurrency=config.max_concurrency,
         output_dir=out_path,
     )
-    server.start()
+    return _execute(server, backend, owns_server=True)
 
+
+def optimize_anything_with_server(
+    server: EvalServer,
+    config: OmniConfig | None = None,
+) -> Result:
+    """Run optimization against a caller-owned :class:`EvalServer`.
+
+    The primitive form of :func:`optimize_anything`. The server already
+    encapsulates task, eval function, budget, output dir, concurrency, and
+    tracker — so the server-shaped fields on ``OmniConfig`` (``max_evals``,
+    ``max_token_cost``, ``output_dir``, ``max_concurrency``, ``tracker``)
+    are **ignored** here; only ``backend`` and the cross-backend conveniences
+    (``run_dir``, ``effort``, ``max_thinking_tokens``, ``sandbox``,
+    ``stop_at_score``, ``config``) are read.
+
+    The caller owns lifecycle: construct the server, call ``server.start()``
+    before this function, and ``server.stop()`` after (or use a
+    context-manager wrapper). The function does not start or stop the
+    server — re-entry on the same server between calls is expected.
+
+    Args:
+        server: A constructed and started :class:`EvalServer`.
+        config: Backend selector and backend-specific config. Defaults to
+            ``OmniConfig()`` (= ``backend="gepa"``).
+
+    Returns:
+        :class:`Result` shaped exactly like :func:`optimize_anything`.
+
+    Example::
+
+        server = EvalServer(task, evaluate, BudgetTracker(max_evals=200))
+        server.start()
+        try:
+            result = optimize_anything_with_server(
+                server, OmniConfig(backend="gepa"),
+            )
+        finally:
+            server.stop()
+    """
+    if config is None:
+        config = OmniConfig()
+    if config.effort is not None and config.max_thinking_tokens is not None:
+        raise ValueError("config.effort and config.max_thinking_tokens are mutually exclusive")
+
+    backend = _build_backend(config)
+    return _execute(server, backend, owns_server=False)
+
+
+def _execute(server: EvalServer, backend: Backend, *, owns_server: bool) -> Result:
+    """Run a backend against a server and fill the result metadata.
+
+    Shared core of :func:`optimize_anything` and
+    :func:`optimize_anything_with_server`. Assumes config validation and
+    server/backend construction already happened.
+
+    When ``owns_server=True``, this function calls ``server.start()`` /
+    ``server.stop()``. Otherwise it leaves lifecycle to the caller.
+    """
+    if owns_server:
+        server.start()
+
+    task = server.task
     start = time.time()
     try:
-        result = backend_obj.run(task, server)
+        result = backend.run(task, server)
     except BudgetExhausted:
         result = Result(
             best_candidate=server.best_candidate,
             best_score=server.best_score,
-            total_evals=budget.used,
-            eval_log=server.eval_log,
         )
     finally:
-        server.stop()
+        if owns_server:
+            server.stop()
 
-    result.total_evals = budget.used
+    result.total_evals = server.budget.used
     result.eval_log = server.eval_log
     result.metadata.setdefault("wall_time", time.time() - start)
-    result.metadata["budget"] = budget.status()
+    result.metadata["budget"] = server.budget.status()
     adapter_cost = float(result.metadata.get("adapter_cost", 0.0))
     result.metadata["total_cost"] = server.total_cost + adapter_cost
     result.metadata["progress_log"] = server.progress_log
-    result.metadata["backend"] = backend_obj.name
-    result.metadata["output_dir"] = str(out_path)
+    result.metadata["backend"] = backend.name
+    if server.output_dir is not None:
+        result.metadata["output_dir"] = str(server.output_dir)
 
     try:
-        backend_obj.process_result(result, out_path)
+        backend.process_result(result, server.output_dir)
     except Exception:
         # Backend artifact persistence is best-effort; never let it kill an
         # otherwise-successful run.
         pass
 
     if task.test_set and result.best_candidate:
-        eval_fn: Callable[..., tuple[float, dict[str, Any]]] = server.eval_fn
+        eval_fn = server.eval_fn
         test_scores: dict[str, float] = {}
         for eid, ex in server.iter_split("test"):
             try:
