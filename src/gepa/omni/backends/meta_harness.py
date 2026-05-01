@@ -93,9 +93,16 @@ Check the reports directory (path in the task prompt's "Run directories" section
 1. **Read all state files:**
    - `task.md` — task objective + background + evaluation model
    - `evolution_summary.jsonl` — what's been tried (one JSON per candidate)
-   - `frontier.json` — current best candidate and best score
+   - `frontier.json` — overall best (`best_name` / `best_score` /
+     `best_candidate_file`) **plus** `per_example`: a dict mapping each
+     example id to the candidate that scored highest on it
+     (`{best_name, score, file}`). The per-example frontier is the
+     strongest signal for *combination* candidates — when different
+     candidates win different examples, read both and design a new one
+     that fuses their mechanisms.
    - `agents/baseline.txt` — the seed candidate
-   - top-scoring `agents/iter*.txt` files
+   - top-scoring `agents/iter*.txt` files (use `frontier.json["per_example"]`
+     to identify per-example winners worth reading)
    - `state/eval_traces/<candidate_name>/*.json` — per-eval records from the
      eval server for every previously-scored candidate. **This is the most
      important source for failure analysis.** Each JSON contains the full
@@ -440,19 +447,54 @@ def _capture_eval_traces(
     return n
 
 
-def _update_frontier(frontier_path: Path, name: str, file: str, score: float) -> bool:
+def _update_frontier(
+    frontier_path: Path,
+    *,
+    name: str,
+    file: str,
+    score: float,
+    per_example_scores: dict[str, float] | None = None,
+) -> bool:
+    """Update the frontier with the candidate's overall score and per-example
+    bests. Returns True when the overall best improved.
+
+    The frontier records two things:
+
+    - Overall: ``best_name`` / ``best_score`` / ``best_candidate_file`` —
+      the candidate with the highest aggregate score so far.
+    - Per-example: ``per_example[ex_id]`` = ``{best_name, score, file}`` —
+      the candidate that scored highest on each individual example. This
+      lets the proposer combine ideas across example-specific winners
+      (e.g. take the mechanism from the candidate that beat ``ex_3`` and
+      merge it with the one that beat ``ex_7``).
+
+    Strict-greater wins (first writer keeps its slot on ties), matching the
+    reference paper's convention.
+    """
     frontier: dict[str, Any] = {}
     if frontier_path.exists():
         try:
             frontier = json.loads(frontier_path.read_text())
         except (json.JSONDecodeError, OSError):
             frontier = {}
+
+    # Overall best
     prev = frontier.get("best_score")
     improved = prev is None or score > float(prev)
     if improved:
         frontier["best_name"] = name
         frontier["best_candidate_file"] = file
         frontier["best_score"] = score
+
+    # Per-example bests (dataset tasks only)
+    if per_example_scores:
+        per_example = frontier.setdefault("per_example", {})
+        for eid, ex_score in per_example_scores.items():
+            current = per_example.get(eid)
+            if current is None or ex_score > float(current.get("score", float("-inf"))):
+                per_example[eid] = {"best_name": name, "score": ex_score, "file": file}
+
+    if improved or per_example_scores:
         frontier_path.write_text(json.dumps(frontier, indent=2))
     return improved
 
@@ -710,7 +752,7 @@ class MetaHarnessBackend:
 
                 eval_idx_before = len(server.eval_log)
                 try:
-                    score, _info = _score_candidate(server, task, cand_text)
+                    score, eval_info = _score_candidate(server, task, cand_text)
                 except BudgetExhausted:
                     _capture_eval_traces(server, name, (eval_idx_before, len(server.eval_log)), work_dir)
                     _log(f"    [{ci}/{len(candidates)}] {_red('budget exhausted')} during {name}")
@@ -751,7 +793,20 @@ class MetaHarnessBackend:
                 )
 
                 prev_best = self._best_score(frontier_path)
-                improved = _update_frontier(frontier_path, name=name, file=file, score=score)
+                # Per-example scores are present for dataset tasks (the
+                # ``scores`` dict from evaluate_examples). Single-task tasks
+                # have a ``_single`` placeholder we skip.
+                per_example_scores: dict[str, float] | None = None
+                raw_scores = eval_info.get("scores") if isinstance(eval_info, dict) else None
+                if isinstance(raw_scores, dict) and "_single" not in raw_scores:
+                    per_example_scores = {str(k): float(v) for k, v in raw_scores.items()}
+                improved = _update_frontier(
+                    frontier_path,
+                    name=name,
+                    file=file,
+                    score=score,
+                    per_example_scores=per_example_scores,
+                )
                 if improved:
                     iter_improved = True
 
