@@ -136,6 +136,13 @@ class GepaBackend:
         if cost_source is not None:
             cost_callback = _ReflectionCostCallback(cost_source, server.tracker, output_dir=self.run_dir)
             callbacks.append(cost_callback)
+        if agent_proposer is not None:
+            # The adapter-curated reflective_dataset (the thing the LM
+            # normally sees as ``<side_info>``) is not persisted by GEPA core.
+            # Mirror it under ``iterations/NNNNN/reflective_dataset.json`` so
+            # the agent proposer can browse past iterations' structured
+            # feedback when planning the next mutation.
+            callbacks.append(_ReflectiveDatasetDumpCallback(self.run_dir))
         if task.val_set:
             callbacks.append(_ProgressCallback(server, reflection_lm=cost_source))
 
@@ -298,3 +305,33 @@ class _ProgressCallback:
         candidate_text = next(iter(candidate_dict.values()), None) if candidate_dict else None
         reflection_cost = self._reflection_lm.total_cost if self._reflection_lm else 0.0
         self._server.log_progress(event["average_score"], candidate=candidate_text, reflection_cost=reflection_cost)
+
+
+class _ReflectiveDatasetDumpCallback:
+    """Write each iteration's reflective_dataset to disk under run_dir.
+
+    GEPA core writes per-iteration meta / components / trace under
+    ``iterations/NNNNN/`` (with ``NNNNN = state.i + 1`` — seed owns id 0),
+    but the adapter-curated reflective_dataset (the thing the LM normally
+    sees as ``<side_info>``) is never persisted by core. This callback
+    closes that gap so the agent proposer can browse past iterations'
+    structured feedback via ``iterations/NNNNN/reflective_dataset.json``.
+
+    Only installed when the file-based agent proposer is selected.
+    """
+
+    def __init__(self, run_dir: str | Path | None) -> None:
+        self._run_dir = Path(run_dir) if run_dir is not None else None
+
+    def on_reflective_dataset_built(self, event: dict[str, Any]) -> None:
+        if self._run_dir is None:
+            return
+        iteration = event.get("iteration")
+        dataset = event.get("dataset") or event.get("reflective_dataset")
+        if iteration is None or dataset is None:
+            return
+        # ``event["iteration"]`` is ``ctx.iteration`` — the 1-indexed
+        # on-disk iteration id (seed owns 0, first loop proposal is 1).
+        target = self._run_dir / "iterations" / f"{int(iteration):05d}" / "reflective_dataset.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(dataset, indent=2, default=str))

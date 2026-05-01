@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 from gepa.omni._helpers import example_to_json, warn_unknown_config_keys
 from gepa.omni.backend import Result
 from gepa.omni.budget import BudgetExhausted, BudgetTracker
-from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix
+from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_settings_args
 
 if TYPE_CHECKING:
     from gepa.omni.config import OmniConfig
@@ -210,6 +210,8 @@ def _run_proposer(
         "bypassPermissions",
         DENY_WEB_TOOLS,
     ]
+    if sandbox:
+        cmd.extend(claude_settings_args(work_dir))  # macOS Seatbelt fallback
     if max_thinking_tokens is None and effort is not None:
         cmd.extend(["--effort", effort])
     if max_budget_usd is not None:
@@ -227,6 +229,19 @@ def _run_proposer(
     (log_dir / f"iter{iteration}_stdout.json").write_text(proc.stdout or "")
     (log_dir / f"iter{iteration}_stderr.txt").write_text(proc.stderr or "")
     cost_usd = _parse_proposer_cost(proc.stdout or "")
+
+    (log_dir / f"iter{iteration}_meta.json").write_text(
+        json.dumps(
+            {
+                "iteration": iteration,
+                "session_id": session_id,
+                "exit_code": proc.returncode,
+                "cost_usd": cost_usd,
+                "stderr_tail": (proc.stderr or "")[-2000:],
+            },
+            indent=2,
+        )
+    )
     return proc.returncode, cost_usd, session_id
 
 
@@ -269,8 +284,14 @@ def _load_candidate(work_dir: Path, relpath: str) -> str | None:
 
 
 def _score_candidate(server: EvalServer, task: Task, candidate: str) -> tuple[float, dict[str, Any]]:
-    if task.has_dataset and task.train_set:
-        return server.evaluate_examples(candidate, split="train")
+    """Score a candidate via the eval server. Dataset tasks prefer val split
+    (matches the other backends' search-loop convention); fall back to train
+    if no val_set; single-task → evaluate()."""
+    if task.has_dataset:
+        if task.val_set:
+            return server.evaluate_examples(candidate, split="val")
+        if task.train_set:
+            return server.evaluate_examples(candidate, split="train")
     return server.evaluate(candidate)
 
 
@@ -334,6 +355,8 @@ def _append_summary(
     components: list[str],
     outcome: str,
     budget_used: int,
+    propose_time: float | None = None,
+    bench_time: float | None = None,
 ) -> None:
     row: dict[str, Any] = {
         "iteration": iteration,
@@ -347,6 +370,10 @@ def _append_summary(
         "outcome": outcome,
         "budget_used": budget_used,
     }
+    if propose_time is not None:
+        row["propose_s"] = round(propose_time, 1)
+    if bench_time is not None:
+        row["bench_s"] = round(bench_time, 1)
     with open(summary_path, "a") as f:
         f.write(json.dumps(row) + "\n")
 
@@ -358,8 +385,46 @@ def _c(code: str, text: str) -> str:
     return f"\033[{code}m{text}\033[0m" if _USE_COLOR else text
 
 
+def _bold(t: str) -> str:
+    return _c("1", t)
+
+
+def _dim(t: str) -> str:
+    return _c("2", t)
+
+
+def _green(t: str) -> str:
+    return _c("32", t)
+
+
+def _red(t: str) -> str:
+    return _c("31", t)
+
+
+def _yellow(t: str) -> str:
+    return _c("33", t)
+
+
+def _cyan(t: str) -> str:
+    return _c("36", t)
+
+
 def _log(*parts: str) -> None:
     print(" ".join(parts), flush=True)
+
+
+def _elapsed(seconds: float) -> str:
+    m, s = divmod(int(seconds), 60)
+    return f"{m}m{s:02d}s" if m else f"{s}s"
+
+
+def _colorize_score(score: float) -> str:
+    s = f"{score:.4f}"
+    if score > 0:
+        return _green(s)
+    if score < 0:
+        return _red(s)
+    return s
 
 
 class MetaHarnessBackend:
@@ -392,7 +457,14 @@ class MetaHarnessBackend:
     def run(self, task: Task, server: EvalServer) -> Result:
         budget = server.budget
 
-        if self.run_dir:
+        # When sandbox=True, force tempdir work_dir even if run_dir is set —
+        # avoids Claude Code's CLAUDE.md walk-up disclosing the auto-memory
+        # pointer, and keeps Seatbelt's allowRead outside ~/. process_result
+        # mirrors back to output_dir/work/ so artifacts aren't lost.
+        if self.sandbox:
+            self._pending_tempdir = tempfile.TemporaryDirectory(prefix="omni_mh_")
+            work_dir = Path(self._pending_tempdir.name)
+        elif self.run_dir:
             work_dir = Path(self.run_dir)
             work_dir.mkdir(parents=True, exist_ok=True)
         else:
@@ -428,12 +500,16 @@ class MetaHarnessBackend:
                     break
                 per_session_cap = remaining
 
-            _log(f"\n[meta-harness] iteration {iteration}/{cap} (evals={budget.used}, cost=${total_proposer_cost:.3f})")
+            _log(
+                f"\n{_bold(f'[meta-harness] iteration {iteration}/{cap}')} "
+                f"{_dim(f'(evals used={budget.used}, cost=${total_proposer_cost:.3f})')}"
+            )
 
             pending_path = state_dir / f"pending_eval_iter{iteration}.json"
             if pending_path.exists():
                 pending_path.unlink()
 
+            propose_start = time.time()
             exit_code, cost, session_id = _run_proposer(
                 work_dir=work_dir,
                 iteration=iteration,
@@ -446,39 +522,133 @@ class MetaHarnessBackend:
                 max_thinking_tokens=self.max_thinking_tokens,
                 sandbox=bool(self.sandbox),
             )
+            propose_time = time.time() - propose_start
             total_proposer_cost += cost
             session_ids.append(session_id)
 
+            _log(
+                f"  {_cyan('proposer')} exit={exit_code} cost=${cost:.3f} "
+                f"time={_elapsed(propose_time)} session={session_id[:8]}"
+            )
+
             if exit_code != 0:
+                _append_summary(
+                    summary_path,
+                    iteration=iteration,
+                    name="(proposer_failed)",
+                    file="",
+                    score=None,
+                    best_score=self._best_score(frontier_path),
+                    hypothesis="",
+                    axis="",
+                    components=[],
+                    outcome=f"proposer_exit_{exit_code}",
+                    budget_used=budget.used,
+                    propose_time=propose_time,
+                )
                 stop_reason = "proposer_failed"
 
             candidates = _read_pending(pending_path)
             if not candidates:
-                _log("  no candidates in pending_eval.json; stopping")
+                _log(f"  {_yellow('no candidates')} in pending_eval.json; stopping")
+                _append_summary(
+                    summary_path,
+                    iteration=iteration,
+                    name="(no_candidates)",
+                    file="",
+                    score=None,
+                    best_score=self._best_score(frontier_path),
+                    hypothesis="",
+                    axis="",
+                    components=[],
+                    outcome="no_pending_eval",
+                    budget_used=budget.used,
+                    propose_time=propose_time,
+                )
                 stop_reason = "no_candidates"
                 break
 
+            _log(f"  {_cyan('benchmarking')} {len(candidates)} candidate(s)...")
+
+            bench_start = time.time()
+            iter_improved = False
             for ci, c in enumerate(candidates, 1):
                 name = c["name"]
                 file = c["file"]
                 cand_text = _load_candidate(work_dir, file)
                 if cand_text is None:
+                    _log(f"    [{ci}/{len(candidates)}] {_red('missing')} {name} ({file})")
+                    _append_summary(
+                        summary_path,
+                        iteration=iteration,
+                        name=name,
+                        file=file,
+                        score=None,
+                        best_score=self._best_score(frontier_path),
+                        hypothesis=c.get("hypothesis", ""),
+                        axis=c.get("axis", ""),
+                        components=c.get("components", []),
+                        outcome="file_missing",
+                        budget_used=budget.used,
+                    )
                     continue
 
                 eval_idx_before = len(server.eval_log)
                 try:
-                    score, _ = _score_candidate(server, task, cand_text)
+                    score, _info = _score_candidate(server, task, cand_text)
                 except BudgetExhausted:
                     _capture_eval_traces(server, name, (eval_idx_before, len(server.eval_log)), work_dir)
+                    _log(f"    [{ci}/{len(candidates)}] {_red('budget exhausted')} during {name}")
+                    _append_summary(
+                        summary_path,
+                        iteration=iteration,
+                        name=name,
+                        file=file,
+                        score=None,
+                        best_score=self._best_score(frontier_path),
+                        hypothesis=c.get("hypothesis", ""),
+                        axis=c.get("axis", ""),
+                        components=c.get("components", []),
+                        outcome="budget_exhausted",
+                        budget_used=budget.used,
+                    )
                     stop_reason = "eval_budget_exhausted"
                     break
                 except Exception as e:
-                    _log(f"    [{ci}/{len(candidates)}] eval error {name}: {e}")
+                    _log(f"    [{ci}/{len(candidates)}] {_red('eval error')} {name}: {e}")
+                    _append_summary(
+                        summary_path,
+                        iteration=iteration,
+                        name=name,
+                        file=file,
+                        score=None,
+                        best_score=self._best_score(frontier_path),
+                        hypothesis=c.get("hypothesis", ""),
+                        axis=c.get("axis", ""),
+                        components=c.get("components", []),
+                        outcome=f"eval_error: {type(e).__name__}",
+                        budget_used=budget.used,
+                    )
                     continue
 
-                _capture_eval_traces(server, name, (eval_idx_before, len(server.eval_log)), work_dir)
+                trace_count = _capture_eval_traces(
+                    server, name, (eval_idx_before, len(server.eval_log)), work_dir
+                )
+
                 prev_best = self._best_score(frontier_path)
-                _update_frontier(frontier_path, name=name, file=file, score=score)
+                improved = _update_frontier(frontier_path, name=name, file=file, score=score)
+                if improved:
+                    iter_improved = True
+
+                delta_str = "(new_best)" if improved else (
+                    f"({score - prev_best:+.4f})" if prev_best is not None else ""
+                )
+                trace_str = f" traces={trace_count}" if trace_count else ""
+                _log(
+                    f"    [{ci}/{len(candidates)}] {_bold(name)}: "
+                    f"{_colorize_score(score)} {delta_str} "
+                    f"{_dim(f'(budget_used={budget.used}{trace_str})')}"
+                )
 
                 _append_summary(
                     summary_path,
@@ -490,27 +660,64 @@ class MetaHarnessBackend:
                     hypothesis=c.get("hypothesis", ""),
                     axis=c.get("axis", ""),
                     components=c.get("components", []),
-                    outcome=(f"{score:.4f}" if prev_best is None else f"{score:.4f} ({score - prev_best:+.4f})"),
+                    outcome=(
+                        f"{score:.4f}" if prev_best is None
+                        else f"{score:.4f} ({score - prev_best:+.4f})"
+                    ),
                     budget_used=budget.used,
+                    propose_time=propose_time if ci == 1 else None,
                 )
 
                 if task.has_dataset:
                     try:
-                        server.log_progress(score, candidate=cand_text, reflection_cost=total_proposer_cost)
+                        server.log_progress(
+                            score,
+                            candidate=cand_text,
+                            reflection_cost=total_proposer_cost,
+                        )
                     except Exception:
                         pass
 
                 if self.stop_at_score is not None and score >= self.stop_at_score:
+                    _log(f"    {_green('perfect score reached')}: {score:.4f} >= {self.stop_at_score}")
                     stop_reason = "perfect_score"
                     break
+
+                tracker = getattr(server, "tracker", None)
+                if tracker is not None:
+                    try:
+                        tracker.log_metrics(
+                            {
+                                "meta_harness/iteration": iteration,
+                                "meta_harness/candidate_score": score,
+                                "meta_harness/best_score": (
+                                    self._best_score(frontier_path) or 0.0
+                                ),
+                                "meta_harness/proposer_cost": total_proposer_cost,
+                            },
+                            step=budget.used,
+                        )
+                    except Exception:
+                        pass
+
+            bench_time = time.time() - bench_start
+
+            wall = _elapsed(time.time() - run_start)
+            tail = (
+                f"iter {iteration} wall={wall} "
+                f"propose={_elapsed(propose_time)} bench={_elapsed(bench_time)}"
+            )
+            improved_tag = f" {_green('IMPROVED')}" if iter_improved else ""
+            _log(f"  {_dim(tail)}{improved_tag}")
 
             if stop_reason in ("eval_budget_exhausted", "perfect_score", "proposer_failed"):
                 break
 
         _log(
-            f"[meta-harness] done reason={stop_reason} iters={iteration} "
-            f"best={self._best_score(frontier_path)} evals={budget.used} "
-            f"proposer_cost=${total_proposer_cost:.3f}"
+            f"\n{_bold('[meta-harness] done')} "
+            f"reason={stop_reason} iters={iteration} "
+            f"best={self._best_score(frontier_path)} "
+            f"evals={budget.used} proposer_cost=${total_proposer_cost:.3f}"
         )
 
         best_candidate = server.best_candidate

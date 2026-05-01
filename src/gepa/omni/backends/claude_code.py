@@ -23,7 +23,7 @@ from gepa.omni._helpers import example_to_json, warn_unknown_config_keys
 from gepa.omni.backend import Result
 from gepa.omni.backends.claude_utils import copy_session_transcript
 from gepa.omni.budget import BudgetTracker
-from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix
+from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_settings_args
 
 if TYPE_CHECKING:
     from gepa.omni.config import OmniConfig
@@ -45,7 +45,7 @@ BODY=$(jq -n --arg c "$CANDIDATE" '{{candidate: $c}}')
 RESPONSE=$(curl -s -w "\\n%{{http_code}}" -X POST "$SERVER_URL/evaluate" \\
     -H "Content-Type: application/json" -d "$BODY")
 HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-BODY=$(echo "$RESPONSE" | head -n -1)
+BODY=$(echo "$RESPONSE" | sed '$d')
 echo "$BODY"
 if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
 """
@@ -74,7 +74,7 @@ fi
 RESPONSE=$(curl -s -w "\\n%{{http_code}}" -X POST "$SERVER_URL/evaluate_examples" \\
     -H "Content-Type: application/json" -d "$BODY")
 HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-BODY=$(echo "$RESPONSE" | head -n -1)
+BODY=$(echo "$RESPONSE" | sed '$d')
 echo "$BODY"
 if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
 """
@@ -90,7 +90,7 @@ BODY=$(jq -n --arg c "$CANDIDATE" '{{candidate: $c}}')
 RESPONSE=$(curl -s -w "\\n%{{http_code}}" -X POST "$SERVER_URL/validate" \\
     -H "Content-Type: application/json" -d "$BODY")
 HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-BODY=$(echo "$RESPONSE" | head -n -1)
+BODY=$(echo "$RESPONSE" | sed '$d')
 echo "$BODY"
 if [ "$HTTP_CODE" = "429" ]; then echo "BUDGET_EXHAUSTED" >&2; exit 1; fi
 """
@@ -116,6 +116,122 @@ Initial candidate: {candidate_len} chars.
 {rules_section}
 """
 
+_EVAL_GENERALIZATION = """\
+## Evaluation
+This is a **generalization** task with {train_size} training examples.
+Training examples are in `train/` as individual JSON files.
+
+### Train evaluation
+```bash
+# Evaluate on all training examples
+./eval.sh candidate.txt
+
+# Evaluate on specific examples
+./eval.sh candidate.txt --ids example_0,example_1,example_2
+```{cost_line}{val_section}"""
+
+_EVAL_SINGLE = """\
+## Evaluation
+This is a **single-task** optimization.
+```bash
+./eval.sh candidate.txt
+```{cost_line}"""
+
+_VAL_SECTION = """
+### Validation
+There is a hidden validation set ({val_size} examples).
+You cannot see individual val examples or their scores.
+```bash
+./validate.sh candidate.txt
+```
+Returns only the aggregate val_score.{val_cost}"""
+
+
+def _budget_section(budget: BudgetTracker) -> str:
+    lines: list[str] = []
+    if budget.max_evals is not None:
+        lines.append(f"- **Evaluation cap:** {budget.max_evals} calls (each eval = 1 unit).")
+    if budget.max_token_cost is not None:
+        lines.append(
+            f"- **LLM token budget:** ${budget.max_token_cost:.2f} "
+            "(enforced by the Claude CLI; you'll stop automatically when exhausted)."
+        )
+    if not lines:
+        lines.append("- No hard budget limit — iterate freely.")
+    return "\n".join(lines)
+
+
+def _strategy_section(task: Task) -> str:
+    """Explicit experiment loop, in the spirit of karpathy/autoresearch.
+
+    Three modes, picked by what splits the task has:
+      - train_set + val_set → ``./validate.sh`` is the per-iteration signal;
+        ``train/`` is materialized for diagnostic inspection (``--ids``) only.
+      - train_set only      → ``./eval.sh`` on the train split is the signal.
+      - no dataset          → ``./eval.sh`` runs the single-task ``eval_fn``.
+    """
+    has_train_dir = task.has_dataset and bool(task.train_set)
+    use_val_signal = has_train_dir and bool(task.val_set)
+
+    score_cmd = "./validate.sh candidate.txt" if use_val_signal else "./eval.sh candidate.txt"
+    score_label = "val_score" if use_val_signal else "score"
+
+    note = (
+        "**Note:** training examples are materialized under `train/` for inspection. "
+        "Spot-check specific examples on demand with "
+        "`./eval.sh candidate.txt --ids id1,id2,id3` to diagnose failures.\n\n"
+        if use_val_signal
+        else ""
+    )
+
+    if has_train_dir:
+        baseline_note = f"note the {score_label}"
+        edit_step = (
+            "2. **Hypothesize and edit.** Read failures in `train/` "
+            "(spot-check with `./eval.sh candidate.txt --ids id1,id2` if useful), "
+            "form a hypothesis, edit `candidate.txt`."
+        )
+    else:
+        baseline_note = "note the score and any judge feedback"
+        edit_step = (
+            "2. **Hypothesize and edit.** Use the judge feedback from the prior eval, "
+            "form a hypothesis, edit `candidate.txt`."
+        )
+
+    return (
+        "Run this as an explicit experiment loop forever, until you hit the max score (if there is one)."
+        f"{note}"
+        f"1. **Baseline.** Run `{score_cmd}` on the seed; {baseline_note}.\n"
+        f"{edit_step}\n"
+        f"3. **Score.** Run `{score_cmd}`.\n"
+        f"4. **Keep or discard.** If {score_label} improved over the best so far, "
+        "`cp candidate.txt best_candidate.txt`. "
+        "Otherwise `cp best_candidate.txt candidate.txt` to revert.\n"
+        "5. Repeat from step 2"
+    )
+
+
+def _perfect_score_section(perfect_score: float | None) -> str:
+    if perfect_score is None:
+        return ""
+    return (
+        f"\n## Perfect Score\n"
+        f"The maximum achievable score is **{perfect_score}**. "
+        f"Once you reach this score, stop iterating — further improvements are impossible.\n"
+    )
+
+
+def _rules_section(task: Task, budget: BudgetTracker) -> str:
+    scripts = "eval.sh, validate.sh" if task.val_set else "eval.sh"
+    val_rule = "\n- You cannot see the validation examples." if task.val_set else ""
+    exhaust_rule = (
+        "\n- When the budget is exhausted, scripts return BUDGET_EXHAUSTED." if budget.max_evals is not None else ""
+    )
+    return (
+        f"- You cannot modify {scripts} or the server.{val_rule}\n"
+        f"- Focus on meaningful improvements each iteration.{exhaust_rule}"
+    )
+
 
 def _build_program_md(task: Task, budget: BudgetTracker, *, perfect_score: float | None) -> str:
     optional = ""
@@ -125,6 +241,7 @@ def _build_program_md(task: Task, budget: BudgetTracker, *, perfect_score: float
         optional += f"## Background\n{task.background}\n\n"
 
     has_eval_budget = budget.max_evals is not None
+
     if task.has_dataset and task.train_set:
         train_size = len(task.train_set)
         cost_line = (
@@ -132,82 +249,29 @@ def _build_program_md(task: Task, budget: BudgetTracker, *, perfect_score: float
             if has_eval_budget
             else ""
         )
-        val_section = ""
         if task.val_set:
             val_size = len(task.val_set)
             val_cost = f" Costs {val_size} budget units." if has_eval_budget else ""
-            val_section = (
-                f"\n### Validation\nThere is a hidden validation set ({val_size} examples). "
-                f"You cannot see individual val examples or their scores.\n"
-                f"```bash\n./validate.sh candidate.txt\n```\n"
-                f"Returns only the aggregate val_score.{val_cost}"
-            )
-        eval_section = (
-            f"## Evaluation\n"
-            f"This is a **generalization** task with {train_size} training examples.\n"
-            f"```bash\n# Evaluate on all training examples\n./eval.sh candidate.txt\n\n"
-            f"# Evaluate on specific examples\n./eval.sh candidate.txt --ids example_0,example_1\n```"
-            f"{cost_line}{val_section}"
+            val_section = "\n" + _VAL_SECTION.format(val_size=val_size, val_cost=val_cost)
+        else:
+            val_section = ""
+        eval_section = _EVAL_GENERALIZATION.format(
+            train_size=train_size,
+            cost_line=cost_line,
+            val_section=val_section,
         )
     else:
         cost_line = "\nEach eval costs 1 budget unit." if has_eval_budget else ""
-        eval_section = (
-            f"## Evaluation\nThis is a **single-task** optimization.\n```bash\n./eval.sh candidate.txt\n```{cost_line}"
-        )
-
-    budget_lines: list[str] = []
-    if budget.max_evals is not None:
-        budget_lines.append(f"- **Evaluation cap:** {budget.max_evals} calls (each eval = 1 unit).")
-    if budget.max_token_cost is not None:
-        budget_lines.append(
-            f"- **LLM token budget:** ${budget.max_token_cost:.2f} "
-            "(enforced by the Claude CLI; you'll stop automatically when exhausted)."
-        )
-    if not budget_lines:
-        budget_lines.append("- No hard budget limit — iterate freely.")
-    budget_section = "\n".join(budget_lines)
-    if perfect_score is not None:
-        budget_section += (
-            f"\n\n## Perfect Score\nThe maximum achievable score is **{perfect_score}**. "
-            f"Once you reach this score, stop iterating — further improvements are impossible."
-        )
-
-    if task.has_dataset and task.train_set:
-        val_step = "5. Validate periodically with `./validate.sh candidate.txt`.\n" if task.val_set else ""
-        final_n = 6 if task.val_set else 5
-        strategy_section = (
-            "1. Read the training examples in `train/` to understand the task.\n"
-            "2. Run `./eval.sh candidate.txt` for a baseline.\n"
-            "3. Analyze failures — inspect examples that scored 0.\n"
-            "4. Improve the candidate; spot-check with `--ids`.\n"
-            f"{val_step}{final_n}. Write your best candidate to `best_candidate.txt`."
-        )
-    else:
-        strategy_section = (
-            "1. Read the candidate (`candidate.txt`) and the problem description above.\n"
-            "2. Run `./eval.sh candidate.txt` for a baseline score and any judge feedback.\n"
-            "3. Revise the candidate based on what you learned.\n"
-            "4. Iterate; write your best solution to `best_candidate.txt` as you improve."
-        )
-
-    scripts = "eval.sh, validate.sh" if task.val_set else "eval.sh"
-    val_rule = "\n- You cannot see the validation examples." if task.val_set else ""
-    exhaust_rule = (
-        "\n- When the budget is exhausted, scripts return BUDGET_EXHAUSTED." if budget.max_evals is not None else ""
-    )
-    rules_section = (
-        f"- You cannot modify {scripts} or the server.{val_rule}\n"
-        f"- Focus on meaningful improvements each iteration.{exhaust_rule}"
-    )
+        eval_section = _EVAL_SINGLE.format(cost_line=cost_line)
 
     return _PROGRAM_MD.format(
         name=task.name,
         optional_sections=optional,
         candidate_len=len(task.initial_candidate),
         eval_section=eval_section,
-        budget_section=budget_section,
-        strategy_section=strategy_section,
-        rules_section=rules_section,
+        budget_section=_budget_section(budget) + _perfect_score_section(perfect_score),
+        strategy_section=_strategy_section(task),
+        rules_section=_rules_section(task, budget),
     )
 
 
@@ -266,7 +330,17 @@ class ClaudeCodeBackend:
     def run(self, task: Task, server: EvalServer) -> Result:
         budget = server.budget
 
-        if self.run_dir:
+        # When sandbox=True, force tempdir work_dir even if run_dir is set.
+        # macOS Seatbelt bug: ``denyRead: ["~/"]`` no-ops if ``allowRead``
+        # contains any path under ``~/``. A TMPDIR-rooted work_dir keeps
+        # allowRead outside home, so the deny rule actually blocks
+        # ~/.claude/projects, ~/.ssh, the project source tree, etc.
+        # ``process_result`` mirrors artifacts back to self.run_dir so the
+        # user doesn't lose them.
+        if self.sandbox:
+            self._pending_tempdir = tempfile.TemporaryDirectory(prefix="omni_cc_")
+            work_dir = Path(self._pending_tempdir.name)
+        elif self.run_dir:
             work_dir = Path(self.run_dir)
             work_dir.mkdir(parents=True, exist_ok=True)
         else:
@@ -304,6 +378,8 @@ class ClaudeCodeBackend:
             "bypassPermissions",
             DENY_WEB_TOOLS,
         ]
+        if self.sandbox:
+            cmd.extend(claude_settings_args(work_dir))  # macOS Seatbelt fallback
         if self.max_thinking_tokens is None and self.effort is not None:
             cmd.extend(["--effort", self.effort])
         if budget.max_token_cost is not None:

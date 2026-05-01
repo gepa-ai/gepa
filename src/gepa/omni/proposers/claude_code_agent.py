@@ -74,7 +74,7 @@ from typing import Any
 
 from gepa.omni.backends.claude_utils import copy_session_transcript
 from gepa.omni.budget import BudgetExhausted
-from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix
+from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_settings_args
 
 _FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 
@@ -692,6 +692,8 @@ can see your reasoning; keep it tight.
             "bypassPermissions",
             DENY_WEB_TOOLS,
         ]
+        if jail_root is not None:
+            cmd.extend(claude_settings_args(jail_root))  # macOS Seatbelt fallback
         if self.max_thinking_tokens is None and self.effort is not None:
             cmd.extend(["--effort", self.effort])
         if self.max_budget_usd is not None:
