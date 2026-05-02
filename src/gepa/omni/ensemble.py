@@ -8,12 +8,12 @@ Two flavors of each helper:
   Budgets are pre-partitioned per config; if a backend finishes early its
   leftover budget is not redistributed.
 - ``optimize_*_with_server`` — primitive. Caller owns the
-  :class:`EvalServer`(s). For the parallel-family helpers the caller
-  pre-builds one server per config (one budget partition per backend).
-  For sequential the caller pre-builds **one** server that all stages
-  share (single budget pool — per-config budgets are ignored). Useful
-  when an outer framework (e.g. terrarium) wants every inner eval routed
-  through its own server while still composing multiple backends.
+  :class:`EvalServer`(s). All four helpers take **one server per config**
+  (one :class:`BudgetTracker` per backend or per stage), so budget is
+  fair-shared across the composition — pre-partition ``total / N`` the
+  way you want it spent. Useful when an outer framework (e.g. terrarium)
+  wants every inner eval routed through its own server while still
+  composing multiple backends.
 
 Helpers
 -------
@@ -169,53 +169,58 @@ def optimize_vote(
 # ── _with_server variants ──────────────────────────────────────────────
 #
 # Mirror the four convenience helpers above, but caller owns the
-# :class:`EvalServer`(s). The parallel-family helpers take a list of
-# servers (one per config — pre-partitioned budgets). Sequential takes a
-# single shared server (one budget pool — per-config budgets ignored).
+# :class:`EvalServer`(s). All four take ``list[EvalServer]`` (one server per
+# config) so budget is fair-shared across the composition — pre-partition
+# ``total / N`` the way you want it spent.
 #
 # Caller is responsible for ``server.start()`` / ``server.stop()``;
 # these helpers do not touch lifecycle.
 
 
 def optimize_sequential_with_server(
-    server: EvalServer,
+    servers: list[EvalServer],
     configs: list[OmniConfig],
 ) -> Result:
-    """Sequential variant for a caller-owned :class:`EvalServer`.
+    """Sequential variant for caller-owned :class:`EvalServer`s.
 
-    All stages share ``server`` and thus a single budget pool — per-config
-    ``max_evals`` / ``max_token_cost`` are ignored (the server's
-    :class:`BudgetTracker` is the single hard cap).
+    ``servers`` and ``configs`` are zipped — stage ``i`` runs config ``i``
+    against server ``i``. Each server has its own :class:`BudgetTracker`,
+    so budget is **fair-shared across stages** (caller pre-partitions, e.g.
+    ``total / N`` per stage). A productive early stage cannot monopolize the
+    budget pool — symmetric with the parallel-family helpers.
 
-    Between stages the function mutates ``server.task`` to seed the next
-    stage's ``initial_candidate`` with the running-best candidate, exactly
-    like :func:`optimize_sequential`. The mutation is benign: only
-    ``initial_candidate`` changes, and the server doesn't read it again
-    after construction (only the next backend does, when picking up the
-    seed).
+    Between stages the function seeds the next stage's
+    ``initial_candidate`` with the running-best candidate by mutating
+    ``servers[i].task`` in place, exactly like :func:`optimize_sequential`.
+    The mutation is benign: only ``initial_candidate`` changes, and a server
+    doesn't read it again after construction (only the next backend does,
+    when picking up the seed).
 
     Returns the :class:`Result` of the last stage with ``stage_results``,
     ``best_stage_score``, and ``best_stage_candidate`` in metadata.
     """
     if not configs:
         raise ValueError("optimize_sequential_with_server requires at least one config")
+    if len(servers) != len(configs):
+        raise ValueError(f"servers and configs must have the same length (got {len(servers)} and {len(configs)})")
 
-    original_task = server.task
+    original_tasks = [s.task for s in servers]
     stage_results: list[Result] = []
     best_so_far: Result | None = None
 
     try:
-        for cfg in configs:
-            result = optimize_anything_with_server(server, cfg)
+        for i, cfg in enumerate(configs):
+            srv = servers[i]
+            # Seed this stage with the running-best candidate, if any.
+            if best_so_far is not None:
+                srv.task = replace(srv.task, initial_candidate=best_so_far.best_candidate)
+            result = optimize_anything_with_server(srv, cfg)
             stage_results.append(result)
             if best_so_far is None or result.best_score > best_so_far.best_score:
                 best_so_far = result
-            # Always feed the running best forward, not the latest run's
-            # output — protects the pipeline from a single regressing stage.
-            assert best_so_far is not None
-            server.task = replace(server.task, initial_candidate=best_so_far.best_candidate)
     finally:
-        server.task = original_task
+        for s, t in zip(servers, original_tasks, strict=True):
+            s.task = t
 
     assert best_so_far is not None
     final = stage_results[-1]
