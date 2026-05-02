@@ -119,7 +119,15 @@ class GepaBackend:
                 reflection_lm = LM(lm_name, **lm_kwargs)
                 reflection_kwargs["reflection_lm"] = reflection_lm
 
+        # Default ``cache_evaluation=True`` so re-evaluating the same
+        # (candidate, minibatch) pair across iterations is a no-op. Gepa's
+        # EngineConfig defaults this to False, which causes the reflective
+        # proposer's ``eval_curr`` to call evaluate() on the same selected
+        # program every time it gets re-picked from the pareto frontier
+        # (and on the seed in iteration 1, because curr_prog == seed).
+        # Caller can override via ``config.engine.cache_evaluation=False``.
         engine_kwargs: dict[str, Any] = {
+            "cache_evaluation": True,
             **self.engine,
             "run_dir": self.run_dir,
             "max_metric_calls": budget.max_evals,
