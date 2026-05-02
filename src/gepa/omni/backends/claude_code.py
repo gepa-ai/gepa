@@ -38,7 +38,16 @@ if TYPE_CHECKING:
     from gepa.omni.task import Task
 
 
-_CC_CONFIG_KEYS: tuple[str, ...] = ("model",)
+_CC_CONFIG_KEYS: tuple[str, ...] = ("model", "ralph")
+
+
+# Nudge fed to claude --resume on each Ralph iteration. Kept short — the
+# agent already has full context from program.md and prior session turns.
+RALPH_CONTINUE_PROMPT = "Continue improving the candidate."
+
+# Stop the Ralph loop when the LLM budget has less than this much headroom
+# left — not worth spawning another CLI for pennies.
+_RALPH_MIN_HEADROOM_USD = 0.05
 
 
 EVAL_SCRIPT_SINGLE = """\
@@ -192,8 +201,7 @@ def _rules_section(task: Task, budget: BudgetTracker) -> str:
         "\n- When the budget is exhausted, scripts return BUDGET_EXHAUSTED." if budget.max_evals is not None else ""
     )
     return (
-        "- You cannot modify eval.sh or the server.\n"
-        f"- Focus on meaningful improvements each iteration.{exhaust_rule}"
+        f"- You cannot modify eval.sh or the server.\n- Focus on meaningful improvements each iteration.{exhaust_rule}"
     )
 
 
@@ -260,9 +268,7 @@ def _materialize_sandbox(
         # is sealed at the eval-server HTTP layer.
         for split in ("train", "val"):
             for eid, ex in server.iter_split(split):
-                (train_dir / f"{eid}.json").write_text(
-                    json.dumps(example_to_json(eid, ex), indent=2, default=str)
-                )
+                (train_dir / f"{eid}.json").write_text(json.dumps(example_to_json(eid, ex), indent=2, default=str))
 
 
 class ClaudeCodeBackend:
@@ -273,6 +279,9 @@ class ClaudeCodeBackend:
     - ``model``: Claude model id. Default ``"claude-sonnet-4-6"`` (versioned —
       pin for reproducibility; pass ``"sonnet"`` / ``"opus"`` aliases to track
       Anthropic's current default).
+    - ``ralph``: When true, resume the same claude session via
+      ``claude --resume`` whenever the CLI exits before the LLM/eval budget
+      is out and keep iterating. Off by default — single-shot semantics.
     """
 
     name = "claude_code"
@@ -281,6 +290,7 @@ class ClaudeCodeBackend:
         extras = config.config
         warn_unknown_config_keys(self.name, extras, _CC_CONFIG_KEYS)
         self.model: str = extras.get("model", "claude-sonnet-4-6")
+        self.ralph: bool = bool(extras.get("ralph", False))
         self.run_dir = config.run_dir
         self.effort = config.effort
         self.stop_at_score = config.stop_at_score
@@ -322,27 +332,6 @@ class ClaudeCodeBackend:
         )
 
         session_id = str(uuid.uuid4())
-        cmd: list[str] = bwrap_prefix(work_dir) if self.sandbox else []
-        cmd += [
-            "claude",
-            "--print",
-            "--output-format",
-            "json",
-            "--model",
-            self.model,
-            "--session-id",
-            session_id,
-            "--permission-mode",
-            "bypassPermissions",
-            DENY_WEB_TOOLS,
-        ]
-        if self.sandbox:
-            cmd.extend(claude_settings_args(work_dir))  # macOS Seatbelt fallback
-        if self.max_thinking_tokens is None and self.effort is not None:
-            cmd.extend(["--effort", self.effort])
-        if budget.max_token_cost is not None:
-            cmd.extend(["--max-budget-usd", str(budget.max_token_cost)])
-        cmd.append(prompt)
 
         env = {**os.environ, "GEPA_OMNI_WORK_DIR": str(work_dir)}
         env.pop("CLAUDECODE", None)
@@ -351,8 +340,53 @@ class ClaudeCodeBackend:
             env["CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING"] = "1"
             env["MAX_THINKING_TOKENS"] = str(self.max_thinking_tokens)
 
-        proc = subprocess.run(cmd, cwd=str(work_dir), env=env, capture_output=True, text=True)
-        adapter_cost = _extract_claude_cost(proc.stdout)
+        adapter_cost = 0.0
+        invocations: list[dict[str, float | int | None]] = []
+
+        proc = self._run_claude(
+            work_dir=work_dir,
+            session_id=session_id,
+            prompt=prompt,
+            budget=budget,
+            adapter_cost=adapter_cost,
+            resume=False,
+            env=env,
+        )
+        iter_cost = _extract_claude_cost(proc.stdout)
+        adapter_cost += iter_cost
+        invocations.append({"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode})
+
+        if self.ralph:
+            # Resume the same session until the budget is out or claude
+            # signals it's done by erroring. Each iteration's
+            # --max-budget-usd is the *remaining* LLM budget so the
+            # final iteration self-caps inside the CLI. No fixed cap —
+            # the loop runs until something else stops it.
+            while True:
+                if proc.returncode != 0:
+                    break  # claude errored — don't retry blindly
+                if not self._has_budget_headroom(server, adapter_cost):
+                    break
+                # Trust server.best_score over agent compliance with
+                # program.md's perfect_score directive.
+                if (
+                    self.stop_at_score is not None
+                    and server.best_score is not None
+                    and server.best_score >= self.stop_at_score
+                ):
+                    break
+                proc = self._run_claude(
+                    work_dir=work_dir,
+                    session_id=session_id,
+                    prompt=RALPH_CONTINUE_PROMPT,
+                    budget=budget,
+                    adapter_cost=adapter_cost,
+                    resume=True,
+                    env=env,
+                )
+                iter_cost = _extract_claude_cost(proc.stdout)
+                adapter_cost += iter_cost
+                invocations.append({"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode})
 
         best_candidate = best_file.read_text() if best_file.exists() else task.initial_candidate
 
@@ -365,8 +399,69 @@ class ClaudeCodeBackend:
                 "adapter_cost": adapter_cost,
                 "session_id": session_id,
                 "work_dir": str(work_dir),
+                "invocations": invocations,
             },
         )
+
+    def _run_claude(
+        self,
+        *,
+        work_dir: Path,
+        session_id: str,
+        prompt: str,
+        budget: BudgetTracker,
+        adapter_cost: float,
+        resume: bool,
+        env: dict[str, str],
+    ) -> subprocess.CompletedProcess[str]:
+        """Invoke ``claude --print`` once. ``resume=True`` continues the pinned
+        session via ``--resume <session_id>`` instead of starting a new one.
+        ``--max-budget-usd`` is set to the *remaining* LLM budget so successive
+        iterations don't stack the cap.
+        """
+        cmd: list[str] = bwrap_prefix(work_dir) if self.sandbox else []
+        cmd += [
+            "claude",
+            "--print",
+            "--output-format",
+            "json",
+            "--model",
+            self.model,
+        ]
+        if resume:
+            cmd.extend(["--resume", session_id])
+        else:
+            cmd.extend(["--session-id", session_id])
+        cmd.extend(
+            [
+                "--permission-mode",
+                "bypassPermissions",
+                DENY_WEB_TOOLS,
+            ]
+        )
+        if self.sandbox:
+            cmd.extend(claude_settings_args(work_dir))  # macOS Seatbelt fallback
+        if self.max_thinking_tokens is None and self.effort is not None:
+            cmd.extend(["--effort", self.effort])
+        if budget.max_token_cost is not None:
+            remaining = max(0.0, budget.max_token_cost - adapter_cost)
+            cmd.extend(["--max-budget-usd", f"{remaining:.6f}"])
+        cmd.append(prompt)
+
+        return subprocess.run(cmd, cwd=str(work_dir), env=env, capture_output=True, text=True)
+
+    def _has_budget_headroom(self, server: EvalServer, adapter_cost: float) -> bool:
+        """Whether starting another Ralph iteration is worthwhile. Stops if the
+        eval-count budget is exhausted, or if the LLM budget has less than
+        ``_RALPH_MIN_HEADROOM_USD`` left (no point spawning a CLI for pennies).
+        """
+        budget = server.budget
+        if budget.exhausted:
+            return False
+        if budget.max_token_cost is not None:
+            if adapter_cost >= budget.max_token_cost - _RALPH_MIN_HEADROOM_USD:
+                return False
+        return True
 
     def process_result(self, result: Result, output_dir: Path | None) -> None:
         if output_dir is None:
