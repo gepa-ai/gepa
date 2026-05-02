@@ -589,7 +589,9 @@ class MetaHarnessBackend:
 
     Backend-specific keys read from ``OmniConfig.config``:
 
-    - ``model``: Proposer model. Default ``"opus"``.
+    - ``model``: Proposer model. Default ``"claude-sonnet-4-6"`` (versioned —
+      pin for reproducibility; pass ``"sonnet"`` / ``"opus"`` aliases to track
+      Anthropic's current default).
     - ``max_iterations``: Hard cap on proposer sessions. ``None`` = until budget.
         Default ``10``.
     - ``max_candidates_per_iter``: Upper bound on candidates per iteration.
@@ -601,7 +603,7 @@ class MetaHarnessBackend:
     def __init__(self, config: OmniConfig) -> None:
         extras = config.config
         warn_unknown_config_keys(self.name, extras, _MH_CONFIG_KEYS)
-        self.model: str = extras.get("model", "opus")
+        self.model: str = extras.get("model", "claude-sonnet-4-6")
         self.max_iterations: int | None = extras.get("max_iterations", 10)
         self.max_candidates_per_iter: int = max(1, int(extras.get("max_candidates_per_iter", 3)))
         self.run_dir = config.run_dir

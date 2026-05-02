@@ -270,7 +270,9 @@ class ClaudeCodeBackend:
 
     Backend-specific keys read from ``OmniConfig.config``:
 
-    - ``model``: Claude model id (e.g. ``"sonnet"``, ``"opus"``). Default ``"sonnet"``.
+    - ``model``: Claude model id. Default ``"claude-sonnet-4-6"`` (versioned —
+      pin for reproducibility; pass ``"sonnet"`` / ``"opus"`` aliases to track
+      Anthropic's current default).
     """
 
     name = "claude_code"
@@ -278,7 +280,7 @@ class ClaudeCodeBackend:
     def __init__(self, config: OmniConfig) -> None:
         extras = config.config
         warn_unknown_config_keys(self.name, extras, _CC_CONFIG_KEYS)
-        self.model: str = extras.get("model", "sonnet")
+        self.model: str = extras.get("model", "claude-sonnet-4-6")
         self.run_dir = config.run_dir
         self.effort = config.effort
         self.stop_at_score = config.stop_at_score

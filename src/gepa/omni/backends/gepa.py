@@ -245,7 +245,7 @@ class GepaBackend:
 
         cfg = dict(self.claude_code_agent or {})
         kwargs: dict[str, Any] = {
-            "model": cfg.pop("model", "sonnet"),
+            "model": cfg.pop("model", "claude-sonnet-4-6"),
             "run_dir": cfg.pop("run_dir", self.run_dir),
             "objective": cfg.pop("objective", objective),
             "background": cfg.pop("background", background),
