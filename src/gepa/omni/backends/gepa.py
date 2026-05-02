@@ -116,6 +116,12 @@ class GepaBackend:
                 if self.max_thinking_tokens is not None:
                     lm_kwargs["thinking"] = {"type": "enabled", "budget_tokens": self.max_thinking_tokens}
                     lm_kwargs.pop("reasoning_effort", None)
+                elif self.effort is not None:
+                    # Auto-thread OmniConfig.effort into the LM kwargs so the
+                    # LM-based proposer picks up extended thinking the same way
+                    # the claude_code_agent path does. User overrides via
+                    # explicit reflection_lm_kwargs.reasoning_effort still win.
+                    lm_kwargs.setdefault("reasoning_effort", self.effort)
                 reflection_lm = LM(lm_name, **lm_kwargs)
                 reflection_kwargs["reflection_lm"] = reflection_lm
 
