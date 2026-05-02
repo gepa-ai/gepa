@@ -296,7 +296,7 @@ def _run_proposer(
     ]
     if sandbox:
         cmd.extend(claude_settings_args(work_dir))  # macOS Seatbelt fallback
-    if max_thinking_tokens is None and effort is not None:
+    if effort is not None:
         cmd.extend(["--effort", effort])
     if max_budget_usd is not None:
         cmd.extend(["--max-budget-usd", f"{max_budget_usd:.4f}"])

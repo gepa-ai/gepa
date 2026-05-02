@@ -46,9 +46,11 @@ class OmniConfig:
             explicitly to persist them.
         stop_at_score: Score threshold for early stop. Each backend interprets.
         effort: ``claude --effort low|medium|high|max`` for backends that use
-            Claude Code. Mutex with ``max_thinking_tokens``.
-        max_thinking_tokens: Fixed thinking-token budget. Mutex with
-            ``effort``.
+            Claude Code. Independent of ``max_thinking_tokens`` — both can be
+            set; behavior with both set is whatever the runtime (claude CLI /
+            litellm) does when both are passed.
+        max_thinking_tokens: Fixed thinking-token budget. Independent of
+            ``effort`` (both can be set together).
         sandbox: Wrap subprocess backends in bwrap (Linux). Default ``False``.
         config: Free-form, backend-specific options. Each backend's factory
             pops the keys it understands; the api warns about leftovers (so

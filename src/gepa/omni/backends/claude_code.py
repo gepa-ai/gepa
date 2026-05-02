@@ -441,7 +441,7 @@ class ClaudeCodeBackend:
         )
         if self.sandbox:
             cmd.extend(claude_settings_args(work_dir))  # macOS Seatbelt fallback
-        if self.max_thinking_tokens is None and self.effort is not None:
+        if self.effort is not None:
             cmd.extend(["--effort", self.effort])
         if budget.max_token_cost is not None:
             remaining = max(0.0, budget.max_token_cost - adapter_cost)

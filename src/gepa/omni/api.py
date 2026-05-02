@@ -71,8 +71,6 @@ def optimize_anything(
         config = OmniConfig()
     if config.max_evals is None and config.max_token_cost is None:
         raise ValueError("At least one of config.max_evals or config.max_token_cost must be specified")
-    if config.effort is not None and config.max_thinking_tokens is not None:
-        raise ValueError("config.effort and config.max_thinking_tokens are mutually exclusive")
 
     backend = _build_backend(config)
     out_path = _resolve_output_dir(config.output_dir, task=task, backend_name=backend.name)
@@ -128,8 +126,6 @@ def optimize_anything_with_server(
     """
     if config is None:
         config = OmniConfig()
-    if config.effort is not None and config.max_thinking_tokens is not None:
-        raise ValueError("config.effort and config.max_thinking_tokens are mutually exclusive")
 
     backend = _build_backend(config)
     return _execute(server, backend, owns_server=False)
