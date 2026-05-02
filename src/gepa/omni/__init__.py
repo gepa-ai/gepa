@@ -27,9 +27,13 @@ from gepa.omni.budget import BudgetExhausted, BudgetTracker
 from gepa.omni.config import OmniConfig
 from gepa.omni.ensemble import (
     optimize_best_of,
+    optimize_best_of_with_server,
     optimize_parallel,
+    optimize_parallel_with_server,
     optimize_sequential,
+    optimize_sequential_with_server,
     optimize_vote,
+    optimize_vote_with_server,
 )
 from gepa.omni.eval_server import EvalServer
 from gepa.omni.proposers import ClaudeCodeAgentProposer
@@ -61,9 +65,13 @@ __all__ = [
     "optimize_anything",
     "optimize_anything_with_server",
     "optimize_best_of",
+    "optimize_best_of_with_server",
     "optimize_parallel",
+    "optimize_parallel_with_server",
     "optimize_sequential",
+    "optimize_sequential_with_server",
     "optimize_vote",
+    "optimize_vote_with_server",
     "register_backend",
     "register_task",
     "register_task_factory",
