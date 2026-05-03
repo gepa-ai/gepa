@@ -263,13 +263,6 @@ def test_agent_state_rejected_proposals(run_dir):
     assert comp_path.exists()
     assert comp_path.read_text() == "rejected attempt"
 
-    # Raw trace entry kept alongside for debugging.
-    with open(iter_dir / "trace.json") as f:
-        trace = json.load(f)
-    assert trace["i"] == 7
-    assert trace["proposal_accepted"] is False
-    assert trace["eval_before"]["trajectories"] == ["trace_before"]
-
     # Legacy trees gone.
     assert not (run_dir_path / "rejected_proposals").exists()
     assert not (run_dir_path / "candidates").exists()

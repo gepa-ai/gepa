@@ -429,10 +429,14 @@ class GEPAState(Generic[RolloutOutput, DataId]):
 
     def _save_seed_iteration_dir(self, run_dir: str) -> None:
         """Write ``iterations/00000/`` — the seed candidate (candidate_idx 0)."""
+        base = "iterations/00000"
+        # Seed dir is immutable once written; skip on subsequent saves so
+        # per-iteration cost stays O(1) instead of O(N).
+        if os.path.exists(os.path.join(run_dir, base, "meta.json")):
+            return
         avg_score, coverage = self.get_program_average_val_subset(0)
         metric_calls = self.num_metric_calls_by_discovery[0] if self.num_metric_calls_by_discovery else 0
         obj_scores = self.prog_candidate_objective_scores[0] if self.prog_candidate_objective_scores else {}
-        base = "iterations/00000"
         self._atomic_write_json(
             run_dir,
             f"{base}/meta.json",
@@ -444,7 +448,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 "parent_iteration_ids": [],
                 "avg_val_score": avg_score,
                 "num_val_scored": coverage,
-                "metric_calls_to_discover": metric_calls,
+                "metric_calls_so_far": metric_calls,
                 "objective_scores": obj_scores,
             },
         )
@@ -467,6 +471,13 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 continue
             iter_id = trace_i + 1
             base = f"iterations/{iter_id:05d}"
+            # Trace entries are finalized in the body of iteration K-1 before
+            # the iteration-K save runs (state.save fires at the top of the
+            # loop, after the previous body has fully populated its entry).
+            # Once meta.json exists the dir is immutable — skip rewriting so
+            # save cost stays O(1) per iteration instead of O(N).
+            if os.path.exists(os.path.join(run_dir, base, "meta.json")):
+                continue
             accepted = entry.get("proposal_accepted")
             candidate_idx = entry.get("new_program_idx") if accepted else None
             parent_candidate_idx = entry.get("selected_program_candidate")
@@ -520,12 +531,6 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                     f"{base}/val_scores.json",
                     {str(k): v for k, v in self.prog_candidate_val_subscores[candidate_idx].items()},
                 )
-
-            # Raw trace entry (includes eval_before/eval_after with outputs
-            # and trajectories captured on the subsample). Kept for
-            # debugging — the structured meta.json above is the primary
-            # agent-facing artifact.
-            self._atomic_write_json(run_dir, f"{base}/trace.json", entry)
 
     def _save_components_dir(self, run_dir: str, base: str, components: dict[str, str]) -> None:
         """Write ``<base>/components/<stem>.txt`` plus ``_index.json``."""
