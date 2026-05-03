@@ -308,7 +308,10 @@ class ClaudeCodeAgentProposer:
         reflection_dir = subdir / "reflection"
         reflection_dir.mkdir()
         for name in components_to_update:
-            records = list(reflective_dataset.get(name, []))
+            records = [
+                {k: v for k, v in r.items() if v is not None} if isinstance(r, Mapping) else r
+                for r in reflective_dataset.get(name, [])
+            ]
             (reflection_dir / f"{name_to_stem[name]}.json").write_text(json.dumps(records, indent=2, default=str))
 
         new_dir = subdir / "new"
@@ -342,8 +345,7 @@ class ClaudeCodeAgentProposer:
             f"## Task\nThe problem statement and **scoring rubric** are in "
             f"`{run_abs}/task.md`. Read it first — it defines what a higher "
             "score means and, for graded problems, what the achievable range "
-            "actually is. Do not assume a score of 1.0 is perfect unless "
-            "`task.md` says so.\n\n"
+            "actually is.\n\n"
             if task_md_exists
             else ""
         )
@@ -357,9 +359,9 @@ class ClaudeCodeAgentProposer:
             history_section = (
                 f"## History\nRead `{run_abs}/history.md` **first**. It's a "
                 "chronological log of every prior iteration's short plan and "
-                "score outcome (accepted or rejected). Use it to avoid "
-                "repeating strategies that have already been tried and to "
-                "build on what worked.\n\n"
+                "score outcome (accepted or rejected). "
+                "You can look into approaches that you believe are interesting to improve, "
+                "but you can also explore different angles. \n\n"
             )
         # Enumerate concrete input paths per component, same pattern the
         # Outputs section uses. Passing literal ``<stem>`` placeholders
@@ -427,7 +429,7 @@ One improved-text file per component:
 Wrap the new component text in a single ```…``` fenced block. Anything
 outside the block is treated as rationale and discarded by the engine.
 
-**Also** write a short plan to `{sub_abs}/plan.md` — **≤50 words**, plain
+**Also** write a short summary to `{sub_abs}/plan.md` — **≤50 words**, plain
 prose. Describe what you're changing and why. This file is concatenated
 with every prior iteration's plan into `history.md` so future proposers
 can see your reasoning; keep it tight.
