@@ -540,6 +540,10 @@ can see your reasoning; keep it tight.
         # jail, never run_dir — closes the CLAUDE.md walk-up channel and
         # keeps sibling proposer outputs invisible. Outputs sync back to
         # ``subdir`` after claude returns.
+        # Claude writes its session transcript under ``~/.claude/projects/<slug>/``
+        # where the slug is derived from claude's cwd. Sandboxed runs use the
+        # jail root; non-sandboxed runs use ``self.run_dir``. Pass the matching
+        # cwd to ``copy_session_transcript`` so the slug lookup hits.
         proc: subprocess.CompletedProcess[str]
         if self.sandbox:
             with tempfile.TemporaryDirectory(prefix="omni_gepa_cc_agent_") as jail_root_str:
@@ -556,6 +560,7 @@ can see your reasoning; keep it tight.
                     session_id=session_id,
                 )
                 self._sync_jail_outputs(agent_subdir, subdir)
+                copy_session_transcript(jail_root, session_id, subdir)
         else:
             proc = self._run_claude(
                 subdir,
@@ -567,8 +572,7 @@ can see your reasoning; keep it tight.
                 env=env,
                 session_id=session_id,
             )
-
-        copy_session_transcript(self.run_dir, session_id, subdir)
+            copy_session_transcript(self.run_dir, session_id, subdir)
 
         payload: dict[str, Any] = {}
         stdout = (proc.stdout or "").strip()
