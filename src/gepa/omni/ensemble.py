@@ -59,19 +59,19 @@ def optimize_sequential(
     backend ``k+2``.
 
     Returns the :class:`Result` of the last backend run, with metadata
-    augmented by ``stage_results`` (one Result per config) and
-    ``best_stage_score``.
+    augmented by ``all_results`` (one Result per config, stage-ordered) and
+    ``best_stage_score`` / ``best_stage_candidate``.
     """
     if not configs:
         raise ValueError("optimize_sequential requires at least one config")
 
-    stage_results: list[Result] = []
+    all_results: list[Result] = []
     current_task = task
     best_so_far: Result | None = None
 
     for cfg in configs:
         result = optimize_anything(current_task, evaluate, cfg)
-        stage_results.append(result)
+        all_results.append(result)
         if best_so_far is None or result.best_score > best_so_far.best_score:
             best_so_far = result
         # Always feed the running best forward, not the latest run's output —
@@ -80,8 +80,8 @@ def optimize_sequential(
         current_task = replace(current_task, initial_candidate=best_so_far.best_candidate)
 
     assert best_so_far is not None
-    final = stage_results[-1]
-    final.metadata["stage_results"] = stage_results
+    final = all_results[-1]
+    final.metadata["all_results"] = all_results
     final.metadata["best_stage_score"] = best_so_far.best_score
     final.metadata["best_stage_candidate"] = best_so_far.best_candidate
     return final
@@ -196,8 +196,9 @@ def optimize_sequential_with_server(
     doesn't read it again after construction (only the next backend does,
     when picking up the seed).
 
-    Returns the :class:`Result` of the last stage with ``stage_results``,
-    ``best_stage_score``, and ``best_stage_candidate`` in metadata.
+    Returns the :class:`Result` of the last stage with ``all_results``
+    (stage-ordered), ``best_stage_score``, and ``best_stage_candidate``
+    in metadata.
     """
     if not configs:
         raise ValueError("optimize_sequential_with_server requires at least one config")
@@ -205,7 +206,7 @@ def optimize_sequential_with_server(
         raise ValueError(f"servers and configs must have the same length (got {len(servers)} and {len(configs)})")
 
     original_tasks = [s.task for s in servers]
-    stage_results: list[Result] = []
+    all_results: list[Result] = []
     best_so_far: Result | None = None
 
     try:
@@ -215,7 +216,7 @@ def optimize_sequential_with_server(
             if best_so_far is not None:
                 srv.task = replace(srv.task, initial_candidate=best_so_far.best_candidate)
             result = optimize_anything_with_server(srv, cfg)
-            stage_results.append(result)
+            all_results.append(result)
             if best_so_far is None or result.best_score > best_so_far.best_score:
                 best_so_far = result
     finally:
@@ -223,8 +224,8 @@ def optimize_sequential_with_server(
             s.task = t
 
     assert best_so_far is not None
-    final = stage_results[-1]
-    final.metadata["stage_results"] = stage_results
+    final = all_results[-1]
+    final.metadata["all_results"] = all_results
     final.metadata["best_stage_score"] = best_so_far.best_score
     final.metadata["best_stage_candidate"] = best_so_far.best_candidate
     return final

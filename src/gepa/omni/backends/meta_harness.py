@@ -708,6 +708,10 @@ class MetaHarnessBackend:
                 stop_reason = "proposer_failed"
 
             candidates = _read_pending(pending_path)
+            if iteration == 1:
+                # Score the seed alongside the first batch so the frontier
+                # starts with a real best_score (not null) for iter 2+.
+                candidates = [{"name": "baseline", "file": "agents/baseline.txt"}, *candidates]
             if not candidates:
                 _log(f"  {_yellow('no candidates')} in pending_eval.json; stopping")
                 _append_summary(
