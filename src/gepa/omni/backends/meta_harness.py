@@ -929,21 +929,29 @@ class MetaHarnessBackend:
         )
 
     def process_result(self, result: Result, output_dir: Path | None) -> None:
-        if output_dir is None:
-            # Caller-owned EvalServer without a configured output_dir: nowhere
-            # to copy transcripts/work to. Still clean up our tempdir.
+        # Prefer ``self.run_dir`` when the caller's server has no output_dir:
+        # callers like terrarium's omni adapter set ``output_dir=None`` on
+        # inner servers (to avoid double per-eval-JSON mirroring) but still
+        # want backend artifacts (work tree, session transcripts) preserved
+        # under the configured ``run_dir`` rather than lost when the tempdir
+        # is cleaned up.
+        dest = output_dir if output_dir is not None else (
+            Path(self.run_dir) if self.run_dir else None
+        )
+        if dest is None:
             if self._pending_tempdir is not None:
                 self._pending_tempdir.cleanup()
                 self._pending_tempdir = None
             return
+        dest.mkdir(parents=True, exist_ok=True)
         work_dir = Path(result.metadata.get("work_dir", ""))
         session_ids: list[str] = result.metadata.get("session_ids", []) or []
-        transcripts_dir = output_dir / "sessions"
+        transcripts_dir = dest / "sessions"
         transcripts_dir.mkdir(parents=True, exist_ok=True)
         for sid in session_ids:
             _copy_session_transcript(work_dir, sid, transcripts_dir)
-        if work_dir.exists() and not _is_under(work_dir, output_dir):
-            shutil.copytree(work_dir, output_dir / "work", dirs_exist_ok=True)
+        if work_dir.exists() and not _is_under(work_dir, dest):
+            shutil.copytree(work_dir, dest / "work", dirs_exist_ok=True)
         if self._pending_tempdir is not None:
             self._pending_tempdir.cleanup()
             self._pending_tempdir = None
