@@ -52,7 +52,12 @@ def _build_prompt(task: Task) -> str:
     return _PROMPT_TEMPLATE.format(sections=sections)
 
 
-def _parse_candidate(response: str) -> str | None:
+def _parse_candidate(response: str | None) -> str | None:
+    # ``LM.__call__`` returns the assistant message ``content`` directly,
+    # which can be ``None`` when the model produced only tool calls or
+    # finish_reason was non-textual. Guard so we treat it as a parse failure.
+    if not response:
+        return None
     m = _FENCE_RE.search(response)
     if m:
         return m.group(1).rstrip("\n")
