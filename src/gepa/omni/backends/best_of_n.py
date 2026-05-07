@@ -13,6 +13,7 @@ floor for baseline comparisons in Terrarium-style evaluations.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import TYPE_CHECKING, Any
@@ -22,6 +23,8 @@ from gepa.omni._helpers import warn_unknown_config_keys
 from gepa.omni.backend import Result
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from gepa.omni.config import OmniConfig
     from gepa.omni.eval_server import EvalServer
     from gepa.omni.task import Task
@@ -190,5 +193,23 @@ class BestOfNBackend:
                 "n_parse_failures": n_parse_failures,
                 "model": self.model,
                 "temperature": self.temperature,
+                "bon_cost_log": list(eval_log),
             },
         )
+
+    def process_result(self, result: Result, output_dir: Path | None) -> None:
+        """Persist per-sample (lm_cost, eval_cost, score) to ``bon_cost_log.jsonl``.
+
+        The omni api / terrarium runner overwrite ``Result.eval_log`` with the
+        eval server's record (which doesn't carry per-LM-call cost), so this
+        side file is the only place the sampling-cost timeline survives.
+        """
+        if output_dir is None:
+            return
+        log = result.metadata.get("bon_cost_log") or []
+        if not log:
+            return
+        out = output_dir / "bon_cost_log.jsonl"
+        with out.open("w") as f:
+            for entry in log:
+                f.write(json.dumps(entry, default=str) + "\n")
