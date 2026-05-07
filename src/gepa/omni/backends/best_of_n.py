@@ -131,7 +131,14 @@ class BestOfNBackend:
             candidate = _parse_candidate(response)
             if candidate is None:
                 n_parse_failures += 1
-                eval_log.append({"sample": n_samples, "parse_failed": True})
+                eval_log.append(
+                    {
+                        "sample": n_samples,
+                        "parse_failed": True,
+                        "lm_cost": lm.total_cost,
+                        "eval_cost": server.total_cost,
+                    }
+                )
                 continue
 
             if task.has_dataset and task.train_set:
@@ -143,11 +150,23 @@ class BestOfNBackend:
             else:
                 score, _info = server.evaluate(candidate)
 
-            eval_log.append({"sample": n_samples, "score": score, "candidate_len": len(candidate)})
-
             if score > best_score:
                 best_score = score
                 best_candidate = candidate
+
+            # Snapshot cost *after* both the LM call and the eval(s) for this
+            # sample. ``best_score`` is the running best including this sample,
+            # making this row directly plottable as cost-vs-best-score.
+            eval_log.append(
+                {
+                    "sample": n_samples,
+                    "score": score,
+                    "best_score": best_score,
+                    "candidate_len": len(candidate),
+                    "lm_cost": lm.total_cost,
+                    "eval_cost": server.total_cost,
+                }
+            )
 
             if self.stop_at_score is not None and best_score >= self.stop_at_score:
                 break
