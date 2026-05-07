@@ -111,8 +111,12 @@ class BestOfNBackend:
             if self.max_n is not None and n_samples >= self.max_n:
                 break
             if budget.max_token_cost is not None:
-                remaining = budget.max_token_cost - lm.total_cost - server.total_cost
-                if remaining <= 0:
+                # ``max_token_cost`` is the LLM-spend cap. Convention across
+                # backends is to count only the backend's own LLM/subprocess
+                # cost — eval-side cost (``server.total_cost``) lives in a
+                # separate bucket and is summed in only by the api's final
+                # report.
+                if lm.total_cost >= budget.max_token_cost:
                     break
             if budget.max_evals is not None and budget.remaining is not None and budget.remaining <= 0:
                 break
