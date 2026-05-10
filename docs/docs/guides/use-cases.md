@@ -43,6 +43,20 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the full blog](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization)
 
+-   **Databricks Genie: Optimizing Frontier Data Agents**
+
+    ---
+
+    The Databricks AI Research team uses GEPA inside [Genie](https://www.databricks.com/blog/pushing-frontier-data-agents-genie) — Databricks' enterprise data agent for natural-language analytics — to push the accuracy / cost frontier of the **table search** subsystem (discovering the relevant tables for a user's query across enterprise data sources).
+
+    **Key Insights:**
+
+    - GEPA used to navigate accuracy-vs-cost trade-offs across different LLM backends for table search
+    - Specialized knowledge search lifts table search performance by up to **40%**, and GEPA further optimizes per-LLM accuracy and cost from there
+    - Demonstrates GEPA's role in production data-agent infrastructure beyond standalone prompt benchmarks
+
+    [:material-arrow-right: Read the blog](https://www.databricks.com/blog/pushing-frontier-data-agents-genie)
+
 -   **Dropbox Dash: 45% NMSE Reduction for Relevance Judging**
 
     ---
