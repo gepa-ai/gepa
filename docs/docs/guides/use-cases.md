@@ -558,6 +558,20 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the paper](https://arxiv.org/abs/2604.02988)
 
+-   **Reinforced Agent: Inference-Time Feedback for Tool-Calling Agents**
+
+    ---
+
+    Ta, Zhu & Shayandeh (2026) introduce a secondary *reviewer* agent that evaluates a tool-calling agent's provisional tool calls **before execution**, shifting from post-hoc error recovery to in-loop correction. GEPA-based automatic prompt optimization is applied on top of the reviewer architecture for additional gains on BFCL and τ²-Bench.
+
+    **Key Results:**
+
+    - **+5.5%** on irrelevance detection (BFCL) and **+7.1%** on multi-turn tasks (τ²-Bench) from the reviewer architecture
+    - **GEPA contributes an additional +1.5–2.8%** on top via automated prompt optimization
+    - o3-mini reviewer achieves a 3:1 benefit-to-risk ratio (vs. 2.1:1 for GPT-4o) under their Helpfulness-Harmfulness metrics
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2604.27233)
+
 </div>
 
 ---
