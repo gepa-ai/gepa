@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+import uuid
 from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -403,9 +404,17 @@ class EvalServer:
     def _write_summary(self, snapshot: dict[str, Any]) -> None:
         assert self.output_dir is not None
         summary_path = self.output_dir / "summary.json"
-        tmp = summary_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(snapshot, indent=2, default=str))
-        tmp.replace(summary_path)
+        tmp = summary_path.with_name(
+            f".summary.{threading.get_ident()}.{uuid.uuid4().hex}.tmp"
+        )
+        try:
+            tmp.write_text(json.dumps(snapshot, indent=2, default=str))
+            tmp.replace(summary_path)
+        finally:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def _write_eval_record(self, idx: int, entry: dict[str, Any], candidate: str, info: dict[str, Any] | None) -> None:
         assert self._evals_dir is not None
@@ -478,6 +487,8 @@ class EvalServer:
 
         try:
             avg_score, info = self.evaluate_examples(candidate, example_ids=target_ids)
+            if set(target_ids) == visible:
+                self.log_progress(avg_score, candidate=candidate)
             self._send_json(
                 handler,
                 {
@@ -553,8 +564,14 @@ class EvalServer:
     @staticmethod
     def _send_json(handler: BaseHTTPRequestHandler, data: dict, status: int = 200) -> None:
         body = json.dumps(data, default=str).encode()
-        handler.send_response(status)
-        handler.send_header("Content-Type", "application/json")
-        handler.send_header("Content-Length", str(len(body)))
-        handler.end_headers()
-        handler.wfile.write(body)
+        try:
+            handler.send_response(status)
+            handler.send_header("Content-Type", "application/json")
+            handler.send_header("Content-Length", str(len(body)))
+            handler.end_headers()
+            handler.wfile.write(body)
+        except BrokenPipeError:
+            # Clients may disconnect after their own timeout or after budget
+            # exhaustion while the server is finishing in-flight evals. Treat
+            # that as a closed response, not as an eval-server failure.
+            return

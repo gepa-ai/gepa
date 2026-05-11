@@ -21,6 +21,9 @@ Helpers
   pipeline. Each backend's best becomes the next backend's seed.
   Monotonic: a backend that regresses doesn't poison the chain (the
   running best is carried forward).
+- :func:`optimize_adaptive_sequential_with_server` — rotate through backends
+  on score plateaus while sharing one eval budget and carrying the running
+  best forward.
 - :func:`optimize_parallel` / :func:`optimize_parallel_with_server` —
   run N backends concurrently, return all results.
 - :func:`optimize_best_of` / :func:`optimize_best_of_with_server` —
@@ -39,9 +42,9 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from gepa.omni.api import optimize_anything, optimize_anything_with_server
+from gepa.omni.backend import Result
 
 if TYPE_CHECKING:
-    from gepa.omni.backend import Result
     from gepa.omni.config import OmniConfig
     from gepa.omni.eval_server import EvalServer
     from gepa.omni.task import EvalFn, Task
@@ -228,6 +231,178 @@ def optimize_sequential_with_server(
     final.metadata["all_results"] = all_results
     final.metadata["best_stage_score"] = best_so_far.best_score
     final.metadata["best_stage_candidate"] = best_so_far.best_candidate
+    return final
+
+
+def optimize_adaptive_sequential_with_server(
+    server: EvalServer,
+    configs: list[OmniConfig],
+    *,
+    plateau_evals: int,
+    patience: int = 1,
+    min_evals_per_stage: int = 0,
+    improvement_epsilon: float = 0.0,
+    cycle: bool = True,
+    max_switches: int | None = None,
+) -> Result:
+    """Run backend slices and switch when the current backend plateaus.
+
+    This is a scheduler over existing omni backends, not a new optimizer. It
+    repeatedly gives the active backend a bounded eval slice, observes whether
+    that backend's aggregate ``Result.best_score`` improved the scheduler's
+    running best, and switches to the next backend after ``patience``
+    non-improving slices once ``min_evals_per_stage`` has been spent in the
+    current stage.
+
+    All slices share ``server`` and therefore one hard eval budget. The running
+    best candidate is always fed forward, so a regressing slice cannot poison a
+    later backend. The returned result is the last executed slice augmented
+    with scheduler metadata and ``best_stage_candidate`` / ``best_stage_score``
+    for the best aggregate backend result seen by the scheduler. This avoids
+    treating per-example ``EvalServer.best_score`` as a candidate-level score
+    on dataset tasks.
+    """
+    if not configs:
+        raise ValueError("optimize_adaptive_sequential_with_server requires at least one config")
+    if plateau_evals <= 0:
+        raise ValueError("plateau_evals must be positive")
+    if patience <= 0:
+        raise ValueError("patience must be positive")
+    if min_evals_per_stage < 0:
+        raise ValueError("min_evals_per_stage cannot be negative")
+
+    original_task = server.task
+    original_max_evals = server.budget.max_evals
+    original_max_token_cost = server.budget.max_token_cost
+    stage_results: list[Result] = []
+    schedule: list[dict[str, object]] = []
+    best_so_far: Result | None = None
+    current_idx = 0
+    current_stage_evals = 0
+    no_improvement_slices = 0
+    switches = 0
+    idle_slices_in_round = 0
+    adapter_cost = 0.0
+
+    try:
+        while not server.budget.exhausted:
+            if current_idx >= len(configs):
+                break
+
+            remaining = server.budget.remaining
+            if remaining is not None and remaining <= 0:
+                break
+            if stage_results and remaining is not None and remaining < min_evals_per_stage:
+                break
+            slice_evals = plateau_evals if remaining is None else min(plateau_evals, remaining)
+            if slice_evals <= 0:
+                break
+            remaining_token_cost = None
+            if original_max_token_cost is not None:
+                remaining_token_cost = max(0.0, original_max_token_cost - adapter_cost)
+                if remaining_token_cost <= 0:
+                    break
+
+            server.budget.max_evals = (
+                server.budget.used + slice_evals
+                if original_max_evals is None
+                else min(original_max_evals, server.budget.used + slice_evals)
+            )
+            server.budget.max_token_cost = remaining_token_cost
+
+            before_evals = server.budget.used
+            before_best = best_so_far.best_score if best_so_far is not None else float("-inf")
+            result = optimize_anything_with_server(server, configs[current_idx])
+            server.budget.max_evals = original_max_evals
+            server.budget.max_token_cost = original_max_token_cost
+            after_evals = server.budget.used
+            eval_delta = after_evals - before_evals
+            current_stage_evals += eval_delta
+            stage_results.append(result)
+            result_cost = float(result.metadata.get("adapter_cost", 0.0))
+            adapter_cost += result_cost
+
+            improved = result.best_score > before_best + improvement_epsilon
+            if best_so_far is None or result.best_score > best_so_far.best_score + improvement_epsilon:
+                best_so_far = result
+
+            if improved:
+                no_improvement_slices = 0
+                idle_slices_in_round = 0
+            else:
+                no_improvement_slices += 1
+                idle_slices_in_round = idle_slices_in_round + 1 if eval_delta == 0 else 0
+
+            schedule.append(
+                {
+                    "backend_idx": current_idx,
+                    "backend": str(configs[current_idx].backend),
+                    "eval_start": before_evals,
+                    "eval_end": after_evals,
+                    "eval_delta": eval_delta,
+                    "best_before": before_best,
+                    "best_after": best_so_far.best_score if best_so_far is not None else float("-inf"),
+                    "improved": improved,
+                    "adapter_cost": result_cost,
+                }
+            )
+
+            if idle_slices_in_round >= len(configs):
+                break
+
+            should_switch = (
+                no_improvement_slices >= patience
+                and current_stage_evals >= min_evals_per_stage
+                and len(configs) > 1
+            )
+            if should_switch:
+                if max_switches is not None and switches >= max_switches:
+                    break
+                next_idx = current_idx + 1
+                if next_idx >= len(configs):
+                    if not cycle:
+                        break
+                    next_idx = 0
+                switches += 1
+                current_idx = next_idx
+                current_stage_evals = 0
+                no_improvement_slices = 0
+
+            # Always seed the next slice with the global best from the shared
+            # server. This keeps scheduler semantics monotonic across backends.
+            if best_so_far is not None:
+                server.task = replace(server.task, initial_candidate=best_so_far.best_candidate)
+    finally:
+        server.budget.max_evals = original_max_evals
+        server.budget.max_token_cost = original_max_token_cost
+        server.task = original_task
+
+    if not stage_results:
+        return Result(
+            best_candidate=server.best_candidate,
+            best_score=server.best_score,
+            total_evals=server.budget.used,
+            eval_log=server.eval_log,
+            metadata={
+                "stage_results": [],
+                "adaptive_schedule": schedule,
+                "adaptive_stop_reason": "budget_exhausted" if server.budget.exhausted else "no_slices_run",
+            },
+        )
+
+    final = stage_results[-1]
+    if best_so_far is not None:
+        final.best_candidate = best_so_far.best_candidate
+        final.best_score = best_so_far.best_score
+    final.metadata["stage_results"] = stage_results
+    final.metadata["adaptive_schedule"] = schedule
+    final.metadata["adaptive_switches"] = switches
+    final.metadata["adapter_cost"] = adapter_cost
+    final.metadata["best_stage_score"] = best_so_far.best_score if best_so_far is not None else final.best_score
+    final.metadata["best_stage_candidate"] = (
+        best_so_far.best_candidate if best_so_far is not None else final.best_candidate
+    )
+    final.metadata["adaptive_stop_reason"] = "budget_exhausted" if server.budget.exhausted else "scheduler_stopped"
     return final
 
 

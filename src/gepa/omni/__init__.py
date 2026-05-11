@@ -26,6 +26,7 @@ from gepa.omni.backend import Backend, Result
 from gepa.omni.budget import BudgetExhausted, BudgetTracker
 from gepa.omni.config import OmniConfig
 from gepa.omni.ensemble import (
+    optimize_adaptive_sequential_with_server,
     optimize_best_of,
     optimize_best_of_with_server,
     optimize_parallel,
@@ -64,6 +65,7 @@ __all__ = [
     "list_tasks",
     "optimize_anything",
     "optimize_anything_with_server",
+    "optimize_adaptive_sequential_with_server",
     "optimize_best_of",
     "optimize_best_of_with_server",
     "optimize_parallel",

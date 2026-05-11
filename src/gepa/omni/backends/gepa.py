@@ -103,7 +103,11 @@ class GepaBackend:
                 raise ValueError("claude_code_agent is mutually exclusive with reflection.custom_candidate_proposer")
             if self.run_dir is None:
                 raise ValueError("claude_code_agent requires OmniConfig.run_dir to be set")
-            agent_proposer = self._build_claude_code_agent(objective, background)
+            agent_proposer = self._build_claude_code_agent(
+                objective,
+                background,
+                default_max_budget_usd=budget.max_token_cost,
+            )
             reflection_kwargs["custom_candidate_proposer"] = agent_proposer
             # The proposer reads <run_dir>/iterations/, <run_dir>/pareto/.
             # The state.save() pass that writes them is gated on this flag.
@@ -123,6 +127,8 @@ class GepaBackend:
                     lm_kwargs.setdefault("reasoning_effort", self.effort)
                 reflection_lm = LM(lm_name, **lm_kwargs)
                 reflection_kwargs["reflection_lm"] = reflection_lm
+            else:
+                reflection_lm = lm_name
 
         # Default ``cache_evaluation=True`` so re-evaluating the same
         # (candidate, minibatch) pair across iterations is a no-op. Gepa's
@@ -140,12 +146,12 @@ class GepaBackend:
         if agent_proposer is not None:
             # Proposer reads iterations/, pareto/, history.md off run_dir.
             engine_kwargs["write_agent_state"] = True
-        if budget.max_token_cost is not None and reflection_lm is None and agent_proposer is None:
-            engine_kwargs["max_reflection_cost"] = budget.max_token_cost
-
         callbacks = list(self.callbacks)
         cost_callback: _ReflectionCostCallback | None = None
         cost_source = reflection_lm if reflection_lm is not None else agent_proposer
+        initial_adapter_cost = float(getattr(cost_source, "total_cost", 0.0) or 0.0) if cost_source is not None else 0.0
+        if budget.max_token_cost is not None and "max_reflection_cost" not in engine_kwargs:
+            engine_kwargs["max_reflection_cost"] = initial_adapter_cost + budget.max_token_cost
         if cost_source is not None:
             cost_callback = _ReflectionCostCallback(cost_source, server.tracker, output_dir=self.run_dir)
             callbacks.append(cost_callback)
@@ -209,14 +215,22 @@ class GepaBackend:
         try:
             gepa_result = optimize_anything(**oa_kwargs)
         except BudgetExhausted:
-            gepa_result = None
+            gepa_result = self._load_result_from_state(
+                run_dir=self.run_dir,
+                seed=engine_kwargs.get("seed"),
+                str_candidate_mode=isinstance(task.initial_candidate, str),
+            )
 
-        adapter_cost = 0.0
+        final_adapter_cost = float(getattr(cost_source, "total_cost", 0.0) or 0.0) if cost_source is not None else 0.0
         reflection_meta: dict[str, Any] = {}
         if cost_callback is not None:
             reflection_meta = {"reflection_cost_log": cost_callback.cost_log}
             if cost_callback.cost_log:
-                adapter_cost = cost_callback.cost_log[-1]["reflection_cost"]
+                final_adapter_cost = max(final_adapter_cost, float(cost_callback.cost_log[-1]["reflection_cost"]))
+        adapter_cost = max(0.0, final_adapter_cost - initial_adapter_cost)
+        if cost_source is not None:
+            reflection_meta["reflection_cost_initial"] = initial_adapter_cost
+            reflection_meta["reflection_cost_final"] = final_adapter_cost
 
         if gepa_result is not None:
             # gepa_result.best_candidate is str | dict[str,str]; we always pass
@@ -243,16 +257,46 @@ class GepaBackend:
     def process_result(self, result: Result, output_dir: Path | None) -> None:
         return
 
-    def _build_claude_code_agent(self, objective: str | None, background: str | None) -> Any:
+    def _load_result_from_state(
+        self,
+        *,
+        run_dir: str | Path | None,
+        seed: int | None,
+        str_candidate_mode: bool,
+    ) -> Any | None:
+        if run_dir is None:
+            return None
+        try:
+            from gepa.core.result import GEPAResult
+            from gepa.core.state import GEPAState
+
+            state = GEPAState.load(str(run_dir))
+            return GEPAResult.from_state(
+                state,
+                run_dir=str(run_dir),
+                seed=seed,
+                str_candidate_key="current_candidate" if str_candidate_mode else None,
+            )
+        except Exception:
+            return None
+
+    def _build_claude_code_agent(
+        self,
+        objective: str | None,
+        background: str | None,
+        *,
+        default_max_budget_usd: float | None = None,
+    ) -> Any:
         """Construct a :class:`ClaudeCodeAgentProposer` from this backend's config.
 
         ``OmniConfig.run_dir``, ``effort``, ``max_thinking_tokens``, and
         ``sandbox`` flow in from the surrounding config. Anything in
         ``OmniConfig.config["claude_code_agent"]`` overrides those defaults
         (e.g. set ``"sandbox": False`` to override the global, or
-        ``"max_budget_usd"`` for a per-proposer USD cap that doesn't apply
-        to the eval server's budget). ``objective`` / ``background`` default
-        to the values resolved against the task; explicit keys override.
+        ``"max_budget_usd"`` for a per-proposer USD cap). If omitted, the
+        surrounding Omni token-cost budget is used as the proposer cap.
+        ``objective`` / ``background`` default to the values resolved against
+        the task; explicit keys override.
         """
         from gepa.omni.proposers import ClaudeCodeAgentProposer
 
@@ -266,6 +310,8 @@ class GepaBackend:
             "max_thinking_tokens": cfg.pop("max_thinking_tokens", self.max_thinking_tokens),
             "sandbox": cfg.pop("sandbox", self.sandbox),
         }
+        if default_max_budget_usd is not None:
+            kwargs["max_budget_usd"] = cfg.pop("max_budget_usd", default_max_budget_usd)
         # Pass through anything else verbatim (max_budget_usd, subdir_prefix, ...).
         kwargs.update(cfg)
         return ClaudeCodeAgentProposer(**kwargs)

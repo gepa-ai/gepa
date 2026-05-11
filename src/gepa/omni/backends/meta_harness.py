@@ -228,6 +228,11 @@ def _materialize_sandbox(work_dir: Path, task: Task, server: EvalServer, budget:
                     "best_name": "baseline",
                     "best_score": None,
                     "best_candidate_file": "agents/baseline.txt",
+                    "_best": {
+                        "agent": "baseline",
+                        "avg_pass_rate": None,
+                        "candidate_file": "agents/baseline.txt",
+                    },
                 },
                 indent=2,
             )
@@ -461,7 +466,9 @@ def _update_frontier(
     The frontier records two things:
 
     - Overall: ``best_name`` / ``best_score`` / ``best_candidate_file`` —
-      the candidate with the highest aggregate score so far.
+      the candidate with the highest aggregate score so far. The same state
+      is mirrored under terminal-bench-style ``_best`` for compatibility with
+      reference MetaHarness prompts and tooling.
     - Per-example: ``per_example[ex_id]`` = ``{best_name, score, file}`` —
       the candidate that scored highest on each individual example. This
       lets the proposer combine ideas across example-specific winners
@@ -485,6 +492,11 @@ def _update_frontier(
         frontier["best_name"] = name
         frontier["best_candidate_file"] = file
         frontier["best_score"] = score
+        frontier["_best"] = {
+            "agent": name,
+            "avg_pass_rate": score,
+            "candidate_file": file,
+        }
 
     # Per-example bests (dataset tasks only)
     if per_example_scores:
@@ -959,6 +971,10 @@ class MetaHarnessBackend:
     def _best_score(self, frontier_path: Path) -> float | None:
         frontier = self._read_frontier(frontier_path)
         val = frontier.get("best_score") if frontier else None
+        if val is None and frontier:
+            best = frontier.get("_best")
+            if isinstance(best, dict):
+                val = best.get("avg_pass_rate")
         if val is None:
             return None
         try:

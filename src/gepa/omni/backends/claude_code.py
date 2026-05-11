@@ -22,6 +22,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -38,16 +39,31 @@ if TYPE_CHECKING:
     from gepa.omni.task import Task
 
 
-_CC_CONFIG_KEYS: tuple[str, ...] = ("model", "ralph")
+_CC_CONFIG_KEYS: tuple[str, ...] = ("model", "ralph", "max_no_eval_seconds")
 
 
-# Nudge fed to claude --resume on each Ralph iteration. Kept short — the
-# agent already has full context from program.md and prior session turns.
-RALPH_CONTINUE_PROMPT = "Continue improving the candidate."
+# Nudge fed to claude --resume on each Ralph iteration.
+RALPH_CONTINUE_PROMPT = (
+    "Continue iterating on the candidate. Re-read program.md if needed. "
+    "Run ./eval.sh as appropriate. "
+    "Keep refining best_candidate.txt until you exhaust the budget "
+    "or genuinely cannot find another improvement."
+)
 
-# Stop the Ralph loop when the LLM budget has less than this much headroom
-# left — not worth spawning another CLI for pennies.
+# Stop spawning new Ralph iterations when the LLM budget has less than this
+# much headroom left — not worth spawning another CLI for pennies.
 _RALPH_MIN_HEADROOM_USD = 0.05
+
+# Hard safety cap on Ralph iterations — prevents pathological infinite
+# loops if budget tracking gets confused. Real runs hit budget exhaustion
+# long before this.
+_RALPH_SAFETY_ITERATION_CAP = 1000
+
+# How long to wait after the eval-count budget reports exhausted before we
+# SIGTERM the subprocess. Lets in-flight 429 responses drain cleanly.
+_BUDGET_EXHAUSTION_GRACE_SECONDS = 120.0
+
+_BUDGET_EXHAUSTED_MARKER = "BUDGET_EXHAUSTED"
 
 
 EVAL_SCRIPT_SINGLE = """\
@@ -104,6 +120,7 @@ _PROGRAM_MD = """\
 Iteratively improve the candidate in `candidate.txt`.
 Initial candidate: {candidate_len} chars.
 
+{handoff_section}\
 {eval_section}
 
 ## Budget
@@ -205,6 +222,18 @@ def _rules_section(task: Task, budget: BudgetTracker) -> str:
     )
 
 
+def _handoff_section(task: Task) -> str:
+    handoffs = task.metadata.get("omni_handoffs") if isinstance(task.metadata, dict) else None
+    if not handoffs:
+        return ""
+    return (
+        "## Prior Optimizer Handoff\n"
+        "Prior sequential-stage artifacts are available in `handoff/`. "
+        "Each stage has a `summary.json`, optional `best_candidate.txt`, and optional eval JSON records. "
+        "Use them as context for what has already been tried and scored.\n\n"
+    )
+
+
 def _build_program_md(task: Task, budget: BudgetTracker, *, perfect_score: float | None) -> str:
     optional = ""
     if task.objective:
@@ -234,6 +263,7 @@ def _build_program_md(task: Task, budget: BudgetTracker, *, perfect_score: float
         name=task.name,
         optional_sections=optional,
         candidate_len=len(task.initial_candidate),
+        handoff_section=_handoff_section(task),
         eval_section=eval_section,
         budget_section=_budget_section(budget) + _perfect_score_section(perfect_score),
         strategy_section=_strategy_section(task),
@@ -270,6 +300,56 @@ def _materialize_sandbox(
             for eid, ex in server.iter_split(split):
                 (train_dir / f"{eid}.json").write_text(json.dumps(example_to_json(eid, ex), indent=2, default=str))
 
+    _materialize_handoff(work_dir, task)
+
+
+def _materialize_handoff(work_dir: Path, task: Task) -> None:
+    handoffs = task.metadata.get("omni_handoffs") if isinstance(task.metadata, dict) else None
+    if not isinstance(handoffs, list) or not handoffs:
+        return
+    handoff_dir = work_dir / "handoff"
+    handoff_dir.mkdir(exist_ok=True)
+    index: list[dict[str, object]] = []
+    for item in handoffs:
+        if not isinstance(item, dict):
+            continue
+        stage_idx = int(item.get("stage_idx", len(index)))
+        backend = str(item.get("backend", "backend"))
+        stage_dir = handoff_dir / f"stage_{stage_idx:02d}_{_safe_name(backend)}"
+        stage_dir.mkdir(exist_ok=True)
+        copied: dict[str, str] = {}
+        for key, filename in (
+            ("summary_path", "summary.json"),
+            ("best_candidate_path", "best_candidate.txt"),
+        ):
+            source = item.get(key)
+            if isinstance(source, str) and source:
+                path = Path(source)
+                if path.exists() and path.is_file():
+                    shutil.copy2(path, stage_dir / filename)
+                    copied[key] = str(stage_dir / filename)
+        trace_source = item.get("eval_trace_dir")
+        if isinstance(trace_source, str) and trace_source:
+            trace_dir = Path(trace_source)
+            if trace_dir.exists() and trace_dir.is_dir():
+                shutil.copytree(trace_dir, stage_dir / "evals", dirs_exist_ok=True)
+                copied["eval_trace_dir"] = str(stage_dir / "evals")
+        index.append(
+            {
+                "stage_idx": stage_idx,
+                "backend": backend,
+                "best_score": item.get("best_score"),
+                "num_evals": item.get("num_evals"),
+                "copied": copied,
+            }
+        )
+    (handoff_dir / "index.json").write_text(json.dumps(index, indent=2, default=str) + "\n")
+
+
+def _safe_name(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value) or "backend"
+
+
 
 class ClaudeCodeBackend:
     """Black-box Claude Code optimizer.
@@ -279,9 +359,13 @@ class ClaudeCodeBackend:
     - ``model``: Claude model id. Default ``"claude-sonnet-4-6"`` (versioned —
       pin for reproducibility; pass ``"sonnet"`` / ``"opus"`` aliases to track
       Anthropic's current default).
-    - ``ralph``: When true, resume the same claude session via
-      ``claude --resume`` whenever the CLI exits before the LLM/eval budget
-      is out and keep iterating. Off by default — single-shot semantics.
+    - ``ralph``: When true, continue the same Claude Code session via repeated
+      ``claude --resume <session_id>`` calls while eval/LLM budget remains.
+      Stops early if an iteration produces no measurable cost (likely no
+      further progress) or if claude errors out. Default ``True``.
+    - ``max_no_eval_seconds``: If set, terminate the Claude Code subprocess
+      after this many seconds without an eval call. Guards against agents
+      that wedge on long internal reasoning without scoring.
     """
 
     name = "claude_code"
@@ -290,7 +374,11 @@ class ClaudeCodeBackend:
         extras = config.config
         warn_unknown_config_keys(self.name, extras, _CC_CONFIG_KEYS)
         self.model: str = extras.get("model", "claude-sonnet-4-6")
-        self.ralph: bool = bool(extras.get("ralph", False))
+        self.ralph = _config_bool(extras.get("ralph", True))
+        raw_max_no_eval_seconds = extras.get("max_no_eval_seconds")
+        self.max_no_eval_seconds = (
+            float(raw_max_no_eval_seconds) if raw_max_no_eval_seconds is not None else None
+        )
         self.run_dir = config.run_dir
         self.effort = config.effort
         self.stop_at_score = config.stop_at_score
@@ -332,7 +420,6 @@ class ClaudeCodeBackend:
         )
 
         session_id = str(uuid.uuid4())
-
         env = {**os.environ, "GEPA_OMNI_WORK_DIR": str(work_dir)}
         env.pop("CLAUDECODE", None)
         env.setdefault("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "64000")
@@ -341,6 +428,7 @@ class ClaudeCodeBackend:
             env["MAX_THINKING_TOKENS"] = str(self.max_thinking_tokens)
 
         adapter_cost = 0.0
+        ralph_iterations = 1
         invocations: list[dict[str, float | int | None]] = []
 
         proc = self._run_claude(
@@ -352,28 +440,37 @@ class ClaudeCodeBackend:
             resume=False,
             env=env,
         )
+        if (
+            proc.returncode != 0
+            and not budget.exhausted
+            and "NO_EVAL_PROGRESS" not in proc.stderr
+            and not _saw_budget_exhausted(proc)
+        ):
+            raise RuntimeError(
+                "Claude Code subprocess failed "
+                f"(exit {proc.returncode}). "
+                f"stdout_tail={_tail_text(proc.stdout)!r} "
+                f"stderr_tail={_tail_text(proc.stderr)!r}"
+            )
         iter_cost = _extract_claude_cost(proc.stdout)
         adapter_cost += iter_cost
-        invocations.append({"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode})
+        invocations.append(
+            {"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode}
+        )
 
         if self.ralph:
-            # Resume the same session until the budget is out or claude
-            # signals it's done by erroring. Each iteration's
-            # --max-budget-usd is the *remaining* LLM budget so the
-            # final iteration self-caps inside the CLI. No fixed cap —
-            # the loop runs until something else stops it.
-            while True:
-                if proc.returncode != 0:
-                    break  # claude errored — don't retry blindly
+            while ralph_iterations < _RALPH_SAFETY_ITERATION_CAP:
+                if _saw_budget_exhausted(proc):
+                    break
                 if not self._has_budget_headroom(server, adapter_cost):
                     break
-                # Trust server.best_score over agent compliance with
-                # program.md's perfect_score directive.
                 if (
                     self.stop_at_score is not None
                     and server.best_score is not None
                     and server.best_score >= self.stop_at_score
                 ):
+                    break
+                if proc.returncode != 0:
                     break
                 proc = self._run_claude(
                     work_dir=work_dir,
@@ -386,19 +483,38 @@ class ClaudeCodeBackend:
                 )
                 iter_cost = _extract_claude_cost(proc.stdout)
                 adapter_cost += iter_cost
-                invocations.append({"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode})
+                invocations.append(
+                    {"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode}
+                )
+                if _saw_budget_exhausted(proc):
+                    break
+                if proc.returncode != 0:
+                    break
+                ralph_iterations += 1
+                # Iteration produced no measurable cost — agent likely
+                # has no more progress to make. Stop spending.
+                if iter_cost < 0.001:
+                    break
 
         best_candidate = best_file.read_text() if best_file.exists() else task.initial_candidate
+        best_score = server.best_score
+        if task.has_dataset:
+            aggregate_best = _best_aggregate_candidate(server)
+            if aggregate_best is not None:
+                best_candidate, best_score = aggregate_best
+            else:
+                best_score = float("-inf")
 
         return Result(
             best_candidate=best_candidate,
-            best_score=server.best_score,
+            best_score=best_score,
             total_evals=server.budget.used,
             eval_log=server.eval_log,
             metadata={
                 "adapter_cost": adapter_cost,
                 "session_id": session_id,
                 "work_dir": str(work_dir),
+                "ralph_iterations": ralph_iterations,
                 "invocations": invocations,
             },
         )
@@ -414,10 +530,17 @@ class ClaudeCodeBackend:
         resume: bool,
         env: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
-        """Invoke ``claude --print`` once. ``resume=True`` continues the pinned
-        session via ``--resume <session_id>`` instead of starting a new one.
-        ``--max-budget-usd`` is set to the *remaining* LLM budget so successive
-        iterations don't stack the cap.
+        """Invoke ``claude --print`` once.
+
+        ``resume=True`` continues the pinned session via ``--resume
+        <session_id>``. ``--max-budget-usd`` is set to the *remaining* LLM
+        budget so successive Ralph iterations don't stack the cap.
+
+        Monitors the subprocess while it runs and terminates it when:
+          * ``max_no_eval_seconds`` has elapsed with no eval activity
+            (signals an agent wedged on internal reasoning), or
+          * the eval-count budget reported exhausted ``_BUDGET_EXHAUSTION_GRACE_SECONDS``
+            ago (giving in-flight 429s time to drain).
         """
         cmd: list[str] = bwrap_prefix(work_dir) if self.sandbox else []
         cmd += [
@@ -432,28 +555,69 @@ class ClaudeCodeBackend:
             cmd.extend(["--resume", session_id])
         else:
             cmd.extend(["--session-id", session_id])
-        cmd.extend(
-            [
-                "--permission-mode",
-                "bypassPermissions",
-                DENY_WEB_TOOLS,
-            ]
-        )
+        cmd.extend(["--permission-mode", "bypassPermissions", DENY_WEB_TOOLS])
         if self.sandbox:
             cmd.extend(claude_settings_args(work_dir))  # macOS Seatbelt fallback
-        if self.effort is not None:
+        if self.max_thinking_tokens is None and self.effort is not None:
             cmd.extend(["--effort", self.effort])
         if budget.max_token_cost is not None:
             remaining = max(0.0, budget.max_token_cost - adapter_cost)
             cmd.extend(["--max-budget-usd", f"{remaining:.6f}"])
         cmd.append(prompt)
 
-        return subprocess.run(cmd, cwd=str(work_dir), env=env, capture_output=True, text=True)
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(work_dir),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        exhausted_since: float | None = None
+        last_eval_used = budget.used
+        last_eval_time = time.monotonic()
+        while proc.poll() is None:
+            if budget.used != last_eval_used:
+                last_eval_used = budget.used
+                last_eval_time = time.monotonic()
+            if (
+                self.max_no_eval_seconds is not None
+                and time.monotonic() - last_eval_time >= self.max_no_eval_seconds
+            ):
+                proc.terminate()
+                try:
+                    stdout, stderr = proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    stdout, stderr = proc.communicate()
+                stderr = (
+                    (stderr or "")
+                    + f"\nNO_EVAL_PROGRESS: terminated Claude Code after {self.max_no_eval_seconds:.1f}s without eval progress.\n"
+                )
+                return subprocess.CompletedProcess(cmd, proc.returncode, stdout or "", stderr)
+            if budget.exhausted:
+                if exhausted_since is None:
+                    exhausted_since = time.monotonic()
+                elif time.monotonic() - exhausted_since >= _BUDGET_EXHAUSTION_GRACE_SECONDS:
+                    proc.terminate()
+                    try:
+                        stdout, stderr = proc.communicate(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        stdout, stderr = proc.communicate()
+                    stderr = (stderr or "") + "\nBUDGET_EXHAUSTED: terminated Claude Code after eval budget was exhausted.\n"
+                    return subprocess.CompletedProcess(cmd, proc.returncode, stdout or "", stderr)
+            time.sleep(1.0)
+
+        stdout, stderr = proc.communicate()
+        return subprocess.CompletedProcess(cmd, proc.returncode, stdout or "", stderr or "")
 
     def _has_budget_headroom(self, server: EvalServer, adapter_cost: float) -> bool:
-        """Whether starting another Ralph iteration is worthwhile. Stops if the
-        eval-count budget is exhausted, or if the LLM budget has less than
-        ``_RALPH_MIN_HEADROOM_USD`` left (no point spawning a CLI for pennies).
+        """Whether starting another Ralph iteration is worthwhile.
+
+        Stops if the eval-count budget is exhausted, or if the LLM budget
+        has less than ``_RALPH_MIN_HEADROOM_USD`` left — not worth
+        spawning another CLI for pennies.
         """
         budget = server.budget
         if budget.exhausted:
@@ -494,6 +658,53 @@ def _is_under(child: Path, parent: Path) -> bool:
         return child.resolve().is_relative_to(parent.resolve())
     except OSError:
         return False
+
+
+def _tail_text(text: str | None, *, max_chars: int = 2000) -> str:
+    if not text:
+        return ""
+    text = text.strip()
+    return text[-max_chars:]
+
+
+def _saw_budget_exhausted(proc: subprocess.CompletedProcess[str]) -> bool:
+    """Return whether Claude observed the eval server's exhausted-budget marker."""
+    return _BUDGET_EXHAUSTED_MARKER in (proc.stdout or "") or _BUDGET_EXHAUSTED_MARKER in (proc.stderr or "")
+
+
+def _config_bool(value: object) -> bool:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+    return bool(value)
+
+
+def _best_aggregate_candidate(server: EvalServer) -> tuple[str, float] | None:
+    """Return the best candidate from aggregate ``evaluate_examples`` calls.
+
+    Dataset ``EvalServer.best_score`` is the best per-example score, not a
+    candidate-level aggregate. The HTTP ``/evaluate_examples`` endpoint logs
+    aggregate checkpoints with candidate ids; use those for agentic backends
+    that evaluate through shell scripts.
+    """
+    progress = list(getattr(server, "progress_log", []) or [])
+    registry = getattr(server, "_candidate_registry", {}) or {}
+    candidates_by_id = {cid: candidate for candidate, cid in registry.items()}
+    best_entry = None
+    for entry in progress:
+        candidate_id = entry.get("candidate_id")
+        if candidate_id not in candidates_by_id:
+            continue
+        if best_entry is None or float(entry.get("val_score", float("-inf"))) > float(
+            best_entry.get("val_score", float("-inf"))
+        ):
+            best_entry = entry
+    if best_entry is None:
+        return None
+    return candidates_by_id[best_entry["candidate_id"]], float(best_entry.get("val_score", float("-inf")))
 
 
 def _extract_claude_cost(stdout: str) -> float:
