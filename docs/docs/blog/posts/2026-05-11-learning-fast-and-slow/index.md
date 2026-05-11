@@ -21,7 +21,9 @@ equal_advisory:
 slug: learning-fast-and-slow
 readtime: 12
 title: "Learning, Fast and Slow"
+bare_title: true
 description: "Fast-Slow Training (FST) interleaves GEPA-based prompt optimization with RL on LLMs, treating the context as fast weights and parameters as slow weights — improving data efficiency, performance ceiling, plasticity, and continual learning."
+social_image: blog/2026-05-11-learning-fast-and-slow/images/fst_diagram.png
 citation_authors:
   - "Rishabh Tiwari*"
   - "Kusha Sareen*"

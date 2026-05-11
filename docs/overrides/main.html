@@ -1,5 +1,13 @@
 {% extends "base.html" %}
 
+{% block htmltitle %}
+  {% if page and page.meta and page.meta.bare_title %}
+    <title>{{ page.meta.get("title", page.title) | e }}</title>
+  {% else %}
+    {{ super() }}
+  {% endif %}
+{% endblock %}
+
 {% block extrahead %}
 {{ super() }}
 
