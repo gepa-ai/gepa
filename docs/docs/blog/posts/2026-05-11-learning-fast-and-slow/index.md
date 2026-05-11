@@ -2,9 +2,22 @@
 date:
   created: 2026-05-11
 authors:
+  - rishabh_tiwari
+  - kusha
   - lakshya
   - joey
   - matei
+  - kurt
+  - inderjit
+  - rishabh_agarwal
+  - devvrit
+equal_contribution:
+  - "Rishabh Tiwari"
+  - "Kusha Sareen"
+  - "Lakshya A Agrawal"
+equal_advisory:
+  - "Rishabh Agarwal"
+  - "Devvrit Khatri"
 slug: learning-fast-and-slow
 readtime: 12
 title: "Learning, Fast and Slow"
@@ -19,15 +32,10 @@ citation_authors:
   - "Inderjit S Dhillon"
   - "Rishabh Agarwal**"
   - "Devvrit Khatri**"
-citation_technical_report_institution: "UC Berkeley, MIT, Google DeepMind"
 citation_keywords: "reinforcement learning, prompt optimization, fast-slow training, continual learning, plasticity, complementary learning systems, GEPA, CISPO"
 ---
 
 # Learning, Fast and Slow
-
-*Rishabh Tiwari\*, Kusha Sareen\*, Lakshya A Agrawal\*, Joseph E. Gonzalez, Matei Zaharia, Kurt Keutzer, Inderjit S Dhillon, Rishabh Agarwal\*\*, Devvrit Khatri\*\**
-
-<small>\*Equal technical contribution &nbsp;&nbsp; \*\*Equal advisory contribution</small>
 
 A north star in AI research is to build **performant** systems that can **adapt** and learn on the fly across **general** diverse sets of tasks.
 
