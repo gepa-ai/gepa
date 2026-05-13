@@ -82,7 +82,7 @@ Inspired by this literature, we propose…
 
 ## Fast-Slow Training for LLMs
 
-Due to the strong in-context learning ability of LLMs, we represent the model context as fast weights [\[15\]](https://arxiv.org/abs/2212.07677) and the model parameters as slow weights. Fast-Slow Training (FST) in LLMs presents a general blueprint where *any* context optimization approach can be taken to update the context, adapting quickly to new settings, and any gradient-based learning approach can be taken to update model parameters.
+Due to the strong in-context learning ability of LLMs, we represent the model context as fast weights [\[15\]](https://arxiv.org/abs/2212.07677) and the model parameters as slow weights. Fast-Slow Training (FST) in LLMs presents a general blueprint where *any* context optimization approach can be taken to update the context, adapting quickly to new settings, and *any* gradient-based learning approach can be taken to update model parameters.
 
 ![Fast-Slow Training diagram](images/fst_diagram.png)
 
