@@ -5,6 +5,7 @@ on:
     branches:
       - blogpost
       - blogpost-aesthetic
+      - fst-followup
       - blogpost-rl-gepa
 
 jobs:
