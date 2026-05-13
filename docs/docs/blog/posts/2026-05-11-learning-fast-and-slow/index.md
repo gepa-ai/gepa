@@ -56,15 +56,13 @@ We introduce **Fast-Slow Training (FST)**, a paradigm for LLM training that opti
 
 ## Motivation: The Quest for General-Purpose AI
 
-A north star in AI research is to build **performant and scalable** systems that **adapt** and learn on the fly across **general,** diverse sets of tasks.
+A north star in AI research is building **performant, scalable** systems that can instantly adapt to a diverse range of general tasks. In the past five years, Large Language Models (LLMs) and **in-context learning** have revolutionized this pursuit, allowing models to solve problems they were never explicitly trained for.
 
-The generality of our systems and their ability to solve problems they were not initially trained for has skyrocketed in the past 5 or so years due to LLMs and their capacity for **in-context learning**.
+It is easy to forget that until recently, even simple tasks like sentiment analysis required training bespoke classifiers from scratch.
 
-Given the capability of current LLMs, it can be easy to forget that not too long ago the best way to, for example, detect if movie reviews were positive or negative was to train a discriminative sentiment classifier from scratch.
+While in-context learning as a paradigm has massively paid its dividends in terms of generality [\[22\]](https://gepa-ai.github.io/gepa/guides/use-cases/), training the model parameters for a given task typically yields higher ceiling performance.
 
-While this paradigm of in-context learning has massively paid its dividends in terms of generality, directly updating the model parameters for a given task typically yields higher ceiling performance.
-
-However, beyond compute costs, domain-specific finetuning imposes a set of restrictions on the model. For one, training a model on a narrow domain is known to degrade out of distribution performance. It can also decrease the ability to later finetune the model on new tasks.
+Compute costs aside, domain-specific finetuning imposes a set of restrictions on the model. For one, training a model on a narrow domain is known to degrade out of distribution performance. It can also decrease the ability to later finetune the model on new tasks.
 
 Though current models are quite general, there seems to be a tradeoff between how adaptable and how performant they are. What can we do to close this gap?
 
