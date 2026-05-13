@@ -59,7 +59,9 @@ jobs:
       - name: Override site_url for staging
         run: |
           cd docs
-          sed -i 's|site_url: https://gepa-ai.github.io/gepa/|site_url: https://blogpost.gepa-docs-staging.pages.dev/|' mkdocs.yml
+          # Use the current branch's Cloudflare Pages alias so og:url / og:image
+          # resolve to URLs that actually exist on the deployed subdomain.
+          sed -i "s|site_url: https://gepa-ai.github.io/gepa/|site_url: https://${{ github.ref_name }}.gepa-docs-staging.pages.dev/|" mkdocs.yml
 
       - name: Install Playwright browsers
         run: |
@@ -78,23 +80,50 @@ jobs:
           cd docs
           uv run -p ../.venv python scripts/generate_social_screenshots.py
 
-      - name: Add noindex directives
+      - name: Add noindex directives (search engines only)
         run: |
-          # robots.txt — tells crawlers not to index anything
+          # robots.txt — block general search engine crawlers, but explicitly
+          # allow social-preview bots so Twitter / LinkedIn / Slack / Discord /
+          # Facebook / WhatsApp / Telegram can fetch the page and render an
+          # Open Graph preview when staging URLs are shared.
+          #
+          # We intentionally do NOT set an X-Robots-Tag header or a
+          # <meta name="robots"> tag, because those would also block the
+          # social-preview bots above (Twitterbot in particular respects them).
           cat > docs/site/robots.txt << 'EOF'
+          User-agent: Twitterbot
+          Allow: /
+
+          User-agent: facebookexternalhit
+          Allow: /
+
+          User-agent: facebookcatalog
+          Allow: /
+
+          User-agent: LinkedInBot
+          Allow: /
+
+          User-agent: Slackbot
+          Allow: /
+
+          User-agent: Slackbot-LinkExpanding
+          Allow: /
+
+          User-agent: Discordbot
+          Allow: /
+
+          User-agent: Pinterestbot
+          Allow: /
+
+          User-agent: WhatsApp
+          Allow: /
+
+          User-agent: TelegramBot
+          Allow: /
+
           User-agent: *
           Disallow: /
           EOF
-
-          # _headers — Cloudflare Pages custom headers file
-          # Sets X-Robots-Tag on every response
-          cat > docs/site/_headers << 'EOF'
-          /*
-            X-Robots-Tag: noindex, nofollow, noarchive
-          EOF
-
-          # Inject <meta name="robots"> into every HTML file
-          find docs/site -name '*.html' -exec sed -i 's|<head>|<head><meta name="robots" content="noindex, nofollow, noarchive">|' {} +
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
