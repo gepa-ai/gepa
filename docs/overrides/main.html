@@ -1,5 +1,13 @@
 {% extends "base.html" %}
 
+{% block htmltitle %}
+  {% if page and page.meta and page.meta.bare_title %}
+    <title>{{ page.meta.get("title", page.title) | e }}</title>
+  {% else %}
+    {{ super() }}
+  {% endif %}
+{% endblock %}
+
 {% block extrahead %}
 {{ super() }}
 
@@ -9,7 +17,7 @@
 {% set page_url = config.site_url ~ page.url %}
 {% set page_image = (config.site_url ~ page.meta.social_image) if page.meta.social_image else "" %}
 {% set is_blog_post = page.url and page.url.startswith('blog/2') %}
-{% set social_title = (config.site_name ~ ": " ~ page_title) if (config.site_name not in page_title) else page_title %}
+{% set social_title = page_title if page.meta.bare_title else ((config.site_name ~ ": " ~ page_title) if (config.site_name not in page_title) else page_title) %}
 
 <!--
   NOTE on social_image paths: The blog plugin rewrites page URLs
