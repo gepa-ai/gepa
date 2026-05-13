@@ -39,9 +39,7 @@
 <meta property="og:type" content="{% if is_blog_post %}article{% else %}website{% endif %}">
 <meta property="og:title" content="{{ social_title }}">
 <meta property="og:url" content="{{ page_url }}">
-{% if not page.meta.bare_title %}
-<meta property="og:site_name" content="{{ config.site_name }}">
-{% endif %}
+<meta property="og:site_name" content="{{ social_title if page.meta.bare_title else config.site_name }}">
 {% if page_desc -%}
 <meta property="og:description" content="{{ page_desc }}">
 {%- endif %}
