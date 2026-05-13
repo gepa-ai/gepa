@@ -5,6 +5,7 @@ on:
     branches:
       - blogpost
       - blogpost-aesthetic
+      - blogpost-rl-gepa
 
 jobs:
   build-and-deploy:
