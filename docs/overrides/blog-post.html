@@ -27,11 +27,22 @@
                             {%- if page.meta.equal_contribution and author.name in page.meta.equal_contribution -%}
                                 <sup>*</sup>
                             {%- endif -%}
+                            {%- if page.meta.equal_advisory and author.name in page.meta.equal_advisory -%}
+                                <sup>**</sup>
+                            {%- endif -%}
                             {%- if not loop.last %}, {% endif -%}
                         {%- endfor %}
                     </span>
-                    {%- if page.meta.equal_contribution %}
-                    <br><span class="blog-post-equal-contrib"><sup>*</sup> Equal Contribution</span>
+                    {%- if page.meta.equal_contribution or page.meta.equal_advisory %}
+                    <br><span class="blog-post-equal-contrib">
+                        {%- if page.meta.equal_contribution -%}
+                            <sup>*</sup> Equal{% if page.meta.equal_advisory %} Technical{% endif %} Contribution
+                        {%- endif -%}
+                        {%- if page.meta.equal_contribution and page.meta.equal_advisory %}&nbsp;&nbsp;&nbsp;{% endif -%}
+                        {%- if page.meta.equal_advisory -%}
+                            <sup>**</sup> Equal Advisory Contribution
+                        {%- endif -%}
+                    </span>
                     {%- endif %}
                 {% endif %}
             </div>

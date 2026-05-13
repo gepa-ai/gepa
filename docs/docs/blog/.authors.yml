@@ -134,3 +134,33 @@ authors:
     description: Professor, Stanford University
     avatar: https://github.com/kunle.png
     url: https://profiles.stanford.edu/kunle-olukotun
+  rishabh_tiwari:
+    name: Rishabh Tiwari
+    description: Researcher
+    avatar: https://github.com/rishabh-16.png
+    url: https://rishabhtiwari.ai/
+  kusha:
+    name: Kusha Sareen
+    description: Researcher
+    avatar: https://github.com/kushasareen.png
+    url: https://kushasareen.github.io/
+  kurt:
+    name: Kurt Keutzer
+    description: Professor, UC Berkeley EECS
+    avatar: https://github.com/keutzer.png
+    url: https://people.eecs.berkeley.edu/~keutzer/
+  inderjit:
+    name: Inderjit S Dhillon
+    description: Professor, UT Austin
+    avatar: https://github.com/inderjit-dhillon.png
+    url: https://www.cs.utexas.edu/people/faculty-researchers/inderjit-dhillon
+  rishabh_agarwal:
+    name: Rishabh Agarwal
+    description: Research Scientist
+    avatar: https://github.com/agarwl.png
+    url: https://agarwl.github.io/
+  devvrit:
+    name: Devvrit Khatri
+    description: PhD Student
+    avatar: https://github.com/devvrit.png
+    url: https://github.com/devvrit
