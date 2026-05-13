@@ -49,7 +49,7 @@ We introduce **Fast-Slow Training (FST)**, a paradigm for LLM training that opti
 
 <figure markdown="span">
   <video controls muted autoplay loop playsinline style="width: 100%; max-width: 800px;">
-    <source src="images/fst_explainer_silent.mp4" type="video/mp4">
+    <source src="../../../../2026-05-11-learning-fast-and-slow/images/fst_explainer_silent.mp4" type="video/mp4">
     Your browser does not support the video tag.
   </video>
 </figure>
