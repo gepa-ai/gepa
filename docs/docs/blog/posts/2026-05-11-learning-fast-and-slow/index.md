@@ -82,6 +82,11 @@ Inspired by this literature, we propose…
   <figcaption>FST jointly optimizes slow parameters θ and a fast textual-context pool Φ via interleaved fast and slow update loops. The slow loop (top) updates θ from the scalar reward alone (θ<sub>c</sub> → θ<sub>c+1</sub>). The fast loop (bottom) updates Φ via reflective optimization, additionally consuming the rollout's full text including thoughts, tool calls, errors, and rich feedback (Φ<sub>c</sub> → Φ<sub>c+1</sub>). Maintaining Φ as a Pareto-frontier population (rather than a single best prompt) preserves diversity: different contexts specialize to different problem slices exposing the slow update rule to rich conditioning during training.</figcaption>
 </figure>
 
+<figure markdown="span">
+  ![Fast-Slow Training headline results](images/main_hero.png)
+  <figcaption><b>Fast-Slow Training (FST).</b> Comparison of FST (slow-weight RL interleaved with fast-weight prompt optimization), RL alone (slow weights only), and GEPA alone (fast weights only), averaged over <code>CodeIO</code>, <code>Math (Polaris)</code>, and <code>HoVer-hard</code>. <b>Left:</b> Evaluation accuracy on the trained task as training samples accumulate. FST reaches RL's peak with substantially fewer samples and converges to a higher ceiling than either RL or GEPA alone. <b>Middle:</b> Plasticity, the model's remaining ability to learn a new skill. After training on a first task, we continue with a fresh round of RL on a second task and report the final accuracy from each initialization. The RL-trained checkpoint barely learns (10.0%), while the FST-trained checkpoint roughly matches the base model (20.5% vs. 19.3%). <b>Right:</b> How far each training run drifts from the base model, measured by KL(π<sub>train</sub> ∥ π<sub>base</sub>). Smaller drift correlates with less forgetting of prior abilities; at matched accuracy, FST sits well to the left of RL.</figcaption>
+</figure>
+
 There is no good reason to restrict learning to being in-context or in-weights; humans themselves seem to learn at multiple time scales (e.g., System 1 vs System 2). We represent the model context as fast weights [\[15\]](https://arxiv.org/abs/2212.07677) and the model parameters as slow weights. Fast-Slow Training (FST) in LLMs presents a general blueprint where *any* context optimization approach can be taken to update the context, adapting quickly to new settings, and *any* gradient-based learning approach can be taken to update model parameters.
 
 To instantiate this idea, we take a state-of-the-art RL algorithm in CISPO [\[16\]](https://arxiv.org/abs/2506.13585) and interleave its updates with a state-of-the-art prompt optimizer GEPA [\[17\]](https://arxiv.org/abs/2507.19457), which is able to leverage rich text feedback. Every $T$ RL steps, we do a light round of prompt optimization with GEPA. The prompt optimizer generates a set of prompts covering the Pareto front. For each problem in RL, we pull several of these into the rollout prompts and calculate the advantage once per problem.
@@ -110,11 +115,6 @@ FST has several benefits. We find FST:
 3. and improves continual learning.
 
 We detail each experiment below.
-
-<figure markdown="span">
-  ![Fast-Slow Training headline results](images/main_hero.png)
-  <figcaption><b>Fast-Slow Training (FST).</b> Comparison of FST (slow-weight RL interleaved with fast-weight prompt optimization), RL alone (slow weights only), and GEPA alone (fast weights only), averaged over <code>CodeIO</code>, <code>Math (Polaris)</code>, and <code>HoVer-hard</code>. <b>Left:</b> Evaluation accuracy on the trained task as training samples accumulate. FST reaches RL's peak with substantially fewer samples and converges to a higher ceiling than either RL or GEPA alone. <b>Middle:</b> Plasticity, the model's remaining ability to learn a new skill. After training on a first task, we continue with a fresh round of RL on a second task and report the final accuracy from each initialization. The RL-trained checkpoint barely learns (10.0%), while the FST-trained checkpoint roughly matches the base model (20.5% vs. 19.3%). <b>Right:</b> How far each training run drifts from the base model, measured by KL(π<sub>train</sub> ∥ π<sub>base</sub>). Smaller drift correlates with less forgetting of prior abilities; at matched accuracy, FST sits well to the left of RL.</figcaption>
-</figure>
 
 ### Fast-Slow Training Improves Data Efficiency and Performance Ceiling { #data-efficiency }
 
