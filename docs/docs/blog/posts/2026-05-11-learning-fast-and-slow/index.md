@@ -77,17 +77,12 @@ Inspired by this literature, we propose…
 
 ## Fast-Slow Training for LLMs
 
-Due to the strong in-context learning ability of LLMs, we represent the model context as fast weights [\[15\]](https://arxiv.org/abs/2212.07677) and the model parameters as slow weights. Fast-Slow Training (FST) in LLMs presents a general blueprint where *any* context optimization approach can be taken to update the context, adapting quickly to new settings, and *any* gradient-based learning approach can be taken to update model parameters.
-
 <figure markdown="span">
   ![Fast-Slow Training diagram](images/fst_diagram.png)
   <figcaption>FST jointly optimizes slow parameters θ and a fast textual-context pool Φ via interleaved fast and slow update loops. The slow loop (top) updates θ from the scalar reward alone (θ<sub>c</sub> → θ<sub>c+1</sub>). The fast loop (bottom) updates Φ via reflective optimization, additionally consuming the rollout's full text including thoughts, tool calls, errors, and rich feedback (Φ<sub>c</sub> → Φ<sub>c+1</sub>). Maintaining Φ as a Pareto-frontier population (rather than a single best prompt) preserves diversity: different contexts specialize to different problem slices exposing the slow update rule to rich conditioning during training.</figcaption>
 </figure>
 
-<figure markdown="span">
-  ![Fast-Slow Training headline results](images/main_hero.png)
-  <figcaption><b>Fast-Slow Training (FST).</b> Comparison of FST (slow-weight RL interleaved with fast-weight prompt optimization), RL alone (slow weights only), and GEPA alone (fast weights only), averaged over <code>CodeIO</code>, <code>Math (Polaris)</code>, and <code>HoVer-hard</code>. <b>Left:</b> Evaluation accuracy on the trained task as training samples accumulate. FST reaches RL's peak with substantially fewer samples and converges to a higher ceiling than either RL or GEPA alone. <b>Middle:</b> Plasticity, the model's remaining ability to learn a new skill. After training on a first task, we continue with a fresh round of RL on a second task and report the final accuracy from each initialization. The RL-trained checkpoint barely learns (10.0%), while the FST-trained checkpoint roughly matches the base model (20.5% vs. 19.3%). <b>Right:</b> How far each training run drifts from the base model, measured by KL(π<sub>train</sub> ∥ π<sub>base</sub>). Smaller drift correlates with less forgetting of prior abilities; at matched accuracy, FST sits well to the left of RL.</figcaption>
-</figure>
+There is no good reason to restrict learning to being in-context or in-weights; humans themselves seem to learn at multiple time scales (e.g., System 1 vs System 2). We represent the model context as fast weights [\[15\]](https://arxiv.org/abs/2212.07677) and the model parameters as slow weights. Fast-Slow Training (FST) in LLMs presents a general blueprint where *any* context optimization approach can be taken to update the context, adapting quickly to new settings, and *any* gradient-based learning approach can be taken to update model parameters.
 
 To instantiate this idea, we take a state-of-the-art RL algorithm in CISPO [\[16\]](https://arxiv.org/abs/2506.13585) and interleave its updates with a state-of-the-art prompt optimizer GEPA [\[17\]](https://arxiv.org/abs/2507.19457), which is able to leverage rich text feedback. Every $T$ RL steps, we do a light round of prompt optimization with GEPA. The prompt optimizer generates a set of prompts covering the Pareto front. For each problem in RL, we pull several of these into the rollout prompts and calculate the advantage once per problem.
 
@@ -115,6 +110,11 @@ FST has several benefits. We find FST:
 3. and improves continual learning.
 
 We detail each experiment below.
+
+<figure markdown="span">
+  ![Fast-Slow Training headline results](images/main_hero.png)
+  <figcaption><b>Fast-Slow Training (FST).</b> Comparison of FST (slow-weight RL interleaved with fast-weight prompt optimization), RL alone (slow weights only), and GEPA alone (fast weights only), averaged over <code>CodeIO</code>, <code>Math (Polaris)</code>, and <code>HoVer-hard</code>. <b>Left:</b> Evaluation accuracy on the trained task as training samples accumulate. FST reaches RL's peak with substantially fewer samples and converges to a higher ceiling than either RL or GEPA alone. <b>Middle:</b> Plasticity, the model's remaining ability to learn a new skill. After training on a first task, we continue with a fresh round of RL on a second task and report the final accuracy from each initialization. The RL-trained checkpoint barely learns (10.0%), while the FST-trained checkpoint roughly matches the base model (20.5% vs. 19.3%). <b>Right:</b> How far each training run drifts from the base model, measured by KL(π<sub>train</sub> ∥ π<sub>base</sub>). Smaller drift correlates with less forgetting of prior abilities; at matched accuracy, FST sits well to the left of RL.</figcaption>
+</figure>
 
 ### Fast-Slow Training Improves Data Efficiency and Performance Ceiling { #data-efficiency }
 
@@ -171,12 +171,10 @@ We train models with RL and FST on a synthetic star graph search task [\[20\]](h
 
 <figure markdown="span">
   ![In-distribution gain decomposed into slow- and fast-weight contributions](images/indist_quadrants.png)
-  <figcaption><b>In-distribution gain decomposed into slow- and fast-weight contributions</b> (pass@1, %). For each task, we evaluate four combinations: base or FST-trained weights, with the original prompt or the FST-evolved prompt. On <code>HoVer-hard</code> and <code>CodeIO</code>, both channels contribute and the joint cell (FST weights + FST prompt) dominates. On <code>Math (Polaris)</code>, almost all of the gain is carried by the slow weights, consistent with the weaker instruction-following of the custom SFT base used for Polaris.</figcaption>
+  <figcaption><b>In-distribution gain decomposed into slow- and fast-weight contributions</b> (pass@1, %). For each task, we evaluate the four combinations of base or FST-trained weights with the original prompt or the FST-evolved prompt. On <code>HoVer-hard</code> and <code>CodeIO</code>, both channels contribute and the joint cell (FST weights + FST prompt) dominates. On <code>Math (Polaris)</code>, almost all of the gain is carried by the slow weights.</figcaption>
 </figure>
 
-To isolate how much of FST's gain comes from each channel, we evaluate every combination of {base, FST-trained weights} with {original prompt, FST-evolved prompt}. On `HoVer-hard`, the slow channel alone lifts pass@1 from 2.0% to 11.6%, the fast channel alone lifts it to 10.6%, and combining the two reaches 21.2%. The same pattern holds on `CodeIO`, where the joint cell reaches 43.3% versus 25.1% (slow only) and 34.5% (fast only). On `Math (Polaris)` almost all of the gain is carried by the slow weights (20.0 → 47.2), likely because the custom SFT base used for Polaris follows instructions less reliably than the public Qwen3-8B Instruct checkpoint, so the prompt channel has less to grip on. FST does not assume a fixed division of labor between the two channels: it lets each task draw on whichever channel pays off while still combining them when both contribute.
-
-We also asked whether an explicit fast-to-slow distillation step can substitute for direct RL on the slow weights. Our initial results using naive distillation suggest that it cannot. Distillation alone plateaus well below FST, indicating that both channels need to optimize against reward jointly to lift the ceiling.
+To see how much of FST's gain comes from each channel, we evaluate every combination of {base, FST-trained weights} with {original prompt, FST-evolved prompt}. On `HoVer-hard`, the slow channel alone lifts pass@1 from 2.0% to 11.6%, the fast channel alone lifts it to 10.6%, and combining the two reaches 21.2%. The same story plays out on `CodeIO`, where the joint cell hits 43.3% versus 25.1% (slow only) and 34.5% (fast only). On `Math (Polaris)` the slow weights carry almost all of the gain (20.0 → 47.2), while the prompt contributes little. The takeaway is that FST does not assume a fixed split between the two channels: it lets each task pull from whichever channel pays off and combines them when both do.
 
 ## The Future
 
