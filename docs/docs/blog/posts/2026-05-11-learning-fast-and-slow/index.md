@@ -79,7 +79,7 @@ Inspired by this literature, we propose…
 
 <figure markdown="span">
   ![Fast-Slow Training diagram](images/fst_diagram.png)
-  <figcaption>FST jointly optimizes slow parameters θ and a fast textual-context pool Φ via interleaved fast and slow update loops. The slow loop (top) updates θ from the scalar reward alone (θ<sub>c</sub> → θ<sub>c+1</sub>). The fast loop (bottom) updates Φ via reflective optimization, additionally consuming the rollout's full text including thoughts, tool calls, errors, and rich feedback (Φ<sub>c</sub> → Φ<sub>c+1</sub>). Maintaining Φ as a Pareto-frontier population (rather than a single best prompt) preserves diversity: different contexts specialize to different problem slices exposing the slow update rule to rich conditioning during training.</figcaption>
+  <figcaption><b>Slow weights and fast weights co-evolve through interleaved updates.</b> The slow loop (top) updates θ from the scalar reward alone (θ<sub>c</sub> → θ<sub>c+1</sub>). The fast loop (bottom) updates Φ via reflective optimization, additionally consuming the rollout's full text including thoughts, tool calls, errors, and rich feedback (Φ<sub>c</sub> → Φ<sub>c+1</sub>). Maintaining Φ as a Pareto-frontier population (rather than a single best prompt) preserves diversity: different contexts specialize to different problem slices exposing the slow update rule to rich conditioning during training.</figcaption>
 </figure>
 
 <figure markdown="span">
