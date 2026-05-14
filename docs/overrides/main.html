@@ -17,7 +17,12 @@
 {% set page_url = config.site_url ~ page.url %}
 {% set page_image = (config.site_url ~ page.meta.social_image) if page.meta.social_image else "" %}
 {% set is_blog_post = page.url and page.url.startswith('blog/2') %}
+{% set is_homepage = page.is_homepage %}
 {% set social_title = page_title if page.meta.bare_title else ((config.site_name ~ ": " ~ page_title) if (config.site_name not in page_title) else page_title) %}
+
+<!-- RSS feed discovery -->
+<link rel="alternate" type="application/rss+xml" title="{{ config.site_name }} Blog" href="{{ config.site_url }}blog/feed.xml">
+<link rel="alternate" type="application/atom+xml" title="{{ config.site_name }} Blog (updated)" href="{{ config.site_url }}blog/feed_updated.xml">
 
 <!--
   NOTE on social_image paths: The blog plugin rewrites page URLs
@@ -34,7 +39,7 @@
 <meta property="og:type" content="{% if is_blog_post %}article{% else %}website{% endif %}">
 <meta property="og:title" content="{{ social_title }}">
 <meta property="og:url" content="{{ page_url }}">
-<meta property="og:site_name" content="{{ config.site_name }}">
+<meta property="og:site_name" content="{{ social_title if page.meta.bare_title else config.site_name }}">
 {% if page_desc -%}
 <meta property="og:description" content="{{ page_desc }}">
 {%- endif %}
@@ -47,6 +52,8 @@
 
 <!-- Twitter Card meta tags -->
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@LakshyAAAgrawal">
+<meta name="twitter:creator" content="@LakshyAAAgrawal">
 <meta name="twitter:title" content="{{ social_title }}">
 {% if page_desc -%}
 <meta name="twitter:description" content="{{ page_desc }}">
@@ -82,16 +89,60 @@
 
 <!-- Structured data (JSON-LD) — uses |tojson to avoid autoescape corruption -->
 {% autoescape false %}
+{% if is_homepage %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": {{ (config.site_url ~ "#organization") | tojson }},
+      "name": "GEPA",
+      "alternateName": "Genetic-Pareto",
+      "url": {{ config.site_url | tojson }},
+      "logo": {
+        "@type": "ImageObject",
+        "url": {{ (config.site_url ~ "static/img/gepa_logo.png") | tojson }}
+      },
+      "description": {{ config.site_description | tojson }},
+      "sameAs": [
+        "https://github.com/gepa-ai",
+        "https://arxiv.org/abs/2507.19457",
+        "https://x.com/LakshyAAAgrawal",
+        "https://discord.gg/WXFSeVGdbW"
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": {{ (config.site_url ~ "#website") | tojson }},
+      "url": {{ config.site_url | tojson }},
+      "name": "GEPA",
+      "description": {{ config.site_description | tojson }},
+      "publisher": { "@id": {{ (config.site_url ~ "#organization") | tojson }} },
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": {{ (config.site_url ~ "?q={search_term_string}") | tojson }}
+        },
+        "query-input": "required name=search_term_string"
+      }
+    }
+  ]
+}
+</script>
+{% else %}
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   {% if is_blog_post -%}
-  "@type": "{% if page.meta.citation_authors %}ScholarlyArticle{% else %}BlogPosting{% endif %}",
+  "@type": {% if page.meta.citation_authors %}["BlogPosting", "Article", "ScholarlyArticle"]{% else %}["BlogPosting", "Article"]{% endif %},
   "headline": {{ social_title | tojson }},
   "url": {{ page_url | tojson }},
   {% if page_desc %}"description": {{ page_desc | tojson }},{% endif %}
   {% if page_image %}"image": {{ page_image | tojson }},{% endif %}
-  {% if page.meta.get('date', {}).get('created') %}"datePublished": {{ page.meta.date.created.isoformat() | tojson }},{% endif %}
+  {% if page.meta.get('date', {}).get('created') %}"datePublished": {{ page.meta.date.created.isoformat() | tojson }},
+  "dateModified": {{ page.meta.date.created.isoformat() | tojson }},{% endif %}
   {% if page.meta.citation_authors %}"author": [{% for author in page.meta.citation_authors %}{"@type": "Person", "name": {{ author | tojson }}}{% if not loop.last %}, {% endif %}{% endfor %}],{% endif %}
   "publisher": {
     "@type": "Organization",
@@ -111,6 +162,7 @@
   "name": {{ social_title | tojson }},
   "url": {{ page_url | tojson }},
   {% if page_desc %}"description": {{ page_desc | tojson }},{% endif %}
+  "isPartOf": { "@id": {{ (config.site_url ~ "#website") | tojson }} },
   "publisher": {
     "@type": "Organization",
     "name": "GEPA",
@@ -119,6 +171,7 @@
   {%- endif %}
 }
 </script>
+{% endif %}
 {% endautoescape %}
 {% endif %}
 

@@ -57,6 +57,25 @@
     text-decoration-color: rgba(144, 224, 239, 0.4);
 }
 
+/* Headerlink ¶ should take zero layout space when not hovered, so a long
+   heading doesn't push an invisible ¶ onto a second line and create an
+   "empty line" gap before the next paragraph. Material's default keeps the
+   element inline-block at full width with opacity: 0, which still occupies
+   layout. */
+.md-typeset .headerlink {
+    width: 0;
+    margin-left: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: opacity 0.25s, width 0.25s, margin-left 0.25s;
+}
+.md-typeset :is(h1, h2, h3, h4, h5, h6):hover .headerlink,
+.md-typeset :is(h1, h2, h3, h4, h5, h6) .headerlink:focus {
+    width: auto;
+    margin-left: 0.5em;
+    opacity: 1;
+}
+
 /* Exclude underlines from UI-like links within content */
 .md-content .md-typeset .headerlink,
 .md-content .md-typeset .md-nav__link,
