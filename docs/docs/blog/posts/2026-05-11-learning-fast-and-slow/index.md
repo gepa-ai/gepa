@@ -20,7 +20,7 @@ equal_advisory:
   - "Devvrit Khatri"
 slug: learning-fast-and-slow
 readtime: 12
-title: "Learning, Fast and Slow: LLMs That Adapt Continually"
+title: "Learning, Fast and Slow: Towards LLMs That Adapt Continually"
 bare_title: true
 description: "Fast-Slow Training (FST) interleaves prompt optimization with reinforcement learning, treating the prompt as fast weights and parameters as slow weights — improving data efficiency, performance ceiling, plasticity, and continual learning."
 social_image: blog/2026-05-11-learning-fast-and-slow/images/fst_diagram.png
@@ -37,15 +37,21 @@ citation_authors:
 citation_keywords: "reinforcement learning, prompt optimization, fast-slow training, continual learning, plasticity, complementary learning systems, GEPA, CISPO"
 ---
 
-# Learning, Fast and Slow: LLMs That Adapt Continually
+# Learning, Fast and Slow: Towards LLMs That Adapt Continually
 
-Adapting an LLM through parameter updates forces every improvement into a single persistent set of weights: task-specific tricks and general reasoning alike. This shrinks the model's distribution toward the trained task eroding its capacity to learn new ones. Prompt optimization enables fast task-specific adaptations and hence sidesteps this, but cannot, on its own, match the performance ceiling of parameter updates.
+!!! tip "TL;DR"
+    Adapting an LLM through parameter updates forces every improvement into a single persistent set of weights: task-specific tricks and general reasoning alike. This shrinks the model's distribution toward the trained task, eroding its capacity to learn new ones. Prompt optimization enables fast task-specific adaptations and hence sidesteps this, but cannot, on its own, match the performance ceiling of parameter updates.
 
-We introduce **Fast-Slow Training (FST)**, a paradigm for LLM training that optimizes the agent/context layer including prompts as "fast weights" and the network parameters as "slow weights", with the two updates interleaved during training. Fast weights encode task-dependent nuances; enabling slow weights to focus on general capabilities. Across math, code, and general reasoning benchmarks, FST beats weights-only training on every axis we measured. With one recipe, FST:
+    We introduce **Fast-Slow Training (FST)**, a paradigm for LLM training that optimizes the agent/context layer including prompts as "fast weights" and the network parameters as "slow weights", with the two updates interleaved during training. Fast weights encode task-dependent nuances; enabling slow weights to focus on general capabilities. Across math, code, and general reasoning benchmarks, FST beats weights-only training on every axis we measured. With one recipe, FST:
 
-- [Matches RL's performance with up to 3x fewer training steps and lifts the asymptotic ceiling](#data-efficiency) under [ScaleRL](https://arxiv.org/abs/2510.13786)-style scaling-law fits.
-- [Reaches matched accuracy at ~70% lower KL divergence from the base, preserving the model's ability to keep learning (plasticity).](#plasticity)
-- [Does a better job at continual learning where weights-only training stalls when the task switches.](#continual-learning)
+    - [Matches RL's performance with up to 3x fewer training steps and lifts the asymptotic ceiling](#data-efficiency) under [ScaleRL](https://arxiv.org/abs/2510.13786)-style scaling-law fits.
+    - [Reaches matched accuracy at ~70% lower KL divergence from the base, preserving the model's ability to keep learning (plasticity).](#plasticity)
+    - [Does a better job at continual learning where weights-only training stalls when the task switches.](#continual-learning)
+
+<figure markdown="span">
+  ![Fast-Slow Training headline results](images/main_hero.png)
+  <figcaption><b>Fast-Slow Training (FST).</b> Headline comparison of RL (slow-weight updates only), GEPA (fast-weight prompt optimization only), and FST (interleaved fast + slow), averaged across <code>CodeIO</code>, <code>Math (Polaris)</code>, and <code>HoVer-hard</code>. <b>Left:</b> Validation accuracy vs. training samples. <b>Middle:</b> Plasticity probe (final HoVer-hard accuracy after fresh RL from each initialization). <b>Right:</b> Slow-weight displacement, KL(π<sub>train</sub> ∥ π<sub>base</sub>) vs. validation accuracy.</figcaption>
+</figure>
 
 <figure markdown="span">
   <video controls muted autoplay loop playsinline style="width: 100%; max-width: 800px;">
