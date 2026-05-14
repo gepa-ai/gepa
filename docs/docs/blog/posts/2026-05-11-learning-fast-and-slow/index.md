@@ -49,11 +49,6 @@ citation_keywords: "reinforcement learning, prompt optimization, fast-slow train
     - [Does a better job at continual learning where weights-only training stalls when the task switches.](#continual-learning)
 
 <figure markdown="span">
-  ![Fast-Slow Training headline results](images/main_hero.png)
-  <figcaption><b>Fast-Slow Training (FST).</b> Comparison of RL (slow-weight updates only), GEPA (fast-weight prompt optimization only) and our method FST (interleaved fast + slow), averaged across <code>CodeIO</code>, <code>Math (Polaris)</code>, and <code>HoVer-hard</code>. <b>Left:</b> Validation accuracy vs. training step. <b>Middle:</b> Plasticity probe (final HoVer-hard accuracy after fresh RL from each initialization). <b>Right:</b> Slow-weight displacement, KL(π<sub>train</sub> ∥ π<sub>base</sub>) vs. validation accuracy.</figcaption>
-</figure>
-
-<figure markdown="span">
   <video controls muted autoplay loop playsinline style="width: 100%; max-width: 800px;">
     <source src="../../../../2026-05-11-learning-fast-and-slow/images/fst_explainer_silent.mp4" type="video/mp4">
     Your browser does not support the video tag.
@@ -89,6 +84,11 @@ Due to the strong in-context learning ability of LLMs, we represent the model co
   <figcaption>FST jointly optimizes slow parameters θ and a fast textual-context pool Φ via interleaved fast and slow update loops. The slow loop (top) updates θ from the scalar reward alone (θ<sub>c</sub> → θ<sub>c+1</sub>). The fast loop (bottom) updates Φ via reflective optimization, additionally consuming the rollout's full text including thoughts, tool calls, errors, and rich feedback (Φ<sub>c</sub> → Φ<sub>c+1</sub>). Maintaining Φ as a Pareto-frontier population (rather than a single best prompt) preserves diversity: different contexts specialize to different problem slices exposing the slow update rule to rich conditioning during training.</figcaption>
 </figure>
 
+<figure markdown="span">
+  ![Fast-Slow Training headline results](images/main_hero.png)
+  <figcaption><b>Fast-Slow Training (FST).</b> Comparison of FST (slow-weight RL interleaved with fast-weight prompt optimization), RL alone (slow weights only), and GEPA alone (fast weights only), averaged over <code>CodeIO</code>, <code>Math (Polaris)</code>, and <code>HoVer-hard</code>. <b>Left:</b> Evaluation accuracy on the trained task as training samples accumulate. FST reaches RL's peak with substantially fewer samples and converges to a higher ceiling than either RL or GEPA alone. <b>Middle:</b> Plasticity, the model's remaining ability to learn a new skill. After training on a first task, we continue with a fresh round of RL on a second task and report the final accuracy from each initialization. The RL-trained checkpoint barely learns (10.0%), while the FST-trained checkpoint roughly matches the base model (20.5% vs. 19.3%). <b>Right:</b> How far each training run drifts from the base model, measured by KL(π<sub>train</sub> ∥ π<sub>base</sub>). Smaller drift correlates with less forgetting of prior abilities; at matched accuracy, FST sits well to the left of RL.</figcaption>
+</figure>
+
 To instantiate this idea, we take a state-of-the-art RL algorithm in CISPO [\[16\]](https://arxiv.org/abs/2506.13585) and interleave its updates with a state-of-the-art prompt optimizer GEPA [\[17\]](https://arxiv.org/abs/2507.19457), which is able to leverage rich text feedback. Every $T$ RL steps, we do a light round of prompt optimization with GEPA. The prompt optimizer generates a set of prompts covering the Pareto front. For each problem in RL, we pull several of these into the rollout prompts and calculate the advantage once per problem.
 
 $$
@@ -122,6 +122,7 @@ We detail each experiment below.
   ![Data efficiency across three training families](images/data_efficiency_1.png)
   <figcaption><b>Data efficiency across three training families.</b> <b>Top row</b>: matched-step validation accuracy (running max, mean@4); dash-dot GEPA-only reference rises from the step-0 base accuracy to the prompt-only ceiling within GEPA's inference budget. FST reaches RL's running peak in substantially fewer training steps (3.0× on <code>CodeIO</code>, 1.4× on <code>Math (Polaris)</code>, 3.0× on <code>HoVer-hard</code>). <b>Bottom row</b>: out-of-distribution accuracy averaged across cross-domain (and easy→hard, where available) benchmarks for each family, evaluated with no GEPA prompt. FST matches RL on OOD averages while reaching the in-distribution peak with substantially fewer steps.</figcaption>
 </figure>
+
 
 <figure markdown="span">
   ![Performance asymptote: sigmoid scaling fits](images/data_efficiency_2.png)
@@ -169,11 +170,13 @@ We train models with RL and FST on a synthetic star graph search task [\[20\]](h
 ### Fast and Slow Weights Both Optimizing for Reward Raise Performance Ceiling { #both-weights-help-ceiling }
 
 <figure markdown="span">
-  ![Ceiling comparison: RL vs FST vs FST-distill](images/ceiling_comparison.png)
-  <figcaption><code>HoVer</code> training: FST (green) lifts validation accuracy above the prompt-only ceiling (GEPA only, dashed), RL (blue) plateaus, and FST-distill, fast-weight self-distillation that relies on GEPA to drive reward gains.</figcaption>
+  ![In-distribution gain decomposed into slow- and fast-weight contributions](images/indist_quadrants.png)
+  <figcaption><b>In-distribution gain decomposed into slow- and fast-weight contributions</b> (pass@1, %). For each task, we evaluate four combinations: base or FST-trained weights, with the original prompt or the FST-evolved prompt. On <code>HoVer-hard</code> and <code>CodeIO</code>, both channels contribute and the joint cell (FST weights + FST prompt) dominates. On <code>Math (Polaris)</code>, almost all of the gain is carried by the slow weights, consistent with the weaker instruction-following of the custom SFT base used for Polaris.</figcaption>
 </figure>
 
-Finally, to study the impact on the performance ceiling, we train models with RL, FST and FST-distill, a variant using reverse KL to distill information from the FST prompt into model weights, following recent work on self-distillation [\[21\]](https://arxiv.org/abs/2601.20802). We find FST has the highest ceiling while other approaches rely on only the fast or the slow weights to climb on rewards. Additionally, we note an added diversity and exploration benefit of FST: since the prompt optimization process generates several candidate prompts covering the Pareto front, using one per rollout allows the model to explore more during RL and usually maintains higher entropy over training.
+To isolate how much of FST's gain comes from each channel, we evaluate every combination of {base, FST-trained weights} with {original prompt, FST-evolved prompt}. On `HoVer-hard`, the slow channel alone lifts pass@1 from 2.0% to 11.6%, the fast channel alone lifts it to 10.6%, and combining the two reaches 21.2%. The same pattern holds on `CodeIO`, where the joint cell reaches 43.3% versus 25.1% (slow only) and 34.5% (fast only). On `Math (Polaris)` almost all of the gain is carried by the slow weights (20.0 → 47.2), likely because the custom SFT base used for Polaris follows instructions less reliably than the public Qwen3-8B Instruct checkpoint, so the prompt channel has less to grip on. FST does not assume a fixed division of labor between the two channels: it lets each task draw on whichever channel pays off while still combining them when both contribute.
+
+We also asked whether an explicit fast-to-slow distillation step can substitute for direct RL on the slow weights. Our initial results using naive distillation suggest that it cannot. Distillation alone plateaus well below FST, indicating that both channels need to optimize against reward jointly to lift the ceiling.
 
 ## The Future
 
