@@ -180,7 +180,7 @@ To see how much of FST's gain comes from each channel, we evaluate every combina
 
 More broadly, FST represents a paradigm for continual learning in LLMs where model context can be optimized as "fast weights" (through any method), quickly picking up task-specific information, and network parameters can be updated as "slow weights" (eg. via RL, SFT, OPD…), building a robust general reasoning core.
 
-FST is a fairly general framework. GEPA and CISPO are the prompt and weight optimizers we picked, but other choices would slot in just as naturally, and we're excited to see how the picture changes with different ones. There's also room to push the method along the compute axis by reusing rollouts across the fast and slow updates. And distilling fast-weight gains back into slow weights (FST-distill) is a thread we only scratched the surface of; it likely deserves a more careful study.
+FST is a fairly general framework. GEPA and CISPO are the prompt and weight optimizers we picked, but other choices would slot in just as naturally, and we're excited to see how the picture changes with different ones. There's also room to push the method along the compute axis by reusing rollouts across the fast and slow updates. Finally, distilling fast-weight gains back into slow weights (FST-distill) is a thread we only scratched the surface of; it likely deserves a more careful study.
 
 Paper: <https://arxiv.org/abs/2605.12484>
 
