@@ -299,18 +299,6 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the guide](https://kargarisaac.medium.com/building-and-optimizing-multi-agent-rag-systems-with-dspy-and-gepa-2b88b5838ce2)
 
--   **Invitae: Medical Genetics Pipelines**
-
-    ---
-
-    Engineering team at **Invitae** (medical genetics) has shared (community channels; no public writeup) that GEPA works across multiple production-adjacent pipelines.
-
-    **Reported applications:**
-
-    - **Biomedical literature classification:** GEPA beat production baselines on Cytogenomics, Clinical Variant Interpretation, and Gene–Phenotype association classification (**+3.7%** accuracy)
-    - **Clinical phenotype extraction:** multi-step pipeline ingesting full PubMed articles and normalizing phenotypes to the **Human Phenotype Ontology**
-    - **Medical AI safety:** experiments in progress using GEPA to improve **Expected Calibration Error (ECE)** for better LLM confidence/uncertainty scores
-
 -   **OCR Accuracy: Up to 38% Error Reduction**
 
     ---
