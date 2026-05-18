@@ -299,6 +299,18 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the guide](https://kargarisaac.medium.com/building-and-optimizing-multi-agent-rag-systems-with-dspy-and-gepa-2b88b5838ce2)
 
+-   **Invitae: Medical Genetics Pipelines**
+
+    ---
+
+    Engineering team at **Invitae** (medical genetics) has shared (community channels; no public writeup) that GEPA works across multiple production-adjacent pipelines.
+
+    **Reported applications:**
+
+    - **Biomedical literature classification:** GEPA beat production baselines on Cytogenomics, Clinical Variant Interpretation, and Gene–Phenotype association classification (**+3.7%** accuracy)
+    - **Clinical phenotype extraction:** multi-step pipeline ingesting full PubMed articles and normalizing phenotypes to the **Human Phenotype Ontology**
+    - **Medical AI safety:** experiments in progress using GEPA to improve **Expected Calibration Error (ECE)** for better LLM confidence/uncertainty scores
+
 -   **OCR Accuracy: Up to 38% Error Reduction**
 
     ---
@@ -539,6 +551,132 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     - State-of-the-art on clinical error detection
 
     [:material-arrow-right: Read the paper](https://arxiv.org/abs/2602.22483)
+
+-   **Prompt Triage: Structured Optimization for VLMs on Medical Imaging (Stanford)**
+
+    ---
+
+    Singhvi, Bikia, Aali, Chaudhari & Daneshjou (Stanford) benchmark GEPA among DSPy-based prompt optimizers on **five medical imaging tasks** across radiology, gastroenterology, and dermatology, evaluating **10 open-source VLMs**.
+
+    **Key Results:**
+
+    - **Median 53% relative improvement** over zero-shot prompting baselines
+    - **300%–3,400% gains** on tasks where zero-shot performance was low
+    - Weight-agnostic improvement: no domain finetuning, no manual prompt engineering
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2511.11898)
+
+-   **Cancer-Myth: False Presuppositions in Cancer Patient Questions**
+
+    ---
+
+    Zhu, Chen et al. (USC + Keck Medicine) use GEPA-optimized precautionary prompts as a mitigation against false presuppositions in cancer patient questions, raising Cancer-Myth accuracy to **80% on Gemini-2.5-Pro** and exposing tradeoffs on other medical benchmarks.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2504.11373)
+
+-   **WER is Unaware: Clinical Risk Assessment of ASR Errors (IWSDS 2026)**
+
+    ---
+
+    Ellis et al. use GEPA (via DSPy) with a cost-sensitive metric to optimize a Gemini-2.5-Pro LLM-as-a-Judge for clinical risk assessment of ASR errors in doctor–patient dialogue, reaching **90% accuracy** and a strong **Cohen's κ of 0.816** — human-comparable performance.
+
+    [:material-arrow-right: Read the paper](https://aclanthology.org/2026.iwsds-1.39.pdf)
+
+-   **EvoClinician: Multi-Turn Medical Diagnosis**
+
+    ---
+
+    He et al. evaluate GEPA as a prompt-optimization baseline against their self-evolving evolutionary agent on the **Med-Inquire** multi-turn medical diagnosis benchmark.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2601.22964)
+
+-   **TRACE: Temporal Reasoning over Streaming EHRs**
+
+    ---
+
+    Qu & Färber (KIT) adopt a **two-phase evolution strategy "inspired by GEPA"** for offline protocol induction over streaming Electronic Health Records, using reflective error analysis on failed clinical interventions.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2602.12833)
+
+-   **SecureForge: Hardening Code-Generation LLMs Against Vulnerabilities (Stanford)**
+
+    ---
+
+    Liu, Einstein, Yang, Baumann et al. (Stanford) use GEPA as their **core methodology** with Semgrep ±1 CWE-labeled rewards to harden system prompts against generating vulnerable code, reporting that **GEPA is statistically significantly more effective than MIPRO** at reducing vulnerabilities across 11 frontier models.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2605.08382)
+
+-   **OrchMAS: Orchestrated Multi-Agent Scientific Reasoning**
+
+    ---
+
+    Feng, Luo et al. (Magellan / NTU) run GEPA as a representative MAS prompt-optimization baseline (alongside OPRO and TextGrad) on **six QA benchmarks** (2Wiki, HotpotQA, GSM8K, DAPO, PopQA, MusiQue) implemented on GPT-4o-mini.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2603.03005)
+
+-   **REVERE: Reflective Evolving Research Engineer (TCS Research + Yale)**
+
+    ---
+
+    Gangireddi, Garikaparthi, Patwardhan & Cohan run GEPA's official implementation (32 iterations / 600-eval budget) as the **offline prompt-optimization baseline** for scientific research-coding agents on **SUPER, ResearchCodeBench, and ScienceAgentBench**.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2603.20667)
+
+-   **Automated Refinement of Essay Scoring Rubrics (U. Tokyo)**
+
+    ---
+
+    Harada, Yoshida, Kojima, Iwasawa & Matsuo describe their iterative rubric refinement for LLM-based automated essay scoring as **"a simplified version of GEPA"**, dropping Pareto-based candidate filtering and system-aware merge for implementation ease.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2510.09030)
+
+-   **Optimized Agentic AI Systems for Asset Pricing**
+
+    ---
+
+    Researchers apply GEPA to optimize agentic AI systems for **asset pricing** — extending prompt evolution to a finance research domain.
+
+    [:material-arrow-right: SSRN paper](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6474601)
+
+-   **VeriInteresting: Verilog HDL Code Generation**
+
+    ---
+
+    Uses GEPA to evolve prompts for **Verilog HDL code generation**, applying reflective prompt optimization to register-transfer-level hardware design.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2603.08715)
+
+-   **VeriAct: Formal Spec Synthesis**
+
+    ---
+
+    Uses GEPA as a **core part of the methodology** for synthesizing formal specifications from natural-language requirements.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2604.00280)
+
+-   **Survey on AI-Driven Circuit Verification (ASPDAC 2026, CUHK)**
+
+    ---
+
+    Survey on AI-driven hardware verification cites GEPA as a **promising approach to avoid data scarcity** in circuit verification workflows.
+
+    [:material-arrow-right: Read the paper](https://www.cse.cuhk.edu.hk/~byu/papers/C312-ASPDAC2026-Verif.pdf)
+
+-   **FEM-Bench: Finite Element Method Scientific Reasoning**
+
+    ---
+
+    Scientific-reasoning benchmark covering finite element method problems uses GEPA as a **baseline optimizer** for evaluating LLMs and agents on engineering-physics tasks.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2512.20732)
+
+-   **AssayBench: Assay-Level Virtual Cell Benchmark**
+
+    ---
+
+    De Brouwer, Edwards, Wu, Collier et al. introduce an **assay-level virtual cell benchmark** for phenotypic screen prediction and use GEPA to optimize the LLM/agent pipelines being evaluated before measuring task performance.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2605.10876)
 
 -   **What Do Prompts Reveal About Model Capabilities in Low-Resource Languages? (AfricaNLP 2026)**
 
