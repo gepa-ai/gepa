@@ -407,6 +407,7 @@ Finally:
     - [GEPA in Go Programming Language](https://github.com/XiaoConstantine/dspy-go)
     - [100% accuracy using GEPA on the clock-hands problem](https://colab.research.google.com/drive/1W-XNxKL2CXFoUTwrL7GLCZ7J7uZgXsut?usp=sharing)
     - [Prompt Optimization for Reliable Backdoor Detection in AI-Generated Code](https://www.lesswrong.com/posts/bALBxf3yGGx4bvvem/prompt-optimization-can-enable-ai-control-research)
+    - [Attack Selection Reduces Safety in Concentrated AI Control Settings (Pivotal Research + Redwood) — GEPA-optimized red-team prompts outperform handwritten rubric prompts at evading trusted monitoring](https://arxiv.org/abs/2602.04930)
     - [Teaching LLMs to Diagnose Production Incidents with ATLAS+GEPA](https://www.arc.computer/blog/atlas-sre-diagnosis)
     - [DataBricks: Building State-of-the-Art Enterprise Agents 90x Cheaper with GEPA](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization)
     - [comet-ml/opik adds support for GEPA](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer)

@@ -486,6 +486,20 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the post](https://www.lesswrong.com/posts/vRpLPZpmECCfxHfv6/paper-prompt-optimization-makes-misalignment-legible)
 
+-   **Attack Selection in AI Control (Pivotal Research + Redwood)**
+
+    ---
+
+    Schaeffer, Khandelwal & Tracy (Pivotal Research / Oxford / Redwood Research) use GEPA to red-team attack-selection prompts in the BigCodeBench backdooring setting, finding that the **GEPA-optimized prompt is the strongest attack** they tested — outperforming handwritten rubric prompts at evading trusted monitoring.
+
+    **Key Results:**
+
+    - GEPA-optimized prompt drives safety to **59%** at 0.5% auditing budget vs the handwritten rubric prompt's **79%** (lower = more effective attack); approaches the "monitor prompt leaked" upper bound of 53%
+    - AUC across auditing budgets: **GEPA 1.37 < Rubric 1.46** (lower = stronger)
+    - Transfers across monitors (GPT-4.1 Nano, Claude 3.5 Haiku, Gemini 2.0 Flash Lite) and attacker models (GPT-4.1 Mini, Claude Haiku 4.5)
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2602.04930)
+
 -   **Automated Risk-of-Bias Assessment of Clinical Trials**
 
     ---
