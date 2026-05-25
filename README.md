@@ -163,6 +163,7 @@ GEPA connects to your system via the [`GEPAAdapter`](src/gepa/core/adapter.py) i
 | [MCP Adapter](src/gepa/adapters/mcp_adapter/) | Optimize [MCP](https://modelcontextprotocol.io/) tool descriptions and system prompts |
 | [TerminalBench](src/gepa/adapters/terminal_bench_adapter/) | Optimize the [Terminus](https://www.tbench.ai/terminus) terminal-use agent |
 | [AnyMaths](src/gepa/adapters/anymaths_adapter/) | Mathematical problem-solving and reasoning tasks |
+| [LangChain](src/gepa/adapters/langchain_adapter/) | Optimize prompts for any LangChain pipeline — chat models, tool-using agents, LangGraph. `pip install "gepa[langchain]"` |
 
 See the [adapters guide](https://gepa-ai.github.io/gepa/guides/adapters/) for how to build your own, and [DSPy's adapter](https://github.com/stanfordnlp/dspy/tree/main/dspy/teleprompt/gepa/gepa_utils.py) as a reference.
 
@@ -398,6 +399,7 @@ Finally:
     - [MCP Adapter](src/gepa/adapters/mcp_adapter/) - Optimize [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) tool usage. Supports local stdio servers, remote SSE/HTTP servers, and optimizes tool descriptions and system prompts.
     - [TerminalBench Adapter](src/gepa/adapters/terminal_bench_adapter/) - Easily integrating GEPA into a Terminus, a sophisticated external agentic pipeline, and optimizing the agents' system prompt.
     - [AnyMaths Adapter](src/gepa/adapters/anymaths_adapter/) - Adapter for optimizing mathematical problem-solving and reasoning tasks. Contributed by [@egmaminta](www.linkedin.com/in/egmaminta).
+    - [LangChain Adapter](src/gepa/adapters/langchain_adapter/) - Optimize prompts for any LangChain pipeline: single-turn chat models, tool-using agents built with `create_agent`, custom LangGraph graphs, RAG, and more. Provider-agnostic via LangChain's `init_chat_model`. Install with `pip install "gepa[langchain]"` plus a provider package (e.g. `langchain-openai`).
 - **GEPA uses**
     - [Nous Research Hermes Agent: evolutionary self-improvement with DSPy + GEPA](https://github.com/NousResearch/hermes-agent-self-evolution)
     - [Context Compression using GEPA](https://github.com/Laurian/context-compression-experiments-2508)
