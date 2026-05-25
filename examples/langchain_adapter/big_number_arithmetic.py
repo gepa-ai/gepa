@@ -101,21 +101,38 @@ def evaluate_response(data: dict, state: dict) -> tuple[float, str]:
     predicted = extract_final_integer(response)
 
     tool_calls = _summarize_tool_calls(state)
-    trace_note = f"\n\nTool-call trace:\n{tool_calls}" if tool_calls else "\n\n(No calculator calls were made.)"
+    trace_note = f"\n\nTool-call trace:\n{tool_calls}" if tool_calls else ""
+
+    if not tool_calls:
+        score = 0.0
+        feedback = (
+            f"You did not call the `calculator` tool. This task requires using the calculator "
+            f"for every arithmetic step — mental math is unreliable for these numbers. "
+            f"Expression: {data['expression']}. The correct answer is {correct}."
+        )
+        # print(f"Score: {score}\nFeedback: {feedback}\n")
+        return score, feedback
 
     if predicted is None:
-        return 0.0, (
+        score = 0.0
+        feedback = (
             f"Could not parse an integer from your response. The correct answer is {correct}. "
             f"Ensure your final answer is a single integer on the last line.{trace_note}"
         )
+        # print(f"Score: {score}\nFeedback: {feedback}\n")
+        return score, feedback
 
     if predicted == correct:
-        return 1.0, f"Correct. The answer is {correct}."
+        return 1.0, ""
 
-    return 0.0, (
+    score = 0.0
+    feedback = (
         f"Incorrect. You answered {predicted}, but the correct answer is {correct}. "
         f"Expression: {data['expression']}.{trace_note}"
     )
+    # print(f"Score: {score}\nFeedback: {feedback}\n")
+
+    return score, feedback
 
 
 def _summarize_tool_calls(state: dict) -> str:
@@ -150,17 +167,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--train-size", type=int, default=200)
     p.add_argument("--val-size", type=int, default=50)
     p.add_argument("--test-size", type=int, default=50)
-    p.add_argument("--num-operands", type=int, default=8)
+    p.add_argument("--num-operands", type=int, default=6)
     p.add_argument("--min-digits", type=int, default=2)
-    p.add_argument("--max-digits", type=int, default=6)
+    p.add_argument("--max-digits", type=int, default=4)
     p.add_argument("--data-seed", type=int, default=42)
 
     # models — defaults use standard LangChain `init_chat_model` strings.
-    p.add_argument("--task-model", default="openai:gpt-5-nano")
+    p.add_argument("--task-model", default="openai:gpt-41-mini")
     p.add_argument(
         "--task-model-kwargs",
         type=json.loads,
-        default={"reasoning_effort": "minimal"},
+        default={},
         help="JSON dict of init_chat_model kwargs (base_url, api_key, default_headers, etc.)",
     )
     p.add_argument("--reflection-model", default="openai:gpt-5")

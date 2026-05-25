@@ -81,6 +81,17 @@ the script path.
 ## Example Optimized Prompts
 
 ### Pair Sum Product
+
+- task_llm: gpt-4.1-nano
+- reflection_llm: gpt-5-mini (medium)
+- Performance
+
+```text
+Baseline:  11/50 (22.0%)
+Optimized: 29/50 (58.0%)
+Delta:     +36.0%
+```
+
 <details>
    <summary>
    Starting Prompt
@@ -137,29 +148,80 @@ the script path.
 
 </details>
 
-### GSM8K
+### Big Number Arithmetic
+
+- task_llm: gpt-41-mini
+- reflection_llm: gpt-5-mini (medium)
+- Performance
+```text
+Baseline:  35/50 (70.0%)
+Optimized: 43/50 (86.0%)
+Delta:     +16.0%
+```
 
 <details>
    <summary>
-   Starting Prompt
+   Baseline
    </summary>
 
    ```text
-   Solve the grade-school math word problem.
-   Think step by step, then provide your final answer as a single integer on the last line.
+   You are given an arithmetic expression. Use the `calculator` tool to compute it.
+   Provide your final answer as a single integer on the last line.
    ```
-
 </details>
-
 <details>
    <summary>
    Optimized Prompt
    </summary>
 
    ```text
-      Solve the grade-school math word problem.
-      Think step by step, then provide your final answer as a single integer on the last line.
+   You are given a single-line task that always begins with the literal "Compute:" followed by one arithmetic expression. Your job is to evaluate that expression exactly using integer arithmetic and return the numeric result.
+
+   Input format and allowed tokens
+   - Input always begins with the exact prefix "Compute:" followed by one expression.
+   - The expression uses integer literals, parentheses, and the operators +, -, and * only.
+   - All integers are exact (no floating point). Intermediate and final results may be negative.
+
+   Evaluation rules (must follow standard arithmetic semantics)
+   - Respect standard operator precedence:
+   1) Evaluate parentheses first (innermost first).
+   2) Within any parenthesized or top-level subexpression, evaluate all multiplications before doing any additions/subtractions.
+   3) For addition and subtraction, evaluate left-to-right.
+   4) For a chain of multiplications (a * b * c * ...), evaluate left-to-right (i.e., ((a*b)*c)*...).
+   - Never rearrange terms (do not use commutativity to change subtraction order). For expressions like a - b * c compute b * c first, then do a - (b*c). For a - b - c evaluate left-to-right: (a - b) - c.
+
+   Tool usage and preventing arithmetic mistakes
+   - Use a precise integer-calculation tool (called `calculator` or equivalent) for computing every non-trivial arithmetic sub-expression to avoid manual errors.
+   - At minimum, you must use the calculator for:
+   - Every multiplication operation.
+   - Every multiplication chain step (each binary multiplication in the left-to-right chain).
+   - Every addition or subtraction that involves multi-digit numbers, negative numbers, or any result that could be miscomputed by hand.
+   - In practice: compute each multiplication with the calculator; then reduce the expression by replacing each multiplicative sub-expression with its integer result; then perform the additions/subtractions left-to-right, using the calculator for each binary step.
+   - Always preserve operand order when calling the calculator for subtraction (i.e., compute exactly left_operand - right_operand).
+
+   Output format (strict)
+   - The very last line of your response must contain only the final integer result and nothing else (no punctuation, no explanatory text).
+   - You may include brief intermediate calculations or tool-call traces on earlier lines if you wish, but they must be accurate and correspond to the calculator calls. Ensure the final line is a single integer only.
+
+   Computation strategy (step-by-step algorithm to follow)
+   1. Verify the line begins with "Compute:" and extract the expression.
+   2. Parse parentheses and recursively evaluate innermost parenthesized expressions first.
+   3. For each subexpression (inside a parenthesis or top-level):
+   a. Identify multiplicative subexpressions (products or chains of *). Evaluate each multiplication left-to-right, using the calculator for every binary multiplication, and replace the chain with its integer result.
+   b. After all multiplications are replaced, evaluate additions and subtractions strictly left-to-right, using the calculator for every binary addition/subtraction step.
+   4. Continue until the entire expression reduces to a single integer.
+   5. Output optional intermediate/calculator traces on earlier lines if desired, but ensure the final line is exactly the single integer result.
+
+   Notes and cautions
+   - Do not use floating point approximations or rounding—everything must be integer arithmetic.
+   - Negative intermediate or final results are allowed and must be output exactly.
+   - This process exists to avoid human arithmetic mistakes: always use the calculator as prescribed.
+
+   Example (high-level)
+   - For "5501 + 5697 + 74 + 8054 * 23 * 77": compute 8054 * 23 (calculator), then that result * 77 (calculator), then compute 5501 + 5697 + 74 (calculator for the additions or stepwise with calculator), then add to the big product (calculator). Final line: the single integer result.
    ```
 
 </details>
+
+
 
