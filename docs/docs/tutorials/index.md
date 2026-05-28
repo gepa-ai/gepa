@@ -26,6 +26,10 @@ A hands-on notebook for classification-only GEPA optimization using AG News. You
 
 - **[ConfidenceAdapter Classification Tutorial](confidence_adapter_classification.ipynb)** - Compare default and confidence-aware classification optimization, from dataset split to AG News per-class and calibration plots.
 
+### LangChain Adapter
+
+- **[LangChain GEPA Adapter Tutorial](langchain_adapter_pair_sum_product_walkthrough.ipynb)** - Walkthrough for how to use langchain v1+ `ChatModel` or agent on a synthetic data task
+
 ## External Tutorials
 
 For more tutorials, especially those focused on the DSPy integration, see:
