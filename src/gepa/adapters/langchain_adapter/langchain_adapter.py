@@ -87,12 +87,28 @@ class LangChainAdapter(GEPAAdapter):
     Caller supplies:
       - `rollout_fn(candidate, example) -> state dict`: any LangChain pipeline —
         a single chat-model invocation, an agent built with `create_agent`, a
-        custom LangGraph graph, RAG, etc. Must return a dict; for single-turn
-        cases use `make_chat_model_rollout` to wrap a `BaseChatModel`. For
-        agents, return the full agent state directly (e.g. `agent.invoke(...)`).
+        custom LangGraph graph, RAG, etc. Must return a state dict; for single-turn
+        cases return a dict with the messages key
+        `{"messages": messages + [AIMessage("llm response")]}`.
+        For agents, return the full agent state directly (e.g. `agent.invoke(...)`).
       - `eval_fn(example, state) -> (score, feedback)`: scores the rollout state.
         Use `last_message_text(state)` if you only need the final assistant text;
         agents can inspect tool calls in `state["messages"]` directly.
+        Note: if `rollout_fn` raises, the adapter substitutes a stand-in state
+        of the form `{"messages": [AIMessage("ERROR: <type>: <msg>")], "error": e}`
+        and still calls `eval_fn` with it. Check `state.get("error")` to detect
+        rollout failures and score them appropriately (e.g. return 0.0 with a
+        feedback string explaining the failure to the reflection LM).
+      - `reflective_record_fn(example, state, score, feedback) -> mapping`
+        (optional): builds the per-example record passed to the reflection LM.
+        Defaults to `{"Inputs", "Generated Outputs", "Feedback"}` derived from
+        `example["input"]` and `last_message_text(state)`. Override to surface
+        tool-call traces, intermediate steps, or domain-specific context.
+      - `num_threads`: parallelism for `evaluate` (default 32).
+      - `custom_proposer`: optional `ProposalFn` to override GEPA's default
+        text-proposal behavior.
+      - `show_progress`: whether to render a tqdm progress bar during
+        `evaluate` (default True).
 
     The candidate is a `dict[str, str]` of named text components; `rollout_fn`
     decides how those components are wired into the call.

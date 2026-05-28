@@ -73,8 +73,7 @@ gskill = [
     "pyyaml",
 ]
 
-langchain=[
-    "gepa[full]",
+langchain = [
     "langchain>=1.0",
     "langchain-core>=1.0",
     "tqdm>=4.66",
