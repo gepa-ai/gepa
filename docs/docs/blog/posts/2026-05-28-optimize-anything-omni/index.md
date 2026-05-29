@@ -2,20 +2,7 @@
 date:
   created: 2026-05-28
 authors:
-  - donghyun
-  - shangyin
-  - qiuyang
-  - lakshya
-  - wenjie
-  - karim
-  - koushik
-  - sanjit
-  - dan
-  - omar
-  - alex
-  - ion
-  - joey
-  - matei
+ - shangyin
 slug: optimize-anything-omni
 readtime: 10
 title: "optimize_anything Goes Omni: Pluggable Backends and Composable Optimizer Pipelines"
