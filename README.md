@@ -410,6 +410,7 @@ Finally:
     - [100% accuracy using GEPA on the clock-hands problem](https://colab.research.google.com/drive/1W-XNxKL2CXFoUTwrL7GLCZ7J7uZgXsut?usp=sharing)
     - [Prompt Optimization for Reliable Backdoor Detection in AI-Generated Code](https://www.lesswrong.com/posts/bALBxf3yGGx4bvvem/prompt-optimization-can-enable-ai-control-research)
     - [Attack Selection Reduces Safety in Concentrated AI Control Settings (Pivotal Research + Redwood) — GEPA-optimized red-team prompts outperform handwritten rubric prompts at evading trusted monitoring](https://arxiv.org/abs/2602.04930)
+    - [Going recursive: RLM-GEPA on AppWorld (Gabriel Lespérance) — PredictRLM(GPT-5.5 low) hits 0.917 TGC / 0.839 SGC unoptimized (beats leaderboard 0.804 SGC); RLM-GEPA lifts to 0.940 TGC / 0.911 SGC](https://x.com/GabLesperance/status/2060754345247863075)
     - [Teaching LLMs to Diagnose Production Incidents with ATLAS+GEPA](https://www.arc.computer/blog/atlas-sre-diagnosis)
     - [DataBricks: Building State-of-the-Art Enterprise Agents 90x Cheaper with GEPA](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization)
     - [comet-ml/opik adds support for GEPA](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer)
