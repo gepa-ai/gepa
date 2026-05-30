@@ -199,7 +199,7 @@ class OpikAdapter(GEPAAdapter[OpikDataInst, OpikTrajectory, OpikRolloutOutput]):
             metric_result = self.metric(data, response)
             score, feedback = _coerce_score_and_feedback(
                 metric_result,
-                fallback_feedback=f"Observed score on item; no reason provided by metric.",
+                fallback_feedback="Observed score on item; no reason provided by metric.",
             )
 
             outputs.append({"full_assistant_response": response})
