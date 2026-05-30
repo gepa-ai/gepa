@@ -1294,6 +1294,21 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Clone and reproduce](https://github.com/intertwine/dspy-agent-skills)
 
+-   **Exploring GEPA: Context Management at the Static vs Runtime Layer (Quarq Labs)**
+
+    ---
+
+    Quarq Labs frames GEPA and Recursive Language Models (RLMs) as complementary thrusts on the same problem — LLMs are passive consumers of context. GEPA optimizes the *static* layer (instructions, retrieval queries, agent scaffolding) ahead of time; RLMs handle the *dynamic* layer at runtime. Together they suggest a shift from "stuff everything into the context window" to systems that actively curate and manage context.
+
+    **Highlights:**
+
+    - Argues that ASI (Actionable Side Information) plays the role of a gradient, but expressed in text rather than numbers
+    - GEPA's Pareto front prevents premature convergence on a single solution
+    - Cites GEPA's efficiency: +6-19pp over GRPO with 35x fewer rollouts; +10pp over MIPROv2 (+12pp on AIME-2025)
+    - Discusses MCP, DSPy full-program, and generic RAG adapters as evidence that GEPA generalizes beyond simple system prompts
+
+    [:material-arrow-right: Read the post](https://x.com/LakshyAAAgrawal/status/2048855588298240059)
+
 </div>
 
 ---
