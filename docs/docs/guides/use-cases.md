@@ -276,6 +276,21 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: View tutorial](https://www.rajapatnaik.com/blog/2025/10/23/langgraph-dspy-gepa-researcher)
 
+-   **RLM-GEPA on AppWorld: Beating the Public Leaderboard**
+
+    ---
+
+    Gabriel Lespérance ports GEPA to optimize **RLM skills** (not weights) for the **AppWorld** agent benchmark (email, calendar, Spotify, Venmo, shopping, todo over realistic app APIs). Unoptimized `PredictRLM(GPT-5.5 low)` already exceeds the public leaderboard; RLM-GEPA pushes it further.
+
+    **Key Results:**
+
+    - Unoptimized `PredictRLM(GPT-5.5 low)`: **0.917 TGC / 0.839 SGC** on test_normal vs current public leaderboard high-water mark of 0.804 SGC
+    - RLM-GEPA optimized: **0.940 TGC / 0.911 SGC** on test_normal (+2.3pp TGC, +7.2pp SGC)
+    - test_challenge transfer: 0.914 TGC / 0.820 SGC unoptimized → 0.911 TGC / 0.849 SGC optimized
+    - Optimizer reads execution traces + evaluator feedback, rewrites the skill instructions only (held-out splits reserved)
+
+    [:material-arrow-right: Read the thread](https://x.com/GabLesperance/status/2060754345247863075)
+
 </div>
 
 ---
