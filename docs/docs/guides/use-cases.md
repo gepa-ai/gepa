@@ -715,6 +715,18 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the paper](https://arxiv.org/abs/2603.28038)
 
+-   **Build, Judge, Optimize: Multi-Agent Consumer Assistants (Instacart)**
+
+    ---
+
+    Breen Herrera et al. present a blueprint for continuously improving production-scale conversational shopping assistants. They compare localized sub-agent GEPA optimization with MAMuT GEPA (joint multi-agent trajectory-aware optimization), showing that **joint optimization achieves 84.7% rubric pass rate vs 77.1% for localized**, with +12.0pp gains in Safety & Compliance.
+
+    **Key Insight:**
+
+    Optimizing individual sub-agents in isolation can introduce hallucinations at the system level. Trajectory-aware joint optimization with GEPA coordinates prompts across agents, reducing inter-agent failures.
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2603.03565)
+
 -   **Self-Optimizing Multi-Agent Systems for Deep Research (ECIR 2026 Workshop)**
 
     ---
