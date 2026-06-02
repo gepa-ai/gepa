@@ -517,6 +517,21 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the paper](https://arxiv.org/abs/2602.04930)
 
+-   **DivSkill-SQL: Residual Skill Optimization for Text-to-SQL Ensembles (UC San Diego + Microsoft)**
+
+    ---
+
+    Zhu, Guan, Prashant, Kuang et al. (UC San Diego + Microsoft) build complementary agentic text-to-SQL ensembles without fine-tuning by adopting **GEPA as their inner-loop skill optimizer** — described in the paper as "the state-of-the-art prompt and skill optimization technique". Each new skill is GEPA-optimized on examples the current ensemble fails to solve.
+
+    **Key Results (Spider2-Lite, Opus-4.6):**
+
+    - **+11.1 pp** selected accuracy on Snowflake over CHASE-SQL baseline (64.25 vs 53.14)
+    - **+8.3 pp** on BigQuery (64.88 vs 56.59)
+    - **+2.6 pp** on BIRD-Critic (PostgreSQL) over CHASE-SQL
+    - Demonstrates GEPA as the enabling optimizer for residual-failure skill discovery in text-to-SQL
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2605.21792)
+
 -   **Automated Risk-of-Bias Assessment of Clinical Trials**
 
     ---
