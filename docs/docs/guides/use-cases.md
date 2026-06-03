@@ -105,23 +105,44 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: View cookbook](https://huggingface.co/learn/cookbook/en/dspy_gepa)
 
--   **Google ADK: Official Agent Optimization**
+-   **Google: ADK + Gemini Enterprise Agent Platform**
 
     ---
 
     ![Google ADK Training](../static/img/use-cases/google_adk.png){ .card-image }
 
-    Google's Agent Development Kit (ADK) uses GEPA as its **built-in agent optimization engine**. The `adk optimize` CLI command runs a `GEPARootAgentPromptOptimizer` to automatically improve agent instructions based on evaluation results.
+    Google ships GEPA as the **official agent-optimization engine** in two places: the open-source [Agent Development Kit](https://adk.dev/optimize/) and Google Cloud's [Gemini Enterprise Agent Platform](https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent). The platform docs describe the integration directly: *"This command applies the GEPA algorithm to iteratively refine root system instructions by evaluating them against your test suite."*
 
     **Key Features:**
 
     - Official `adk optimize` CLI powered by GEPA
     - `LocalEvalSampler` for running evaluations
     - Automatic prompt rewriting via `GEPARootAgentPromptOptimizer`
+    - Same GEPA pipeline available inside the Gemini Enterprise Agent Platform's "Quality Flywheel" optimization loop
+
+    [:material-arrow-right: Gemini Enterprise Agent Platform docs](https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent)
 
     [:material-arrow-right: Official ADK docs](https://adk.dev/optimize/)
 
     [:material-arrow-right: Community tutorial](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/)
+
+-   **Microsoft AI: MAI-Thinking-1 Pre-training Data Curation**
+
+    ---
+
+    The Microsoft AI team's **MAI-Thinking-1** ("Building a Hill-Climbing Machine") uses **GEPA / DSPy to optimize an LLM-judge prompt for filtering pre-training data**. They score each candidate document with a Qwen3-30B judge whose prompt was tuned by GEPA against ~2,000 human labels.
+
+    **From the paper:**
+
+    > "To further improve quality, we score each candidate document using Qwen3-30B. The judge prompt is optimized with GEPA / DSPy (Agrawal et al., 2026) with approximately 2,000 human labels. After filtering out low-quality documents with additional heuristics, we obtain a dataset of approximately 233B tokens."
+
+    **Key Insights:**
+
+    - GEPA-tuned LLM judge drives the Code-pages filtering pipeline that produces **~233B tokens** of high-quality pre-training data
+    - First public report of GEPA being used inside a frontier model's pre-training data pipeline
+    - Demonstrates GEPA's reach beyond inference-time prompt optimization, into upstream data quality
+
+    [:material-arrow-right: Read the paper](https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf)
 
 -   **Comet-ml Opik Integration**
 
