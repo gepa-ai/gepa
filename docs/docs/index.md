@@ -45,6 +45,8 @@ hide:
   <div class="marquee-wrapper">
     <div class="marquee-track">
       <a href="https://x.com/tobi/status/1963434604741701909" target="_blank">Shopify</a>
+      <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent" target="_blank">Google</a>
+      <a href="https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf" target="_blank">Microsoft</a>
       <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank">OpenAI</a>
       <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank">Databricks</a>
       <a href="https://pydantic.dev/articles/prompt-optimization-with-gepa" target="_blank">Pydantic</a>
@@ -70,6 +72,8 @@ hide:
       <a href="https://agenta.ai" target="_blank">Agenta</a>
       <!-- duplicate set for seamless loop -->
       <a href="https://x.com/tobi/status/1963434604741701909" target="_blank">Shopify</a>
+      <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent" target="_blank">Google</a>
+      <a href="https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf" target="_blank">Microsoft</a>
       <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank">OpenAI</a>
       <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank">Databricks</a>
       <a href="https://pydantic.dev/articles/prompt-optimization-with-gepa" target="_blank">Pydantic</a>
