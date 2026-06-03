@@ -1,3 +1,4 @@
+import os
 import shutil
 import sys
 import tempfile
@@ -6,7 +7,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gepa.logging.experiment_tracker import ExperimentTracker, create_experiment_tracker
+# These tests exercise mlflow's filesystem tracking backend on purpose
+# (file:// URIs into a tempdir, no SQL setup). Recent mlflow releases
+# refuse the file store unless this opt-out flag is set, so set it before
+# any mlflow call. Documented escape hatch — see the MlflowException
+# message that surfaces this exact variable name.
+os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
+
+from gepa.logging.experiment_tracker import ExperimentTracker, create_experiment_tracker  # noqa: E402
 
 
 def has_wandb():
