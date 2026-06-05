@@ -34,10 +34,10 @@ from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 @dataclass
 class ProposalContext:
-    """Pre-sampled context for a single proposal worker.
+    """Pre-sampled context for a single proposal task.
 
     Created by :meth:`ReflectiveMutationProposer.prepare_proposal` (sequential),
-    then consumed by :meth:`ReflectiveMutationProposer.execute_proposal` (parallel-safe).
+    then consumed (in a batch) by :meth:`ReflectiveMutationProposer.execute_batch`.
     """
 
     iteration: int
@@ -64,12 +64,34 @@ class ProposalOutput:
     cache_entry: tuple | None = None
 
 
+@dataclass
+class _PreReflect:
+    """A task that has passed parent evaluation and is ready for reflection.
+
+    Produced by :meth:`ReflectiveMutationProposer._execute_eval_and_prepare`
+    and consumed (after the batched reflection step) by
+    :meth:`ReflectiveMutationProposer._execute_after_reflection`. It carries the
+    parent evaluation and reflective dataset so the reflection call for many
+    tasks can be batched together between the two halves.
+    """
+
+    eval_curr: Any
+    components: list[str]
+    reflective_dataset: Any
+    total_evals: int
+    cache_entry: tuple | None
+    trace_data: dict[str, Any]
+
+
 class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
     """Implements the reflective mutation flow.
 
-    Supports parallel execution: call :meth:`prepare_proposal` sequentially,
-    then :meth:`execute_proposal` from multiple threads, then
-    :meth:`apply_proposal_output` sequentially.
+    Proposals are produced a batch at a time: :meth:`prepare_proposal` selects
+    the (parent, minibatch) tasks sequentially, :meth:`execute_batch` runs the
+    evaluate-reflect-evaluate pipeline over the whole batch (issuing the
+    reflection LM calls together as one batched/concurrent request rather than
+    via engine threads), and the engine applies acceptance sequentially. A batch
+    of size one reproduces the original single-proposal behavior.
     """
 
     def __init__(
@@ -211,12 +233,13 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             is_seed_candidate=is_seed_candidate,
         )
 
-    def execute_proposal(self, ctx: ProposalContext, state: GEPAState) -> ProposalOutput:
-        """Run the evaluation + proposal pipeline. Safe for parallel execution.
+    def _execute_eval_and_prepare(self, ctx: ProposalContext, state: GEPAState) -> "ProposalOutput | _PreReflect":
+        """Evaluate the parent and build the reflective dataset for one task.
 
-        The only state mutation is the module_selector (e.g. RoundRobin counter),
-        which is protected by a lock. All other state updates are deferred to
-        :meth:`apply_proposal_output`.
+        First half of the proposal pipeline. Returns a :class:`_PreReflect`
+        ready for the (possibly batched) reflection call, or a skip
+        :class:`ProposalOutput` (proposal=None) when the task should not proceed
+        (no trajectories, all-perfect scores, or a reflective-dataset error).
         """
         i = ctx.iteration
         trace_data: dict[str, Any] = {
@@ -342,29 +365,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                     reflective_dataset=reflective_dataset_concrete,
                 ),
             )
-
-            new_texts, prompts, raw_lm_outputs = self.propose_new_texts(
-                ctx.curr_prog, reflective_dataset, predictor_names_to_update
-            )
-
-            notify_callbacks(
-                self.callbacks,
-                "on_proposal_end",
-                ProposalEndEvent(
-                    iteration=i,
-                    new_instructions=new_texts,
-                    prompts=prompts,
-                    raw_lm_outputs=raw_lm_outputs,
-                ),
-            )
-
-            _lm_metadata: dict[str, Any] = {}
-            for comp in new_texts:
-                _lm_metadata[f"prompt:{comp}"] = prompts.get(comp, "")
-                _lm_metadata[f"raw_lm_output:{comp}"] = raw_lm_outputs.get(comp, "")
-
-            for pname, text in new_texts.items():
-                self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
         except Exception as e:
             self.logger.log(f"Iteration {i}: Exception during reflection/proposal: {e}")
             import traceback
@@ -373,6 +373,50 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             return ProposalOutput(
                 proposal=None, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry
             )
+
+        return _PreReflect(
+            eval_curr=eval_curr,
+            components=predictor_names_to_update,
+            reflective_dataset=reflective_dataset,
+            total_evals=total_evals,
+            cache_entry=cache_entry,
+            trace_data=trace_data,
+        )
+
+    def _execute_after_reflection(
+        self,
+        ctx: ProposalContext,
+        pre: "_PreReflect",
+        new_texts: dict[str, str],
+        prompts: dict[str, str | list[dict[str, Any]]],
+        raw_lm_outputs: dict[str, str],
+        state: GEPAState,
+    ) -> ProposalOutput:
+        """Second half of the pipeline: build the child candidate and evaluate it."""
+        i = ctx.iteration
+        eval_curr = pre.eval_curr
+        total_evals = pre.total_evals
+        trace_data = pre.trace_data
+        cache_entry = pre.cache_entry
+
+        notify_callbacks(
+            self.callbacks,
+            "on_proposal_end",
+            ProposalEndEvent(
+                iteration=i,
+                new_instructions=new_texts,
+                prompts=prompts,
+                raw_lm_outputs=raw_lm_outputs,
+            ),
+        )
+
+        _lm_metadata: dict[str, Any] = {}
+        for comp in new_texts:
+            _lm_metadata[f"prompt:{comp}"] = prompts.get(comp, "")
+            _lm_metadata[f"raw_lm_output:{comp}"] = raw_lm_outputs.get(comp, "")
+
+        for pname, text in new_texts.items():
+            self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
 
         # 4) Create candidate, evaluate on same minibatch
         new_candidate = ctx.curr_prog.copy()
@@ -445,6 +489,121 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         return ProposalOutput(
             proposal=proposal, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry
         )
+
+    def execute_proposal(self, ctx: ProposalContext, state: GEPAState) -> ProposalOutput:
+        """Run the full evaluation + proposal pipeline for a single task.
+
+        Equivalent to ``execute_batch([ctx], state)[0]``; retained for callers
+        that drive one proposal at a time.
+        """
+        pre = self._execute_eval_and_prepare(ctx, state)
+        if isinstance(pre, ProposalOutput):
+            return pre
+        try:
+            new_texts, prompts, raw_lm_outputs = self.propose_new_texts(
+                ctx.curr_prog, pre.reflective_dataset, pre.components
+            )
+        except Exception as e:
+            self.logger.log(f"Iteration {ctx.iteration}: Exception during reflection/proposal: {e}")
+            import traceback
+
+            self.logger.log(traceback.format_exc())
+            return ProposalOutput(
+                proposal=None, total_evals=pre.total_evals, trace_data=pre.trace_data, cache_entry=pre.cache_entry
+            )
+        return self._execute_after_reflection(ctx, pre, new_texts, prompts, raw_lm_outputs, state)
+
+    def _propose_texts_batch(
+        self, jobs: list[tuple[dict[str, str], Mapping[str, Sequence[Mapping[str, Any]]], list[str]]]
+    ) -> list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]]]:
+        """Propose new texts for many tasks, batching the reflection LM calls.
+
+        Only the built-in stateless reflection path can be batched. When an
+        adapter proposer or a custom proposer owns the call, fall back to one
+        invocation per task (their batching, if any, is their concern).
+        """
+        if (
+            self.adapter.propose_new_texts is not None
+            or self.custom_candidate_proposer is not None
+            or self._reflection_lm is None
+        ):
+            return [self.propose_new_texts(cand, refds, comps) for cand, refds, comps in jobs]
+
+        results = self._reflection_lm.reflect_many(jobs)
+        return [(proposal.new_texts, proposal.prompts, proposal.raw_lm_outputs) for proposal, _next_lm in results]
+
+    def _propose_texts_batch_safe(
+        self, jobs: list[tuple[dict[str, str], Mapping[str, Sequence[Mapping[str, Any]]], list[str]]]
+    ) -> list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]] | None]:
+        """Like :meth:`_propose_texts_batch` but isolates per-task failures.
+
+        Returns ``None`` in the slot of any task whose reflection raised, so one
+        bad task does not sink the whole batch.
+        """
+        if not jobs:
+            return []
+        try:
+            return list(self._propose_texts_batch(jobs))
+        except Exception as e:
+            self.logger.log(f"Batched reflection failed ({e}); retrying per task.")
+            import traceback
+
+            self.logger.log(traceback.format_exc())
+            out: list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]] | None] = []
+            for cand, refds, comps in jobs:
+                try:
+                    out.append(self.propose_new_texts(cand, refds, comps))
+                except Exception as e2:
+                    self.logger.log(f"Per-task reflection failed: {e2}")
+                    out.append(None)
+            return out
+
+    def execute_batch(self, contexts: list[ProposalContext], state: GEPAState) -> list[ProposalOutput]:
+        """Run the proposal pipeline for a batch of tasks (vectorized).
+
+        Evaluates all parents, builds reflective datasets, issues a single
+        batched reflection across the surviving tasks, then evaluates all
+        children — returning one :class:`ProposalOutput` per input context, in
+        order. The engine applies acceptance sequentially afterwards, so
+        ``GEPAState`` is never mutated concurrently. ``len(contexts) == 1``
+        reproduces :meth:`execute_proposal` exactly.
+        """
+        outputs: list[ProposalOutput | None] = [None] * len(contexts)
+
+        # Phase 1: evaluate parents + build reflective datasets per task.
+        pres: list[_PreReflect | None] = []
+        for idx, ctx in enumerate(contexts):
+            result = self._execute_eval_and_prepare(ctx, state)
+            if isinstance(result, ProposalOutput):
+                outputs[idx] = result  # skipped (no trajectories / perfect / error)
+                pres.append(None)
+            else:
+                pres.append(result)
+
+        # Phase 2: one batched reflection across all tasks ready to reflect.
+        ready_idxs = [idx for idx, pre in enumerate(pres) if pre is not None]
+        jobs: list[tuple[dict[str, str], Mapping[str, Sequence[Mapping[str, Any]]], list[str]]] = []
+        for idx in ready_idxs:
+            pre = pres[idx]
+            assert pre is not None
+            jobs.append((contexts[idx].curr_prog, pre.reflective_dataset, pre.components))
+        batch_texts = self._propose_texts_batch_safe(jobs)
+
+        # Phase 3: build + evaluate children per task.
+        for job_pos, idx in enumerate(ready_idxs):
+            pre = pres[idx]
+            assert pre is not None
+            texts = batch_texts[job_pos]
+            if texts is None:
+                outputs[idx] = ProposalOutput(
+                    proposal=None, total_evals=pre.total_evals, trace_data=pre.trace_data, cache_entry=pre.cache_entry
+                )
+                continue
+            new_texts, prompts, raw_lm_outputs = texts
+            outputs[idx] = self._execute_after_reflection(contexts[idx], pre, new_texts, prompts, raw_lm_outputs, state)
+
+        # Every context slot is filled (skip or full output); order is preserved.
+        return [out for out in outputs if out is not None]
 
     def apply_proposal_output(self, output: ProposalOutput, state: GEPAState) -> None:
         """Apply deferred state updates from a proposal. Must be called sequentially."""

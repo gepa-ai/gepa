@@ -110,3 +110,55 @@ def test_empty_components_yields_empty_proposal():
     assert proposal.new_texts == {}
     assert proposal.prompts == {}
     assert next_lm is impl
+
+
+# --- Batched reflection (reflect_many) ---------------------------------------
+
+
+def test_reflect_many_aligns_results_per_job():
+    """N jobs → N proposals in order, one LM call per (job, component)."""
+    lm = RecordingLM()
+    impl = StatelessReflectionLM(lm)
+
+    jobs = [
+        ({"a": "A0"}, {"a": REFLECTIVE["a"]}, ["a"]),
+        ({"a": "A1"}, {"a": REFLECTIVE["a"]}, ["a"]),
+        ({"a": "A2"}, {"a": REFLECTIVE["a"]}, ["a"]),
+    ]
+    results = impl.reflect_many(jobs)
+
+    assert len(results) == 3
+    for proposal, next_lm in results:
+        assert proposal.new_texts == {"a": "NEW INSTRUCTION"}
+        assert next_lm is impl
+    assert lm.calls and len(lm.calls) == 3  # one call per job
+
+
+def test_reflect_many_skips_empty_jobs_without_dropping_slots():
+    """A job whose component has no feedback yields an empty proposal in its slot."""
+    lm = RecordingLM()
+    impl = StatelessReflectionLM(lm)
+
+    jobs = [
+        ({"a": "A0"}, {"a": REFLECTIVE["a"]}, ["a"]),
+        ({"a": "A1"}, {"a": []}, ["a"]),  # no feedback → skipped, no LM call
+        ({"a": "A2"}, {"a": REFLECTIVE["a"]}, ["a"]),
+    ]
+    results = impl.reflect_many(jobs)
+
+    assert len(results) == 3  # slot alignment preserved
+    assert results[0][0].new_texts == {"a": "NEW INSTRUCTION"}
+    assert results[1][0].new_texts == {}
+    assert results[2][0].new_texts == {"a": "NEW INSTRUCTION"}
+    assert len(lm.calls) == 2  # only the two non-empty jobs called the LM
+
+
+def test_reflect_many_matches_sequential_reflect():
+    """Batched reflect_many produces the same per-job result as calling reflect()."""
+    jobs = [
+        ({"a": "A0", "b": "B0"}, REFLECTIVE, ["a", "b"]),
+        ({"a": "A1", "b": "B1"}, REFLECTIVE, ["a"]),
+    ]
+    batched = [p.new_texts for p, _ in StatelessReflectionLM(RecordingLM()).reflect_many(jobs)]
+    one_by_one = [StatelessReflectionLM(RecordingLM()).reflect(c, rd, comps)[0].new_texts for c, rd, comps in jobs]
+    assert batched == one_by_one
