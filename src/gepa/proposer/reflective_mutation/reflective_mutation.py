@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -122,7 +121,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.reflection_lm = reflection_lm
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
-        self._lock = threading.Lock()
 
         self.reflection_prompt_template = reflection_prompt_template
 
@@ -328,11 +326,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             {"subsample_score": sum(eval_curr.scores), "total_metric_calls": total_evals}, step=i
         )
 
-        # 2) Decide which components to update (lock protects RoundRobin state mutation)
-        with self._lock:
-            predictor_names_to_update = self.module_selector(
-                state, eval_curr.trajectories, eval_curr.scores, ctx.curr_prog_id, ctx.curr_prog
-            )
+        # 2) Decide which components to update. The engine is single-threaded
+        # (proposals are vectorized, not threaded), so no lock is needed around
+        # the module selector's internal state (e.g. RoundRobin counter).
+        predictor_names_to_update = self.module_selector(
+            state, eval_curr.trajectories, eval_curr.scores, ctx.curr_prog_id, ctx.curr_prog
+        )
 
         # 3) Build reflective dataset and propose new content
         try:

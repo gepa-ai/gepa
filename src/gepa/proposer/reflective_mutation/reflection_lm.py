@@ -23,7 +23,6 @@ in later phases, instead of bespoke branches in the engine.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -106,7 +105,8 @@ class StatelessReflectionLM:
         self.lm = lm
         self.reflection_prompt_template = reflection_prompt_template
         self.logger = logger
-        # Upper bound on concurrent reflection LM calls issued by reflect_many.
+        # Concurrency for the underlying litellm.batch_completion call (passed
+        # through to the LM's batch_complete); not an application-level pool.
         self.max_workers = max_workers
         # Track components for which we've already warned about a missing
         # per-component template, so the warning fires at most once each.
@@ -135,47 +135,52 @@ class StatelessReflectionLM:
         return self.reflect_many([(candidate, reflective_dataset, components_to_update)])[0]
 
     def reflect_many(self, jobs: list[ReflectionJob]) -> list[tuple[ReflectionProposal, StatelessReflectionLM]]:
-        # Flatten every (job, component) pair that has feedback into a single
-        # list of independent LM calls, run them in one batched/concurrent pass,
-        # then scatter the results back into one ReflectionProposal per job.
-        calls: list[tuple[int, str, dict[str, Any]]] = []
+        # Flatten every (job, component) pair that has feedback into one list of
+        # rendered prompts, issue them as a single vectorized completion
+        # (litellm.batch_completion), then scatter the parsed results back into
+        # one ReflectionProposal per job.
+        rendered: list[tuple[int, str, Any, list[dict[str, Any]]]] = []
         for job_idx, (candidate, reflective_dataset, components_to_update) in enumerate(jobs):
             for name in components_to_update:
                 # Gracefully handle a selected component with no data in the reflective dataset.
                 if name not in reflective_dataset or not reflective_dataset.get(name):
                     self._log(f"Component '{name}' is not in reflective dataset. Skipping.")
                     continue
-                calls.append(
-                    (
-                        job_idx,
-                        name,
-                        {
-                            "current_instruction_doc": candidate[name],
-                            "dataset_with_feedback": reflective_dataset[name],
-                            "prompt_template": self._resolve_template(name),
-                        },
-                    )
+                prompt = InstructionProposalSignature.prompt_renderer(
+                    {
+                        "current_instruction_doc": candidate[name],
+                        "dataset_with_feedback": reflective_dataset[name],
+                        "prompt_template": self._resolve_template(name),
+                    }
                 )
+                # Normalize to a chat-messages list (matches gepa.lm.LM.__call__).
+                messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+                rendered.append((job_idx, name, prompt, messages))
 
-        def run_one(call: tuple[int, str, dict[str, Any]]) -> tuple[int, str, str, Any, str]:
-            job_idx, name, input_dict = call
-            result, prompt, raw_output = InstructionProposalSignature.run_with_metadata(
-                lm=self.lm, input_dict=input_dict
-            )
-            return job_idx, name, result["new_instruction"], prompt, raw_output
-
-        # Short-circuit the single-call case so behavior is byte-identical to a
-        # plain sequential reflect() (no thread, no executor overhead).
-        if len(calls) <= 1:
-            results = [run_one(c) for c in calls]
-        else:
-            with ThreadPoolExecutor(max_workers=min(len(calls), self.max_workers)) as executor:
-                results = list(executor.map(run_one, calls))
+        raw_outputs = self._batch_complete([r[2] for r in rendered], [r[3] for r in rendered])
 
         proposals = [ReflectionProposal(new_texts={}, prompts={}, raw_lm_outputs={}) for _ in jobs]
-        for job_idx, name, new_text, prompt, raw_output in results:
-            proposals[job_idx].new_texts[name] = new_text
+        for (job_idx, name, prompt, _messages), raw_output in zip(rendered, raw_outputs, strict=True):
+            new_instruction = InstructionProposalSignature.output_extractor(raw_output.strip())["new_instruction"]
+            proposals[job_idx].new_texts[name] = new_instruction
             proposals[job_idx].prompts[name] = prompt
             proposals[job_idx].raw_lm_outputs[name] = raw_output
 
         return [(proposal, self) for proposal in proposals]
+
+    def _batch_complete(self, prompts: list[Any], messages_list: list[list[dict[str, Any]]]) -> list[str]:
+        """Issue the reflection completions, vectorized when possible.
+
+        Prefers a single ``litellm.batch_completion`` via the LM's
+        ``batch_complete``. A single call uses the plain completion path (so N=1
+        is byte-identical to the historical single reflection); a custom callable
+        with no batch API runs sequentially. No application-level threads.
+        """
+        if not prompts:
+            return []
+        if len(prompts) == 1:
+            return [self.lm(prompts[0])]
+        if hasattr(self.lm, "batch_complete"):
+            return list(self.lm.batch_complete(messages_list, max_workers=self.max_workers))
+        # Custom callable without a vectorized API → sequential completions.
+        return [self.lm(prompt) for prompt in prompts]

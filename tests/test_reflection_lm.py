@@ -162,3 +162,51 @@ def test_reflect_many_matches_sequential_reflect():
     batched = [p.new_texts for p, _ in StatelessReflectionLM(RecordingLM()).reflect_many(jobs)]
     one_by_one = [StatelessReflectionLM(RecordingLM()).reflect(c, rd, comps)[0].new_texts for c, rd, comps in jobs]
     assert batched == one_by_one
+
+
+# --- Vectorized completion (litellm.batch_completion path) -------------------
+
+
+class BatchCapableLM:
+    """Fake LM mirroring gepa.lm.LM: exposes a vectorized batch_complete."""
+
+    def __init__(self):
+        self.batch_sizes: list[int] = []  # size of each batch_complete invocation
+        self.single_calls = 0
+
+    def __call__(self, prompt):
+        self.single_calls += 1
+        return "```\nSINGLE\n```"
+
+    def batch_complete(self, messages_list, max_workers=10):
+        self.batch_sizes.append(len(messages_list))
+        return ["```\nBATCHED\n```" for _ in messages_list]
+
+
+def test_reflect_many_uses_one_batch_completion_when_available():
+    """Many calls → a single vectorized batch_complete, not per-call completions."""
+    lm = BatchCapableLM()
+    jobs = [({"a": f"A{i}"}, {"a": REFLECTIVE["a"]}, ["a"]) for i in range(3)]
+
+    results = StatelessReflectionLM(lm).reflect_many(jobs)
+
+    assert [p.new_texts["a"] for p, _ in results] == ["BATCHED"] * 3
+    assert lm.batch_sizes == [3]  # exactly one batched call covering all three
+    assert lm.single_calls == 0
+
+
+def test_single_call_uses_plain_completion_not_batch():
+    """N=1 keeps the plain single-completion path (byte-identical to history)."""
+    lm = BatchCapableLM()
+    StatelessReflectionLM(lm).reflect_many([({"a": "A"}, {"a": REFLECTIVE["a"]}, ["a"])])
+    assert lm.batch_sizes == []  # no batch_complete for a single call
+    assert lm.single_calls == 1
+
+
+def test_custom_callable_without_batch_api_runs_sequentially():
+    """A plain callable (no batch_complete) falls back to sequential completions."""
+    lm = RecordingLM()  # no batch_complete attribute
+    jobs = [({"a": f"A{i}"}, {"a": REFLECTIVE["a"]}, ["a"]) for i in range(3)]
+    results = StatelessReflectionLM(lm).reflect_many(jobs)
+    assert len(results) == 3
+    assert len(lm.calls) == 3  # one sequential call per job, no threads
