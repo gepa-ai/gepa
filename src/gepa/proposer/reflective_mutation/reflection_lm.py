@@ -22,6 +22,8 @@ in later phases, instead of bespoke branches in the engine.
 
 from __future__ import annotations
 
+import random
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
@@ -125,6 +127,24 @@ class StatelessReflectionLM:
             return template
         return self.reflection_prompt_template
 
+    def _render(
+        self,
+        current_instruction_doc: str,
+        dataset_with_feedback: Any,
+        prompt_template: str | None,
+    ) -> tuple[Any, list[dict[str, Any]]]:
+        """Render a reflection prompt and its chat-messages form."""
+        prompt = InstructionProposalSignature.prompt_renderer(
+            {
+                "current_instruction_doc": current_instruction_doc,
+                "dataset_with_feedback": dataset_with_feedback,
+                "prompt_template": prompt_template,
+            }
+        )
+        # Normalize to a chat-messages list (matches gepa.lm.LM.__call__).
+        messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+        return prompt, messages
+
     def reflect(
         self,
         candidate: dict[str, str],
@@ -146,15 +166,7 @@ class StatelessReflectionLM:
                 if name not in reflective_dataset or not reflective_dataset.get(name):
                     self._log(f"Component '{name}' is not in reflective dataset. Skipping.")
                     continue
-                prompt = InstructionProposalSignature.prompt_renderer(
-                    {
-                        "current_instruction_doc": candidate[name],
-                        "dataset_with_feedback": reflective_dataset[name],
-                        "prompt_template": self._resolve_template(name),
-                    }
-                )
-                # Normalize to a chat-messages list (matches gepa.lm.LM.__call__).
-                messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+                prompt, messages = self._render(candidate[name], reflective_dataset[name], self._resolve_template(name))
                 rendered.append((job_idx, name, prompt, messages))
 
         raw_outputs = self._batch_complete([r[2] for r in rendered], [r[3] for r in rendered])
@@ -184,3 +196,113 @@ class StatelessReflectionLM:
             return list(self.lm.batch_complete(messages_list, max_workers=self.max_workers))
         # Custom callable without a vectorized API → sequential completions.
         return [self.lm(prompt) for prompt in prompts]
+
+
+class ComBEEReflectionLM(StatelessReflectionLM):
+    """ComBEE map-shuffle-reduce reflection, vectorized (#307, arXiv:2604.04247).
+
+    For each ``(job, component)`` with ``n`` reflection records: duplicate each
+    record ``duplication_factor`` times and shuffle (augmented shuffle), split
+    into ``k = ⌊√n⌋`` groups, reflect once per group (**Level-1 / Map**), then
+    aggregate the ``k`` intermediate instructions into one (**Level-2 /
+    Reduce**). When ``k ≤ 1`` (small ``n``) it degrades to a single stateless
+    reflection — i.e. ``StatelessReflectionLM``.
+
+    Both rounds are vectorized across the whole proposal batch: **all** Level-1
+    group calls (≈ N·k) go out as one batched completion, then **all** Level-2
+    reduces (≈ N) as a second. So a batched-ComBEE iteration is two
+    ``batch_complete`` round-trips regardless of N.
+
+    This is orthogonal to the memory axis: ComBEE is stateless in memory
+    (``next_lm = self``); the aggregation wraps whatever ``lm`` it is given.
+    """
+
+    def __init__(
+        self,
+        lm: LanguageModel,
+        reflection_prompt_template: str | dict[str, str] | None = None,
+        aggregation_prompt_template: str | None = None,
+        duplication_factor: int = 2,
+        rng: random.Random | None = None,
+        logger: Any | None = None,
+        max_workers: int = 10,
+    ):
+        super().__init__(lm, reflection_prompt_template, logger, max_workers)
+        self.duplication_factor = duplication_factor
+        self.aggregation_prompt_template = (
+            aggregation_prompt_template or InstructionProposalSignature.default_aggregation_prompt_template
+        )
+        self.rng = rng if rng is not None else random.Random(0)
+
+    @staticmethod
+    def _split(items: list[Any], k: int) -> list[list[Any]]:
+        """Split ``items`` into ``k`` contiguous, balanced groups (ComBEE §3.1)."""
+        base, remainder, offset, groups = len(items) // k, len(items) % k, 0, []
+        for i in range(k):
+            size = base + (1 if i < remainder else 0)
+            groups.append(items[offset : offset + size])
+            offset += size
+        return groups
+
+    def reflect_many(self, jobs: list[ReflectionJob]) -> list[tuple[ReflectionProposal, StatelessReflectionLM]]:
+        # ---- Round 1 (Map): build every group prompt across all (job, component) ----
+        l1: list[tuple[Any, list[dict[str, Any]]]] = []
+        l1_key: list[tuple[int, str, str]] = []  # (job_idx, component, kind) kind in {"naive","group"}
+        curr_doc: dict[tuple[int, str], str] = {}  # remember the parent text for the reduce step
+        for job_idx, (candidate, reflective_dataset, components_to_update) in enumerate(jobs):
+            for name in components_to_update:
+                if name not in reflective_dataset or not reflective_dataset.get(name):
+                    self._log(f"Component '{name}' is not in reflective dataset. Skipping.")
+                    continue
+                records = list(reflective_dataset[name])
+                k = max(1, int(len(records) ** 0.5))
+                template = self._resolve_template(name)
+                curr_doc[(job_idx, name)] = candidate[name]
+                if k <= 1:
+                    # Degenerate case: a single stateless reflection over the original records.
+                    l1.append(self._render(candidate[name], records, template))
+                    l1_key.append((job_idx, name, "naive"))
+                    continue
+                augmented = records * self.duplication_factor
+                self.rng.shuffle(augmented)
+                for group in self._split(augmented, k):
+                    if not group:
+                        continue
+                    l1.append(self._render(candidate[name], group, template))
+                    l1_key.append((job_idx, name, "group"))
+
+        l1_raw = self._batch_complete([x[0] for x in l1], [x[1] for x in l1])
+
+        # ---- Gather Level-1 results ----
+        final: dict[tuple[int, str], tuple[str, Any, str]] = {}  # ready new_texts (naive / single-group)
+        group_props: dict[tuple[int, str], list[str]] = defaultdict(list)
+        for (job_idx, name, kind), (prompt, _m), raw in zip(l1_key, l1, l1_raw, strict=True):
+            text = InstructionProposalSignature.output_extractor(raw.strip())["new_instruction"]
+            if kind == "naive":
+                final[(job_idx, name)] = (text, prompt, raw)
+            else:
+                group_props[(job_idx, name)].append(text)
+
+        # ---- Round 2 (Reduce): one aggregation per (job, component) with ≥2 groups ----
+        l2: list[tuple[Any, list[dict[str, Any]]]] = []
+        l2_key: list[tuple[int, str]] = []
+        for key, props in group_props.items():
+            if len(props) == 1:
+                final[key] = (props[0], "", "")  # only one surviving group → no reduce (#307)
+                continue
+            agg_records = [{"Proposed Instruction Update": p} for p in props]
+            l2.append(self._render(curr_doc[key], agg_records, self.aggregation_prompt_template))
+            l2_key.append(key)
+
+        l2_raw = self._batch_complete([x[0] for x in l2], [x[1] for x in l2])
+        for key, (prompt, _m), raw in zip(l2_key, l2, l2_raw, strict=True):
+            text = InstructionProposalSignature.output_extractor(raw.strip())["new_instruction"]
+            final[key] = (text, prompt, raw)
+
+        # ---- Scatter into one proposal per job ----
+        proposals = [ReflectionProposal(new_texts={}, prompts={}, raw_lm_outputs={}) for _ in jobs]
+        for (job_idx, name), (text, prompt, raw) in final.items():
+            proposals[job_idx].new_texts[name] = text
+            proposals[job_idx].prompts[name] = prompt
+            proposals[job_idx].raw_lm_outputs[name] = raw
+        return [(proposal, self) for proposal in proposals]

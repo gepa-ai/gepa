@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import random
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -26,7 +27,7 @@ from gepa.proposer.reflective_mutation.base import (
     LanguageModel,
     ReflectionComponentSelector,
 )
-from gepa.proposer.reflective_mutation.reflection_lm import StatelessReflectionLM
+from gepa.proposer.reflective_mutation.reflection_lm import ComBEEReflectionLM, StatelessReflectionLM
 from gepa.strategies.batch_sampler import BatchSampler
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
@@ -108,6 +109,10 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
+        use_combee: bool = False,
+        combee_duplication_factor: int = 2,
+        combee_aggregation_prompt: str | None = None,
+        combee_rng: random.Random | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -130,13 +135,23 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         else:
             InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
 
-        # The stateless reflection LM (#329 Phase 1).  When a custom adapter
-        # proposer or candidate proposer overrides reflection, this stays None.
-        self._reflection_lm: StatelessReflectionLM | None = (
-            StatelessReflectionLM(reflection_lm, reflection_prompt_template, logger)
-            if reflection_lm is not None
-            else None
-        )
+        # The reflection LM (#329).  When a custom adapter proposer or candidate
+        # proposer overrides reflection, this stays None.  ComBEE is just a
+        # different ReflectionLM implementation, swapped in here.
+        self._reflection_lm: StatelessReflectionLM | None
+        if reflection_lm is None:
+            self._reflection_lm = None
+        elif use_combee:
+            self._reflection_lm = ComBEEReflectionLM(
+                reflection_lm,
+                reflection_prompt_template,
+                aggregation_prompt_template=combee_aggregation_prompt,
+                duplication_factor=combee_duplication_factor,
+                rng=combee_rng,
+                logger=logger,
+            )
+        else:
+            self._reflection_lm = StatelessReflectionLM(reflection_lm, reflection_prompt_template, logger)
 
         if self.skip_perfect_score and self.perfect_score is None:
             raise ValueError(

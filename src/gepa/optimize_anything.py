@@ -742,6 +742,19 @@ class ReflectionConfig:
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
 
+    # --- ComBEE (map-shuffle-reduce reflection aggregation, arXiv:2604.04247) ---
+    use_combee: bool = False
+    """Enable ComBEE parallel-scan aggregation for the reflection step. Splits a
+    large reflection minibatch into k=⌊√n⌋ groups, reflects on each (Map), and
+    aggregates the intermediate instructions into one (Reduce). Use a larger
+    ``reflection_minibatch_size`` (n≥4) for it to engage; n≤3 degrades to a
+    single reflection."""
+    combee_duplication_factor: int = 2
+    """ComBEE augmented-shuffle duplication count ``p`` (each reflection record
+    is duplicated ``p`` times before grouping)."""
+    combee_aggregation_prompt: str | None = None
+    """Optional override for the ComBEE Level-2 (Reduce) prompt template."""
+
 
 @dataclass
 class MergeConfig:
@@ -1571,6 +1584,9 @@ def optimize_anything(
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
         callbacks=config.callbacks,
+        use_combee=config.reflection.use_combee,
+        combee_duplication_factor=config.reflection.combee_duplication_factor,
+        combee_aggregation_prompt=config.reflection.combee_aggregation_prompt,
     )
 
     # Define evaluator function for merge proposer
