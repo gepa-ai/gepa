@@ -1258,6 +1258,22 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the guide](https://gaodalie.substack.com/p/dspy-3-gepa-the-most-advanced-rag)
 
+-   **MarkTechPost: Reflective Prompt Optimization with GEPA**
+
+    ---
+
+    Sana Hassan's hands-on walkthrough on **MarkTechPost** showing how to build a full GEPA optimization loop on arithmetic word problems — from installing `gepa` with LiteLLM, through structured evaluators with actionable feedback, to comparing baseline vs. optimized prompts on a held-out validation set.
+
+    **What's Covered:**
+
+    - Installing and configuring GEPA with LiteLLM backends
+    - Building deterministic benchmark datasets
+    - Writing structured evaluators that return actionable feedback
+    - Multi-component prompts (instructions + format rules)
+    - Held-out validation and evolution-history analysis
+
+    [:material-arrow-right: Read the tutorial](https://www.marktechpost.com/2026/06/07/building-reflective-prompt-optimization-with-gepa-multi-component-prompts-structured-feedback-and-held-out-validation/)
+
 -   **Teaching AI to Spot Fake XKCD Comics**
 
     ---
