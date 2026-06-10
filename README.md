@@ -416,6 +416,7 @@ Finally:
     - [Attack Selection Reduces Safety in Concentrated AI Control Settings (Pivotal Research + Redwood) — GEPA-optimized red-team prompts outperform handwritten rubric prompts at evading trusted monitoring](https://arxiv.org/abs/2602.04930)
     - [Going recursive: RLM-GEPA on AppWorld (Gabriel Lespérance) — PredictRLM(GPT-5.5 low) hits 0.917 TGC / 0.839 SGC unoptimized (beats leaderboard 0.804 SGC); RLM-GEPA lifts to 0.940 TGC / 0.911 SGC](https://x.com/GabLesperance/status/2060754345247863075)
     - [DivSkill-SQL: Residual Skill Optimization for Text-to-SQL Ensembles (UC San Diego + Microsoft) — adopts GEPA as inner-loop skill optimizer; +11.1pp on Spider2-Lite Snowflake, +8.3pp on BigQuery, +2.6pp on BIRD-Critic over CHASE-SQL](https://arxiv.org/abs/2605.21792)
+    - [DD-GEPA: Dialogue Disentanglement Prompt Optimization (Yokohama National University) — three-component prompt (task instruction / utterance representation / output instruction) optimized with GEPA; Qwen3-30B F1 39.40 → 42.52 on the Kummerfeld benchmark](https://arxiv.org/abs/2606.07894)
     - [Teaching LLMs to Diagnose Production Incidents with ATLAS+GEPA](https://www.arc.computer/blog/atlas-sre-diagnosis)
     - [DataBricks: Building State-of-the-Art Enterprise Agents 90x Cheaper with GEPA](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization)
     - [comet-ml/opik adds support for GEPA](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer)

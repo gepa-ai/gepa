@@ -574,6 +574,20 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the paper](https://arxiv.org/abs/2605.21792)
 
+-   **DD-GEPA: Dialogue Disentanglement Prompt Optimization (Yokohama National University)**
+
+    ---
+
+    Takada & Mori decompose the LLM dialogue-disentanglement prompt into three components — **task instruction**, **utterance representation**, and **output instruction** — and use **GEPA as the core optimizer** over them on multi-party chat. The optimized prompt surpasses the authors' own hand-crafted prompt and several non-LLM baselines on Qwen3-30B.
+
+    **Key Results (Qwen3-30B on the Kummerfeld benchmark, baseline → DD-GEPA optimum):**
+
+    - **F1: 39.40 → 42.52** (+3.1 pp); P: 38.30 → 42.22; R: 40.56 → 42.82
+    - NMI: 93.62 → 95.51; ARI: 70.02 → 75.87; 1-1: 78.46 → 82.26
+    - Optimized prompt surpasses Takada & Mori's own hand-crafted prompt and the Elsner non-LLM baseline (15.5 F1)
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2606.07894)
+
 -   **Automated Risk-of-Bias Assessment of Clinical Trials**
 
     ---
