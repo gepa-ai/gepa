@@ -4,7 +4,6 @@
 import os
 import traceback
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Generic
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
@@ -378,15 +377,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     # Parallel reflective proposals
     # ------------------------------------------------------------------
 
-    def _run_parallel_reflective_batch(
+    def _run_reflective_batch(
         self,
         state: GEPAState[RolloutOutput, DataId],
     ) -> bool:
-        """Run multiple reflective proposals in parallel.
+        """Run a batch of N reflective proposals for one iteration.
 
-        Pre-samples N contexts sequentially, executes the heavy
-        evaluate-propose-evaluate pipeline in parallel threads, then
-        processes acceptances sequentially.
+        Pre-samples N contexts sequentially, runs the evaluate-reflect-evaluate
+        pipeline as a single vectorized batch (one batched reflection call; no
+        engine-level threads), then processes acceptances sequentially. ``N=1``
+        (the default) reproduces the original single-proposal behavior exactly.
         """
         n = self.num_parallel_proposals
 
@@ -417,29 +417,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if not contexts:
             return False
 
-        # Step 2: Execute proposals in parallel (thread-safe heavy compute)
-        outputs: list[ProposalOutput | None] = [None] * len(contexts)
-        with ThreadPoolExecutor(max_workers=len(contexts)) as executor:
-            future_to_idx = {
-                executor.submit(self.reflective_proposer.execute_proposal, ctx, state): idx
-                for idx, ctx in enumerate(contexts)
-            }
-            for future in as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                try:
-                    outputs[idx] = future.result()
-                except Exception as e:
-                    self.logger.log(f"Iteration {contexts[idx].iteration}: Parallel proposal failed: {e}")
-                    self.logger.log(traceback.format_exc())
-                    notify_callbacks(
-                        self.callbacks,
-                        "on_error",
-                        ErrorEvent(
-                            iteration=contexts[idx].iteration,
-                            exception=e,
-                            will_continue=True,
-                        ),
-                    )
+        # Step 2: Execute all proposals as one vectorized batch. The reflection
+        # LM calls are issued together (one batched call); the engine itself
+        # stays single-threaded, so GEPAState is never mutated concurrently.
+        outputs = self.reflective_proposer.execute_batch(contexts, state)
 
         # Step 3: Process acceptances sequentially
         any_accepted = False
@@ -739,14 +720,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     # Old behavior: regardless of whether we attempted, clear the flag before reflective
                     self.merge_proposer.last_iter_found_new_program = False
 
-                # 2) Reflective mutation proposer
-                if self.num_parallel_proposals > 1:
-                    proposal_accepted = self._run_parallel_reflective_batch(state)
-                else:
-                    output = self.reflective_proposer.propose_output(state)
-                    proposal_accepted = self._process_proposal_output(
-                        output, state.i + 1, state.full_program_trace[-1], state
-                    )
+                # 2) Reflective mutation proposer (vectorized; batch size 1 = default)
+                proposal_accepted = self._run_reflective_batch(state)
 
             except Exception as e:
                 self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
@@ -829,11 +804,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         ``"candidates"`` table in WandB / MLflow.
         """
         metadata = proposal.metadata or {}
-        components = {
-            k.split(":", 1)[1]
-            for k in metadata
-            if k.startswith("prompt:") or k.startswith("raw_lm_output:")
-        }
+        components = {k.split(":", 1)[1] for k in metadata if k.startswith("prompt:") or k.startswith("raw_lm_output:")}
         if not components:
             return
 
@@ -847,18 +818,20 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             prompt = metadata.get(f"prompt:{comp}", "")
             raw_output = metadata.get(f"raw_lm_output:{comp}", "")
             proposed_text = proposal.candidate.get(comp, "")
-            rows.append([
-                iteration,
-                comp,
-                status,
-                candidate_idx,
-                parent_ids_str,
-                subsample_before,
-                subsample_after,
-                prompt if isinstance(prompt, str) else str(prompt),
-                raw_output,
-                proposed_text,
-            ])
+            rows.append(
+                [
+                    iteration,
+                    comp,
+                    status,
+                    candidate_idx,
+                    parent_ids_str,
+                    subsample_before,
+                    subsample_after,
+                    prompt if isinstance(prompt, str) else str(prompt),
+                    raw_output,
+                    proposed_text,
+                ]
+            )
 
         self.experiment_tracker.log_table(
             "proposals",
