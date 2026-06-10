@@ -17,7 +17,7 @@ from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState, ObjectiveScores, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
 from gepa.logging.logger import LoggerProtocol
-from gepa.proposer.base import CandidateProposal, ProposeNewCandidate
+from gepa.proposer.base import BatchProposer, CandidateProposal, ProposeNewCandidate
 
 AncestorLog = tuple[int, int, int]
 MergeDescription = tuple[int, int, tuple[int, ...]]
@@ -207,7 +207,7 @@ def sample_and_attempt_merge_programs_by_common_predictors(
     return None
 
 
-class MergeProposer(ProposeNewCandidate[DataId]):
+class MergeProposer(ProposeNewCandidate[DataId], BatchProposer[DataId]):
     """
     Implements merge flow that combines compatible descendants of a common ancestor.
 
@@ -401,3 +401,34 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             tag="merge",
             metadata={"ancestor": ancestor},
         )
+
+    # ------------------------------------------------------------------
+    # BatchProposer interface
+    # ------------------------------------------------------------------
+
+    def propose_batch(self, state: GEPAState, n: int) -> list[CandidateProposal | None]:  # noqa: ARG002
+        """BatchProposer implementation: merges are always single proposals (n is ignored).
+
+        Encapsulates the scheduling guard and the post-attempt flag reset that
+        the engine used to manage externally. Returns [proposal] when a merge
+        candidate exists, [None] otherwise.
+        """
+        proposal = self.propose(state)
+        # Mirror what the engine does after every merge attempt: clear the flag
+        # so a second merge isn't attempted in the same iteration.
+        self.last_iter_found_new_program = False
+        return [proposal]
+
+    def on_proposal_accepted(self) -> None:
+        """Called by the engine when this proposer's merge proposal was accepted."""
+        self.merges_due -= 1
+        self.total_merges_tested += 1
+
+    def on_candidate_found(self) -> None:
+        """Called by the engine when any new candidate was accepted (including reflective).
+
+        Arms the merge scheduler for the next iteration.
+        """
+        self.last_iter_found_new_program = True
+        if self.total_merges_tested < self.max_merge_invocations:
+            self.merges_due += 1

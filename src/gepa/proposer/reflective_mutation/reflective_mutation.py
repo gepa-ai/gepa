@@ -2,7 +2,9 @@
 # https://github.com/gepa-ai/gepa
 
 import threading
+import traceback as _traceback
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,7 +23,7 @@ from gepa.core.callbacks import (
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
-from gepa.proposer.base import CandidateProposal, ProposeNewCandidate, SubsampleEvaluation
+from gepa.proposer.base import BatchProposer, CandidateProposal, ProposeNewCandidate, SubsampleEvaluation
 from gepa.proposer.reflective_mutation.base import (
     CandidateSelector,
     LanguageModel,
@@ -63,7 +65,7 @@ class ProposalOutput:
     cache_entry: tuple | None = None
 
 
-class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
+class ReflectiveMutationProposer(ProposeNewCandidate[DataId], BatchProposer[DataId]):
     """Implements the reflective mutation flow.
 
     Supports parallel execution: call :meth:`prepare_proposal` sequentially,
@@ -497,3 +499,70 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.apply_proposal_output(output, state)
         state.full_program_trace[-1].update(output.trace_data)
         return output.proposal
+
+    def propose_batch(self, state: GEPAState, n: int) -> list[CandidateProposal | None]:
+        """BatchProposer implementation: run up to n proposals, in parallel when n > 1.
+
+        Slot 0 reuses the trace entry the engine already appended for this
+        iteration. Slots 1..n-1 each advance ``state.i`` and append their own
+        trace entry, mirroring what the engine did when it owned the parallel
+        loop. Deferred state updates (eval counts, cache) are applied before
+        returning so the engine only deals with :class:`CandidateProposal`
+        objects. The iteration number for each proposal is stored in
+        ``proposal.metadata["iteration"]`` for the engine's acceptance logging.
+        """
+        contexts: list[ProposalContext] = []
+        trace_entries: list[dict[str, Any]] = []
+
+        # Slot 0 — reuse the trace entry already created by the engine
+        trace_entry_0 = state.full_program_trace[-1]
+        ctx_0 = self.prepare_proposal(state)
+        trace_entry_0["selected_program_candidate"] = ctx_0.curr_prog_id
+        trace_entry_0["subsample_ids"] = ctx_0.subsample_ids
+        contexts.append(ctx_0)
+        trace_entries.append(trace_entry_0)
+
+        # Slots 1..n-1 — advance state and create new trace entries
+        for _ in range(n - 1):
+            state.i += 1
+            trace_entry: dict[str, Any] = {"i": state.i}
+            state.full_program_trace.append(trace_entry)
+            ctx = self.prepare_proposal(state)
+            trace_entry["selected_program_candidate"] = ctx.curr_prog_id
+            trace_entry["subsample_ids"] = ctx.subsample_ids
+            contexts.append(ctx)
+            trace_entries.append(trace_entry)
+
+        # Execute proposals — parallel when n > 1, direct call when n == 1
+        raw_outputs: list[ProposalOutput | None] = [None] * len(contexts)
+        if len(contexts) == 1:
+            raw_outputs[0] = self.execute_proposal(contexts[0], state)
+        else:
+            with ThreadPoolExecutor(max_workers=len(contexts)) as executor:
+                future_to_idx = {
+                    executor.submit(self.execute_proposal, ctx, state): idx
+                    for idx, ctx in enumerate(contexts)
+                }
+                for future in as_completed(future_to_idx):
+                    idx = future_to_idx[future]
+                    try:
+                        raw_outputs[idx] = future.result()
+                    except Exception as e:
+                        self.logger.log(
+                            f"Iteration {contexts[idx].iteration}: Parallel proposal failed: {e}\n"
+                            + _traceback.format_exc()
+                        )
+
+        # Apply deferred state updates and collect proposals
+        results: list[CandidateProposal | None] = []
+        for ctx, trace_entry, output in zip(contexts, trace_entries, raw_outputs, strict=False):
+            if output is None:
+                results.append(None)
+                continue
+            self.apply_proposal_output(output, state)
+            trace_entry.update(output.trace_data)
+            if output.proposal is not None:
+                output.proposal.metadata["iteration"] = ctx.iteration
+            results.append(output.proposal)
+
+        return results

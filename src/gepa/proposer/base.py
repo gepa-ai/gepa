@@ -2,7 +2,7 @@
 # https://github.com/gepa-ai/gepa
 
 from dataclasses import dataclass, field
-from typing import Any, Generic, Protocol
+from typing import Any, Generic, Protocol, runtime_checkable
 
 from gepa.core.data_loader import DataId
 from gepa.core.state import GEPAState
@@ -51,3 +51,27 @@ class ProposeNewCandidate(Protocol[DataId]):
     """
 
     def propose(self, state: GEPAState[Any, DataId]) -> CandidateProposal | None: ...
+
+
+@runtime_checkable
+class BatchProposer(Protocol[DataId]):
+    """Universal proposer interface consumed by the engine.
+
+    The engine calls ``propose_batch(state, n)`` to request up to ``n``
+    proposals for the current iteration. ``None`` in a slot means the
+    proposer declined to produce a proposal for that slot. The engine
+    processes each non-None proposal sequentially for acceptance.
+
+    Stateless proposers (e.g. :class:`ReflectiveMutationProposer`) batch
+    their internal LM calls across the ``n`` slots; stateful ones (e.g. a
+    coding-agent proposer) may ignore ``n > 1`` and return a list of length 1.
+
+    Implementations signal post-acceptance events via optional notification
+    methods (``on_proposal_accepted``, ``on_candidate_found``) — the engine
+    calls these via ``getattr`` with a no-op default so the protocol stays
+    minimal.
+    """
+
+    def propose_batch(
+        self, state: GEPAState[Any, DataId], n: int
+    ) -> list[CandidateProposal[DataId] | None]: ...
