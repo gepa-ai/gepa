@@ -403,6 +403,7 @@ Finally:
     - [LangChain Adapter](src/gepa/adapters/langchain_adapter/) - Optimize prompts for any LangChain pipeline: single-turn chat models, tool-using agents built with `create_agent`, custom LangGraph graphs, RAG, and more. Provider-agnostic via LangChain's `init_chat_model`. Install with `pip install "gepa[langchain]"` plus a provider package (e.g. `langchain-openai`).
 - **GEPA uses**
     - [Microsoft AI: MAI-Thinking-1](https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf) — GEPA / DSPy optimizes the Qwen3-30B LLM-judge prompt used to filter Code pages in the pre-training pipeline (~233B tokens curated from ~2,000 human labels).
+    - [Nubank: Building Customer Support AI Agents at 100M-User Scale](https://arxiv.org/abs/2606.08867) — GEPA inside DSPy optimizes LLM-as-a-Judge prompts; lifts E2 eval accuracy 68.88% → 88.89%, drives Cohen's κ (GPT-4.1 vs GPT-4.1-mini) from 0.00 → 0.745; downstream production wins include +37pp AI transactional NPS and +29pp self-service rate across 5 deployed domains.
     - [Google: Gemini Enterprise Agent Platform — `adk optimize` powered by GEPA](https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent)
     - [Nous Research Hermes Agent: evolutionary self-improvement with DSPy + GEPA](https://github.com/NousResearch/hermes-agent-self-evolution)
     - [Context Compression using GEPA](https://github.com/Laurian/context-compression-experiments-2508)
