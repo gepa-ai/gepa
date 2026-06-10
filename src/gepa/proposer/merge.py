@@ -362,7 +362,7 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             ),
         )
 
-        outputs_by_id, scores_by_id, objective_by_id, actual_evals_count = state.cached_evaluate_full(
+        outputs_by_id, scores_by_id, objective_by_id, actual_evals_count = state.cached_evaluate(
             new_program, subsample_ids, self.valset.fetch, self.evaluator
         )
         new_sub_scores = [scores_by_id[eid] for eid in subsample_ids]

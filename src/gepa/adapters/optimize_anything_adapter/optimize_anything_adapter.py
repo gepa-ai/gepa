@@ -15,11 +15,9 @@ internal engine.  It handles:
 import hashlib
 import json
 import logging
-import pickle
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
@@ -71,8 +69,6 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         best_example_evals_k: int = 1,
         objective: str | None = None,
         background: str | None = None,
-        cache_mode: str = "memory",  # "off", "memory", "disk"
-        cache_dir: str | Path | None = None,
     ):
         self.evaluator = evaluator
         self.parallel = parallel
@@ -81,26 +77,10 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self.best_example_evals_k = best_example_evals_k
         self.objective = objective
         self.background = background
-        self.cache_mode = cache_mode
-        self.cache_dir = Path(cache_dir) if cache_dir else None
 
         # Track top-K best evaluations per example for warm-start support
         self._best_evals_by_example: dict[str, list[dict]] = {}  # keyed by _example_hash
         self._best_evals_lock = threading.Lock()  # Thread safety for parallel execution
-
-        # Initialize evaluation cache
-        self._eval_cache: dict[tuple[str, str], tuple[float, Any, dict]] = {}
-        self._eval_cache_lock = threading.Lock()
-
-        # Setup disk cache directory and load existing entries
-        self._cache_dir_path: Path | None = None
-        if self.cache_mode == "disk" and self.cache_dir:
-            self._cache_dir_path = self.cache_dir / "fitness_cache"
-            self._cache_dir_path.mkdir(parents=True, exist_ok=True)
-            self._load_cache()
-
-        # Refiner uses LiteLLM directly via refiner_config.refiner_lm callable
-        # No separate predictor needed - the LM callable is set up in optimize_anything.py
 
     def _get_best_example_evals(self, example: object) -> list[dict]:
         """Get sorted top-K best evaluations for this example (thread-safe)."""
@@ -125,52 +105,14 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 reverse=True,
             )[: self.best_example_evals_k]
 
-    # --- Evaluation caching methods ---
-
-    def _candidate_hash(self, candidate: dict[str, str]) -> str:
-        """SHA256 hash of candidate for cache key (first 16 chars)."""
-        return hashlib.sha256(json.dumps(sorted(candidate.items())).encode()).hexdigest()[:16]
-
     def _example_hash(self, example: Any) -> str:
-        """Hash example for cache key (first 16 chars)."""
+        """Hash example for warm-start tracking key (first 16 chars)."""
         if example is None:
             return "none"
         try:
-            # Try JSON serialization for dicts, lists, primitives
             return hashlib.sha256(json.dumps(example, sort_keys=True, default=str).encode()).hexdigest()[:16]
         except (TypeError, ValueError):
-            # Fallback to id for unhashable objects
             return f"id_{id(example)}"
-
-    def _cache_key(self, candidate: dict[str, str], example: Any) -> tuple[str, str]:
-        """Build cache key tuple."""
-        return (self._candidate_hash(candidate), self._example_hash(example))
-
-    def _cache_filename(self, cache_key: tuple[str, str]) -> str:
-        """Build filename from cache key."""
-        return f"{cache_key[0]}_{cache_key[1]}.pkl"
-
-    def _load_cache(self) -> None:
-        """Load all cache entries from disk into memory."""
-        if self._cache_dir_path is None:
-            return
-        for cache_file in self._cache_dir_path.glob("*.pkl"):
-            try:
-                with open(cache_file, "rb") as f:
-                    data = pickle.load(f)
-                    # File stores: {"key": (cand_hash, ex_hash), "result": (score, output, side_info)}
-                    self._eval_cache[data["key"]] = data["result"]
-            except Exception as exc:
-                logger.warning("Failed to load cache file %s: %s", cache_file, exc)
-
-    def _save_cache_entry(self, cache_key: tuple[str, str], result: tuple) -> None:
-        """Save single cache entry to disk."""
-        if self._cache_dir_path is None:
-            return
-        filename = self._cache_filename(cache_key)
-        filepath = self._cache_dir_path / filename
-        with open(filepath, "wb") as f:
-            pickle.dump({"key": cache_key, "result": result}, f)
 
     def _build_opt_state(self, example: Any) -> "OptimizationState":
         """Build an OptimizationState for the given example."""
@@ -183,37 +125,12 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         candidate: "Candidate",
         example: Any,
     ) -> tuple[float, Any, dict]:
-        """Call evaluator with optional caching."""
-        # No caching
-        if self.cache_mode == "off":
-            return self.evaluator(
-                candidate,
-                example=example,
-                opt_state=self._build_opt_state(example),
-            )
-
-        # Build cache key
-        cache_key = self._cache_key(candidate, example)
-
-        # Check cache (thread-safe)
-        with self._eval_cache_lock:
-            if cache_key in self._eval_cache:
-                return self._eval_cache[cache_key]
-
-        # Cache miss - call evaluator
-        result = self.evaluator(
+        """Call the wrapped evaluator for a single example."""
+        return self.evaluator(
             candidate,
             example=example,
             opt_state=self._build_opt_state(example),
         )
-
-        # Store in cache (thread-safe)
-        with self._eval_cache_lock:
-            self._eval_cache[cache_key] = result
-            if self.cache_mode == "disk":
-                self._save_cache_entry(cache_key, result)
-
-        return result
 
     def evaluate(
         self,

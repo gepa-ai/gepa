@@ -265,8 +265,15 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 is_seed_candidate=ctx.is_seed_candidate,
             ),
         )
-        eval_curr = self.adapter.evaluate(ctx.minibatch, ctx.curr_prog, capture_traces=True)
-        total_evals += eval_curr.num_metric_calls if eval_curr.num_metric_calls is not None else len(ctx.subsample_ids)
+        if state.evaluation_cache is not None:
+            eval_curr, num_evals = state.evaluation_cache.evaluate_batch_with_cache(
+                ctx.curr_prog, ctx.subsample_ids, self.trainset.fetch, self.adapter.evaluate,
+                require_trajectories=True,
+            )
+            total_evals += num_evals
+        else:
+            eval_curr = self.adapter.evaluate(ctx.minibatch, ctx.curr_prog, capture_traces=True)
+            total_evals += eval_curr.num_metric_calls if eval_curr.num_metric_calls is not None else len(ctx.subsample_ids)
         trace_data["subsample_scores"] = eval_curr.scores
         notify_callbacks(
             self.callbacks,
