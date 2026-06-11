@@ -2,7 +2,9 @@
 # https://github.com/gepa-ai/gepa
 
 import threading
+import traceback as _traceback
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,21 +23,24 @@ from gepa.core.callbacks import (
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
 from gepa.core.state import GEPAState
-from gepa.proposer.base import CandidateProposal, ProposeNewCandidate, SubsampleEvaluation
+from gepa.proposer.base import CandidateProposal, Proposer, SubsampleEvaluation
 from gepa.proposer.reflective_mutation.base import (
     CandidateSelector,
     LanguageModel,
     ReflectionComponentSelector,
 )
+from gepa.strategies.acceptance import AcceptanceCriterion
 from gepa.strategies.batch_sampler import BatchSampler
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
+from gepa.strategies.proposal_sampling import ProposalTask, SamplingStrategy
+from gepa.strategies.proposal_selection import SelectionStrategy
 
 
 @dataclass
 class ProposalContext:
     """Pre-sampled context for a single proposal worker.
 
-    Created by :meth:`ReflectiveMutationProposer.prepare_proposal` (sequential),
+    Created by :meth:`ReflectiveMutationProposer._context_from_task` (sequential),
     then consumed by :meth:`ReflectiveMutationProposer.execute_proposal` (parallel-safe).
     """
 
@@ -63,12 +68,16 @@ class ProposalOutput:
     cache_entry: tuple | None = None
 
 
-class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
+class ReflectiveMutationProposer(Proposer[DataId]):
     """Implements the reflective mutation flow.
 
-    Supports parallel execution: call :meth:`prepare_proposal` sequentially,
-    then :meth:`execute_proposal` from multiple threads, then
-    :meth:`apply_proposal_output` sequentially.
+    Inherits from :class:`~gepa.proposer.base.Proposer`.  The engine calls
+    ``propose(state)`` which drives the full sampling → mutation → selection
+    pipeline; subclass responsibility is only ``_mutate()``.
+
+    Parallel execution is controlled by ``num_parallel_proposals`` (default 1).
+    Pass ``sampling_strategy=IndependentSampling(n)`` or another strategy to
+    control how tasks are generated; the proposer runs them all in parallel.
     """
 
     def __init__(
@@ -86,23 +95,33 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
+        num_parallel_proposals: int = 1,
+        acceptance_criterion: AcceptanceCriterion | None = None,
+        sampling_strategy: SamplingStrategy | None = None,
+        selection_strategy: SelectionStrategy | None = None,
     ):
+        resolved_trainset = ensure_loader(trainset)
+        super().__init__(
+            trainset=resolved_trainset,
+            candidate_selector=candidate_selector,
+            batch_sampler=batch_sampler,
+            acceptance_criterion=acceptance_criterion,
+            sampling_strategy=sampling_strategy,
+            selection_strategy=selection_strategy,
+        )
         self.logger = logger
-        self.trainset = ensure_loader(trainset)
         self.adapter = adapter
-        self.candidate_selector = candidate_selector
         self.module_selector = module_selector
-        self.batch_sampler = batch_sampler
         self.perfect_score = perfect_score
         self.skip_perfect_score = skip_perfect_score
         self.experiment_tracker = experiment_tracker
         self.reflection_lm = reflection_lm
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
+        self.num_parallel_proposals = num_parallel_proposals
         self._lock = threading.Lock()
 
         self.reflection_prompt_template = reflection_prompt_template
-        # Track parameters for which we've already logged missing template warnings
         self._missing_template_warnings: set[str] = set()
 
         if isinstance(reflection_prompt_template, dict):
@@ -144,7 +163,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         prompts: dict[str, str | list[dict[str, Any]]] = {}
         raw_lm_outputs: dict[str, str] = {}
         for name in components_to_update:
-            # Gracefully handle cases where a selected component has no data in reflective_dataset
             if name not in reflective_dataset or not reflective_dataset.get(name):
                 self.logger.log(f"Component '{name}' is not in reflective dataset. Skipping.")
                 continue
@@ -152,10 +170,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             base_instruction = candidate[name]
             dataset_with_feedback = reflective_dataset[name]
 
-            # Determine which prompt template to use for this parameter
             prompt_template = None
             if isinstance(self.reflection_prompt_template, dict):
-                # Use parameter-specific template if available
                 prompt_template = self.reflection_prompt_template.get(name)
                 if prompt_template is None and name not in self._missing_template_warnings:
                     self.logger.log(
@@ -163,7 +179,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                     )
                     self._missing_template_warnings.add(name)
             else:
-                # Use the single template for all parameters
                 prompt_template = self.reflection_prompt_template
 
             result, prompt, raw_output = InstructionProposalSignature.run_with_metadata(
@@ -179,18 +194,13 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             raw_lm_outputs[name] = raw_output
         return new_texts, prompts, raw_lm_outputs
 
-    def prepare_proposal(self, state: GEPAState) -> ProposalContext:
-        """Select parent candidate and sample minibatch. Must be called sequentially.
-
-        Performs the state-dependent, non-parallelizable parts of a proposal:
-        candidate selection, minibatch sampling, and callback notifications
-        that should fire in order.
-        """
+    def _context_from_task(self, task: ProposalTask, state: GEPAState) -> ProposalContext:
+        """Build a ProposalContext from a ProposalTask, firing sequential callbacks."""
         i = state.i + 1
-
-        curr_prog_id = self.candidate_selector.select_candidate_idx(state)
-        curr_prog = state.program_candidates[curr_prog_id]
+        curr_prog_id = task.parent_idx
+        curr_prog = task.parent_candidate
         curr_prog_score = state.program_full_scores_val_set[curr_prog_id]
+
         self.logger.log(f"Iteration {i}: Selected program {curr_prog_id} score: {curr_prog_score}")
 
         notify_callbacks(
@@ -209,15 +219,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             step=i,
         )
 
-        subsample_ids = self.batch_sampler.next_minibatch_ids(self.trainset, state)
-        minibatch = self.trainset.fetch(subsample_ids)
-
         notify_callbacks(
             self.callbacks,
             "on_minibatch_sampled",
             MinibatchSampledEvent(
                 iteration=i,
-                minibatch_ids=subsample_ids,
+                minibatch_ids=task.minibatch_ids,
                 trainset_size=len(self.trainset),
             ),
         )
@@ -230,8 +237,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             curr_prog_id=curr_prog_id,
             curr_prog=curr_prog,
             curr_prog_score=curr_prog_score,
-            subsample_ids=subsample_ids,
-            minibatch=minibatch,
+            subsample_ids=task.minibatch_ids,
+            minibatch=task.minibatch,
             parent_ids=curr_parent_ids,
             is_seed_candidate=is_seed_candidate,
         )
@@ -284,7 +291,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             ),
         )
 
-        # Prepare cache entry for parent evaluation
         objective_scores_list = list(eval_curr.objective_scores) if eval_curr.objective_scores else None
         cache_entry = (ctx.curr_prog, ctx.subsample_ids, eval_curr.outputs, eval_curr.scores, objective_scores_list)
 
@@ -474,26 +480,51 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             candidate, ids, outputs, scores, obj_scores = output.cache_entry
             state.evaluation_cache.put_batch(candidate, ids, outputs, scores, obj_scores)
 
-    def propose_output(self, state: GEPAState) -> ProposalOutput:
-        """Run a single reflective mutation iteration, returning a :class:`ProposalOutput`.
+    def _mutate(
+        self, tasks: list[ProposalTask], state: GEPAState[Any, DataId]
+    ) -> list[CandidateProposal[DataId]]:
+        """Run reflective mutation for each task, in parallel when len(tasks) > 1.
 
-        The caller is responsible for passing the output to
-        :meth:`apply_proposal_output`.
+        All tasks belong to the same engine iteration (state.i is not advanced here).
+        Fires sequential callbacks per task before parallel execution.
         """
-        ctx = self.prepare_proposal(state)
-        state.full_program_trace[-1].update({
-            "selected_program_candidate": ctx.curr_prog_id,
-            "subsample_ids": ctx.subsample_ids,
-        })
-        return self.execute_proposal(ctx, state)
+        # Build contexts sequentially (fires callbacks that must run in order)
+        contexts: list[ProposalContext] = [self._context_from_task(task, state) for task in tasks]
 
-    def propose(self, state: GEPAState) -> CandidateProposal | None:
-        """Run a single reflective mutation iteration.
+        # Update trace entry for this iteration (first task's data)
+        if contexts:
+            state.full_program_trace[-1]["selected_program_candidate"] = contexts[0].curr_prog_id
+            state.full_program_trace[-1]["subsample_ids"] = contexts[0].subsample_ids
 
-        Convenience method equivalent to :meth:`propose_output` followed by
-        :meth:`apply_proposal_output`.
-        """
-        output = self.propose_output(state)
-        self.apply_proposal_output(output, state)
-        state.full_program_trace[-1].update(output.trace_data)
-        return output.proposal
+        # Execute proposals — parallel when multiple tasks
+        raw_outputs: list[ProposalOutput | None] = [None] * len(contexts)
+        if len(contexts) == 1:
+            raw_outputs[0] = self.execute_proposal(contexts[0], state)
+        else:
+            with ThreadPoolExecutor(max_workers=len(contexts)) as executor:
+                future_to_idx = {
+                    executor.submit(self.execute_proposal, ctx, state): idx
+                    for idx, ctx in enumerate(contexts)
+                }
+                for future in as_completed(future_to_idx):
+                    idx = future_to_idx[future]
+                    try:
+                        raw_outputs[idx] = future.result()
+                    except Exception as e:
+                        self.logger.log(
+                            f"Iteration {contexts[idx].iteration}: Parallel proposal failed: {e}\n"
+                            + _traceback.format_exc()
+                        )
+
+        # Apply deferred state updates and collect proposals (no Nones)
+        proposals: list[CandidateProposal[DataId]] = []
+        for ctx, output in zip(contexts, raw_outputs, strict=False):
+            if output is None:
+                continue
+            self.apply_proposal_output(output, state)
+            state.full_program_trace[-1].update(output.trace_data)
+            if output.proposal is not None:
+                output.proposal.metadata["iteration"] = ctx.iteration
+                proposals.append(output.proposal)
+
+        return proposals
