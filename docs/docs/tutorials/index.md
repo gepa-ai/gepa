@@ -26,6 +26,10 @@ A hands-on notebook for classification-only GEPA optimization using AG News. You
 
 - **[ConfidenceAdapter Classification Tutorial](confidence_adapter_classification.ipynb)** - Compare default and confidence-aware classification optimization, from dataset split to AG News per-class and calibration plots.
 
+### LangChain Adapter
+
+- **[LangChain GEPA Adapter Tutorial](langchain_adapter_pair_sum_product_walkthrough.ipynb)** - Walkthrough for how to use langchain v1+ `ChatModel` or agent on a synthetic data task
+
 ## External Tutorials
 
 For more tutorials, especially those focused on the DSPy integration, see:
@@ -59,6 +63,7 @@ For more tutorials, especially those focused on the DSPy integration, see:
 - [Google ADK Agent Optimization (Official)](https://adk.dev/optimize/) - Built-in GEPA-powered optimization in Google's Agent Development Kit
 - [Google ADK Training with GEPA](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/) - Community tutorial on optimizing ADK agents
 - [Speeding Up a Sudoku Solver with GEPA optimize_anything](https://blog.mariusvach.com/posts/gepa-sudoku-solver) - Use `optimize_anything` to speed up a Python Sudoku solver `optimize_anything`
+- [GEPA: Distilling Your Taste Into a Prompt](https://www.youtube.com/watch?v=1iRORRcegns) - Use `optimize_anything` with Pydantic AI to create an LLM judge that matches your taste
 
 ### International Tutorials
 

@@ -45,6 +45,8 @@ hide:
   <div class="marquee-wrapper">
     <div class="marquee-track">
       <a href="https://x.com/tobi/status/1963434604741701909" target="_blank">Shopify</a>
+      <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent" target="_blank">Google</a>
+      <a href="https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf" target="_blank">Microsoft</a>
       <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank">OpenAI</a>
       <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank">Databricks</a>
       <a href="https://pydantic.dev/articles/prompt-optimization-with-gepa" target="_blank">Pydantic</a>
@@ -61,7 +63,7 @@ hide:
       <a href="https://www.linkedin.com/posts/dria-ai_today-were-releasing-something-weve-used-activity-7396920472237477888-WyXN" target="_blank">Dria</a>
       <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank">Prime Intellect</a>
       <a href="https://github.com/NousResearch/hermes-agent-self-evolution" target="_blank">Nous Research</a>
-      <span>NuBank</span>
+      <a href="https://arxiv.org/abs/2606.08867" target="_blank">Nubank</a>
       <span>Infosys</span>
       <a href="https://sutro.sh/" target="_blank">Sutro</a>
       <span>Invitae</span>
@@ -70,6 +72,8 @@ hide:
       <a href="https://agenta.ai" target="_blank">Agenta</a>
       <!-- duplicate set for seamless loop -->
       <a href="https://x.com/tobi/status/1963434604741701909" target="_blank">Shopify</a>
+      <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent" target="_blank">Google</a>
+      <a href="https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf" target="_blank">Microsoft</a>
       <a href="https://developers.openai.com/cookbook/examples/partners/self_evolving_agents/autonomous_agent_retraining" target="_blank">OpenAI</a>
       <a href="https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization" target="_blank">Databricks</a>
       <a href="https://pydantic.dev/articles/prompt-optimization-with-gepa" target="_blank">Pydantic</a>
@@ -86,7 +90,7 @@ hide:
       <a href="https://www.linkedin.com/posts/dria-ai_today-were-releasing-something-weve-used-activity-7396920472237477888-WyXN" target="_blank">Dria</a>
       <a href="https://github.com/PrimeIntellect-ai/verifiers/tree/main/verifiers/gepa" target="_blank">Prime Intellect</a>
       <a href="https://github.com/NousResearch/hermes-agent-self-evolution" target="_blank">Nous Research</a>
-      <span>NuBank</span>
+      <a href="https://arxiv.org/abs/2606.08867" target="_blank">Nubank</a>
       <span>Infosys</span>
       <a href="https://sutro.sh/" target="_blank">Sutro</a>
       <span>Invitae</span>

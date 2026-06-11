@@ -20,7 +20,6 @@ def evaluate(candidate: str, example) -> tuple[float, SideInfo]:
     side_info = {
         "score": score,
         "input": example.input,
-        "prompt": candidate,
         "output": prediction.answer,
         "reasoning": getattr(prediction, "reasoning", ""),
         "execution_feedback": feedback,

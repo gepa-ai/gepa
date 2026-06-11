@@ -5,6 +5,9 @@ on:
     branches:
       - blogpost
       - blogpost-aesthetic
+      - blogpost-rl-gepa
+      - fst-followup
+      - omni-blog
 
 jobs:
   build-and-deploy:
@@ -58,7 +61,9 @@ jobs:
       - name: Override site_url for staging
         run: |
           cd docs
-          sed -i 's|site_url: https://gepa-ai.github.io/gepa/|site_url: https://blogpost.gepa-docs-staging.pages.dev/|' mkdocs.yml
+          # Use the current branch's Cloudflare Pages alias so og:url / og:image
+          # resolve to URLs that actually exist on the deployed subdomain.
+          sed -i "s|site_url: https://gepa-ai.github.io/gepa/|site_url: https://${{ github.ref_name }}.gepa-docs-staging.pages.dev/|" mkdocs.yml
 
       - name: Install Playwright browsers
         run: |
@@ -76,24 +81,6 @@ jobs:
         run: |
           cd docs
           uv run -p ../.venv python scripts/generate_social_screenshots.py
-
-      - name: Add noindex directives
-        run: |
-          # robots.txt — tells crawlers not to index anything
-          cat > docs/site/robots.txt << 'EOF'
-          User-agent: *
-          Disallow: /
-          EOF
-
-          # _headers — Cloudflare Pages custom headers file
-          # Sets X-Robots-Tag on every response
-          cat > docs/site/_headers << 'EOF'
-          /*
-            X-Robots-Tag: noindex, nofollow, noarchive
-          EOF
-
-          # Inject <meta name="robots"> into every HTML file
-          find docs/site -name '*.html' -exec sed -i 's|<head>|<head><meta name="robots" content="noindex, nofollow, noarchive">|' {} +
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
