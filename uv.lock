@@ -1180,7 +1180,7 @@ requires-dist = [
     { name = "tiktoken", marker = "python_full_version >= '3.14' and extra == 'full'", specifier = ">=0.12.0" },
     { name = "tqdm", marker = "extra == 'full'", specifier = ">=4.66.1" },
     { name = "tqdm", marker = "extra == 'langchain'", specifier = ">=4.66" },
-    { name = "trackio", marker = "extra == 'full'", specifier = ">=0.26.0" },
+    { name = "trackio", marker = "extra == 'full'", specifier = ">=0.27.0" },
     { name = "twine", marker = "extra == 'build'" },
     { name = "wandb", marker = "python_full_version >= '3.14' and extra == 'full'", specifier = ">=0.23.0" },
     { name = "wandb", marker = "python_full_version < '3.14' and extra == 'full'" },
