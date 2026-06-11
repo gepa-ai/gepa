@@ -1,5 +1,4 @@
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,20 +16,42 @@ class _FakeServer:
         self.eval_log = []
 
 
+class _FakePopen:
+    """Stands in for subprocess.Popen: the backend polls until done, then communicates."""
+
+    def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
+        self.returncode = returncode
+        self._stdout = stdout
+        self._stderr = stderr
+
+    def poll(self) -> int:
+        return self.returncode
+
+    def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+        del timeout
+        return self._stdout, self._stderr
+
+    def terminate(self) -> None:
+        pass
+
+    def kill(self) -> None:
+        pass
+
+
 def test_claude_code_backend_ralph_resumes_with_remaining_budget(tmp_path: Path) -> None:
     server = _FakeServer()
     task = Task(name="smoke", initial_candidate="seed")
     calls: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
         calls.append(cmd)
         Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
         cost = 0.2 if len(calls) == 1 else 0.0005
-        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps({"total_cost_usd": cost}), stderr="")
+        return _FakePopen(0, json.dumps({"total_cost_usd": cost}))
 
     backend = ClaudeCodeBackend(OmniConfig(backend="claude_code", run_dir=str(tmp_path), config={}))
 
-    with patch("gepa.omni.backends.claude_code.subprocess.run", side_effect=fake_run):
+    with patch("gepa.omni.backends.claude_code.subprocess.Popen", side_effect=fake_popen):
         result = backend.run(task, server)
 
     assert len(calls) == 2
@@ -48,16 +69,16 @@ def test_claude_code_backend_can_disable_ralph(tmp_path: Path) -> None:
     task = Task(name="smoke", initial_candidate="seed")
     calls: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
         calls.append(cmd)
         Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
-        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps({"total_cost_usd": 0.2}), stderr="")
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
     backend = ClaudeCodeBackend(
         OmniConfig(backend="claude_code", run_dir=str(tmp_path), config={"ralph": False})
     )
 
-    with patch("gepa.omni.backends.claude_code.subprocess.run", side_effect=fake_run):
+    with patch("gepa.omni.backends.claude_code.subprocess.Popen", side_effect=fake_popen):
         result = backend.run(task, server)
 
     assert len(calls) == 1
@@ -70,16 +91,16 @@ def test_claude_code_backend_string_false_disables_ralph(tmp_path: Path) -> None
     task = Task(name="smoke", initial_candidate="seed")
     calls: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
         calls.append(cmd)
         Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
-        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps({"total_cost_usd": 0.2}), stderr="")
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
     backend = ClaudeCodeBackend(
         OmniConfig(backend="claude_code", run_dir=str(tmp_path), config={"ralph": "false"})
     )
 
-    with patch("gepa.omni.backends.claude_code.subprocess.run", side_effect=fake_run):
+    with patch("gepa.omni.backends.claude_code.subprocess.Popen", side_effect=fake_popen):
         result = backend.run(task, server)
 
     assert len(calls) == 1
@@ -92,16 +113,16 @@ def test_claude_code_backend_ralph_respects_stop_at_score(tmp_path: Path) -> Non
     task = Task(name="smoke", initial_candidate="seed")
     calls: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
         calls.append(cmd)
         Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
-        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps({"total_cost_usd": 0.2}), stderr="")
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
     backend = ClaudeCodeBackend(
         OmniConfig(backend="claude_code", run_dir=str(tmp_path), stop_at_score=1.0, config={})
     )
 
-    with patch("gepa.omni.backends.claude_code.subprocess.run", side_effect=fake_run):
+    with patch("gepa.omni.backends.claude_code.subprocess.Popen", side_effect=fake_popen):
         result = backend.run(task, server)
 
     assert len(calls) == 1
@@ -114,16 +135,16 @@ def test_claude_code_backend_counts_failed_resume_cost(tmp_path: Path) -> None:
     task = Task(name="smoke", initial_candidate="seed")
     calls: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
         calls.append(cmd)
         Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
         if len(calls) == 1:
-            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps({"total_cost_usd": 0.2}), stderr="")
-        return subprocess.CompletedProcess(cmd, 1, stdout=json.dumps({"total_cost_usd": 0.1}), stderr="failed")
+            return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
+        return _FakePopen(1, json.dumps({"total_cost_usd": 0.1}), stderr="failed")
 
     backend = ClaudeCodeBackend(OmniConfig(backend="claude_code", run_dir=str(tmp_path), config={}))
 
-    with patch("gepa.omni.backends.claude_code.subprocess.run", side_effect=fake_run):
+    with patch("gepa.omni.backends.claude_code.subprocess.Popen", side_effect=fake_popen):
         result = backend.run(task, server)
 
     assert len(calls) == 2
@@ -158,7 +179,7 @@ def test_claude_code_backend_materializes_omni_handoff(tmp_path: Path) -> None:
         },
     )
 
-    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
         del cmd
         work_dir = Path(str(kwargs["cwd"]))
         assert (work_dir / "handoff" / "index.json").exists()
@@ -167,13 +188,13 @@ def test_claude_code_backend_materializes_omni_handoff(tmp_path: Path) -> None:
         assert (work_dir / "handoff" / "stage_00_gepa" / "evals" / "0.json").exists()
         assert "Prior Optimizer Handoff" in (work_dir / "program.md").read_text()
         Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
-        return subprocess.CompletedProcess([], 0, stdout=json.dumps({"total_cost_usd": 0.2}), stderr="")
+        return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
     backend = ClaudeCodeBackend(
         OmniConfig(backend="claude_code", run_dir=str(tmp_path / "run"), config={"ralph": False})
     )
 
-    with patch("gepa.omni.backends.claude_code.subprocess.run", side_effect=fake_run):
+    with patch("gepa.omni.backends.claude_code.subprocess.Popen", side_effect=fake_popen):
         result = backend.run(task, server)
 
     assert result.best_candidate == "candidate"
