@@ -81,6 +81,9 @@ def optimize(
     mlflow_tracking_uri: str | None = None,
     mlflow_experiment_name: str | None = None,
     mlflow_attach_existing: bool = False,
+    use_trackio: bool = False,
+    trackio_init_kwargs: dict[str, Any] | None = None,
+    trackio_attach_existing: bool = False,
     tracking_key_prefix: str = "",
     track_best_outputs: bool = True,
     display_progress_bar: bool = False,
@@ -170,7 +173,10 @@ def optimize(
     - wandb_attach_existing: When True, log into the already-active W&B run without calling wandb.init() or wandb.finish(). Use when GEPA is embedded in a training loop that owns the run.
     - mlflow_attach_existing: When True, log into the already-active MLflow run without calling mlflow.start_run() or mlflow.end_run(). Use when GEPA is embedded in a training loop that owns the run.
     - use_mlflow: Whether to use MLflow to log the progress of the optimization.
-      Both wandb and mlflow can be used simultaneously if desired.
+    - use_trackio: Whether to use Trackio to log the progress of the optimization.
+    - trackio_init_kwargs: Additional keyword arguments to pass to trackio.init().
+    - trackio_attach_existing: When True, log into the already-active Trackio run without calling trackio.init() or trackio.finish(). Use when GEPA is embedded in a training loop that owns the run.
+      WandB, MLflow, and Trackio can be used simultaneously if desired.
     - mlflow_tracking_uri: The tracking URI to use for MLflow.
     - mlflow_experiment_name: The experiment name to use for MLflow.
     - track_best_outputs: Whether to track the best outputs on the validation set. If True, GEPAResult will contain the best outputs obtained for each task in the validation set.
@@ -361,6 +367,9 @@ def optimize(
         mlflow_tracking_uri=mlflow_tracking_uri,
         mlflow_experiment_name=mlflow_experiment_name,
         mlflow_attach_existing=mlflow_attach_existing,
+        use_trackio=use_trackio,
+        trackio_init_kwargs=trackio_init_kwargs,
+        trackio_attach_existing=trackio_attach_existing,
         key_prefix=tracking_key_prefix,
     )
 

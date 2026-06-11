@@ -1,14 +1,31 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-"""Tests for wandb_attach_existing and mlflow_attach_existing flags."""
+"""Tests for attach_existing flags on tracking backends."""
 
-from unittest.mock import MagicMock, patch, call
+import sys
+import types
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from gepa.logging.experiment_tracker import ExperimentTracker, create_experiment_tracker
 from gepa.optimize_anything import GEPAConfig, TrackingConfig
+
+
+@pytest.fixture(autouse=True)
+def mock_trackio_module(monkeypatch):
+    """Provide a minimal Trackio module so tests do not require the optional dependency."""
+    trackio = types.ModuleType("trackio")
+    trackio.init = MagicMock()
+    trackio.log = MagicMock()
+    trackio.finish = MagicMock()
+    trackio.Table = MagicMock()
+    trackio.Markdown = MagicMock()
+    trackio.context_vars = types.SimpleNamespace(current_run=MagicMock())
+    trackio.context_vars.current_run.get.return_value = None
+
+    monkeypatch.setitem(sys.modules, "trackio", trackio)
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +150,108 @@ class TestMlflowAttachExisting:
 
 
 # ---------------------------------------------------------------------------
+# ExperimentTracker — trackio_attach_existing
+# ---------------------------------------------------------------------------
+
+class TestTrackioAttachExisting:
+    def test_attach_existing_skips_init(self):
+        """trackio.init() is not called when attach_existing=True."""
+        tracker = ExperimentTracker(use_trackio=True, trackio_attach_existing=True)
+        with patch("trackio.init") as mock_init:
+            tracker.initialize()
+            tracker.start_run()
+        mock_init.assert_not_called()
+
+    def test_attach_existing_skips_finish(self):
+        """trackio.finish() is not called when attach_existing=True."""
+        tracker = ExperimentTracker(use_trackio=True, trackio_attach_existing=True)
+        with patch("trackio.finish") as mock_finish:
+            tracker.end_run()
+        mock_finish.assert_not_called()
+
+    def test_attach_existing_still_logs(self):
+        """Metrics are logged via trackio.log() even in attach mode."""
+        tracker = ExperimentTracker(use_trackio=True, trackio_attach_existing=True)
+        with patch("trackio.log") as mock_log:
+            tracker.log_metrics({"score": 0.8}, step=1)
+        mock_log.assert_called_once_with({"score": 0.8}, step=1)
+
+    def test_attach_existing_logs_through_captured_run(self):
+        """Attach mode keeps logging when Trackio's ContextVar is absent in another thread."""
+        tracker = ExperimentTracker(use_trackio=True, trackio_attach_existing=True)
+        mock_run = MagicMock()
+
+        with patch("trackio.context_vars.current_run") as mock_var, \
+             patch("trackio.log") as mock_log:
+            mock_var.get.return_value = mock_run
+            tracker.start_run()
+            mock_var.get.return_value = None
+            tracker.log_metrics({"score": 0.8}, step=1)
+
+        mock_run.log.assert_called_once_with(metrics={"score": 0.8}, step=1)
+        mock_log.assert_not_called()
+
+    def test_normal_mode_logs_through_init_run(self):
+        """Owned Trackio runs use the Run returned by trackio.init for later logs."""
+        tracker = ExperimentTracker(
+            use_trackio=True,
+            trackio_attach_existing=False,
+            trackio_init_kwargs={"project": "gepa-test", "name": "run"},
+        )
+        mock_run = MagicMock()
+
+        with patch("trackio.init", return_value=mock_run), \
+             patch("trackio.log") as mock_log:
+            tracker.start_run()
+            tracker.log_metrics({"score": 0.8}, step=1)
+
+        mock_run.log.assert_called_once_with(metrics={"score": 0.8}, step=1)
+        mock_log.assert_not_called()
+
+    def test_config_update_is_flushed_after_prior_logs(self):
+        """Config updates are re-emitted when attaching to an already-logged run."""
+        tracker = ExperimentTracker(
+            use_trackio=True,
+            trackio_attach_existing=True,
+            key_prefix="gepa/",
+        )
+        mock_run = MagicMock()
+        mock_run.config = {"host/lr": 0.001}
+        mock_run._config_logged = True
+
+        with patch("trackio.context_vars.current_run") as mock_var, \
+             patch("trackio.log") as mock_log:
+            mock_var.get.return_value = mock_run
+            tracker.log_config({"model": "gpt-5"})
+
+        assert mock_run.config == {"host/lr": 0.001, "gepa/model": "gpt-5"}
+        assert mock_run._config_logged is False
+        mock_log.assert_not_called()
+
+    def test_normal_mode_calls_init_and_finish(self):
+        """Without attach_existing, trackio.init() and trackio.finish() are called."""
+        tracker = ExperimentTracker(
+            use_trackio=True,
+            trackio_attach_existing=False,
+            trackio_init_kwargs={"project": "gepa-test", "name": "run"},
+        )
+        with patch("trackio.init") as mock_init, \
+             patch("trackio.finish") as mock_finish:
+            tracker.initialize()
+            tracker.start_run()
+            tracker.end_run()
+        mock_init.assert_called_once_with(project="gepa-test", name="run")
+        mock_finish.assert_called_once()
+
+    def test_default_project_when_init_kwargs_omitted(self):
+        """trackio.init() requires a project; GEPA defaults it to 'gepa'."""
+        tracker = ExperimentTracker(use_trackio=True)
+        with patch("trackio.init") as mock_init:
+            tracker.start_run()
+        mock_init.assert_called_once_with(project="gepa")
+
+
+# ---------------------------------------------------------------------------
 # create_experiment_tracker — new flags threaded through
 # ---------------------------------------------------------------------------
 
@@ -149,10 +268,17 @@ class TestCreateExperimentTracker:
         )
         assert tracker.mlflow_attach_existing is True
 
+    def test_trackio_attach_existing_passed_through(self):
+        tracker = create_experiment_tracker(
+            use_trackio=True, trackio_attach_existing=True
+        )
+        assert tracker.trackio_attach_existing is True
+
     def test_defaults_are_false(self):
         tracker = create_experiment_tracker()
         assert tracker.wandb_attach_existing is False
         assert tracker.mlflow_attach_existing is False
+        assert tracker.trackio_attach_existing is False
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +290,7 @@ class TestTrackingConfig:
         cfg = TrackingConfig()
         assert cfg.wandb_attach_existing is False
         assert cfg.mlflow_attach_existing is False
+        assert cfg.trackio_attach_existing is False
 
     def test_fields_settable(self):
         cfg = TrackingConfig(
@@ -171,13 +298,18 @@ class TestTrackingConfig:
             wandb_attach_existing=True,
             use_mlflow=True,
             mlflow_attach_existing=True,
+            use_trackio=True,
+            trackio_attach_existing=True,
+            trackio_init_kwargs={"project": "gepa"},
         )
         assert cfg.wandb_attach_existing is True
         assert cfg.mlflow_attach_existing is True
+        assert cfg.trackio_attach_existing is True
+        assert cfg.trackio_init_kwargs == {"project": "gepa"}
 
     def test_config_wired_to_tracker_via_optimize_anything(self):
         """TrackingConfig.wandb_attach_existing reaches the ExperimentTracker."""
-        from gepa.optimize_anything import optimize_anything, EngineConfig, ReflectionConfig
+        from gepa.optimize_anything import EngineConfig, ReflectionConfig, optimize_anything
 
         created_trackers: list[ExperimentTracker] = []
         original = create_experiment_tracker
@@ -221,6 +353,8 @@ class TestTrackingConfig:
                         wandb_attach_existing=True,
                         use_mlflow=True,
                         mlflow_attach_existing=True,
+                        use_trackio=True,
+                        trackio_attach_existing=True,
                     ),
                 ),
             )
@@ -228,6 +362,7 @@ class TestTrackingConfig:
         assert len(created_trackers) == 1
         assert created_trackers[0].wandb_attach_existing is True
         assert created_trackers[0].mlflow_attach_existing is True
+        assert created_trackers[0].trackio_attach_existing is True
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +423,58 @@ class TestOptimizeApiAttachExisting:
         assert len(created) == 1
         assert created[0].wandb_attach_existing is True
 
+    def test_trackio_attach_existing_in_optimize(self):
+        """gepa.optimize passes trackio_attach_existing to the tracker."""
+        import gepa
+        from gepa.core.adapter import EvaluationBatch
+
+        created: list[ExperimentTracker] = []
+
+        def spy(**kwargs):
+            t = ExperimentTracker(**kwargs)
+            created.append(t)
+            return t
+
+        class DummyAdapter:
+            propose_new_texts = None
+
+            def evaluate(self, batch, candidate, capture_traces=False):
+                return EvaluationBatch(outputs=[0.5]*len(batch), scores=[0.5]*len(batch))
+
+            def make_reflective_dataset(self, candidate, eval_batch, components):
+                return {c: [] for c in components}
+
+        with patch("gepa.api.create_experiment_tracker", side_effect=spy), \
+             patch("gepa.api.GEPAEngine") as mock_cls:
+            mock_engine = MagicMock()
+            mock_state = MagicMock()
+            mock_state.program_candidates = [{"system_prompt": "v0"}]
+            mock_state.parent_program_for_candidate = [[None]]
+            mock_state.prog_candidate_val_subscores = [{}]
+            mock_state.program_at_pareto_front_valset = {}
+            mock_state.program_full_scores_val_set = [0.5]
+            mock_state.num_metric_calls_by_discovery = [0]
+            mock_state.total_num_evals = 1
+            mock_state.num_full_ds_evals = 1
+            mock_state.best_outputs_valset = None
+            mock_state.objective_pareto_front = {}
+            mock_state.program_at_pareto_front_objectives = {}
+            mock_engine.run.return_value = mock_state
+            mock_cls.return_value = mock_engine
+
+            gepa.optimize(
+                seed_candidate={"system_prompt": "hello"},
+                trainset=[{"q": "x"}],
+                adapter=DummyAdapter(),
+                reflection_lm=MagicMock(return_value="```\nhello\n```"),
+                max_metric_calls=3,
+                use_trackio=True,
+                trackio_attach_existing=True,
+            )
+
+        assert len(created) == 1
+        assert created[0].trackio_attach_existing is True
+
 
 # ---------------------------------------------------------------------------
 # key_prefix
@@ -310,6 +497,13 @@ class TestKeyPrefix:
         call_kwargs = mock_log.call_args[0][0]
         assert "gepa/val_score" in call_kwargs
 
+    def test_metrics_prefixed_trackio(self):
+        tracker = ExperimentTracker(use_trackio=True, key_prefix="gepa/")
+        with patch("trackio.log") as mock_log:
+            tracker.log_metrics({"val_score": 0.8}, step=1)
+        call_kwargs = mock_log.call_args[0][0]
+        assert "gepa/val_score" in call_kwargs
+
     def test_table_name_prefixed_wandb(self):
         tracker = ExperimentTracker(use_wandb=True, key_prefix="run1/")
         with patch("wandb.log") as mock_log, \
@@ -324,6 +518,14 @@ class TestKeyPrefix:
             tracker.log_table("candidates", ["col"], [[1]])
         mock_log.assert_called_once()
         assert mock_log.call_args[1]["artifact_file"] == "run1/candidates.json"
+
+    def test_table_name_prefixed_trackio(self):
+        tracker = ExperimentTracker(use_trackio=True, key_prefix="run1/")
+        with patch("trackio.log") as mock_log, \
+             patch("trackio.Table", return_value=MagicMock()):
+            tracker.log_table("candidates", ["col"], [[1]])
+        call_kwargs = mock_log.call_args[0][0]
+        assert "run1/candidates" in call_kwargs
 
     def test_html_key_prefixed_wandb(self):
         tracker = ExperimentTracker(use_wandb=True, key_prefix="gepa/")
@@ -358,6 +560,16 @@ class TestKeyPrefix:
         assert "gepa/model" in call_kwargs
         assert "gepa/lr" in call_kwargs
 
+    def test_config_keys_prefixed_trackio(self):
+        tracker = ExperimentTracker(use_trackio=True, key_prefix="gepa/")
+        mock_run = MagicMock()
+        mock_run.config = {}
+        with patch("trackio.context_vars.current_run") as mock_var:
+            mock_var.get.return_value = mock_run
+            tracker.log_config({"model": "gpt-5", "lr": 0.01})
+        assert "gepa/model" in mock_run.config
+        assert "gepa/lr" in mock_run.config
+
     def test_empty_prefix_unchanged(self):
         """Empty prefix (default) leaves keys unchanged."""
         tracker = ExperimentTracker(use_wandb=True, key_prefix="")
@@ -368,7 +580,7 @@ class TestKeyPrefix:
 
     def test_prefix_via_tracking_config(self):
         """key_prefix in TrackingConfig is wired to ExperimentTracker."""
-        from gepa.optimize_anything import TrackingConfig, GEPAConfig
+        from gepa.optimize_anything import GEPAConfig, TrackingConfig
 
         created: list[ExperimentTracker] = []
         original = create_experiment_tracker
@@ -398,7 +610,7 @@ class TestKeyPrefix:
             mock_engine.run.return_value = mock_state
             mock_cls.return_value = mock_engine
 
-            from gepa.optimize_anything import optimize_anything, EngineConfig, ReflectionConfig
+            from gepa.optimize_anything import EngineConfig, ReflectionConfig, optimize_anything
             optimize_anything(
                 seed_candidate="x",
                 evaluator=lambda c: 0.5,

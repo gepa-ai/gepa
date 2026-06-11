@@ -29,18 +29,24 @@ class ExperimentTracker:
         wandb_step_metric: str | None = None,
         use_mlflow: bool = False,
         mlflow_tracking_uri: str | None = None,
+        use_trackio: bool = False,
+        trackio_init_kwargs: dict[str, Any] | None = None,
+        trackio_attach_existing: bool = False,
         mlflow_experiment_name: str | None = None,
         mlflow_attach_existing: bool = False,
         key_prefix: str = "",
     ):
         self.use_wandb = use_wandb
         self.use_mlflow = use_mlflow
+        self.use_trackio = use_trackio
 
         self.wandb_api_key = wandb_api_key
         self.wandb_init_kwargs = wandb_init_kwargs or {}
         self.wandb_attach_existing = wandb_attach_existing
         self.wandb_step_metric = wandb_step_metric
         self.mlflow_tracking_uri = mlflow_tracking_uri
+        self.trackio_init_kwargs = trackio_init_kwargs or {}
+        self.trackio_attach_existing = trackio_attach_existing
         self.mlflow_experiment_name = mlflow_experiment_name
         self.mlflow_attach_existing = mlflow_attach_existing
         self.key_prefix = key_prefix
@@ -48,6 +54,7 @@ class ExperimentTracker:
         self._created_mlflow_run = False
         self._mlflow_run_id: str | None = None
         self._mlflow_client: Any = None
+        self._trackio_run: Any = None
         self._wandb_step_metric_defined = False
 
         # Accumulate table rows so each wandb.log() sends the full growing
@@ -55,6 +62,7 @@ class ExperimentTracker:
         # the pending dict to overwrite earlier single-row tables with the
         # newest one, and only the last row per commit cycle survives.
         self._wandb_table_rows: dict[str, tuple[list[str], list[list]]] = {}
+        self._trackio_table_rows: dict[str, tuple[list[str], list[list]]] = {}
 
     def _p(self, key: str) -> str:
         """Prepend key_prefix to a key/name, if one is set."""
@@ -66,6 +74,8 @@ class ExperimentTracker:
             self._initialize_wandb()
         if self.use_mlflow:
             self._initialize_mlflow()
+        if self.use_trackio:
+            self._initialize_trackio()
 
     def _initialize_wandb(self):
         """Initialize wandb."""
@@ -80,6 +90,15 @@ class ExperimentTracker:
             raise ImportError("wandb is not installed. Please install it or set backend='mlflow' or 'none'.")
         except Exception as e:
             raise RuntimeError(f"Error logging into wandb: {e}")
+
+    def _initialize_trackio(self):
+        """Initialize Trackio."""
+        try:
+            import trackio  # type: ignore  # noqa: F401
+        except ImportError:
+            raise ImportError("trackio is not installed. Install it with `pip install trackio` or disable use_trackio.")
+        except Exception as e:
+            raise RuntimeError(f"Error setting up trackio: {e}")
 
     def _initialize_mlflow(self):
         """Initialize mlflow."""
@@ -127,6 +146,24 @@ class ExperimentTracker:
         except Exception as e:
             print(f"Warning: Failed to define wandb step metric: {e}")
 
+    def _get_active_trackio_run(self) -> Any:
+        """Return the active Trackio run from Trackio's context, if any."""
+        try:
+            from trackio import context_vars  # type: ignore
+
+            return context_vars.current_run.get()
+        except Exception:
+            return None
+
+    def _log_trackio(self, metrics: dict[str, Any], step: int | None = None) -> None:
+        """Log to Trackio without relying on ContextVar state in worker threads."""
+        if self._trackio_run is not None:
+            self._trackio_run.log(metrics=metrics, step=step)
+        else:
+            import trackio  # type: ignore
+
+            trackio.log(metrics, step=step)
+
     def start_run(self):
         """Start a new run.
 
@@ -144,6 +181,17 @@ class ExperimentTracker:
                 import wandb  # type: ignore
 
                 wandb.init(**self.wandb_init_kwargs)
+        if self.use_trackio:
+            if self.trackio_attach_existing:
+                # Attach to the active run — no init, no finish later.
+                self._trackio_run = self._get_active_trackio_run()
+            else:
+                import trackio  # type: ignore
+
+                init_kwargs = dict(self.trackio_init_kwargs)
+                init_kwargs.setdefault("project", "gepa")
+                self._trackio_run = trackio.init(**init_kwargs)
+
         if self.use_mlflow:
             import mlflow  # type: ignore
             from mlflow import MlflowClient  # type: ignore
@@ -196,6 +244,23 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to log config to wandb: {e}")
 
+        if self.use_trackio:
+            try:
+                # trackio.config is an inert module-level dict (wandb-compat shim);
+                # the run's own config dict is what gets serialized on the next log.
+                run = self._trackio_run or self._get_active_trackio_run()
+                if run is not None and isinstance(run.config, dict):
+                    prefixed = {self._p(k): v for k, v in safe_config.items()}
+                    run.config.update(prefixed)
+                    if hasattr(run, "_config_logged"):
+                        # Trackio serializes run.config from Run.log() only while
+                        # this flag is false. Attach mode may join a run that
+                        # already logged, so mark the merged config dirty for
+                        # the next real log without advancing Trackio's step.
+                        run._config_logged = False
+            except Exception as e:
+                print(f"Warning: Failed to log config to trackio: {e}")
+
         if self.use_mlflow:
             try:
                 str_params = {self._p(k): str(v) for k, v in safe_config.items()}
@@ -232,6 +297,14 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to log to wandb: {e}")
 
+        if self.use_trackio:
+            try:
+                numeric_metrics = {self._p(k): v for k, v in metrics.items() if isinstance(v, int | float)}
+                if numeric_metrics:
+                    self._log_trackio(numeric_metrics, step=step)
+            except Exception as e:
+                print(f"Warning: Failed to log metrics to trackio: {e}")
+
         if self.use_mlflow:
             try:
                 numeric_metrics = {self._p(k): float(v) for k, v in metrics.items() if isinstance(v, int | float)}
@@ -260,6 +333,14 @@ class ExperimentTracker:
                     wandb.run.summary[self._p(k)] = v  # type: ignore[union-attr]
             except Exception as e:
                 print(f"Warning: Failed to log summary to wandb: {e}")
+
+        if self.use_trackio:
+            try:
+                prefixed = {self._p(f"summary/{k}"): v for k, v in summary.items()}
+                if prefixed:
+                    self._log_trackio(prefixed)
+            except Exception as e:
+                print(f"Warning: Failed to log summary to trackio: {e}")
 
         if self.use_mlflow:
             try:
@@ -309,6 +390,21 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to log table to wandb: {e}")
 
+        if self.use_trackio:
+            try:
+                import trackio  # type: ignore
+
+                key = self._p(table_name)
+                if key not in self._trackio_table_rows:
+                    self._trackio_table_rows[key] = (columns, list(data))
+                else:
+                    self._trackio_table_rows[key][1].extend(data)
+                all_columns, all_rows = self._trackio_table_rows[key]
+                table = trackio.Table(columns=all_columns, data=all_rows)
+                self._log_trackio({key: table})
+            except Exception as e:
+                print(f"Warning: Failed to log table to trackio: {e}")
+
         if self.use_mlflow:
             try:
                 import mlflow  # type: ignore
@@ -342,6 +438,14 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to log HTML to wandb: {e}")
 
+        if self.use_trackio:
+            try:
+                import trackio  # type: ignore
+
+                self._log_trackio({self._p(key): trackio.Markdown(html_content)})
+            except Exception as e:
+                print(f"Warning: Failed to log HTML to trackio: {e}")
+
         if self.use_mlflow:
             try:
                 import tempfile
@@ -372,6 +476,15 @@ class ExperimentTracker:
             except Exception as e:
                 print(f"Warning: Failed to end wandb run: {e}")
 
+        if self.use_trackio and not self.trackio_attach_existing:
+            try:
+                import trackio  # type: ignore
+
+                trackio.finish()
+                self._trackio_run = None
+            except Exception as e:
+                print(f"Warning: Failed to end trackio run: {e}")
+
         if self.use_mlflow:
             try:
                 import mlflow  # type: ignore
@@ -393,6 +506,10 @@ class ExperimentTracker:
             except Exception:
                 pass
 
+        if self.use_trackio:
+            if self._trackio_run is not None or self._get_active_trackio_run() is not None:
+                return True
+
         if self.use_mlflow:
             try:
                 import mlflow  # type: ignore
@@ -413,6 +530,9 @@ def create_experiment_tracker(
     wandb_step_metric: str | None = None,
     use_mlflow: bool = False,
     mlflow_tracking_uri: str | None = None,
+    use_trackio: bool = False,
+    trackio_init_kwargs: dict[str, Any] | None = None,
+    trackio_attach_existing: bool = False,
     mlflow_experiment_name: str | None = None,
     mlflow_attach_existing: bool = False,
     key_prefix: str = "",
@@ -423,6 +543,7 @@ def create_experiment_tracker(
     Args:
         use_wandb: Whether to use wandb
         use_mlflow: Whether to use mlflow
+        use_trackio: Whether to use Trackio
         wandb_api_key: API key for wandb
         wandb_init_kwargs: Additional kwargs for wandb.init()
         wandb_attach_existing: When True, skip wandb.init() and wandb.finish()
@@ -433,6 +554,9 @@ def create_experiment_tracker(
             Required when embedding GEPA inside a host training loop that
             manages its own wandb step counter.
         mlflow_tracking_uri: Tracking URI for mlflow
+        trackio_init_kwargs: Additional kwargs for trackio.init()
+        trackio_attach_existing: When True, skip trackio.init() and
+            trackio.finish() and log into the already-active run.
         mlflow_experiment_name: Experiment name for mlflow
         mlflow_attach_existing: When True, skip mlflow.start_run() and
             mlflow.end_run() and log into the already-active run.
@@ -451,6 +575,9 @@ def create_experiment_tracker(
         wandb_step_metric=wandb_step_metric,
         use_mlflow=use_mlflow,
         mlflow_tracking_uri=mlflow_tracking_uri,
+        use_trackio=use_trackio,
+        trackio_init_kwargs=trackio_init_kwargs,
+        trackio_attach_existing=trackio_attach_existing,
         mlflow_experiment_name=mlflow_experiment_name,
         mlflow_attach_existing=mlflow_attach_existing,
         key_prefix=key_prefix,
