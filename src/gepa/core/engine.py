@@ -77,8 +77,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         acceptance_criterion: AcceptanceCriterion | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
-        # Parallel proposals
-        num_parallel_proposals: int = 1,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -118,7 +116,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.display_progress_bar = display_progress_bar
         self.use_cloudpickle = use_cloudpickle
 
-        self.num_parallel_proposals = num_parallel_proposals
         self.raise_on_exception = raise_on_exception
         self.val_evaluation_policy: EvaluationPolicy[DataId, DataInst] = (
             val_evaluation_policy if val_evaluation_policy is not None else FullEvaluationPolicy()
@@ -367,12 +364,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         Delegates parallelism to the proposer; the engine only drives acceptance.
         Returns True if at least one proposal was accepted.
         """
-        proposals = self.reflective_proposer.propose_batch(state, self.num_parallel_proposals)
+        proposals = self.reflective_proposer.propose(state)
         any_accepted = False
         for proposal in proposals:
-            if proposal is None:
-                self.logger.log("Reflective mutation did not propose a new candidate")
-                continue
             iteration = proposal.metadata.get("iteration", state.i + 1)
             if self._accept_reflective_and_notify(proposal, iteration, state):
                 any_accepted = True
@@ -586,8 +580,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
                 # 1) Attempt merge first if scheduled and last iter found new program
                 if self.merge_proposer is not None and self.merge_proposer.use_merge:
-                    proposals = self.merge_proposer.propose_batch(state, 1)
-                    merge_proposal = proposals[0] if proposals else None
+                    merge_proposal = self.merge_proposer.propose(state)
                     if merge_proposal is not None and merge_proposal.tag == "merge":
                         parent_sums = merge_proposal.subsample_scores_before or [
                             float("-inf"),
