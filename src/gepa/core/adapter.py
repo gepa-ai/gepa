@@ -41,6 +41,8 @@ class ProposalFn(Protocol):
         candidate: dict[str, str],
         reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
         components_to_update: list[str],
+        *,
+        metadata: Mapping[str, Any] | None = None,
     ) -> dict[str, str]:
         """
         - Given the current `candidate`, a reflective dataset (as returned by
@@ -49,6 +51,18 @@ class ProposalFn(Protocol):
           to implement their own instruction proposal logic. For example, the user can use
           a different LLM, implement DSPy signatures, etc. Another example can be situations
           where 2 or more components need to be updated together (coupled updates).
+
+        - `metadata` is an open-ended dict of context hints supplied by the engine on
+          every call.           Custom proposers read only the keys they care about. Keys GEPA
+          currently populates:
+            * `"iteration"`: int — 1-indexed iteration number (matches the
+              ``Iteration N:`` log line and, when ``write_agent_state=True``,
+              the on-disk ``iterations/NNNNN/`` subdir). Seed is id 0; the
+              first loop proposal runs at id 1.
+            * `"parent_iteration_id"`: int — on-disk iteration id of the
+              parent candidate.
+          Future keys may be added without changing this signature — existing proposers
+          simply ignore them.
 
         Returns
         - Dict[str, str] mapping component names to newly proposed component texts.
