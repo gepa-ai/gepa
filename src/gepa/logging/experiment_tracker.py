@@ -54,6 +54,7 @@ class ExperimentTracker:
         self._created_mlflow_run = False
         self._mlflow_run_id: str | None = None
         self._mlflow_client: Any = None
+        self._trackio_run: Any = None
         self._wandb_step_metric_defined = False
 
         # Accumulate table rows so each wandb.log() sends the full growing
@@ -145,6 +146,24 @@ class ExperimentTracker:
         except Exception as e:
             print(f"Warning: Failed to define wandb step metric: {e}")
 
+    def _get_active_trackio_run(self) -> Any:
+        """Return the active Trackio run from Trackio's context, if any."""
+        try:
+            from trackio import context_vars  # type: ignore
+
+            return context_vars.current_run.get()
+        except Exception:
+            return None
+
+    def _log_trackio(self, metrics: dict[str, Any], step: int | None = None) -> None:
+        """Log to Trackio without relying on ContextVar state in worker threads."""
+        if self._trackio_run is not None:
+            self._trackio_run.log(metrics=metrics, step=step)
+        else:
+            import trackio  # type: ignore
+
+            trackio.log(metrics, step=step)
+
     def start_run(self):
         """Start a new run.
 
@@ -165,13 +184,13 @@ class ExperimentTracker:
         if self.use_trackio:
             if self.trackio_attach_existing:
                 # Attach to the active run — no init, no finish later.
-                pass
+                self._trackio_run = self._get_active_trackio_run()
             else:
                 import trackio  # type: ignore
 
                 init_kwargs = dict(self.trackio_init_kwargs)
                 init_kwargs.setdefault("project", "gepa")
-                trackio.init(**init_kwargs)
+                self._trackio_run = trackio.init(**init_kwargs)
 
         if self.use_mlflow:
             import mlflow  # type: ignore
@@ -229,12 +248,16 @@ class ExperimentTracker:
             try:
                 # trackio.config is an inert module-level dict (wandb-compat shim);
                 # the run's own config dict is what gets serialized on the next log.
-                from trackio import context_vars  # type: ignore
-
-                run = context_vars.current_run.get()
+                run = self._trackio_run or self._get_active_trackio_run()
                 if run is not None and isinstance(run.config, dict):
                     prefixed = {self._p(k): v for k, v in safe_config.items()}
                     run.config.update(prefixed)
+                    if hasattr(run, "_config_logged"):
+                        # Trackio serializes run.config from Run.log() only while
+                        # this flag is false. Attach mode may join a run that
+                        # already logged, so mark the merged config dirty for
+                        # the next real log without advancing Trackio's step.
+                        run._config_logged = False
             except Exception as e:
                 print(f"Warning: Failed to log config to trackio: {e}")
 
@@ -276,11 +299,9 @@ class ExperimentTracker:
 
         if self.use_trackio:
             try:
-                import trackio  # type: ignore
-
                 numeric_metrics = {self._p(k): v for k, v in metrics.items() if isinstance(v, int | float)}
                 if numeric_metrics:
-                    trackio.log(numeric_metrics, step=step)
+                    self._log_trackio(numeric_metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log metrics to trackio: {e}")
 
@@ -315,11 +336,9 @@ class ExperimentTracker:
 
         if self.use_trackio:
             try:
-                import trackio  # type: ignore
-
                 prefixed = {self._p(f"summary/{k}"): v for k, v in summary.items()}
                 if prefixed:
-                    trackio.log(prefixed)
+                    self._log_trackio(prefixed)
             except Exception as e:
                 print(f"Warning: Failed to log summary to trackio: {e}")
 
@@ -382,7 +401,7 @@ class ExperimentTracker:
                     self._trackio_table_rows[key][1].extend(data)
                 all_columns, all_rows = self._trackio_table_rows[key]
                 table = trackio.Table(columns=all_columns, data=all_rows)
-                trackio.log({key: table})
+                self._log_trackio({key: table})
             except Exception as e:
                 print(f"Warning: Failed to log table to trackio: {e}")
 
@@ -423,7 +442,7 @@ class ExperimentTracker:
             try:
                 import trackio  # type: ignore
 
-                trackio.log({self._p(key): trackio.Markdown(html_content)})
+                self._log_trackio({self._p(key): trackio.Markdown(html_content)})
             except Exception as e:
                 print(f"Warning: Failed to log HTML to trackio: {e}")
 
@@ -462,6 +481,7 @@ class ExperimentTracker:
                 import trackio  # type: ignore
 
                 trackio.finish()
+                self._trackio_run = None
             except Exception as e:
                 print(f"Warning: Failed to end trackio run: {e}")
 
@@ -487,13 +507,8 @@ class ExperimentTracker:
                 pass
 
         if self.use_trackio:
-            try:
-                from trackio import context_vars  # type: ignore
-
-                if context_vars.current_run.get() is not None:
-                    return True
-            except Exception:
-                pass
+            if self._trackio_run is not None or self._get_active_trackio_run() is not None:
+                return True
 
         if self.use_mlflow:
             try:

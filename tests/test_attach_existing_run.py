@@ -156,6 +156,58 @@ class TestTrackioAttachExisting:
             tracker.log_metrics({"score": 0.8}, step=1)
         mock_log.assert_called_once_with({"score": 0.8}, step=1)
 
+    def test_attach_existing_logs_through_captured_run(self):
+        """Attach mode keeps logging when Trackio's ContextVar is absent in another thread."""
+        tracker = ExperimentTracker(use_trackio=True, trackio_attach_existing=True)
+        mock_run = MagicMock()
+
+        with patch("trackio.context_vars.current_run") as mock_var, \
+             patch("trackio.log") as mock_log:
+            mock_var.get.return_value = mock_run
+            tracker.start_run()
+            mock_var.get.return_value = None
+            tracker.log_metrics({"score": 0.8}, step=1)
+
+        mock_run.log.assert_called_once_with(metrics={"score": 0.8}, step=1)
+        mock_log.assert_not_called()
+
+    def test_normal_mode_logs_through_init_run(self):
+        """Owned Trackio runs use the Run returned by trackio.init for later logs."""
+        tracker = ExperimentTracker(
+            use_trackio=True,
+            trackio_attach_existing=False,
+            trackio_init_kwargs={"project": "gepa-test", "name": "run"},
+        )
+        mock_run = MagicMock()
+
+        with patch("trackio.init", return_value=mock_run), \
+             patch("trackio.log") as mock_log:
+            tracker.start_run()
+            tracker.log_metrics({"score": 0.8}, step=1)
+
+        mock_run.log.assert_called_once_with(metrics={"score": 0.8}, step=1)
+        mock_log.assert_not_called()
+
+    def test_config_update_is_flushed_after_prior_logs(self):
+        """Config updates are re-emitted when attaching to an already-logged run."""
+        tracker = ExperimentTracker(
+            use_trackio=True,
+            trackio_attach_existing=True,
+            key_prefix="gepa/",
+        )
+        mock_run = MagicMock()
+        mock_run.config = {"host/lr": 0.001}
+        mock_run._config_logged = True
+
+        with patch("trackio.context_vars.current_run") as mock_var, \
+             patch("trackio.log") as mock_log:
+            mock_var.get.return_value = mock_run
+            tracker.log_config({"model": "gpt-5"})
+
+        assert mock_run.config == {"host/lr": 0.001, "gepa/model": "gpt-5"}
+        assert mock_run._config_logged is False
+        mock_log.assert_not_called()
+
     def test_normal_mode_calls_init_and_finish(self):
         """Without attach_existing, trackio.init() and trackio.finish() are called."""
         tracker = ExperimentTracker(
