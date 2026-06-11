@@ -105,6 +105,7 @@ nav:
             - MCP Adapter: api/adapters/MCPAdapter.md
             - TerminalBench Adapter: api/adapters/TerminalBenchAdapter.md
             - LangChain Adapter: api/adapters/LangChainAdapter.md
+            - Opik Adapter: api/adapters/OpikAdapter.md
         - Proposers:
             - Proposers Overview: api/proposers/index.md
             - CandidateProposal: api/proposers/CandidateProposal.md
