@@ -1,16 +1,22 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-import threading
+import traceback
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 from typing import Any
 
-from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn, RolloutOutput, Trajectory
+from gepa.core.adapter import (
+    DataInst,
+    EvaluationBatch,
+    GEPAAdapter,
+    ProposalFn,
+    RolloutOutput,
+    Trajectory,
+    default_batch_evaluate,
+)
 from gepa.core.callbacks import (
     CandidateSelectedEvent,
     EvaluationEndEvent,
-    EvaluationSkippedEvent,
     EvaluationStartEvent,
     GEPACallback,
     MinibatchSampledEvent,
@@ -20,55 +26,33 @@ from gepa.core.callbacks import (
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
-from gepa.core.state import GEPAState
-from gepa.proposer.base import CandidateProposal, ProposeNewCandidate, SubsampleEvaluation
+from gepa.core.state import GEPAState, _candidate_hash
+from gepa.proposer.base import CandidateProposal, SubsampleEvaluation
 from gepa.proposer.reflective_mutation.base import (
     CandidateSelector,
     LanguageModel,
     ReflectionComponentSelector,
 )
+from gepa.strategies.acceptance import AcceptanceCriterion, StrictImprovementAcceptance
 from gepa.strategies.batch_sampler import BatchSampler
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
+from gepa.strategies.proposal_sampling import ProposalTask, SamplingStrategy, SingleMutationSampling
+from gepa.strategies.proposal_selection import AllImprovements, SelectionStrategy
 
 
-@dataclass
-class ProposalContext:
-    """Pre-sampled context for a single proposal worker.
-
-    Created by :meth:`ReflectiveMutationProposer.prepare_proposal` (sequential),
-    then consumed by :meth:`ReflectiveMutationProposer.execute_proposal` (parallel-safe).
-    """
-
-    iteration: int
-    curr_prog_id: int
-    curr_prog: dict[str, str]
-    curr_prog_score: float
-    subsample_ids: list
-    minibatch: list
-    parent_ids: list[int]
-    is_seed_candidate: bool
-
-
-@dataclass
-class ProposalOutput:
-    """Result from :meth:`ReflectiveMutationProposer.execute_proposal`.
-
-    Contains the proposal plus deferred state updates that must be applied
-    sequentially via :meth:`ReflectiveMutationProposer.apply_proposal_output`.
-    """
-
-    proposal: CandidateProposal | None
-    total_evals: int
-    trace_data: dict[str, Any] = field(default_factory=dict)
-    cache_entry: tuple | None = None
-
-
-class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
+class ReflectiveMutationProposer:
     """Implements the reflective mutation flow.
 
-    Supports parallel execution: call :meth:`prepare_proposal` sequentially,
-    then :meth:`execute_proposal` from multiple threads, then
-    :meth:`apply_proposal_output` sequentially.
+    Each iteration, the proposer:
+
+    1. Samples one or more (parent, minibatch) tasks via ``sampling_strategy``
+    2. Batch-evaluates all parents (deduplicated)
+    3. For each task: builds a reflective dataset and proposes new texts
+    4. Batch-evaluates all children
+    5. Filters proposals via ``selection_strategy`` + ``acceptance_criterion``
+
+    With the default ``SingleMutationSampling``, this produces exactly one
+    task per iteration — matching GEPA's original sequential behavior.
     """
 
     def __init__(
@@ -86,6 +70,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
+        acceptance_criterion: AcceptanceCriterion | None = None,
+        sampling_strategy: SamplingStrategy | None = None,
+        selection_strategy: SelectionStrategy | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -99,10 +86,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self.reflection_lm = reflection_lm
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
-        self._lock = threading.Lock()
+        self.acceptance_criterion: AcceptanceCriterion = acceptance_criterion or StrictImprovementAcceptance()
+        self.sampling_strategy: SamplingStrategy = sampling_strategy or SingleMutationSampling()
+        self.selection_strategy: SelectionStrategy = selection_strategy or AllImprovements()
 
         self.reflection_prompt_template = reflection_prompt_template
-        # Track parameters for which we've already logged missing template warnings
         self._missing_template_warnings: set[str] = set()
 
         if isinstance(reflection_prompt_template, dict):
@@ -127,8 +115,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
         Returns:
             A tuple of (new_texts, prompts, raw_lm_outputs) where each is a
-            dict keyed by component name.  When the adapter or a custom proposer
-            handles the call, prompts and raw_lm_outputs are empty dicts.
+            dict keyed by component name.
         """
         empty: dict[str, str | list[dict[str, Any]]] = {}
         if self.adapter.propose_new_texts is not None:
@@ -144,7 +131,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         prompts: dict[str, str | list[dict[str, Any]]] = {}
         raw_lm_outputs: dict[str, str] = {}
         for name in components_to_update:
-            # Gracefully handle cases where a selected component has no data in reflective_dataset
             if name not in reflective_dataset or not reflective_dataset.get(name):
                 self.logger.log(f"Component '{name}' is not in reflective dataset. Skipping.")
                 continue
@@ -152,10 +138,8 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             base_instruction = candidate[name]
             dataset_with_feedback = reflective_dataset[name]
 
-            # Determine which prompt template to use for this parameter
             prompt_template = None
             if isinstance(self.reflection_prompt_template, dict):
-                # Use parameter-specific template if available
                 prompt_template = self.reflection_prompt_template.get(name)
                 if prompt_template is None and name not in self._missing_template_warnings:
                     self.logger.log(
@@ -163,7 +147,6 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                     )
                     self._missing_template_warnings.add(name)
             else:
-                # Use the single template for all parameters
                 prompt_template = self.reflection_prompt_template
 
             result, prompt, raw_output = InstructionProposalSignature.run_with_metadata(
@@ -179,321 +162,276 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             raw_lm_outputs[name] = raw_output
         return new_texts, prompts, raw_lm_outputs
 
-    def prepare_proposal(self, state: GEPAState) -> ProposalContext:
-        """Select parent candidate and sample minibatch. Must be called sequentially.
+    # ------------------------------------------------------------------
+    # Batch evaluate helper
+    # ------------------------------------------------------------------
 
-        Performs the state-dependent, non-parallelizable parts of a proposal:
-        candidate selection, minibatch sampling, and callback notifications
-        that should fire in order.
+    def _batch_evaluate(self, items: list[tuple[dict[str, str], list]]) -> list[EvaluationBatch]:
+        """Evaluate (candidate, batch) pairs via the adapter's batch_evaluate or fallback."""
+        batch_fn = getattr(self.adapter, "batch_evaluate", None)
+        if batch_fn is not None:
+            return batch_fn(items)
+        return default_batch_evaluate(self.adapter, items)
+
+    # ------------------------------------------------------------------
+    # Main proposal method
+    # ------------------------------------------------------------------
+
+    def propose(self, state: GEPAState) -> list[CandidateProposal]:
+        """Run the reflective mutation pipeline and return accepted proposals.
+
+        With the default ``SingleMutationSampling`` + ``AllImprovements``,
+        this returns 0 or 1 proposals — identical to the original sequential
+        behavior.
         """
         i = state.i + 1
 
-        curr_prog_id = self.candidate_selector.select_candidate_idx(state)
-        curr_prog = state.program_candidates[curr_prog_id]
-        curr_prog_score = state.program_full_scores_val_set[curr_prog_id]
-        self.logger.log(f"Iteration {i}: Selected program {curr_prog_id} score: {curr_prog_score}")
+        # Stage 1: Sample (parent, minibatch) tasks
+        tasks = self.sampling_strategy.sample_tasks(
+            state, self.candidate_selector, self.batch_sampler, self.trainset
+        )
+        if not tasks:
+            return []
 
-        notify_callbacks(
-            self.callbacks,
-            "on_candidate_selected",
-            CandidateSelectedEvent(
-                iteration=i,
-                candidate_idx=curr_prog_id,
-                candidate=curr_prog,
-                score=curr_prog_score,
-            ),
+        # Fire callbacks for each sampled task
+        for task in tasks:
+            notify_callbacks(
+                self.callbacks,
+                "on_candidate_selected",
+                CandidateSelectedEvent(
+                    iteration=i,
+                    candidate_idx=task.parent_idx,
+                    candidate=task.parent_candidate,
+                    score=state.program_full_scores_val_set[task.parent_idx],
+                ),
+            )
+            notify_callbacks(
+                self.callbacks,
+                "on_minibatch_sampled",
+                MinibatchSampledEvent(
+                    iteration=i,
+                    minibatch_ids=task.minibatch_ids,
+                    trainset_size=len(self.trainset),
+                ),
+            )
+
+        # Stage 2: Batch evaluate parents (deduplicated)
+        unique_keys: dict[tuple[str, tuple], tuple[dict[str, str], list[Any]]] = {}
+        task_to_key: list[tuple[str, tuple]] = []
+        for task in tasks:
+            key = (_candidate_hash(task.parent_candidate), tuple(task.minibatch_ids))
+            unique_keys.setdefault(key, (task.parent_candidate, task.minibatch))
+            task_to_key.append(key)
+
+        key_list = list(unique_keys.keys())
+        items = [unique_keys[k] for k in key_list]
+
+        # Fire evaluation start callbacks for each task
+        for task in tasks:
+            notify_callbacks(
+                self.callbacks,
+                "on_evaluation_start",
+                EvaluationStartEvent(
+                    iteration=i,
+                    candidate_idx=task.parent_idx,
+                    batch_size=len(task.minibatch),
+                    capture_traces=True,
+                    parent_ids=[p for p in state.parent_program_for_candidate[task.parent_idx] if p is not None],
+                    inputs=task.minibatch,
+                    is_seed_candidate=task.parent_idx == 0,
+                ),
+            )
+
+        parent_evals = self._batch_evaluate(items)
+        key_to_eval: dict[tuple[str, tuple], EvaluationBatch] = dict(zip(key_list, parent_evals, strict=True))
+
+        # Fire evaluation end callbacks for each task
+        for task, key in zip(tasks, task_to_key, strict=True):
+            eval_curr = key_to_eval[key]
+            notify_callbacks(
+                self.callbacks,
+                "on_evaluation_end",
+                EvaluationEndEvent(
+                    iteration=i,
+                    candidate_idx=task.parent_idx,
+                    scores=eval_curr.scores,
+                    has_trajectories=bool(eval_curr.trajectories),
+                    parent_ids=[p for p in state.parent_program_for_candidate[task.parent_idx] if p is not None],
+                    outputs=eval_curr.outputs,
+                    trajectories=eval_curr.trajectories,
+                    objective_scores=eval_curr.objective_scores,
+                    is_seed_candidate=task.parent_idx == 0,
+                ),
+            )
+
+        total_parent_evals = sum(
+            e.num_metric_calls if e.num_metric_calls is not None else len(items[idx][1])
+            for idx, e in enumerate(parent_evals)
+        )
+        state.increment_evals(total_parent_evals)
+
+        # Update evaluation cache for parents
+        if state.evaluation_cache is not None:
+            for task, key in zip(tasks, task_to_key, strict=True):
+                eval_curr = key_to_eval[key]
+                objective_scores_list = list(eval_curr.objective_scores) if eval_curr.objective_scores else None
+                state.evaluation_cache.put_batch(
+                    task.parent_candidate, task.minibatch_ids, eval_curr.outputs, eval_curr.scores, objective_scores_list
+                )
+
+        # Log first task's selection (for trace compatibility)
+        first_task = tasks[0]
+        state.full_program_trace[-1]["selected_program_candidate"] = first_task.parent_idx
+        state.full_program_trace[-1]["subsample_ids"] = first_task.minibatch_ids
+        self.logger.log(
+            f"Iteration {i}: Selected program {first_task.parent_idx} "
+            f"score: {state.program_full_scores_val_set[first_task.parent_idx]}"
         )
 
         self.experiment_tracker.log_metrics(
-            {"iteration": i, "selected_program_candidate": curr_prog_id, "total_metric_calls": state.total_num_evals},
+            {
+                "iteration": i,
+                "selected_program_candidate": first_task.parent_idx,
+                "total_metric_calls": state.total_num_evals,
+            },
             step=i,
         )
 
-        subsample_ids = self.batch_sampler.next_minibatch_ids(self.trainset, state)
-        minibatch = self.trainset.fetch(subsample_ids)
+        # Stage 3: Reflect + propose (per task)
+        children: list[tuple[ProposalTask, dict[str, str], EvaluationBatch, dict[str, Any]] | None] = []
+        for task, key in zip(tasks, task_to_key, strict=True):
+            eval_curr = key_to_eval[key]
 
-        notify_callbacks(
-            self.callbacks,
-            "on_minibatch_sampled",
-            MinibatchSampledEvent(
-                iteration=i,
-                minibatch_ids=subsample_ids,
-                trainset_size=len(self.trainset),
-            ),
+            if not eval_curr.trajectories:
+                self.logger.log(f"Iteration {i}: No trajectories for parent {task.parent_idx}. Skipping.")
+                children.append(None)
+                continue
+
+            if self.skip_perfect_score and self.perfect_score is not None and all(
+                s is not None and s >= self.perfect_score for s in eval_curr.scores
+            ):
+                self.logger.log(f"Iteration {i}: All subsample scores perfect for parent {task.parent_idx}. Skipping.")
+                children.append(None)
+                continue
+
+            predictor_names = self.module_selector(
+                state, eval_curr.trajectories, eval_curr.scores, task.parent_idx, task.parent_candidate
+            )
+
+            try:
+                reflective_dataset = self.adapter.make_reflective_dataset(
+                    task.parent_candidate, eval_curr, predictor_names
+                )
+                reflective_dataset_concrete: dict[str, list[dict[str, Any]]] = {
+                    k: [dict(item) for item in v] for k, v in reflective_dataset.items()
+                }
+                notify_callbacks(
+                    self.callbacks, "on_reflective_dataset_built",
+                    ReflectiveDatasetBuiltEvent(
+                        iteration=i, candidate_idx=task.parent_idx,
+                        components=predictor_names, dataset=reflective_dataset_concrete,
+                    ),
+                )
+                notify_callbacks(
+                    self.callbacks, "on_proposal_start",
+                    ProposalStartEvent(
+                        iteration=i, parent_candidate=task.parent_candidate,
+                        components=predictor_names, reflective_dataset=reflective_dataset_concrete,
+                    ),
+                )
+
+                new_texts, prompts, raw_outputs = self.propose_new_texts(
+                    task.parent_candidate, reflective_dataset, predictor_names
+                )
+
+                notify_callbacks(
+                    self.callbacks, "on_proposal_end",
+                    ProposalEndEvent(
+                        iteration=i, new_instructions=new_texts,
+                        prompts=prompts, raw_lm_outputs=raw_outputs,
+                    ),
+                )
+
+                _lm_metadata: dict[str, Any] = {}
+                for comp in new_texts:
+                    _lm_metadata[f"prompt:{comp}"] = prompts.get(comp, "")
+                    _lm_metadata[f"raw_lm_output:{comp}"] = raw_outputs.get(comp, "")
+
+                for pname, text in new_texts.items():
+                    self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
+
+                new_candidate = task.parent_candidate.copy()
+                for name, text in new_texts.items():
+                    assert name in new_candidate, f"{name} missing in candidate"
+                    new_candidate[name] = text
+
+                children.append((task, new_candidate, eval_curr, _lm_metadata))
+            except Exception as e:
+                self.logger.log(f"Iteration {i}: Exception during reflection/proposal: {e}")
+                self.logger.log(traceback.format_exc())
+                children.append(None)
+
+        # Stage 4: Batch evaluate children
+        valid_children = [(idx, c) for idx, c in enumerate(children) if c is not None]
+        if not valid_children:
+            return []
+
+        child_items = [(c[1], c[0].minibatch) for _, c in valid_children]
+        child_evals = self._batch_evaluate(child_items)
+
+        total_child_evals = sum(
+            e.num_metric_calls if e.num_metric_calls is not None else len(child_items[idx][1])
+            for idx, e in enumerate(child_evals)
         )
+        state.increment_evals(total_child_evals)
 
-        curr_parent_ids = [p for p in state.parent_program_for_candidate[curr_prog_id] if p is not None]
-        is_seed_candidate = curr_prog_id == 0
+        # Update evaluation cache for children
+        if state.evaluation_cache is not None:
+            for (_, (task, new_candidate, _, _)), child_eval in zip(valid_children, child_evals, strict=True):
+                new_obj_scores = list(child_eval.objective_scores) if child_eval.objective_scores else None
+                state.evaluation_cache.put_batch(
+                    new_candidate, task.minibatch_ids, child_eval.outputs, child_eval.scores, new_obj_scores
+                )
 
-        return ProposalContext(
-            iteration=i,
-            curr_prog_id=curr_prog_id,
-            curr_prog=curr_prog,
-            curr_prog_score=curr_prog_score,
-            subsample_ids=subsample_ids,
-            minibatch=minibatch,
-            parent_ids=curr_parent_ids,
-            is_seed_candidate=is_seed_candidate,
-        )
+        # Log subsample scores for first task (trace compatibility)
+        if valid_children:
+            first_child_idx = valid_children[0][0]
+            first_child = children[first_child_idx]
+            if first_child is not None:
+                state.full_program_trace[-1]["subsample_scores"] = key_to_eval[task_to_key[first_child_idx]].scores
+                state.full_program_trace[-1]["new_subsample_scores"] = child_evals[0].scores
 
-    def execute_proposal(self, ctx: ProposalContext, state: GEPAState) -> ProposalOutput:
-        """Run the evaluation + proposal pipeline. Safe for parallel execution.
+                subsample_before = sum(key_to_eval[task_to_key[first_child_idx]].scores)
+                subsample_after = sum(child_evals[0].scores)
+                self.experiment_tracker.log_metrics(
+                    {"subsample/before": subsample_before, "subsample/after": subsample_after, "total_metric_calls": state.total_num_evals},
+                    step=i,
+                )
 
-        The only state mutation is the module_selector (e.g. RoundRobin counter),
-        which is protected by a lock. All other state updates are deferred to
-        :meth:`apply_proposal_output`.
-        """
-        i = ctx.iteration
-        trace_data: dict[str, Any] = {
-            "selected_program_candidate": ctx.curr_prog_id,
-            "subsample_ids": ctx.subsample_ids,
-        }
-        total_evals = 0
-        cache_entry = None
-
-        # 1) Evaluate current program with traces
-        notify_callbacks(
-            self.callbacks,
-            "on_evaluation_start",
-            EvaluationStartEvent(
-                iteration=i,
-                candidate_idx=ctx.curr_prog_id,
-                batch_size=len(ctx.minibatch),
-                capture_traces=True,
-                parent_ids=ctx.parent_ids,
-                inputs=ctx.minibatch,
-                is_seed_candidate=ctx.is_seed_candidate,
-            ),
-        )
-        eval_curr = self.adapter.evaluate(ctx.minibatch, ctx.curr_prog, capture_traces=True)
-        total_evals += eval_curr.num_metric_calls if eval_curr.num_metric_calls is not None else len(ctx.subsample_ids)
-        trace_data["subsample_scores"] = eval_curr.scores
-        notify_callbacks(
-            self.callbacks,
-            "on_evaluation_end",
-            EvaluationEndEvent(
-                iteration=i,
-                candidate_idx=ctx.curr_prog_id,
-                scores=eval_curr.scores,
-                has_trajectories=bool(eval_curr.trajectories),
-                parent_ids=ctx.parent_ids,
-                outputs=eval_curr.outputs,
-                trajectories=eval_curr.trajectories,
-                objective_scores=eval_curr.objective_scores,
-                is_seed_candidate=ctx.is_seed_candidate,
-            ),
-        )
-
-        # Prepare cache entry for parent evaluation
-        objective_scores_list = list(eval_curr.objective_scores) if eval_curr.objective_scores else None
-        cache_entry = (ctx.curr_prog, ctx.subsample_ids, eval_curr.outputs, eval_curr.scores, objective_scores_list)
-
-        if not eval_curr.trajectories or len(eval_curr.trajectories) == 0:
-            self.logger.log(f"Iteration {i}: No trajectories captured. Skipping.")
-            notify_callbacks(
-                self.callbacks,
-                "on_evaluation_skipped",
-                EvaluationSkippedEvent(
-                    iteration=i,
-                    candidate_idx=ctx.curr_prog_id,
-                    reason="no_trajectories",
+        # Stage 5: Build proposals and filter
+        proposals: list[CandidateProposal] = []
+        for (_, (task, new_candidate, eval_curr, _lm_metadata)), child_eval in zip(valid_children, child_evals, strict=True):
+            proposal = CandidateProposal(
+                candidate=new_candidate,
+                parent_program_ids=[task.parent_idx],
+                subsample_indices=task.minibatch_ids,
+                subsample_scores_before=eval_curr.scores,
+                subsample_scores_after=child_eval.scores,
+                eval_before=SubsampleEvaluation(
                     scores=eval_curr.scores,
-                    is_seed_candidate=ctx.is_seed_candidate,
+                    outputs=eval_curr.outputs,
+                    objective_scores=list(eval_curr.objective_scores) if eval_curr.objective_scores else None,
+                    trajectories=eval_curr.trajectories,
                 ),
-            )
-            return ProposalOutput(
-                proposal=None, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry
-            )
-
-        if (
-            self.skip_perfect_score
-            and self.perfect_score is not None
-            and all(s is not None and s >= self.perfect_score for s in eval_curr.scores)
-        ):
-            self.logger.log(f"Iteration {i}: All subsample scores perfect. Skipping.")
-            notify_callbacks(
-                self.callbacks,
-                "on_evaluation_skipped",
-                EvaluationSkippedEvent(
-                    iteration=i,
-                    candidate_idx=ctx.curr_prog_id,
-                    reason="all_scores_perfect",
-                    scores=eval_curr.scores,
-                    is_seed_candidate=ctx.is_seed_candidate,
+                eval_after=SubsampleEvaluation(
+                    scores=child_eval.scores,
+                    outputs=child_eval.outputs,
+                    objective_scores=list(child_eval.objective_scores) if child_eval.objective_scores else None,
+                    trajectories=child_eval.trajectories,
                 ),
+                tag="reflective_mutation",
+                metadata=_lm_metadata,
             )
-            return ProposalOutput(
-                proposal=None, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry
-            )
+            proposals.append(proposal)
 
-        self.experiment_tracker.log_metrics(
-            {"subsample_score": sum(eval_curr.scores), "total_metric_calls": total_evals}, step=i
-        )
-
-        # 2) Decide which components to update (lock protects RoundRobin state mutation)
-        with self._lock:
-            predictor_names_to_update = self.module_selector(
-                state, eval_curr.trajectories, eval_curr.scores, ctx.curr_prog_id, ctx.curr_prog
-            )
-
-        # 3) Build reflective dataset and propose new content
-        try:
-            reflective_dataset = self.adapter.make_reflective_dataset(ctx.curr_prog, eval_curr, predictor_names_to_update)
-
-            reflective_dataset_concrete: dict[str, list[dict[str, Any]]] = {
-                k: [dict(item) for item in v] for k, v in reflective_dataset.items()
-            }
-
-            notify_callbacks(
-                self.callbacks,
-                "on_reflective_dataset_built",
-                ReflectiveDatasetBuiltEvent(
-                    iteration=i,
-                    candidate_idx=ctx.curr_prog_id,
-                    components=predictor_names_to_update,
-                    dataset=reflective_dataset_concrete,
-                ),
-            )
-
-            notify_callbacks(
-                self.callbacks,
-                "on_proposal_start",
-                ProposalStartEvent(
-                    iteration=i,
-                    parent_candidate=ctx.curr_prog,
-                    components=predictor_names_to_update,
-                    reflective_dataset=reflective_dataset_concrete,
-                ),
-            )
-
-            new_texts, prompts, raw_lm_outputs = self.propose_new_texts(
-                ctx.curr_prog, reflective_dataset, predictor_names_to_update
-            )
-
-            notify_callbacks(
-                self.callbacks,
-                "on_proposal_end",
-                ProposalEndEvent(
-                    iteration=i,
-                    new_instructions=new_texts,
-                    prompts=prompts,
-                    raw_lm_outputs=raw_lm_outputs,
-                ),
-            )
-
-            _lm_metadata: dict[str, Any] = {}
-            for comp in new_texts:
-                _lm_metadata[f"prompt:{comp}"] = prompts.get(comp, "")
-                _lm_metadata[f"raw_lm_output:{comp}"] = raw_lm_outputs.get(comp, "")
-
-            for pname, text in new_texts.items():
-                self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
-        except Exception as e:
-            self.logger.log(f"Iteration {i}: Exception during reflection/proposal: {e}")
-            import traceback
-
-            self.logger.log(traceback.format_exc())
-            return ProposalOutput(
-                proposal=None, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry
-            )
-
-        # 4) Create candidate, evaluate on same minibatch
-        new_candidate = ctx.curr_prog.copy()
-        for pname, text in new_texts.items():
-            assert pname in new_candidate, f"{pname} missing in candidate"
-            new_candidate[pname] = text
-
-        notify_callbacks(
-            self.callbacks,
-            "on_evaluation_start",
-            EvaluationStartEvent(
-                iteration=i,
-                candidate_idx=None,
-                batch_size=len(ctx.minibatch),
-                capture_traces=True,
-                parent_ids=[ctx.curr_prog_id],
-                inputs=ctx.minibatch,
-                is_seed_candidate=False,
-            ),
-        )
-
-        eval_after = self.adapter.evaluate(ctx.minibatch, new_candidate, capture_traces=True)
-        new_scores = eval_after.scores
-        new_outputs = eval_after.outputs
-        total_evals += eval_after.num_metric_calls if eval_after.num_metric_calls is not None else len(ctx.subsample_ids)
-
-        notify_callbacks(
-            self.callbacks,
-            "on_evaluation_end",
-            EvaluationEndEvent(
-                iteration=i,
-                candidate_idx=None,
-                scores=new_scores,
-                has_trajectories=bool(eval_after.trajectories),
-                parent_ids=[ctx.curr_prog_id],
-                outputs=new_outputs,
-                trajectories=eval_after.trajectories,
-                objective_scores=eval_after.objective_scores,
-                is_seed_candidate=False,
-            ),
-        )
-
-        trace_data["new_subsample_scores"] = new_scores
-        new_sum = sum(new_scores)
-        self.experiment_tracker.log_metrics(
-            {"new_subsample_score": new_sum, "total_metric_calls": total_evals}, step=i
-        )
-
-        proposal = CandidateProposal(
-            candidate=new_candidate,
-            parent_program_ids=[ctx.curr_prog_id],
-            subsample_indices=ctx.subsample_ids,
-            subsample_scores_before=eval_curr.scores,
-            subsample_scores_after=new_scores,
-            eval_before=SubsampleEvaluation(
-                scores=eval_curr.scores,
-                outputs=eval_curr.outputs,
-                objective_scores=list(eval_curr.objective_scores) if eval_curr.objective_scores else None,
-                trajectories=eval_curr.trajectories,
-            ),
-            eval_after=SubsampleEvaluation(
-                scores=new_scores,
-                outputs=new_outputs,
-                objective_scores=list(eval_after.objective_scores) if eval_after.objective_scores else None,
-                trajectories=eval_after.trajectories,
-            ),
-            tag="reflective_mutation",
-            metadata=_lm_metadata,
-        )
-        return ProposalOutput(proposal=proposal, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry)
-
-    def apply_proposal_output(self, output: ProposalOutput, state: GEPAState) -> None:
-        """Apply deferred state updates from a proposal. Must be called sequentially."""
-        state.increment_evals(output.total_evals)
-        if output.cache_entry is not None and state.evaluation_cache is not None:
-            candidate, ids, outputs, scores, obj_scores = output.cache_entry
-            state.evaluation_cache.put_batch(candidate, ids, outputs, scores, obj_scores)
-
-    def propose_output(self, state: GEPAState) -> ProposalOutput:
-        """Run a single reflective mutation iteration, returning a :class:`ProposalOutput`.
-
-        The caller is responsible for passing the output to
-        :meth:`apply_proposal_output`.
-        """
-        ctx = self.prepare_proposal(state)
-        state.full_program_trace[-1].update({
-            "selected_program_candidate": ctx.curr_prog_id,
-            "subsample_ids": ctx.subsample_ids,
-        })
-        return self.execute_proposal(ctx, state)
-
-    def propose(self, state: GEPAState) -> CandidateProposal | None:
-        """Run a single reflective mutation iteration.
-
-        Convenience method equivalent to :meth:`propose_output` followed by
-        :meth:`apply_proposal_output`.
-        """
-        output = self.propose_output(state)
-        self.apply_proposal_output(output, state)
-        state.full_program_trace[-1].update(output.trace_data)
-        return output.proposal
+        return self.selection_strategy.select(proposals, state, self.acceptance_criterion)
