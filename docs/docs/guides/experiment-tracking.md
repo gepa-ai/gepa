@@ -377,9 +377,12 @@ config params, summary values, table names, and HTML artifact keys.
 
 ## Installation
 
-WandB, MLflow, and Trackio are optional dependencies included in `gepa[full]`:
+Experiment trackers are optional runtime dependencies. Install the backend you
+want to enable before setting `use_wandb=True`, `use_mlflow=True`, or
+`use_trackio=True`:
 
 ```bash
-pip install "gepa[full]"                 # includes wandb + mlflow + trackio
-pip install wandb mlflow trackio         # or install individually
+pip install wandb
+pip install mlflow
+pip install trackio
 ```
