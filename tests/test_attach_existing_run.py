@@ -3,10 +3,30 @@
 
 """Tests for attach_existing flags on tracking backends."""
 
+import sys
+import types
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from gepa.logging.experiment_tracker import ExperimentTracker, create_experiment_tracker
 from gepa.optimize_anything import GEPAConfig, TrackingConfig
+
+
+@pytest.fixture(autouse=True)
+def mock_trackio_module(monkeypatch):
+    """Provide a minimal Trackio module so tests do not require the optional dependency."""
+    trackio = types.ModuleType("trackio")
+    trackio.init = MagicMock()
+    trackio.log = MagicMock()
+    trackio.finish = MagicMock()
+    trackio.Table = MagicMock()
+    trackio.Markdown = MagicMock()
+    trackio.context_vars = types.SimpleNamespace(current_run=MagicMock())
+    trackio.context_vars.current_run.get.return_value = None
+
+    monkeypatch.setitem(sys.modules, "trackio", trackio)
+
 
 # ---------------------------------------------------------------------------
 # ExperimentTracker — wandb_attach_existing

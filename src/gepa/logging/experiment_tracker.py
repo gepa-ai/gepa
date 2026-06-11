@@ -96,7 +96,7 @@ class ExperimentTracker:
         try:
             import trackio  # type: ignore  # noqa: F401
         except ImportError:
-            raise ImportError("trackio is not installed. Please install it or disable use_trackio.")
+            raise ImportError("trackio is not installed. Install it with `pip install trackio` or disable use_trackio.")
         except Exception as e:
             raise RuntimeError(f"Error setting up trackio: {e}")
 

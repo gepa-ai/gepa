@@ -25,7 +25,6 @@ full = [
     "litellm>=1.83.0",
     "tqdm>=4.66.1",
     "cloudpickle>=3.0.0",
-    "trackio>=0.27.0",
     # Python < 3.14
     "datasets>=2.14.6; python_version < '3.14'",
     "mlflow>=3.11.1; python_version < '3.14'",
