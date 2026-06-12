@@ -33,8 +33,8 @@ citation_keywords: "text optimization, LLM-driven optimization, prompt optimizat
     **TL;DR.** `optimize_anything` is now **backend-pluggable** and **pipeline-composable**: one knob (`backend=`) dispatches the same optimization call to GEPA, an autonomous coding agent, or an agent-based optimizer, and the backends compose into multi-stage pipelines. Using **[Terrarium](https://github.com/gepa-ai/terrarium)**, our new evaluation framework that pins every optimizer to the same task, budget, and evaluation server, we find that **no single optimizer dominates** on [Frontier-CS](https://arxiv.org/abs/2512.15699) — but the composed **`OMNI`** pipeline beats every standalone optimizer under a matched \$20 budget.
 
 <figure markdown="span">
-  ![Bar chart, mean score on Frontier-CS (10 problems, \$20 budget each): GEPA 43.8, AutoResearch 55.4, Meta-Harness 50.9 (gray), and OMNI 63.2 (dark blue). The OMNI bar tops every standalone optimizer.](images/omni_bar.png){ style="width: 100%;" }
-  <figcaption>The headline result. On Frontier-CS (10 problems, matched \$20 budget, Claude Sonnet 4.6), the composed <span class="gradient-code">OMNI</span> pipeline (63.2) beats every standalone optimizer — GEPA (43.8), AutoResearch (55.4), and Meta-Harness (50.9).</figcaption>
+  ![Bar chart, mean score on Frontier-CS (10 problems, \$20 budget each): GEPA 43.8, AutoResearch 55.4, Meta-Harness 50.9 (gray), and OMNI 63.2 (dark blue). The OMNI bar tops every standalone optimizer.](images/omni_bar.png){ style="width: 70%;" }
+  <figcaption>On Frontier-CS (10 problems, matched $20 budget, Claude Sonnet 4.6), the composed <span class="gradient-code">OMNI</span> pipeline (63.2) beats every standalone optimizer — GEPA (43.8), AutoResearch (55.4), and Meta-Harness (50.9).</figcaption>
 </figure>
 
 When we [introduced `optimize_anything`](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/), the premise was simple: if your artifact is text and its quality can be measured, you can optimize it. The API stripped LLM-driven search down to two things, an artifact and an evaluator, and let GEPA's reflective-mutation loop handle the actual optimization.
@@ -93,7 +93,7 @@ To decide *which* backend to reach for, we ran a controlled study with [Terrariu
 
 <figure markdown="span">
   ![Two-panel bar chart for Frontier-CS. (a) Average across 10 problems: GEPA 43.8, AutoResearch 55.4, Meta-Harness 50.9. (b) Per-problem breakdown across 10 problems (P0–P255), where the winning optimizer changes from problem to problem; final win tally is GEPA 3, AutoResearch 3, Meta-Harness 4.](images/optimizer_variance.png){ style="width: 100%;" }
-  <figcaption>On Frontier-CS (10 problems, \$20 budget each, Claude Sonnet 4.6). <strong>(a)</strong> AutoResearch has the highest average (55.4), ahead of Meta-Harness (50.9) and GEPA (43.8). <strong>(b)</strong> But per problem, the winner is nearly a coin toss: GEPA wins 3, AutoResearch 3, Meta-Harness 4. The optimizer that wins a given problem is hard to predict from the problem itself.</figcaption>
+  <figcaption>On Frontier-CS (10 problems, $20 budget each, Claude Sonnet 4.6). <strong>(a)</strong> AutoResearch has the highest average (55.4), ahead of Meta-Harness (50.9) and GEPA (43.8). <strong>(b)</strong> But per problem, the winner is nearly a coin toss: GEPA wins 3, AutoResearch 3, Meta-Harness 4. The optimizer that wins a given problem is hard to predict from the problem itself.</figcaption>
 </figure>
 
 All three optimizers crush a zero-shot baseline. The baseline is a single LLM call to the same model scores just **7.72** on average, versus 43.8–55.4 for the optimizers, confirming that *some* optimizer is essential. But which one? AutoResearch wins on average, yet the per-problem breakdown shows the lead is fragile: each optimizer is the single best on a roughly equal share of problems, and there is no reliable way to predict the winner from a problem's surface features. "Pick the right optimizer for the task" turns out to be an unsatisfying answer in practice.
@@ -106,7 +106,7 @@ It can.
 
 <figure markdown="span">
   ![Two trajectory panels showing best score vs cumulative cost (USD) on Frontier-CS. Left, P0: GEPA climbs fast then plateaus at 54.4 after about \$1.3 (solid green, then dashed); switching to AutoResearch lifts it to 62.7 (blue), while switching to Meta-Harness stays flat at 54.4 (pink). Right, P85: AutoResearch plateaus at 50.0 almost immediately after \$0.5 (solid blue, then dashed); switching to either GEPA (green) or Meta-Harness (pink) climbs all the way to a perfect 100.](images/unstuck_frontier_cs.png){ style="width: 100%;" }
-  <figcaption>Switching optimizers unblocks a plateau. The original optimizer is dashed past its stuck point; the alternatives receive its best candidate as a seed and start fresh under the remaining budget. <strong>P0:</strong> GEPA plateaus at 54.4 (after ≈\$1.3); AutoResearch lifts it to 62.7. <strong>P85:</strong> AutoResearch plateaus at 50.0 (after ≈\$0.5); both GEPA and Meta-Harness reach a perfect 100.</figcaption>
+  <figcaption>Switching optimizers unblocks a plateau. The original optimizer is dashed past its stuck point; the alternatives receive its best candidate as a seed and start fresh under the remaining budget. <strong>P0:</strong> GEPA plateaus at 54.4 (after ≈$1.3); AutoResearch lifts it to 62.7. <strong>P85:</strong> AutoResearch plateaus at 50.0 (after ≈$0.5); both GEPA and Meta-Harness reach a perfect 100.</figcaption>
 </figure>
 
 The plateau a single optimizer reaches is rarely the best the budget can buy — and a *different* optimizer, seeded from the stuck candidate, can usually keep making progress. (Which alternative helps varies, too: on P0, AutoResearch breaks through while Meta-Harness stays put.) Two findings, one conclusion: rather than betting the whole budget on one optimizer, **explore with several and continue from the best**.
@@ -117,7 +117,7 @@ These observations point at a design rather than a winner. **`OMNI`** is a compo
 
 <figure markdown="span">
   ![OMNI pipeline diagram. Phase 1 (left): GEPA, AutoResearch, and Meta-Harness each run in parallel on a small slice of the budget (each labeled \$5). Their outputs flow into a "Pick Best" node. Phase 2 (right): the best candidate seeds a fresh instance of one optimizer (Fresh GEPA / Fresh AutoResearch / Fresh Meta-Harness, each \$5) that continues the search, producing the named variant OMNI-GEPA / OMNI-AutoResearch / OMNI-Meta-Harness, each capped at \$20 total.](images/omni_design.png){ style="width: 100%;" }
-  <figcaption><span class="gradient-code">OMNI</span> as an optimizer pipeline. <strong>Phase 1:</strong> run every backend in parallel on a small slice of the budget and pick the single best candidate (exploiting that no optimizer dominates, and that early progress is fast). <strong>Phase 2:</strong> hand that candidate to a <em>fresh</em> optimizer for the rest of the budget (exploiting that a fresh optimizer breaks plateaus). The continuation backend names the variant — <span class="gradient-code">OMNI</span>-GEPA, <span class="gradient-code">OMNI</span>-AutoResearch, or <span class="gradient-code">OMNI</span>-Meta-Harness — each capped at \$20 total.</figcaption>
+  <figcaption><span class="gradient-code">OMNI</span> as an optimizer pipeline. <strong>Phase 1:</strong> run every backend in parallel on a small slice of the budget and pick the single best candidate (exploiting that no optimizer dominates, and that early progress is fast). <strong>Phase 2:</strong> hand that candidate to a <em>fresh</em> optimizer for the rest of the budget (exploiting that a fresh optimizer breaks plateaus). The continuation backend names the variant — <span class="gradient-code">OMNI</span>-GEPA, <span class="gradient-code">OMNI</span>-AutoResearch, or <span class="gradient-code">OMNI</span>-Meta-Harness — each capped at $20 total.</figcaption>
 </figure>
 
 Phase 1 begins the slow part of the search from a stronger starting point than any single optimizer reaches alone; phase 2 uses a fresh optimizer to push past the plateau the explorer would otherwise hit. With the new API, that pipeline is a short composition over the same backends — the explore phase uses `optimize_best_of` (run several backends in parallel, keep the highest-scoring candidate), then a fresh optimizer continues from the winner:
@@ -155,7 +155,7 @@ Because every stage shares the same external eval server and budget, these are g
 
 ## Results: OMNI beats every standalone optimizer on Frontier-CS
 
-We compared each backend run standalone against the corresponding `OMNI` pipeline on Frontier-CS, under a matched **\$20** budget. The headline figure at the top of the post shows the outcome: `OMNI` (63.2) tops every standalone optimizer. And the gains hold across the board — every continuation variant beats its standalone counterpart:
+We compared each backend run standalone against the corresponding `OMNI` pipeline on Frontier-CS, under a matched **\$20** budget. The figure at the top of the post shows the outcome: `OMNI` (63.2) tops every standalone optimizer. And the gains hold across the board — every continuation variant beats its standalone counterpart:
 
 | Optimizer | Standalone | `OMNI` | Improvement |
 | --- | --- | --- | --- |
