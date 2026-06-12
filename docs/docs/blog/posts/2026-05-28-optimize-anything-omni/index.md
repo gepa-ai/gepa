@@ -2,7 +2,7 @@
 date:
   created: 2026-05-28
 authors:
- - shangyin
+ - gepa-team
 slug: optimize-anything-omni
 readtime: 10
 title: "optimize_anything Goes Omni: Pluggable Backends and Composable Optimizer Pipelines"
@@ -30,15 +30,15 @@ citation_keywords: "text optimization, LLM-driven optimization, prompt optimizat
 # <span class="gradient-code">optimize_anything</span> Goes Omni: Pluggable Backends and Composable Optimizer Pipelines
 
 !!! tip ""
-    **TL;DR.** When we [introduced `optimize_anything`](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/), it had a single optimization strategy under the hood: GEPA's reflective mutation over a Pareto frontier. But GEPA is not the only way to drive an LLM-based search loop — autonomous coding agents and agent-based optimizers tackle the same problems with very different strategies.
+    **TL;DR.** When we [introduced `optimize_anything`](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/), it had a single optimization strategy under the hood: GEPA's reflective mutation over a Pareto frontier. But GEPA is not the only way to drive an LLM-based search loop. More recently, autonomous coding agents and agent-based optimizers tackle the same problems with very different strategies.
 
-    Today `optimize_anything` becomes **backend-pluggable** and **pipeline-composable**. One new knob (`backend=`) dispatches the same optimization call to GEPA, an autonomous coding agent, or an agent-based optimizer — without touching your task or evaluator. And because no single optimizer wins everywhere, you can now **compose** several into a multi-stage pipeline. We call the headline composition **`OMNI`**.
+    Today `optimize_anything` becomes **backend-pluggable** and **pipeline-composable**. One new knob (`backend=`) dispatches the same optimization call to GEPA, an autonomous coding agent, or an agent-based optimizer without touching your task or evaluator. And because no single optimizer wins everywhere, you can now **compose** several into a multi-stage pipeline. We call the headline composition **`OMNI`**.
 
-    To understand which optimizer wins where, we built **[Terrarium](https://github.com/gepa-ai/terrarium)**, an evaluation framework that pins every optimizer to the same task, budget, and evaluation server. Its central finding: on [Frontier-CS](https://arxiv.org/abs/2512.15699), a suite of open-ended computer-science problems, **no single optimizer dominates**. So we composed them. Under a matched \$20 budget, **every `OMNI` pipeline beats its standalone counterpart — by 14% to 41%**.
+    To understand which optimizer wins where, we built **[Terrarium](https://github.com/gepa-ai/terrarium)**, an evaluation framework that pins every optimizer to the same task, budget, and evaluation server. Its central finding: on [Frontier-CS](https://arxiv.org/abs/2512.15699), a suite of open-ended computer-science problems, **no single optimizer dominates**. So we composed them. Under a matched \$20 budget, **every `OMNI` pipeline beats its standalone counterpart by 14% to 41%**.
 
-When we [introduced `optimize_anything`](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/), the premise was simple: if your artifact is text and its quality can be measured, you can optimize it. The API stripped LLM-driven search down to two things — an artifact and an evaluator — and let GEPA's reflective-mutation loop handle the rest.
+When we [introduced `optimize_anything`](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/), the premise was simple: if your artifact is text and its quality can be measured, you can optimize it. The API stripped LLM-driven search down to two things, an artifact and an evaluator, and let GEPA's reflective-mutation loop handle the actual optimization.
 
-But GEPA's reflective proposer is just *one* way to close the loop. A growing family of systems share the exact same shape — a candidate string, a black-box scoring function, and an LLM-driven search loop — yet realize it through very different strategies. Some hand the proposal step to an autonomous coding agent. Some keep an external framework in charge of selection and let an agent mutate one parent at a time. Each is strong on some problems and weak on others, and until now, switching between them meant re-porting your task into a new framework.
+But GEPA's reflective proposer is just *one* way to close the loop. A growing family of systems share the exact same shape: a candidate string, a black-box scoring function, and an LLM-driven search loop, yet realize it through very different strategies. Some hand the proposal step to an autonomous coding agent. Some keep an external framework in charge of selection and let an agent mutate one parent at a time. Each is strong on some problems and weak on others (and we don't know exactly why so we cannot effectively dispatch the problems), and until now, switching between them meant re-porting your task into a new framework.
 
 This release closes that gap on both ends. `optimize_anything` is now a **dispatcher**: the same call runs against any compatible backend. And backends are **composable**: you can run several, pick the best, and continue — all under one budget.
 
@@ -85,26 +85,21 @@ print(result.best_score, result.best_candidate)
 
 `backend="gepa"` is the default, so existing code keeps its exact behavior. The `evaluate` contract is the same one from `optimize_anything`: `(candidate) -> (score, info)` for single-task problems, or `(candidate, example) -> (score, info)` when the `Task` carries a `train_set`/`val_set`. The returned `info` dict is surfaced to the proposer as **Actionable Side Information (ASI)** — the diagnostic feedback that turns blind mutation into targeted, engineer-like iteration.
 
-### The budget is the contract
-
-Making backends interchangeable requires one thing above all: a **fair, shared notion of cost**. A comparison between two optimizers should reflect their search strategies, not which one happened to be handed a bigger budget or a peek at the test set.
-
-So every backend talks to the same external **evaluation server**, which owns the held-out data and meters the budget. It accepts candidates, returns scores, and ends the search when the budget is spent — server-side, so an optimizer can neither inspect held-out examples nor stretch its allowance. A `max_token_cost=20` cap means \$20 whether you run GEPA, an autonomous agent, or a five-stage pipeline. This same contract is what makes the compositions below *fair* — and what powers Terrarium, the framework we used to figure out how to compose optimizers in the first place.
 
 ## Why one optimizer is not enough
 
-To decide *which* backend to reach for, we ran a controlled study with [Terrarium](https://github.com/gepa-ai/terrarium), holding the task, budget, model (Claude Sonnet 4.6, medium thinking), and evaluation server fixed, and varying only the optimizer. The most basic question a practitioner asks is: *which optimizer should I use?* On [Frontier-CS](https://arxiv.org/abs/2512.15699) — a suite of open-ended, verifiable competitive-programming problems where each candidate is a full program scored by a hidden-test judge — the answer is uncomfortable.
+To decide *which* backend to reach for, we ran a controlled study with [Terrarium](https://github.com/gepa-ai/terrarium), holding the task, budget, model (Claude Sonnet 4.6, medium thinking), and evaluation server fixed, and varying only the optimizer. The most basic question a practitioner asks is: *which optimizer should I use?* On [Frontier-CS](https://arxiv.org/abs/2512.15699), a suite of open-ended, verifiable competitive-programming problems where each candidate is a full program scored by a hidden-test judge, the answer is uncomfortable.
 
 <figure markdown="span">
   ![Two-panel bar chart for Frontier-CS. (a) Average across 10 problems: GEPA 43.8, AutoResearch 55.4, Meta-Harness 50.9. (b) Per-problem breakdown across 10 problems (P0–P255), where the winning optimizer changes from problem to problem; final win tally is GEPA 3, AutoResearch 3, Meta-Harness 4.](images/optimizer_variance.png){ style="width: 100%;" }
   <figcaption>On Frontier-CS (10 problems, \$20 budget each, Claude Sonnet 4.6). <strong>(a)</strong> AutoResearch has the highest average (55.4), ahead of Meta-Harness (50.9) and GEPA (43.8). <strong>(b)</strong> But per problem, the winner is nearly a coin toss: GEPA wins 3, AutoResearch 3, Meta-Harness 4. The optimizer that wins a given problem is hard to predict from the problem itself.</figcaption>
 </figure>
 
-All three optimizers crush a zero-shot baseline — a single LLM call to the same model scores just **7.72** on average, versus 43.8–55.4 for the optimizers — confirming that *some* optimizer is essential. But which one? AutoResearch wins on average, yet the per-problem breakdown shows the lead is fragile: each optimizer is the single best on a roughly equal share of problems, and there is no reliable way to predict the winner from a problem's surface features. "Pick the right optimizer for the task" turns out to be an unsatisfying answer in practice.
+All three optimizers crush a zero-shot baseline. The baseline is a single LLM call to the same model scores just **7.72** on average, versus 43.8–55.4 for the optimizers, confirming that *some* optimizer is essential. But which one? AutoResearch wins on average, yet the per-problem breakdown shows the lead is fragile: each optimizer is the single best on a roughly equal share of problems, and there is no reliable way to predict the winner from a problem's surface features. "Pick the right optimizer for the task" turns out to be an unsatisfying answer in practice.
 
 ### Optimizers plateau — and a fresh optimizer can unstick them
 
-A second pattern compounds the first. With enough budget, every optimizer's progress is **front-loaded**: it banks most of its improvement early, then plateaus, and the rest of the budget buys little. The natural question is whether that tail of budget is wasted — or whether handing the stalled candidate to a *different* optimizer can break the plateau.
+A second pattern compounds the first. With enough budget, every optimizer's progress is **front-loaded**: it banks most of its improvement early, then plateaus, and the rest of the budget buys little. The natural question is whether that tail of budget is wasted or whether handing the stalled candidate to a *different* optimizer can break the plateau.
 
 It can.
 
