@@ -30,11 +30,12 @@ citation_keywords: "text optimization, LLM-driven optimization, prompt optimizat
 # <span class="gradient-code">optimize_anything</span> Goes Omni: Pluggable Backends and Composable Optimizer Pipelines
 
 !!! tip ""
-    **TL;DR.** When we [introduced `optimize_anything`](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/), it had a single optimization strategy under the hood: GEPA's reflective mutation over a Pareto frontier. But GEPA is not the only way to drive an LLM-based search loop. More recently, autonomous coding agents and agent-based optimizers tackle the same problems with very different strategies.
+    **TL;DR.** `optimize_anything` is now **backend-pluggable** and **pipeline-composable**: one knob (`backend=`) dispatches the same optimization call to GEPA, an autonomous coding agent, or an agent-based optimizer, and the backends compose into multi-stage pipelines. Using **[Terrarium](https://github.com/gepa-ai/terrarium)**, our new evaluation framework that pins every optimizer to the same task, budget, and evaluation server, we find that **no single optimizer dominates** on [Frontier-CS](https://arxiv.org/abs/2512.15699) — but the composed **`OMNI`** pipeline beats every standalone optimizer under a matched \$20 budget.
 
-    Today `optimize_anything` becomes **backend-pluggable** and **pipeline-composable**. One new knob (`backend=`) dispatches the same optimization call to GEPA, an autonomous coding agent, or an agent-based optimizer without touching your task or evaluator. And because no single optimizer wins everywhere, you can now **compose** several into a multi-stage pipeline. We call the headline composition **`OMNI`**.
-
-    To understand which optimizer wins where, we built **[Terrarium](https://github.com/gepa-ai/terrarium)**, an evaluation framework that pins every optimizer to the same task, budget, and evaluation server. Its central finding: on [Frontier-CS](https://arxiv.org/abs/2512.15699), a suite of open-ended computer-science problems, **no single optimizer dominates**. So we composed them. Under a matched \$20 budget, **every `OMNI` pipeline beats its standalone counterpart by 14% to 41%**.
+<figure markdown="span">
+  ![Bar chart, mean score on Frontier-CS (10 problems, \$20 budget each): GEPA 43.8, AutoResearch 55.4, Meta-Harness 50.9 (gray), and OMNI 63.2 (dark blue). The OMNI bar tops every standalone optimizer.](images/omni_bar.png){ style="width: 100%;" }
+  <figcaption>The headline result. On Frontier-CS (10 problems, matched \$20 budget, Claude Sonnet 4.6), the composed <span class="gradient-code">OMNI</span> pipeline (63.2) beats every standalone optimizer — GEPA (43.8), AutoResearch (55.4), and Meta-Harness (50.9).</figcaption>
+</figure>
 
 When we [introduced `optimize_anything`](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/), the premise was simple: if your artifact is text and its quality can be measured, you can optimize it. The API stripped LLM-driven search down to two things, an artifact and an evaluator, and let GEPA's reflective-mutation loop handle the actual optimization.
 
@@ -154,14 +155,7 @@ Because every stage shares the same external eval server and budget, these are g
 
 ## Results: OMNI beats every standalone optimizer on Frontier-CS
 
-We compared each backend run standalone against the corresponding `OMNI` pipeline on Frontier-CS, under a matched **\$20** budget:
-
-<figure markdown="span">
-  ![Grouped bar chart, mean score on Frontier-CS (10 problems, \$20 budget) for each optimizer standalone (gray) vs wrapped in OMNI (dark blue). GEPA 43.8 to 61.8, AutoResearch 55.4 to 63.2, Meta-Harness 50.9 to 59.3. Every OMNI bar is higher than its standalone counterpart.](images/omni_bar.png){ style="width: 100%;" }
-  <figcaption>Every <span class="gradient-code">OMNI</span> variant beats its standalone counterpart on Frontier-CS under a matched \$20 budget. GEPA gains the most, jumping +18 points (43.8 → 61.8) and erasing its standalone gap behind the agent-based baselines; AutoResearch (55.4 → 63.2) and Meta-Harness (50.9 → 59.3) each gain 7–8 points.</figcaption>
-</figure>
-
-The gains hold across the board:
+We compared each backend run standalone against the corresponding `OMNI` pipeline on Frontier-CS, under a matched **\$20** budget. The headline figure at the top of the post shows the outcome: `OMNI` (63.2) tops every standalone optimizer. And the gains hold across the board — every continuation variant beats its standalone counterpart:
 
 | Optimizer | Standalone | `OMNI` | Improvement |
 | --- | --- | --- | --- |
