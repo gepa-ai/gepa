@@ -61,7 +61,7 @@ print("Best score:", result.val_aggregate_scores[result.best_idx])
 ```
 
 !!! warning "Sizing `max_metric_calls`"
-    `max_metric_calls` is the **only** knob controlling how many proposal iterations GEPA gets to attempt. The 50 above is on the low side — the recommended floor is **`~16 × len(valset)`** (gives ~15 proposal attempts), and many real workloads use 200-2000+. Sizing it too low produces a short trajectory (baseline → one or two accepted candidates) that looks like optimization but isn't. See [Choosing `max_metric_calls`](budget.md) for the budget formula, and [Running GEPA inside Coding Agents](coding-agents.md) if you're invoking GEPA from an autonomous loop.
+    `max_metric_calls` is the **ceiling** on the metric-call budget — other stop conditions can stop the run earlier, but none of them give GEPA more iterations than this allows. The 50 above is on the low side; the recommended budget is **`> 15 × len(valset)`** (gives ~15 proposal attempts), and many real workloads use 200-2000+. Sizing it too low produces a short trajectory (baseline → one or two accepted candidates) that looks like optimization but isn't. See [Choosing `max_metric_calls`](budget.md) for the budget formula and the available stop conditions, and [Running GEPA inside Coding Agents](coding-agents.md) if you're invoking GEPA from an autonomous loop.
 
 ### Option 2: Using optimize_anything
 

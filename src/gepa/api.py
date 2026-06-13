@@ -276,20 +276,25 @@ def optimize(
     - merge_val_overlap_floor: Minimum number of shared validation ids required between parents before attempting a merge subsample. Only relevant when using `val_evaluation_policy` other than `full_eval`.
 
     # Budget and Stop Condition
-    - max_metric_calls: The total metric-call budget for the run. This is the
-        *only* knob that controls how many proposal iterations GEPA gets to
-        attempt — there is no separate `iterations` flag. The budget pays for:
-        (a) baseline full-validation = `len(valset)` calls, and (b) each
-        proposal cycle = `reflection_minibatch_size + len(valset)` calls.
-        The recommended floor is **~15 proposal attempts**, which gives
-        roughly ``16 * len(valset)`` total calls (the exact formula is
-        ``len(valset) + 15 * (reflection_minibatch_size + len(valset))``).
-        Many real workloads need 200-2000+ total calls; pick higher if you
-        have headroom. Setting this too low silently produces a short
-        trajectory that looks like optimization but is just baseline plus
-        one or two accepted candidates — ``gepa.optimize`` will warn at the
-        start of the run if your budget is below the recommended floor and
-        again at the end if fewer than 3 candidates were accepted.
+    - max_metric_calls: The **ceiling** on the metric-call budget for the
+        run. Other stop conditions passed via ``stop_callbacks`` (e.g.,
+        ``NoImprovementStopper``, ``TimeoutStopCondition``,
+        ``ScoreThresholdStopper``) can stop the run earlier when their
+        condition triggers, but none of them give GEPA *more* iterations
+        than ``max_metric_calls`` allows. So this value is the upper bound
+        on optimization depth; setting it too low caps the optimizer
+        regardless of any other stoppers you configure.
+        The budget pays for (a) baseline full-validation = ``len(valset)``
+        calls and (b) each proposal cycle =
+        ``reflection_minibatch_size + len(valset)`` calls. The recommended
+        budget is ``max_metric_calls > 15 * len(valset)`` — gives GEPA
+        room for ~15 proposal attempts. Many real workloads use 200-2000+
+        total calls; pick higher when you have headroom. Setting this too
+        low silently produces a short trajectory that looks like
+        optimization but is just baseline plus one or two accepted
+        candidates — ``gepa.optimize`` will warn at the start of the run
+        if your budget is below the recommended floor and again at the end
+        if fewer than 3 candidates were accepted.
         See the [budget guide](../guides/budget.md) for the full formula.
         If not provided, stop_callbacks must be provided.
     - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single StopperProtocol or a list or tuple of StopperProtocol instances. Examples: FileStopper, TimeoutStopCondition, SignalStopper, NoImprovementStopper, or custom stopping logic. If not provided, max_metric_calls must be provided.

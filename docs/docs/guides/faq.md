@@ -94,7 +94,9 @@ Available stoppers: `MaxMetricCallsStopper`, `TimeoutStopCondition`, `NoImprovem
 
 ### My GEPA run finished with only one proposal — what happened?
 
-You under-budgeted `max_metric_calls`. The baseline full validation alone costs `len(valset)` metric calls, and each subsequent proposal cycle costs another `reflection_minibatch_size + len(valset)`. The recommended floor is **~15 proposal attempts**, which works out to roughly `16 × len(valset)` (rule of thumb) or precisely `len(valset) + 15 × (reflection_minibatch_size + len(valset))`. When `max_metric_calls` is below that floor, GEPA stops after only a handful of accepted proposals — what looks like a short "optimization curve" is actually `baseline → 1-2 accepted candidates → out of budget`.
+You under-budgeted `max_metric_calls`. The baseline full validation alone costs `len(valset)` metric calls, and each subsequent proposal cycle costs another `reflection_minibatch_size + len(valset)`. The recommended budget is **`> 15 × len(valset)`** (rule of thumb) or precisely `len(valset) + 15 × (reflection_minibatch_size + len(valset))`, which gives GEPA room for ~15 proposal attempts. When `max_metric_calls` is below that floor, GEPA stops after only a handful of accepted proposals — what looks like a short "optimization curve" is actually `baseline → 1-2 accepted candidates → out of budget`.
+
+`max_metric_calls` is the ceiling on the metric-call budget; other stop conditions (`NoImprovementStopper`, `TimeoutStopCondition`, …) can shorten a run further but never extend it. So undersizing this caps optimization depth regardless of any other stoppers you configure.
 
 GEPA emits a `gepa.GEPABudgetWarning` both at the start of the run (when the budget is below the ~15-attempt floor) and at the end of the run (when fewer than 3 candidates were accepted). Treat both warnings as actionable.
 

@@ -1,6 +1,6 @@
 # Running GEPA inside Autonomous Coding Agents
 
-GEPA is increasingly invoked by long-horizon coding agents — Claude Code, Codex `/goal`, Cursor agent mode, Devin-style task runners. These agents are powerful but they lack a built-in model for how GEPA's only iteration knob, `max_metric_calls`, translates into actual optimization depth. The cheapest path that produces *any* accepted candidate looks indistinguishable from a real optimization run.
+GEPA is increasingly invoked by long-horizon coding agents — Claude Code, Codex `/goal`, Cursor agent mode, Devin-style task runners. These agents are powerful but they lack a built-in model for how `max_metric_calls` — the **ceiling** on the metric-call budget — translates into actual optimization depth. Other stop conditions like `NoImprovementStopper` or `TimeoutStopCondition` can shorten a run, but none of them can give GEPA *more* iterations than `max_metric_calls` allows. So if `max_metric_calls` is undersized, the cheapest path that produces *any* accepted candidate looks indistinguishable from a real optimization run, and the agent ships the underbudgeted run as "done".
 
 This guide tells you what to put in your agent's prompt so it doesn't reward-hack the optimization itself.
 
@@ -26,7 +26,7 @@ When asking a coding agent to run GEPA, **always** include these four things:
 
 Tell the agent the formula, not a magic number — because the right budget depends on `len(valset)` and `reflection_minibatch_size`, which the agent might change.
 
-> Set `max_metric_calls` to **at least `16 * len(valset)`** (rule of thumb), or more precisely `len(valset) + 15 * (reflection_minibatch_size + len(valset))`. This gives the optimizer room for ~15 proposal attempts, which is the recommended minimum. If you change `valset` size or minibatch size, recompute. Higher is better when wall-clock time allows.
+> Set `max_metric_calls` to **more than `15 * len(valset)`** (rule of thumb), or more precisely `len(valset) + 15 * (reflection_minibatch_size + len(valset))`. This gives the optimizer room for ~15 proposal attempts, which is the recommended minimum. If you change `valset` size or minibatch size, recompute. Higher is better when wall-clock time allows.
 
 ### 2. A success criterion in terms of accepted candidates
 
@@ -49,21 +49,22 @@ Drop this into your agent's system prompt or `/goal` brief:
 ```
 When running gepa.optimize:
 
-1. Compute max_metric_calls >= 16 * len(valset) (rule of thumb), or more
+1. Compute max_metric_calls > 15 * len(valset) (rule of thumb), or more
    precisely len(valset) + 15 * (reflection_minibatch_size + len(valset)).
    Default reflection_minibatch_size is 3 if unspecified. This gives the
-   optimizer room for the recommended ~15 proposal attempts. Use this
-   formula as a floor — picking a smaller number to save time will silently
-   produce a degenerate optimization curve. Higher is better when you have
-   wall-clock budget.
+   optimizer room for the recommended ~15 proposal attempts. max_metric_calls
+   is a ceiling on the budget — other stop conditions (NoImprovementStopper,
+   TimeoutStopCondition, etc.) can stop the run earlier but never give it
+   more iterations, so undersizing this caps the optimizer regardless of
+   anything else you configure. Higher is better when wall-clock allows.
 
 2. After the run, verify result.num_candidates - 1 >= 5. If fewer accepted
    proposals than that, the experiment is incomplete regardless of how the
    final validation score looks. Re-run with a larger budget before reporting.
 
 3. Treat any GEPABudgetWarning (Python warning category gepa.GEPABudgetWarning)
-   as a failure of the experiment, not a soft warning. Do not present score
-   improvements until the warning is gone.
+   as a failure of the experiment, not a soft warning. Do not consider a GEPA
+   run as valid if either the pre-flight or post-run warning is active.
 
 4. Before presenting a trajectory plot or score-over-iterations chart, open
    the run's gepa-result.json and verify num_candidates >= 6 and that the
