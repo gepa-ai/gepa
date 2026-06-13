@@ -60,6 +60,9 @@ print("Best prompt:", result.best_candidate['system_prompt'])
 print("Best score:", result.val_aggregate_scores[result.best_idx])
 ```
 
+!!! warning "Sizing `max_metric_calls`"
+    `max_metric_calls` is the **only** knob controlling how many proposal iterations GEPA gets to attempt. The 50 above is on the low side — it works for tiny train/val sets but real workloads typically need **100–500+**. Sizing it too low produces a 2-point trajectory (baseline → one accepted candidate) that looks like optimization but isn't. See [Choosing `max_metric_calls`](budget.md) for the budget formula, and [Running GEPA inside Coding Agents](coding-agents.md) if you're invoking GEPA from an autonomous loop.
+
 ### Option 2: Using optimize_anything
 
 The `optimize_anything` API can optimize any text artifact — code, prompts, agent architectures, configurations, SVG graphics — not just prompts. You provide an evaluator that scores candidates and returns diagnostic feedback (Actionable Side Information), and the system handles the search.
