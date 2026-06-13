@@ -429,6 +429,7 @@ def test_e2e_resume_run(mocked_lms, run_dir):
         reflection_lm=reflection_lm,
         display_progress_bar=True,
         run_dir=run_dir,
+        cache_evaluation=False,
     )
 
     # Resume from the same run_dir. Even if called with `max_metric_calls=0`,
@@ -442,5 +443,6 @@ def test_e2e_resume_run(mocked_lms, run_dir):
         reflection_lm=reflection_lm,
         display_progress_bar=True,
         run_dir=run_dir,
+        cache_evaluation=False,
     )
     assert second_run.total_metric_calls == first_run.total_metric_calls

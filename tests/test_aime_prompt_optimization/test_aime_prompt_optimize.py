@@ -47,6 +47,7 @@ def test_aime_prompt_optimize(mocked_lms, recorder_dir):
         max_metric_calls=30,  # Can be reduced to 17
         reflection_lm=reflection_lm,
         display_progress_bar=True,
+        cache_evaluation=False,
     )
 
     # 3. Assertion: Verify the result against the golden file
