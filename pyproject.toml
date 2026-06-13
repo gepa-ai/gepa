@@ -43,6 +43,9 @@ confidence = [
     "litellm>=1.64.0; python_version < '3.14'",
     "litellm>=1.81.0; python_version >= '3.14'",
 ]
+helix = [
+    "helix-evo>=0.1.0; python_version >= '3.11'",
+]
 dspy = []
 test = [
     "gepa[full]",
