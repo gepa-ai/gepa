@@ -26,13 +26,13 @@ When asking a coding agent to run GEPA, **always** include these four things:
 
 Tell the agent the formula, not a magic number — because the right budget depends on `len(valset)` and `reflection_minibatch_size`, which the agent might change.
 
-> Set `max_metric_calls` to at least `len(valset) + 10 * (reflection_minibatch_size + len(valset))`. This gives the optimizer room for ~10 proposal attempts. If you change `valset` size or minibatch size, recompute this.
+> Set `max_metric_calls` to **at least `16 * len(valset)`** (rule of thumb), or more precisely `len(valset) + 15 * (reflection_minibatch_size + len(valset))`. This gives the optimizer room for ~15 proposal attempts, which is the recommended minimum. If you change `valset` size or minibatch size, recompute. Higher is better when wall-clock time allows.
 
 ### 2. A success criterion in terms of accepted candidates
 
 External validation score lift is *not* a sufficient success criterion — the agent in the incident above passed external validation with a single accepted candidate. Require depth:
 
-> After `gepa.optimize` returns, verify `result.num_candidates - 1 >= 5` (at least 5 proposals accepted). If fewer, the budget was too small or the evaluator signal too weak — do not claim the experiment is done.
+> After `gepa.optimize` returns, verify `result.num_candidates - 1 >= 5` (at least 5 proposals accepted). Note that this is a much weaker check than the ~15-attempt budget floor — many proposals get rejected, so 5 accepted is fine when the budget was sized for 15+ attempts. If fewer than 5 are accepted, the budget was too small or the evaluator signal too weak — do not claim the experiment is done.
 
 ### 3. Explicit instructions to read GEPABudgetWarning
 
@@ -49,9 +49,13 @@ Drop this into your agent's system prompt or `/goal` brief:
 ```
 When running gepa.optimize:
 
-1. Compute max_metric_calls = len(valset) + 10 * (reflection_minibatch_size + len(valset)).
-   Default reflection_minibatch_size is 3 if unspecified. Use this formula
-   exactly; do not pick a smaller number to save time.
+1. Compute max_metric_calls >= 16 * len(valset) (rule of thumb), or more
+   precisely len(valset) + 15 * (reflection_minibatch_size + len(valset)).
+   Default reflection_minibatch_size is 3 if unspecified. This gives the
+   optimizer room for the recommended ~15 proposal attempts. Use this
+   formula as a floor — picking a smaller number to save time will silently
+   produce a degenerate optimization curve. Higher is better when you have
+   wall-clock budget.
 
 2. After the run, verify result.num_candidates - 1 >= 5. If fewer accepted
    proposals than that, the experiment is incomplete regardless of how the
@@ -70,8 +74,8 @@ When running gepa.optimize:
 
 GEPA's API tries to make these failures hard to ignore:
 
-- **Pre-flight warning** — if `max_metric_calls < len(valset) + 3 * (reflection_minibatch_size + len(valset))`, a `GEPABudgetWarning` fires before the run starts.
-- **Post-run summary** — every `gepa.optimize` call now logs a 1-line summary at the end (`GEPA finished: N proposal(s) accepted over M metric call(s)...`) and warns again if fewer than 3 proposals were accepted.
+- **Pre-flight warning** — if `max_metric_calls < len(valset) + 15 * (reflection_minibatch_size + len(valset))` (the floor for ~15 proposal attempts), a `GEPABudgetWarning` fires before the run starts.
+- **Post-run summary** — every `gepa.optimize` call now logs a 1-line summary at the end (`GEPA finished: N proposal(s) accepted over M metric call(s)...`) and warns again if fewer than 3 proposals were accepted (the "almost nothing happened" threshold; the pre-flight is what enforces the full 15-attempt budget).
 - **Result inspection** — `result.num_candidates` (counts baseline) and `result.total_metric_calls` are first-class properties on `GEPAResult`.
 
 These guardrails are deliberately *warnings*, not hard errors, because some users have legitimate reasons to run small budgets (smoke tests, CI). But agents driving long-horizon goals should treat them as failures.

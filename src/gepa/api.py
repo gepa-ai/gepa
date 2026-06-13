@@ -40,11 +40,16 @@ from gepa.strategies.component_selector import (
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import FileStopper, StopperProtocol
 
-# Minimum number of proposal cycles a recommended budget should support.
-# Below this, GEPA's reflection-evolve loop produces a degenerate 2-point
-# trajectory (baseline → 1 accepted candidate) that looks like optimization
-# but is not — see https://github.com/gepa-ai/gepa/issues/375.
-_MIN_RECOMMENDED_PROPOSALS = 3
+# Recommended floor: GEPA needs at least ~15 proposal attempts for meaningful
+# evolutionary search. Below this, the reflection-mutate-evaluate loop produces
+# a degenerate short trajectory that looks like optimization but is not. See
+# https://github.com/gepa-ai/gepa/issues/375 for the originating incident.
+_MIN_RECOMMENDED_PROPOSALS = 15
+
+# Post-run threshold: not every proposal gets accepted into the candidate pool,
+# so the "did anything happen at all" check uses a much smaller threshold than
+# the pre-flight budget floor.
+_MIN_ACCEPTED_PROPOSALS_NO_WARN = 3
 
 
 class GEPABudgetWarning(UserWarning):
@@ -75,7 +80,11 @@ def _budget_floor(
 ) -> int:
     """Compute the minimum sensible ``max_metric_calls`` for the given setup.
 
-    ``baseline_eval + min_proposals * (minibatch + valset_full_eval)``
+    Exact formula: ``baseline_eval + min_proposals * (minibatch + valset_full_eval)``
+
+    A useful approximation when ``minibatch << valset_len`` is
+    ``(min_proposals + 1) * valset_len`` — for the default 15-proposal floor
+    that simplifies to the ``~16 * len(valset)`` rule of thumb in the docs.
     """
     mb = reflection_minibatch_size if reflection_minibatch_size is not None else 3
     return valset_len + min_proposals * (mb + valset_len)
@@ -104,8 +113,9 @@ def _warn_if_budget_under_floor(
             f"for valset of size {val_len} and reflection_minibatch_size={mb}. "
             f"At this budget GEPA can attempt at most "
             f"~{max(0, (max_metric_calls - val_len) // (mb + val_len))} proposal step(s), "
-            f"which typically produces a 2-point trajectory rather than real optimization. "
-            f"Recommended: set max_metric_calls to at least {floor} (gives ≥{_MIN_RECOMMENDED_PROPOSALS} proposal attempts). "
+            f"which typically produces a short trajectory rather than real optimization. "
+            f"Recommended: set max_metric_calls to at least {floor} (gives ~{_MIN_RECOMMENDED_PROPOSALS} proposal attempts). "
+            f"Rule of thumb: ~{_MIN_RECOMMENDED_PROPOSALS + 1} x len(valset). "
             f"See https://gepa-ai.github.io/gepa/guides/budget/ for details.",
             GEPABudgetWarning,
             stacklevel=3,
@@ -118,7 +128,12 @@ def _warn_if_too_few_accepted(
     """Log a final summary and warn if the run accepted too few candidates.
 
     The candidate count includes the seed baseline, so ``num_candidates <= 2``
-    means only one proposal was accepted across the whole run.
+    means at most one proposal was accepted across the whole run. The
+    post-run threshold (``_MIN_ACCEPTED_PROPOSALS_NO_WARN``) is intentionally
+    smaller than the pre-flight floor — not every proposal attempt gets
+    accepted into the pool, so we only flag the "almost nothing happened"
+    case here. The pre-flight check is what enforces a budget large enough
+    for the recommended ~15 attempts.
     """
     n_candidates = result.num_candidates
     n_proposed = max(0, n_candidates - 1)  # baseline doesn't count as a proposal
@@ -132,12 +147,12 @@ def _warn_if_too_few_accepted(
             logger.log(summary)
         except Exception:
             pass
-    if n_proposed < _MIN_RECOMMENDED_PROPOSALS:
+    if n_proposed < _MIN_ACCEPTED_PROPOSALS_NO_WARN:
         warnings.warn(
             f"GEPA finished with only {n_proposed} accepted proposal(s) "
             f"(candidate pool = {n_candidates}). This is likely an under-budgeted run — "
             f"the optimizer didn't get enough iterations to do meaningful search. "
-            f"Consider raising max_metric_calls. "
+            f"Consider raising max_metric_calls (recommended ~{_MIN_RECOMMENDED_PROPOSALS + 1} x len(valset)). "
             f"See https://gepa-ai.github.io/gepa/guides/budget/.",
             GEPABudgetWarning,
             stacklevel=3,
@@ -266,14 +281,15 @@ def optimize(
         attempt — there is no separate `iterations` flag. The budget pays for:
         (a) baseline full-validation = `len(valset)` calls, and (b) each
         proposal cycle = `reflection_minibatch_size + len(valset)` calls.
-        A useful rule of thumb is at least
-        `len(valset) + 3 * (reflection_minibatch_size + len(valset))` to give
-        the optimizer room for ≥3 proposal attempts; many real workloads need
-        100-500+ total calls. Setting this too low silently produces a 1- or
-        2-point trajectory that looks like optimization but is just baseline
-        plus one accepted candidate — `gepa.optimize` will warn at the start
-        of the run if your budget is below the recommended floor and again at
-        the end if fewer than 3 candidates were accepted.
+        The recommended floor is **~15 proposal attempts**, which gives
+        roughly ``16 * len(valset)`` total calls (the exact formula is
+        ``len(valset) + 15 * (reflection_minibatch_size + len(valset))``).
+        Many real workloads need 200-2000+ total calls; pick higher if you
+        have headroom. Setting this too low silently produces a short
+        trajectory that looks like optimization but is just baseline plus
+        one or two accepted candidates — ``gepa.optimize`` will warn at the
+        start of the run if your budget is below the recommended floor and
+        again at the end if fewer than 3 candidates were accepted.
         See the [budget guide](../guides/budget.md) for the full formula.
         If not provided, stop_callbacks must be provided.
     - stop_callbacks: Optional stopper(s) that return True when optimization should stop. Can be a single StopperProtocol or a list or tuple of StopperProtocol instances. Examples: FileStopper, TimeoutStopCondition, SignalStopper, NoImprovementStopper, or custom stopping logic. If not provided, max_metric_calls must be provided.

@@ -20,6 +20,7 @@ import pytest
 
 from gepa import GEPABudgetWarning
 from gepa.api import (
+    _MIN_ACCEPTED_PROPOSALS_NO_WARN,
     _MIN_RECOMMENDED_PROPOSALS,
     _budget_floor,
     _safe_loader_len,
@@ -59,18 +60,27 @@ class _FakeResult:
 
 
 class TestBudgetFloor:
-    def test_default_minibatch_uses_3(self):
-        # 10-example valset, default minibatch=3, 3 proposals:
-        # 10 (baseline) + 3 * (3 + 10) = 49
-        assert _budget_floor(valset_len=10, reflection_minibatch_size=None) == 49
+    def test_default_minibatch_and_proposals(self):
+        # 10-example valset, default minibatch=3, default 15 proposals:
+        # 10 (baseline) + 15 * (3 + 10) = 205
+        assert _budget_floor(valset_len=10, reflection_minibatch_size=None) == 205
 
     def test_explicit_minibatch(self):
-        # 10-example valset, minibatch=5, 3 proposals:
-        # 10 + 3 * (5 + 10) = 55
-        assert _budget_floor(valset_len=10, reflection_minibatch_size=5) == 55
+        # 10-example valset, minibatch=5, 15 proposals:
+        # 10 + 15 * (5 + 10) = 235
+        assert _budget_floor(valset_len=10, reflection_minibatch_size=5) == 235
 
     def test_scales_with_min_proposals(self):
         assert _budget_floor(10, 3, min_proposals=10) == 10 + 10 * (3 + 10)
+
+    def test_rule_of_thumb_approximation(self):
+        # When minibatch << valset_len, the exact floor approaches
+        # (min_proposals + 1) * valset_len. For valset=100, minibatch=3,
+        # the exact is 100 + 15 * 103 = 1645; ~16 * 100 = 1600 is within ~3%.
+        valset = 100
+        exact = _budget_floor(valset, 3)
+        approx = (_MIN_RECOMMENDED_PROPOSALS + 1) * valset
+        assert abs(exact - approx) / exact < 0.05
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +107,7 @@ class TestSafeLoaderLen:
 class TestPreflightWarning:
     def test_warns_when_below_floor(self):
         # Reproduce the reported incident: valset=6, mb defaulted to 3,
-        # budget=8. Floor would be 6 + 3*(3+6) = 33.
+        # budget=8. Floor at 15 proposals is 6 + 15*(3+6) = 141.
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             _warn_if_budget_under_floor(
@@ -109,14 +119,16 @@ class TestPreflightWarning:
         assert len(budget_warnings) == 1
         msg = str(budget_warnings[0].message)
         assert "max_metric_calls=8" in msg
-        assert "33" in msg  # recommended floor for this configuration
+        assert "141" in msg  # recommended floor for this configuration
         assert "https://gepa-ai.github.io/gepa/guides/budget/" in msg
 
     def test_silent_when_at_or_above_floor(self):
+        # 6 * 16 = 96, comfortably above the 141 floor only if we pick larger;
+        # use 200 to clear the 141 floor decisively.
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             _warn_if_budget_under_floor(
-                max_metric_calls=100,
+                max_metric_calls=200,
                 val_loader=_FakeLoader(6),
                 reflection_minibatch_size=None,
             )
@@ -183,8 +195,12 @@ class TestPostRunSummary:
         assert "under-budgeted" in str(budget_warnings[0].message)
 
     def test_silent_when_enough_proposals_accepted(self):
+        # Post-run threshold is _MIN_ACCEPTED_PROPOSALS_NO_WARN (3), which is
+        # intentionally smaller than the pre-flight 15-proposal floor —
+        # rejections in the candidate pool are normal, so we only warn on
+        # "almost nothing happened" here.
         result: Any = _FakeResult(
-            num_candidates=1 + _MIN_RECOMMENDED_PROPOSALS, total_metric_calls=200
+            num_candidates=1 + _MIN_ACCEPTED_PROPOSALS_NO_WARN, total_metric_calls=200
         )
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
