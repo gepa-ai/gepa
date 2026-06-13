@@ -39,15 +39,18 @@ uv run pyright src/
 
 ## Running GEPA from inside an autonomous loop
 
-If you are a coding agent invoking `gepa.optimize` (or `dspy.GEPA`) as part of executing a user's plan, you must size the budget correctly. `max_metric_calls` is the **ceiling** on metric-call budget — other stop conditions (`NoImprovementStopper`, `TimeoutStopCondition`, `ScoreThresholdStopper`, etc.) can stop the run earlier, but none of them give GEPA *more* iterations than `max_metric_calls` allows. Setting `max_metric_calls` too low caps the optimizer regardless of any other stoppers you configure, and silently produces a short trajectory that looks like optimization but is not.
+If you are a coding agent invoking `gepa.optimize` (or `dspy.GEPA`) as part of executing a user's plan, pick the stopping strategy deliberately. There are two paths:
+
+- **`stop_callbacks` only** (preferred default for unattended runs): skip `max_metric_calls` and pass e.g. `NoImprovementStopper(max_iterations_without_improvement=10)`. GEPA runs until it actually converges; you don't have to guess a budget upfront.
+- **`max_metric_calls`**: fixed budget. If you choose this path, the budget must be `> 15 * len(valset)` (rule of thumb) or precisely `len(valset) + 15 * (reflection_minibatch_size + len(valset))` (with `reflection_minibatch_size` defaulting to 3). Anything smaller silently produces a short trajectory that looks like optimization but is not.
+
+Do not pick a small `max_metric_calls` "to save time" — that's the documented failure mode.
 
 **Required behavior:**
 
-1. **Compute the budget from the data, don't pick a number.** The recommended budget is `max_metric_calls > 15 * len(valset)` — gives GEPA room for at least ~15 proposal attempts. If you change the valset size, recompute. Pick higher when wall-clock budget allows; 200-2000+ total calls is common in production.
+1. **Verify proposal depth before declaring the goal reached.**
+   After `gepa.optimize` returns, check `result.num_candidates - 1` (excludes the baseline). If it's less than 5, the optimization was not meaningful — re-run with a larger budget or a looser stopper, regardless of whether the final validation score looks better than baseline.
 
-2. **Verify proposal depth before declaring the goal reached.**
-   After `gepa.optimize` returns, check `result.num_candidates - 1` (this excludes the baseline). If it's less than 5, the optimization was not meaningful — re-run with a larger budget regardless of whether the final validation score looks better than baseline.
+2. **Treat `gepa.GEPABudgetWarning` as a hard failure of the experiment, not a soft warning.** It fires at the start of the run if you set `max_metric_calls` below the recommended floor, and again at the end if fewer than 3 proposals were accepted (regardless of which stopper fired). Do not consider a GEPA run as valid if either warning is active.
 
-3. **Treat `gepa.GEPABudgetWarning` as a hard failure of the experiment, not a soft warning.** It fires at the start of the run if the budget is below the recommended floor, and again at the end if fewer than 3 proposals were accepted. Do not consider a GEPA run as valid if either warning is active.
-
-4. **Inspect `<run_dir>/gepa-result.json` before drawing any "scores across iterations" chart.** Confirm `num_candidates >= 6` and that `val_aggregate_scores` has at least 5 distinct rising values. A 2-point trajectory is one proposal step, not optimization.
+3. **Inspect `<run_dir>/gepa-result.json` before drawing any "scores across iterations" chart.** Confirm `num_candidates >= 6` and that `val_aggregate_scores` has at least 5 distinct rising values. A 2-point trajectory is one proposal step, not optimization.

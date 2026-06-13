@@ -1,6 +1,13 @@
 # Running GEPA inside Autonomous Coding Agents
 
-GEPA is increasingly invoked by long-horizon coding agents — Claude Code, Codex `/goal`, Cursor agent mode, Devin-style task runners. These agents are powerful but they lack a built-in model for how `max_metric_calls` — the **ceiling** on the metric-call budget — translates into actual optimization depth. Other stop conditions like `NoImprovementStopper` or `TimeoutStopCondition` can shorten a run, but none of them can give GEPA *more* iterations than `max_metric_calls` allows. So if `max_metric_calls` is undersized, the cheapest path that produces *any* accepted candidate looks indistinguishable from a real optimization run, and the agent ships the underbudgeted run as "done".
+GEPA is increasingly invoked by long-horizon coding agents — Claude Code, Codex `/goal`, Cursor agent mode, Devin-style task runners. The risk is that an agent picks a budget that's too small to actually optimize, then declares the goal reached because the one accepted candidate happened to beat the baseline on external validation.
+
+There are two ways to stop a GEPA run, and both can fail this way if configured wrong:
+
+- **`max_metric_calls`** — fixed budget. Easy to undersize.
+- **`stop_callbacks`** (e.g. `NoImprovementStopper`, `ScoreThresholdStopper`, `TimeoutStopCondition`) — substantive conditions. Skip the budget entirely; let GEPA run until the optimization actually converges. Easy to set the stopper's threshold too aggressive.
+
+For unattended agent runs, the cleanest default is to skip `max_metric_calls` and use `NoImprovementStopper(max_iterations_without_improvement=10)` (or larger). That gives the optimizer license to keep proposing as long as it's making progress, and avoids the agent having to guess a magic number.
 
 This guide tells you what to put in your agent's prompt so it doesn't reward-hack the optimization itself.
 
@@ -22,11 +29,11 @@ This is the modal failure of unattended GEPA runs under coding agents.
 
 When asking a coding agent to run GEPA, **always** include these four things:
 
-### 1. The budget formula, not a number
+### 1. Pick a stopping strategy explicitly
 
-Tell the agent the formula, not a magic number — because the right budget depends on `len(valset)` and `reflection_minibatch_size`, which the agent might change.
+Either skip `max_metric_calls` entirely and use a substantive stopper, **or** set a budget large enough to not be the limiting factor — don't pick a small budget "to save time".
 
-> Set `max_metric_calls` to **more than `15 * len(valset)`** (rule of thumb), or more precisely `len(valset) + 15 * (reflection_minibatch_size + len(valset))`. This gives the optimizer room for ~15 proposal attempts, which is the recommended minimum. If you change `valset` size or minibatch size, recompute. Higher is better when wall-clock time allows.
+> Prefer `stop_callbacks=[NoImprovementStopper(max_iterations_without_improvement=10)]` and leave `max_metric_calls` unset. If you must set `max_metric_calls`, make it **more than `15 * len(valset)`** (rule of thumb), or more precisely `len(valset) + 15 * (reflection_minibatch_size + len(valset))`. Either way, the optimizer needs room for at least ~15 proposal attempts to do real evolutionary search.
 
 ### 2. A success criterion in terms of accepted candidates
 
@@ -49,18 +56,17 @@ Drop this into your agent's system prompt or `/goal` brief:
 ```
 When running gepa.optimize:
 
-1. Compute max_metric_calls > 15 * len(valset) (rule of thumb), or more
-   precisely len(valset) + 15 * (reflection_minibatch_size + len(valset)).
-   Default reflection_minibatch_size is 3 if unspecified. This gives the
-   optimizer room for the recommended ~15 proposal attempts. max_metric_calls
-   is a ceiling on the budget — other stop conditions (NoImprovementStopper,
-   TimeoutStopCondition, etc.) can stop the run earlier but never give it
-   more iterations, so undersizing this caps the optimizer regardless of
-   anything else you configure. Higher is better when wall-clock allows.
+1. Pick a stopping strategy. Prefer skipping max_metric_calls and passing
+   stop_callbacks=[NoImprovementStopper(max_iterations_without_improvement=10)]
+   so GEPA runs until the optimization actually converges. If you do set
+   max_metric_calls, make it > 15 * len(valset) (rule of thumb) — anything
+   smaller caps the optimizer prematurely. Do not pick a small budget "to
+   save time".
 
 2. After the run, verify result.num_candidates - 1 >= 5. If fewer accepted
    proposals than that, the experiment is incomplete regardless of how the
-   final validation score looks. Re-run with a larger budget before reporting.
+   final validation score looks. Re-run with a larger budget (or a looser
+   stopper) before reporting.
 
 3. Treat any GEPABudgetWarning (Python warning category gepa.GEPABudgetWarning)
    as a failure of the experiment, not a soft warning. Do not consider a GEPA
@@ -75,8 +81,8 @@ When running gepa.optimize:
 
 GEPA's API tries to make these failures hard to ignore:
 
-- **Pre-flight warning** — if `max_metric_calls < len(valset) + 15 * (reflection_minibatch_size + len(valset))` (the floor for ~15 proposal attempts), a `GEPABudgetWarning` fires before the run starts.
-- **Post-run summary** — every `gepa.optimize` call now logs a 1-line summary at the end (`GEPA finished: N proposal(s) accepted over M metric call(s)...`) and warns again if fewer than 3 proposals were accepted (the "almost nothing happened" threshold; the pre-flight is what enforces the full 15-attempt budget).
+- **Pre-flight warning** — if `max_metric_calls` is set and below the ~15-attempt floor, a `GEPABudgetWarning` fires before the run starts. Skipping `max_metric_calls` and using `stop_callbacks` instead silences the pre-flight check (you're not over-promising depth via a small budget; the stopper decides).
+- **Post-run summary** — every `gepa.optimize` call logs a 1-line summary at the end (`GEPA finished: N proposal(s) accepted over M metric call(s)...`) and warns if fewer than 3 proposals were accepted, regardless of which stopper fired first. If you used `NoImprovementStopper` and this fires, your `max_iterations_without_improvement` was probably too low.
 - **Result inspection** — `result.num_candidates` (counts baseline) and `result.total_metric_calls` are first-class properties on `GEPAResult`.
 
 These guardrails are deliberately *warnings*, not hard errors, because some users have legitimate reasons to run small budgets (smoke tests, CI). But agents driving long-horizon goals should treat them as failures.

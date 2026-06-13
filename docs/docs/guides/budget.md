@@ -1,16 +1,44 @@
 # Choosing `max_metric_calls`
 
-`max_metric_calls` is the **ceiling** on the metric-call budget for a GEPA run. Other stop conditions (`NoImprovementStopper`, `TimeoutStopCondition`, `ScoreThresholdStopper`, …) can stop the run earlier when their condition fires, but none of them give GEPA *more* iterations than `max_metric_calls` allows. So this single value is the upper bound on optimization depth — setting it too low caps the optimizer regardless of any other stoppers you configure.
+There are two ways to control when a GEPA run stops:
 
-If you set it too low, GEPA will produce a 1- or 2-point trajectory (baseline → one accepted candidate) that looks like optimization but isn't. GEPA will warn you when this happens — both before the run (if the budget is below the recommended floor) and after the run (if too few candidates were accepted). This guide explains how to size it correctly.
+1. **Set `max_metric_calls`** — a hard upper bound on the metric-call budget. Simple, but you have to pick a number upfront.
+2. **Skip `max_metric_calls` and pass `stop_callbacks` instead** — let GEPA run until a substantive condition fires (no improvement for N iterations, score threshold reached, wall-clock deadline). You don't have to predict the budget; the run stops when the optimization has actually converged.
 
-## Rule of thumb
+You can also do both: GEPA stops as soon as any stopper fires.
 
-**Set `max_metric_calls` to more than `15 × len(valset)`.**
+## Recommended: use `NoImprovementStopper` instead of a fixed budget
 
-That gives GEPA room for ~15 proposal attempts, which is the recommended minimum for meaningful evolutionary search. For real workloads, **higher is usually better** — many production deployments use 200-2000+ total calls. Pick the largest budget you can afford in wall-clock time.
+For most real workloads, the right answer is to **not** set `max_metric_calls` and use `NoImprovementStopper` instead:
 
-## The exact formula
+```python
+from gepa.utils import NoImprovementStopper
+
+result = gepa.optimize(
+    seed_candidate=...,
+    trainset=...,
+    valset=...,
+    stop_callbacks=[NoImprovementStopper(max_iterations_without_improvement=10)],
+    reflection_lm="openai/gpt-5",
+)
+```
+
+This gives the optimizer license to keep proposing as long as it's making progress, and stops it when it actually stalls. No need to guess the budget.
+
+Other useful stoppers:
+
+- `ScoreThresholdStopper(threshold=...)` — stop once a target validation score is reached.
+- `TimeoutStopCondition(timeout_seconds=...)` — wall-clock deadline (useful in CI / agent loops).
+- `SignalStopper` / `FileStopper` — graceful external stop signals.
+- `CompositeStopper(...)` — combine several.
+
+## When you *do* set `max_metric_calls`
+
+If you'd rather pin the budget explicitly, **set it to `> 15 × len(valset)`**.
+
+That gives GEPA room for ~15 proposal attempts, the recommended minimum for meaningful evolutionary search. Higher is usually better — many production deployments use 200-2000+ total calls.
+
+### The exact formula
 
 Each metric call costs roughly one rollout. GEPA spends them in two places:
 
@@ -25,9 +53,9 @@ To support **N proposal attempts**, you need at least:
 floor(N) = len(valset) + N * (reflection_minibatch_size + len(valset))
 ```
 
-With the recommended `N = 15` and the default `reflection_minibatch_size = 3`, this simplifies (when `len(valset) >> minibatch`) to roughly `> 15 × len(valset)` — the rule of thumb above.
+With the recommended `N = 15` and the default `reflection_minibatch_size = 3`, this simplifies (when `len(valset) >> minibatch`) to roughly `> 15 × len(valset)`.
 
-## Recommended floors
+### Recommended floors
 
 | `len(valset)` | minibatch | **Recommended (N=15)** | Generous (N=30) |
 |---:|---:|---:|---:|
@@ -39,18 +67,6 @@ With the recommended `N = 15` and the default `reflection_minibatch_size = 3`, t
 | 200 | 5 | **3,275** | 6,350 |
 
 `gepa.optimize` uses the N=15 column as the threshold for the pre-flight warning.
-
-## Other stop conditions
-
-`max_metric_calls` is the ceiling, but you can configure additional stoppers via `stop_callbacks` so GEPA halts as soon as any condition fires:
-
-- `NoImprovementStopper(max_iterations_without_improvement=N)` — stop when no improvement for N iterations.
-- `TimeoutStopCondition(timeout_seconds=...)` — stop on wall-clock.
-- `ScoreThresholdStopper(threshold=...)` — stop once a target score is hit.
-- `SignalStopper` / `FileStopper` — graceful external stop signals.
-- `CompositeStopper(...)` — combine several.
-
-These are useful for converging fast on easy tasks without burning the full budget — but remember they only *lower* the effective iteration count. The budget you set still has to be large enough to clear the recommended floor in the worst case.
 
 ## The bug this prevents
 
@@ -66,11 +82,11 @@ gepa.optimize(
 
 With `len(valset) = 6` and the default minibatch of 3, the baseline full-validation alone burned 6 of the 8 budgeted calls, leaving budget for less than one proposal cycle. The agent driving the run reported the baseline-improved candidate as a successful optimization, when in fact GEPA had done one proposal step and stopped.
 
-The recommended budget for that configuration is `> 15 × 6 = 90` (or precisely `6 + 15 * (3 + 6) = 141` if you compute exactly). Either would have prevented the failure.
+The recommended budget for that configuration is `> 15 × 6 = 90` (or precisely `141` if you compute exactly), or — better — use `NoImprovementStopper` and skip the budget entirely.
 
 ## How to read the warnings
 
-**At the start of the run (pre-flight):**
+**At the start of the run (pre-flight, only when `max_metric_calls` is set below the floor):**
 
 ```
 GEPABudgetWarning: max_metric_calls=8 is below the recommended floor of 141
@@ -87,11 +103,11 @@ GEPA finished: 1 proposal(s) accepted over 8 metric call(s); final candidate poo
 GEPABudgetWarning: GEPA finished with only 1 accepted proposal(s) ...
 ```
 
-A pool size of 2 means baseline + 1 candidate — the optimizer didn't get to explore. The post-run check uses a more conservative threshold (3 accepted) than the pre-flight (~15 attempts), because not every proposal gets accepted into the pool. The pre-flight is what enforces the budget for ~15 attempts.
+A pool size of 2 means baseline + 1 candidate — the optimizer didn't get to explore. If you were using a non-`max_metric_calls` stopper, the warning means *that* stopper fired too early: loosen `NoImprovementStopper.max_iterations_without_improvement`, raise `ScoreThresholdStopper.threshold`, or extend the timeout.
 
 ## Silencing the warning
 
-If you have a deliberate reason to run with a small budget (smoke tests, integration checks, deterministic CI), suppress it with the standard `warnings` filter:
+For deliberate small-budget runs (smoke tests, integration checks, deterministic CI), suppress with the standard `warnings` filter:
 
 ```python
 import warnings
@@ -117,7 +133,7 @@ print(f"Total metric calls: {result.total_metric_calls}")
 print(f"Best val score:     {result.val_aggregate_scores[result.best_idx]}")
 ```
 
-If `num_candidates - 1` is much smaller than what you expected, the run was under-budgeted regardless of whether the warning fired (e.g., the optimizer accepted very few proposals despite a generous budget — a sign your evaluator's feedback signal is too weak).
+If `num_candidates - 1` is much smaller than what you expected, the run was under-budgeted or your stopper fired too early — regardless of whether the warning fired (e.g., the optimizer accepted very few proposals despite a generous budget — a sign your evaluator's feedback signal is too weak).
 
 ## Where to set the budget for autonomous coding agents
 

@@ -191,8 +191,12 @@ class TestPostRunSummary:
             _warn_if_too_few_accepted(result, logger=None)
         budget_warnings = [w for w in caught if issubclass(w.category, GEPABudgetWarning)]
         assert len(budget_warnings) == 1
-        assert "1 accepted proposal" in str(budget_warnings[0].message)
-        assert "under-budgeted" in str(budget_warnings[0].message)
+        msg = str(budget_warnings[0].message)
+        assert "1 accepted proposal" in msg
+        # Warning should suggest either remedy (raise budget OR loosen stopper),
+        # because the user may not have set max_metric_calls at all.
+        assert "max_metric_calls" in msg
+        assert "stopper" in msg.lower()
 
     def test_silent_when_enough_proposals_accepted(self):
         # Post-run threshold is _MIN_ACCEPTED_PROPOSALS_NO_WARN (3), which is
