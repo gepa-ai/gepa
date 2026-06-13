@@ -29,6 +29,7 @@ from gepa.proposer.reflective_mutation.base import LanguageModel
 
 if TYPE_CHECKING:
     from gepa.optimize_anything import Candidate, OptimizationState, RefinerConfig, SideInfo
+    from gepa.utils.feedback_builder import FeedbackBuilder
 
 
 REFINER_PROMPT_TEMPLATE = """You are refining a candidate to improve its performance.
@@ -73,6 +74,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         background: str | None = None,
         cache_mode: str = "memory",  # "off", "memory", "disk"
         cache_dir: str | Path | None = None,
+        feedback_builder: "FeedbackBuilder | None" = None,
     ):
         self.evaluator = evaluator
         self.parallel = parallel
@@ -83,6 +85,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self.background = background
         self.cache_mode = cache_mode
         self.cache_dir = Path(cache_dir) if cache_dir else None
+        self.feedback_builder = feedback_builder
 
         # Track top-K best evaluations per example for warm-start support
         self._best_evals_by_example: dict[str, list[dict]] = {}  # keyed by _example_hash
@@ -534,20 +537,31 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         ``<component>_specific_info`` data.  The ``"scores"`` key is renamed
         to ``"Scores (Higher is Better)"`` for clarity in the LLM prompt.
         """
+        if self.feedback_builder is not None:
+            return self.feedback_builder.build(eval_batch, components_to_update)
+
         scores, side_infos = eval_batch.scores, eval_batch.trajectories
         assert side_infos is not None
         ret: dict[str, list[dict[str, Any]]] = {}
         for component_name in components_to_update:
             ret[component_name] = []
             for score, side_info in zip(scores, side_infos, strict=False):
-                ret[component_name].append({})
+                record: dict[str, Any] = {}
+
+                # Auto-inject score if not already present
+                has_score_key = any(k.lower() == "score" for k in side_info)
+                if not has_score_key:
+                    record["Score"] = score
+
                 for k, v in side_info.items():
                     if k == "scores":
-                        ret[component_name][-1]["Scores (Higher is Better)"] = v
+                        record["Scores (Higher is Better)"] = v
                     elif not k.endswith("_specific_info"):
-                        ret[component_name][-1][k] = v
+                        record[k] = v
                     elif k == f"{component_name}_specific_info":
-                        ret[component_name][-1].update(v)
+                        record.update(v)
                     else:
                         continue
+
+                ret[component_name].append(record)
         return ret
