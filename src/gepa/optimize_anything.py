@@ -462,6 +462,14 @@ class EngineConfig:
     raise_on_exception: bool = True
     use_cloudpickle: bool = True
     track_best_outputs: bool = True
+    # Write an agent-readable directory tree (``iterations/NNNNN/`` +
+    # ``pareto/``) under ``run_dir`` on every save. Each loop iteration —
+    # accepted or rejected — gets its own directory with ``meta.json``,
+    # ``components/``, ``trace.json`` (with before/after scores and
+    # trajectories), plus ``val_scores.json`` + ``outputs/`` + ``trajectories/``
+    # for accepted ones. The seed is pinned at ``iterations/00000/``. Default
+    # off.
+    write_agent_state: bool = False
 
     # Simple stopping conditions
     max_metric_calls: int | None = None
@@ -1619,6 +1627,7 @@ def optimize_anything(
         val_evaluation_policy=config.engine.val_evaluation_policy,
         acceptance_criterion=acceptance_criterion_instance,
         use_cloudpickle=config.engine.use_cloudpickle,
+        write_agent_state=config.engine.write_agent_state,
         evaluation_cache=evaluation_cache,
         num_parallel_proposals=_resolve_num_parallel_proposals(
             config.engine.num_parallel_proposals,

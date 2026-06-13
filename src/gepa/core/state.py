@@ -4,6 +4,7 @@
 import hashlib
 import json
 import os
+import re
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -31,6 +32,14 @@ CacheKey: TypeAlias = tuple[CandidateHash, DataId]
 def _candidate_hash(candidate: dict[str, str]) -> CandidateHash:
     """Compute a deterministic hash of a candidate dictionary."""
     return hashlib.sha256(json.dumps(sorted(candidate.items())).encode()).hexdigest()
+
+
+_COMPONENT_NAME_SANITIZER = re.compile(r"[^A-Za-z0-9_.-]")
+
+
+def _sanitize_component_name(name: str) -> str:
+    """Collapse component names to filesystem-safe characters."""
+    return _COMPONENT_NAME_SANITIZER.sub("_", name)
 
 
 @dataclass
@@ -137,6 +146,9 @@ class ValsetEvaluation(Generic[RolloutOutput, DataId]):
     outputs_by_val_id: dict[DataId, RolloutOutput]
     scores_by_val_id: dict[DataId, float]
     objective_scores_by_val_id: dict[DataId, ObjectiveScores] | None = None
+    # Populated only when the engine is run with ``write_agent_state=True`` —
+    # full valset trajectories are expensive, so default eval paths skip them.
+    trajectories_by_val_id: dict[DataId, Any] | None = None
 
 
 class GEPAState(Generic[RolloutOutput, DataId]):
@@ -150,7 +162,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     returned by :func:`~gepa.optimize_anything.optimize_anything`.
     """
 
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 5
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 6
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
     _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
 
@@ -158,6 +170,12 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     parent_program_for_candidate: list[list[ProgramIdx | None]]
     prog_candidate_val_subscores: list[dict[DataId, float]]
     prog_candidate_objective_scores: list[ObjectiveScores]
+    # On-disk iteration id for each candidate (indexed by candidate idx).
+    # Seed = 0; accepted loop candidates get the 1-indexed iteration id
+    # at which they were discovered (``ctx.iteration`` ==
+    # ``state.i + 1``). Maintained in lockstep with ``program_candidates``
+    # so lookups are O(1) instead of requiring a trace scan.
+    iteration_ids_by_candidate_idx: list[int]
 
     pareto_front_valset: dict[DataId, float]
     program_at_pareto_front_valset: dict[DataId, set[ProgramIdx]]
@@ -197,6 +215,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         evaluation_cache: "EvaluationCache[RolloutOutput, DataId] | None" = None,
     ):
         self.program_candidates = [dict(seed_candidate)]
+        # Seed owns on-disk iteration id 0.
+        self.iteration_ids_by_candidate_idx = [0]
         self.prog_candidate_val_subscores = [dict(base_evaluation.scores_by_val_id)]
 
         base_objective_aggregates = self._aggregate_objective_scores(base_evaluation.objective_scores_by_val_id)
@@ -259,6 +279,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         assert len(self.program_candidates) == len(self.prog_candidate_val_subscores)
         assert len(self.program_candidates) == len(self.prog_candidate_objective_scores)
         assert len(self.program_candidates) == len(self.num_metric_calls_by_discovery)
+        assert len(self.program_candidates) == len(self.iteration_ids_by_candidate_idx)
 
         assert len(self.pareto_front_valset) == len(self.program_at_pareto_front_valset)
         assert set(self.pareto_front_valset.keys()) == set(self.program_at_pareto_front_valset.keys())
@@ -296,14 +317,33 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             for hook in hooks:
                 hook(self.total_num_evals, count)
 
-    def _atomic_write_json(self, run_dir: str, filename: str, data: Any) -> None:
-        target_path = os.path.join(run_dir, filename)
+    def _atomic_write_json(self, run_dir: str, rel_path: str, data: Any) -> None:
+        target_path = os.path.join(run_dir, rel_path)
+        parent = os.path.dirname(target_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         tmp_path = target_path + ".tmp"
         with open(tmp_path, "w") as f:
             json.dump(data, f, indent=2, default=json_default)
         os.replace(tmp_path, target_path)
 
-    def save(self, run_dir: str | None, *, use_cloudpickle: bool = False) -> None:
+    def _atomic_write_text(self, run_dir: str, rel_path: str, data: str) -> None:
+        target_path = os.path.join(run_dir, rel_path)
+        parent = os.path.dirname(target_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        tmp_path = target_path + ".tmp"
+        with open(tmp_path, "w") as f:
+            f.write(data)
+        os.replace(tmp_path, target_path)
+
+    def save(
+        self,
+        run_dir: str | None,
+        *,
+        use_cloudpickle: bool = False,
+        write_agent_state: bool = False,
+    ) -> None:
         if run_dir is None:
             return
         if use_cloudpickle:
@@ -345,6 +385,252 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if self.program_candidates:
             self._atomic_write_json(run_dir, "candidates.json", self.program_candidates)
 
+        # Opt-in directory layout for agent consumption
+        if write_agent_state:
+            self._save_agent_directory(run_dir)
+
+    def _save_agent_directory(self, run_dir: str) -> None:
+        """Write agent-readable state as a directory of small files.
+
+        Partitions the run's state into per-iteration subdirs so an agent
+        (e.g. Claude Code) can navigate a single timeline — both accepted
+        candidates *and* rejected proposals live under ``iterations/NNNNN/``.
+        ``iterations/00000/`` is always the seed (``candidate_idx=0``); subsequent
+        directories correspond to ``state.i + 1`` (the loop iteration that
+        produced the proposal, shifted so the seed owns id 0). The pickled
+        ``gepa_state.bin`` remains the source of truth for resume; this tree
+        is output-only.
+        """
+        cand_to_iter = self._candidate_idx_to_iteration_id()
+        self._save_seed_iteration_dir(run_dir)
+        self._save_proposal_iteration_dirs(run_dir, cand_to_iter)
+        self._save_pareto_dir(run_dir, cand_to_iter)
+        self._save_index(run_dir, cand_to_iter)
+
+    def iteration_id_for_candidate_idx(self, candidate_idx: int) -> int | None:
+        """On-disk iteration id for the accepted candidate at ``candidate_idx``.
+
+        O(1) lookup against :attr:`iteration_ids_by_candidate_idx`, which is
+        maintained in lockstep with :attr:`program_candidates` by
+        :meth:`update_state_with_new_program`. Returns ``None`` for
+        out-of-range indices.
+        """
+        if candidate_idx < 0 or candidate_idx >= len(self.iteration_ids_by_candidate_idx):
+            return None
+        return self.iteration_ids_by_candidate_idx[candidate_idx]
+
+    def _candidate_idx_to_iteration_id(self) -> dict[int, int]:
+        """Map candidate idx (internal) → on-disk iteration id.
+
+        Backed by :attr:`iteration_ids_by_candidate_idx`, so this is just a
+        zipped view — no trace scan needed.
+        """
+        return dict(enumerate(self.iteration_ids_by_candidate_idx))
+
+    def _save_seed_iteration_dir(self, run_dir: str) -> None:
+        """Write ``iterations/00000/`` — the seed candidate (candidate_idx 0)."""
+        avg_score, coverage = self.get_program_average_val_subset(0)
+        metric_calls = self.num_metric_calls_by_discovery[0] if self.num_metric_calls_by_discovery else 0
+        obj_scores = self.prog_candidate_objective_scores[0] if self.prog_candidate_objective_scores else {}
+        base = "iterations/00000"
+        self._atomic_write_json(
+            run_dir,
+            f"{base}/meta.json",
+            {
+                "iteration_id": 0,
+                "is_seed": True,
+                "accepted": True,
+                "candidate_idx": 0,
+                "parent_iteration_ids": [],
+                "avg_val_score": avg_score,
+                "num_val_scored": coverage,
+                "metric_calls_to_discover": metric_calls,
+                "objective_scores": obj_scores,
+            },
+        )
+        self._atomic_write_json(
+            run_dir,
+            f"{base}/val_scores.json",
+            {str(k): v for k, v in self.prog_candidate_val_subscores[0].items()},
+        )
+        self._save_components_dir(run_dir, base, self.program_candidates[0])
+
+    def _save_proposal_iteration_dirs(self, run_dir: str, cand_to_iter: dict[int, int]) -> None:
+        """Write one ``iterations/NNNNN/`` per loop trace entry.
+
+        Covers both accepted and rejected proposals. Iteration id is
+        ``state.i + 1`` so the seed keeps id ``0``.
+        """
+        for entry in self.full_program_trace:
+            trace_i = entry.get("i")
+            if trace_i is None:
+                continue
+            iter_id = trace_i + 1
+            base = f"iterations/{iter_id:05d}"
+            accepted = entry.get("proposal_accepted")
+            candidate_idx = entry.get("new_program_idx") if accepted else None
+            parent_candidate_idx = entry.get("selected_program_candidate")
+            parent_iter_ids = (
+                [cand_to_iter[parent_candidate_idx]]
+                if parent_candidate_idx is not None and parent_candidate_idx in cand_to_iter
+                else []
+            )
+
+            # The candidate text to archive under components/: for accepted
+            # iterations this is the newly accepted program; for rejected
+            # iterations it's the proposed (now discarded) candidate.
+            components: dict[str, str] | None = None
+            if accepted and candidate_idx is not None and candidate_idx < len(self.program_candidates):
+                components = self.program_candidates[candidate_idx]
+            elif "proposed_candidate" in entry and isinstance(entry["proposed_candidate"], dict):
+                components = entry["proposed_candidate"]
+
+            meta: dict[str, Any] = {
+                "iteration_id": iter_id,
+                "trace_i": trace_i,
+                "accepted": bool(accepted) if accepted is not None else None,
+                "parent_iteration_ids": parent_iter_ids,
+                "candidate_idx": candidate_idx,
+                "subsample_ids": entry.get("subsample_ids"),
+                "subsample_scores_before": entry.get("subsample_scores"),
+                "subsample_scores_after": entry.get("new_subsample_scores"),
+            }
+            if accepted and candidate_idx is not None and candidate_idx < len(self.prog_candidate_val_subscores):
+                avg_score, coverage = self.get_program_average_val_subset(candidate_idx)
+                meta["avg_val_score"] = avg_score
+                meta["num_val_scored"] = coverage
+                obj_scores = self.prog_candidate_objective_scores[candidate_idx]
+                if obj_scores:
+                    meta["objective_scores"] = obj_scores
+                metric_calls = (
+                    self.num_metric_calls_by_discovery[candidate_idx]
+                    if candidate_idx < len(self.num_metric_calls_by_discovery)
+                    else None
+                )
+                if metric_calls is not None:
+                    meta["metric_calls_to_discover"] = metric_calls
+            self._atomic_write_json(run_dir, f"{base}/meta.json", meta)
+
+            if components is not None:
+                self._save_components_dir(run_dir, base, components)
+
+            if accepted and candidate_idx is not None and candidate_idx < len(self.prog_candidate_val_subscores):
+                self._atomic_write_json(
+                    run_dir,
+                    f"{base}/val_scores.json",
+                    {str(k): v for k, v in self.prog_candidate_val_subscores[candidate_idx].items()},
+                )
+
+            # Raw trace entry (includes eval_before/eval_after with outputs
+            # and trajectories captured on the subsample). Kept for
+            # debugging — the structured meta.json above is the primary
+            # agent-facing artifact.
+            self._atomic_write_json(run_dir, f"{base}/trace.json", entry)
+
+    def _save_components_dir(self, run_dir: str, base: str, components: dict[str, str]) -> None:
+        """Write ``<base>/components/<stem>.txt`` plus ``_index.json``."""
+        index_map: dict[str, str] = {}
+        used: set[str] = set()
+        for i, (name, text) in enumerate(components.items()):
+            safe = _sanitize_component_name(name)
+            if not safe or safe in used:
+                safe = f"component_{i:02d}"
+            used.add(safe)
+            index_map[name] = f"{safe}.txt"
+            self._atomic_write_text(run_dir, f"{base}/components/{safe}.txt", text)
+        self._atomic_write_json(run_dir, f"{base}/components/_index.json", index_map)
+
+    def _save_pareto_dir(self, run_dir: str, cand_to_iter: dict[int, int]) -> None:
+        """Write Pareto frontier files keyed by iteration id (not candidate idx).
+
+        Keeping the on-disk representation iteration-id-keyed means the agent
+        never sees the internal candidate numbering; everything is anchored
+        on the ``iterations/`` timeline.
+        """
+        def _iter_ids(candidate_idxs: "set[int]") -> list[int]:
+            return sorted({cand_to_iter[c] for c in candidate_idxs if c in cand_to_iter})
+
+        if self.frontier_type in ("instance", "hybrid"):
+            instance_front: dict[str, Any] = {}
+            for val_id, best_score in self.pareto_front_valset.items():
+                instance_front[str(val_id)] = {
+                    "best_score": best_score,
+                    "best_iteration_ids": _iter_ids(self.program_at_pareto_front_valset.get(val_id, set())),
+                }
+            self._atomic_write_json(run_dir, "pareto/instance_front.json", instance_front)
+
+        if self.frontier_type in ("objective", "hybrid"):
+            obj_front: dict[str, Any] = {}
+            for obj_name, best_score in self.objective_pareto_front.items():
+                obj_front[obj_name] = {
+                    "best_score": best_score,
+                    "best_iteration_ids": _iter_ids(self.program_at_pareto_front_objectives.get(obj_name, set())),
+                }
+            self._atomic_write_json(run_dir, "pareto/objective_front.json", obj_front)
+
+        if self.frontier_type == "cartesian":
+            cartesian_front: dict[str, Any] = {}
+            for key, best_score in self.pareto_front_cartesian.items():
+                cartesian_front[str(key)] = {
+                    "best_score": best_score,
+                    "best_iteration_ids": _iter_ids(self.program_at_pareto_front_cartesian.get(key, set())),
+                }
+            self._atomic_write_json(run_dir, "pareto/cartesian_front.json", cartesian_front)
+
+    def _save_index(self, run_dir: str, cand_to_iter: dict[int, int]) -> None:
+        """Write the small top-level index that points at the rest of the tree."""
+        num_candidates = len(self.program_candidates)
+
+        hardest: list[dict[str, Any]] = []
+        if self.pareto_front_valset:
+            sorted_examples = sorted(self.pareto_front_valset.items(), key=lambda x: x[1])
+            for val_id, score in sorted_examples[:20]:
+                best_iters = sorted({
+                    cand_to_iter[c]
+                    for c in self.program_at_pareto_front_valset.get(val_id, set())
+                    if c in cand_to_iter
+                })
+                hardest.append({
+                    "val_id": str(val_id),
+                    "best_score": score,
+                    "best_iteration_ids": best_iters,
+                })
+
+        full_scores = self.program_full_scores_val_set
+        best_candidate_idx = (
+            int(max(range(num_candidates), key=lambda i: full_scores[i]))
+            if num_candidates > 0
+            else 0
+        )
+        best_iter_id = cand_to_iter.get(best_candidate_idx)
+
+        front_candidate_idxs: set[int] = set()
+        for prog_set in self.get_pareto_front_mapping().values():
+            front_candidate_idxs.update(prog_set)
+        front_iter_ids = sorted({cand_to_iter[c] for c in front_candidate_idxs if c in cand_to_iter})
+
+        index: dict[str, Any] = {
+            "schema_version": 3,
+            "iteration": self.i,
+            "total_metric_calls": self.total_num_evals,
+            "num_full_val_evals": self.num_full_ds_evals,
+            "frontier_type": self.frontier_type,
+            "component_names": self.list_of_named_predictors,
+            "summary": {
+                "num_iterations": len(cand_to_iter),
+                "best_iteration_id": best_iter_id,
+                "best_avg_score": full_scores[best_candidate_idx] if num_candidates > 0 else None,
+                "pareto_front_iteration_ids": front_iter_ids,
+                "hardest_examples": hardest,
+            },
+            "layout": {
+                "iterations_dir": "iterations/",
+                "pareto_dir": "pareto/",
+            },
+        }
+
+        self._atomic_write_json(run_dir, "gepa_state.json", index)
+
     @staticmethod
     def load(run_dir: str) -> "GEPAState[RolloutOutput, DataId]":
         with open(os.path.join(run_dir, "gepa_state.bin"), "rb") as f:
@@ -369,6 +655,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         assert len(state.program_candidates) == len(state.num_metric_calls_by_discovery)
         assert len(state.program_candidates) == len(state.parent_program_for_candidate)
         assert len(state.program_candidates) == len(state.named_predictor_id_to_update_next_for_program_candidate)
+        assert len(state.program_candidates) == len(state.iteration_ids_by_candidate_idx)
         assert len(state.pareto_front_valset) == len(state.program_at_pareto_front_valset)
         assert set(state.pareto_front_valset.keys()) == set(state.program_at_pareto_front_valset.keys())
         assert set(state.objective_pareto_front.keys()) == set(state.program_at_pareto_front_objectives.keys())
@@ -417,6 +704,22 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             d["evaluation_cache"] = None
         if "adapter_state" not in d:
             d["adapter_state"] = {}
+        if "iteration_ids_by_candidate_idx" not in d:
+            # v5 → v6: reconstruct on-disk iteration ids by walking the
+            # full trace. Seed gets 0; every accepted trace entry maps its
+            # ``new_program_idx`` to ``trace_i + 1``. Missing entries fall
+            # back to ``-1`` (shouldn't happen for a consistent state, but
+            # keeps the list length aligned with ``program_candidates``).
+            mapping = {0: 0}
+            for entry in d.get("full_program_trace", []):
+                if not entry.get("proposal_accepted"):
+                    continue
+                cand_idx = entry.get("new_program_idx")
+                trace_i = entry.get("i")
+                if cand_idx is None or trace_i is None:
+                    continue
+                mapping[cand_idx] = trace_i + 1
+            d["iteration_ids_by_candidate_idx"] = [mapping.get(i, -1) for i in range(num_candidates)]
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
@@ -531,9 +834,18 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         valset_evaluation: ValsetEvaluation,
         run_dir: str | None,
         num_metric_calls_by_discovery_of_new_program: int,
+        iteration: int | None = None,
     ) -> ProgramIdx:
+        # ``iteration`` is the 1-indexed on-disk iteration id for the
+        # proposal that produced this candidate — same numbering
+        # ``ctx.iteration`` uses (``state.i + 1``). Seed is iter id 0, so
+        # loop iterations start at 1. Falls back to ``self.i + 1`` when
+        # the caller hasn't plumbed it.
+        if iteration is None:
+            iteration = self.i + 1
         new_program_idx = len(self.program_candidates)
         self.program_candidates.append(dict(new_program))
+        self.iteration_ids_by_candidate_idx.append(iteration)
         self.num_metric_calls_by_discovery.append(num_metric_calls_by_discovery_of_new_program)
 
         max_predictor_id = max(
