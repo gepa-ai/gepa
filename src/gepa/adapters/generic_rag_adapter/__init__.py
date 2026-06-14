@@ -35,6 +35,13 @@ try:
 except ImportError:
     _LANCEDB_AVAILABLE = False
 
+try:
+    from .vector_stores.pgvector_store import PGVectorStore
+
+    _PGVECTOR_AVAILABLE = True
+except ImportError:
+    _PGVECTOR_AVAILABLE = False
+
 __all__ = [
     "GenericRAGAdapter",
     "RAGDataInst",
@@ -54,3 +61,5 @@ if _MILVUS_AVAILABLE:
     __all__.append("MilvusVectorStore")
 if _LANCEDB_AVAILABLE:
     __all__.append("LanceDBVectorStore")
+if _PGVECTOR_AVAILABLE:
+    __all__.append("PGVectorStore")
