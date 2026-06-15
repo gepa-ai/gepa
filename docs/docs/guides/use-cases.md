@@ -144,6 +144,27 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Read the paper](https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf)
 
+-   **Nubank: 100M-User Customer Support Agents**
+
+    ---
+
+    Nubank's evaluation-driven framework for building customer-support AI agents at **100M+ user scale** uses **GEPA inside DSPy to optimize their LLM-as-a-Judge prompts**. GEPA-tuned judges align with human annotators and produce stable cross-model scores, which then drive prompt iteration on the production agents. Deployed across **five production domains** (card delivery, debt management, credit-limit support, and more).
+
+    **Key Results (LLM-judge evaluation accuracy, starter prompt → GEPA-optimized):**
+
+    - **E1: 77.78% → 82.00%**; **E2: 68.88% → 88.89%** on customer-support evals (5-run mean, narrow 95% CIs)
+    - **Cohen's κ (GPT-4.1 vs GPT-4.1-mini): 0.00 → 0.745** — judges go from random to strong cross-model agreement
+    - **GPT-4.1 vs GPT-4o: κ = 0.895** post-optimization
+    - GEPA settings: `auto="light"` (~500 iterations), reflection minibatch 3, Pareto selection, GPT-4.1-mini base + GPT-5.1 reflection, free-text human rationales fed to the optimizer
+
+    **Downstream production wins (enabled by the GEPA-tuned eval stack):**
+
+    - **+37 pp AI transactional NPS** in card-delivery deployment
+    - **+29 pp self-service rate** vs. prior agent variants
+    - AI satisfaction within a few percentage points of expert human agents
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2606.08867)
+
 -   **Comet-ml Opik Integration**
 
     ---
@@ -552,6 +573,20 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
     - Demonstrates GEPA as the enabling optimizer for residual-failure skill discovery in text-to-SQL
 
     [:material-arrow-right: Read the paper](https://arxiv.org/abs/2605.21792)
+
+-   **DD-GEPA: Dialogue Disentanglement Prompt Optimization (Yokohama National University)**
+
+    ---
+
+    Takada & Mori decompose the LLM dialogue-disentanglement prompt into three components — **task instruction**, **utterance representation**, and **output instruction** — and use **GEPA as the core optimizer** over them on multi-party chat. The optimized prompt surpasses the authors' own hand-crafted prompt and several non-LLM baselines on Qwen3-30B.
+
+    **Key Results (Qwen3-30B on the Kummerfeld benchmark, baseline → DD-GEPA optimum):**
+
+    - **F1: 39.40 → 42.52** (+3.1 pp); P: 38.30 → 42.22; R: 40.56 → 42.82
+    - NMI: 93.62 → 95.51; ARI: 70.02 → 75.87; 1-1: 78.46 → 82.26
+    - Optimized prompt surpasses Takada & Mori's own hand-crafted prompt and the Elsner non-LLM baseline (15.5 F1)
+
+    [:material-arrow-right: Read the paper](https://arxiv.org/abs/2606.07894)
 
 -   **Automated Risk-of-Bias Assessment of Clinical Trials**
 
