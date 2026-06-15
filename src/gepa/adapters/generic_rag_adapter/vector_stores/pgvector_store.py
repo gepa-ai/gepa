@@ -2,6 +2,7 @@
 # https://github.com/gepa-ai/gepa
 
 import json
+import uuid
 from typing import Any, ClassVar
 
 from gepa.adapters.generic_rag_adapter.vector_store_interface import VectorStoreInterface
@@ -110,16 +111,6 @@ class PGVectorStore(VectorStoreInterface):
         from psycopg2 import sql
 
         where_sql, filter_params = self._build_where_clause(filters)
-        op = self._distance_op
-
-        if self.distance_metric == "cosine":
-            score_expr = sql.SQL(f"1 - (embedding {op} %s::vector)")
-        elif self.distance_metric == "inner_product":
-            # pgvector returns negative inner product for <#>
-            score_expr = sql.SQL(f"-(embedding {op} %s::vector)")
-        else:
-            # L2: negate so that higher score = closer
-            score_expr = sql.SQL(f"-(embedding {op} %s::vector)")
 
         query_sql = sql.SQL(
             "SELECT id, content, metadata, {score} AS score "
@@ -128,10 +119,10 @@ class PGVectorStore(VectorStoreInterface):
             "ORDER BY embedding {op} %s::vector ASC "
             "LIMIT %s"
         ).format(
-            score=score_expr,
+            score=self._vector_score_sql(),
             table=sql.Identifier(self.table_name),
             where=where_sql,
-            op=sql.SQL(op),
+            op=sql.SQL(self._distance_op),
         )
 
         # query_vector appears twice: once for score, once for ORDER BY
@@ -174,7 +165,7 @@ class PGVectorStore(VectorStoreInterface):
 
         query_sql = sql.SQL(
             "SELECT id, content, metadata, "
-            "    ({alpha} * (1 - (embedding <=> %s::vector)) "
+            "    ({alpha} * {vscore} "
             "     + {beta} * COALESCE(ts_rank(to_tsvector('english', content), plainto_tsquery('english', %s)), 0)) AS score "
             "FROM {table} "
             "{where} "
@@ -182,6 +173,7 @@ class PGVectorStore(VectorStoreInterface):
             "LIMIT %s"
         ).format(
             alpha=sql.Literal(alpha),
+            vscore=self._vector_score_sql(),
             beta=sql.Literal(1.0 - alpha),
             table=sql.Identifier(self.table_name),
             where=where_sql,
@@ -207,11 +199,15 @@ class PGVectorStore(VectorStoreInterface):
                 cur.execute(sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier(self.table_name)))
                 doc_count = cur.fetchone()[0]
 
-                # pg_attribute stores the vector dimension in atttypmod
+                # Filter by current schema to avoid ambiguity when multiple schemas
+                # share the same table name.
                 cur.execute(
-                    "SELECT atttypmod FROM pg_attribute "
+                    "SELECT pg_attribute.atttypmod "
+                    "FROM pg_attribute "
                     "JOIN pg_class ON attrelid = pg_class.oid "
-                    "WHERE relname = %s AND attname = 'embedding'",
+                    "JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid "
+                    "WHERE pg_class.relname = %s AND pg_attribute.attname = 'embedding' "
+                    "AND pg_namespace.nspname = current_schema()",
                     (self.table_name,),
                 )
                 row = cur.fetchone()
@@ -225,6 +221,7 @@ class PGVectorStore(VectorStoreInterface):
                 "distance_metric": self.distance_metric,
             }
         except Exception as e:
+            self.conn.rollback()
             return {
                 "name": self.table_name,
                 "document_count": 0,
@@ -249,7 +246,7 @@ class PGVectorStore(VectorStoreInterface):
         if len(documents) != len(embeddings):
             raise ValueError("Number of documents must match number of embeddings")
         if ids is None:
-            ids = [f"doc_{i}" for i in range(len(documents))]
+            ids = [str(uuid.uuid4()) for _ in range(len(documents))]
         elif len(ids) != len(documents):
             raise ValueError("Number of IDs must match number of documents")
 
@@ -325,6 +322,22 @@ class PGVectorStore(VectorStoreInterface):
             self.conn.rollback()
             raise RuntimeError(f"Failed to create pgvector table: {e!s}") from e
 
+    def _vector_score_sql(self) -> "Any":
+        """Return a psycopg2 sql.SQL fragment for the similarity score (one %s::vector placeholder).
+
+        All scores are normalized to [0, 1]: cosine uses 1-distance (clamped),
+        L2 uses 1/(1+distance), inner product clamps the dot product to [0, 1].
+        """
+        from psycopg2 import sql
+
+        op = sql.SQL(self._distance_op)
+        if self.distance_metric == "cosine":
+            return sql.SQL("GREATEST(0.0, 1.0 - (embedding ") + op + sql.SQL(" %s::vector))")
+        elif self.distance_metric == "l2":
+            return sql.SQL("1.0 / (1.0 + (embedding ") + op + sql.SQL(" %s::vector))")
+        else:  # inner_product: <#> returns -(a·b), so negate; clamp to [0,1] for normalized vectors
+            return sql.SQL("GREATEST(0.0, LEAST(1.0, -(embedding ") + op + sql.SQL(" %s::vector)))")
+
     def _build_where_clause(self, filters: dict[str, Any] | None):
         """Build a parameterized WHERE clause from a filters dict.
 
@@ -351,14 +364,22 @@ class PGVectorStore(VectorStoreInterface):
                 conditions.append(sql.SQL("(metadata->>%s)::numeric = %s"))
                 params.extend([key, value])
             elif isinstance(value, list):
+                # Convert to strings for ANY(%s), matching JSONB's ->> text output.
+                # Booleans must use lowercase ('true'/'false') to match JSONB's representation.
+                str_values = []
+                for v in value:
+                    if isinstance(v, bool):
+                        str_values.append("true" if v else "false")
+                    else:
+                        str_values.append(str(v))
                 conditions.append(sql.SQL("metadata->>%s = ANY(%s)"))
-                params.extend([key, [str(v) for v in value]])
+                params.extend([key, str_values])
             elif isinstance(value, dict):
                 op_map = {"gte": ">=", "gt": ">", "lte": "<=", "lt": "<"}
                 for op_key, op_val in value.items():
                     pg_op = op_map.get(op_key)
                     if pg_op:
-                        conditions.append(sql.SQL(f"(metadata->>%s)::numeric {pg_op} %s"))
+                        conditions.append(sql.SQL("(metadata->>%s)::numeric ") + sql.SQL(pg_op) + sql.SQL(" %s"))
                         params.extend([key, op_val])
 
         if not conditions:
@@ -450,8 +471,19 @@ class PGVectorStore(VectorStoreInterface):
         Returns:
             PGVectorStore instance with the table created
         """
-        dsn = f"postgresql://{user}:{password}@{host}:{port}/{database}"
-        return cls.from_connection_string(dsn, table_name, embedding_function, distance_metric, vector_size)
+        try:
+            import psycopg2
+        except ImportError as e:
+            raise ImportError(
+                "psycopg2 is required for PGVectorStore. Install with: pip install psycopg2-binary pgvector"
+            ) from e
+
+        # Use keyword arguments to avoid URL-parsing issues with special characters
+        # in passwords or usernames (e.g. '@', '/', '?').
+        conn = psycopg2.connect(host=host, port=port, dbname=database, user=user, password=password)
+        store = cls(conn, table_name, embedding_function, distance_metric)
+        store.create_table(vector_size)
+        return store
 
     @classmethod
     def create_remote(
