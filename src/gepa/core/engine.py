@@ -6,7 +6,14 @@ import traceback
 from collections.abc import Sequence
 from typing import Any, Generic
 
-from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.adapter import (
+    DataInst,
+    EvaluationBatch,
+    GEPAAdapter,
+    RolloutOutput,
+    Trajectory,
+    default_batch_evaluate,
+)
 from gepa.core.callbacks import (
     BudgetUpdatedEvent,
     CandidateAcceptedEvent,
@@ -144,26 +151,85 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if setter is not None:
             setter(state.adapter_state)
 
-    def _evaluate_on_valset(
+    def _evaluate_programs_on_valset(
         self,
-        program: dict[str, str],
+        programs: list[dict[str, str]],
         state: GEPAState[RolloutOutput, DataId],
-    ) -> ValsetEvaluation[RolloutOutput, DataId]:
+    ) -> list[tuple[ValsetEvaluation[RolloutOutput, DataId], int]]:
+        """Evaluate candidates on the valset, read-only, via ``adapter.batch_evaluate``.
+
+        Cache-miss examples across all candidates go out in one batched call, so
+        parallelism (if any) is the adapter's. Honors the eval cache and
+        ``val_evaluation_policy``. Returns each evaluation with its metric-call
+        count (cache misses); the budget is incremented later in
+        :meth:`_add_evaluated_program`, not here.
+        """
         valset = self.valset
         assert valset is not None
+        cache = state.evaluation_cache
 
-        val_ids = self.val_evaluation_policy.get_eval_batch(valset, state)
+        # 1) Per program: split the requested val examples into cached vs. to-evaluate.
+        cached_per: list[dict[Any, Any]] = []
+        todo_per: list[list[Any]] = []
+        for program in programs:
+            val_ids = list(self.val_evaluation_policy.get_eval_batch(valset, state))
+            if cache is not None:
+                cached, uncached = cache.get_batch(program, val_ids)
+            else:
+                cached, uncached = {}, val_ids
+            cached_per.append(cached)
+            todo_per.append(uncached)
 
-        outputs_by_val_idx, scores_by_val_idx, objective_by_val_idx, num_actual_evals = state.cached_evaluate_full(
-            program, list(val_ids), valset.fetch, self.evaluator
-        )
-        state.increment_evals(num_actual_evals)
+        # 2) One adapter call over every (program, cache-miss examples) pair.
+        eval_idxs = [i for i, todo in enumerate(todo_per) if todo]
+        items = [(programs[i], valset.fetch(todo_per[i])) for i in eval_idxs]
+        fresh = self._batch_evaluate(items) if items else []
+        fresh_by_idx = dict(zip(eval_idxs, fresh, strict=True))
 
-        return ValsetEvaluation(
-            outputs_by_val_id=outputs_by_val_idx,
-            scores_by_val_id=scores_by_val_idx,
-            objective_scores_by_val_id=objective_by_val_idx,
-        )
+        # 3) Merge cached + fresh per program, repopulating the cache.
+        results: list[tuple[ValsetEvaluation[RolloutOutput, DataId], int]] = []
+        for i, program in enumerate(programs):
+            outputs_by: dict[Any, Any] = {}
+            scores_by: dict[Any, float] = {}
+            objective_by: dict[Any, Any] | None = None
+            for eid, entry in cached_per[i].items():
+                outputs_by[eid] = entry.output
+                scores_by[eid] = entry.score
+                if entry.objective_scores is not None:
+                    objective_by = objective_by or {}
+                    objective_by[eid] = entry.objective_scores
+
+            uncached = todo_per[i]
+            if uncached:
+                eb = fresh_by_idx[i]
+                obj = list(eb.objective_scores) if eb.objective_scores else None
+                for j, eid in enumerate(uncached):
+                    outputs_by[eid] = eb.outputs[j]
+                    scores_by[eid] = eb.scores[j]
+                    if obj is not None:
+                        objective_by = objective_by or {}
+                        objective_by[eid] = obj[j]
+                if cache is not None:
+                    cache.put_batch(program, uncached, eb.outputs, eb.scores, obj)
+
+            results.append(
+                (
+                    ValsetEvaluation(
+                        outputs_by_val_id=outputs_by,
+                        scores_by_val_id=scores_by,
+                        objective_scores_by_val_id=objective_by,
+                    ),
+                    len(uncached),
+                )
+            )
+        return results
+
+    def _batch_evaluate(self, items: list[tuple[dict[str, str], list]]) -> list[EvaluationBatch]:
+        """Evaluate (candidate, batch) pairs via the adapter's batch_evaluate or fallback."""
+        batch_fn = getattr(self.adapter, "batch_evaluate", None)
+        if batch_fn is not None:
+            return batch_fn(items)
+        return default_batch_evaluate(self.adapter, items)
 
     def _run_full_eval_and_add(
         self,
@@ -171,8 +237,25 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         state: GEPAState[RolloutOutput, DataId],
         parent_program_idx: list[int],
     ) -> tuple[int, int]:
+        valset_evaluation, num_actual_evals = self._evaluate_programs_on_valset([new_program], state)[0]
+        return self._add_evaluated_program(new_program, state, parent_program_idx, valset_evaluation, num_actual_evals)
+
+    def _add_evaluated_program(
+        self,
+        new_program: dict[str, str],
+        state: GEPAState[RolloutOutput, DataId],
+        parent_program_idx: list[int],
+        valset_evaluation: ValsetEvaluation[RolloutOutput, DataId],
+        num_actual_evals: int,
+    ) -> tuple[int, int]:
+        """Add an already-evaluated candidate to the pool. Must run sequentially.
+
+        Snapshots the discovery budget before incrementing so candidates,
+        processed in order, record the same ``num_metric_calls_by_discovery``
+        as the serial path.
+        """
         num_metric_calls_by_discovery = state.total_num_evals
-        valset_evaluation = self._evaluate_on_valset(new_program, state)
+        state.increment_evals(num_actual_evals)
         state.num_full_ds_evals += 1
 
         # Snapshot Pareto front before update
@@ -277,15 +360,17 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     # Reflective proposal acceptance (shared by single and parallel paths)
     # ------------------------------------------------------------------
 
-    def _accept_reflective_proposal(
+    def _reflective_acceptance(
         self,
         proposal: CandidateProposal,
         iteration: int,
         state: GEPAState[RolloutOutput, DataId],
     ) -> bool:
-        """Check acceptance, run full eval if accepted, fire callbacks.
+        """Apply the acceptance criterion (on subsample scores) and fire the
+        reject path. Returns True if the proposal should proceed to full eval.
 
-        Returns True if the proposal was accepted.
+        This is the cheap, sequential gate; the expensive full-valset eval and
+        the pool/Pareto mutation happen afterwards in :meth:`_run_reflective_batch`.
         """
         old_sum = sum(proposal.subsample_scores_before or [])
         new_sum = sum(proposal.subsample_scores_after or [])
@@ -319,26 +404,57 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         else:
             accept_msg = f"Iteration {iteration}: Candidate accepted (old_sum={old_sum}, new_sum={new_sum}). Continue to full eval and add to candidate pool."
         self.logger.log(accept_msg)
-
-        new_idx, _ = self._run_full_eval_and_add(
-            new_program=proposal.candidate,
-            state=state,
-            parent_program_idx=proposal.parent_program_ids,
-        )
-
-        self._log_proposal_lm_calls(iteration, proposal, candidate_idx=new_idx)
-
-        notify_callbacks(
-            self.callbacks,
-            "on_candidate_accepted",
-            CandidateAcceptedEvent(
-                iteration=iteration,
-                new_candidate_idx=new_idx,
-                new_score=new_sum,
-                parent_ids=proposal.parent_program_ids,
-            ),
-        )
         return True
+
+    def _run_reflective_batch(
+        self,
+        proposals: list[CandidateProposal],
+        state: GEPAState[RolloutOutput, DataId],
+    ) -> bool:
+        """Gate, full-eval, and add a batch of reflective proposals.
+
+        Gating and pool mutation stay sequential and ordered; the accepted
+        candidates' valset evals are batched into one
+        :meth:`_evaluate_programs_on_valset` call. Returns True if any was accepted.
+        """
+        iteration = state.i + 1
+
+        # 1) Acceptance gate.
+        accepted = [p for p in proposals if self._reflective_acceptance(p, iteration, state)]
+        if not accepted:
+            return False
+
+        # 2) Full-valset eval of all accepted candidates.
+        valset_evals = self._evaluate_programs_on_valset([p.candidate for p in accepted], state)
+
+        # 3) Add each accepted candidate to the pool, in order.
+        any_accepted = False
+        for proposal, (valset_evaluation, num_actual_evals) in zip(accepted, valset_evals, strict=True):
+            new_idx, _ = self._add_evaluated_program(
+                new_program=proposal.candidate,
+                state=state,
+                parent_program_idx=proposal.parent_program_ids,
+                valset_evaluation=valset_evaluation,
+                num_actual_evals=num_actual_evals,
+            )
+            self._log_proposal_lm_calls(iteration, proposal, candidate_idx=new_idx)
+            notify_callbacks(
+                self.callbacks,
+                "on_candidate_accepted",
+                CandidateAcceptedEvent(
+                    iteration=iteration,
+                    new_candidate_idx=new_idx,
+                    new_score=sum(proposal.subsample_scores_after or []),
+                    parent_ids=proposal.parent_program_ids,
+                ),
+            )
+            any_accepted = True
+            if self.merge_proposer is not None:
+                self.merge_proposer.last_iter_found_new_program = True
+                if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
+                    self.merge_proposer.merges_due += 1
+
+        return any_accepted
 
     # ------------------------------------------------------------------
     # Main optimization loop
@@ -634,14 +750,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
                     continue
 
-                for proposal in proposals:
-                    accepted = self._accept_reflective_proposal(proposal, state.i + 1, state)
-                    if accepted:
-                        proposal_accepted = True
-                        if self.merge_proposer is not None:
-                            self.merge_proposer.last_iter_found_new_program = True
-                            if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
-                                self.merge_proposer.merges_due += 1
+                proposal_accepted = self._run_reflective_batch(proposals, state)
 
             except Exception as e:
                 self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
