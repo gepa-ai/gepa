@@ -139,6 +139,50 @@ class ReflectiveMutationProposer:
         proposal, _next_lm = self._reflection_lm.reflect(candidate, reflective_dataset, components_to_update)
         return proposal.new_texts, proposal.prompts, proposal.raw_lm_outputs
 
+    def _propose_texts_batch(
+        self, jobs: list[tuple[dict[str, str], Mapping[str, Sequence[Mapping[str, Any]]], list[str]]]
+    ) -> list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]]]:
+        """Propose new texts for many tasks, batching the reflection LM calls.
+
+        Only the built-in stateless reflection path can be batched (one
+        ``litellm.batch_completion`` covering every task/component). When an
+        adapter proposer or custom proposer owns the call, fall back to one
+        invocation per task — their batching, if any, is their concern.
+        """
+        if (
+            self.adapter.propose_new_texts is not None
+            or self.custom_candidate_proposer is not None
+            or self._reflection_lm is None
+        ):
+            return [self.propose_new_texts(cand, refds, comps) for cand, refds, comps in jobs]
+
+        results = self._reflection_lm.reflect_many(jobs)
+        return [(proposal.new_texts, proposal.prompts, proposal.raw_lm_outputs) for proposal, _next_lm in results]
+
+    def _propose_texts_batch_safe(
+        self, jobs: list[tuple[dict[str, str], Mapping[str, Sequence[Mapping[str, Any]]], list[str]]]
+    ) -> list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]] | None]:
+        """Like :meth:`_propose_texts_batch`, but isolates per-task failures.
+
+        Returns ``None`` in the slot of any task whose reflection raised, so one
+        bad task (or a failed batch) does not sink the whole iteration.
+        """
+        if not jobs:
+            return []
+        try:
+            return list(self._propose_texts_batch(jobs))
+        except Exception as e:
+            self.logger.log(f"Batched reflection failed ({e}); retrying per task.")
+            self.logger.log(traceback.format_exc())
+            out: list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]] | None] = []
+            for cand, refds, comps in jobs:
+                try:
+                    out.append(self.propose_new_texts(cand, refds, comps))
+                except Exception as e2:
+                    self.logger.log(f"Per-task reflection failed: {e2}")
+                    out.append(None)
+            return out
+
     # ------------------------------------------------------------------
     # Batch evaluate helper
     # ------------------------------------------------------------------
@@ -276,14 +320,16 @@ class ReflectiveMutationProposer:
             step=i,
         )
 
-        # Stage 3: Reflect + propose (per task)
-        children: list[tuple[ProposalTask, dict[str, str], EvaluationBatch, dict[str, Any]] | None] = []
+        # Stage 3a: Build reflective datasets + fire pre-reflection callbacks (per task).
+        # ``prepared`` holds one slot per task (None = skipped); ``jobs`` is the
+        # subset that will reflect, in order, so the reflection LM can batch them.
+        prepared: list[tuple[ProposalTask, EvaluationBatch, list[str], Any] | None] = []
         for task, key in zip(tasks, task_to_key, strict=True):
             eval_curr = key_to_eval[key]
 
             if not eval_curr.trajectories:
                 self.logger.log(f"Iteration {i}: No trajectories for parent {task.parent_idx}. Skipping.")
-                children.append(None)
+                prepared.append(None)
                 continue
 
             if (
@@ -292,7 +338,7 @@ class ReflectiveMutationProposer:
                 and all(s is not None and s >= self.perfect_score for s in eval_curr.scores)
             ):
                 self.logger.log(f"Iteration {i}: All subsample scores perfect for parent {task.parent_idx}. Skipping.")
-                children.append(None)
+                prepared.append(None)
                 continue
 
             predictor_names = self.module_selector(
@@ -326,40 +372,57 @@ class ReflectiveMutationProposer:
                         reflective_dataset=reflective_dataset_concrete,
                     ),
                 )
-
-                new_texts, prompts, raw_outputs = self.propose_new_texts(
-                    task.parent_candidate, reflective_dataset, predictor_names
-                )
-
-                notify_callbacks(
-                    self.callbacks,
-                    "on_proposal_end",
-                    ProposalEndEvent(
-                        iteration=i,
-                        new_instructions=new_texts,
-                        prompts=prompts,
-                        raw_lm_outputs=raw_outputs,
-                    ),
-                )
-
-                _lm_metadata: dict[str, Any] = {}
-                for comp in new_texts:
-                    _lm_metadata[f"prompt:{comp}"] = prompts.get(comp, "")
-                    _lm_metadata[f"raw_lm_output:{comp}"] = raw_outputs.get(comp, "")
-
-                for pname, text in new_texts.items():
-                    self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
-
-                new_candidate = task.parent_candidate.copy()
-                for name, text in new_texts.items():
-                    assert name in new_candidate, f"{name} missing in candidate"
-                    new_candidate[name] = text
-
-                children.append((task, new_candidate, eval_curr, _lm_metadata))
             except Exception as e:
-                self.logger.log(f"Iteration {i}: Exception during reflection/proposal: {e}")
+                self.logger.log(f"Iteration {i}: Exception building reflective dataset: {e}")
                 self.logger.log(traceback.format_exc())
+                prepared.append(None)
+                continue
+
+            prepared.append((task, eval_curr, predictor_names, reflective_dataset))
+
+        # Stage 3b: Reflect across all prepared tasks — one batched LM call when the
+        # reflection LM supports it (litellm.batch_completion), else per task.
+        jobs = [(p[0].parent_candidate, p[3], p[2]) for p in prepared if p is not None]
+        batch_texts = iter(self._propose_texts_batch_safe(jobs))
+
+        # Stage 3c: Build each child candidate from its proposed texts.
+        children: list[tuple[ProposalTask, dict[str, str], EvaluationBatch, dict[str, Any]] | None] = []
+        for p in prepared:
+            if p is None:
                 children.append(None)
+                continue
+            task, eval_curr, _predictor_names, _reflective_dataset = p
+            texts = next(batch_texts)
+            if texts is None:
+                children.append(None)
+                continue
+            new_texts, prompts, raw_outputs = texts
+
+            notify_callbacks(
+                self.callbacks,
+                "on_proposal_end",
+                ProposalEndEvent(
+                    iteration=i,
+                    new_instructions=new_texts,
+                    prompts=prompts,
+                    raw_lm_outputs=raw_outputs,
+                ),
+            )
+
+            _lm_metadata: dict[str, Any] = {}
+            for comp in new_texts:
+                _lm_metadata[f"prompt:{comp}"] = prompts.get(comp, "")
+                _lm_metadata[f"raw_lm_output:{comp}"] = raw_outputs.get(comp, "")
+
+            for pname, text in new_texts.items():
+                self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
+
+            new_candidate = task.parent_candidate.copy()
+            for name, text in new_texts.items():
+                assert name in new_candidate, f"{name} missing in candidate"
+                new_candidate[name] = text
+
+            children.append((task, new_candidate, eval_curr, _lm_metadata))
 
         # Stage 4: Batch evaluate children
         valid_children = [(idx, c) for idx, c in enumerate(children) if c is not None]
