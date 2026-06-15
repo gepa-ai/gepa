@@ -93,6 +93,9 @@ def optimize(
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
     acceptance_criterion: AcceptanceCriterion
     | Literal["strict_improvement", "improvement_or_equal"] = "strict_improvement",
+    # Proposal strategies (default: 1 parent, 1 mutation per iteration)
+    sampling_strategy: Any | None = None,
+    selection_strategy: Any | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -389,6 +392,9 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
+        acceptance_criterion=acceptance_criterion_instance,
+        sampling_strategy=sampling_strategy,
+        selection_strategy=selection_strategy,
     )
 
     def evaluator_fn(
