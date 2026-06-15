@@ -27,6 +27,7 @@ from gepa.proposer.reflective_mutation.base import (
     LanguageModel,
     ReflectionComponentSelector,
 )
+from gepa.proposer.reflective_mutation.reflection_lm import StatelessReflectionLM
 from gepa.strategies.batch_sampler import BatchSampler
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
@@ -102,14 +103,19 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         self._lock = threading.Lock()
 
         self.reflection_prompt_template = reflection_prompt_template
-        # Track parameters for which we've already logged missing template warnings
-        self._missing_template_warnings: set[str] = set()
 
         if isinstance(reflection_prompt_template, dict):
             for _param_name, template in reflection_prompt_template.items():
                 InstructionProposalSignature.validate_prompt_template(template)
         else:
             InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
+
+        # Reflection LM (#329 Phase 1); None when an adapter/custom proposer owns reflection.
+        self._reflection_lm: StatelessReflectionLM | None = (
+            StatelessReflectionLM(reflection_lm, reflection_prompt_template, logger)
+            if reflection_lm is not None
+            else None
+        )
 
         if self.skip_perfect_score and self.perfect_score is None:
             raise ValueError(
@@ -137,47 +143,13 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         if self.custom_candidate_proposer is not None:
             return self.custom_candidate_proposer(candidate, reflective_dataset, components_to_update), empty, {}
 
-        if self.reflection_lm is None:
+        if self._reflection_lm is None:
             raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
 
-        new_texts: dict[str, str] = {}
-        prompts: dict[str, str | list[dict[str, Any]]] = {}
-        raw_lm_outputs: dict[str, str] = {}
-        for name in components_to_update:
-            # Gracefully handle cases where a selected component has no data in reflective_dataset
-            if name not in reflective_dataset or not reflective_dataset.get(name):
-                self.logger.log(f"Component '{name}' is not in reflective dataset. Skipping.")
-                continue
-
-            base_instruction = candidate[name]
-            dataset_with_feedback = reflective_dataset[name]
-
-            # Determine which prompt template to use for this parameter
-            prompt_template = None
-            if isinstance(self.reflection_prompt_template, dict):
-                # Use parameter-specific template if available
-                prompt_template = self.reflection_prompt_template.get(name)
-                if prompt_template is None and name not in self._missing_template_warnings:
-                    self.logger.log(
-                        f"No reflection_prompt_template found for parameter '{name}'. Using default template."
-                    )
-                    self._missing_template_warnings.add(name)
-            else:
-                # Use the single template for all parameters
-                prompt_template = self.reflection_prompt_template
-
-            result, prompt, raw_output = InstructionProposalSignature.run_with_metadata(
-                lm=self.reflection_lm,
-                input_dict={
-                    "current_instruction_doc": base_instruction,
-                    "dataset_with_feedback": dataset_with_feedback,
-                    "prompt_template": prompt_template,
-                },
-            )
-            new_texts[name] = result["new_instruction"]
-            prompts[name] = prompt
-            raw_lm_outputs[name] = raw_output
-        return new_texts, prompts, raw_lm_outputs
+        # Delegate to the ReflectionLM (#329 Phase 1). The stateless default
+        # returns itself as next_lm, so we ignore it; a later phase pools it.
+        proposal, _next_lm = self._reflection_lm.reflect(candidate, reflective_dataset, components_to_update)
+        return proposal.new_texts, proposal.prompts, proposal.raw_lm_outputs
 
     def prepare_proposal(self, state: GEPAState) -> ProposalContext:
         """Select parent candidate and sample minibatch. Must be called sequentially.
@@ -338,7 +310,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
         # 3) Build reflective dataset and propose new content
         try:
-            reflective_dataset = self.adapter.make_reflective_dataset(ctx.curr_prog, eval_curr, predictor_names_to_update)
+            reflective_dataset = self.adapter.make_reflective_dataset(
+                ctx.curr_prog, eval_curr, predictor_names_to_update
+            )
 
             reflective_dataset_concrete: dict[str, list[dict[str, Any]]] = {
                 k: [dict(item) for item in v] for k, v in reflective_dataset.items()
@@ -420,7 +394,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         eval_after = self.adapter.evaluate(ctx.minibatch, new_candidate, capture_traces=True)
         new_scores = eval_after.scores
         new_outputs = eval_after.outputs
-        total_evals += eval_after.num_metric_calls if eval_after.num_metric_calls is not None else len(ctx.subsample_ids)
+        total_evals += (
+            eval_after.num_metric_calls if eval_after.num_metric_calls is not None else len(ctx.subsample_ids)
+        )
 
         notify_callbacks(
             self.callbacks,
@@ -440,9 +416,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
         trace_data["new_subsample_scores"] = new_scores
         new_sum = sum(new_scores)
-        self.experiment_tracker.log_metrics(
-            {"new_subsample_score": new_sum, "total_metric_calls": total_evals}, step=i
-        )
+        self.experiment_tracker.log_metrics({"new_subsample_score": new_sum, "total_metric_calls": total_evals}, step=i)
 
         proposal = CandidateProposal(
             candidate=new_candidate,
@@ -465,7 +439,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             tag="reflective_mutation",
             metadata=_lm_metadata,
         )
-        return ProposalOutput(proposal=proposal, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry)
+        return ProposalOutput(
+            proposal=proposal, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry
+        )
 
     def apply_proposal_output(self, output: ProposalOutput, state: GEPAState) -> None:
         """Apply deferred state updates from a proposal. Must be called sequentially."""
@@ -481,10 +457,12 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         :meth:`apply_proposal_output`.
         """
         ctx = self.prepare_proposal(state)
-        state.full_program_trace[-1].update({
-            "selected_program_candidate": ctx.curr_prog_id,
-            "subsample_ids": ctx.subsample_ids,
-        })
+        state.full_program_trace[-1].update(
+            {
+                "selected_program_candidate": ctx.curr_prog_id,
+                "subsample_ids": ctx.subsample_ids,
+            }
+        )
         return self.execute_proposal(ctx, state)
 
     def propose(self, state: GEPAState) -> CandidateProposal | None:
