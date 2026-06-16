@@ -18,9 +18,9 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
+from gepa.lm import LM
 from gepa.oa._helpers import warn_unknown_config_keys
 from gepa.oa.engine import Result
-from gepa.lm import LM
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -38,9 +38,9 @@ from pathlib import Path
 from typing import Any, NoReturn, cast
 
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
-from gepa.oa.engines import AutoResearchEngine, BestOfNEngine, GepaEngine, MetaHarnessEngine
 from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engine import Engine, Result
+from gepa.oa.engines import AutoResearchEngine, BestOfNEngine, GepaEngine, MetaHarnessEngine
 from gepa.oa.ensemble import (
     optimize_adaptive_sequential_with_server,
     optimize_best_of,

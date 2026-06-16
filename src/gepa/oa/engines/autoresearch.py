@@ -29,8 +29,8 @@ from typing import TYPE_CHECKING
 
 from gepa.oa._helpers import example_to_json, warn_unknown_config_keys
 from gepa.oa.budget import BudgetTracker
-from gepa.oa.engines.claude_utils import copy_session_transcript
 from gepa.oa.engine import Result
+from gepa.oa.engines.claude_utils import copy_session_transcript
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_settings_args
 
 if TYPE_CHECKING:
