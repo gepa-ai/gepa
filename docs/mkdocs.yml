@@ -44,6 +44,16 @@ nav:
         - API Overview: api/index.md
         - optimize_anything:
             - optimize_anything: api/optimize_anything/optimize_anything.md
+            - Task: api/optimize_anything/Task.md
+            - OptimizeAnythingConfig: api/optimize_anything/OptimizeAnythingConfig.md
+            - Engine: api/optimize_anything/Engine.md
+            - Result: api/optimize_anything/Result.md
+            - EvalServer: api/optimize_anything/EvalServer.md
+            - BudgetTracker: api/optimize_anything/BudgetTracker.md
+            - optimize_anything_with_server: api/optimize_anything/optimize_anything_with_server.md
+            - list_engines: api/optimize_anything/list_engines.md
+            - register_engine: api/optimize_anything/register_engine.md
+        - GEPA Engine:
             - GEPAConfig: api/optimize_anything/GEPAConfig.md
             - EngineConfig: api/optimize_anything/EngineConfig.md
             - ReflectionConfig: api/optimize_anything/ReflectionConfig.md

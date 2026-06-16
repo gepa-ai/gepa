@@ -1,6 +1,6 @@
 # TrackingConfig
 
-::: gepa.optimize_anything.TrackingConfig
+::: gepa.legacy_optimize_anything.TrackingConfig
     handler: python
     options:
         show_source: true

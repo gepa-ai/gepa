@@ -1,21 +1,21 @@
 from __future__ import annotations
 
 import json
-import threading
 import tempfile
+import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-from gepa.omni.budget import BudgetTracker
-from gepa.omni.eval_server import EvalServer
-from gepa.omni.task import Task
+from gepa.oa.budget import BudgetTracker
+from gepa.oa.eval_server import EvalServer
+from gepa.oa.task import Task
 
 
-class OmniEvalServerTests(unittest.TestCase):
+class OptimizeAnythingEvalServerTests(unittest.TestCase):
     def test_shared_output_dir_summary_writes_use_independent_temp_files(self) -> None:
-        """Composition backends may create independent servers in one run dir."""
+        """Composition engines may create independent servers in one run dir."""
 
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)

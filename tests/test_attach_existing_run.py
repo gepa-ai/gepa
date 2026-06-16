@@ -8,19 +8,19 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 
 from gepa.logging.experiment_tracker import ExperimentTracker, create_experiment_tracker
-from gepa.optimize_anything import GEPAConfig, TrackingConfig
+from gepa.legacy_optimize_anything import GEPAConfig, TrackingConfig
 
 
 # ---------------------------------------------------------------------------
 # ExperimentTracker — wandb_attach_existing
 # ---------------------------------------------------------------------------
 
+
 class TestWandbAttachExisting:
     def test_attach_existing_skips_init(self):
         """wandb.init() is not called when attach_existing=True."""
         tracker = ExperimentTracker(use_wandb=True, wandb_attach_existing=True)
-        with patch("wandb.init") as mock_init, \
-             patch("wandb.login"):
+        with patch("wandb.init") as mock_init, patch("wandb.login"):
             tracker.initialize()
             tracker.start_run()
         mock_init.assert_not_called()
@@ -29,8 +29,7 @@ class TestWandbAttachExisting:
         """wandb.finish() is not called when attach_existing=True."""
         tracker = ExperimentTracker(use_wandb=True, wandb_attach_existing=True)
         mock_run = MagicMock()
-        with patch("wandb.run", mock_run), \
-             patch("wandb.finish") as mock_finish:
+        with patch("wandb.run", mock_run), patch("wandb.finish") as mock_finish:
             tracker.end_run()
         mock_finish.assert_not_called()
 
@@ -45,10 +44,12 @@ class TestWandbAttachExisting:
         """Without attach_existing, wandb.init() and wandb.finish() are called."""
         tracker = ExperimentTracker(use_wandb=True, wandb_attach_existing=False)
         mock_run = MagicMock()
-        with patch("wandb.login"), \
-             patch("wandb.init") as mock_init, \
-             patch("wandb.run", mock_run), \
-             patch("wandb.finish") as mock_finish:
+        with (
+            patch("wandb.login"),
+            patch("wandb.init") as mock_init,
+            patch("wandb.run", mock_run),
+            patch("wandb.finish") as mock_finish,
+        ):
             tracker.initialize()
             tracker.start_run()
             tracker.end_run()
@@ -59,10 +60,12 @@ class TestWandbAttachExisting:
         """Context manager entry/exit respects attach_existing."""
         tracker = ExperimentTracker(use_wandb=True, wandb_attach_existing=True)
         mock_run = MagicMock()
-        with patch("wandb.login"), \
-             patch("wandb.init") as mock_init, \
-             patch("wandb.run", mock_run), \
-             patch("wandb.finish") as mock_finish:
+        with (
+            patch("wandb.login"),
+            patch("wandb.init") as mock_init,
+            patch("wandb.run", mock_run),
+            patch("wandb.finish") as mock_finish,
+        ):
             with tracker:
                 pass
         mock_init.assert_not_called()
@@ -73,14 +76,17 @@ class TestWandbAttachExisting:
 # ExperimentTracker — mlflow_attach_existing
 # ---------------------------------------------------------------------------
 
+
 class TestMlflowAttachExisting:
     def test_attach_existing_skips_start_run(self):
         """mlflow.start_run() is not called when attach_existing=True."""
         tracker = ExperimentTracker(use_mlflow=True, mlflow_attach_existing=True)
-        with patch("mlflow.set_tracking_uri"), \
-             patch("mlflow.set_experiment"), \
-             patch("mlflow.active_run", return_value=MagicMock()), \
-             patch("mlflow.start_run") as mock_start:
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("mlflow.set_experiment"),
+            patch("mlflow.active_run", return_value=MagicMock()),
+            patch("mlflow.start_run") as mock_start,
+        ):
             tracker.initialize()
             tracker.start_run()
         mock_start.assert_not_called()
@@ -90,8 +96,7 @@ class TestMlflowAttachExisting:
         """mlflow.end_run() is not called when attach_existing=True."""
         tracker = ExperimentTracker(use_mlflow=True, mlflow_attach_existing=True)
         tracker._created_mlflow_run = False  # never created
-        with patch("mlflow.end_run") as mock_end, \
-             patch("mlflow.active_run", return_value=MagicMock()):
+        with patch("mlflow.end_run") as mock_end, patch("mlflow.active_run", return_value=MagicMock()):
             tracker.end_run()
         mock_end.assert_not_called()
 
@@ -105,11 +110,13 @@ class TestMlflowAttachExisting:
     def test_normal_mode_creates_and_ends_run(self):
         """Without attach_existing, mlflow.start_run() and end_run() are called."""
         tracker = ExperimentTracker(use_mlflow=True, mlflow_attach_existing=False)
-        with patch("mlflow.set_tracking_uri"), \
-             patch("mlflow.set_experiment"), \
-             patch("mlflow.active_run", return_value=None), \
-             patch("mlflow.start_run") as mock_start, \
-             patch("mlflow.end_run") as mock_end:
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("mlflow.set_experiment"),
+            patch("mlflow.active_run", return_value=None),
+            patch("mlflow.start_run") as mock_start,
+            patch("mlflow.end_run") as mock_end,
+        ):
             # active_run returns a mock after start_run
             mock_start.return_value = MagicMock()
             tracker.initialize()
@@ -123,9 +130,11 @@ class TestMlflowAttachExisting:
     def test_context_manager_attach_existing(self):
         """Context manager entry/exit respects mlflow attach_existing."""
         tracker = ExperimentTracker(use_mlflow=True, mlflow_attach_existing=True)
-        with patch("mlflow.active_run", return_value=MagicMock()), \
-             patch("mlflow.start_run") as mock_start, \
-             patch("mlflow.end_run") as mock_end:
+        with (
+            patch("mlflow.active_run", return_value=MagicMock()),
+            patch("mlflow.start_run") as mock_start,
+            patch("mlflow.end_run") as mock_end,
+        ):
             with tracker:
                 pass
         mock_start.assert_not_called()
@@ -136,17 +145,14 @@ class TestMlflowAttachExisting:
 # create_experiment_tracker — new flags threaded through
 # ---------------------------------------------------------------------------
 
+
 class TestCreateExperimentTracker:
     def test_wandb_attach_existing_passed_through(self):
-        tracker = create_experiment_tracker(
-            use_wandb=True, wandb_attach_existing=True
-        )
+        tracker = create_experiment_tracker(use_wandb=True, wandb_attach_existing=True)
         assert tracker.wandb_attach_existing is True
 
     def test_mlflow_attach_existing_passed_through(self):
-        tracker = create_experiment_tracker(
-            use_mlflow=True, mlflow_attach_existing=True
-        )
+        tracker = create_experiment_tracker(use_mlflow=True, mlflow_attach_existing=True)
         assert tracker.mlflow_attach_existing is True
 
     def test_defaults_are_false(self):
@@ -158,6 +164,7 @@ class TestCreateExperimentTracker:
 # ---------------------------------------------------------------------------
 # TrackingConfig — fields present and wired to experiment tracker
 # ---------------------------------------------------------------------------
+
 
 class TestTrackingConfig:
     def test_fields_exist_with_defaults(self):
@@ -177,7 +184,7 @@ class TestTrackingConfig:
 
     def test_config_wired_to_tracker_via_optimize_anything(self):
         """TrackingConfig.wandb_attach_existing reaches the ExperimentTracker."""
-        from gepa.optimize_anything import optimize_anything, EngineConfig, ReflectionConfig
+        from gepa.legacy_optimize_anything import optimize_anything, EngineConfig, ReflectionConfig
 
         created_trackers: list[ExperimentTracker] = []
         original = create_experiment_tracker
@@ -187,11 +194,16 @@ class TestTrackingConfig:
             created_trackers.append(t)
             return t
 
-        with patch("gepa.optimize_anything.create_experiment_tracker", side_effect=spy), \
-             patch("gepa.optimize_anything.GEPAEngine") as mock_cls, \
-             patch("wandb.login"), patch("wandb.init"), patch("wandb.finish"), \
-             patch("mlflow.active_run", return_value=MagicMock()), \
-             patch("mlflow.start_run"), patch("mlflow.end_run"):
+        with (
+            patch("gepa.legacy_optimize_anything.create_experiment_tracker", side_effect=spy),
+            patch("gepa.legacy_optimize_anything.GEPAEngine") as mock_cls,
+            patch("wandb.login"),
+            patch("wandb.init"),
+            patch("wandb.finish"),
+            patch("mlflow.active_run", return_value=MagicMock()),
+            patch("mlflow.start_run"),
+            patch("mlflow.end_run"),
+        ):
             mock_engine = MagicMock()
             mock_state = MagicMock()
             mock_state.program_candidates = [{"current_candidate": "v0"}]
@@ -213,9 +225,7 @@ class TestTrackingConfig:
                 evaluator=lambda c: 0.5,
                 config=GEPAConfig(
                     engine=EngineConfig(max_metric_calls=3),
-                    reflection=ReflectionConfig(
-                        reflection_lm=MagicMock(return_value="```\nx\n```")
-                    ),
+                    reflection=ReflectionConfig(reflection_lm=MagicMock(return_value="```\nx\n```")),
                     tracking=TrackingConfig(
                         use_wandb=True,
                         wandb_attach_existing=True,
@@ -234,6 +244,7 @@ class TestTrackingConfig:
 # gepa.optimize — attach flags in the flat API
 # ---------------------------------------------------------------------------
 
+
 class TestOptimizeApiAttachExisting:
     def test_wandb_attach_existing_in_optimize(self):
         """gepa.optimize passes wandb_attach_existing to the tracker."""
@@ -251,14 +262,18 @@ class TestOptimizeApiAttachExisting:
             propose_new_texts = None
 
             def evaluate(self, batch, candidate, capture_traces=False):
-                return EvaluationBatch(outputs=[0.5]*len(batch), scores=[0.5]*len(batch))
+                return EvaluationBatch(outputs=[0.5] * len(batch), scores=[0.5] * len(batch))
 
             def make_reflective_dataset(self, candidate, eval_batch, components):
                 return {c: [] for c in components}
 
-        with patch("gepa.api.create_experiment_tracker", side_effect=spy), \
-             patch("gepa.api.GEPAEngine") as mock_cls, \
-             patch("wandb.login"), patch("wandb.init"), patch("wandb.finish"):
+        with (
+            patch("gepa.api.create_experiment_tracker", side_effect=spy),
+            patch("gepa.api.GEPAEngine") as mock_cls,
+            patch("wandb.login"),
+            patch("wandb.init"),
+            patch("wandb.finish"),
+        ):
             mock_engine = MagicMock()
             mock_state = MagicMock()
             mock_state.program_candidates = [{"system_prompt": "v0"}]
@@ -293,6 +308,7 @@ class TestOptimizeApiAttachExisting:
 # key_prefix
 # ---------------------------------------------------------------------------
 
+
 class TestKeyPrefix:
     def test_metrics_prefixed_wandb(self):
         tracker = ExperimentTracker(use_wandb=True, key_prefix="gepa/")
@@ -312,8 +328,7 @@ class TestKeyPrefix:
 
     def test_table_name_prefixed_wandb(self):
         tracker = ExperimentTracker(use_wandb=True, key_prefix="run1/")
-        with patch("wandb.log") as mock_log, \
-             patch("wandb.Table", return_value=MagicMock()):
+        with patch("wandb.log") as mock_log, patch("wandb.Table", return_value=MagicMock()):
             tracker.log_table("candidates", ["col"], [[1]])
         call_kwargs = mock_log.call_args[0][0]
         assert "run1/candidates" in call_kwargs
@@ -328,9 +343,11 @@ class TestKeyPrefix:
     def test_html_key_prefixed_wandb(self):
         tracker = ExperimentTracker(use_wandb=True, key_prefix="gepa/")
         mock_run = MagicMock()
-        with patch("wandb.log") as mock_log, \
-             patch("wandb.Html", return_value=MagicMock()), \
-             patch("wandb.run", mock_run):
+        with (
+            patch("wandb.log") as mock_log,
+            patch("wandb.Html", return_value=MagicMock()),
+            patch("wandb.run", mock_run),
+        ):
             tracker.log_html("<html/>", key="candidate_tree")
         call_kwargs = mock_log.call_args[0][0]
         assert "gepa/candidate_tree" in call_kwargs
@@ -368,7 +385,7 @@ class TestKeyPrefix:
 
     def test_prefix_via_tracking_config(self):
         """key_prefix in TrackingConfig is wired to ExperimentTracker."""
-        from gepa.optimize_anything import TrackingConfig, GEPAConfig
+        from gepa.legacy_optimize_anything import TrackingConfig, GEPAConfig
 
         created: list[ExperimentTracker] = []
         original = create_experiment_tracker
@@ -378,10 +395,15 @@ class TestKeyPrefix:
             created.append(t)
             return t
 
-        with patch("gepa.optimize_anything.create_experiment_tracker", side_effect=spy), \
-             patch("gepa.optimize_anything.GEPAEngine") as mock_cls, \
-             patch("wandb.login"), patch("wandb.init"), patch("wandb.finish"):
+        with (
+            patch("gepa.legacy_optimize_anything.create_experiment_tracker", side_effect=spy),
+            patch("gepa.legacy_optimize_anything.GEPAEngine") as mock_cls,
+            patch("wandb.login"),
+            patch("wandb.init"),
+            patch("wandb.finish"),
+        ):
             from unittest.mock import MagicMock
+
             mock_engine = MagicMock()
             mock_state = MagicMock()
             mock_state.program_candidates = [{"current_candidate": "v0"}]
@@ -398,15 +420,14 @@ class TestKeyPrefix:
             mock_engine.run.return_value = mock_state
             mock_cls.return_value = mock_engine
 
-            from gepa.optimize_anything import optimize_anything, EngineConfig, ReflectionConfig
+            from gepa.legacy_optimize_anything import optimize_anything, EngineConfig, ReflectionConfig
+
             optimize_anything(
                 seed_candidate="x",
                 evaluator=lambda c: 0.5,
                 config=GEPAConfig(
                     engine=EngineConfig(max_metric_calls=3),
-                    reflection=ReflectionConfig(
-                        reflection_lm=MagicMock(return_value="```\nx\n```")
-                    ),
+                    reflection=ReflectionConfig(reflection_lm=MagicMock(return_value="```\nx\n```")),
                     tracking=TrackingConfig(key_prefix="gepa/"),
                 ),
             )
@@ -419,14 +440,13 @@ class TestKeyPrefix:
 # wandb_step_metric — custom x-axis for embedded runs
 # ---------------------------------------------------------------------------
 
+
 class TestWandbStepMetric:
     def test_define_metric_called_on_first_log(self):
         """wandb.define_metric is called lazily on the first log_metrics call."""
         tracker = ExperimentTracker(use_wandb=True, wandb_step_metric="gepa/iteration")
         mock_run = MagicMock()
-        with patch("wandb.run", mock_run), \
-             patch("wandb.define_metric") as mock_define, \
-             patch("wandb.log"):
+        with patch("wandb.run", mock_run), patch("wandb.define_metric") as mock_define, patch("wandb.log"):
             tracker.log_metrics({"score": 0.5}, step=1)
         # define_metric called twice: once for the step metric, once for "*"
         assert mock_define.call_count == 2
@@ -437,9 +457,7 @@ class TestWandbStepMetric:
         """wandb.define_metric is NOT called on subsequent log_metrics calls."""
         tracker = ExperimentTracker(use_wandb=True, wandb_step_metric="gepa/iteration")
         mock_run = MagicMock()
-        with patch("wandb.run", mock_run), \
-             patch("wandb.define_metric") as mock_define, \
-             patch("wandb.log"):
+        with patch("wandb.run", mock_run), patch("wandb.define_metric") as mock_define, patch("wandb.log"):
             tracker.log_metrics({"score": 0.5}, step=1)
             tracker.log_metrics({"score": 0.6}, step=2)
         assert mock_define.call_count == 2  # only from the first call
@@ -448,9 +466,7 @@ class TestWandbStepMetric:
         """step is injected as a metric value, not passed as step= kwarg."""
         tracker = ExperimentTracker(use_wandb=True, wandb_step_metric="gepa/iteration")
         mock_run = MagicMock()
-        with patch("wandb.run", mock_run), \
-             patch("wandb.define_metric"), \
-             patch("wandb.log") as mock_log:
+        with patch("wandb.run", mock_run), patch("wandb.define_metric"), patch("wandb.log") as mock_log:
             tracker.log_metrics({"score": 0.5, "loss": 0.3}, step=3)
         mock_log.assert_called_once()
         call_args = mock_log.call_args
@@ -479,9 +495,7 @@ class TestWandbStepMetric:
             key_prefix="round1/",
         )
         mock_run = MagicMock()
-        with patch("wandb.run", mock_run), \
-             patch("wandb.define_metric"), \
-             patch("wandb.log") as mock_log:
+        with patch("wandb.run", mock_run), patch("wandb.define_metric"), patch("wandb.log") as mock_log:
             tracker.log_metrics({"score": 0.5}, step=2)
         logged_data = mock_log.call_args[0][0]
         # key_prefix applied to metric keys
@@ -493,9 +507,7 @@ class TestWandbStepMetric:
         """When step is None, step metric is not injected."""
         tracker = ExperimentTracker(use_wandb=True, wandb_step_metric="gepa/iteration")
         mock_run = MagicMock()
-        with patch("wandb.run", mock_run), \
-             patch("wandb.define_metric"), \
-             patch("wandb.log") as mock_log:
+        with patch("wandb.run", mock_run), patch("wandb.define_metric"), patch("wandb.log") as mock_log:
             tracker.log_metrics({"score": 0.5}, step=None)
         logged_data = mock_log.call_args[0][0]
         assert "gepa/iteration" not in logged_data

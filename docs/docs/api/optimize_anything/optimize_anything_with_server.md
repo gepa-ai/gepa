@@ -1,6 +1,6 @@
-# make_litellm_lm
+# optimize_anything_with_server
 
-::: gepa.legacy_optimize_anything.make_litellm_lm
+::: gepa.optimize_anything.optimize_anything_with_server
     handler: python
     options:
         show_source: true

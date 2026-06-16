@@ -1,4 +1,4 @@
-"""Small shared helpers for backend implementations."""
+"""Small shared helpers for engine implementations."""
 
 from __future__ import annotations
 
@@ -8,17 +8,17 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 
-def warn_unknown_config_keys(backend_name: str, raw: dict[str, Any], known: Iterable[str]) -> None:
+def warn_unknown_config_keys(engine_name: str, raw: dict[str, Any], known: Iterable[str]) -> None:
     """Warn when ``raw`` contains keys outside ``known`` so typos surface.
 
-    Backends call this from their ``__init__`` after reading the keys they
-    consume from ``OmniConfig.config``.
+    Engines call this from their ``__init__`` after reading the keys they
+    consume from ``OptimizeAnythingConfig.config``.
     """
     known_set = frozenset(known)
     unknown = set(raw) - known_set
     if unknown:
         warnings.warn(
-            f"{backend_name}: unknown keys in OmniConfig.config: {sorted(unknown)}. Known keys: {sorted(known_set)}",
+            f"{engine_name}: unknown keys in OptimizeAnythingConfig.config: {sorted(unknown)}. Known keys: {sorted(known_set)}",
             stacklevel=3,
         )
 

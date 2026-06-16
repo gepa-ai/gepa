@@ -1,6 +1,6 @@
-# make_litellm_lm
+# Task
 
-::: gepa.legacy_optimize_anything.make_litellm_lm
+::: gepa.optimize_anything.Task
     handler: python
     options:
         show_source: true

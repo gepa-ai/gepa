@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from gepa.optimize_anything import (
+from gepa.legacy_optimize_anything import (
     GEPAConfig,
     EngineConfig,
     ReflectionConfig,

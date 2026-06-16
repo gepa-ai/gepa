@@ -14,8 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import gepa.optimize_anything as oa
-from gepa.optimize_anything import EvaluatorWrapper, OptimizationState
+import gepa.legacy_optimize_anything as oa
+from gepa.legacy_optimize_anything import EvaluatorWrapper, OptimizationState
 from gepa.utils.stdio_capture import StreamCaptureManager, ThreadLocalStreamCapture
 
 # ---------------------------------------------------------------------------
@@ -71,6 +71,7 @@ class TestOaLog:
 
     def test_log_outside_evaluator_discards_output(self):
         """oa.log() outside evaluator should discard output, not accumulate."""
+
         # Call oa.log() outside evaluator in a fresh thread to guarantee clean state
         def warn_runner():
             with warnings.catch_warnings(record=True):

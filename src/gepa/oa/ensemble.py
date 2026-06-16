@@ -1,37 +1,37 @@
-"""Ensemble helpers — compose multiple backends over the same task.
+"""Ensemble helpers — compose multiple engines over the same task.
 
 Two flavors of each helper:
 
 - ``optimize_*`` — convenience. Take ``(task, evaluate, configs)``, build
-  a fresh :class:`EvalServer` per backend internally (each with its own
-  budget from ``OmniConfig.max_evals`` / ``OmniConfig.max_token_cost``).
-  Budgets are pre-partitioned per config; if a backend finishes early its
+  a fresh :class:`EvalServer` per engine internally (each with its own
+  budget from ``OptimizeAnythingConfig.max_evals`` / ``OptimizeAnythingConfig.max_token_cost``).
+  Budgets are pre-partitioned per config; if an engine finishes early its
   leftover budget is not redistributed.
 - ``optimize_*_with_server`` — primitive. Caller owns the
   :class:`EvalServer`(s). All four helpers take **one server per config**
-  (one :class:`BudgetTracker` per backend or per stage), so budget is
+  (one :class:`BudgetTracker` per engine or per stage), so budget is
   fair-shared across the composition — pre-partition ``total / N`` the
   way you want it spent. Useful when an outer framework (e.g. terrarium)
   wants every inner eval routed through its own server while still
-  composing multiple backends.
+  composing multiple engines.
 
 Helpers
 -------
 - :func:`optimize_sequential` / :func:`optimize_sequential_with_server` —
-  pipeline. Each backend's best becomes the next backend's seed.
-  Monotonic: a backend that regresses doesn't poison the chain (the
+  pipeline. Each engine's best becomes the next engine's seed.
+  Monotonic: an engine that regresses doesn't poison the chain (the
   running best is carried forward).
-- :func:`optimize_adaptive_sequential_with_server` — rotate through backends
+- :func:`optimize_adaptive_sequential_with_server` — rotate through engines
   on score plateaus while sharing one eval budget and carrying the running
   best forward.
 - :func:`optimize_parallel` / :func:`optimize_parallel_with_server` —
-  run N backends concurrently, return all results.
+  run N engines concurrently, return all results.
 - :func:`optimize_best_of` / :func:`optimize_best_of_with_server` —
   parallel + ``max(results, key=best_score)``.
 - :func:`optimize_vote` / :func:`optimize_vote_with_server` — parallel,
-  then re-score each backend's ``best_candidate`` once via ``evaluate``
+  then re-score each engine's ``best_candidate`` once via ``evaluate``
   (outside any budget) and return the candidate with the highest
-  re-score. Useful when backends have disjoint scoring quirks and you
+  re-score. Useful when engines have disjoint scoring quirks and you
   want a final consensus.
 """
 
@@ -41,27 +41,47 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from gepa.omni.api import optimize_anything, optimize_anything_with_server
-from gepa.omni.backend import Result
+from gepa.oa.engine import Result
 
 if TYPE_CHECKING:
-    from gepa.omni.config import OmniConfig
-    from gepa.omni.eval_server import EvalServer
-    from gepa.omni.task import EvalFn, Task
+    from gepa.oa.config import OptimizeAnythingConfig
+    from gepa.oa.eval_server import EvalServer
+    from gepa.oa.task import EvalFn, Task
+
+
+def optimize_anything(
+    task: Task,
+    evaluate: EvalFn,
+    config: OptimizeAnythingConfig,
+) -> Result:
+    """Delegate to the public :func:`gepa.optimize_anything.optimize_anything`."""
+    from gepa.optimize_anything import optimize_anything as run
+
+    return run(task, evaluate, config)
+
+
+def optimize_anything_with_server(
+    server: EvalServer,
+    config: OptimizeAnythingConfig,
+) -> Result:
+    """Delegate to the public :func:`gepa.optimize_anything.optimize_anything_with_server`."""
+    from gepa.optimize_anything import optimize_anything_with_server as run
+
+    return run(server, config)
 
 
 def optimize_sequential(
     task: Task,
     evaluate: EvalFn,
-    configs: list[OmniConfig],
+    configs: list[OptimizeAnythingConfig],
 ) -> Result:
-    """Run ``configs`` in order; each backend's best becomes the next seed.
+    """Run ``configs`` in order; each engine's best becomes the next seed.
 
-    Monotonic: if backend ``k+1`` regresses, the chain still feeds the
-    running-best candidate (not backend ``k``'s output verbatim) to
-    backend ``k+2``.
+    Monotonic: if engine ``k+1`` regresses, the chain still feeds the
+    running-best candidate (not engine ``k``'s output verbatim) to
+    engine ``k+2``.
 
-    Returns the :class:`Result` of the last backend run, with metadata
+    Returns the :class:`Result` of the last engine run, with metadata
     augmented by ``all_results`` (one Result per config, stage-ordered) and
     ``best_stage_score`` / ``best_stage_candidate``.
     """
@@ -93,7 +113,7 @@ def optimize_sequential(
 def optimize_parallel(
     task: Task,
     evaluate: EvalFn,
-    configs: list[OmniConfig],
+    configs: list[OptimizeAnythingConfig],
     *,
     max_workers: int | None = None,
 ) -> list[Result]:
@@ -116,14 +136,14 @@ def optimize_parallel(
 def optimize_best_of(
     task: Task,
     evaluate: EvalFn,
-    configs: list[OmniConfig],
+    configs: list[OptimizeAnythingConfig],
     *,
     max_workers: int | None = None,
 ) -> Result:
     """Run all configs in parallel, return the result with the highest ``best_score``.
 
-    ``best_score`` comes from each backend's own scoring during its run — no
-    re-scoring. Use :func:`optimize_vote` if you want a fair cross-backend
+    ``best_score`` comes from each engine's own scoring during its run — no
+    re-scoring. Use :func:`optimize_vote` if you want a fair cross-engine
     comparison via a single re-score pass.
     """
     results = optimize_parallel(task, evaluate, configs, max_workers=max_workers)
@@ -135,22 +155,22 @@ def optimize_best_of(
 def optimize_vote(
     task: Task,
     evaluate: EvalFn,
-    configs: list[OmniConfig],
+    configs: list[OptimizeAnythingConfig],
     *,
     max_workers: int | None = None,
 ) -> Result:
-    """Run all configs in parallel, then re-score each backend's best candidate
+    """Run all configs in parallel, then re-score each engine's best candidate
     once via ``evaluate`` (outside any budget) and return the highest-scoring.
 
     Unlike :func:`optimize_best_of`, the re-score pass uses a single shared
-    scoring function, so backends with different internal eval semantics get
+    scoring function, so engines with different internal eval semantics get
     compared fairly. The returned :class:`Result` is the original winning
-    backend's result with metadata augmented:
+    engine's result with metadata augmented:
 
     - ``vote_scores``: list of re-scores aligned with ``configs``.
-    - ``vote_candidates``: each backend's best_candidate.
-    - ``vote_winner_idx``: index into ``configs`` of the winning backend.
-    - ``all_results``: the raw list of backend results.
+    - ``vote_candidates``: each engine's best_candidate.
+    - ``vote_winner_idx``: index into ``configs`` of the winning engine.
+    - ``all_results``: the raw list of engine results.
     """
     results = optimize_parallel(task, evaluate, configs, max_workers=max_workers)
     vote_scores: list[float] = []
@@ -182,7 +202,7 @@ def optimize_vote(
 
 def optimize_sequential_with_server(
     servers: list[EvalServer],
-    configs: list[OmniConfig],
+    configs: list[OptimizeAnythingConfig],
 ) -> Result:
     """Sequential variant for caller-owned :class:`EvalServer`s.
 
@@ -196,7 +216,7 @@ def optimize_sequential_with_server(
     ``initial_candidate`` with the running-best candidate by mutating
     ``servers[i].task`` in place, exactly like :func:`optimize_sequential`.
     The mutation is benign: only ``initial_candidate`` changes, and a server
-    doesn't read it again after construction (only the next backend does,
+    doesn't read it again after construction (only the next engine does,
     when picking up the seed).
 
     Returns the :class:`Result` of the last stage with ``all_results``
@@ -236,7 +256,7 @@ def optimize_sequential_with_server(
 
 def optimize_adaptive_sequential_with_server(
     server: EvalServer,
-    configs: list[OmniConfig],
+    configs: list[OptimizeAnythingConfig],
     *,
     plateau_evals: int,
     patience: int = 1,
@@ -245,20 +265,20 @@ def optimize_adaptive_sequential_with_server(
     cycle: bool = True,
     max_switches: int | None = None,
 ) -> Result:
-    """Run backend slices and switch when the current backend plateaus.
+    """Run engine slices and switch when the current engine plateaus.
 
-    This is a scheduler over existing omni backends, not a new optimizer. It
-    repeatedly gives the active backend a bounded eval slice, observes whether
-    that backend's aggregate ``Result.best_score`` improved the scheduler's
-    running best, and switches to the next backend after ``patience``
+    This is a scheduler over existing optimize_anything engines, not a new optimizer. It
+    repeatedly gives the active engine a bounded eval slice, observes whether
+    that engine's aggregate ``Result.best_score`` improved the scheduler's
+    running best, and switches to the next engine after ``patience``
     non-improving slices once ``min_evals_per_stage`` has been spent in the
     current stage.
 
     All slices share ``server`` and therefore one hard eval budget. The running
     best candidate is always fed forward, so a regressing slice cannot poison a
-    later backend. The returned result is the last executed slice augmented
+    later engine. The returned result is the last executed slice augmented
     with scheduler metadata and ``best_stage_candidate`` / ``best_stage_score``
-    for the best aggregate backend result seen by the scheduler. This avoids
+    for the best aggregate engine result seen by the scheduler. This avoids
     treating per-example ``EvalServer.best_score`` as a candidate-level score
     on dataset tasks.
     """
@@ -335,8 +355,8 @@ def optimize_adaptive_sequential_with_server(
 
             schedule.append(
                 {
-                    "backend_idx": current_idx,
-                    "backend": str(configs[current_idx].backend),
+                    "engine_idx": current_idx,
+                    "engine": str(configs[current_idx].engine),
                     "eval_start": before_evals,
                     "eval_end": after_evals,
                     "eval_delta": eval_delta,
@@ -351,9 +371,7 @@ def optimize_adaptive_sequential_with_server(
                 break
 
             should_switch = (
-                no_improvement_slices >= patience
-                and current_stage_evals >= min_evals_per_stage
-                and len(configs) > 1
+                no_improvement_slices >= patience and current_stage_evals >= min_evals_per_stage and len(configs) > 1
             )
             if should_switch:
                 if max_switches is not None and switches >= max_switches:
@@ -369,7 +387,7 @@ def optimize_adaptive_sequential_with_server(
                 no_improvement_slices = 0
 
             # Always seed the next slice with the global best from the shared
-            # server. This keeps scheduler semantics monotonic across backends.
+            # server. This keeps scheduler semantics monotonic across engines.
             if best_so_far is not None:
                 server.task = replace(server.task, initial_candidate=best_so_far.best_candidate)
     finally:
@@ -408,7 +426,7 @@ def optimize_adaptive_sequential_with_server(
 
 def optimize_parallel_with_server(
     servers: list[EvalServer],
-    configs: list[OmniConfig],
+    configs: list[OptimizeAnythingConfig],
     *,
     max_workers: int | None = None,
 ) -> list[Result]:
@@ -437,16 +455,16 @@ def optimize_parallel_with_server(
 
 def optimize_best_of_with_server(
     servers: list[EvalServer],
-    configs: list[OmniConfig],
+    configs: list[OptimizeAnythingConfig],
     *,
     max_workers: int | None = None,
 ) -> Result:
     """Best-of variant for caller-owned :class:`EvalServer`s.
 
     Run all (server, config) pairs in parallel, return the result with
-    the highest ``best_score``. ``best_score`` comes from each backend's
+    the highest ``best_score``. ``best_score`` comes from each engine's
     own scoring during its run — no re-scoring. Use
-    :func:`optimize_vote_with_server` for cross-backend re-score.
+    :func:`optimize_vote_with_server` for cross-engine re-score.
     """
     results = optimize_parallel_with_server(servers, configs, max_workers=max_workers)
     winner = max(results, key=lambda r: r.best_score)
@@ -456,7 +474,7 @@ def optimize_best_of_with_server(
 
 def optimize_vote_with_server(
     servers: list[EvalServer],
-    configs: list[OmniConfig],
+    configs: list[OptimizeAnythingConfig],
     evaluate: EvalFn,
     *,
     max_workers: int | None = None,
@@ -464,12 +482,12 @@ def optimize_vote_with_server(
     """Vote variant for caller-owned :class:`EvalServer`s.
 
     Run all (server, config) pairs in parallel, then re-score each
-    backend's ``best_candidate`` once via ``evaluate`` (outside any
+    engine's ``best_candidate`` once via ``evaluate`` (outside any
     budget) and return the highest-scoring. ``evaluate`` is called
     directly — it does not go through any of the inner servers, so the
     re-score pass does not consume their budgets.
 
-    Returned :class:`Result` is the winning backend's result with
+    Returned :class:`Result` is the winning engine's result with
     ``vote_scores`` / ``vote_candidates`` / ``vote_winner_idx`` /
     ``all_results`` in metadata.
     """

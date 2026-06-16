@@ -1,15 +1,15 @@
 """In-process budget enforcement.
 
-The :class:`BudgetTracker` lives inside the omni process and wraps the
-real eval function. Backends — including external black-box ones — can only
+The :class:`BudgetTracker` lives inside the optimize_anything process and wraps the
+real eval function. Engines — including external black-box ones — can only
 evaluate through the eval server, so they cannot modify the counter.
 
 Two independent limits are supported — ``max_evals`` (number of eval calls)
-and ``max_token_cost`` (cumulative USD spent on backend LLM tokens). At least
+and ``max_token_cost`` (cumulative USD spent on engine LLM tokens). At least
 one must be specified.
 
 ``max_evals`` is enforced centrally by the ``BudgetTracker`` (every eval goes
-through it). ``max_token_cost`` is enforced by each backend in its own way
+through it). ``max_token_cost`` is enforced by each engine in its own way
 (GEPA via ``max_reflection_cost``, Claude Code via ``--max-budget-usd``).
 """
 
@@ -32,9 +32,9 @@ class BudgetTracker:
     Args:
         max_evals: Maximum number of evaluation calls allowed. ``None`` means
             unlimited (token-cost-only mode).
-        max_token_cost: Maximum cumulative USD spent on backend LLM tokens.
+        max_token_cost: Maximum cumulative USD spent on engine LLM tokens.
             ``None`` means unlimited (eval-count-only mode). Enforcement is
-            backend-side; the tracker holds the config value for propagation.
+            engine-side; the tracker holds the config value for propagation.
 
     Raises:
         ValueError: If both ``max_evals`` and ``max_token_cost`` are ``None``.

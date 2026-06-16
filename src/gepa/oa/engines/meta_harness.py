@@ -1,8 +1,8 @@
-"""Meta-Harness backend: iterative candidate proposal via Claude Code.
+"""Meta-Harness engine: iterative candidate proposal via Claude Code.
 
 The proposer (a Claude subprocess) reads frontier + history and writes
-``pending_eval.json`` listing 1+ candidates; the backend benchmarks each one
-through the omni eval server, updates state files, and loops until the
+``pending_eval.json`` listing 1+ candidates; the engine benchmarks each one
+through the optimize_anything eval server, updates state files, and loops until the
 budget is exhausted or ``max_iterations`` is hit.
 """
 
@@ -20,15 +20,15 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from gepa.omni._helpers import example_to_json, warn_unknown_config_keys
-from gepa.omni.backend import Result
-from gepa.omni.budget import BudgetExhausted, BudgetTracker
-from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_settings_args
+from gepa.oa._helpers import example_to_json, warn_unknown_config_keys
+from gepa.oa.budget import BudgetExhausted, BudgetTracker
+from gepa.oa.engine import Result
+from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_settings_args
 
 if TYPE_CHECKING:
-    from gepa.omni.config import OmniConfig
-    from gepa.omni.eval_server import EvalServer
-    from gepa.omni.task import Task
+    from gepa.oa.config import OptimizeAnythingConfig
+    from gepa.oa.eval_server import EvalServer
+    from gepa.oa.task import Task
 
 
 _MH_CONFIG_KEYS: tuple[str, ...] = ("model", "max_iterations", "max_candidates_per_iter")
@@ -36,15 +36,15 @@ _MH_CONFIG_KEYS: tuple[str, ...] = ("model", "max_iterations", "max_candidates_p
 
 SKILL_MD = """\
 ---
-name: gepa-omni-meta-harness
-description: Run one iteration of candidate evolution for a task. Called by the meta_harness backend.
+name: gepa-optimize-anything-meta-harness
+description: Run one iteration of candidate evolution for a task. Called by the meta_harness engine.
 ---
 
 # Meta-Harness (Candidate Evolution)
 
 Run ONE iteration of candidate evolution. Do all work in the main session — do NOT delegate to subagents. Constraints get lost when you delegate, leading to parameter-only changes and skipped prototyping.
 
-**You do NOT run benchmarks.** You analyze results, prototype changes, and write new candidate files. The outer loop (the meta_harness backend) handles benchmarking separately.
+**You do NOT run benchmarks.** You analyze results, prototype changes, and write new candidate files. The outer loop (the meta_harness engine) handles benchmarking separately.
 
 ## CRITICAL CONSTRAINTS
 
@@ -78,7 +78,7 @@ If the last 3 iterations explored the same axis (prompt wording, retrieval count
 
 ## Budget
 
-Token-cost and eval-count budgets are enforced by the backend, not by you. Don't try to ration evals or refuse to propose because "budget might run out" — if the cap is reached, the backend simply stops spawning new proposer sessions. Your only job is to produce strong candidates this iteration.
+Token-cost and eval-count budgets are enforced by the engine, not by you. Don't try to ration evals or refuse to propose because "budget might run out" — if the cap is reached, the engine simply stops spawning new proposer sessions. Your only job is to produce strong candidates this iteration.
 
 ## WORKFLOW
 
@@ -206,7 +206,7 @@ def _materialize_sandbox(work_dir: Path, task: Task, server: EvalServer, budget:
 
     (work_dir / "task.md").write_text(_build_task_md(task))
 
-    skill_dir = work_dir / ".claude" / "skills" / "gepa-omni-meta-harness"
+    skill_dir = work_dir / ".claude" / "skills" / "gepa-optimize-anything-meta-harness"
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / "SKILL.md").write_text(SKILL_MD)
 
@@ -250,9 +250,7 @@ def _materialize_sandbox(work_dir: Path, task: Task, server: EvalServer, budget:
         # existed; test stays sealed at the eval-server HTTP layer.
         for split in ("train", "val"):
             for eid, ex in server.iter_split(split):
-                (train_dir / f"{eid}.json").write_text(
-                    json.dumps(example_to_json(eid, ex), indent=2, default=str)
-                )
+                (train_dir / f"{eid}.json").write_text(json.dumps(example_to_json(eid, ex), indent=2, default=str))
 
 
 def _run_proposer(
@@ -280,7 +278,7 @@ def _run_proposer(
         f"- state/reports/: `{state / 'reports'}`\n"
         f"- agents/: `{work_dir / 'agents'}`\n"
         f"- Write pending_eval.json to: `{pending_path}`\n\n"
-        f"Follow the gepa-omni-meta-harness skill in `.claude/skills/`."
+        f"Follow the gepa-optimize-anything-meta-harness skill in `.claude/skills/`."
     )
 
     session_id = str(uuid.uuid4())
@@ -596,10 +594,10 @@ def _colorize_score(score: float) -> str:
     return s
 
 
-class MetaHarnessBackend:
+class MetaHarnessEngine:
     """Iterative meta-harness optimizer.
 
-    Backend-specific keys read from ``OmniConfig.config``:
+    Engine-specific keys read from ``OptimizeAnythingConfig.config``:
 
     - ``model``: Proposer model. Default ``"claude-sonnet-4-6"`` (versioned —
       pin for reproducibility; pass ``"sonnet"`` / ``"opus"`` aliases to track
@@ -612,7 +610,7 @@ class MetaHarnessBackend:
 
     name = "meta_harness"
 
-    def __init__(self, config: OmniConfig) -> None:
+    def __init__(self, config: OptimizeAnythingConfig) -> None:
         extras = config.config
         warn_unknown_config_keys(self.name, extras, _MH_CONFIG_KEYS)
         self.model: str = extras.get("model", "claude-sonnet-4-6")
@@ -633,13 +631,13 @@ class MetaHarnessBackend:
         # pointer, and keeps Seatbelt's allowRead outside ~/. process_result
         # mirrors back to output_dir/work/ so artifacts aren't lost.
         if self.sandbox:
-            self._pending_tempdir = tempfile.TemporaryDirectory(prefix="omni_mh_")
+            self._pending_tempdir = tempfile.TemporaryDirectory(prefix="optimize_anything_mh_")
             work_dir = Path(self._pending_tempdir.name)
         elif self.run_dir:
             work_dir = Path(self.run_dir)
             work_dir.mkdir(parents=True, exist_ok=True)
         else:
-            self._pending_tempdir = tempfile.TemporaryDirectory(prefix="omni_mh_")
+            self._pending_tempdir = tempfile.TemporaryDirectory(prefix="optimize_anything_mh_")
             work_dir = Path(self._pending_tempdir.name)
 
         _materialize_sandbox(work_dir, task, server, budget)
@@ -806,9 +804,7 @@ class MetaHarnessBackend:
                     )
                     continue
 
-                trace_count = _capture_eval_traces(
-                    server, name, (eval_idx_before, len(server.eval_log)), work_dir
-                )
+                trace_count = _capture_eval_traces(server, name, (eval_idx_before, len(server.eval_log)), work_dir)
 
                 prev_best = self._best_score(frontier_path)
                 # Per-example scores are present for dataset tasks (the
@@ -828,8 +824,8 @@ class MetaHarnessBackend:
                 if improved:
                     iter_improved = True
 
-                delta_str = "(new_best)" if improved else (
-                    f"({score - prev_best:+.4f})" if prev_best is not None else ""
+                delta_str = (
+                    "(new_best)" if improved else (f"({score - prev_best:+.4f})" if prev_best is not None else "")
                 )
                 trace_str = f" traces={trace_count}" if trace_count else ""
                 _log(
@@ -848,10 +844,7 @@ class MetaHarnessBackend:
                     hypothesis=c.get("hypothesis", ""),
                     axis=c.get("axis", ""),
                     components=c.get("components", []),
-                    outcome=(
-                        f"{score:.4f}" if prev_best is None
-                        else f"{score:.4f} ({score - prev_best:+.4f})"
-                    ),
+                    outcome=(f"{score:.4f}" if prev_best is None else f"{score:.4f} ({score - prev_best:+.4f})"),
                     budget_used=budget.used,
                     propose_time=propose_time if ci == 1 else None,
                 )
@@ -878,9 +871,7 @@ class MetaHarnessBackend:
                             {
                                 "meta_harness/iteration": iteration,
                                 "meta_harness/candidate_score": score,
-                                "meta_harness/best_score": (
-                                    self._best_score(frontier_path) or 0.0
-                                ),
+                                "meta_harness/best_score": (self._best_score(frontier_path) or 0.0),
                                 "meta_harness/proposer_cost": total_proposer_cost,
                             },
                             step=budget.used,
@@ -891,10 +882,7 @@ class MetaHarnessBackend:
             bench_time = time.time() - bench_start
 
             wall = _elapsed(time.time() - run_start)
-            tail = (
-                f"iter {iteration} wall={wall} "
-                f"propose={_elapsed(propose_time)} bench={_elapsed(bench_time)}"
-            )
+            tail = f"iter {iteration} wall={wall} propose={_elapsed(propose_time)} bench={_elapsed(bench_time)}"
             improved_tag = f" {_green('IMPROVED')}" if iter_improved else ""
             _log(f"  {_dim(tail)}{improved_tag}")
 
@@ -942,14 +930,12 @@ class MetaHarnessBackend:
 
     def process_result(self, result: Result, output_dir: Path | None) -> None:
         # Prefer ``self.run_dir`` when the caller's server has no output_dir:
-        # callers like terrarium's omni adapter set ``output_dir=None`` on
+        # callers like terrarium's optimize_anything adapter set ``output_dir=None`` on
         # inner servers (to avoid double per-eval-JSON mirroring) but still
-        # want backend artifacts (work tree, session transcripts) preserved
+        # want engine artifacts (work tree, session transcripts) preserved
         # under the configured ``run_dir`` rather than lost when the tempdir
         # is cleaned up.
-        dest = output_dir if output_dir is not None else (
-            Path(self.run_dir) if self.run_dir else None
-        )
+        dest = output_dir if output_dir is not None else (Path(self.run_dir) if self.run_dir else None)
         if dest is None:
             if self._pending_tempdir is not None:
                 self._pending_tempdir.cleanup()

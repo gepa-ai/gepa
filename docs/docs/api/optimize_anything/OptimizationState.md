@@ -1,6 +1,6 @@
 # OptimizationState
 
-::: gepa.optimize_anything.OptimizationState
+::: gepa.legacy_optimize_anything.OptimizationState
     handler: python
     options:
         show_source: true

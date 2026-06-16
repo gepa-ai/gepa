@@ -31,7 +31,7 @@ That's the contract this module implements. Each call:
 
 Needs ``EngineConfig.write_agent_state=True`` on the GEPA side so the
 ``run_dir`` actually contains the readable ``iterations/`` and ``pareto/``
-trees this proposer reads. The :class:`~gepa.omni.backends.gepa.GepaBackend`
+trees this proposer reads. The :class:`~gepa.oa.engines.gepa.GepaEngine`
 wiring auto-sets that default whenever this proposer is selected.
 
 Learns the current ``iteration`` (trace ``state.i``) and
@@ -49,7 +49,7 @@ concurrent proposers is convention-only (claude is *instructed* to stay
 inside its own ``proposals/<subdir>/``); a stricter per-subdir write jail
 or a git worktree per proposal would be needed to enforce this.
 
-Budget + cost tracking: raises :class:`gepa.omni.budget.BudgetExhausted`
+Budget + cost tracking: raises :class:`gepa.oa.budget.BudgetExhausted`
 when cumulative spend hits ``max_budget_usd``, and exposes ``total_cost``
 / ``total_tokens_in`` / ``total_tokens_out`` so existing reflection-cost
 GEPA callbacks plug in unchanged (they only need those three attributes,
@@ -72,9 +72,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from gepa.omni.backends.claude_utils import copy_session_transcript
-from gepa.omni.budget import BudgetExhausted
-from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_settings_args
+from gepa.oa.budget import BudgetExhausted
+from gepa.oa.engines.claude_utils import copy_session_transcript
+from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_settings_args
 
 _FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 
@@ -164,7 +164,7 @@ class ClaudeCodeAgentProposer:
         """Write ``<run_dir>/task.md`` once per run.
 
         Mirrors the ``program.md`` pattern used by
-        :class:`~gepa.omni.backends.claude_code.ClaudeCodeBackend`: long task
+        :class:`~gepa.oa.engines.autoresearch.AutoResearchEngine`: long task
         context is materialized on disk and referenced by path from the CLI
         prompt. One file (not a dir) so the agent incurs a single read per
         iteration instead of one-per-section.
@@ -548,7 +548,7 @@ can see your reasoning; keep it tight.
         # cwd to ``copy_session_transcript`` so the slug lookup hits.
         proc: subprocess.CompletedProcess[str]
         if self.sandbox:
-            with tempfile.TemporaryDirectory(prefix="omni_gepa_cc_agent_") as jail_root_str:
+            with tempfile.TemporaryDirectory(prefix="optimize_anything_gepa_cc_agent_") as jail_root_str:
                 jail_root = Path(jail_root_str)
                 agent_subdir = self._build_jail_mirror(subdir, jail_root)
                 proc = self._run_claude(

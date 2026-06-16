@@ -1,12 +1,12 @@
 """Eval server: the single choke point for evaluation, budget, and tracking.
 
-Every backend — in-process or external — goes through the :class:`EvalServer`.
+Every engine — in-process or external — goes through the :class:`EvalServer`.
 It exposes two interfaces to the same budget-controlled eval:
 
 1. ``server.evaluate(candidate)`` — direct Python call (no HTTP overhead).
-2. ``POST server.url/evaluate`` — HTTP endpoint for external/black-box backends.
+2. ``POST server.url/evaluate`` — HTTP endpoint for external/black-box engines.
 
-The api always creates the EvalServer; backends never construct their own.
+The api always creates the EvalServer; engines never construct their own.
 
 HTTP Protocol
 -------------
@@ -22,7 +22,7 @@ POST /evaluate_examples
     respecting the concurrency limit. Each example = 1 budget tick.
 
     The agent-visible pool is ``train_set + val_set`` (val merged in so
-    backends/agents see one combined set). The ``test_set`` is sealed —
+    engines/agents see one combined set). The ``test_set`` is sealed —
     HTTP callers cannot reach it via this endpoint. The in-process Python
     API (:meth:`evaluate_examples`) is unrestricted; the runner uses it
     directly for held-out test reporting.
@@ -43,8 +43,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
 
-from gepa.omni.budget import BudgetExhausted, BudgetTracker
-from gepa.omni.task import EvalFn, Task
+from gepa.oa.budget import BudgetExhausted, BudgetTracker
+from gepa.oa.task import EvalFn, Task
 
 DEFAULT_MAX_CONCURRENCY = 8
 
@@ -65,7 +65,7 @@ def _resolve_id(item: Any, fallback: str) -> str:
 class EvalServer:
     """Eval server with budget enforcement — the single source of truth.
 
-    In-process backends call :meth:`evaluate` directly. External backends POST
+    In-process engines call :meth:`evaluate` directly. External engines POST
     to :attr:`url`. Both go through the same budget counter.
 
     Args:
@@ -133,7 +133,7 @@ class EvalServer:
         self._server: HTTPServer | None = None
         self._thread: threading.Thread | None = None
 
-    # ── Direct Python API (used by in-process backends like GEPA) ───────
+    # ── Direct Python API (used by in-process engines like GEPA) ───────
 
     def iter_split(self, split: str) -> Iterator[tuple[str, Any]]:
         """Yield ``(id, item)`` pairs for the given split (``train``/``val``/``test``)."""
@@ -305,7 +305,7 @@ class EvalServer:
         with self._lock:
             return list(self._progress_log)
 
-    # ── HTTP server (used by external backends) ─────────────────────────
+    # ── HTTP server (used by external engines) ─────────────────────────
 
     @property
     def port(self) -> int:
@@ -404,9 +404,7 @@ class EvalServer:
     def _write_summary(self, snapshot: dict[str, Any]) -> None:
         assert self.output_dir is not None
         summary_path = self.output_dir / "summary.json"
-        tmp = summary_path.with_name(
-            f".summary.{threading.get_ident()}.{uuid.uuid4().hex}.tmp"
-        )
+        tmp = summary_path.with_name(f".summary.{threading.get_ident()}.{uuid.uuid4().hex}.tmp")
         try:
             tmp.write_text(json.dumps(snapshot, indent=2, default=str))
             tmp.replace(summary_path)

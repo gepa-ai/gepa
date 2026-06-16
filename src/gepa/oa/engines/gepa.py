@@ -1,4 +1,4 @@
-"""GEPA backend: runs ``gepa.optimize_anything`` against the omni eval server.
+"""GEPA engine: runs the archived GEPA optimizer against the optimize_anything eval server.
 
 In-process — calls ``server.evaluate(candidate, example)`` directly. Budget is
 enforced by the server. ``max_token_cost`` is enforced via the GEPA engine's
@@ -11,17 +11,17 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from gepa.omni._helpers import warn_unknown_config_keys
-from gepa.omni.backend import Result
-from gepa.omni.budget import BudgetExhausted
+from gepa.oa._helpers import warn_unknown_config_keys
+from gepa.oa.budget import BudgetExhausted
+from gepa.oa.engine import Result
 
 if TYPE_CHECKING:
-    from gepa.omni.config import OmniConfig
-    from gepa.omni.eval_server import EvalServer
-    from gepa.omni.task import Task
+    from gepa.oa.config import OptimizeAnythingConfig
+    from gepa.oa.eval_server import EvalServer
+    from gepa.oa.task import Task
 
 
-# Keys this backend understands inside ``OmniConfig.config``.
+# Keys this engine understands inside ``OptimizeAnythingConfig.config``.
 _GEPA_CONFIG_KEYS: tuple[str, ...] = (
     "engine",
     "reflection",
@@ -35,39 +35,39 @@ _GEPA_CONFIG_KEYS: tuple[str, ...] = (
 )
 
 
-class GepaBackend:
-    """Runs GEPA's ``optimize_anything`` against an omni task.
+class GepaEngine:
+    """Runs GEPA's ``optimize_anything`` against an optimize_anything task.
 
-    Backend-specific keys read from ``OmniConfig.config`` (all optional):
+    Engine-specific keys read from ``OptimizeAnythingConfig.config`` (all optional):
 
-    - ``engine``: kwargs for :class:`gepa.optimize_anything.EngineConfig`.
-    - ``reflection``: kwargs for :class:`~gepa.optimize_anything.ReflectionConfig`.
-    - ``merge``: kwargs for :class:`~gepa.optimize_anything.MergeConfig` (or ``None``).
-    - ``refiner``: kwargs for :class:`~gepa.optimize_anything.RefinerConfig` (or ``None``).
+    - ``engine``: kwargs for :class:`gepa.legacy_optimize_anything.EngineConfig`.
+    - ``reflection``: kwargs for :class:`~gepa.legacy_optimize_anything.ReflectionConfig`.
+    - ``merge``: kwargs for :class:`~gepa.legacy_optimize_anything.MergeConfig` (or ``None``).
+    - ``refiner``: kwargs for :class:`~gepa.legacy_optimize_anything.RefinerConfig` (or ``None``).
     - ``objective``, ``background``: override ``task.objective`` / ``task.background``.
     - ``reflection_lm_kwargs``: extra kwargs for ``gepa.lm.LM(...)``.
     - ``callbacks``: list of GEPA callbacks.
     - ``claude_code_agent``: kwargs forwarded to
-      :class:`~gepa.omni.proposers.ClaudeCodeAgentProposer`. When set, GEPA's
+      :class:`~gepa.oa.proposers.ClaudeCodeAgentProposer`. When set, GEPA's
       reflection step is replaced by a Claude Code subprocess that reads the
       agent-readable run-dir tree (``write_agent_state`` is auto-enabled);
       ``run_dir``, ``max_thinking_tokens``, ``effort``, and ``sandbox`` come
-      from the surrounding :class:`OmniConfig`. Mutually exclusive with
+      from the surrounding :class:`OptimizeAnythingConfig`. Mutually exclusive with
       ``reflection.custom_candidate_proposer``.
     """
 
     name = "gepa"
 
-    def __init__(self, config: OmniConfig) -> None:
+    def __init__(self, config: OptimizeAnythingConfig) -> None:
         extras = config.config
         warn_unknown_config_keys(self.name, extras, _GEPA_CONFIG_KEYS)
-        # Cross-cutting (read directly off OmniConfig)
+        # Cross-cutting (read directly off OptimizeAnythingConfig)
         self.run_dir = config.run_dir
         self.stop_at_score = config.stop_at_score
         self.effort = config.effort
         self.max_thinking_tokens = config.max_thinking_tokens
         self.sandbox = config.sandbox
-        # Backend-specific (read out of config.config)
+        # Engine-specific (read out of config.config)
         self.engine: dict[str, Any] = dict(extras.get("engine") or {})
         self.reflection: dict[str, Any] = dict(extras.get("reflection") or {})
         self.merge: dict[str, Any] | None = dict(extras["merge"]) if extras.get("merge") else None
@@ -81,8 +81,7 @@ class GepaBackend:
         )
 
     def run(self, task: Task, server: EvalServer) -> Result:
-        from gepa.lm import LM
-        from gepa.optimize_anything import (
+        from gepa.legacy_optimize_anything import (
             EngineConfig,
             GEPAConfig,
             MergeConfig,
@@ -90,6 +89,7 @@ class GepaBackend:
             ReflectionConfig,
             optimize_anything,
         )
+        from gepa.lm import LM
 
         budget = server.budget
         objective = self.objective or task.objective
@@ -102,7 +102,7 @@ class GepaBackend:
             if reflection_kwargs.get("custom_candidate_proposer") is not None:
                 raise ValueError("claude_code_agent is mutually exclusive with reflection.custom_candidate_proposer")
             if self.run_dir is None:
-                raise ValueError("claude_code_agent requires OmniConfig.run_dir to be set")
+                raise ValueError("claude_code_agent requires OptimizeAnythingConfig.run_dir to be set")
             agent_proposer = self._build_claude_code_agent(
                 objective,
                 background,
@@ -120,7 +120,7 @@ class GepaBackend:
                 if self.max_thinking_tokens is not None:
                     lm_kwargs["thinking"] = {"type": "enabled", "budget_tokens": self.max_thinking_tokens}
                 if self.effort is not None:
-                    # Auto-thread OmniConfig.effort into the LM kwargs so the
+                    # Auto-thread OptimizeAnythingConfig.effort into the LM kwargs so the
                     # LM-based proposer picks up extended thinking the same way
                     # the claude_code_agent path does. User overrides via
                     # explicit reflection_lm_kwargs.reasoning_effort still win.
@@ -187,8 +187,8 @@ class GepaBackend:
             stop_callbacks=stop_callbacks or None,
         )
 
-        # The omni eval server (server.evaluate) is our single budget choke
-        # point — gepa.optimize_anything's evaluator goes straight through it.
+        # The optimize_anything eval server (server.evaluate) is our single budget choke
+        # point — gepa.legacy_optimize_anything's evaluator goes straight through it.
         def evaluator(candidate, example=None, **kwargs):
             return server.evaluate(candidate, example)
 
@@ -235,7 +235,7 @@ class GepaBackend:
         if gepa_result is not None:
             # gepa_result.best_candidate is str | dict[str,str]; we always pass
             # a str seed_candidate, so the runtime value is str — but the typing
-            # admits the dict form. Coerce so omni's Result stays str-typed.
+            # admits the dict form. Coerce so optimize_anything's Result stays str-typed.
             best = gepa_result.best_candidate
             if isinstance(best, dict):
                 best = next(iter(best.values()), "")
@@ -287,18 +287,18 @@ class GepaBackend:
         *,
         default_max_budget_usd: float | None = None,
     ) -> Any:
-        """Construct a :class:`ClaudeCodeAgentProposer` from this backend's config.
+        """Construct a :class:`ClaudeCodeAgentProposer` from this engine's config.
 
-        ``OmniConfig.run_dir``, ``effort``, ``max_thinking_tokens``, and
+        ``OptimizeAnythingConfig.run_dir``, ``effort``, ``max_thinking_tokens``, and
         ``sandbox`` flow in from the surrounding config. Anything in
-        ``OmniConfig.config["claude_code_agent"]`` overrides those defaults
+        ``OptimizeAnythingConfig.config["claude_code_agent"]`` overrides those defaults
         (e.g. set ``"sandbox": False`` to override the global, or
         ``"max_budget_usd"`` for a per-proposer USD cap). If omitted, the
-        surrounding Omni token-cost budget is used as the proposer cap.
+        surrounding OptimizeAnything token-cost budget is used as the proposer cap.
         ``objective`` / ``background`` default to the values resolved against
         the task; explicit keys override.
         """
-        from gepa.omni.proposers import ClaudeCodeAgentProposer
+        from gepa.oa.proposers import ClaudeCodeAgentProposer
 
         cfg = dict(self.claude_code_agent or {})
         kwargs: dict[str, Any] = {

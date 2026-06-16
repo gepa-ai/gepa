@@ -1,6 +1,6 @@
 # log
 
-::: gepa.optimize_anything.log
+::: gepa.legacy_optimize_anything.log
     handler: python
     options:
         show_source: true

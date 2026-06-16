@@ -1,6 +1,6 @@
 # RefinerConfig
 
-::: gepa.optimize_anything.RefinerConfig
+::: gepa.legacy_optimize_anything.RefinerConfig
     handler: python
     options:
         show_source: true

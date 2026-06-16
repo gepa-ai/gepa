@@ -1,6 +1,6 @@
 # Evaluator
 
-::: gepa.optimize_anything.Evaluator
+::: gepa.legacy_optimize_anything.Evaluator
     handler: python
     options:
         show_source: true

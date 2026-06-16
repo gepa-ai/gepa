@@ -1,4 +1,4 @@
-"""Shared Claude Code CLI plumbing used across omni backends and proposers.
+"""Shared Claude Code CLI plumbing used across optimize_anything engines and proposers.
 
 Currently exposes :func:`copy_session_transcript`, which mirrors the
 ``~/.claude/projects/<slug>/<session>.jsonl`` transcript that the CLI writes

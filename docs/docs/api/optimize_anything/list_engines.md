@@ -1,6 +1,6 @@
-# make_litellm_lm
+# list_engines
 
-::: gepa.legacy_optimize_anything.make_litellm_lm
+::: gepa.optimize_anything.list_engines
     handler: python
     options:
         show_source: true

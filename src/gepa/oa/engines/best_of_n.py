@@ -1,4 +1,4 @@
-"""Best-of-N backend.
+"""Best-of-N engine.
 
 A naive baseline: in a loop, draw an independent candidate from a single
 LLM call (no conversation history, no past attempts in the prompt),
@@ -18,16 +18,16 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
+from gepa.oa._helpers import warn_unknown_config_keys
+from gepa.oa.engine import Result
 from gepa.lm import LM
-from gepa.omni._helpers import warn_unknown_config_keys
-from gepa.omni.backend import Result
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from gepa.omni.config import OmniConfig
-    from gepa.omni.eval_server import EvalServer
-    from gepa.omni.task import Task
+    from gepa.oa.config import OptimizeAnythingConfig
+    from gepa.oa.eval_server import EvalServer
+    from gepa.oa.task import Task
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +70,10 @@ def _parse_candidate(response: str | None) -> str | None:
     return body or None
 
 
-class BestOfNBackend:
+class BestOfNEngine:
     """Stateless sample-and-keep-best baseline.
 
-    Backend-specific keys read from ``OmniConfig.config``:
+    Engine-specific keys read from ``OptimizeAnythingConfig.config``:
 
     - ``model``: LiteLLM model id. Default ``"claude-sonnet-4-6"``.
     - ``temperature``: Sampling temperature. Default ``1.0`` (sampling on
@@ -86,7 +86,7 @@ class BestOfNBackend:
 
     name = "best_of_n"
 
-    def __init__(self, config: OmniConfig) -> None:
+    def __init__(self, config: OptimizeAnythingConfig) -> None:
         extras = config.config
         warn_unknown_config_keys(self.name, extras, _BON_CONFIG_KEYS)
         self.model: str = extras.get("model", "claude-sonnet-4-6")
@@ -120,7 +120,7 @@ class BestOfNBackend:
                 break
             if budget.max_token_cost is not None:
                 # ``max_token_cost`` is the LLM-spend cap. Convention across
-                # backends is to count only the backend's own LLM/subprocess
+                # engines is to count only the engine's own LLM/subprocess
                 # cost — eval-side cost (``server.total_cost``) lives in a
                 # separate bucket and is summed in only by the api's final
                 # report.
@@ -200,7 +200,7 @@ class BestOfNBackend:
     def process_result(self, result: Result, output_dir: Path | None) -> None:
         """Persist per-sample (lm_cost, eval_cost, score) to ``bon_cost_log.jsonl``.
 
-        The omni api / terrarium runner overwrite ``Result.eval_log`` with the
+        The optimize_anything api / terrarium runner overwrite ``Result.eval_log`` with the
         eval server's record (which doesn't carry per-LM-call cost), so this
         side file is the only place the sampling-cost timeline survives.
         """

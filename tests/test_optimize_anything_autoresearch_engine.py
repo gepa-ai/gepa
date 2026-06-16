@@ -2,10 +2,10 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from gepa.omni.backends.claude_code import ClaudeCodeBackend
-from gepa.omni.budget import BudgetTracker
-from gepa.omni.config import OmniConfig
-from gepa.omni.task import Task
+from gepa.oa.budget import BudgetTracker
+from gepa.oa.engines.autoresearch import AutoResearchEngine
+from gepa.oa.config import OptimizeAnythingConfig
+from gepa.oa.task import Task
 
 
 class _FakeServer:
@@ -17,7 +17,7 @@ class _FakeServer:
 
 
 class _FakePopen:
-    """Stands in for subprocess.Popen: the backend polls until done, then communicates."""
+    """Stands in for subprocess.Popen: the engine polls until done, then communicates."""
 
     def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
         self.returncode = returncode
@@ -38,7 +38,7 @@ class _FakePopen:
         pass
 
 
-def test_claude_code_backend_ralph_resumes_with_remaining_budget(tmp_path: Path) -> None:
+def test_autoresearch_engine_ralph_resumes_with_remaining_budget(tmp_path: Path) -> None:
     server = _FakeServer()
     task = Task(name="smoke", initial_candidate="seed")
     calls: list[list[str]] = []
@@ -49,10 +49,10 @@ def test_claude_code_backend_ralph_resumes_with_remaining_budget(tmp_path: Path)
         cost = 0.2 if len(calls) == 1 else 0.0005
         return _FakePopen(0, json.dumps({"total_cost_usd": cost}))
 
-    backend = ClaudeCodeBackend(OmniConfig(backend="claude_code", run_dir=str(tmp_path), config={}))
+    engine = AutoResearchEngine(OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path), config={}))
 
-    with patch("gepa.omni.backends.claude_code.subprocess.Popen", side_effect=fake_popen):
-        result = backend.run(task, server)
+    with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+        result = engine.run(task, server)
 
     assert len(calls) == 2
     assert "--session-id" in calls[0]
@@ -64,7 +64,7 @@ def test_claude_code_backend_ralph_resumes_with_remaining_budget(tmp_path: Path)
     assert result.metadata["ralph_iterations"] == 2
 
 
-def test_claude_code_backend_can_disable_ralph(tmp_path: Path) -> None:
+def test_autoresearch_engine_can_disable_ralph(tmp_path: Path) -> None:
     server = _FakeServer()
     task = Task(name="smoke", initial_candidate="seed")
     calls: list[list[str]] = []
@@ -74,19 +74,19 @@ def test_claude_code_backend_can_disable_ralph(tmp_path: Path) -> None:
         Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
         return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
-    backend = ClaudeCodeBackend(
-        OmniConfig(backend="claude_code", run_dir=str(tmp_path), config={"ralph": False})
+    engine = AutoResearchEngine(
+        OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path), config={"ralph": False})
     )
 
-    with patch("gepa.omni.backends.claude_code.subprocess.Popen", side_effect=fake_popen):
-        result = backend.run(task, server)
+    with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+        result = engine.run(task, server)
 
     assert len(calls) == 1
     assert "--session-id" in calls[0]
     assert result.metadata["ralph_iterations"] == 1
 
 
-def test_claude_code_backend_string_false_disables_ralph(tmp_path: Path) -> None:
+def test_autoresearch_engine_string_false_disables_ralph(tmp_path: Path) -> None:
     server = _FakeServer()
     task = Task(name="smoke", initial_candidate="seed")
     calls: list[list[str]] = []
@@ -96,18 +96,18 @@ def test_claude_code_backend_string_false_disables_ralph(tmp_path: Path) -> None
         Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
         return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
-    backend = ClaudeCodeBackend(
-        OmniConfig(backend="claude_code", run_dir=str(tmp_path), config={"ralph": "false"})
+    engine = AutoResearchEngine(
+        OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path), config={"ralph": "false"})
     )
 
-    with patch("gepa.omni.backends.claude_code.subprocess.Popen", side_effect=fake_popen):
-        result = backend.run(task, server)
+    with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+        result = engine.run(task, server)
 
     assert len(calls) == 1
     assert result.metadata["ralph_iterations"] == 1
 
 
-def test_claude_code_backend_ralph_respects_stop_at_score(tmp_path: Path) -> None:
+def test_autoresearch_engine_ralph_respects_stop_at_score(tmp_path: Path) -> None:
     server = _FakeServer()
     server.best_score = 1.0
     task = Task(name="smoke", initial_candidate="seed")
@@ -118,19 +118,19 @@ def test_claude_code_backend_ralph_respects_stop_at_score(tmp_path: Path) -> Non
         Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
         return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
-    backend = ClaudeCodeBackend(
-        OmniConfig(backend="claude_code", run_dir=str(tmp_path), stop_at_score=1.0, config={})
+    engine = AutoResearchEngine(
+        OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path), stop_at_score=1.0, config={})
     )
 
-    with patch("gepa.omni.backends.claude_code.subprocess.Popen", side_effect=fake_popen):
-        result = backend.run(task, server)
+    with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+        result = engine.run(task, server)
 
     assert len(calls) == 1
     assert result.metadata["adapter_cost"] == 0.2
     assert result.metadata["ralph_iterations"] == 1
 
 
-def test_claude_code_backend_counts_failed_resume_cost(tmp_path: Path) -> None:
+def test_autoresearch_engine_counts_failed_resume_cost(tmp_path: Path) -> None:
     server = _FakeServer()
     task = Task(name="smoke", initial_candidate="seed")
     calls: list[list[str]] = []
@@ -142,17 +142,17 @@ def test_claude_code_backend_counts_failed_resume_cost(tmp_path: Path) -> None:
             return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
         return _FakePopen(1, json.dumps({"total_cost_usd": 0.1}), stderr="failed")
 
-    backend = ClaudeCodeBackend(OmniConfig(backend="claude_code", run_dir=str(tmp_path), config={}))
+    engine = AutoResearchEngine(OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path), config={}))
 
-    with patch("gepa.omni.backends.claude_code.subprocess.Popen", side_effect=fake_popen):
-        result = backend.run(task, server)
+    with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+        result = engine.run(task, server)
 
     assert len(calls) == 2
     assert result.metadata["adapter_cost"] == 0.30000000000000004
     assert result.metadata["ralph_iterations"] == 1
 
 
-def test_claude_code_backend_materializes_omni_handoff(tmp_path: Path) -> None:
+def test_autoresearch_engine_materializes_optimize_anything_handoff(tmp_path: Path) -> None:
     server = _FakeServer()
     source = tmp_path / "source"
     source.mkdir()
@@ -165,10 +165,10 @@ def test_claude_code_backend_materializes_omni_handoff(tmp_path: Path) -> None:
         name="smoke",
         initial_candidate="seed",
         metadata={
-            "omni_handoffs": [
+            "optimize_anything_handoffs": [
                 {
                     "stage_idx": 0,
-                    "backend": "gepa",
+                    "engine": "gepa",
                     "best_score": 0.7,
                     "num_evals": 1,
                     "summary_path": str(source / "summary.json"),
@@ -190,11 +190,11 @@ def test_claude_code_backend_materializes_omni_handoff(tmp_path: Path) -> None:
         Path(str(kwargs["cwd"]), "best_candidate.txt").write_text("candidate")
         return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
-    backend = ClaudeCodeBackend(
-        OmniConfig(backend="claude_code", run_dir=str(tmp_path / "run"), config={"ralph": False})
+    engine = AutoResearchEngine(
+        OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path / "run"), config={"ralph": False})
     )
 
-    with patch("gepa.omni.backends.claude_code.subprocess.Popen", side_effect=fake_popen):
-        result = backend.run(task, server)
+    with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
+        result = engine.run(task, server)
 
     assert result.best_candidate == "candidate"

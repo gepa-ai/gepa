@@ -1,7 +1,8 @@
-"""Registries for backends and tasks.
+"""Registries for optimization engines and tasks.
 
-Backends register a string name → class; the api resolves ``backend="gepa"``
-to the class and calls ``cls.from_config(omni_config)``.
+Engines register a string name to a class. The public
+``gepa.optimize_anything`` API resolves ``engine="gepa"`` to that class and
+instantiates it with :class:`OptimizeAnythingConfig`.
 
 Tasks may also be registered by name for convenience.
 """
@@ -12,39 +13,39 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from gepa.omni.task import Task
+    from gepa.oa.task import Task
 
-_BACKENDS: dict[str, type] = {}
+_ENGINES: dict[str, type] = {}
 _TASKS: dict[str, Task] = {}
 _TASK_FACTORIES: dict[str, Callable[[], Task]] = {}
 
 
-def register_backend(name: str, cls: type) -> type:
-    """Register a backend class under ``name``."""
-    _BACKENDS[name] = cls
+def register_engine(name: str, cls: type) -> type:
+    """Register an engine class under ``name``."""
+    _ENGINES[name] = cls
     return cls
 
 
-def get_backend_cls(name: str) -> type:
-    """Resolve a backend class by name.
+def get_engine_cls(name: str) -> type:
+    """Resolve an engine class by name.
 
-    On first lookup, eagerly imports built-in backends so they self-register.
+    On first lookup, eagerly imports built-in engines so they self-register.
     """
-    if not _BACKENDS:
-        _load_builtin_backends()
-    if name not in _BACKENDS:
-        raise KeyError(f"Unknown backend '{name}'. Available: {sorted(_BACKENDS)}")
-    return _BACKENDS[name]
+    if not _ENGINES:
+        _load_builtin_engines()
+    if name not in _ENGINES:
+        raise KeyError(f"Unknown engine '{name}'. Available: {sorted(_ENGINES)}")
+    return _ENGINES[name]
 
 
-def list_backends() -> list[str]:
-    if not _BACKENDS:
-        _load_builtin_backends()
-    return sorted(_BACKENDS)
+def list_engines() -> list[str]:
+    if not _ENGINES:
+        _load_builtin_engines()
+    return sorted(_ENGINES)
 
 
-def _load_builtin_backends() -> None:
-    import gepa.omni.backends  # noqa: F401  triggers registration
+def _load_builtin_engines() -> None:
+    import gepa.oa.engines  # noqa: F401  triggers registration
 
 
 def register_task(task: Task) -> Task:

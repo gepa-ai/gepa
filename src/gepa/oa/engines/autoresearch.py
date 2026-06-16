@@ -1,7 +1,7 @@
-"""Claude Code backend: black-box optimization via a Claude Code subprocess.
+"""AutoResearch engine: black-box optimization via a Claude Code subprocess.
 
 The api creates an :class:`EvalServer` and starts its HTTP endpoint. This
-backend launches one ``claude --print`` session inside a work_dir laid out
+engine launches one ``claude --print`` session inside a work_dir laid out
 with ``program.md``, ``candidate.txt``, ``best_candidate.txt``, and an
 ``eval.sh`` script that POSTs to the eval server. Budget enforcement happens
 server-side (HTTP 429 on exhaustion); LLM cost is bounded via
@@ -27,16 +27,16 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from gepa.omni._helpers import example_to_json, warn_unknown_config_keys
-from gepa.omni.backend import Result
-from gepa.omni.backends.claude_utils import copy_session_transcript
-from gepa.omni.budget import BudgetTracker
-from gepa.omni.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_settings_args
+from gepa.oa._helpers import example_to_json, warn_unknown_config_keys
+from gepa.oa.budget import BudgetTracker
+from gepa.oa.engines.claude_utils import copy_session_transcript
+from gepa.oa.engine import Result
+from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_settings_args
 
 if TYPE_CHECKING:
-    from gepa.omni.config import OmniConfig
-    from gepa.omni.eval_server import EvalServer
-    from gepa.omni.task import Task
+    from gepa.oa.config import OptimizeAnythingConfig
+    from gepa.oa.eval_server import EvalServer
+    from gepa.oa.task import Task
 
 
 _CC_CONFIG_KEYS: tuple[str, ...] = ("model", "ralph", "max_no_eval_seconds")
@@ -223,7 +223,7 @@ def _rules_section(task: Task, budget: BudgetTracker) -> str:
 
 
 def _handoff_section(task: Task) -> str:
-    handoffs = task.metadata.get("omni_handoffs") if isinstance(task.metadata, dict) else None
+    handoffs = task.metadata.get("optimize_anything_handoffs") if isinstance(task.metadata, dict) else None
     if not handoffs:
         return ""
     return (
@@ -304,7 +304,7 @@ def _materialize_sandbox(
 
 
 def _materialize_handoff(work_dir: Path, task: Task) -> None:
-    handoffs = task.metadata.get("omni_handoffs") if isinstance(task.metadata, dict) else None
+    handoffs = task.metadata.get("optimize_anything_handoffs") if isinstance(task.metadata, dict) else None
     if not isinstance(handoffs, list) or not handoffs:
         return
     handoff_dir = work_dir / "handoff"
@@ -314,8 +314,8 @@ def _materialize_handoff(work_dir: Path, task: Task) -> None:
         if not isinstance(item, dict):
             continue
         stage_idx = int(item.get("stage_idx", len(index)))
-        backend = str(item.get("backend", "backend"))
-        stage_dir = handoff_dir / f"stage_{stage_idx:02d}_{_safe_name(backend)}"
+        engine = str(item.get("engine", "engine"))
+        stage_dir = handoff_dir / f"stage_{stage_idx:02d}_{_safe_name(engine)}"
         stage_dir.mkdir(exist_ok=True)
         copied: dict[str, str] = {}
         for key, filename in (
@@ -337,7 +337,7 @@ def _materialize_handoff(work_dir: Path, task: Task) -> None:
         index.append(
             {
                 "stage_idx": stage_idx,
-                "backend": backend,
+                "engine": engine,
                 "best_score": item.get("best_score"),
                 "num_evals": item.get("num_evals"),
                 "copied": copied,
@@ -347,14 +347,13 @@ def _materialize_handoff(work_dir: Path, task: Task) -> None:
 
 
 def _safe_name(value: str) -> str:
-    return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value) or "backend"
+    return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value) or "engine"
 
 
+class AutoResearchEngine:
+    """Black-box research optimizer backed by Claude Code.
 
-class ClaudeCodeBackend:
-    """Black-box Claude Code optimizer.
-
-    Backend-specific keys read from ``OmniConfig.config``:
+    Engine-specific keys read from ``OptimizeAnythingConfig.config``:
 
     - ``model``: Claude model id. Default ``"claude-sonnet-4-6"`` (versioned —
       pin for reproducibility; pass ``"sonnet"`` / ``"opus"`` aliases to track
@@ -368,17 +367,15 @@ class ClaudeCodeBackend:
       that wedge on long internal reasoning without scoring.
     """
 
-    name = "claude_code"
+    name = "autoresearch"
 
-    def __init__(self, config: OmniConfig) -> None:
+    def __init__(self, config: OptimizeAnythingConfig) -> None:
         extras = config.config
         warn_unknown_config_keys(self.name, extras, _CC_CONFIG_KEYS)
         self.model: str = extras.get("model", "claude-sonnet-4-6")
         self.ralph = _config_bool(extras.get("ralph", True))
         raw_max_no_eval_seconds = extras.get("max_no_eval_seconds")
-        self.max_no_eval_seconds = (
-            float(raw_max_no_eval_seconds) if raw_max_no_eval_seconds is not None else None
-        )
+        self.max_no_eval_seconds = float(raw_max_no_eval_seconds) if raw_max_no_eval_seconds is not None else None
         self.run_dir = config.run_dir
         self.effort = config.effort
         self.stop_at_score = config.stop_at_score
@@ -397,13 +394,13 @@ class ClaudeCodeBackend:
         # ``process_result`` mirrors artifacts back to self.run_dir so the
         # user doesn't lose them.
         if self.sandbox:
-            self._pending_tempdir = tempfile.TemporaryDirectory(prefix="omni_cc_")
+            self._pending_tempdir = tempfile.TemporaryDirectory(prefix="optimize_anything_cc_")
             work_dir = Path(self._pending_tempdir.name)
         elif self.run_dir:
             work_dir = Path(self.run_dir)
             work_dir.mkdir(parents=True, exist_ok=True)
         else:
-            self._pending_tempdir = tempfile.TemporaryDirectory(prefix="omni_cc_")
+            self._pending_tempdir = tempfile.TemporaryDirectory(prefix="optimize_anything_cc_")
             work_dir = Path(self._pending_tempdir.name)
 
         _materialize_sandbox(work_dir, task, server, budget, perfect_score=self.stop_at_score)
@@ -454,9 +451,7 @@ class ClaudeCodeBackend:
             )
         iter_cost = _extract_claude_cost(proc.stdout)
         adapter_cost += iter_cost
-        invocations.append(
-            {"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode}
-        )
+        invocations.append({"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode})
 
         if self.ralph:
             while ralph_iterations < _RALPH_SAFETY_ITERATION_CAP:
@@ -483,9 +478,7 @@ class ClaudeCodeBackend:
                 )
                 iter_cost = _extract_claude_cost(proc.stdout)
                 adapter_cost += iter_cost
-                invocations.append(
-                    {"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode}
-                )
+                invocations.append({"cost": iter_cost, "score": server.best_score, "returncode": proc.returncode})
                 if _saw_budget_exhausted(proc):
                     break
                 if proc.returncode != 0:
@@ -580,10 +573,7 @@ class ClaudeCodeBackend:
             if budget.used != last_eval_used:
                 last_eval_used = budget.used
                 last_eval_time = time.monotonic()
-            if (
-                self.max_no_eval_seconds is not None
-                and time.monotonic() - last_eval_time >= self.max_no_eval_seconds
-            ):
+            if self.max_no_eval_seconds is not None and time.monotonic() - last_eval_time >= self.max_no_eval_seconds:
                 proc.terminate()
                 try:
                     stdout, stderr = proc.communicate(timeout=5)
@@ -605,7 +595,9 @@ class ClaudeCodeBackend:
                     except subprocess.TimeoutExpired:
                         proc.kill()
                         stdout, stderr = proc.communicate()
-                    stderr = (stderr or "") + "\nBUDGET_EXHAUSTED: terminated Claude Code after eval budget was exhausted.\n"
+                    stderr = (
+                        stderr or ""
+                    ) + "\nBUDGET_EXHAUSTED: terminated Claude Code after eval budget was exhausted.\n"
                     return subprocess.CompletedProcess(cmd, proc.returncode, stdout or "", stderr)
             time.sleep(1.0)
 
@@ -629,14 +621,12 @@ class ClaudeCodeBackend:
 
     def process_result(self, result: Result, output_dir: Path | None) -> None:
         # Prefer ``self.run_dir`` when the caller's server has no output_dir:
-        # callers like terrarium's omni adapter set ``output_dir=None`` on
+        # callers like terrarium's optimize_anything adapter set ``output_dir=None`` on
         # inner servers (to avoid double per-eval-JSON mirroring) but still
-        # want backend artifacts (work tree, session transcripts) preserved
+        # want engine artifacts (work tree, session transcripts) preserved
         # under the configured ``run_dir`` rather than lost when the tempdir
         # is cleaned up.
-        dest = output_dir if output_dir is not None else (
-            Path(self.run_dir) if self.run_dir else None
-        )
+        dest = output_dir if output_dir is not None else (Path(self.run_dir) if self.run_dir else None)
         if dest is None:
             if self._pending_tempdir is not None:
                 self._pending_tempdir.cleanup()
@@ -687,7 +677,7 @@ def _best_aggregate_candidate(server: EvalServer) -> tuple[str, float] | None:
 
     Dataset ``EvalServer.best_score`` is the best per-example score, not a
     candidate-level aggregate. The HTTP ``/evaluate_examples`` endpoint logs
-    aggregate checkpoints with candidate ids; use those for agentic backends
+    aggregate checkpoints with candidate ids; use those for agentic engines
     that evaluate through shell scripts.
     """
     progress = list(getattr(server, "progress_log", []) or [])
