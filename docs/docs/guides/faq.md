@@ -84,7 +84,7 @@ from gepa.utils import TimeoutStopCondition, NoImprovementStopper
 config = GEPAConfig(
     engine=EngineConfig(max_metric_calls=200),
     stop_callbacks=[
-        TimeoutStopCondition(seconds=3600),
+        TimeoutStopCondition(timeout_seconds=3600),
         NoImprovementStopper(max_iterations_without_improvement=10),
     ],
 )

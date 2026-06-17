@@ -163,6 +163,7 @@ GEPA connects to your system via the [`GEPAAdapter`](src/gepa/core/adapter.py) i
 | [MCP Adapter](src/gepa/adapters/mcp_adapter/) | Optimize [MCP](https://modelcontextprotocol.io/) tool descriptions and system prompts |
 | [TerminalBench](src/gepa/adapters/terminal_bench_adapter/) | Optimize the [Terminus](https://www.tbench.ai/terminus) terminal-use agent |
 | [AnyMaths](src/gepa/adapters/anymaths_adapter/) | Mathematical problem-solving and reasoning tasks |
+| [LangChain](src/gepa/adapters/langchain_adapter/) | Optimize prompts for any LangChain pipeline — chat models, tool-using agents, LangGraph. `pip install "gepa[langchain]"` |
 
 See the [adapters guide](https://gepa-ai.github.io/gepa/guides/adapters/) for how to build your own, and [DSPy's adapter](https://github.com/stanfordnlp/dspy/tree/main/dspy/teleprompt/gepa/gepa_utils.py) as a reference.
 
@@ -178,7 +179,8 @@ GEPA is integrated into several major frameworks:
 - **[Pydantic](https://pydantic.dev/articles/prompt-optimization-with-gepa)** — Prompt optimization for Pydantic AI.
 - **[OpenAI Cookbook](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining)** — Self-evolving agents with GEPA.
 - **[HuggingFace Cookbook](https://huggingface.co/learn/cookbook/en/dspy_gepa)** — Prompt optimization guide.
-- **[Google ADK](https://adk.dev/optimize/)** — Built-in agent optimization in Google's Agent Development Kit. [Community tutorial](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/).
+- **[Google ADK / Gemini Enterprise Agent Platform](https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent)** — `adk optimize` powered by GEPA, also shipped inside Google Cloud's Gemini Enterprise Agent Platform Quality Flywheel. [ADK docs](https://adk.dev/optimize/) · [Community tutorial](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/).
+- **[Microsoft AI: MAI-Thinking-1](https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf)** — Uses GEPA / DSPy to optimize the Qwen3-30B LLM-judge prompt that filters Code pages in the model's pre-training pipeline (~233B tokens of curated data).
 
 ---
 
@@ -389,7 +391,7 @@ Finally:
   - [Comet ML Opik](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer) - Core optimization algorithm in Opik Agent Optimizer.
   - [OpenAI Cookbook](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining) - Self-evolving agents with GEPA.
   - [HuggingFace Cookbook](https://huggingface.co/learn/cookbook/en/dspy_gepa) - Prompt optimization guide.
-  - [Google ADK](https://adk.dev/optimize/) - Built-in agent optimization in Google's Agent Development Kit. [Community tutorial](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/).
+  - [Google ADK / Gemini Enterprise Agent Platform](https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent) - `adk optimize` powered by GEPA, also shipped inside Google Cloud's Gemini Enterprise Agent Platform Quality Flywheel. [ADK docs](https://adk.dev/optimize/) · [Community tutorial](https://raphaelmansuy.github.io/adk_training/blog/gepa-optimization-tutorial/).
   - [Contributed Adapters](src/gepa/adapters/) – see our adapter templates and issue tracker to request new integrations.
     - [DefaultAdapter](src/gepa/adapters/default_adapter/) - System Prompt Optimization for a single-turn task.
     - [ConfidenceAdapter](src/gepa/adapters/confidence_adapter/) - Logprob-aware classification optimization using [`llm-structured-confidence`](https://github.com/rodolfonobrega/llm-structured-confidence). Detects lucky guesses by extracting token-level logprobs from structured JSON outputs with `enum` constraints, and feeds confidence diagnostics (logprob, probability, top alternatives) into the reflection LLM. Install with `pip install "gepa[confidence]"`. See the [guide](https://gepa-ai.github.io/gepa/guides/confidence-adapter/).
@@ -398,7 +400,11 @@ Finally:
     - [MCP Adapter](src/gepa/adapters/mcp_adapter/) - Optimize [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) tool usage. Supports local stdio servers, remote SSE/HTTP servers, and optimizes tool descriptions and system prompts.
     - [TerminalBench Adapter](src/gepa/adapters/terminal_bench_adapter/) - Easily integrating GEPA into a Terminus, a sophisticated external agentic pipeline, and optimizing the agents' system prompt.
     - [AnyMaths Adapter](src/gepa/adapters/anymaths_adapter/) - Adapter for optimizing mathematical problem-solving and reasoning tasks. Contributed by [@egmaminta](www.linkedin.com/in/egmaminta).
+    - [LangChain Adapter](src/gepa/adapters/langchain_adapter/) - Optimize prompts for any LangChain pipeline: single-turn chat models, tool-using agents built with `create_agent`, custom LangGraph graphs, RAG, and more. Provider-agnostic via LangChain's `init_chat_model`. Install with `pip install "gepa[langchain]"` plus a provider package (e.g. `langchain-openai`).
 - **GEPA uses**
+    - [Microsoft AI: MAI-Thinking-1](https://microsoft.ai/wp-content/uploads/2026/06/main_20260602_2.pdf) — GEPA / DSPy optimizes the Qwen3-30B LLM-judge prompt used to filter Code pages in the pre-training pipeline (~233B tokens curated from ~2,000 human labels).
+    - [Nubank: Building Customer Support AI Agents at 100M-User Scale](https://arxiv.org/abs/2606.08867) — GEPA inside DSPy optimizes LLM-as-a-Judge prompts; lifts E2 eval accuracy 68.88% → 88.89%, drives Cohen's κ (GPT-4.1 vs GPT-4.1-mini) from 0.00 → 0.745; downstream production wins include +37pp AI transactional NPS and +29pp self-service rate across 5 deployed domains.
+    - [Google: Gemini Enterprise Agent Platform — `adk optimize` powered by GEPA](https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/optimize-agent)
     - [Nous Research Hermes Agent: evolutionary self-improvement with DSPy + GEPA](https://github.com/NousResearch/hermes-agent-self-evolution)
     - [Context Compression using GEPA](https://github.com/Laurian/context-compression-experiments-2508)
     - [GEPA Integration into SuperOptiX-AI](https://github.com/SuperagenticAI/gepa-eval)
@@ -407,6 +413,10 @@ Finally:
     - [GEPA in Go Programming Language](https://github.com/XiaoConstantine/dspy-go)
     - [100% accuracy using GEPA on the clock-hands problem](https://colab.research.google.com/drive/1W-XNxKL2CXFoUTwrL7GLCZ7J7uZgXsut?usp=sharing)
     - [Prompt Optimization for Reliable Backdoor Detection in AI-Generated Code](https://www.lesswrong.com/posts/bALBxf3yGGx4bvvem/prompt-optimization-can-enable-ai-control-research)
+    - [Attack Selection Reduces Safety in Concentrated AI Control Settings (Pivotal Research + Redwood) — GEPA-optimized red-team prompts outperform handwritten rubric prompts at evading trusted monitoring](https://arxiv.org/abs/2602.04930)
+    - [Going recursive: RLM-GEPA on AppWorld (Gabriel Lespérance) — PredictRLM(GPT-5.5 low) hits 0.917 TGC / 0.839 SGC unoptimized (beats leaderboard 0.804 SGC); RLM-GEPA lifts to 0.940 TGC / 0.911 SGC](https://x.com/GabLesperance/status/2060754345247863075)
+    - [DivSkill-SQL: Residual Skill Optimization for Text-to-SQL Ensembles (UC San Diego + Microsoft) — adopts GEPA as inner-loop skill optimizer; +11.1pp on Spider2-Lite Snowflake, +8.3pp on BigQuery, +2.6pp on BIRD-Critic over CHASE-SQL](https://arxiv.org/abs/2605.21792)
+    - [DD-GEPA: Dialogue Disentanglement Prompt Optimization (Yokohama National University) — three-component prompt (task instruction / utterance representation / output instruction) optimized with GEPA; Qwen3-30B F1 39.40 → 42.52 on the Kummerfeld benchmark](https://arxiv.org/abs/2606.07894)
     - [Teaching LLMs to Diagnose Production Incidents with ATLAS+GEPA](https://www.arc.computer/blog/atlas-sre-diagnosis)
     - [DataBricks: Building State-of-the-Art Enterprise Agents 90x Cheaper with GEPA](https://www.databricks.com/blog/building-state-art-enterprise-agents-90x-cheaper-automated-prompt-optimization)
     - [comet-ml/opik adds support for GEPA](https://www.comet.com/docs/opik/agent_optimization/algorithms/gepa_optimizer)
@@ -421,9 +431,31 @@ Finally:
     - [Google ADK: Official agent optimization powered by GEPA](https://adk.dev/optimize/)
     - [HuggingFace Cookbook on prompt optimization for with DSPy and GEPA](https://huggingface.co/learn/cookbook/en/dspy_gepa)
     - [OpenAI Cookbook showing how to build self-evolving agents using GEPA](https://cookbook.openai.com/examples/partners/self_evolving_agents/autonomous_agent_retraining)
+    - [MarkTechPost tutorial: Reflective Prompt Optimization with GEPA — multi-component prompts, structured feedback, held-out validation](https://www.marktechpost.com/2026/06/07/building-reflective-prompt-optimization-with-gepa-multi-component-prompts-structured-feedback-and-held-out-validation/)
     - [What Do Prompts Reveal About Model Capabilities in Low-Resource Languages? (AfricaNLP 2026)](https://openreview.net/attachment?id=7JZmTp85Yf&name=pdf)
     - [Beyond the Answer: Decoding the Behavior of LLMs as Scientific Reasoners (ICLR 2026 Workshop)](https://arxiv.org/abs/2603.28038)
     - [Self-Optimizing Multi-Agent Systems for Deep Research (ECIR 2026 Workshop) — GEPA outperforms TextGrad and expert-crafted prompts](https://arxiv.org/abs/2604.02988)
+    - [Prompt Optimisation for Error Detection in Medical Notes (MEDEC) — GPT-5 0.669 → 0.785, Qwen3-32B 0.578 → 0.690](https://arxiv.org/abs/2602.22483)
+    - [Automated Risk-of-Bias Assessment of Clinical Trials — GEPA-optimized prompts across 7 RoB domains, 30–40% improvement](https://arxiv.org/abs/2512.01452)
+    - [Clinical NER: GEPA vs Bio+ClinicalBERT (IEEE BigData 2025) — up to 12.5% F1 lift in zero-shot clinical NER](https://ieeexplore.ieee.org/abstract/document/11401686)
+    - [Prompt Triage: Structured Optimization for VLMs on Medical Imaging (Stanford) — median 53% relative improvement on 5 imaging tasks](https://arxiv.org/abs/2511.11898)
+    - [Cancer-Myth: GEPA-optimized precautionary prompts for false presuppositions in cancer patient questions](https://arxiv.org/abs/2504.11373)
+    - [WER is Unaware (IWSDS 2026) — GEPA-optimized LLM-as-a-Judge for clinical ASR risk (90% accuracy, κ=0.816)](https://aclanthology.org/2026.iwsds-1.39.pdf)
+    - [EvoClinician — GEPA baseline on Med-Inquire multi-turn medical diagnosis](https://arxiv.org/abs/2601.22964)
+    - [TRACE — two-phase evolution "inspired by GEPA" over streaming EHRs](https://arxiv.org/abs/2602.12833)
+    - [SecureForge (Stanford) — GEPA-based hardening of code-gen LLMs against vulnerabilities; outperforms MIPRO](https://arxiv.org/abs/2605.08382)
+    - [OrchMAS — GEPA as MAS prompt-optimization baseline across six QA benchmarks](https://arxiv.org/abs/2603.03005)
+    - [REVERE (TCS + Yale) — GEPA as offline baseline on scientific research-coding (SUPER, RCB, ScienceAgentBench)](https://arxiv.org/abs/2603.20667)
+    - [Empowering Small Models for GPU Parallelization (OpenACC) — GPT-5 Nano to 100% compilation on PolyBench](https://arxiv.org/abs/2601.08884)
+    - [Automated Refinement of Essay Scoring Rubrics (U. Tokyo) — "a simplified version of GEPA"](https://arxiv.org/abs/2510.09030)
+    - [Optimized Agentic AI Systems for Asset Pricing (SSRN)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6474601)
+    - [VeriInteresting — GEPA-style prompt evolution for Verilog HDL code generation](https://arxiv.org/abs/2603.08715)
+    - [VeriAct — GEPA as a core part of formal specification synthesis](https://arxiv.org/abs/2604.00280)
+    - [Survey on AI-Driven Circuit Verification (ASPDAC 2026, CUHK) — cites GEPA as a promising approach to avoid data scarcity](https://www.cse.cuhk.edu.hk/~byu/papers/C312-ASPDAC2026-Verif.pdf)
+    - [FEM-Bench — scientific-reasoning benchmark using GEPA as baseline optimizer](https://arxiv.org/abs/2512.20732)
+    - [AssayBench — assay-level virtual cell benchmark; GEPA optimizes pipelines before evaluation](https://arxiv.org/abs/2605.10876)
+    - [Reinforced Agent: Inference-Time Feedback for Tool-Calling Agents — reviewer architecture + GEPA prompt optimization](https://arxiv.org/abs/2604.27233)
+    - [Databricks Genie: GEPA-optimized table search inside Databricks' enterprise data agent](https://www.databricks.com/blog/pushing-frontier-data-agents-genie)
 
 ---
 

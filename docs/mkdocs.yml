@@ -40,6 +40,7 @@ nav:
         - ARC AGI Example: tutorials/arc_agi.ipynb
         - 3D Unicorn Optimization (Seedless): tutorials/3d_unicorn_optimization.ipynb
         - ConfidenceAdapter AG News Tutorial: tutorials/confidence_adapter_classification.ipynb
+        - LangChain Adapter Tutorial: tutorials/langchain_adapter_pair_sum_product_walkthrough.ipynb
     - API Reference:
         - API Overview: api/index.md
         - optimize_anything:
@@ -113,6 +114,7 @@ nav:
             - RAG Adapter: api/adapters/RAGAdapter.md
             - MCP Adapter: api/adapters/MCPAdapter.md
             - TerminalBench Adapter: api/adapters/TerminalBenchAdapter.md
+            - LangChain Adapter: api/adapters/LangChainAdapter.md
         - Proposers:
             - Proposers Overview: api/proposers/index.md
             - CandidateProposal: api/proposers/CandidateProposal.md
