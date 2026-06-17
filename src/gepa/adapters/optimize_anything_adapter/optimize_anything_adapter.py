@@ -230,60 +230,35 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         Multi-objective scores from ``side_info["scores"]`` are extracted and
         forwarded as ``objective_scores`` in the returned batch.
         """
-        # Backward compatibility: if refiner_config is None, use old behavior
+        # No-refiner path: evaluate each example (optionally in parallel) and
+        # package. Factored into ``_assemble_no_refiner_batch`` so that
+        # ``batch_evaluate``'s parallel fallback can reuse the exact same
+        # packaging (best-evals update, objective-score extraction, counts).
         if self.refiner_config is None:
-            # Old path: direct evaluation without refinement
             if self.parallel and len(batch) > 1:
                 raw_results = self._evaluate_parallel(batch, candidate)
             else:
                 raw_results = [self._call_evaluator(candidate, example) for example in batch]
-            # Package outputs as (score, candidate, side_info) tuples
-            eval_output = []
-            for score, _, side_info in raw_results:
-                output = (score, candidate, side_info)  # Package as tuple
-                eval_output.append((score, output, side_info))
-        else:
-            # New path: evaluate with refinement
-            # eval_output is list of (score, output, side_info)
-            # where output = (score, best_candidate, side_info)
-            eval_output = self._evaluate_with_refinement(batch, candidate)
+            return self._assemble_no_refiner_batch(candidate, batch, raw_results)
 
-        # Update best evals history for each example
-        # (skip when refiner is on — refiner path already records evals internally)
-        if self.refiner_config is None:
-            for example, (score, _, side_info) in zip(batch, eval_output, strict=True):
-                self._update_best_example_evals(example, score, side_info)
+        # Refiner path: evaluate with refinement. eval_output is a list of
+        # (score, output, side_info) where output = (score, best_candidate, side_info).
+        eval_output = self._evaluate_with_refinement(batch, candidate)
 
         scores = [score for score, _, _ in eval_output]
         side_infos: list[SideInfo] = [info for _, _, info in eval_output]
         # outputs = list of (score, best_candidate, side_info) tuples
         outputs = [out for _, out, _ in eval_output]
+        objective_scores = [self._extract_objective_scores(candidate, si) for si in side_infos]
 
-        objective_scores = []
-        for side_info in side_infos:
-            objective_score = {}
-            if "scores" in side_info:
-                objective_score.update(side_info["scores"])
-
-            for param_name in candidate.keys():
-                if param_name + "_specific_info" in side_info and "scores" in side_info[param_name + "_specific_info"]:
-                    objective_score.update(
-                        {f"{param_name}::{k}": v for k, v in side_info[param_name + "_specific_info"]["scores"].items()}
-                    )
-
-            objective_scores.append(objective_score)
-
-        # Count actual evaluator invocations.
-        # Without refinement: 1 call per example. With refinement: count from
-        # the attempt history already recorded in each side_info.
-        num_metric_calls = len(batch)
-        if self.refiner_config is not None:
-            num_metric_calls = 0
-            for si in side_infos:
-                rp_info = si.get("refiner_prompt_specific_info", {})
-                attempts = rp_info.get("Attempts", [])
-                # Each attempt with "side_info" represents an actual evaluator call
-                num_metric_calls += sum(1 for a in attempts if "side_info" in a)
+        # Count actual evaluator invocations from the attempt history recorded
+        # in each side_info (the refiner path may call the evaluator multiple
+        # times per example).
+        num_metric_calls = 0
+        for si in side_infos:
+            rp_info = si.get("refiner_prompt_specific_info", {})
+            attempts = rp_info.get("Attempts", [])
+            num_metric_calls += sum(1 for a in attempts if "side_info" in a)
 
         return EvaluationBatch(
             outputs=outputs,
@@ -301,11 +276,15 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         When a ``batch_evaluator`` was provided at construction time, all
         (candidate, example) pairs are flattened into a single call to the
-        user's batch function.  Otherwise falls back to sequential
-        ``evaluate()`` calls.  Always captures traces.
+        user's batch function.
+
+        Falls back to sequential ``evaluate()`` calls for the refiner path or a
+        single item. Always captures traces.
         """
         if self._batch_evaluator is not None:
             return self._batch_evaluate_via_user_fn(items)
+        if self.parallel and self.refiner_config is None and len(items) > 1:
+            return self._batch_evaluate_parallel_fallback(items)
         return [self.evaluate(batch, candidate, capture_traces=True) for candidate, batch in items]
 
     def _batch_evaluate_via_user_fn(
@@ -464,6 +443,97 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         results.sort(key=lambda x: x[0])
         return [result for _, result in results]
+
+    def _run_parallel_pairs(
+        self,
+        pairs: list[tuple["Candidate", Any]],
+    ) -> list[tuple[float, Any, "SideInfo"]]:
+        """Evaluate ``(candidate, example)`` pairs concurrently, preserving input order.
+
+        Unlike :meth:`_run_parallel` (one candidate, many examples), this fans
+        out over pairs whose candidate may differ, so a single thread pool is
+        shared across all candidates in a ``batch_evaluate`` call.
+        """
+        results: list[tuple[int, tuple[float, Any, SideInfo]]] = []
+        with ThreadPoolExecutor(max_workers=self.max_workers or len(pairs)) as executor:
+            future_to_idx = {
+                executor.submit(self._call_evaluator, candidate, example): idx
+                for idx, (candidate, example) in enumerate(pairs)
+            }
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                results.append((idx, future.result()))
+        results.sort(key=lambda x: x[0])
+        return [result for _, result in results]
+
+    def _batch_evaluate_parallel_fallback(
+        self,
+        items: list[tuple["Candidate", list]],
+    ) -> list[EvaluationBatch]:
+        """Fan all ``(candidate, example)`` pairs out across one thread pool, regroup per item.
+
+        No-refiner path only. Saturates ``max_workers`` across candidates and
+        examples, then repackages each item via :meth:`_assemble_no_refiner_batch`
+        so results are identical to per-item ``evaluate()`` calls.
+        """
+        pairs: list[tuple[Candidate, Any]] = []
+        pair_to_item_idx: list[int] = []
+        for item_idx, (candidate, batch) in enumerate(items):
+            for example in batch:
+                pairs.append((candidate, example))
+                pair_to_item_idx.append(item_idx)
+
+        raw_by_pair = self._run_parallel_pairs(pairs) if pairs else []
+
+        raw_per_item: list[list[tuple[float, Any, SideInfo]]] = [[] for _ in items]
+        for pair_idx, raw in enumerate(raw_by_pair):
+            raw_per_item[pair_to_item_idx[pair_idx]].append(raw)
+
+        return [
+            self._assemble_no_refiner_batch(candidate, batch, raw_per_item[item_idx])
+            for item_idx, (candidate, batch) in enumerate(items)
+        ]
+
+    def _extract_objective_scores(self, candidate: "Candidate", side_info: "SideInfo") -> dict[str, float]:
+        """Pull per-objective scores out of a side_info dict (top-level + per-param)."""
+        objective_score: dict[str, float] = {}
+        if "scores" in side_info:
+            objective_score.update(side_info["scores"])
+        for param_name in candidate.keys():
+            specific = side_info.get(param_name + "_specific_info") if isinstance(side_info, dict) else None
+            if isinstance(specific, dict) and "scores" in specific:
+                objective_score.update({f"{param_name}::{k}": v for k, v in specific["scores"].items()})
+        return objective_score
+
+    def _assemble_no_refiner_batch(
+        self,
+        candidate: "Candidate",
+        batch: list[DataInst],
+        raw_results: list[tuple[float, Any, "SideInfo"]],
+    ) -> EvaluationBatch:
+        """Package raw ``(score, _, side_info)`` evaluator results into an EvaluationBatch.
+
+        Shared by :meth:`evaluate` (no-refiner path) and
+        :meth:`_batch_evaluate_parallel_fallback` so both produce identical
+        output, update best-evals history, and count metric calls the same way.
+        """
+        # Package outputs as (score, candidate, side_info) tuples.
+        eval_output = [(score, (score, candidate, side_info), side_info) for score, _, side_info in raw_results]
+        for example, (score, _, side_info) in zip(batch, eval_output, strict=True):
+            self._update_best_example_evals(example, score, side_info)
+
+        scores = [score for score, _, _ in eval_output]
+        side_infos: list[SideInfo] = [info for _, _, info in eval_output]
+        outputs = [out for _, out, _ in eval_output]
+        objective_scores = [self._extract_objective_scores(candidate, si) for si in side_infos]
+
+        return EvaluationBatch(
+            outputs=outputs,
+            scores=scores,
+            trajectories=side_infos,
+            objective_scores=objective_scores,
+            num_metric_calls=len(batch),
+        )
 
     def _evaluate_parallel(self, batch, candidate):
         """Evaluate batch in parallel (no refinement)."""
