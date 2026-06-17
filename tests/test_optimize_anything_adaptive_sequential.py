@@ -129,7 +129,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
         from gepa.oa.engines.autoresearch import AutoResearchEngine
 
         engine = AutoResearchEngine(
-            OptimizeAnythingConfig(engine="autoresearch", config={"model": "sonnet", "ralph": False})
+            OptimizeAnythingConfig(engine="autoresearch", engine_config={"model": "sonnet", "ralph": False})
         )
         task = Task(name="task", initial_candidate="seed", train_set=["a"])
         server = EvalServer(task, lambda candidate, example: (1.0, {}), BudgetTracker(max_evals=1), max_concurrency=1)
@@ -148,7 +148,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
         from gepa.oa.engines.autoresearch import AutoResearchEngine
 
         engine = AutoResearchEngine(
-            OptimizeAnythingConfig(engine="autoresearch", config={"model": "sonnet", "ralph": True})
+            OptimizeAnythingConfig(engine="autoresearch", engine_config={"model": "sonnet", "ralph": True})
         )
         task = Task(name="task", initial_candidate="seed")
         server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=10), max_concurrency=1)
@@ -190,7 +190,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
                 return "", ""
 
         proc = FakeProcess()
-        engine = AutoResearchEngine(OptimizeAnythingConfig(engine="autoresearch", config={"model": "sonnet"}))
+        engine = AutoResearchEngine(OptimizeAnythingConfig(engine="autoresearch", engine_config={"model": "sonnet"}))
         budget = BudgetTracker(max_evals=0)
 
         with (
@@ -231,7 +231,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
         engine = GepaEngine(
             OptimizeAnythingConfig(
                 engine="gepa",
-                config={"reflection": {"reflection_lm": fake_lm}},
+                engine_config={"reflection": {"reflection_lm": fake_lm}},
             )
         )
 

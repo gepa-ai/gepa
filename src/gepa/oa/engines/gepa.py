@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from gepa.oa.task import Task
 
 
-# Keys this engine understands inside ``OptimizeAnythingConfig.config``.
+# Keys this engine understands inside ``OptimizeAnythingConfig.engine_config``.
 _GEPA_CONFIG_KEYS: tuple[str, ...] = (
     "engine",
     "reflection",
@@ -38,7 +38,7 @@ _GEPA_CONFIG_KEYS: tuple[str, ...] = (
 class GepaEngine:
     """Runs GEPA's ``optimize_anything`` against an optimize_anything task.
 
-    Engine-specific keys read from ``OptimizeAnythingConfig.config`` (all optional):
+    Engine-specific keys read from ``OptimizeAnythingConfig.engine_config`` (all optional):
 
     - ``engine``: kwargs for :class:`gepa.legacy_optimize_anything.EngineConfig`.
     - ``reflection``: kwargs for :class:`~gepa.legacy_optimize_anything.ReflectionConfig`.
@@ -59,7 +59,7 @@ class GepaEngine:
     name = "gepa"
 
     def __init__(self, config: OptimizeAnythingConfig) -> None:
-        extras = config.config
+        extras = config.engine_config
         warn_unknown_config_keys(self.name, extras, _GEPA_CONFIG_KEYS)
         # Cross-cutting (read directly off OptimizeAnythingConfig)
         self.run_dir = config.run_dir
@@ -67,7 +67,7 @@ class GepaEngine:
         self.effort = config.effort
         self.max_thinking_tokens = config.max_thinking_tokens
         self.sandbox = config.sandbox
-        # Engine-specific (read out of config.config)
+        # Engine-specific (read out of config.engine_config)
         self.engine: dict[str, Any] = dict(extras.get("engine") or {})
         self.reflection: dict[str, Any] = dict(extras.get("reflection") or {})
         self.merge: dict[str, Any] | None = dict(extras["merge"]) if extras.get("merge") else None
@@ -291,7 +291,7 @@ class GepaEngine:
 
         ``OptimizeAnythingConfig.run_dir``, ``effort``, ``max_thinking_tokens``, and
         ``sandbox`` flow in from the surrounding config. Anything in
-        ``OptimizeAnythingConfig.config["claude_code_agent"]`` overrides those defaults
+        ``OptimizeAnythingConfig.engine_config["claude_code_agent"]`` overrides those defaults
         (e.g. set ``"sandbox": False`` to override the global, or
         ``"max_budget_usd"`` for a per-proposer USD cap). If omitted, the
         surrounding OptimizeAnything token-cost budget is used as the proposer cap.

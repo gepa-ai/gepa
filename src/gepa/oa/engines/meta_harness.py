@@ -597,7 +597,7 @@ def _colorize_score(score: float) -> str:
 class MetaHarnessEngine:
     """Iterative meta-harness optimizer.
 
-    Engine-specific keys read from ``OptimizeAnythingConfig.config``:
+    Engine-specific keys read from ``OptimizeAnythingConfig.engine_config``:
 
     - ``model``: Proposer model. Default ``"claude-sonnet-4-6"`` (versioned —
       pin for reproducibility; pass ``"sonnet"`` / ``"opus"`` aliases to track
@@ -611,7 +611,7 @@ class MetaHarnessEngine:
     name = "meta_harness"
 
     def __init__(self, config: OptimizeAnythingConfig) -> None:
-        extras = config.config
+        extras = config.engine_config
         warn_unknown_config_keys(self.name, extras, _MH_CONFIG_KEYS)
         self.model: str = extras.get("model", "claude-sonnet-4-6")
         self.max_iterations: int | None = extras.get("max_iterations", None)

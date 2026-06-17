@@ -353,7 +353,7 @@ def _safe_name(value: str) -> str:
 class AutoResearchEngine:
     """Black-box research optimizer backed by Claude Code.
 
-    Engine-specific keys read from ``OptimizeAnythingConfig.config``:
+    Engine-specific keys read from ``OptimizeAnythingConfig.engine_config``:
 
     - ``model``: Claude model id. Default ``"claude-sonnet-4-6"`` (versioned —
       pin for reproducibility; pass ``"sonnet"`` / ``"opus"`` aliases to track
@@ -370,7 +370,7 @@ class AutoResearchEngine:
     name = "autoresearch"
 
     def __init__(self, config: OptimizeAnythingConfig) -> None:
-        extras = config.config
+        extras = config.engine_config
         warn_unknown_config_keys(self.name, extras, _CC_CONFIG_KEYS)
         self.model: str = extras.get("model", "claude-sonnet-4-6")
         self.ralph = _config_bool(extras.get("ralph", True))

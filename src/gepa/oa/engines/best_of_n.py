@@ -73,7 +73,7 @@ def _parse_candidate(response: str | None) -> str | None:
 class BestOfNEngine:
     """Stateless sample-and-keep-best baseline.
 
-    Engine-specific keys read from ``OptimizeAnythingConfig.config``:
+    Engine-specific keys read from ``OptimizeAnythingConfig.engine_config``:
 
     - ``model``: LiteLLM model id. Default ``"claude-sonnet-4-6"``.
     - ``temperature``: Sampling temperature. Default ``1.0`` (sampling on
@@ -87,7 +87,7 @@ class BestOfNEngine:
     name = "best_of_n"
 
     def __init__(self, config: OptimizeAnythingConfig) -> None:
-        extras = config.config
+        extras = config.engine_config
         warn_unknown_config_keys(self.name, extras, _BON_CONFIG_KEYS)
         self.model: str = extras.get("model", "claude-sonnet-4-6")
         self.temperature: float = float(extras.get("temperature", 1.0))

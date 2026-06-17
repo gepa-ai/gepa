@@ -19,7 +19,7 @@ The primary public API for GEPA. Define a task, provide an evaluator, and choose
 
 ## GEPA Engine
 
-Configuration for the built-in GEPA engine (`engine="gepa"`). These classes are passed via `OptimizeAnythingConfig(config={...})` to control GEPA-specific behavior.
+Configuration for the built-in GEPA engine (`engine="gepa"`). These classes are passed via `OptimizeAnythingConfig(engine_config={...})` to control GEPA-specific behavior.
 
 - [`GEPAConfig`](optimize_anything/GEPAConfig.md)
 - [`EngineConfig`](optimize_anything/EngineConfig.md)

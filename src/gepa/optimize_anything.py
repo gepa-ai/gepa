@@ -284,10 +284,10 @@ def _build_engine(config: OptimizeAnythingConfig) -> Engine:
     if isinstance(config.engine, str):
         cls = get_engine_cls(config.engine)
         return cls(config)
-    if config.config:
+    if config.engine_config:
         warnings.warn(
-            "OptimizeAnythingConfig.config is ignored when OptimizeAnythingConfig.engine is a constructed Engine "
-            "instance.",
+            "OptimizeAnythingConfig.engine_config is ignored when OptimizeAnythingConfig.engine is a constructed "
+            "Engine instance.",
             stacklevel=3,
         )
     return config.engine

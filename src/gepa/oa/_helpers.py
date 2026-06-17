@@ -12,13 +12,14 @@ def warn_unknown_config_keys(engine_name: str, raw: dict[str, Any], known: Itera
     """Warn when ``raw`` contains keys outside ``known`` so typos surface.
 
     Engines call this from their ``__init__`` after reading the keys they
-    consume from ``OptimizeAnythingConfig.config``.
+    consume from ``OptimizeAnythingConfig.engine_config``.
     """
     known_set = frozenset(known)
     unknown = set(raw) - known_set
     if unknown:
         warnings.warn(
-            f"{engine_name}: unknown keys in OptimizeAnythingConfig.config: {sorted(unknown)}. Known keys: {sorted(known_set)}",
+            f"{engine_name}: unknown keys in OptimizeAnythingConfig.engine_config: {sorted(unknown)}. "
+            f"Known keys: {sorted(known_set)}",
             stacklevel=3,
         )
 

@@ -10,11 +10,11 @@ same evaluation surface for free.
 
 Construction goes through ``__init__(config: OptimizeAnythingConfig)``. Each engine
 reads cross-cutting fields directly (``config.run_dir``, ``config.stop_at_score``,
-…) and pops engine-specific keys from ``config.config``, storing what it
+…) and pops engine-specific keys from ``config.engine_config``, storing what it
 needs on ``self``. ``run`` reads ``self.*``. The public API never injects
 attributes after construction.
 
-Engines should warn (or raise) about unknown keys in ``config.config``
+Engines should warn (or raise) about unknown keys in ``config.engine_config``
 themselves — they're the only ones who know what they consume.
 """
 
@@ -45,8 +45,8 @@ class Engine(Protocol):
 
         Read cross-cutting fields directly (``config.run_dir``,
         ``config.stop_at_score``, …) and pop engine-specific keys from
-        ``config.config`` onto ``self``. Warn (or raise) on unknown keys in
-        ``config.config`` to surface typos.
+        ``config.engine_config`` onto ``self``. Warn (or raise) on unknown keys
+        in ``config.engine_config`` to surface typos.
         """
         ...
 

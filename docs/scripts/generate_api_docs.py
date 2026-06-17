@@ -137,7 +137,7 @@ CATEGORY_INFO = {
     },
     "gepa_engine": {
         "title": "GEPA Engine",
-        "description": "Configuration for the built-in GEPA engine (`engine=\"gepa\"`). These classes are passed via `OptimizeAnythingConfig(config={...})` to control GEPA-specific behavior.",
+        "description": "Configuration for the built-in GEPA engine (`engine=\"gepa\"`). These classes are passed via `OptimizeAnythingConfig(engine_config={...})` to control GEPA-specific behavior.",
         "dir": "optimize_anything",
     },
     "core": {

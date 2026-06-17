@@ -1,7 +1,7 @@
 """Typed configuration for :func:`gepa.optimize_anything.optimize_anything`.
 
 One flat :class:`OptimizeAnythingConfig` carries every cross-cutting knob (budget, eval
-server, cross-engine conveniences) plus a free-form ``config`` dict that
+server, cross-engine conveniences) plus a free-form ``engine_config`` dict that
 each engine parses for engine-specific options.
 
 Cross-engine fields (``run_dir``, ``stop_at_score``, ``effort``,
@@ -53,8 +53,8 @@ class OptimizeAnythingConfig:
         max_thinking_tokens: Fixed thinking-token budget. Independent of
             ``effort`` (both can be set together).
         sandbox: Wrap subprocess engines in bwrap (Linux). Default ``False``.
-        config: Free-form, engine-specific options. Each engine reads the
-            keys it understands and warns about leftovers so typos surface.
+        engine_config: Free-form, engine-specific options. Each engine reads
+            the keys it understands and warns about leftovers so typos surface.
     """
 
     engine: str | Engine = "gepa"
@@ -77,4 +77,4 @@ class OptimizeAnythingConfig:
 
     # Engine-specific. Each engine's factory pops what it knows; the api
     # warns about anything left over.
-    config: dict[str, Any] = field(default_factory=dict)
+    engine_config: dict[str, Any] = field(default_factory=dict)
