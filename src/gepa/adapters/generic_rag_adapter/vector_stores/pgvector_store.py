@@ -49,6 +49,7 @@ class PGVectorStore(VectorStoreInterface):
         table_name: str,
         embedding_function=None,
         distance_metric: str = "cosine",
+        tsvector_language: str = "english",
     ):
         """
         Initialize PGVectorStore.
@@ -58,6 +59,7 @@ class PGVectorStore(VectorStoreInterface):
             table_name: Name of the table that stores the embeddings
             embedding_function: Optional callable(str) -> list[float] for text queries
             distance_metric: One of "cosine" (default), "l2", or "inner_product"
+            tsvector_language: Language used for full-text search in hybrid_search (default: "english")
         """
         import importlib.util
 
@@ -79,6 +81,7 @@ class PGVectorStore(VectorStoreInterface):
         self.embedding_function = embedding_function
         self.distance_metric = distance_metric
         self._distance_op = self._DISTANCE_OPS[distance_metric]
+        self.tsvector_language = tsvector_language
 
         register_vector(self.conn)
 
@@ -163,10 +166,11 @@ class PGVectorStore(VectorStoreInterface):
 
         where_sql, filter_params = self._build_where_clause(filters)
 
+        lang = sql.Literal(self.tsvector_language)
         query_sql = sql.SQL(
             "SELECT id, content, metadata, "
             "    ({alpha} * {vscore} "
-            "     + {beta} * COALESCE(ts_rank(to_tsvector('english', content), plainto_tsquery('english', %s)), 0)) AS score "
+            "     + {beta} * COALESCE(ts_rank(to_tsvector({lang}, content), plainto_tsquery({lang}, %s)), 0)) AS score "
             "FROM {table} "
             "{where} "
             "ORDER BY score DESC "
@@ -175,6 +179,7 @@ class PGVectorStore(VectorStoreInterface):
             alpha=sql.Literal(alpha),
             vscore=self._vector_score_sql(),
             beta=sql.Literal(1.0 - alpha),
+            lang=lang,
             table=sql.Identifier(self.table_name),
             where=where_sql,
         )
@@ -211,7 +216,9 @@ class PGVectorStore(VectorStoreInterface):
                     (self.table_name,),
                 )
                 row = cur.fetchone()
-                dimension = row[0] if row else 0
+                # None signals "table exists but dimension could not be determined"
+                # rather than returning a misleading 0.
+                dimension = row[0] if row else None
 
             return {
                 "name": self.table_name,
@@ -225,7 +232,7 @@ class PGVectorStore(VectorStoreInterface):
             return {
                 "name": self.table_name,
                 "document_count": 0,
-                "dimension": 0,
+                "dimension": None,
                 "vector_store_type": "pgvector",
                 "error": str(e),
             }
@@ -260,7 +267,7 @@ class PGVectorStore(VectorStoreInterface):
 
         try:
             with self.conn.cursor() as cur:
-                for doc_id, doc, embedding in zip(ids, documents, embeddings, strict=False):
+                for doc_id, doc, embedding in zip(ids, documents, embeddings, strict=True):
                     content = doc.get("content", "")
                     metadata = {k: v for k, v in doc.items() if k != "content"}
                     cur.execute(insert_sql, (doc_id, content, extras.Json(metadata), embedding))
@@ -306,17 +313,24 @@ class PGVectorStore(VectorStoreInterface):
         ).format(table=sql.Identifier(self.table_name), dim=sql.Literal(vector_size))
 
         # HNSW index works on any data size (unlike ivfflat which requires training data)
-        create_index_sql = sql.SQL("CREATE INDEX IF NOT EXISTS {idx} ON {table} USING hnsw (embedding {op})").format(
+        create_hnsw_sql = sql.SQL("CREATE INDEX IF NOT EXISTS {idx} ON {table} USING hnsw (embedding {op})").format(
             idx=sql.Identifier(f"{self.table_name}_embedding_hnsw_idx"),
             table=sql.Identifier(self.table_name),
             op=sql.SQL(index_op),
+        )
+
+        # GIN index on metadata speeds up the JSONB filter predicates in _build_where_clause.
+        create_gin_sql = sql.SQL("CREATE INDEX IF NOT EXISTS {idx} ON {table} USING GIN (metadata)").format(
+            idx=sql.Identifier(f"{self.table_name}_metadata_gin_idx"),
+            table=sql.Identifier(self.table_name),
         )
 
         try:
             with self.conn.cursor() as cur:
                 cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
                 cur.execute(create_table_sql)
-                cur.execute(create_index_sql)
+                cur.execute(create_hnsw_sql)
+                cur.execute(create_gin_sql)
             self.conn.commit()
         except Exception as e:
             self.conn.rollback()
@@ -413,6 +427,7 @@ class PGVectorStore(VectorStoreInterface):
         table_name: str,
         embedding_function=None,
         distance_metric: str = "cosine",
+        tsvector_language: str = "english",
         vector_size: int | None = None,
     ) -> "PGVectorStore":
         """
@@ -423,7 +438,8 @@ class PGVectorStore(VectorStoreInterface):
             table_name: Table name to use for the vector store
             embedding_function: Optional callable(str) -> list[float]
             distance_metric: "cosine" (default), "l2", or "inner_product"
-            vector_size: If provided, creates the table (and HNSW index) if it does not exist
+            tsvector_language: Language for full-text search (default: "english")
+            vector_size: If provided, creates the table (and indexes) if it does not exist
 
         Returns:
             PGVectorStore instance
@@ -436,7 +452,7 @@ class PGVectorStore(VectorStoreInterface):
             ) from e
 
         conn = psycopg2.connect(dsn)
-        store = cls(conn, table_name, embedding_function, distance_metric)
+        store = cls(conn, table_name, embedding_function, distance_metric, tsvector_language)
         if vector_size is not None:
             store.create_table(vector_size)
         return store
@@ -447,6 +463,7 @@ class PGVectorStore(VectorStoreInterface):
         table_name: str,
         embedding_function=None,
         distance_metric: str = "cosine",
+        tsvector_language: str = "english",
         host: str = "localhost",
         port: int = 5432,
         database: str = "postgres",
@@ -461,6 +478,7 @@ class PGVectorStore(VectorStoreInterface):
             table_name: Table name for the vector store
             embedding_function: Optional callable(str) -> list[float]
             distance_metric: "cosine" (default), "l2", or "inner_product"
+            tsvector_language: Language for full-text search (default: "english")
             host: Database host (default: localhost)
             port: Database port (default: 5432)
             database: Database name (default: postgres)
@@ -481,7 +499,7 @@ class PGVectorStore(VectorStoreInterface):
         # Use keyword arguments to avoid URL-parsing issues with special characters
         # in passwords or usernames (e.g. '@', '/', '?').
         conn = psycopg2.connect(host=host, port=port, dbname=database, user=user, password=password)
-        store = cls(conn, table_name, embedding_function, distance_metric)
+        store = cls(conn, table_name, embedding_function, distance_metric, tsvector_language)
         store.create_table(vector_size)
         return store
 
@@ -492,6 +510,7 @@ class PGVectorStore(VectorStoreInterface):
         table_name: str,
         embedding_function=None,
         distance_metric: str = "cosine",
+        tsvector_language: str = "english",
         vector_size: int = 384,
     ) -> "PGVectorStore":
         """
@@ -502,9 +521,12 @@ class PGVectorStore(VectorStoreInterface):
             table_name: Table name for the vector store
             embedding_function: Optional callable(str) -> list[float]
             distance_metric: "cosine" (default), "l2", or "inner_product"
+            tsvector_language: Language for full-text search (default: "english")
             vector_size: Embedding dimension (default: 384)
 
         Returns:
             PGVectorStore instance with the table created
         """
-        return cls.from_connection_string(dsn, table_name, embedding_function, distance_metric, vector_size)
+        return cls.from_connection_string(
+            dsn, table_name, embedding_function, distance_metric, tsvector_language, vector_size
+        )
