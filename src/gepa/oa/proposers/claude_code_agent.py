@@ -74,7 +74,7 @@ from typing import Any
 
 from gepa.oa.budget import BudgetExhausted
 from gepa.oa.engines.claude_utils import copy_session_transcript
-from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_settings_args
+from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args
 
 _FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 
@@ -694,12 +694,12 @@ can see your reasoning; keep it tight.
             self.model,
             "--session-id",
             session_id,
-            "--permission-mode",
-            "bypassPermissions",
             DENY_WEB_TOOLS,
         ]
-        if jail_root is not None:
-            cmd.extend(claude_settings_args(jail_root))  # macOS Seatbelt fallback
+        # Single source of the permission posture: bypassPermissions inside the
+        # bwrap jail (or unsandboxed), or the macOS Seatbelt settings whose
+        # ``--permission-mode default`` makes the file-tool whitelist enforce.
+        cmd.extend(claude_permission_args(cwd, sandboxed=jail_root is not None))
         if self.max_thinking_tokens is None and self.effort is not None:
             cmd.extend(["--effort", self.effort])
         if self.max_budget_usd is not None:

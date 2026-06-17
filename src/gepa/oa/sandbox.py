@@ -224,3 +224,35 @@ def claude_settings_args(
         "--permission-mode",
         "default",
     ]
+
+
+def claude_permission_args(
+    work_dir: Path | str,
+    *,
+    sandboxed: bool,
+    extra_writable: list[Path | str] | None = None,
+) -> list[str]:
+    """Resolve the *single* tool-permission posture for a ``claude --print`` call.
+
+    Callers must use this instead of hardcoding ``--permission-mode`` so the
+    argv never carries two conflicting modes. Exactly one mode is emitted:
+
+    - **macOS + sandboxed** → ``--settings <seatbelt json> --permission-mode
+      default`` (via :func:`claude_settings_args`). ``default`` is what makes
+      the settings' ``permissions.allow`` whitelist enforce: in ``--print``
+      mode every unlisted tool auto-denies (no human to approve), so the
+      allowlist becomes a strict tool-layer whitelist layered on top of the
+      Seatbelt filesystem confinement.
+    - **Linux + sandboxed** → ``--permission-mode bypassPermissions``. The
+      bwrap jail (:func:`bwrap_prefix`) is the OS-level confinement and there
+      is no human to answer prompts in ``--print`` mode, so tool permissions
+      are bypassed inside the jail.
+    - **unsandboxed** (either platform) → ``--permission-mode bypassPermissions``.
+    """
+    if sandboxed:
+        # On macOS this carries its own ``--permission-mode default``; on Linux
+        # it is empty (bwrap handles confinement), so we fall through to bypass.
+        settings = claude_settings_args(work_dir, extra_writable=extra_writable)
+        if settings:
+            return settings
+    return ["--permission-mode", "bypassPermissions"]

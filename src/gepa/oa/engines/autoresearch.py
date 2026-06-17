@@ -31,7 +31,7 @@ from gepa.oa._helpers import example_to_json, warn_unknown_config_keys
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.engine import Result
 from gepa.oa.engines.claude_utils import copy_session_transcript
-from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_settings_args
+from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args
 
 if TYPE_CHECKING:
     from gepa.oa.config import OptimizeAnythingConfig
@@ -548,9 +548,11 @@ class AutoResearchEngine:
             cmd.extend(["--resume", session_id])
         else:
             cmd.extend(["--session-id", session_id])
-        cmd.extend(["--permission-mode", "bypassPermissions", DENY_WEB_TOOLS])
-        if self.sandbox:
-            cmd.extend(claude_settings_args(work_dir))  # macOS Seatbelt fallback
+        cmd.append(DENY_WEB_TOOLS)
+        # Single source of the permission posture (see claude_permission_args):
+        # bypassPermissions in the bwrap jail / unsandboxed, or the macOS
+        # Seatbelt settings whose --permission-mode default enforces the whitelist.
+        cmd.extend(claude_permission_args(work_dir, sandboxed=self.sandbox))
         if self.max_thinking_tokens is None and self.effort is not None:
             cmd.extend(["--effort", self.effort])
         if budget.max_token_cost is not None:
