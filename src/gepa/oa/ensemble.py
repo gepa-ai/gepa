@@ -39,7 +39,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from gepa.oa.engine import Result
 
@@ -57,7 +57,9 @@ def optimize_anything(
     """Delegate to the public :func:`gepa.optimize_anything.optimize_anything`."""
     from gepa.optimize_anything import optimize_anything as run
 
-    return run(task, evaluate, config)
+    # This wrapper always uses the new (task, evaluate, config) API, which returns
+    # a Result; the public function's Result | GEPAResult union covers legacy calls.
+    return cast(Result, run(task, evaluate, config))
 
 
 def optimize_anything_with_server(
