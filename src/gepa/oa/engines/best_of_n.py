@@ -96,6 +96,9 @@ class BestOfNEngine:
         self.stop_at_score = config.stop_at_score
         self.effort = config.effort
         self.max_thinking_tokens = config.max_thinking_tokens
+        # Proposer-cost cap: USD this engine may spend sampling candidates.
+        # Eval-side cost (server.total_cost) is a separate bucket.
+        self.max_token_cost = config.max_token_cost
 
     def run(self, task: Task, server: EvalServer) -> Result:
         budget = server.budget
@@ -118,13 +121,11 @@ class BestOfNEngine:
         while True:
             if self.max_n is not None and n_samples >= self.max_n:
                 break
-            if budget.max_token_cost is not None:
-                # ``max_token_cost`` is the LLM-spend cap. Convention across
-                # engines is to count only the engine's own LLM/subprocess
-                # cost — eval-side cost (``server.total_cost``) lives in a
-                # separate bucket and is summed in only by the api's final
-                # report.
-                if lm.total_cost >= budget.max_token_cost:
+            if self.max_token_cost is not None:
+                # Proposer-cost cap: only this engine's own LLM spend counts.
+                # Eval-side cost (``server.total_cost``) is a separate bucket,
+                # summed in only by the api's final report.
+                if lm.total_cost >= self.max_token_cost:
                     break
             if budget.max_evals is not None and budget.remaining is not None and budget.remaining <= 0:
                 break

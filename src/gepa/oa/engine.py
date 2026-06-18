@@ -47,6 +47,14 @@ class Engine(Protocol):
         ``config.stop_at_score``, …) and pop engine-specific keys from
         ``config.engine_config`` onto ``self``. Warn (or raise) on unknown keys
         in ``config.engine_config`` to surface typos.
+
+        Budget contract: the engine MUST honor ``config.max_token_cost`` (the
+        proposer-cost cap — USD on the engine's own optimizer LLM tokens). The
+        eval server enforces only the eval-call budget and cannot enforce the
+        proposer cap: it never observes the engine's out-of-band LLM spend (and
+        a subprocess's cost isn't knowable until it exits). Read the cap here
+        and translate it into your native mechanism (``max_reflection_cost``,
+        ``--max-budget-usd``, …).
         """
         ...
 
@@ -57,7 +65,9 @@ class Engine(Protocol):
             task: Task definition.
             server: The eval server. Call ``server.evaluate(candidate)`` for
                 in-process eval, or use ``server.url`` for HTTP-based eval.
-                ``server.budget.max_token_cost`` carries the LLM-spend cap.
+                ``server.budget`` enforces the eval-call budget; the
+                proposer-cost cap lives on ``config.max_token_cost`` (read at
+                construction), not on the server.
         """
         ...
 

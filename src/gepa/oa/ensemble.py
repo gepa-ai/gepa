@@ -293,7 +293,6 @@ def optimize_adaptive_sequential_with_server(
 
     original_task = server.task
     original_max_evals = server.budget.max_evals
-    original_max_token_cost = server.budget.max_token_cost
     stage_results: list[Result] = []
     schedule: list[dict[str, object]] = []
     best_so_far: Result | None = None
@@ -317,24 +316,21 @@ def optimize_adaptive_sequential_with_server(
             slice_evals = plateau_evals if remaining is None else min(plateau_evals, remaining)
             if slice_evals <= 0:
                 break
-            remaining_token_cost = None
-            if original_max_token_cost is not None:
-                remaining_token_cost = max(0.0, original_max_token_cost - adapter_cost)
-                if remaining_token_cost <= 0:
-                    break
 
+            # The scheduler shares one *eval* budget across stages (carved into
+            # per-slice windows here). Proposer cost is NOT shared: each stage's
+            # engine reads its own ``configs[i].max_token_cost`` and enforces it
+            # itself. ``adapter_cost`` is accumulated only for reporting.
             server.budget.max_evals = (
                 server.budget.used + slice_evals
                 if original_max_evals is None
                 else min(original_max_evals, server.budget.used + slice_evals)
             )
-            server.budget.max_token_cost = remaining_token_cost
 
             before_evals = server.budget.used
             before_best = best_so_far.best_score if best_so_far is not None else float("-inf")
             result = optimize_anything_with_server(server, configs[current_idx])
             server.budget.max_evals = original_max_evals
-            server.budget.max_token_cost = original_max_token_cost
             after_evals = server.budget.used
             eval_delta = after_evals - before_evals
             current_stage_evals += eval_delta
@@ -392,7 +388,6 @@ def optimize_adaptive_sequential_with_server(
                 server.task = replace(server.task, initial_candidate=best_so_far.best_candidate)
     finally:
         server.budget.max_evals = original_max_evals
-        server.budget.max_token_cost = original_max_token_cost
         server.task = original_task
 
     if not stage_results:

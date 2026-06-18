@@ -155,13 +155,13 @@ This is a **single-task** optimization.
 ```{cost_line}"""
 
 
-def _budget_section(budget: BudgetTracker) -> str:
+def _budget_section(budget: BudgetTracker, max_token_cost: float | None) -> str:
     lines: list[str] = []
     if budget.max_evals is not None:
         lines.append(f"- **Evaluation cap:** {budget.max_evals} calls (each eval = 1 unit).")
-    if budget.max_token_cost is not None:
+    if max_token_cost is not None:
         lines.append(
-            f"- **LLM token budget:** ${budget.max_token_cost:.2f} "
+            f"- **LLM token budget:** ${max_token_cost:.2f} "
             "(enforced by the Claude CLI; you'll stop automatically when exhausted)."
         )
     if not lines:
@@ -234,7 +234,9 @@ def _handoff_section(task: Task) -> str:
     )
 
 
-def _build_program_md(task: Task, budget: BudgetTracker, *, perfect_score: float | None) -> str:
+def _build_program_md(
+    task: Task, budget: BudgetTracker, *, max_token_cost: float | None, perfect_score: float | None
+) -> str:
     optional = ""
     if task.objective:
         optional += f"## Objective\n{task.objective}\n\n"
@@ -265,7 +267,7 @@ def _build_program_md(task: Task, budget: BudgetTracker, *, perfect_score: float
         candidate_len=len(task.initial_candidate),
         handoff_section=_handoff_section(task),
         eval_section=eval_section,
-        budget_section=_budget_section(budget) + _perfect_score_section(perfect_score),
+        budget_section=_budget_section(budget, max_token_cost) + _perfect_score_section(perfect_score),
         strategy_section=_strategy_section(task),
         rules_section=_rules_section(task, budget),
     )
@@ -277,11 +279,14 @@ def _materialize_sandbox(
     server: EvalServer,
     budget: BudgetTracker,
     *,
+    max_token_cost: float | None = None,
     perfect_score: float | None = None,
 ) -> None:
     server_url = server.url
     work_dir.mkdir(parents=True, exist_ok=True)
-    (work_dir / "program.md").write_text(_build_program_md(task, budget, perfect_score=perfect_score))
+    (work_dir / "program.md").write_text(
+        _build_program_md(task, budget, max_token_cost=max_token_cost, perfect_score=perfect_score)
+    )
     (work_dir / "candidate.txt").write_text(task.initial_candidate)
     (work_dir / "best_candidate.txt").write_text(task.initial_candidate)
 
@@ -381,6 +386,9 @@ class AutoResearchEngine:
         self.stop_at_score = config.stop_at_score
         self.max_thinking_tokens = config.max_thinking_tokens
         self.sandbox = config.sandbox
+        # Proposer-cost cap: USD the claude subprocess(es) may spend. Enforced
+        # via --max-budget-usd; the eval server never sees proposer spend.
+        self.max_token_cost = config.max_token_cost
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
 
     def run(self, task: Task, server: EvalServer) -> Result:
@@ -403,7 +411,9 @@ class AutoResearchEngine:
             self._pending_tempdir = tempfile.TemporaryDirectory(prefix="optimize_anything_cc_")
             work_dir = Path(self._pending_tempdir.name)
 
-        _materialize_sandbox(work_dir, task, server, budget, perfect_score=self.stop_at_score)
+        _materialize_sandbox(
+            work_dir, task, server, budget, max_token_cost=self.max_token_cost, perfect_score=self.stop_at_score
+        )
 
         candidate_file = work_dir / "candidate.txt"
         best_file = work_dir / "best_candidate.txt"
@@ -555,8 +565,8 @@ class AutoResearchEngine:
         cmd.extend(claude_permission_args(work_dir, sandboxed=self.sandbox))
         if self.max_thinking_tokens is None and self.effort is not None:
             cmd.extend(["--effort", self.effort])
-        if budget.max_token_cost is not None:
-            remaining = max(0.0, budget.max_token_cost - adapter_cost)
+        if self.max_token_cost is not None:
+            remaining = max(0.0, self.max_token_cost - adapter_cost)
             cmd.extend(["--max-budget-usd", f"{remaining:.6f}"])
         cmd.append(prompt)
 
@@ -616,8 +626,8 @@ class AutoResearchEngine:
         budget = server.budget
         if budget.exhausted:
             return False
-        if budget.max_token_cost is not None:
-            if adapter_cost >= budget.max_token_cost - _RALPH_MIN_HEADROOM_USD:
+        if self.max_token_cost is not None:
+            if adapter_cost >= self.max_token_cost - _RALPH_MIN_HEADROOM_USD:
                 return False
         return True
 

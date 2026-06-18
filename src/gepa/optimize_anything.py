@@ -174,7 +174,9 @@ def _run_engine_optimization(
 
     engine = _build_engine(config)
     output_dir = _resolve_output_dir(config.output_dir, task=task, engine_name=engine.name)
-    budget = BudgetTracker(max_evals=config.max_evals, max_token_cost=config.max_token_cost)
+    # The eval budget caps eval calls only. The proposer-cost cap
+    # (config.max_token_cost) is read and enforced by the engine itself.
+    budget = BudgetTracker(max_evals=config.max_evals)
     server = EvalServer(
         task,
         evaluate,

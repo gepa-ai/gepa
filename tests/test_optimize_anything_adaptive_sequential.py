@@ -225,12 +225,13 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
         server = EvalServer(
             Task(name="task", initial_candidate="seed"),
             _evaluate,
-            BudgetTracker(max_evals=10, max_token_cost=0.5),
+            BudgetTracker(max_evals=10),
             max_concurrency=1,
         )
         engine = GepaEngine(
             OptimizeAnythingConfig(
                 engine="gepa",
+                max_token_cost=0.5,
                 engine_config={"reflection": {"reflection_lm": fake_lm}},
             )
         )

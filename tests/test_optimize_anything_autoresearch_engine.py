@@ -10,7 +10,7 @@ from gepa.oa.task import Task
 
 class _FakeServer:
     def __init__(self) -> None:
-        self.budget = BudgetTracker(max_evals=10, max_token_cost=1.0)
+        self.budget = BudgetTracker(max_evals=10)
         self.url = "http://127.0.0.1:9"
         self.best_score = 0.0
         self.eval_log = []
@@ -49,7 +49,9 @@ def test_autoresearch_engine_ralph_resumes_with_remaining_budget(tmp_path: Path)
         cost = 0.2 if len(calls) == 1 else 0.0005
         return _FakePopen(0, json.dumps({"total_cost_usd": cost}))
 
-    engine = AutoResearchEngine(OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path), engine_config={}))
+    engine = AutoResearchEngine(
+        OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path), max_token_cost=1.0, engine_config={})
+    )
 
     with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):
         result = engine.run(task, server)

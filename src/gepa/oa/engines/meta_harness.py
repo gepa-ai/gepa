@@ -621,6 +621,10 @@ class MetaHarnessEngine:
         self.stop_at_score = config.stop_at_score
         self.max_thinking_tokens = config.max_thinking_tokens
         self.sandbox = config.sandbox
+        # Proposer-cost cap: USD this engine may spend across its claude
+        # subprocess sessions. Enforced via --max-budget-usd; the eval server
+        # never sees proposer spend.
+        self.max_token_cost = config.max_token_cost
         self._pending_tempdir: tempfile.TemporaryDirectory[str] | None = None
 
     def run(self, task: Task, server: EvalServer) -> Result:
@@ -662,8 +666,8 @@ class MetaHarnessEngine:
                 break
 
             per_session_cap: float | None = None
-            if budget.max_token_cost is not None:
-                remaining = budget.max_token_cost - total_proposer_cost
+            if self.max_token_cost is not None:
+                remaining = self.max_token_cost - total_proposer_cost
                 if remaining <= 0:
                     stop_reason = "token_budget_exhausted"
                     break

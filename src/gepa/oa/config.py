@@ -30,10 +30,14 @@ class OptimizeAnythingConfig:
             When a string, the engine class is instantiated with this
             :class:`OptimizeAnythingConfig`.
         max_evals: Server-side cap on eval calls. ``None`` = unlimited.
-        max_token_cost: Cap on cumulative LLM USD spend. ``None`` = unlimited.
-            Each engine reads this and configures its own enforcer
-            (gepa: ``max_reflection_cost``; autoresearch/meta_harness:
-            ``--max-budget-usd``).
+        max_token_cost: Proposer-cost cap — cumulative USD an engine may spend
+            on its *own* optimizer LLM tokens (reflection, agent). ``None`` =
+            unlimited. This is **not** an eval-budget field: the eval server
+            never sees proposer spend (a subprocess's cost isn't even knowable
+            until it exits). Each engine reads it at construction and enforces
+            it itself (gepa: ``max_reflection_cost``; autoresearch/meta_harness:
+            ``--max-budget-usd``). At least one of ``max_evals`` /
+            ``max_token_cost`` must be set so a run is bounded.
         max_concurrency: Eval server thread-pool size.
         output_dir: Where the eval server persists per-eval JSON,
             ``progress_log.jsonl``, and ``summary.json``. When ``None``, the

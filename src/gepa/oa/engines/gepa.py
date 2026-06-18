@@ -67,6 +67,10 @@ class GepaEngine:
         self.effort = config.effort
         self.max_thinking_tokens = config.max_thinking_tokens
         self.sandbox = config.sandbox
+        # Proposer-cost cap: USD this engine may spend on its reflection LM /
+        # agent. Enforced here via max_reflection_cost / the agent's
+        # --max-budget-usd; the eval server never sees reflection spend.
+        self.max_token_cost = config.max_token_cost
         # Engine-specific (read out of config.engine_config)
         self.engine: dict[str, Any] = dict(extras.get("engine") or {})
         self.reflection: dict[str, Any] = dict(extras.get("reflection") or {})
@@ -106,7 +110,7 @@ class GepaEngine:
             agent_proposer = self._build_claude_code_agent(
                 objective,
                 background,
-                default_max_budget_usd=budget.max_token_cost,
+                default_max_budget_usd=self.max_token_cost,
             )
             reflection_kwargs["custom_candidate_proposer"] = agent_proposer
             # The proposer reads <run_dir>/iterations/, <run_dir>/pareto/.
@@ -150,8 +154,8 @@ class GepaEngine:
         cost_callback: _ReflectionCostCallback | None = None
         cost_source = reflection_lm if reflection_lm is not None else agent_proposer
         initial_adapter_cost = float(getattr(cost_source, "total_cost", 0.0) or 0.0) if cost_source is not None else 0.0
-        if budget.max_token_cost is not None and "max_reflection_cost" not in engine_kwargs:
-            engine_kwargs["max_reflection_cost"] = initial_adapter_cost + budget.max_token_cost
+        if self.max_token_cost is not None and "max_reflection_cost" not in engine_kwargs:
+            engine_kwargs["max_reflection_cost"] = initial_adapter_cost + self.max_token_cost
         if cost_source is not None:
             cost_callback = _ReflectionCostCallback(cost_source, server.tracker, output_dir=self.run_dir)
             callbacks.append(cost_callback)
@@ -170,10 +174,10 @@ class GepaEngine:
             from gepa.utils.stop_condition import ScoreThresholdStopper
 
             stop_callbacks.append(ScoreThresholdStopper(self.stop_at_score))
-        if budget.max_token_cost is not None and cost_source is not None:
+        if self.max_token_cost is not None and cost_source is not None:
             from gepa.utils.stop_condition import MaxReflectionCostStopper
 
-            stop_callbacks.append(MaxReflectionCostStopper(budget.max_token_cost, reflection_lm=cost_source))
+            stop_callbacks.append(MaxReflectionCostStopper(self.max_token_cost, reflection_lm=cost_source))
 
         # Build GEPA's nested dataclasses explicitly. GEPAConfig.__post_init__
         # also accepts dicts, but its type annotations don't, so passing dicts

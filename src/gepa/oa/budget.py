@@ -1,16 +1,26 @@
-"""In-process budget enforcement.
+"""In-process eval-budget enforcement.
 
-The :class:`BudgetTracker` lives inside the optimize_anything process and wraps the
-real eval function. Engines — including external black-box ones — can only
-evaluate through the eval server, so they cannot modify the counter.
+The :class:`BudgetTracker` is the **eval ledger**: it counts (and caps) calls
+to the eval function and nothing else. It lives inside the optimize_anything
+process and wraps the real eval function. Engines — including external
+black-box ones — can only evaluate through the eval server, so they cannot
+modify the counter.
 
-Two independent limits are supported — ``max_evals`` (number of eval calls)
-and ``max_token_cost`` (cumulative USD spent on engine LLM tokens). At least
-one must be specified.
+It does **not** track proposer cost. The dollars an optimizer spends *thinking
+up* candidates (GEPA's reflection LM, a ``claude --print`` subprocess) are
+spent out-of-band — the eval server never sees them, and for a subprocess
+there is nothing to observe until the process exits. That cap is
+:attr:`OptimizeAnythingConfig.max_token_cost`, read by each engine at
+construction and enforced engine-side (GEPA via ``max_reflection_cost``, Claude
+engines via ``--max-budget-usd``). See :class:`gepa.oa.engine.Engine`.
 
-``max_evals`` is enforced centrally by the ``BudgetTracker`` (every eval goes
-through it). ``max_token_cost`` is enforced by each engine in its own way
-(GEPA via ``max_reflection_cost``, Claude Code via ``--max-budget-usd``).
+So the two budgets have two distinct owners:
+
+- **eval budget** (call count, here) — enforced centrally by this tracker.
+- **proposer budget** (USD on optimizer LLM tokens) — owned by the engine.
+
+The api's final report sums them (``server.total_cost`` for eval-side cost +
+the engine's reported ``adapter_cost``) but they are never conflated here.
 """
 
 from __future__ import annotations
@@ -27,29 +37,19 @@ class BudgetExhausted(Exception):  # noqa: N818 — load-bearing public name
 
 @dataclass
 class BudgetTracker:
-    """Thread-safe, in-process eval budget enforcer.
+    """Thread-safe, in-process eval-call budget enforcer.
 
     Args:
         max_evals: Maximum number of evaluation calls allowed. ``None`` means
-            unlimited (token-cost-only mode).
-        max_token_cost: Maximum cumulative USD spent on engine LLM tokens.
-            ``None`` means unlimited (eval-count-only mode). Enforcement is
-            engine-side; the tracker holds the config value for propagation.
-
-    Raises:
-        ValueError: If both ``max_evals`` and ``max_token_cost`` are ``None``.
+            unlimited eval calls — valid for proposer-cost-only runs, where the
+            run is instead bounded by the engine's ``max_token_cost`` cap.
     """
 
     max_evals: int | None = None
-    max_token_cost: float | None = None
 
     _used: int = field(default=0, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _log: list[dict[str, Any]] = field(default_factory=list, init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        if self.max_evals is None and self.max_token_cost is None:
-            raise ValueError("At least one of max_evals or max_token_cost must be specified")
 
     def record(self, score: float) -> None:
         """Record one eval call. Raises BudgetExhausted if over eval limit."""
@@ -76,9 +76,7 @@ class BudgetTracker:
 
     @property
     def exhausted(self) -> bool:
-        if self.max_evals is not None and self._used >= self.max_evals:
-            return True
-        return False
+        return self.max_evals is not None and self._used >= self.max_evals
 
     def status(self) -> dict[str, Any]:
         result: dict[str, Any] = {"exhausted": self.exhausted}
@@ -86,6 +84,4 @@ class BudgetTracker:
             result["max_evals"] = self.max_evals
             result["used"] = self._used
             result["remaining_evals"] = self.remaining
-        if self.max_token_cost is not None:
-            result["max_token_cost"] = self.max_token_cost
         return result
