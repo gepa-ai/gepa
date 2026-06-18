@@ -30,12 +30,11 @@ Use :func:`optimize_anything_with_server` when an outer system already owns an
 
 from __future__ import annotations
 
-import sys
 import time
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Any, NoReturn, cast
+from typing import TYPE_CHECKING, Any
 
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
@@ -65,86 +64,62 @@ from gepa.oa.registry import (
 )
 from gepa.oa.task import EvalFn, Task
 
-_MISSING = object()
+if TYPE_CHECKING:
+    from gepa.core.result import GEPAResult
+
 _NEW_API_ARGS = {"task", "evaluate", "config"}
 _LEGACY_API_ARGS = {"seed_candidate", "evaluator", "dataset", "valset", "objective", "background"}
-_LEGACY_MIGRATION_MESSAGE = """\
-gepa.optimize_anything.optimize_anything now uses the engine-based API:
+
+_LEGACY_FALLBACK_MESSAGE = """\
+gepa.optimize_anything.optimize_anything received a legacy seed_candidate/evaluator
+call and is transparently dispatching to gepa.legacy_optimize_anything so existing
+code keeps working. This backward-compatible fallback is deprecated and may be
+removed in a future release.
+
+Migrate to the engine-based API:
 
     from gepa.optimize_anything import OptimizeAnythingConfig, Task, optimize_anything
 
     result = optimize_anything(
-        task=Task(
-            name="my_task",
-            initial_candidate="initial prompt or program",
-            objective="Improve the candidate's score.",
-        ),
+        task=Task(name="my_task", initial_candidate="...", objective="..."),
         evaluate=evaluate,
         config=OptimizeAnythingConfig(engine="gepa", max_evals=100),
     )
 
-The previous seed_candidate/evaluator API has moved to:
+or import the legacy API explicitly to silence this warning:
 
-    from gepa.legacy_optimize_anything import EngineConfig, GEPAConfig, optimize_anything
-
-    result = optimize_anything(
-        seed_candidate="initial prompt or program",
-        evaluator=evaluate,
-        objective="Improve the candidate's score.",
-        config=GEPAConfig(engine=EngineConfig(max_metric_calls=100)),
-    )
-
-This call was not run. Update the call to the new Task/evaluate API, or import
-from gepa.legacy_optimize_anything explicitly to keep using the legacy API.
+    from gepa.legacy_optimize_anything import optimize_anything
 """
 
 
 def optimize_anything(
     *args: Any,
     **kwargs: Any,
-) -> Result:
-    """Validate the public call shape and run the engine-based API.
+) -> Result | GEPAResult:
+    """Run the engine-based API, falling back to the legacy API when needed.
 
-    The legacy ``seed_candidate=...`` / ``evaluator=...`` call shape is no
-    longer accepted from this module. Import
-    :mod:`gepa.legacy_optimize_anything` explicitly for that API.
+    Calls using the new ``task`` / ``evaluate`` / ``config`` shape run the
+    engine-based optimizer. Calls using the legacy ``seed_candidate=...`` /
+    ``evaluator=...`` shape are transparently dispatched to
+    :func:`gepa.legacy_optimize_anything.optimize_anything` with a
+    :class:`DeprecationWarning`, so existing code keeps working. Import
+    :mod:`gepa.legacy_optimize_anything` directly to use the legacy API without
+    the warning. Calls that mix the two APIs are rejected with a ``TypeError``.
     """
     legacy_args = sorted(_LEGACY_API_ARGS & set(kwargs))
     if legacy_args:
-        _raise_optimize_anything_call_error(
-            f"legacy argument(s) are no longer accepted here: {', '.join(legacy_args)}",
-            deprecation=True,
-        )
+        new_args = sorted((_NEW_API_ARGS - {"config"}) & set(kwargs))
+        if new_args:
+            raise TypeError(
+                f"cannot mix new-API argument(s) {new_args} with legacy argument(s) {legacy_args}; "
+                "use either the Task/evaluate API or gepa.legacy_optimize_anything, not both"
+            )
+        warnings.warn(_LEGACY_FALLBACK_MESSAGE, DeprecationWarning, stacklevel=2)
+        from gepa.legacy_optimize_anything import optimize_anything as _legacy_optimize_anything
 
-    unknown_args = sorted(set(kwargs) - _NEW_API_ARGS)
-    if unknown_args:
-        _raise_optimize_anything_call_error(f"unknown argument(s): {', '.join(unknown_args)}")
+        return _legacy_optimize_anything(*args, **kwargs)
 
-    if len(args) > 3:
-        _raise_optimize_anything_call_error(
-            f"expected at most 3 positional arguments (task, evaluate, config), got {len(args)}"
-        )
-
-    task = _pop_arg("task", 0, args, kwargs)
-    evaluate = _pop_arg("evaluate", 1, args, kwargs)
-    config = _pop_arg("config", 2, args, kwargs, default=None)
-
-    if task is _MISSING:
-        _raise_optimize_anything_call_error("missing required argument: task")
-    if evaluate is _MISSING:
-        _raise_optimize_anything_call_error("missing required argument: evaluate")
-    if not isinstance(task, Task):
-        _raise_optimize_anything_call_error(
-            "task must be a gepa.optimize_anything.Task. "
-            "If you passed a seed candidate string/dict, use gepa.legacy_optimize_anything instead.",
-            deprecation=True,
-        )
-    if not callable(evaluate):
-        _raise_optimize_anything_call_error("evaluate must be callable")
-    if config is not None and not isinstance(config, OptimizeAnythingConfig):
-        _raise_optimize_anything_call_error("config must be an OptimizeAnythingConfig or None")
-
-    return _run_engine_optimization(task=task, evaluate=cast(EvalFn, evaluate), config=config)
+    return _run_engine_optimization(*args, **kwargs)
 
 
 def _run_engine_optimization(
@@ -186,33 +161,6 @@ def _run_engine_optimization(
         output_dir=output_dir,
     )
     return _run_engine(server, engine, owns_server=True)
-
-
-def _pop_arg(
-    name: str,
-    position: int,
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-    *,
-    default: Any = _MISSING,
-) -> Any:
-    has_positional = len(args) > position
-    has_keyword = name in kwargs
-    if has_positional and has_keyword:
-        _raise_optimize_anything_call_error(f"{name!r} was provided both positionally and by keyword")
-    if has_positional:
-        return args[position]
-    if has_keyword:
-        return kwargs[name]
-    return default
-
-
-def _raise_optimize_anything_call_error(reason: str, *, deprecation: bool = False) -> NoReturn:
-    message = f"Invalid optimize_anything call: {reason}.\n\n{_LEGACY_MIGRATION_MESSAGE}"
-    print(message, file=sys.stderr)
-    if deprecation:
-        warnings.warn(message, DeprecationWarning, stacklevel=3)
-    raise TypeError(message)
 
 
 def optimize_anything_with_server(
