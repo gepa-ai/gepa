@@ -79,6 +79,11 @@ langchain = [
     "tqdm>=4.66",
 ]
 
+pgvector = [
+    "psycopg2-binary>=2.9",
+    "pgvector>=0.3.0",
+]
+
 [project.urls]
 "Homepage" = "https://github.com/gepa-ai/gepa"
 "Bug Tracker" = "https://github.com/gepa-ai/gepa/issues"
