@@ -4,7 +4,6 @@
 import os
 import traceback
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Generic
 
 from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
@@ -33,10 +32,7 @@ from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.base import CandidateProposal
 from gepa.proposer.merge import MergeProposer
-from gepa.proposer.reflective_mutation.reflective_mutation import (
-    ProposalOutput,
-    ReflectiveMutationProposer,
-)
+from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
 from gepa.utils import StopperProtocol
@@ -81,8 +77,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         acceptance_criterion: AcceptanceCriterion | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
-        # Parallel proposals
-        num_parallel_proposals: int = 1,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -117,16 +111,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.merge_proposer = merge_proposer
         self.frontier_type: FrontierType = frontier_type
 
-        # Merge scheduling flags (mirroring previous behavior)
-        if self.merge_proposer is not None:
-            self.merge_proposer.last_iter_found_new_program = False
-
         self.acceptance_criterion: AcceptanceCriterion = acceptance_criterion or StrictImprovementAcceptance()
         self.track_best_outputs = track_best_outputs
         self.display_progress_bar = display_progress_bar
         self.use_cloudpickle = use_cloudpickle
 
-        self.num_parallel_proposals = num_parallel_proposals
         self.raise_on_exception = raise_on_exception
         self.val_evaluation_policy: EvaluationPolicy[DataId, DataInst] = (
             val_evaluation_policy if val_evaluation_policy is not None else FullEvaluationPolicy()
@@ -347,108 +336,40 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         )
         return True
 
-    def _process_proposal_output(
+    def _accept_reflective_and_notify(
         self,
-        output: ProposalOutput,
+        proposal: CandidateProposal,
         iteration: int,
-        trace_entry: dict,
         state: GEPAState[RolloutOutput, DataId],
     ) -> bool:
-        """Apply deferred state updates from a ProposalOutput and run acceptance.
+        """Run acceptance check for a reflective proposal and notify merge scheduler.
 
         Returns True if the proposal was accepted.
         """
-        self.reflective_proposer.apply_proposal_output(output, state)
-        trace_entry.update(output.trace_data)
-
-        if output.proposal is None:
-            self.logger.log(f"Iteration {iteration}: Reflective mutation did not propose a new candidate")
-            return False
-
-        accepted = self._accept_reflective_proposal(output.proposal, iteration, state)
-
+        accepted = self._accept_reflective_proposal(proposal, iteration, state)
         if accepted and self.merge_proposer is not None:
-            self.merge_proposer.last_iter_found_new_program = True
-            if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
-                self.merge_proposer.merges_due += 1
-
+            self.merge_proposer.on_candidate_found()
         return accepted
 
     # ------------------------------------------------------------------
     # Parallel reflective proposals
     # ------------------------------------------------------------------
 
-    def _run_parallel_reflective_batch(
+    def _run_reflective_batch_unified(
         self,
         state: GEPAState[RolloutOutput, DataId],
     ) -> bool:
-        """Run multiple reflective proposals in parallel.
+        """Run reflective proposals via the BatchProposer interface.
 
-        Pre-samples N contexts sequentially, executes the heavy
-        evaluate-propose-evaluate pipeline in parallel threads, then
-        processes acceptances sequentially.
+        Delegates parallelism to the proposer; the engine only drives acceptance.
+        Returns True if at least one proposal was accepted.
         """
-        n = self.num_parallel_proposals
-
-        # Step 1: Pre-sample N contexts (sequential)
-        contexts = []
-        trace_entries: list[dict] = []
-
-        # First context uses the iteration slot already created by the caller
-        trace_entry_0 = state.full_program_trace[-1]
-        ctx_0 = self.reflective_proposer.prepare_proposal(state)
-        trace_entry_0["selected_program_candidate"] = ctx_0.curr_prog_id
-        trace_entry_0["subsample_ids"] = ctx_0.subsample_ids
-        contexts.append(ctx_0)
-        trace_entries.append(trace_entry_0)
-
-        for _ in range(n - 1):
-            if self._should_stop(state):
-                break
-            state.i += 1
-            trace_entry: dict[str, Any] = {"i": state.i}
-            state.full_program_trace.append(trace_entry)
-            ctx = self.reflective_proposer.prepare_proposal(state)
-            trace_entry["selected_program_candidate"] = ctx.curr_prog_id
-            trace_entry["subsample_ids"] = ctx.subsample_ids
-            contexts.append(ctx)
-            trace_entries.append(trace_entry)
-
-        if not contexts:
-            return False
-
-        # Step 2: Execute proposals in parallel (thread-safe heavy compute)
-        outputs: list[ProposalOutput | None] = [None] * len(contexts)
-        with ThreadPoolExecutor(max_workers=len(contexts)) as executor:
-            future_to_idx = {
-                executor.submit(self.reflective_proposer.execute_proposal, ctx, state): idx
-                for idx, ctx in enumerate(contexts)
-            }
-            for future in as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                try:
-                    outputs[idx] = future.result()
-                except Exception as e:
-                    self.logger.log(f"Iteration {contexts[idx].iteration}: Parallel proposal failed: {e}")
-                    self.logger.log(traceback.format_exc())
-                    notify_callbacks(
-                        self.callbacks,
-                        "on_error",
-                        ErrorEvent(
-                            iteration=contexts[idx].iteration,
-                            exception=e,
-                            will_continue=True,
-                        ),
-                    )
-
-        # Step 3: Process acceptances sequentially
+        proposals = self.reflective_proposer.propose(state)
         any_accepted = False
-        for _idx, (ctx, trace_entry, output) in enumerate(zip(contexts, trace_entries, outputs, strict=False)):
-            if output is None:
-                continue
-            if self._process_proposal_output(output, ctx.iteration, trace_entry, state):
+        for proposal in proposals:
+            iteration = proposal.metadata.get("iteration", state.i + 1)
+            if self._accept_reflective_and_notify(proposal, iteration, state):
                 any_accepted = True
-
         return any_accepted
 
     # ------------------------------------------------------------------
@@ -619,10 +540,6 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         state.add_budget_hook(budget_hook)
 
-        # Merge scheduling
-        if self.merge_proposer is not None:
-            self.merge_proposer.last_iter_found_new_program = False
-
         # Main loop
         last_pbar_val = 0
         while not self._should_stop(state):
@@ -663,90 +580,70 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
                 # 1) Attempt merge first if scheduled and last iter found new program
                 if self.merge_proposer is not None and self.merge_proposer.use_merge:
-                    if self.merge_proposer.merges_due > 0 and self.merge_proposer.last_iter_found_new_program:
-                        proposal = self.merge_proposer.propose(state)
-                        self.merge_proposer.last_iter_found_new_program = False  # old behavior
+                    merge_proposal = self.merge_proposer.propose(state)
+                    if merge_proposal is not None and merge_proposal.tag == "merge":
+                        parent_sums = merge_proposal.subsample_scores_before or [
+                            float("-inf"),
+                            float("-inf"),
+                        ]
+                        new_sum = sum(merge_proposal.subsample_scores_after or [])
 
-                        if proposal is not None and proposal.tag == "merge":
-                            parent_sums = proposal.subsample_scores_before or [
-                                float("-inf"),
-                                float("-inf"),
-                            ]
-                            new_sum = sum(proposal.subsample_scores_after or [])
+                        notify_callbacks(
+                            self.callbacks,
+                            "on_merge_attempted",
+                            MergeAttemptedEvent(
+                                iteration=state.i + 1,
+                                parent_ids=merge_proposal.parent_program_ids,
+                                merged_candidate=merge_proposal.candidate,
+                            ),
+                        )
 
-                            # Notify merge attempted
+                        if new_sum >= max(parent_sums):
+                            new_idx, _ = self._run_full_eval_and_add(
+                                new_program=merge_proposal.candidate,
+                                state=state,
+                                parent_program_idx=merge_proposal.parent_program_ids,
+                            )
+                            self.merge_proposer.on_proposal_accepted()
+                            proposal_accepted = True
                             notify_callbacks(
                                 self.callbacks,
-                                "on_merge_attempted",
-                                MergeAttemptedEvent(
+                                "on_merge_accepted",
+                                MergeAcceptedEvent(
                                     iteration=state.i + 1,
-                                    parent_ids=proposal.parent_program_ids,
-                                    merged_candidate=proposal.candidate,
+                                    new_candidate_idx=new_idx,
+                                    parent_ids=merge_proposal.parent_program_ids,
                                 ),
                             )
-
-                            if new_sum >= max(parent_sums):
-                                # ACCEPTED: consume one merge attempt and record it
-                                new_idx, _ = self._run_full_eval_and_add(
-                                    new_program=proposal.candidate,
-                                    state=state,
-                                    parent_program_idx=proposal.parent_program_ids,
-                                )
-                                self.merge_proposer.merges_due -= 1
-                                self.merge_proposer.total_merges_tested += 1
-                                proposal_accepted = True
-
-                                # Notify merge accepted
-                                notify_callbacks(
-                                    self.callbacks,
-                                    "on_merge_accepted",
-                                    MergeAcceptedEvent(
-                                        iteration=state.i + 1,
-                                        new_candidate_idx=new_idx,
-                                        parent_ids=proposal.parent_program_ids,
-                                    ),
-                                )
-                                notify_callbacks(
-                                    self.callbacks,
-                                    "on_candidate_accepted",
-                                    CandidateAcceptedEvent(
-                                        iteration=state.i + 1,
-                                        new_candidate_idx=new_idx,
-                                        new_score=new_sum,
-                                        parent_ids=proposal.parent_program_ids,
-                                    ),
-                                )
-                                continue  # skip reflective this iteration
-                            else:
-                                # REJECTED: do NOT consume merges_due or total_merges_tested
-                                self.logger.log(
-                                    f"Iteration {state.i + 1}: New program subsample score {new_sum} "
-                                    f"is worse than both parents {parent_sums}, skipping merge"
-                                )
-                                # Notify merge rejected
-                                notify_callbacks(
-                                    self.callbacks,
-                                    "on_merge_rejected",
-                                    MergeRejectedEvent(
-                                        iteration=state.i + 1,
-                                        parent_ids=proposal.parent_program_ids,
-                                        reason=f"Merged score {new_sum} worse than both parents {parent_sums}",
-                                    ),
-                                )
-                                # Skip reflective this iteration (old behavior)
-                                continue
-
-                    # Old behavior: regardless of whether we attempted, clear the flag before reflective
-                    self.merge_proposer.last_iter_found_new_program = False
+                            notify_callbacks(
+                                self.callbacks,
+                                "on_candidate_accepted",
+                                CandidateAcceptedEvent(
+                                    iteration=state.i + 1,
+                                    new_candidate_idx=new_idx,
+                                    new_score=new_sum,
+                                    parent_ids=merge_proposal.parent_program_ids,
+                                ),
+                            )
+                            continue  # skip reflective this iteration
+                        else:
+                            self.logger.log(
+                                f"Iteration {state.i + 1}: New program subsample score {new_sum} "
+                                f"is worse than both parents {parent_sums}, skipping merge"
+                            )
+                            notify_callbacks(
+                                self.callbacks,
+                                "on_merge_rejected",
+                                MergeRejectedEvent(
+                                    iteration=state.i + 1,
+                                    parent_ids=merge_proposal.parent_program_ids,
+                                    reason=f"Merged score {new_sum} worse than both parents {parent_sums}",
+                                ),
+                            )
+                            continue  # skip reflective this iteration (old behavior)
 
                 # 2) Reflective mutation proposer
-                if self.num_parallel_proposals > 1:
-                    proposal_accepted = self._run_parallel_reflective_batch(state)
-                else:
-                    output = self.reflective_proposer.propose_output(state)
-                    proposal_accepted = self._process_proposal_output(
-                        output, state.i + 1, state.full_program_trace[-1], state
-                    )
+                proposal_accepted = self._run_reflective_batch_unified(state)
 
             except Exception as e:
                 self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")

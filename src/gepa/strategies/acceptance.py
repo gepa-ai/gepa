@@ -1,10 +1,15 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
-from typing import Protocol, runtime_checkable
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from gepa.core.state import GEPAState
-from gepa.proposer.base import CandidateProposal
+
+# Added to break circular introduced in base.py
+if TYPE_CHECKING:
+    from gepa.proposer.base import CandidateProposal
 
 
 @runtime_checkable

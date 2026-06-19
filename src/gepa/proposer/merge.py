@@ -208,11 +208,18 @@ def sample_and_attempt_merge_programs_by_common_predictors(
 
 
 class MergeProposer(ProposeNewCandidate[DataId]):
-    """
-    Implements merge flow that combines compatible descendants of a common ancestor.
+    """Genetic crossover operator: combines two Pareto-front candidates via a common ancestor.
+
+    NOTE: ``MergeProposer`` intentionally does NOT inherit from ``Proposer``.
+    The ``Proposer`` base class is built around ``ProposalTask`` — a single parent
+    selected from the trainset. Merge requires two parents + a common ancestor
+    selected from the Pareto front, evaluated on a valset subsample. That sampling
+    pattern doesn't map cleanly onto ``ProposalTask``, so merge lives outside the
+    ``Proposer`` hierarchy and is driven directly by the engine as a separate
+    crossover step.
 
     - Find merge candidates among Pareto front dominators
-    - Attempt a merge via sample_and_attempt_merge_programs_by_common_predictors
+    - Attempt a merge via common-ancestor crossover
     - Subsample eval on valset-driven selected indices
     - Return proposal if merge's subsample score >= max(parents)
     The engine handles full eval + adding to state.
@@ -291,8 +298,12 @@ class MergeProposer(ProposeNewCandidate[DataId]):
         i = state.i + 1
         state.full_program_trace[-1]["invoked_merge"] = True
 
+        # Capture then reset — prevents a second merge attempt in the same iteration
+        found_new_last_iter = self.last_iter_found_new_program
+        self.last_iter_found_new_program = False
+
         # Only attempt when scheduled by engine and after a new program in last iteration
-        if not (self.use_merge and self.last_iter_found_new_program and self.merges_due > 0):
+        if not (self.use_merge and found_new_last_iter and self.merges_due > 0):
             self.logger.log(f"Iteration {i}: No merge candidates scheduled")
             return None
 
@@ -401,3 +412,17 @@ class MergeProposer(ProposeNewCandidate[DataId]):
             tag="merge",
             metadata={"ancestor": ancestor},
         )
+
+    def on_proposal_accepted(self) -> None:
+        """Called by the engine when this proposer's merge proposal was accepted."""
+        self.merges_due -= 1
+        self.total_merges_tested += 1
+
+    def on_candidate_found(self) -> None:
+        """Called by the engine when any new candidate was accepted (including reflective).
+
+        Arms the merge scheduler for the next iteration.
+        """
+        self.last_iter_found_new_program = True
+        if self.total_merges_tested < self.max_merge_invocations:
+            self.merges_due += 1

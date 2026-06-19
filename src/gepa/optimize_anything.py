@@ -1571,6 +1571,11 @@ def optimize_anything(
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
         callbacks=config.callbacks,
+        num_parallel_proposals=_resolve_num_parallel_proposals(
+            config.engine.num_parallel_proposals,
+            config.engine.max_workers or (os.cpu_count() or 32),
+            config.reflection.reflection_minibatch_size or 1,
+        ),
     )
 
     # Define evaluator function for merge proposer
@@ -1620,11 +1625,6 @@ def optimize_anything(
         acceptance_criterion=acceptance_criterion_instance,
         use_cloudpickle=config.engine.use_cloudpickle,
         evaluation_cache=evaluation_cache,
-        num_parallel_proposals=_resolve_num_parallel_proposals(
-            config.engine.num_parallel_proposals,
-            config.engine.max_workers or (os.cpu_count() or 32),
-            config.reflection.reflection_minibatch_size or 1,
-        ),
     )
 
     # --- 15. Run optimization ---
