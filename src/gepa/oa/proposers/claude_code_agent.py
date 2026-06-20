@@ -34,7 +34,7 @@ Needs ``EngineConfig.write_agent_state=True`` on the GEPA side so the
 trees this proposer reads. The :class:`~gepa.oa.engines.gepa.GepaEngine`
 wiring auto-sets that default whenever this proposer is selected.
 
-Learns the current ``iteration`` (trace ``state.i``) and
+Learns this proposal's on-disk anchor (``iteration_id``) and its
 ``parent_iteration_id`` via the ``metadata`` kwarg on the
 :class:`~gepa.core.adapter.ProposalFn` contract — GEPA's
 ``reflective_mutation`` populates that dict on every call.
@@ -72,6 +72,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from gepa.core.state import SEED_ITERATION_ID
 from gepa.oa.budget import BudgetExhausted
 from gepa.oa.engines.claude_utils import copy_session_transcript
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args
@@ -104,7 +105,7 @@ def _safe_component_filename(name: str, idx: int) -> str:
 
     Mirrors :meth:`gepa.core.state.GEPAState._save_components` so the
     parent-iteration component files this proposer reads from
-    ``iterations/NNNNN/components/`` use the exact same stems.
+    ``iterations/<id>/components/`` use the exact same stems.
     """
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
     return safe if safe else f"component_{idx:02d}"
@@ -217,21 +218,21 @@ class ClaudeCodeAgentProposer:
         if plan_src.exists():
             shutil.copy2(plan_src, subdir_real / "plan.md")
 
-    def _allocate_subdir(self, iteration: int | None) -> Path:
+    def _allocate_subdir(self, iteration_id: str | None) -> Path:
         """Pick a collision-free subdir for this call under ``<run_dir>/<prefix>/``.
 
-        Shape: ``iter_NNNNN-<uuid8>`` when the iteration id is known
-        (standard path — supplied via ``metadata["iteration"]`` which is
-        the 1-indexed on-disk iteration id); falls back to
-        ``YYYYmmddTHHMMSS-<pid>-<uuid8>`` otherwise. The uuid suffix
-        disambiguates parallel proposals that share the same iteration id
-        (``num_parallel_proposals > 1``).
+        Shape: ``iter_<iteration_id>`` when the on-disk anchor is known
+        (standard path — supplied via ``metadata["iteration_id"]``), so the
+        scratch dir name lines up 1:1 with ``iterations/<iteration_id>/``; falls
+        back to ``YYYYmmddTHHMMSS-<pid>-<uuid8>`` otherwise. ``iteration_id`` is
+        already a unique random id, so it disambiguates parallel proposals
+        (``num_parallel_proposals > 1``) on its own.
         """
         self.run_dir.mkdir(parents=True, exist_ok=True)
         base = self.run_dir / self.subdir_prefix
         base.mkdir(parents=True, exist_ok=True)
-        if iteration is not None:
-            name = f"iter_{iteration:05d}-{uuid.uuid4().hex[:8]}"
+        if iteration_id is not None:
+            name = f"iter_{iteration_id}"
         else:
             ts = time.strftime("%Y%m%dT%H%M%S")
             name = f"{ts}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
@@ -326,7 +327,7 @@ class ClaudeCodeAgentProposer:
         stems: dict[str, str],
         *,
         first_iteration: bool,
-        parent_iter_id: int | None,
+        parent_iter_id: str | None,
         root_dir: Path | None = None,
     ) -> str:
         """Program.md-style proposal brief.
@@ -386,18 +387,18 @@ class ClaudeCodeAgentProposer:
         if not sandboxed and parent_iter_id is not None:
             parent_section += (
                 f"\n   For full rollout outputs see "
-                f"`{run_abs}/iterations/{parent_iter_id:05d}/outputs/` + "
-                f"`{run_abs}/iterations/{parent_iter_id:05d}/trajectories/`."
+                f"`{run_abs}/iterations/{parent_iter_id}/outputs/` + "
+                f"`{run_abs}/iterations/{parent_iter_id}/trajectories/`."
             )
         wider_state_section = (
             ""
             if sandboxed
             else (
                 f"\n## Wider state (browse when useful)\n"
-                f"- `{run_abs}/iterations/NNNNN/` — every past iteration "
+                f"- `{run_abs}/iterations/<id>/` — every past iteration "
                 f"(accepted *and* rejected), with `meta.json`, "
                 f"`components/`, `plan.md`, `reflective_dataset.json`, "
-                f"`trace.json`. `00000/` is always the seed.\n"
+                f"`trace.json`. `iterations/seed/` is always the seed.\n"
                 f"- `{run_abs}/pareto/` — current Pareto frontier(s) "
                 f"keyed by iteration id.\n"
             )
@@ -478,15 +479,14 @@ can see your reasoning; keep it tight.
         """Propose new component texts via the Claude Code CLI.
 
         ``metadata`` is an open context dict supplied by GEPA's reflective
-        mutation path. Keys read (all optional):
+        mutation path. Both keys read are on-disk anchors (all optional):
 
-        * ``"iteration"`` — the proposal's trace index (``state.i``). Used to
-          name the proposals subdir, derive the on-disk iteration id for
-          ``plan.md`` persistence, and decide whether ``history.md`` is
-          worth rebuilding.
+        * ``"iteration_id"`` — this proposal's on-disk anchor. Names the
+          proposals scratch subdir, gates the ``history.md`` rebuild, and is
+          where ``plan.md`` is persisted (``iterations/<iteration_id>/``).
         * ``"parent_iteration_id"`` — on-disk iteration id of the parent
-          candidate under ``iterations/NNNNN/``. Used to locate the parent
-          iteration folder without scanning.
+          candidate under ``iterations/<id>/`` (``"seed"`` for the seed). Used
+          to locate the parent iteration folder without scanning.
 
         When ``metadata`` is ``None`` or the keys are absent (direct
         non-reflective callers, tests, tooling) we fall back to UUID-only
@@ -501,22 +501,28 @@ can see your reasoning; keep it tight.
             return {}
 
         meta = dict(metadata) if metadata else {}
-        iteration_raw = meta.get("iteration")
+        iteration_id_raw = meta.get("iteration_id")
         parent_iter_raw = meta.get("parent_iteration_id")
-        iteration = int(iteration_raw) if iteration_raw is not None else None
-        parent_iter_id = int(parent_iter_raw) if parent_iter_raw is not None else None
+        # On-disk anchors are opaque strings (the seed is ``"seed"``); never
+        # coerce them to int.
+        iteration_id = str(iteration_id_raw) if iteration_id_raw is not None else None
+        parent_iter_id = str(parent_iter_raw) if parent_iter_raw is not None else None
 
         self._ensure_task_md()
         # Regenerate history.md from the iterations/ tree every call —
         # state.save() at the top of each GEPA turn means everything
-        # strictly before this iter is already on disk.
-        if iteration is not None:
+        # strictly before this iter is already on disk. The first proposal in a
+        # run has nothing to log (only the seed exists, and it's excluded), so
+        # an empty/absent history.md is exactly the "first iteration" signal.
+        first_iteration = False
+        if iteration_id is not None:
             self._rebuild_history_md()
+            first_iteration = not (self.run_dir / "history.md").exists()
 
-        subdir = self._allocate_subdir(iteration)
+        subdir = self._allocate_subdir(iteration_id)
         parent_dir: Path | None = None
         if parent_iter_id is not None:
-            iter_dir = self.run_dir / "iterations" / f"{parent_iter_id:05d}"
+            iter_dir = self.run_dir / "iterations" / parent_iter_id
             if iter_dir.is_dir():
                 parent_dir = iter_dir
         stems = self._materialize(
@@ -526,8 +532,6 @@ can see your reasoning; keep it tight.
             components_to_update,
             parent_iteration_dir=parent_dir,
         )
-        # Seed owns iteration id 0; the very first loop proposal runs at id 1.
-        first_iteration = iteration == 1
         session_id = str(uuid.uuid4())
 
         env = {**os.environ}
@@ -645,14 +649,14 @@ can see your reasoning; keep it tight.
 
         new_texts = self._read_new_texts(subdir, candidate, components_to_update, stems)
 
-        # Copy the agent's plan.md into iterations/<iter_id>/plan.md so the
+        # Copy the agent's plan.md into iterations/<iteration_id>/plan.md so the
         # next proposer call — which regenerates history.md from disk —
-        # sees it. ``iterations/<iter_id>/`` may not exist yet: GEPA's
+        # sees it. ``iterations/<iteration_id>/`` may not exist yet: GEPA's
         # state.save() writes it at the top of the next outer-loop turn,
         # but we create the dir here so the write is ordering-safe (state
         # save uses ``os.makedirs(..., exist_ok=True)``).
-        if iteration is not None:
-            self._persist_plan_md(subdir, iteration)
+        if iteration_id is not None:
+            self._persist_plan_md(subdir, iteration_id)
 
         return new_texts
 
@@ -663,7 +667,7 @@ can see your reasoning; keep it tight.
         stems: dict[str, str],
         *,
         first_iteration: bool,
-        parent_iter_id: int | None,
+        parent_iter_id: str | None,
         jail_root: Path | None,
         env: dict[str, str],
         session_id: str,
@@ -718,24 +722,24 @@ can see your reasoning; keep it tight.
     # Plan + history bookkeeping
     # ------------------------------------------------------------------
 
-    def _persist_plan_md(self, subdir: Path, iteration: int) -> None:
-        """Copy the agent's ``plan.md`` into ``iterations/<iter_id>/plan.md``.
+    def _persist_plan_md(self, subdir: Path, iteration_id: str) -> None:
+        """Copy the agent's ``plan.md`` into ``iterations/<iteration_id>/plan.md``.
 
         Best-effort — if the agent didn't write a plan, silently skip.
-        ``iterations/<iter_id>/`` is created if missing; GEPA's state.save
+        ``iterations/<iteration_id>/`` is created if missing; GEPA's state.save
         populates the rest of that directory (meta.json, components/, ...)
         on the next outer-loop save pass without conflict.
         """
         plan_src = subdir / "plan.md"
         if not plan_src.exists():
             return
-        dest = self.run_dir / "iterations" / f"{iteration:05d}" / "plan.md"
+        dest = self.run_dir / "iterations" / iteration_id / "plan.md"
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(plan_src.read_text())
         except OSError as e:
             print(
-                f"[ClaudeCodeAgentProposer] failed to persist plan.md for iteration {iteration}: {e}",
+                f"[ClaudeCodeAgentProposer] failed to persist plan.md for iteration {iteration_id}: {e}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -750,22 +754,20 @@ can see your reasoning; keep it tight.
             plan:
             <verbatim plan body>
 
-        Seed (``iterations/00000/``) is skipped: it has no plan and no
-        parent. Merge (multi-parent) iterations show the first parent only
-        for now.
+        Seed (``iterations/seed/``) is skipped: it has no plan and no parent.
+        Iteration directories are now keyed by random id rather than a
+        sortable number, so blocks are ordered by each iteration's ``trace_i``
+        (recorded in ``meta.json``); the ``### Iteration N`` header uses the
+        1-indexed display number. Merge (multi-parent) iterations show the
+        first parent only for now.
         """
         iters_root = self.run_dir / "iterations"
         if not iters_root.exists():
             return
-        blocks: list[str] = []
-        for d in sorted(iters_root.iterdir()):
-            if not d.is_dir():
-                continue
-            try:
-                iter_id = int(d.name)
-            except ValueError:
-                continue
-            if iter_id == 0:
+        # (trace_i, block) pairs — dir names no longer sort chronologically.
+        ordered: list[tuple[int, str]] = []
+        for d in iters_root.iterdir():
+            if not d.is_dir() or d.name == SEED_ITERATION_ID:
                 continue
             meta_path = d / "meta.json"
             if not meta_path.exists():
@@ -774,6 +776,10 @@ can see your reasoning; keep it tight.
                 meta = json.loads(meta_path.read_text())
             except (OSError, json.JSONDecodeError):
                 continue
+            if meta.get("is_seed"):
+                continue
+            trace_i = meta.get("trace_i")
+            seq = trace_i if isinstance(trace_i, int) else 0
             accepted = meta.get("accepted")
             status = "accepted" if accepted else ("rejected" if accepted is False else "pending")
             parent_ids = meta.get("parent_iteration_ids") or []
@@ -793,14 +799,16 @@ can see your reasoning; keep it tight.
                     plan_body = plan_path.read_text().strip()
                 except OSError:
                     plan_body = None
-            header = f"### Iteration {iter_id} — {status} ({parent_str})"
+            header = f"### Iteration {seq + 1} — {status} ({parent_str})"
             parts = [header, score_line]
             if plan_body:
                 parts.append("plan:")
                 parts.append(plan_body)
             else:
                 parts.append("plan: (none)")
-            blocks.append("\n".join(parts))
+            ordered.append((seq, "\n".join(parts)))
+        ordered.sort(key=lambda e: e[0])
+        blocks = [block for _, block in ordered]
         history_path = self.run_dir / "history.md"
         try:
             if blocks:

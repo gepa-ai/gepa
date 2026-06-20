@@ -54,13 +54,12 @@ class ProposalFn(Protocol):
 
         - `metadata` is an open-ended dict of context hints supplied by the engine on
           every call.           Custom proposers read only the keys they care about. Keys GEPA
-          currently populates:
-            * `"iteration"`: int — 1-indexed iteration number (matches the
-              ``Iteration N:`` log line and, when ``write_agent_state=True``,
-              the on-disk ``iterations/NNNNN/`` subdir). Seed is id 0; the
-              first loop proposal runs at id 1.
-            * `"parent_iteration_id"`: int — on-disk iteration id of the
-              parent candidate.
+          currently populates are both on-disk anchors:
+            * `"iteration_id"`: str — this proposal's on-disk anchor; when
+              ``write_agent_state=True`` it owns the ``iterations/<iteration_id>/``
+              subdir. A random short id, unique even across parallel proposals.
+            * `"parent_iteration_id"`: str — on-disk iteration id of the
+              parent candidate (``"seed"`` for the seed).
           Future keys may be added without changing this signature — existing proposers
           simply ignore them.
 

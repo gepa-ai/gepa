@@ -28,7 +28,15 @@ from gepa.core.callbacks import (
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
-from gepa.core.state import EvaluationCache, FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
+from gepa.core.state import (
+    SEED_ITERATION_ID,
+    EvaluationCache,
+    FrontierType,
+    GEPAState,
+    ValsetEvaluation,
+    initialize_gepa_state,
+    new_iteration_id,
+)
 from gepa.gepa_utils import json_default, try_json_serialize
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
@@ -183,7 +191,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
     def _write_agent_iteration_files(
         self,
-        iteration_id: int,
+        iteration_id: str,
         valset_evaluation: ValsetEvaluation[RolloutOutput, DataId],
     ) -> None:
         """Write per-val_id outputs/trajectories for an iteration's full valset eval.
@@ -191,13 +199,14 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         Called only when ``write_agent_state`` is enabled and ``run_dir`` is
         set. Produces ``iterations/<iter_id>/outputs/<val_id>.json`` and, when
         the valset evaluation captured them,
-        ``iterations/<iter_id>/trajectories/<val_id>.json``. The iteration id
-        is ``0`` for the seed and ``state.i + 1`` for accepted loop proposals
-        (the same numbering ``GEPAState._save_agent_directory`` uses).
+        ``iterations/<iter_id>/trajectories/<val_id>.json``. The iteration id is
+        ``SEED_ITERATION_ID`` for the seed and the proposal's random
+        ``iteration_id`` for accepted loop proposals (the same anchor
+        ``GEPAState._save_agent_directory`` uses).
         """
         if not self.write_agent_state or self.run_dir is None:
             return
-        base = os.path.join(self.run_dir, "iterations", f"{iteration_id:05d}")
+        base = os.path.join(self.run_dir, "iterations", iteration_id)
         outputs = valset_evaluation.outputs_by_val_id or {}
         if outputs:
             out_dir = os.path.join(base, "outputs")
@@ -266,16 +275,17 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         new_program: dict[str, str],
         state: GEPAState[RolloutOutput, DataId],
         parent_program_idx: list[int],
-        iteration: int | None = None,
+        iteration_id: str | None = None,
     ) -> tuple[int, int]:
-        # ``iteration`` is the 1-indexed display/on-disk iteration id for the
-        # proposal being processed — same numbering ``ctx.iteration`` uses
-        # (``state.i + 1`` in sequential mode; the context's pre-stamped
-        # value in parallel mode). Defaults to ``state.i + 1`` so merge and
-        # other callers that don't thread it through still get the right
-        # value.
-        if iteration is None:
-            iteration = state.i + 1
+        # ``iteration_id`` is the on-disk anchor for the proposal being
+        # processed — the random id stamped on its trace entry at slot
+        # creation. Defaults to the current (latest) trace entry's id so merge
+        # and other callers that don't thread it through still land in the
+        # right iteration directory.
+        if iteration_id is None:
+            latest = state.full_program_trace[-1] if state.full_program_trace else {}
+            candidate_id = latest.get("iteration_id")
+            iteration_id = candidate_id if isinstance(candidate_id, str) else new_iteration_id()
         num_metric_calls_by_discovery = state.total_num_evals
         valset_evaluation = self._evaluate_on_valset(new_program, state)
         state.num_full_ds_evals += 1
@@ -292,13 +302,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             valset_evaluation=valset_evaluation,
             run_dir=self.run_dir,
             num_metric_calls_by_discovery_of_new_program=num_metric_calls_by_discovery,
-            iteration=iteration,
+            iteration_id=iteration_id,
         )
 
-        # ``iteration`` is already the on-disk iteration id (1-indexed,
-        # matching ``ctx.iteration`` and the numbering
-        # ``GEPAState._save_agent_directory`` uses). No shift needed.
-        self._write_agent_iteration_files(iteration, valset_evaluation)
+        # ``iteration_id`` is the on-disk anchor (the same one
+        # ``GEPAState._save_agent_directory`` writes the proposal dir under).
+        self._write_agent_iteration_files(iteration_id, valset_evaluation)
 
         # Compute best program immediately after state update (before callbacks)
         # to ensure is_best_program reflects the updated Pareto front
@@ -392,9 +401,14 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self,
         proposal: CandidateProposal,
         iteration: int,
+        iteration_id: str,
         state: GEPAState[RolloutOutput, DataId],
     ) -> bool:
         """Check acceptance, run full eval if accepted, fire callbacks.
+
+        ``iteration`` is the human-facing sequence number (used in logs and
+        callback events); ``iteration_id`` is the on-disk anchor for this
+        proposal's ``iterations/<id>/`` directory.
 
         Returns True if the proposal was accepted.
         """
@@ -435,7 +449,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             new_program=proposal.candidate,
             state=state,
             parent_program_idx=proposal.parent_program_ids,
-            iteration=iteration,
+            iteration_id=iteration_id,
         )
 
         self._log_proposal_lm_calls(iteration, proposal, candidate_idx=new_idx)
@@ -474,7 +488,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if self.write_agent_state:
             _record_proposal_evals(trace_entry, output.proposal)
 
-        accepted = self._accept_reflective_proposal(output.proposal, iteration, state)
+        # The on-disk anchor was stamped on this trace entry when its iteration
+        # slot was created; fall back to the legacy sequence anchor for trace
+        # entries that predate it.
+        iteration_id = trace_entry.get("iteration_id") or str(trace_entry.get("i", 0) + 1)
+        accepted = self._accept_reflective_proposal(output.proposal, iteration, iteration_id, state)
         if self.write_agent_state:
             trace_entry["proposal_accepted"] = accepted
             trace_entry["proposed_candidate"] = output.proposal.candidate
@@ -518,7 +536,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             if self._should_stop(state):
                 break
             state.i += 1
-            trace_entry: dict[str, Any] = {"i": state.i}
+            trace_entry: dict[str, Any] = {"i": state.i, "iteration_id": new_iteration_id()}
             state.full_program_trace.append(trace_entry)
             ctx = self.reflective_proposer.prepare_proposal(state)
             trace_entry["selected_program_candidate"] = ctx.curr_prog_id
@@ -670,9 +688,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             evaluation_cache=self._initial_evaluation_cache,
         )
 
-        # Seed is iteration id 0 — outputs/trajectories go under
-        # iterations/00000/ alongside subsequent loop iterations.
-        self._write_agent_iteration_files(0, seed_valset_evaluation)
+        # Seed uses the reserved iteration id — outputs/trajectories go under
+        # iterations/seed/ alongside subsequent loop iterations.
+        self._write_agent_iteration_files(SEED_ITERATION_ID, seed_valset_evaluation)
 
         # Restore adapter state from persisted state (only has effect on resume)
         self._sync_state_to_adapter(state)
@@ -788,7 +806,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 )
 
                 state.i += 1
-                state.full_program_trace.append({"i": state.i})
+                state.full_program_trace.append({"i": state.i, "iteration_id": new_iteration_id()})
 
                 # Notify callbacks of iteration start
                 notify_callbacks(

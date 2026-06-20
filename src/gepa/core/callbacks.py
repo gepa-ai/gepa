@@ -139,6 +139,7 @@ class ReflectiveDatasetBuiltEvent(TypedDict):
     """Event for on_reflective_dataset_built callback."""
 
     iteration: int
+    iteration_id: str
     candidate_idx: int
     components: list[str]
     dataset: dict[str, list[dict[str, Any]]]

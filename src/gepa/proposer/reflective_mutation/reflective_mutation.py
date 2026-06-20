@@ -40,6 +40,10 @@ class ProposalContext:
     """
 
     iteration: int
+    # On-disk anchor (``iterations/<iteration_id>/``) for this proposal, taken
+    # from the trace entry of the iteration slot that owns it. Opaque string —
+    # unique under parallel proposals, unlike the ``iteration`` sequence number.
+    iteration_id: str
     curr_prog_id: int
     curr_prog: dict[str, str]
     curr_prog_score: float
@@ -128,12 +132,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         """Propose new instruction texts for the given components.
 
         ``metadata`` is an open-ended context dict forwarded unconditionally
-        to ``custom_candidate_proposer``. Keys GEPA currently supplies:
-        ``"iteration"`` — the 1-indexed iteration number (same value shown
-        in ``Iteration N:`` log lines; equals ``state.i + 1`` and the
-        on-disk ``iterations/NNNNN/`` id) — and ``"parent_iteration_id"``
-        (on-disk iteration id of the parent candidate). The adapter-owned
-        ``propose_new_texts`` path keeps its legacy 3-positional signature.
+        to ``custom_candidate_proposer``. Keys GEPA currently supplies are both
+        on-disk anchors: ``"iteration_id"`` — this proposal's own slot
+        (``iterations/<iteration_id>/``); and ``"parent_iteration_id"`` — the
+        parent candidate's slot. The adapter-owned ``propose_new_texts`` path
+        keeps its legacy 3-positional signature.
 
         Returns:
             A tuple of (new_texts, prompts, raw_lm_outputs) where each is a
@@ -242,8 +245,16 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         curr_parent_ids = [p for p in state.parent_program_for_candidate[curr_prog_id] if p is not None]
         is_seed_candidate = curr_prog_id == 0
 
+        # On-disk anchor for this proposal's iteration slot. ``prepare_proposal``
+        # runs right after the slot is appended, so the latest trace entry is
+        # this proposal's; fall back to the legacy ``state.i + 1`` anchor.
+        latest_entry = state.full_program_trace[-1] if state.full_program_trace else {}
+        _entry_iter_id = latest_entry.get("iteration_id")
+        iteration_id = _entry_iter_id if isinstance(_entry_iter_id, str) else str(i)
+
         return ProposalContext(
             iteration=i,
+            iteration_id=iteration_id,
             curr_prog_id=curr_prog_id,
             curr_prog=curr_prog,
             curr_prog_score=curr_prog_score,
@@ -366,6 +377,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 "on_reflective_dataset_built",
                 ReflectiveDatasetBuiltEvent(
                     iteration=i,
+                    iteration_id=ctx.iteration_id,
                     candidate_idx=ctx.curr_prog_id,
                     components=predictor_names_to_update,
                     dataset=reflective_dataset_concrete,
@@ -383,17 +395,20 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 ),
             )
 
-            # Context dict forwarded to custom proposers. Resolve the
-            # parent's on-disk iteration id (what the agent sees under
-            # ``iterations/NNNNN/``) rather than leaking the internal
-            # candidate idx through the API surface.
+            # Context dict forwarded to custom proposers. Both keys are on-disk
+            # anchors (``iterations/<id>/``): ``iteration_id`` is this
+            # proposal's own slot, ``parent_iteration_id`` the parent's. We
+            # forward anchors rather than the internal candidate idx or the
+            # display sequence number — a proposer only needs to know which
+            # directories to read/write, and the sequence isn't unique under
+            # concurrency.
             parent_iteration_id = state.iteration_id_for_candidate_idx(ctx.curr_prog_id)
             new_texts, prompts, raw_lm_outputs = self.propose_new_texts(
                 ctx.curr_prog,
                 reflective_dataset,
                 predictor_names_to_update,
                 metadata={
-                    "iteration": ctx.iteration,
+                    "iteration_id": ctx.iteration_id,
                     "parent_iteration_id": parent_iteration_id,
                 },
             )

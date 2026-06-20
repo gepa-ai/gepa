@@ -118,7 +118,7 @@ def test_gepa_state_save_and_initialize(run_dir):
 def test_agent_state_directory_layout(run_dir):
     """save(write_agent_state=True) writes a unified iterations/ tree.
 
-    Seed lands at iterations/00000/ (is_seed=True); there are no separate
+    Seed lands at iterations/seed/ (is_seed=True); there are no separate
     ``candidates/`` or ``rejected_proposals/`` trees any more.
     """
     seed = {"system_prompt": "You are helpful."}
@@ -147,7 +147,7 @@ def test_agent_state_directory_layout(run_dir):
     assert index["iteration"] == state.i
     assert index["component_names"] == ["system_prompt"]
     assert index["summary"]["num_iterations"] == 1
-    assert index["summary"]["best_iteration_id"] == 0
+    assert index["summary"]["best_iteration_id"] == "seed"
     assert index["summary"]["hardest_examples"][0]["best_score"] == 0.3
     assert index["layout"] == {"iterations_dir": "iterations/", "pareto_dir": "pareto/"}
 
@@ -156,11 +156,11 @@ def test_agent_state_directory_layout(run_dir):
     assert not (run_dir_path / "rejected_proposals").exists()
 
     # Seed iteration subtree.
-    seed_meta_path = run_dir_path / "iterations" / "00000" / "meta.json"
+    seed_meta_path = run_dir_path / "iterations" / "seed" / "meta.json"
     assert seed_meta_path.exists()
     with open(seed_meta_path) as f:
         meta = json.load(f)
-    assert meta["iteration_id"] == 0
+    assert meta["iteration_id"] == "seed"
     assert meta["is_seed"] is True
     assert meta["accepted"] is True
     assert meta["candidate_idx"] == 0
@@ -168,15 +168,15 @@ def test_agent_state_directory_layout(run_dir):
     assert meta["parent_iteration_ids"] == []
     assert meta["avg_val_score"] == pytest.approx(0.5)
 
-    with open(run_dir_path / "iterations" / "00000" / "val_scores.json") as f:
+    with open(run_dir_path / "iterations" / "seed" / "val_scores.json") as f:
         val_scores = json.load(f)
     assert val_scores == {"0": 0.3, "1": 0.7, "2": 0.5}
 
     # Component text lives as raw .txt, mapped from real name via _index.json.
-    with open(run_dir_path / "iterations" / "00000" / "components" / "_index.json") as f:
+    with open(run_dir_path / "iterations" / "seed" / "components" / "_index.json") as f:
         comp_index = json.load(f)
     assert comp_index == {"system_prompt": "system_prompt.txt"}
-    comp_path = run_dir_path / "iterations" / "00000" / "components" / "system_prompt.txt"
+    comp_path = run_dir_path / "iterations" / "seed" / "components" / "system_prompt.txt"
     assert comp_path.read_text() == "You are helpful."
 
     # Pareto subtree — only files matching frontier_type should exist.
@@ -214,9 +214,10 @@ def test_agent_state_default_off(run_dir):
 
 
 def test_agent_state_rejected_proposals(run_dir):
-    """Rejected proposals live under iterations/NNNNN/ alongside accepted ones.
+    """Rejected proposals live under iterations/<id>/ alongside accepted ones.
 
-    On-disk iteration id = trace ``i`` + 1 (seed owns id 0).
+    The on-disk id is the random ``iteration_id`` stamped on the trace entry
+    (seed owns ``SEED_ITERATION_ID``); ``trace_i`` is retained as a sort hint.
     """
     seed = {"prompt": "hello"}
     valset_out = ValsetEvaluation(
@@ -230,6 +231,7 @@ def test_agent_state_rejected_proposals(run_dir):
 
     state.full_program_trace.append({
         "i": 7,
+        "iteration_id": "a1b2c3d4",
         "selected_program_candidate": 0,
         "subsample_ids": [0],
         "subsample_scores": [0.5],
@@ -244,16 +246,16 @@ def test_agent_state_rejected_proposals(run_dir):
 
     run_dir_path = Path(str(run_dir))
 
-    iter_dir = run_dir_path / "iterations" / "00008"
+    iter_dir = run_dir_path / "iterations" / "a1b2c3d4"
     assert iter_dir.is_dir()
 
     with open(iter_dir / "meta.json") as f:
         meta = json.load(f)
-    assert meta["iteration_id"] == 8
+    assert meta["iteration_id"] == "a1b2c3d4"
     assert meta["trace_i"] == 7
     assert meta["accepted"] is False
     assert meta["candidate_idx"] is None
-    assert meta["parent_iteration_ids"] == [0]
+    assert meta["parent_iteration_ids"] == ["seed"]
     assert meta["subsample_scores_before"] == [0.5]
     assert meta["subsample_scores_after"] == [0.3]
     assert "avg_val_score" not in meta  # rejected: no full valset eval
@@ -306,22 +308,22 @@ def test_agent_state_e2e_writes_per_iteration_outputs_and_trajectories(run_dir):
 
     run_dir_path = Path(str(run_dir))
 
-    # Seed at iterations/00000/ — outputs and trajectories present.
-    assert (run_dir_path / "iterations" / "00000" / "outputs" / "0.json").exists()
-    assert (run_dir_path / "iterations" / "00000" / "outputs" / "1.json").exists()
-    assert (run_dir_path / "iterations" / "00000" / "trajectories" / "0.json").exists()
-    with open(run_dir_path / "iterations" / "00000" / "outputs" / "0.json") as f:
+    # Seed at iterations/seed/ — outputs and trajectories present.
+    assert (run_dir_path / "iterations" / "seed" / "outputs" / "0.json").exists()
+    assert (run_dir_path / "iterations" / "seed" / "outputs" / "1.json").exists()
+    assert (run_dir_path / "iterations" / "seed" / "trajectories" / "0.json").exists()
+    with open(run_dir_path / "iterations" / "seed" / "outputs" / "0.json") as f:
         seed_out = json.load(f)
     assert seed_out == {"id": 0, "weight": 0}
-    with open(run_dir_path / "iterations" / "00000" / "trajectories" / "0.json") as f:
+    with open(run_dir_path / "iterations" / "seed" / "trajectories" / "0.json") as f:
         seed_traj = json.load(f)
     assert seed_traj["weight"] == 0
 
     # At least one accepted descendant iteration should also have outputs.
-    iter_dirs = sorted(d for d in (run_dir_path / "iterations").iterdir() if d.is_dir())
+    iter_dirs = [d for d in (run_dir_path / "iterations").iterdir() if d.is_dir()]
     assert len(iter_dirs) >= 2
     accepted_with_outputs = [
-        d for d in iter_dirs[1:] if (d / "outputs" / "0.json").exists()
+        d for d in iter_dirs if d.name != "seed" and (d / "outputs" / "0.json").exists()
     ]
     assert accepted_with_outputs, "at least one accepted proposal should have outputs"
     for iter_dir in accepted_with_outputs:
@@ -373,7 +375,7 @@ def test_agent_state_sanitizes_component_names(run_dir):
     state.num_full_ds_evals = 1
     state.save(run_dir, write_agent_state=True)
 
-    comp_dir = Path(str(run_dir)) / "iterations" / "00000" / "components"
+    comp_dir = Path(str(run_dir)) / "iterations" / "seed" / "components"
     with open(comp_dir / "_index.json") as f:
         index = json.load(f)
     # Real names preserved as keys; slashes and spaces become underscores in filenames.
@@ -594,9 +596,28 @@ def test_upgrade_state_dict_adds_missing_fields():
     }
     state_mod.GEPAState._upgrade_state_dict(d)
     assert d["adapter_state"] == {}
-    # Seed (candidate_idx 0) → iteration id 0; accepted candidate_idx 1
-    # discovered at trace i=3 → iteration id 4.
-    assert d["iteration_ids_by_candidate_idx"] == [0, 4]
+    # Seed (candidate_idx 0) → "seed"; accepted candidate_idx 1 discovered at
+    # trace i=3 had no stamped iteration_id → legacy anchor str(3 + 1) = "4".
+    assert d["iteration_ids_by_candidate_idx"] == ["seed", "4"]
+
+
+def test_upgrade_state_dict_normalizes_int_iteration_ids():
+    """v6 → v7: early integer iteration ids become string anchors (seed → "seed")."""
+    d = {
+        "program_candidates": [{"a": "b"}, {"a": "c"}],
+        "prog_candidate_objective_scores": [{}, {}],
+        "objective_pareto_front": {},
+        "program_at_pareto_front_objectives": {},
+        "frontier_type": "instance",
+        "pareto_front_cartesian": {},
+        "program_at_pareto_front_cartesian": {},
+        "evaluation_cache": None,
+        "adapter_state": {},
+        "iteration_ids_by_candidate_idx": [0, 4],
+        "full_program_trace": [],
+    }
+    state_mod.GEPAState._upgrade_state_dict(d)
+    assert d["iteration_ids_by_candidate_idx"] == ["seed", "4"]
     assert d["validation_schema_version"] == state_mod.GEPAState._VALIDATION_SCHEMA_VERSION
 
 

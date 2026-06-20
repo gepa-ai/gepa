@@ -468,12 +468,12 @@ class EngineConfig:
     raise_on_exception: bool = True
     use_cloudpickle: bool = True
     track_best_outputs: bool = True
-    # Write an agent-readable directory tree (``iterations/NNNNN/`` +
+    # Write an agent-readable directory tree (``iterations/<id>/`` +
     # ``pareto/``) under ``run_dir`` on every save. Each loop iteration —
     # accepted or rejected — gets its own directory with ``meta.json``,
     # ``components/``, ``trace.json`` (with before/after scores and
     # trajectories), plus ``val_scores.json`` + ``outputs/`` + ``trajectories/``
-    # for accepted ones. The seed is pinned at ``iterations/00000/``. Default
+    # for accepted ones. The seed is pinned at ``iterations/seed/``. Default
     # off.
     write_agent_state: bool = False
 
