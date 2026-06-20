@@ -279,13 +279,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     ) -> tuple[int, int]:
         # ``iteration_id`` is the on-disk anchor for the proposal being
         # processed — the random id stamped on its trace entry at slot
-        # creation. Defaults to the current (latest) trace entry's id so merge
-        # and other callers that don't thread it through still land in the
-        # right iteration directory.
+        # creation. Defaults to the current slot's id so merge and other
+        # callers that don't thread it through still land in the right
+        # iteration directory.
         if iteration_id is None:
-            latest = state.full_program_trace[-1] if state.full_program_trace else {}
-            candidate_id = latest.get("iteration_id")
-            iteration_id = candidate_id if isinstance(candidate_id, str) else new_iteration_id()
+            iteration_id = state.current_iteration_id()
         num_metric_calls_by_discovery = state.total_num_evals
         valset_evaluation = self._evaluate_on_valset(new_program, state)
         state.num_full_ds_evals += 1

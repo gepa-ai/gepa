@@ -245,16 +245,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         curr_parent_ids = [p for p in state.parent_program_for_candidate[curr_prog_id] if p is not None]
         is_seed_candidate = curr_prog_id == 0
 
-        # On-disk anchor for this proposal's iteration slot. ``prepare_proposal``
-        # runs right after the slot is appended, so the latest trace entry is
-        # this proposal's; fall back to the legacy ``state.i + 1`` anchor.
-        latest_entry = state.full_program_trace[-1] if state.full_program_trace else {}
-        _entry_iter_id = latest_entry.get("iteration_id")
-        iteration_id = _entry_iter_id if isinstance(_entry_iter_id, str) else str(i)
-
         return ProposalContext(
             iteration=i,
-            iteration_id=iteration_id,
+            # ``prepare_proposal`` runs right after the engine opens this slot,
+            # so the current slot's anchor is this proposal's anchor.
+            iteration_id=state.current_iteration_id(),
             curr_prog_id=curr_prog_id,
             curr_prog=curr_prog,
             curr_prog_score=curr_prog_score,

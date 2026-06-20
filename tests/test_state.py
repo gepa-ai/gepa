@@ -601,26 +601,6 @@ def test_upgrade_state_dict_adds_missing_fields():
     assert d["iteration_ids_by_candidate_idx"] == ["seed", "4"]
 
 
-def test_upgrade_state_dict_normalizes_int_iteration_ids():
-    """v6 → v7: early integer iteration ids become string anchors (seed → "seed")."""
-    d = {
-        "program_candidates": [{"a": "b"}, {"a": "c"}],
-        "prog_candidate_objective_scores": [{}, {}],
-        "objective_pareto_front": {},
-        "program_at_pareto_front_objectives": {},
-        "frontier_type": "instance",
-        "pareto_front_cartesian": {},
-        "program_at_pareto_front_cartesian": {},
-        "evaluation_cache": None,
-        "adapter_state": {},
-        "iteration_ids_by_candidate_idx": [0, 4],
-        "full_program_trace": [],
-    }
-    state_mod.GEPAState._upgrade_state_dict(d)
-    assert d["iteration_ids_by_candidate_idx"] == ["seed", "4"]
-    assert d["validation_schema_version"] == state_mod.GEPAState._VALIDATION_SCHEMA_VERSION
-
-
 def test_existing_adapters_lack_adapter_state_methods():
     """DefaultAdapter doesn't define get/set_adapter_state — duck typing is safe."""
     from gepa.adapters.default_adapter.default_adapter import DefaultAdapter

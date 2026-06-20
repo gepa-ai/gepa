@@ -176,7 +176,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     returned by :func:`~gepa.optimize_anything.optimize_anything`.
     """
 
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 7
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 6
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
     _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
 
@@ -443,6 +443,17 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         """
         return dict(enumerate(self.iteration_ids_by_candidate_idx))
 
+    def current_iteration_id(self) -> str:
+        """On-disk anchor (``iterations/<id>/``) for the iteration in flight.
+
+        The engine stamps a random ``iteration_id`` on every trace entry at
+        slot creation, so the most-recently-opened entry's id is the current
+        iteration's anchor. Callers that need a *specific* iteration's anchor
+        pass it explicitly; this is the fallback for the single-writer paths
+        (merge, seed-less proposals) that operate on the current slot.
+        """
+        return self.full_program_trace[-1]["iteration_id"]
+
     def _save_iteration_dirs(self, run_dir: str, cand_to_iter: dict[int, str]) -> None:
         """Write every ``iterations/<id>/`` dir: the seed (``SEED_ITERATION_ID``)
         plus one per loop-trace entry (keyed by the random ``iteration_id``
@@ -502,10 +513,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             trace_i = entry.get("i")
             if trace_i is None:
                 continue
-            # New states stamp a random ``iteration_id`` at slot creation; fall
-            # back to the legacy ``trace_i + 1`` anchor for states that predate
-            # it (kept in sync with the migration in ``_upgrade_state_dict``).
-            iter_id = entry.get("iteration_id") or str(trace_i + 1)
+            # Every loop slot is stamped with its anchor at creation time.
+            iter_id = entry["iteration_id"]
             base = f"iterations/{iter_id}"
             if os.path.exists(os.path.join(run_dir, base, "meta.json")):
                 continue
@@ -734,13 +743,9 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         if "adapter_state" not in d:
             d["adapter_state"] = {}
         if "iteration_ids_by_candidate_idx" not in d:
-            # v5 → v6: reconstruct on-disk iteration ids by walking the full
-            # trace. Seed gets ``SEED_ITERATION_ID``; every accepted trace entry
-            # maps its ``new_program_idx`` to its anchor (the random
-            # ``iteration_id`` if present, else the legacy ``trace_i + 1`` as a
-            # string). Missing entries fall back to ``"-1"`` (shouldn't happen
-            # for a consistent state, but keeps the list length aligned with
-            # ``program_candidates``).
+            # Populate the field for states that predate it so the load-time
+            # length assertion passes: seed -> SEED_ITERATION_ID, accepted
+            # candidates -> their legacy (trace_i + 1) slot id.
             mapping: dict[int, str] = {0: SEED_ITERATION_ID}
             for entry in d.get("full_program_trace", []):
                 if not entry.get("proposal_accepted"):
@@ -749,15 +754,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
                 trace_i = entry.get("i")
                 if cand_idx is None or trace_i is None:
                     continue
-                mapping[cand_idx] = entry.get("iteration_id") or str(trace_i + 1)
+                mapping[cand_idx] = str(trace_i + 1)
             d["iteration_ids_by_candidate_idx"] = [mapping.get(i, "-1") for i in range(num_candidates)]
-        else:
-            # v6 → v7: early dev states stored integer iteration ids. Normalize
-            # to the string anchors the ``iterations/`` tree now uses, mapping
-            # the seed slot to ``SEED_ITERATION_ID``.
-            ids = d["iteration_ids_by_candidate_idx"]
-            if ids and not isinstance(ids[0], str):
-                d["iteration_ids_by_candidate_idx"] = [SEED_ITERATION_ID, *(str(v) for v in ids[1:])]
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
@@ -876,11 +874,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     ) -> ProgramIdx:
         # ``iteration_id`` is the on-disk iteration id for the proposal that
         # produced this candidate — the random anchor stamped on its trace
-        # entry at slot creation. Falls back to the current (latest) trace
-        # entry's id, then to a fresh id, when the caller hasn't plumbed it.
+        # entry at slot creation. Falls back to the current slot's id when the
+        # caller hasn't plumbed it (e.g. the merge path).
         if iteration_id is None:
-            latest = self.full_program_trace[-1].get("iteration_id") if self.full_program_trace else None
-            iteration_id = latest if isinstance(latest, str) else new_iteration_id()
+            iteration_id = self.current_iteration_id()
         new_program_idx = len(self.program_candidates)
         self.program_candidates.append(dict(new_program))
         self.iteration_ids_by_candidate_idx.append(iteration_id)
