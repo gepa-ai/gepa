@@ -72,6 +72,7 @@ def optimize(
     # Logging and Callbacks
     logger: LoggerProtocol | None = None,
     run_dir: str | None = None,
+    write_admission_manifest: bool = False,
     callbacks: "list[GEPACallback] | None" = None,
     use_wandb: bool = False,
     wandb_api_key: str | None = None,
@@ -431,6 +432,7 @@ def optimize(
         acceptance_criterion=acceptance_criterion_instance,
         use_cloudpickle=use_cloudpickle,
         evaluation_cache=evaluation_cache,
+        write_admission_manifest=write_admission_manifest,
     )
 
     with experiment_tracker:
