@@ -63,6 +63,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     def __init__(
         self,
         evaluator: Callable[..., tuple[float, Any, dict[str, Any]]],
+        batch_evaluator: Callable[..., Any] | None = None,
         reflection_lm: LanguageModel | None = None,
         reflection_prompt_template: str | None = None,
         parallel: bool = True,
@@ -75,6 +76,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         cache_dir: str | Path | None = None,
     ):
         self.evaluator = evaluator
+        self.batch_evaluator = batch_evaluator
         self.parallel = parallel
         self.max_workers = max_workers
         self.refiner_config = refiner_config
@@ -215,6 +217,42 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         return result
 
+    def _call_batch_evaluator(
+        self,
+        batch: list[Any],
+        candidate: "Candidate",
+    ) -> list[tuple[float, Any, dict]]:
+        """Invoke ``batch_evaluator([(candidate, example), ...])`` and normalise results.
+
+        The batch evaluator receives a list of ``(candidate, example)`` pairs
+        and must return a list of results in the same order.  Each result can be:
+        - ``(score, side_info)`` — score + diagnostic dict
+        - ``score`` — plain float (side_info defaults to ``{}``)
+
+        The candidate value passed follows the same unwrapping as the single
+        evaluator: ``str_candidate_mode`` callers receive the plain string.
+        """
+        assert self.batch_evaluator is not None
+        pairs = [(candidate, example) for example in batch]
+        raw_outputs = self.batch_evaluator(pairs)
+
+        if len(raw_outputs) != len(batch):
+            raise ValueError(
+                f"batch_evaluator returned {len(raw_outputs)} results for a batch of "
+                f"{len(batch)} examples — lengths must match."
+            )
+
+        normalised: list[tuple[float, Any, dict]] = []
+        for result in raw_outputs:
+            if isinstance(result, tuple) and len(result) == 2:
+                score, side_info = result
+                side_info = dict(side_info) if side_info is not None else {}
+            else:
+                score = float(result)  # type: ignore[arg-type]
+                side_info = {}
+            normalised.append((float(score), None, side_info))
+        return normalised
+
     def evaluate(
         self,
         batch: list[DataInst],
@@ -230,8 +268,10 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         """
         # Backward compatibility: if refiner_config is None, use old behavior
         if self.refiner_config is None:
-            # Old path: direct evaluation without refinement
-            if self.parallel and len(batch) > 1:
+            # Batch evaluator path: delegate the entire batch in one call.
+            if self.batch_evaluator is not None:
+                raw_results = self._call_batch_evaluator(batch, candidate)
+            elif self.parallel and len(batch) > 1:
                 raw_results = self._evaluate_parallel(batch, candidate)
             else:
                 raw_results = [self._call_evaluator(candidate, example) for example in batch]
