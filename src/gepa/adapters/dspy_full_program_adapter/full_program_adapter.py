@@ -174,6 +174,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
 
             if selected is not None:
                 trace_instances = [selected]
+            else:
+                trace_instances = trace_instances[-1:]
 
             trace_d = []
             example_data["Program Trace"] = trace_d
