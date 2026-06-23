@@ -23,9 +23,6 @@ Example:
         evaluate=evaluate,
         config=OptimizeAnythingConfig(engine="gepa", max_evals=100),
     )
-
-Use :func:`optimize_anything_with_server` when an outer system already owns an
-:class:`EvalServer`.
 """
 
 from __future__ import annotations
