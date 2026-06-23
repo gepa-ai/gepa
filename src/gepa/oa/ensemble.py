@@ -78,14 +78,14 @@ def optimize_sequential(
         raise ValueError("optimize_sequential requires at least one config")
 
     # Lazy import avoids a circular import (gepa.optimize_anything imports this module).
-    from gepa.optimize_anything import optimize_task
+    from gepa.optimize_anything import optimize_anything_from_task
 
     all_results: list[Result] = []
     current_task = task
     best_so_far: Result | None = None
 
     for cfg in configs:
-        result = optimize_task(current_task, evaluate, cfg)
+        result = optimize_anything_from_task(current_task, evaluate, cfg)
         all_results.append(result)
         if best_so_far is None or result.best_score > best_so_far.best_score:
             best_so_far = result
@@ -121,11 +121,11 @@ def optimize_parallel(
         raise ValueError("optimize_parallel requires at least one config")
 
     # Lazy import avoids a circular import (gepa.optimize_anything imports this module).
-    from gepa.optimize_anything import optimize_task
+    from gepa.optimize_anything import optimize_anything_from_task
 
     workers = max_workers if max_workers is not None else len(configs)
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(lambda c: optimize_task(task, evaluate, c), configs))
+        return list(pool.map(lambda c: optimize_anything_from_task(task, evaluate, c), configs))
 
 
 def optimize_best_of(

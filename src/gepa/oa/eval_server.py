@@ -548,7 +548,6 @@ class EvalServer:
                 "train_size": visible_size,
                 "val_size": 0,
                 "test_size": 0,
-                "metadata": {k: v for k, v in self.task.metadata.items() if isinstance(v, str | int | float | bool)},
             },
         )
 

@@ -15,7 +15,7 @@ required ``evaluate`` parameter.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 EvalFn = Callable[..., tuple[float, dict[str, Any]]]
@@ -42,7 +42,6 @@ class Task:
             opaque — any object the evaluator understands.
         val_set: Validation examples (used for candidate selection).
         test_set: Held-out test examples (evaluated outside the budget).
-        metadata: Extra typed context (run mode, candidate type, etc.).
     """
 
     name: str
@@ -52,7 +51,6 @@ class Task:
     train_set: list[Any] | None = None
     val_set: list[Any] | None = None
     test_set: list[Any] | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def has_dataset(self) -> bool:

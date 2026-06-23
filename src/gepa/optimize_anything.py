@@ -72,7 +72,6 @@ def optimize_anything(
     train_set: list[Any] | None = None,
     val_set: list[Any] | None = None,
     test_set: list[Any] | None = None,
-    metadata: dict[str, Any] | None = None,
     config: OptimizeAnythingConfig | None = None,
 ) -> Result:
     """Optimize a text candidate (prompt, code, instructions, ...) against a score.
@@ -96,16 +95,6 @@ def optimize_anything(
         val_set: Validation examples used for candidate selection.
         test_set: Held-out test examples scored after the run, outside the
             budget. Reported under ``result.metadata["test_score(s)"]``.
-        metadata: Free-form per-task context (run mode, candidate type, etc.).
-            The whole dict is handed to the engine, so engines may read any key
-            from ``task.metadata``. Only JSON-scalar values (``str``/``int``/
-            ``float``/``bool``) are surfaced to proposer agents via the eval
-            server's ``GET /task`` endpoint; lists, dicts, and arbitrary objects
-            are *not* exposed there (they stay engine-side only). A few keys are
-            reserved and read by specific engines: ``"val_set"`` is used by the
-            GEPA engine as a validation-set fallback, and
-            ``"optimize_anything_handoffs"`` is consumed by the AutoResearch
-            engine.
         config: Engine selection, budgets, output directory, and
             engine-specific options. Defaults to ``OptimizeAnythingConfig()``;
             at least one of ``config.max_evals`` or ``config.max_token_cost``
@@ -123,12 +112,11 @@ def optimize_anything(
         train_set=train_set,
         val_set=val_set,
         test_set=test_set,
-        metadata=metadata if metadata is not None else {},
     )
-    return optimize_task(task, evaluate, config)
+    return optimize_anything_from_task(task, evaluate, config)
 
 
-def optimize_task(
+def optimize_anything_from_task(
     task: Task,
     evaluate: EvalFn,
     config: OptimizeAnythingConfig | None = None,
@@ -280,7 +268,7 @@ __all__ = [
     "optimize_parallel_with_server",
     "optimize_sequential",
     "optimize_sequential_with_server",
-    "optimize_task",
+    "optimize_anything_from_task",
     "optimize_vote",
     "optimize_vote_with_server",
     "register_engine",

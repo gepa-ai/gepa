@@ -163,23 +163,18 @@ def test_autoresearch_engine_materializes_optimize_anything_handoff(tmp_path: Pa
     evals = source / "evals"
     evals.mkdir()
     (evals / "0.json").write_text(json.dumps({"score": 0.7, "candidate": "prior"}))
-    task = Task(
-        name="smoke",
-        initial_candidate="seed",
-        metadata={
-            "optimize_anything_handoffs": [
-                {
-                    "stage_idx": 0,
-                    "engine": "gepa",
-                    "best_score": 0.7,
-                    "num_evals": 1,
-                    "summary_path": str(source / "summary.json"),
-                    "best_candidate_path": str(source / "best_candidate.txt"),
-                    "eval_trace_dir": str(evals),
-                }
-            ]
-        },
-    )
+    task = Task(name="smoke", initial_candidate="seed")
+    handoffs = [
+        {
+            "stage_idx": 0,
+            "engine": "gepa",
+            "best_score": 0.7,
+            "num_evals": 1,
+            "summary_path": str(source / "summary.json"),
+            "best_candidate_path": str(source / "best_candidate.txt"),
+            "eval_trace_dir": str(evals),
+        }
+    ]
 
     def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
         del cmd
@@ -193,7 +188,11 @@ def test_autoresearch_engine_materializes_optimize_anything_handoff(tmp_path: Pa
         return _FakePopen(0, json.dumps({"total_cost_usd": 0.2}))
 
     engine = AutoResearchEngine(
-        OptimizeAnythingConfig(engine="autoresearch", run_dir=str(tmp_path / "run"), engine_config={"ralph": False})
+        OptimizeAnythingConfig(
+            engine="autoresearch",
+            run_dir=str(tmp_path / "run"),
+            engine_config={"ralph": False, "handoffs": handoffs},
+        )
     )
 
     with patch("gepa.oa.engines.autoresearch.subprocess.Popen", side_effect=fake_popen):

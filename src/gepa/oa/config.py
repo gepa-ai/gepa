@@ -57,8 +57,15 @@ class OptimizeAnythingConfig:
         max_thinking_tokens: Fixed thinking-token budget. Independent of
             ``effort`` (both can be set together).
         sandbox: Wrap subprocess engines in bwrap (Linux). Default ``False``.
-        engine_config: Free-form, engine-specific options. Each engine reads
-            the keys it understands and warns about leftovers so typos surface.
+        engine_config: Engine-specific options that don't generalize across
+            engines. Each engine reads the keys it understands and warns about
+            leftovers so typos surface. The keys an engine accepts are
+            enumerated in that engine's class docstring and in its
+            ``_<ENGINE>_CONFIG_KEYS`` tuple (the validation source of truth) —
+            e.g. ``GepaEngine`` / ``_GEPA_CONFIG_KEYS``,
+            ``AutoResearchEngine`` / ``_AR_CONFIG_KEYS`` (model, ralph,
+            max_no_eval_seconds, handoffs), ``BestOfNEngine`` /
+            ``_BON_CONFIG_KEYS``, ``MetaHarnessEngine`` / ``_MH_CONFIG_KEYS``.
     """
 
     engine: str | Engine = "gepa"
@@ -79,6 +86,6 @@ class OptimizeAnythingConfig:
     max_thinking_tokens: int | None = None
     sandbox: bool = False
 
-    # Engine-specific. Each engine's factory pops what it knows; the api
-    # warns about anything left over.
+    # Engine-specific. Each engine's factory pops what it knows (see the
+    # engine's _<ENGINE>_CONFIG_KEYS tuple) and warns about anything left over.
     engine_config: dict[str, Any] = field(default_factory=dict)

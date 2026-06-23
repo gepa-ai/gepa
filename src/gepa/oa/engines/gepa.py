@@ -208,8 +208,6 @@ class GepaEngine:
             # post-run eval and must never leak into the optimization loop.
             if task.val_set:
                 oa_kwargs["valset"] = task.val_set
-            if "val_set" in task.metadata:
-                oa_kwargs.setdefault("valset", task.metadata["val_set"])
 
         if objective:
             oa_kwargs["objective"] = objective

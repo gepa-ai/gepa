@@ -25,7 +25,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from gepa.oa._helpers import example_to_json, warn_unknown_config_keys
 from gepa.oa.budget import BudgetTracker
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from gepa.oa.task import Task
 
 
-_CC_CONFIG_KEYS: tuple[str, ...] = ("model", "ralph", "max_no_eval_seconds")
+_AR_CONFIG_KEYS: tuple[str, ...] = ("model", "ralph", "max_no_eval_seconds", "handoffs")
 
 
 # Nudge fed to claude --resume on each Ralph iteration.
@@ -222,8 +222,7 @@ def _rules_section(task: Task, budget: BudgetTracker) -> str:
     )
 
 
-def _handoff_section(task: Task) -> str:
-    handoffs = task.metadata.get("optimize_anything_handoffs") if isinstance(task.metadata, dict) else None
+def _handoff_section(handoffs: list[dict[str, Any]] | None) -> str:
     if not handoffs:
         return ""
     return (
@@ -235,7 +234,12 @@ def _handoff_section(task: Task) -> str:
 
 
 def _build_program_md(
-    task: Task, budget: BudgetTracker, *, max_token_cost: float | None, perfect_score: float | None
+    task: Task,
+    budget: BudgetTracker,
+    *,
+    max_token_cost: float | None,
+    perfect_score: float | None,
+    handoffs: list[dict[str, Any]] | None,
 ) -> str:
     optional = ""
     if task.objective:
@@ -265,7 +269,7 @@ def _build_program_md(
         name=task.name,
         optional_sections=optional,
         candidate_len=len(task.initial_candidate),
-        handoff_section=_handoff_section(task),
+        handoff_section=_handoff_section(handoffs),
         eval_section=eval_section,
         budget_section=_budget_section(budget, max_token_cost) + _perfect_score_section(perfect_score),
         strategy_section=_strategy_section(task),
@@ -281,11 +285,14 @@ def _materialize_sandbox(
     *,
     max_token_cost: float | None = None,
     perfect_score: float | None = None,
+    handoffs: list[dict[str, Any]] | None = None,
 ) -> None:
     server_url = server.url
     work_dir.mkdir(parents=True, exist_ok=True)
     (work_dir / "program.md").write_text(
-        _build_program_md(task, budget, max_token_cost=max_token_cost, perfect_score=perfect_score)
+        _build_program_md(
+            task, budget, max_token_cost=max_token_cost, perfect_score=perfect_score, handoffs=handoffs
+        )
     )
     (work_dir / "candidate.txt").write_text(task.initial_candidate)
     (work_dir / "best_candidate.txt").write_text(task.initial_candidate)
@@ -305,11 +312,10 @@ def _materialize_sandbox(
             for eid, ex in server.iter_split(split):
                 (train_dir / f"{eid}.json").write_text(json.dumps(example_to_json(eid, ex), indent=2, default=str))
 
-    _materialize_handoff(work_dir, task)
+    _materialize_handoff(work_dir, handoffs)
 
 
-def _materialize_handoff(work_dir: Path, task: Task) -> None:
-    handoffs = task.metadata.get("optimize_anything_handoffs") if isinstance(task.metadata, dict) else None
+def _materialize_handoff(work_dir: Path, handoffs: list[dict[str, Any]] | None) -> None:
     if not isinstance(handoffs, list) or not handoffs:
         return
     handoff_dir = work_dir / "handoff"
@@ -370,17 +376,24 @@ class AutoResearchEngine:
     - ``max_no_eval_seconds``: If set, terminate the Claude Code subprocess
       after this many seconds without an eval call. Guards against agents
       that wedge on long internal reasoning without scoring.
+    - ``handoffs``: ``list[dict]`` of prior-stage artifacts, used by sequential
+      compositions to give this stage context on what earlier stages tried.
+      Each item describes one stage (``stage_idx``, ``engine``, ``best_score``,
+      ``num_evals``, and the paths ``summary_path`` / ``best_candidate_path`` /
+      ``eval_trace_dir``); they are materialized under ``handoff/`` in the
+      workspace and referenced from ``program.md``. Default ``None``.
     """
 
     name = "autoresearch"
 
     def __init__(self, config: OptimizeAnythingConfig) -> None:
         extras = config.engine_config
-        warn_unknown_config_keys(self.name, extras, _CC_CONFIG_KEYS)
+        warn_unknown_config_keys(self.name, extras, _AR_CONFIG_KEYS)
         self.model: str = extras.get("model", "claude-sonnet-4-6")
         self.ralph = _config_bool(extras.get("ralph", True))
         raw_max_no_eval_seconds = extras.get("max_no_eval_seconds")
         self.max_no_eval_seconds = float(raw_max_no_eval_seconds) if raw_max_no_eval_seconds is not None else None
+        self.handoffs: list[dict[str, Any]] | None = extras.get("handoffs")
         self.run_dir = config.run_dir
         self.effort = config.effort
         self.stop_at_score = config.stop_at_score
@@ -412,7 +425,13 @@ class AutoResearchEngine:
             work_dir = Path(self._pending_tempdir.name)
 
         _materialize_sandbox(
-            work_dir, task, server, budget, max_token_cost=self.max_token_cost, perfect_score=self.stop_at_score
+            work_dir,
+            task,
+            server,
+            budget,
+            max_token_cost=self.max_token_cost,
+            perfect_score=self.stop_at_score,
+            handoffs=self.handoffs,
         )
 
         candidate_file = work_dir / "candidate.txt"
