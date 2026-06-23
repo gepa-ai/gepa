@@ -1,25 +1,25 @@
 """Public ``optimize_anything`` API.
 
-The API has three pieces:
+A call has three parts:
 
-- :class:`Task` describes what to optimize.
-- ``evaluate`` scores a candidate and returns ``(score, info)``.
-- :class:`OptimizeAnythingConfig` chooses the optimization :class:`Engine`
-  and sets budgets.
+- **What to optimize** — the task fields passed directly to
+  :func:`optimize_anything` (``name``, ``initial_candidate``, ``objective``,
+  ``background``, and optional ``train_set`` / ``val_set`` / ``test_set``).
+- **How to score it** — ``evaluate``, a function returning ``(score, info)``.
+- **How to optimize** — :class:`OptimizeAnythingConfig`, which chooses the
+  :class:`Engine` and sets the budget.
 
 Example:
 
-    from gepa.optimize_anything import OptimizeAnythingConfig, Task, optimize_anything
+    from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything
 
     def evaluate(candidate: str) -> tuple[float, dict]:
         return run_candidate(candidate), {"diagnostics": "..."}
 
     result = optimize_anything(
-        task=Task(
-            name="my_task",
-            initial_candidate="initial prompt or program",
-            objective="Improve the candidate's score.",
-        ),
+        name="my_task",
+        initial_candidate="initial prompt or program",
+        objective="Improve the candidate's score.",
         evaluate=evaluate,
         config=OptimizeAnythingConfig(engine="gepa", max_evals=100),
     )
@@ -34,7 +34,7 @@ import time
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
@@ -64,83 +64,85 @@ from gepa.oa.registry import (
 )
 from gepa.oa.task import EvalFn, Task
 
-if TYPE_CHECKING:
-    from gepa.core.result import GEPAResult
-
-_NEW_API_ARGS = {"task", "evaluate", "config"}
-_LEGACY_API_ARGS = {"seed_candidate", "evaluator", "dataset", "valset", "objective", "background"}
-
-_LEGACY_FALLBACK_MESSAGE = """\
-gepa.optimize_anything.optimize_anything received a legacy seed_candidate/evaluator
-call and is transparently dispatching to gepa.legacy_optimize_anything so existing
-code keeps working. This backward-compatible fallback is deprecated and may be
-removed in a future release.
-
-Migrate to the engine-based API:
-
-    from gepa.optimize_anything import OptimizeAnythingConfig, Task, optimize_anything
-
-    result = optimize_anything(
-        task=Task(name="my_task", initial_candidate="...", objective="..."),
-        evaluate=evaluate,
-        config=OptimizeAnythingConfig(engine="gepa", max_evals=100),
-    )
-
-or import the legacy API explicitly to silence this warning:
-
-    from gepa.legacy_optimize_anything import optimize_anything
-"""
-
 
 def optimize_anything(
-    *args: Any,
-    **kwargs: Any,
-) -> Result | GEPAResult:
-    """Run the engine-based API, falling back to the legacy API when needed.
+    *,
+    name: str,
+    initial_candidate: str,
+    evaluate: EvalFn,
+    objective: str = "",
+    background: str = "",
+    train_set: list[Any] | None = None,
+    val_set: list[Any] | None = None,
+    test_set: list[Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    config: OptimizeAnythingConfig | None = None,
+) -> Result:
+    """Optimize a text candidate (prompt, code, instructions, ...) against a score.
 
-    Calls using the new ``task`` / ``evaluate`` / ``config`` shape run the
-    engine-based optimizer. Calls using the legacy ``seed_candidate=...`` /
-    ``evaluator=...`` shape are transparently dispatched to
-    :func:`gepa.legacy_optimize_anything.optimize_anything` with a
-    :class:`DeprecationWarning`, so existing code keeps working. Import
-    :mod:`gepa.legacy_optimize_anything` directly to use the legacy API without
-    the warning. Calls that mix the two APIs are rejected with a ``TypeError``.
+    Args:
+        name: Unique identifier for this task (e.g. ``"circle_packing"``). Used
+            for logging and to lay out the default output directory.
+        initial_candidate: The seed text to evolve from.
+        evaluate: Scoring function returning ``(score, info)``. Use
+            ``(candidate) -> (score, info)`` for a single task, or
+            ``(candidate, example) -> (score, info)`` when train/val/test
+            examples are provided. ``score`` is a float (higher is better) and
+            ``info`` is a free-form dict surfaced to the engine as feedback.
+        objective: Short goal statement (e.g. "Maximize sum of circle radii").
+            Surfaced verbatim by every engine as the optimization goal.
+        background: Long-form context — problem statement, evaluation rules,
+            domain notes. Surfaced verbatim by every engine.
+        train_set: Training examples used during optimization. Items are opaque
+            — any object ``evaluate`` understands. Pairs the dataset-shaped
+            ``(candidate, example)`` signature with ``evaluate``.
+        val_set: Validation examples used for candidate selection.
+        test_set: Held-out test examples scored after the run, outside the
+            budget. Reported under ``result.metadata["test_score(s)"]``.
+        metadata: Free-form per-task context (run mode, candidate type, etc.).
+            The whole dict is handed to the engine, so engines may read any key
+            from ``task.metadata``. Only JSON-scalar values (``str``/``int``/
+            ``float``/``bool``) are surfaced to proposer agents via the eval
+            server's ``GET /task`` endpoint; lists, dicts, and arbitrary objects
+            are *not* exposed there (they stay engine-side only). A few keys are
+            reserved and read by specific engines: ``"val_set"`` is used by the
+            GEPA engine as a validation-set fallback, and
+            ``"optimize_anything_handoffs"`` is consumed by the AutoResearch
+            engine.
+        config: Engine selection, budgets, output directory, and
+            engine-specific options. Defaults to ``OptimizeAnythingConfig()``;
+            at least one of ``config.max_evals`` or ``config.max_token_cost``
+            must be set.
+
+    Returns:
+        A :class:`Result` with ``best_candidate``, ``best_score``,
+        ``total_evals``, ``eval_log``, and ``metadata``.
     """
-    legacy_args = sorted(_LEGACY_API_ARGS & set(kwargs))
-    if legacy_args:
-        new_args = sorted((_NEW_API_ARGS - {"config"}) & set(kwargs))
-        if new_args:
-            raise TypeError(
-                f"cannot mix new-API argument(s) {new_args} with legacy argument(s) {legacy_args}; "
-                "use either the Task/evaluate API or gepa.legacy_optimize_anything, not both"
-            )
-        warnings.warn(_LEGACY_FALLBACK_MESSAGE, DeprecationWarning, stacklevel=2)
-        from gepa.legacy_optimize_anything import optimize_anything as _legacy_optimize_anything
-
-        return _legacy_optimize_anything(*args, **kwargs)
-
-    return _run_engine_optimization(*args, **kwargs)
+    task = Task(
+        name=name,
+        initial_candidate=initial_candidate,
+        objective=objective,
+        background=background,
+        train_set=train_set,
+        val_set=val_set,
+        test_set=test_set,
+        metadata=metadata if metadata is not None else {},
+    )
+    return optimize_task(task, evaluate, config)
 
 
-def _run_engine_optimization(
+def optimize_task(
     task: Task,
     evaluate: EvalFn,
     config: OptimizeAnythingConfig | None = None,
 ) -> Result:
-    """Run optimization for ``task`` using the configured engine.
+    """Optimize a prebuilt :class:`Task` with the configured engine.
 
-    Args:
-        task: What to optimize. ``task.objective`` and ``task.background`` are
-            passed to the engine.
-        evaluate: Scoring function. Use ``(candidate) -> (score, info)`` for a
-            single task, or ``(candidate, example) -> (score, info)`` when the
-            task has train/val/test examples.
-        config: Engine selection, budgets, output directory, and
-            engine-specific options. Defaults to ``OptimizeAnythingConfig()``.
-
-    Returns:
-        A :class:`Result` with ``best_candidate``, ``best_score``,
-        ``total_evals``, ``eval_log``, and metadata.
+    The Task-based counterpart of :func:`optimize_anything`: that function
+    builds a :class:`Task` from its arguments and forwards it here. Call this
+    directly when you already hold a ``Task`` — e.g. the ensemble helpers,
+    which carry one ``Task`` forward across stages. See ``evaluate`` /
+    ``config`` and the return value in :func:`optimize_anything`.
     """
     if config is None:
         config = OptimizeAnythingConfig()
@@ -281,6 +283,7 @@ __all__ = [
     "optimize_parallel_with_server",
     "optimize_sequential",
     "optimize_sequential_with_server",
+    "optimize_task",
     "optimize_vote",
     "optimize_vote_with_server",
     "register_engine",

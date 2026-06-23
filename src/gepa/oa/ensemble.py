@@ -39,7 +39,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from gepa.oa.engine import Result
 
@@ -47,19 +47,6 @@ if TYPE_CHECKING:
     from gepa.oa.config import OptimizeAnythingConfig
     from gepa.oa.eval_server import EvalServer
     from gepa.oa.task import EvalFn, Task
-
-
-def optimize_anything(
-    task: Task,
-    evaluate: EvalFn,
-    config: OptimizeAnythingConfig,
-) -> Result:
-    """Delegate to the public :func:`gepa.optimize_anything.optimize_anything`."""
-    from gepa.optimize_anything import optimize_anything as run
-
-    # This wrapper always uses the new (task, evaluate, config) API, which returns
-    # a Result; the public function's Result | GEPAResult union covers legacy calls.
-    return cast(Result, run(task, evaluate, config))
 
 
 def optimize_anything_with_server(
@@ -90,12 +77,15 @@ def optimize_sequential(
     if not configs:
         raise ValueError("optimize_sequential requires at least one config")
 
+    # Lazy import avoids a circular import (gepa.optimize_anything imports this module).
+    from gepa.optimize_anything import optimize_task
+
     all_results: list[Result] = []
     current_task = task
     best_so_far: Result | None = None
 
     for cfg in configs:
-        result = optimize_anything(current_task, evaluate, cfg)
+        result = optimize_task(current_task, evaluate, cfg)
         all_results.append(result)
         if best_so_far is None or result.best_score > best_so_far.best_score:
             best_so_far = result
@@ -130,9 +120,12 @@ def optimize_parallel(
     if not configs:
         raise ValueError("optimize_parallel requires at least one config")
 
+    # Lazy import avoids a circular import (gepa.optimize_anything imports this module).
+    from gepa.optimize_anything import optimize_task
+
     workers = max_workers if max_workers is not None else len(configs)
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(lambda c: optimize_anything(task, evaluate, c), configs))
+        return list(pool.map(lambda c: optimize_task(task, evaluate, c), configs))
 
 
 def optimize_best_of(
