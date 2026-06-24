@@ -42,22 +42,61 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
+from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engine import Result
 
 if TYPE_CHECKING:
-    from gepa.oa.config import OptimizeAnythingConfig
     from gepa.oa.eval_server import EvalServer
     from gepa.oa.task import Task
 
 
+def optimize_anything_from_task(
+    task: Task,
+    evaluate: Callable[..., tuple[float, dict[str, Any]]],
+    config: OptimizeAnythingConfig | None = None,
+) -> Result:
+    """Optimize a prebuilt :class:`Task` by unpacking it into :func:`optimize_anything`.
+
+    A convenience for callers that already hold a ``Task`` — e.g. the ensemble
+    helpers, which carry one ``Task`` forward across stages. The task's ``name``
+    is preserved by threading it through ``config`` when ``config.name`` is unset.
+    """
+    # Lazy import avoids a circular import (gepa.optimize_anything imports this module).
+    from gepa.optimize_anything import optimize_anything
+
+    if config is None:
+        config = OptimizeAnythingConfig()
+    if config.name is None:
+        config = replace(config, name=task.name)
+    return optimize_anything(
+        task.seed_candidate,
+        evaluator=evaluate,
+        dataset=task.train_set,
+        valset=task.val_set,
+        objective=task.objective,
+        background=task.background,
+        test_set=task.test_set,
+        config=config,
+    )
+
+
 def optimize_anything_with_server(
     server: EvalServer,
-    config: OptimizeAnythingConfig,
+    config: OptimizeAnythingConfig | None = None,
 ) -> Result:
-    """Delegate to the public :func:`gepa.optimize_anything.optimize_anything_with_server`."""
-    from gepa.optimize_anything import optimize_anything_with_server as run
+    """Run optimization against a caller-owned :class:`EvalServer`.
 
-    return run(server, config)
+    The caller is responsible for ``server.start()`` and ``server.stop()``.
+    Server-shaped config fields such as ``max_evals``, ``output_dir``, and
+    ``tracker`` are ignored because they already belong to the server.
+    """
+    # Lazy import avoids a circular import (gepa.optimize_anything imports this module).
+    from gepa.optimize_anything import _build_engine, _run_engine
+
+    if config is None:
+        config = OptimizeAnythingConfig()
+    engine = _build_engine(config)
+    return _run_engine(server, engine, owns_server=False)
 
 
 def optimize_sequential(
@@ -77,9 +116,6 @@ def optimize_sequential(
     """
     if not configs:
         raise ValueError("optimize_sequential requires at least one config")
-
-    # Lazy import avoids a circular import (gepa.optimize_anything imports this module).
-    from gepa.optimize_anything import optimize_anything_from_task
 
     all_results: list[Result] = []
     current_task = task
@@ -120,9 +156,6 @@ def optimize_parallel(
     """
     if not configs:
         raise ValueError("optimize_parallel requires at least one config")
-
-    # Lazy import avoids a circular import (gepa.optimize_anything imports this module).
-    from gepa.optimize_anything import optimize_anything_from_task
 
     workers = max_workers if max_workers is not None else len(configs)
     with ThreadPoolExecutor(max_workers=workers) as pool:

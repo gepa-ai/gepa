@@ -40,6 +40,8 @@ from gepa.oa.engine import Engine, Result
 from gepa.oa.engines import AutoResearchEngine, BestOfNEngine, GepaEngine, MetaHarnessEngine
 from gepa.oa.ensemble import (
     optimize_adaptive_sequential_with_server,
+    optimize_anything_from_task,
+    optimize_anything_with_server,
     optimize_best_of,
     optimize_best_of_with_server,
     optimize_parallel,
@@ -116,6 +118,13 @@ def optimize_anything(
     """
     if config is None:
         config = OptimizeAnythingConfig()
+    if config.max_evals is None and config.max_token_cost is None:
+        warnings.warn(
+            "Neither config.max_evals nor config.max_token_cost is set; the run is unbounded "
+            "and will stop only on the engine's own stop conditions.",
+            stacklevel=2,
+        )
+
     task = Task(
         name=config.name or _default_run_name(config.engine),
         seed_candidate=seed_candidate,
@@ -125,27 +134,6 @@ def optimize_anything(
         val_set=valset,
         test_set=test_set,
     )
-    return optimize_anything_from_task(task, evaluator, config)
-
-
-def optimize_anything_from_task(
-    task: Task,
-    evaluate: Callable[..., tuple[float, dict[str, Any]]],
-    config: OptimizeAnythingConfig | None = None,
-) -> Result:
-    """Optimize a prebuilt :class:`Task` with the configured engine.
-
-    The Task-based counterpart of :func:`optimize_anything`: that function
-    builds a :class:`Task` from its arguments and forwards it here. Call this
-    directly when you already hold a ``Task`` — e.g. the ensemble helpers,
-    which carry one ``Task`` forward across stages. See ``evaluate`` /
-    ``config`` and the return value in :func:`optimize_anything`.
-    """
-    if config is None:
-        config = OptimizeAnythingConfig()
-    if config.max_evals is None and config.max_token_cost is None:
-        raise ValueError("At least one of config.max_evals or config.max_token_cost must be specified")
-
     engine = _build_engine(config)
     output_dir = _resolve_output_dir(config.output_dir, task=task, engine_name=engine.name)
     # The eval budget caps eval calls only. The proposer-cost cap
@@ -153,30 +141,13 @@ def optimize_anything_from_task(
     budget = BudgetTracker(max_evals=config.max_evals)
     server = EvalServer(
         task,
-        evaluate,
+        evaluator,
         budget,
         tracker=config.tracker,
         max_concurrency=config.max_concurrency,
         output_dir=output_dir,
     )
     return _run_engine(server, engine, owns_server=True)
-
-
-def optimize_anything_with_server(
-    server: EvalServer,
-    config: OptimizeAnythingConfig | None = None,
-) -> Result:
-    """Run optimization against a caller-owned :class:`EvalServer`.
-
-    The caller is responsible for ``server.start()`` and ``server.stop()``.
-    Server-shaped config fields such as ``max_evals``, ``output_dir``, and
-    ``tracker`` are ignored because they already belong to the server.
-    """
-    if config is None:
-        config = OptimizeAnythingConfig()
-
-    engine = _build_engine(config)
-    return _run_engine(server, engine, owns_server=False)
 
 
 def _run_engine(server: EvalServer, engine: Engine, *, owns_server: bool) -> Result:
