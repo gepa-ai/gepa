@@ -3,11 +3,11 @@
 A call has three parts:
 
 - **What to optimize** — the task fields passed directly to
-  :func:`optimize_anything` (``name``, ``initial_candidate``, ``objective``,
+  :func:`optimize_anything` (``seed_candidate``, ``objective``,
   ``background``, and optional ``train_set`` / ``val_set`` / ``test_set``).
 - **How to score it** — ``evaluate``, a function returning ``(score, info)``.
 - **How to optimize** — :class:`OptimizeAnythingConfig`, which chooses the
-  :class:`Engine` and sets the budget.
+  :class:`Engine`, names the run, and sets the budget.
 
 Example:
 
@@ -17,8 +17,7 @@ Example:
         return run_candidate(candidate), {"diagnostics": "..."}
 
     result = optimize_anything(
-        name="my_task",
-        initial_candidate="initial prompt or program",
+        seed_candidate="initial prompt or program",
         objective="Improve the candidate's score.",
         evaluate=evaluate,
         config=OptimizeAnythingConfig(engine="gepa", max_evals=100),
@@ -28,6 +27,7 @@ Example:
 from __future__ import annotations
 
 import time
+import uuid
 import warnings
 from datetime import datetime
 from pathlib import Path
@@ -48,7 +48,7 @@ from gepa.oa.ensemble import (
     optimize_vote,
     optimize_vote_with_server,
 )
-from gepa.oa.eval_server import EvalServer
+from gepa.oa.eval_server import EvalServer, _resolve_id
 from gepa.oa.proposers import ClaudeCodeAgentProposer
 from gepa.oa.registry import (
     get_engine_cls,
@@ -64,9 +64,8 @@ from gepa.oa.task import EvalFn, Task
 
 def optimize_anything(
     *,
-    name: str,
-    initial_candidate: str,
     evaluate: EvalFn,
+    seed_candidate: str | None = None,
     objective: str = "",
     background: str = "",
     train_set: list[Any] | None = None,
@@ -77,9 +76,9 @@ def optimize_anything(
     """Optimize a text candidate (prompt, code, instructions, ...) against a score.
 
     Args:
-        name: Unique identifier for this task (e.g. ``"circle_packing"``). Used
-            for logging and to lay out the default output directory.
-        initial_candidate: The seed text to evolve from.
+        seed_candidate: The seed text to evolve from. ``None`` for seedless
+            mode, where the engine bootstraps the first candidate from
+            ``objective`` / ``background``.
         evaluate: Scoring function returning ``(score, info)``. Use
             ``(candidate) -> (score, info)`` for a single task, or
             ``(candidate, example) -> (score, info)`` when train/val/test
@@ -89,24 +88,31 @@ def optimize_anything(
             Surfaced verbatim by every engine as the optimization goal.
         background: Long-form context — problem statement, evaluation rules,
             domain notes. Surfaced verbatim by every engine.
-        train_set: Training examples used during optimization. Items are opaque
-            — any object ``evaluate`` understands. Pairs the dataset-shaped
-            ``(candidate, example)`` signature with ``evaluate``.
-        val_set: Validation examples used for candidate selection.
-        test_set: Held-out test examples scored after the run, outside the
-            budget. Reported under ``result.metadata["test_score(s)"]``.
-        config: Engine selection, budgets, output directory, and
+        train_set: Optional training examples used during optimization. Items
+            are opaque — any object ``evaluate`` understands. Pairs the
+            dataset-shaped ``(candidate, example)`` signature with ``evaluate``.
+        val_set: Optional validation examples used for candidate selection.
+        test_set: Optional held-out test examples. When provided, the seed and
+            optimized candidates are each scored on it outside the budget — the
+            test set never enters the eval server, so engines and agents cannot
+            see it. When omitted, test scoring is skipped entirely. Reported
+            under ``result.metadata["test_score(s)"]`` (optimized) and
+            ``result.metadata["baseline_test_score(s)"]`` (seed).
+        config: Engine selection, run ``name``, budgets, output directory, and
             engine-specific options. Defaults to ``OptimizeAnythingConfig()``;
             at least one of ``config.max_evals`` or ``config.max_token_cost``
-            must be set.
+            must be set. When ``config.name`` is omitted, a name is generated
+            from the engine, a short uuid, and a timestamp.
 
     Returns:
         A :class:`Result` with ``best_candidate``, ``best_score``,
         ``total_evals``, ``eval_log``, and ``metadata``.
     """
+    if config is None:
+        config = OptimizeAnythingConfig()
     task = Task(
-        name=name,
-        initial_candidate=initial_candidate,
+        name=config.name or _default_run_name(config.engine),
+        seed_candidate=seed_candidate,
         objective=objective,
         background=background,
         train_set=train_set,
@@ -173,6 +179,12 @@ def _run_engine(server: EvalServer, engine: Engine, *, owns_server: bool) -> Res
         server.start()
 
     task = server.task
+
+    # Held-out test is scored outside the budget, directly against the seed
+    # candidate (baseline) and, after optimization, the best candidate. The
+    # test_set is optional — when absent these passes are skipped entirely.
+    baseline_test = _score_test(server, task, task.seed_candidate)
+
     start = time.time()
     try:
         result = engine.run(task, server)
@@ -202,18 +214,43 @@ def _run_engine(server: EvalServer, engine: Engine, *, owns_server: bool) -> Res
         # Engine artifact persistence is best-effort.
         pass
 
-    if task.test_set and result.best_candidate:
-        test_scores: dict[str, float] = {}
-        for eid, ex in server.iter_split("test"):
-            try:
-                score, _ = server.eval_fn(result.best_candidate, ex)
-                test_scores[eid] = score
-            except Exception:
-                test_scores[eid] = 0.0
-        result.metadata["test_scores"] = test_scores
-        result.metadata["test_score"] = sum(test_scores.values()) / len(test_scores) if test_scores else 0.0
+    # Reuse the baseline pass when the engine made no improvement, otherwise
+    # score the optimized candidate. Both are optional and skipped without a
+    # test_set.
+    if result.best_candidate == task.seed_candidate:
+        optimized_test = baseline_test
+    else:
+        optimized_test = _score_test(server, task, result.best_candidate)
+
+    if baseline_test is not None:
+        result.metadata["baseline_test_scores"], result.metadata["baseline_test_score"] = baseline_test
+    if optimized_test is not None:
+        result.metadata["test_scores"], result.metadata["test_score"] = optimized_test
 
     return result
+
+
+def _score_test(server: EvalServer, task: Task, candidate: str | None) -> tuple[dict[str, float], float] | None:
+    """Score ``candidate`` on the held-out ``test_set``, outside the budget.
+
+    Returns ``(per_example_scores, average)`` or ``None`` when there is no
+    test_set or no candidate to score. Test examples are evaluated directly
+    via ``eval_fn`` — they never touch the eval server's budget or pool.
+    """
+    if not task.test_set or not candidate:
+        return None
+    scores: dict[str, float] = {}
+    for i, ex in enumerate(task.test_set):
+        eid = _resolve_id(ex, f"test_{i}")
+        if eid in scores:
+            eid = f"test_{i}"
+        try:
+            score, _ = server.eval_fn(candidate, ex)
+            scores[eid] = score
+        except Exception:
+            scores[eid] = 0.0
+    avg = sum(scores.values()) / len(scores) if scores else 0.0
+    return scores, avg
 
 
 def _build_engine(config: OptimizeAnythingConfig) -> Engine:
@@ -228,6 +265,13 @@ def _build_engine(config: OptimizeAnythingConfig) -> Engine:
             stacklevel=3,
         )
     return config.engine
+
+
+def _default_run_name(engine: str | Engine) -> str:
+    """Generate a run name from the engine, a short uuid, and a timestamp."""
+    backend = engine if isinstance(engine, str) else getattr(engine, "name", "engine")
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return f"{backend}-{uuid.uuid4().hex[:8]}-{ts}"
 
 
 def _resolve_output_dir(output_dir: str | Path | None, *, task: Task, engine_name: str) -> Path:

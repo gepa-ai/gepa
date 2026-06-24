@@ -212,7 +212,7 @@ def _materialize_sandbox(work_dir: Path, task: Task, server: EvalServer, budget:
 
     agents_dir = work_dir / "agents"
     agents_dir.mkdir(exist_ok=True)
-    (agents_dir / "baseline.txt").write_text(task.initial_candidate)
+    (agents_dir / "baseline.txt").write_text(task.seed_candidate or "")
 
     (work_dir / "scratch").mkdir(exist_ok=True)
     state_dir = work_dir / "state"

@@ -197,7 +197,7 @@ class GepaEngine:
             return server.evaluate(candidate, example)
 
         oa_kwargs: dict[str, Any] = {
-            "seed_candidate": task.initial_candidate,
+            "seed_candidate": task.seed_candidate,
             "evaluator": evaluator,
             "config": config,
         }
@@ -220,7 +220,9 @@ class GepaEngine:
             gepa_result = self._load_result_from_state(
                 run_dir=self.run_dir,
                 seed=engine_kwargs.get("seed"),
-                str_candidate_mode=isinstance(task.initial_candidate, str),
+                # optimize_anything candidates are always strings (seedless ->
+                # None seed), never the legacy dict form.
+                str_candidate_mode=not isinstance(task.seed_candidate, dict),
             )
 
         final_adapter_cost = float(getattr(cost_source, "total_cost", 0.0) or 0.0) if cost_source is not None else 0.0
@@ -235,9 +237,9 @@ class GepaEngine:
             reflection_meta["reflection_cost_final"] = final_adapter_cost
 
         if gepa_result is not None:
-            # gepa_result.best_candidate is str | dict[str,str]; we always pass
-            # a str seed_candidate, so the runtime value is str — but the typing
-            # admits the dict form. Coerce so optimize_anything's Result stays str-typed.
+            # gepa_result.best_candidate is str | dict[str,str]; our seed is a
+            # str (or None for seedless), so the runtime value is str — but the
+            # typing admits the dict form. Coerce so the Result stays str-typed.
             best = gepa_result.best_candidate
             if isinstance(best, dict):
                 best = next(iter(best.values()), "")

@@ -40,7 +40,7 @@ class _FakePopen:
 
 def test_autoresearch_engine_ralph_resumes_with_remaining_budget(tmp_path: Path) -> None:
     server = _FakeServer()
-    task = Task(name="smoke", initial_candidate="seed")
+    task = Task(name="smoke", seed_candidate="seed")
     calls: list[list[str]] = []
 
     def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
@@ -68,7 +68,7 @@ def test_autoresearch_engine_ralph_resumes_with_remaining_budget(tmp_path: Path)
 
 def test_autoresearch_engine_can_disable_ralph(tmp_path: Path) -> None:
     server = _FakeServer()
-    task = Task(name="smoke", initial_candidate="seed")
+    task = Task(name="smoke", seed_candidate="seed")
     calls: list[list[str]] = []
 
     def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
@@ -90,7 +90,7 @@ def test_autoresearch_engine_can_disable_ralph(tmp_path: Path) -> None:
 
 def test_autoresearch_engine_string_false_disables_ralph(tmp_path: Path) -> None:
     server = _FakeServer()
-    task = Task(name="smoke", initial_candidate="seed")
+    task = Task(name="smoke", seed_candidate="seed")
     calls: list[list[str]] = []
 
     def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
@@ -112,7 +112,7 @@ def test_autoresearch_engine_string_false_disables_ralph(tmp_path: Path) -> None
 def test_autoresearch_engine_ralph_respects_stop_at_score(tmp_path: Path) -> None:
     server = _FakeServer()
     server.best_score = 1.0
-    task = Task(name="smoke", initial_candidate="seed")
+    task = Task(name="smoke", seed_candidate="seed")
     calls: list[list[str]] = []
 
     def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
@@ -134,7 +134,7 @@ def test_autoresearch_engine_ralph_respects_stop_at_score(tmp_path: Path) -> Non
 
 def test_autoresearch_engine_counts_failed_resume_cost(tmp_path: Path) -> None:
     server = _FakeServer()
-    task = Task(name="smoke", initial_candidate="seed")
+    task = Task(name="smoke", seed_candidate="seed")
     calls: list[list[str]] = []
 
     def fake_popen(cmd: list[str], **kwargs: object) -> _FakePopen:
@@ -163,7 +163,7 @@ def test_autoresearch_engine_materializes_optimize_anything_handoff(tmp_path: Pa
     evals = source / "evals"
     evals.mkdir()
     (evals / "0.json").write_text(json.dumps({"score": 0.7, "candidate": "prior"}))
-    task = Task(name="smoke", initial_candidate="seed")
+    task = Task(name="smoke", seed_candidate="seed")
     handoffs = [
         {
             "stage_idx": 0,

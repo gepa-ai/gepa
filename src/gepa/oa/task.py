@@ -1,7 +1,7 @@
 """Task definition for the optimize_anything API.
 
 A :class:`Task` is **pure data** describing *what* to optimize: a name, an
-initial candidate, optional natural-language ``objective`` / ``background``
+optional seed candidate, optional natural-language ``objective`` / ``background``
 for engine prompts, and optional ``train``/``val``/``test`` splits. Dataset
 items are opaque — any Python object the user's evaluator understands. If an
 item has a stable ``id`` (attribute or ``"id"`` mapping key), the eval server
@@ -33,19 +33,23 @@ class Task:
 
     Attributes:
         name: Unique identifier (e.g. ``"circle_packing"``).
-        initial_candidate: Seed text to evolve from.
+        seed_candidate: Seed text to evolve from. ``None`` for seedless mode,
+            where the engine bootstraps the first candidate from ``objective`` /
+            ``background``.
         objective: Short goal statement (e.g. "Maximize sum of circle radii").
             Surfaced verbatim by every engine as the optimization goal.
         background: Long-form context — problem statement, evaluation rules,
             domain notes. Surfaced verbatim by every engine.
-        train_set: Training examples (used for optimization). Items are
-            opaque — any object the evaluator understands.
-        val_set: Validation examples (used for candidate selection).
-        test_set: Held-out test examples (evaluated outside the budget).
+        train_set: Optional training examples (used for optimization). Items
+            are opaque — any object the evaluator understands.
+        val_set: Optional validation examples (used for candidate selection).
+        test_set: Optional held-out test examples. Held outside the eval
+            server and scored (seed + optimized) outside the budget only when
+            present; skipped entirely when omitted.
     """
 
     name: str
-    initial_candidate: str
+    seed_candidate: str | None = None
     objective: str = ""
     background: str = ""
     train_set: list[Any] | None = None

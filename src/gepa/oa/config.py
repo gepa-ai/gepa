@@ -29,6 +29,10 @@ class OptimizeAnythingConfig:
             ``"meta_harness"``) or a constructed :class:`Engine` instance.
             When a string, the engine class is instantiated with this
             :class:`OptimizeAnythingConfig`.
+        name: Identifier for this run, used for logging and to lay out the
+            default output directory. When ``None``, a name is generated on the
+            fly from the engine, a short uuid, and a timestamp (e.g.
+            ``"gepa-a1b2c3d4-20260623-153045"``).
         max_evals: Server-side cap on eval calls. ``None`` = unlimited.
         max_token_cost: Proposer-cost cap — cumulative USD an engine may spend
             on its *own* optimizer LLM tokens (reflection, agent). ``None`` =
@@ -69,6 +73,7 @@ class OptimizeAnythingConfig:
     """
 
     engine: str | Engine = "gepa"
+    name: str | None = None
 
     # Budget
     max_evals: int | None = 100

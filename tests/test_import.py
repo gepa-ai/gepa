@@ -33,7 +33,7 @@ def test_optimize_anything_imports():
 
 
 def test_optimize_anything_legacy_kwargs_are_rejected():
-    """The legacy seed_candidate/evaluator route was dropped from the public entry point.
+    """The legacy evaluator/initial_candidate route was dropped from the public entry point.
 
     optimize_anything now takes the task fields directly and builds the Task internally,
     so legacy-style kwargs raise a natural TypeError from arg binding. Callers that still
@@ -41,17 +41,20 @@ def test_optimize_anything_legacy_kwargs_are_rejected():
     """
     from gepa.optimize_anything import optimize_anything
 
-    with pytest.raises(TypeError, match="seed_candidate"):
+    with pytest.raises(TypeError, match="evaluator"):
         optimize_anything(seed_candidate="seed", evaluator=lambda candidate: (1.0, {}))
 
+    with pytest.raises(TypeError, match="initial_candidate"):
+        optimize_anything(initial_candidate="seed", evaluate=lambda candidate: (1.0, {}))
 
-def test_optimize_anything_missing_required_args_raise():
-    """The new signature requires name, initial_candidate, and evaluate as keyword-only
-    args; omitting one raises a natural TypeError from arg binding."""
+
+def test_optimize_anything_requires_only_evaluate():
+    """evaluate is the only required keyword-only arg. seed_candidate is optional
+    (seedless mode) and the run name now lives on OptimizeAnythingConfig, not the call."""
     from gepa.optimize_anything import optimize_anything
 
     with pytest.raises(TypeError, match="evaluate"):
-        optimize_anything(name="t", initial_candidate="x")
+        optimize_anything(seed_candidate="x")
 
-    with pytest.raises(TypeError, match="initial_candidate"):
+    with pytest.raises(TypeError, match="name"):
         optimize_anything(name="t", evaluate=lambda candidate: (1.0, {}))

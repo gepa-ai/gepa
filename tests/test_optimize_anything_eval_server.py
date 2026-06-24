@@ -19,7 +19,7 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             output_dir = Path(tmp)
-            task = Task(name="task", initial_candidate="seed")
+            task = Task(name="task", seed_candidate="seed")
             server_a = EvalServer(
                 task,
                 lambda candidate: (1.0, {}),
@@ -61,7 +61,7 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
 
         task = Task(
             name="task",
-            initial_candidate="seed",
+            seed_candidate="seed",
             train_set=["a", "b"],
         )
         server = EvalServer(
@@ -92,7 +92,7 @@ class OptimizeAnythingEvalServerTests(unittest.TestCase):
 
         task = Task(
             name="task",
-            initial_candidate="seed",
+            seed_candidate="seed",
             train_set=["a", "b"],
         )
         server = EvalServer(

@@ -18,7 +18,7 @@ def _evaluate(candidate: str) -> tuple[float, dict]:
 class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
     def test_switches_after_plateau_and_preserves_global_best(self) -> None:
         server = EvalServer(
-            Task(name="task", initial_candidate="seed"),
+            Task(name="task", seed_candidate="seed"),
             _evaluate,
             BudgetTracker(max_evals=3),
             max_concurrency=1,
@@ -27,7 +27,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
         calls: list[tuple[str, str]] = []
 
         def fake_optimize(active_server, cfg):
-            calls.append((str(cfg.engine), active_server.task.initial_candidate))
+            calls.append((str(cfg.engine), active_server.task.seed_candidate))
             active_server.evaluate(str(cfg.engine))
             if len(calls) <= 2:
                 return SimpleNamespace(best_candidate="gepa-best", best_score=0.8, metadata={})
@@ -51,7 +51,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
 
     def test_uses_engine_aggregate_not_per_eval_server_best(self) -> None:
         server = EvalServer(
-            Task(name="task", initial_candidate="seed"),
+            Task(name="task", seed_candidate="seed"),
             lambda candidate: (1.0 if candidate == "spiky" else 0.0, {}),
             BudgetTracker(max_evals=2),
             max_concurrency=1,
@@ -62,7 +62,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
             if cfg.engine == "gepa":
                 active_server.evaluate("spiky")
                 return SimpleNamespace(best_candidate="aggregate-best", best_score=0.5, metadata={})
-            self.assertEqual(active_server.task.initial_candidate, "aggregate-best")
+            self.assertEqual(active_server.task.seed_candidate, "aggregate-best")
             active_server.evaluate("next")
             return SimpleNamespace(best_candidate="next", best_score=0.1, metadata={})
 
@@ -83,7 +83,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
 
     def test_does_not_start_new_slice_below_minimum_remaining_budget(self) -> None:
         server = EvalServer(
-            Task(name="task", initial_candidate="seed"),
+            Task(name="task", seed_candidate="seed"),
             _evaluate,
             BudgetTracker(max_evals=3),
             max_concurrency=1,
@@ -113,7 +113,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
 
     def test_autoresearch_aggregate_candidate_helper_ignores_per_eval_best(self) -> None:
         server = EvalServer(
-            Task(name="task", initial_candidate="seed"),
+            Task(name="task", seed_candidate="seed"),
             _evaluate,
             BudgetTracker(max_evals=10),
             max_concurrency=1,
@@ -131,7 +131,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
         engine = AutoResearchEngine(
             OptimizeAnythingConfig(engine="autoresearch", engine_config={"model": "sonnet", "ralph": False})
         )
-        task = Task(name="task", initial_candidate="seed", train_set=["a"])
+        task = Task(name="task", seed_candidate="seed", train_set=["a"])
         server = EvalServer(task, lambda candidate, example: (1.0, {}), BudgetTracker(max_evals=1), max_concurrency=1)
         server.start()
 
@@ -150,7 +150,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
         engine = AutoResearchEngine(
             OptimizeAnythingConfig(engine="autoresearch", engine_config={"model": "sonnet", "ralph": True})
         )
-        task = Task(name="task", initial_candidate="seed")
+        task = Task(name="task", seed_candidate="seed")
         server = EvalServer(task, lambda candidate: (1.0, {}), BudgetTracker(max_evals=10), max_concurrency=1)
         server.start()
 
@@ -223,7 +223,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
             return SimpleNamespace(best_candidate="best", best_idx=0, val_aggregate_scores=[0.9])
 
         server = EvalServer(
-            Task(name="task", initial_candidate="seed"),
+            Task(name="task", seed_candidate="seed"),
             _evaluate,
             BudgetTracker(max_evals=10),
             max_concurrency=1,

@@ -92,7 +92,7 @@ def optimize_sequential(
         # Always feed the running best forward, not the latest run's output —
         # protects the pipeline from a single regressing stage.
         assert best_so_far is not None
-        current_task = replace(current_task, initial_candidate=best_so_far.best_candidate)
+        current_task = replace(current_task, seed_candidate=best_so_far.best_candidate)
 
     assert best_so_far is not None
     final = all_results[-1]
@@ -208,9 +208,9 @@ def optimize_sequential_with_server(
     budget pool — symmetric with the parallel-family helpers.
 
     Between stages the function seeds the next stage's
-    ``initial_candidate`` with the running-best candidate by mutating
+    ``seed_candidate`` with the running-best candidate by mutating
     ``servers[i].task`` in place, exactly like :func:`optimize_sequential`.
-    The mutation is benign: only ``initial_candidate`` changes, and a server
+    The mutation is benign: only ``seed_candidate`` changes, and a server
     doesn't read it again after construction (only the next engine does,
     when picking up the seed).
 
@@ -232,7 +232,7 @@ def optimize_sequential_with_server(
             srv = servers[i]
             # Seed this stage with the running-best candidate, if any.
             if best_so_far is not None:
-                srv.task = replace(srv.task, initial_candidate=best_so_far.best_candidate)
+                srv.task = replace(srv.task, seed_candidate=best_so_far.best_candidate)
             result = optimize_anything_with_server(srv, cfg)
             all_results.append(result)
             if best_so_far is None or result.best_score > best_so_far.best_score:
@@ -380,7 +380,7 @@ def optimize_adaptive_sequential_with_server(
             # Always seed the next slice with the global best from the shared
             # server. This keeps scheduler semantics monotonic across engines.
             if best_so_far is not None:
-                server.task = replace(server.task, initial_candidate=best_so_far.best_candidate)
+                server.task = replace(server.task, seed_candidate=best_so_far.best_candidate)
     finally:
         server.budget.max_evals = original_max_evals
         server.task = original_task

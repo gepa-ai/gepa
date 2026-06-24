@@ -50,8 +50,8 @@ def _build_prompt(task: Task) -> str:
         sections += f"## Objective\n{task.objective}\n\n"
     if task.background:
         sections += f"## Background\n{task.background}\n\n"
-    if task.initial_candidate:
-        sections += f"## Seed candidate\n```\n{task.initial_candidate}\n```\n\n"
+    if task.seed_candidate:
+        sections += f"## Seed candidate\n```\n{task.seed_candidate}\n```\n\n"
     return _PROMPT_TEMPLATE.format(sections=sections)
 
 
@@ -113,7 +113,7 @@ class BestOfNEngine:
         prompt = _build_prompt(task)
 
         best_score = float("-inf")
-        best_candidate = task.initial_candidate
+        best_candidate = task.seed_candidate or ""
         eval_log: list[dict[str, Any]] = []
         n_samples = 0
         n_parse_failures = 0

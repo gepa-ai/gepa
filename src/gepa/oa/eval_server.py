@@ -22,13 +22,10 @@ POST /evaluate_examples
     respecting the concurrency limit. Each example = 1 budget tick.
 
     The agent-visible pool is ``train_set + val_set`` (val merged in so
-    engines/agents see one combined set). The ``test_set`` is sealed —
-    HTTP callers cannot reach it via this endpoint. The in-process Python
-    API (:meth:`evaluate_examples`) is unrestricted; the runner uses it
-    directly for held-out test reporting.
+    engines/agents see one combined set).
 
 GET /status   → {"budget": {...}, "task": "...", "best_score": ..., ...}
-GET /task     → task metadata (name/objective/background/initial_candidate/...)
+GET /task     → task metadata (objective/background/seed_candidate/...)
 """
 
 from __future__ import annotations
@@ -94,7 +91,7 @@ class EvalServer:
         self.tracker = tracker
         self.max_concurrency = max_concurrency
         self.best_score: float = float("-inf")
-        self.best_candidate: str = task.initial_candidate
+        self.best_candidate: str = task.seed_candidate or ""
         self.total_cost: float = 0.0
         self.eval_log: list[dict[str, Any]] = []
         self._start_time: float = time.time()
@@ -113,12 +110,15 @@ class EvalServer:
             self._evals_dir.mkdir(exist_ok=True)
         self._eval_semaphore = threading.Semaphore(max_concurrency)
 
+        # The eval server holds only the agent-visible pool (train + val). The
+        # held-out test_set is never registered here: the optimize_anything
+        # runner scores it directly via ``eval_fn``, so test data is unreachable
+        # from any engine, agent, or HTTP endpoint by construction.
         self._examples: dict[str, Any] = {}
-        self._split_ids: dict[str, list[str]] = {"train": [], "val": [], "test": []}
+        self._split_ids: dict[str, list[str]] = {"train": [], "val": []}
         for split_name, dataset in (
             ("train", task.train_set),
             ("val", task.val_set),
-            ("test", task.test_set),
         ):
             if not dataset:
                 continue
@@ -136,7 +136,11 @@ class EvalServer:
     # ── Direct Python API (used by in-process engines like GEPA) ───────
 
     def iter_split(self, split: str) -> Iterator[tuple[str, Any]]:
-        """Yield ``(id, item)`` pairs for the given split (``train``/``val``/``test``)."""
+        """Yield ``(id, item)`` pairs for the given split (``train``/``val``).
+
+        The server holds no ``test`` split, so ``iter_split("test")`` yields
+        nothing; test is scored by the optimize_anything runner directly.
+        """
         for eid in self._split_ids.get(split, []):
             yield eid, self._examples[eid]
 
@@ -173,8 +177,9 @@ class EvalServer:
         """Evaluate a candidate on specific examples or a whole split, in parallel.
 
         Provide either ``example_ids`` or ``split`` (``"train"``/``"val"``/
-        ``"test"``/``"all"``); ``example_ids`` takes precedence. For
-        single-task tasks, delegates to :meth:`evaluate`.
+        ``"all"``); ``example_ids`` takes precedence. The server holds no
+        ``test`` split, so ``"all"`` means train+val. For single-task tasks,
+        delegates to :meth:`evaluate`.
 
         Returns:
             (average_score, info_dict) with per-example scores and metadata.
@@ -196,7 +201,7 @@ class EvalServer:
                 if eid in self._examples:
                     examples.append((eid, self._examples[eid]))
         elif split is not None:
-            splits = ("train", "val", "test") if split == "all" else (split,)
+            splits = ("train", "val") if split == "all" else (split,)
             for s in splits:
                 examples.extend(self.iter_split(s))
         elif self.task.train_set:
@@ -423,7 +428,7 @@ class EvalServer:
             pass
 
     def _agent_visible_ids(self) -> list[str]:
-        """Train + val ids combined. Agents see one merged set; test is sealed."""
+        """Train + val ids combined. Agents see one merged set; test is held outside the server."""
         return list(self._split_ids["train"]) + list(self._split_ids["val"])
 
     def _handle_evaluate(self, handler: BaseHTTPRequestHandler) -> None:
@@ -467,8 +472,8 @@ class EvalServer:
         # The HTTP endpoint speaks only the agent-visible pool (train+val).
         # ``split`` is no longer a parameter — agents either default to the
         # whole visible pool or pass explicit ``example_ids`` from it. Any
-        # example_id outside the visible pool is rejected so test ids and
-        # any other hidden splits cannot be probed.
+        # example_id outside the visible pool is rejected; the test set is
+        # not even registered in the server, so it cannot be probed at all.
         visible = set(self._agent_visible_ids())
         if example_ids is not None:
             invalid = [eid for eid in example_ids if eid not in visible]
@@ -540,10 +545,9 @@ class EvalServer:
         self._send_json(
             handler,
             {
-                "name": self.task.name,
                 "objective": self.task.objective,
                 "background": self.task.background,
-                "initial_candidate": self.task.initial_candidate,
+                "seed_candidate": self.task.seed_candidate,
                 "has_dataset": self.task.has_dataset,
                 "train_size": visible_size,
                 "val_size": 0,

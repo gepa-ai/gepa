@@ -268,7 +268,7 @@ def _build_program_md(
     return _PROGRAM_MD.format(
         name=task.name,
         optional_sections=optional,
-        candidate_len=len(task.initial_candidate),
+        candidate_len=len(task.seed_candidate or ""),
         handoff_section=_handoff_section(handoffs),
         eval_section=eval_section,
         budget_section=_budget_section(budget, max_token_cost) + _perfect_score_section(perfect_score),
@@ -294,8 +294,8 @@ def _materialize_sandbox(
             task, budget, max_token_cost=max_token_cost, perfect_score=perfect_score, handoffs=handoffs
         )
     )
-    (work_dir / "candidate.txt").write_text(task.initial_candidate)
-    (work_dir / "best_candidate.txt").write_text(task.initial_candidate)
+    (work_dir / "candidate.txt").write_text(task.seed_candidate or "")
+    (work_dir / "best_candidate.txt").write_text(task.seed_candidate or "")
 
     eval_template = EVAL_SCRIPT_DATASET if task.has_dataset else EVAL_SCRIPT_SINGLE
     eval_script = work_dir / "eval.sh"
@@ -518,7 +518,7 @@ class AutoResearchEngine:
                 if iter_cost < 0.001:
                     break
 
-        best_candidate = best_file.read_text() if best_file.exists() else task.initial_candidate
+        best_candidate = best_file.read_text() if best_file.exists() else (task.seed_candidate or "")
         best_score = server.best_score
         if task.has_dataset:
             aggregate_best = _best_aggregate_candidate(server)
