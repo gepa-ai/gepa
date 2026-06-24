@@ -18,13 +18,12 @@ from gepa.oa.registry import (
     register_task,
     register_task_factory,
 )
-from gepa.oa.task import EvalFn, Task
+from gepa.oa.task import Task
 
 __all__ = [
     "BudgetExhausted",
     "BudgetTracker",
     "Engine",
-    "EvalFn",
     "EvalServer",
     "OptimizeAnythingConfig",
     "Result",

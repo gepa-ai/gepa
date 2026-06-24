@@ -4,8 +4,8 @@ A call has three parts:
 
 - **What to optimize** — the task fields passed directly to
   :func:`optimize_anything` (``seed_candidate``, ``objective``,
-  ``background``, and optional ``train_set`` / ``val_set`` / ``test_set``).
-- **How to score it** — ``evaluate``, a function returning ``(score, info)``.
+  ``background``, and optional ``dataset`` / ``valset`` / ``test_set``).
+- **How to score it** — ``evaluator``, a function returning ``(score, info)``.
 - **How to optimize** — :class:`OptimizeAnythingConfig`, which chooses the
   :class:`Engine`, names the run, and sets the budget.
 
@@ -17,9 +17,9 @@ Example:
         return run_candidate(candidate), {"diagnostics": "..."}
 
     result = optimize_anything(
-        seed_candidate="initial prompt or program",
+        "initial prompt or program",
+        evaluator=evaluate,
         objective="Improve the candidate's score.",
-        evaluate=evaluate,
         config=OptimizeAnythingConfig(engine="gepa", max_evals=100),
     )
 """
@@ -29,6 +29,7 @@ from __future__ import annotations
 import time
 import uuid
 import warnings
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -59,39 +60,44 @@ from gepa.oa.registry import (
     register_task,
     register_task_factory,
 )
-from gepa.oa.task import EvalFn, Task
+from gepa.oa.task import Task
 
 
 def optimize_anything(
-    *,
-    evaluate: EvalFn,
     seed_candidate: str | None = None,
-    objective: str = "",
-    background: str = "",
-    train_set: list[Any] | None = None,
-    val_set: list[Any] | None = None,
+    *,
+    evaluator: Callable[..., tuple[float, dict[str, Any]]],
+    dataset: list[Any] | None = None,
+    valset: list[Any] | None = None,
+    objective: str | None = None,
+    background: str | None = None,
     test_set: list[Any] | None = None,
     config: OptimizeAnythingConfig | None = None,
 ) -> Result:
     """Optimize a text candidate (prompt, code, instructions, ...) against a score.
 
+    The signature mirrors :func:`gepa.legacy_optimize_anything.optimize_anything`
+    (``seed_candidate`` / ``evaluator`` / ``dataset`` / ``valset`` / ``objective``
+    / ``background``) so the two entry points share one shape; the new API only
+    swaps ``config`` for an :class:`OptimizeAnythingConfig` and adds ``test_set``.
+
     Args:
         seed_candidate: The seed text to evolve from. ``None`` for seedless
             mode, where the engine bootstraps the first candidate from
             ``objective`` / ``background``.
-        evaluate: Scoring function returning ``(score, info)``. Use
+        evaluator: Scoring function returning ``(score, info)``. Use
             ``(candidate) -> (score, info)`` for a single task, or
-            ``(candidate, example) -> (score, info)`` when train/val/test
+            ``(candidate, example) -> (score, info)`` when dataset/val/test
             examples are provided. ``score`` is a float (higher is better) and
             ``info`` is a free-form dict surfaced to the engine as feedback.
+        dataset: Optional training examples used during optimization. Items
+            are opaque — any object ``evaluator`` understands. Pairs the
+            dataset-shaped ``(candidate, example)`` signature with ``evaluator``.
+        valset: Optional validation examples used for candidate selection.
         objective: Short goal statement (e.g. "Maximize sum of circle radii").
             Surfaced verbatim by every engine as the optimization goal.
         background: Long-form context — problem statement, evaluation rules,
             domain notes. Surfaced verbatim by every engine.
-        train_set: Optional training examples used during optimization. Items
-            are opaque — any object ``evaluate`` understands. Pairs the
-            dataset-shaped ``(candidate, example)`` signature with ``evaluate``.
-        val_set: Optional validation examples used for candidate selection.
         test_set: Optional held-out test examples. When provided, the seed and
             optimized candidates are each scored on it outside the budget — the
             test set never enters the eval server, so engines and agents cannot
@@ -113,18 +119,18 @@ def optimize_anything(
     task = Task(
         name=config.name or _default_run_name(config.engine),
         seed_candidate=seed_candidate,
-        objective=objective,
-        background=background,
-        train_set=train_set,
-        val_set=val_set,
+        objective=objective or "",
+        background=background or "",
+        train_set=dataset,
+        val_set=valset,
         test_set=test_set,
     )
-    return optimize_anything_from_task(task, evaluate, config)
+    return optimize_anything_from_task(task, evaluator, config)
 
 
 def optimize_anything_from_task(
     task: Task,
-    evaluate: EvalFn,
+    evaluate: Callable[..., tuple[float, dict[str, Any]]],
     config: OptimizeAnythingConfig | None = None,
 ) -> Result:
     """Optimize a prebuilt :class:`Task` with the configured engine.
@@ -292,7 +298,6 @@ __all__ = [
     "BudgetTracker",
     "ClaudeCodeAgentProposer",
     "Engine",
-    "EvalFn",
     "EvalServer",
     "GepaEngine",
     "MetaHarnessEngine",

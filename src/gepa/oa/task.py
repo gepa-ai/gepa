@@ -14,17 +14,8 @@ required ``evaluate`` parameter.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-
-EvalFn = Callable[..., tuple[float, dict[str, Any]]]
-"""Eval function signature.
-
-- Single-task:  ``(candidate: str) -> (score, info)``
-- Dataset task: ``(candidate: str, example: Any) -> (score, info)``
-  ``example`` is whatever the caller put in ``train_set`` / ``val_set`` / ``test_set``.
-"""
 
 
 @dataclass

@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
-from gepa.oa.task import EvalFn, Task
+from gepa.oa.task import Task
 
 DEFAULT_MAX_CONCURRENCY = 8
 
@@ -78,7 +78,7 @@ class EvalServer:
     def __init__(
         self,
         task: Task,
-        evaluate: EvalFn,
+        evaluate: Callable[..., tuple[float, dict[str, Any]]],
         budget: BudgetTracker,
         *,
         tracker: Any | None = None,

@@ -32,29 +32,29 @@ def test_optimize_anything_imports():
     assert Task is not None
 
 
-def test_optimize_anything_legacy_kwargs_are_rejected():
-    """The legacy evaluator/initial_candidate route was dropped from the public entry point.
-
-    optimize_anything now takes the task fields directly and builds the Task internally,
-    so legacy-style kwargs raise a natural TypeError from arg binding. Callers that still
-    need the old API import gepa.legacy_optimize_anything directly.
-    """
-    from gepa.optimize_anything import optimize_anything
-
-    with pytest.raises(TypeError, match="evaluator"):
-        optimize_anything(seed_candidate="seed", evaluator=lambda candidate: (1.0, {}))
-
-    with pytest.raises(TypeError, match="initial_candidate"):
-        optimize_anything(initial_candidate="seed", evaluate=lambda candidate: (1.0, {}))
-
-
-def test_optimize_anything_requires_only_evaluate():
-    """evaluate is the only required keyword-only arg. seed_candidate is optional
-    (seedless mode) and the run name now lives on OptimizeAnythingConfig, not the call."""
+def test_optimize_anything_old_kwargs_are_rejected():
+    """optimize_anything mirrors the legacy seed_candidate/evaluator shape, so the
+    intermediate names (evaluate, initial_candidate) and the now-config-only ``name``
+    raise a natural TypeError from arg binding."""
     from gepa.optimize_anything import optimize_anything
 
     with pytest.raises(TypeError, match="evaluate"):
-        optimize_anything(seed_candidate="x")
+        optimize_anything(seed_candidate="seed", evaluate=lambda candidate: (1.0, {}))
+
+    with pytest.raises(TypeError, match="initial_candidate"):
+        optimize_anything(initial_candidate="seed", evaluator=lambda candidate: (1.0, {}))
+
+    with pytest.raises(TypeError, match="name"):
+        optimize_anything(seed_candidate="seed", evaluator=lambda candidate: (1.0, {}), name="t")
+
+
+def test_optimize_anything_requires_evaluator():
+    """evaluator is the only required arg; seed_candidate is an optional leading
+    positional (None = seedless) and the run name lives on OptimizeAnythingConfig."""
+    from gepa.optimize_anything import optimize_anything
+
+    with pytest.raises(TypeError, match="evaluator"):
+        optimize_anything("x")
 
     with pytest.raises(TypeError, match="name"):
         optimize_anything(name="t", evaluate=lambda candidate: (1.0, {}))

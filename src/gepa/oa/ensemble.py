@@ -37,16 +37,17 @@ Helpers
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from gepa.oa.engine import Result
 
 if TYPE_CHECKING:
     from gepa.oa.config import OptimizeAnythingConfig
     from gepa.oa.eval_server import EvalServer
-    from gepa.oa.task import EvalFn, Task
+    from gepa.oa.task import Task
 
 
 def optimize_anything_with_server(
@@ -61,7 +62,7 @@ def optimize_anything_with_server(
 
 def optimize_sequential(
     task: Task,
-    evaluate: EvalFn,
+    evaluate: Callable[..., tuple[float, dict[str, Any]]],
     configs: list[OptimizeAnythingConfig],
 ) -> Result:
     """Run ``configs`` in order; each engine's best becomes the next seed.
@@ -104,7 +105,7 @@ def optimize_sequential(
 
 def optimize_parallel(
     task: Task,
-    evaluate: EvalFn,
+    evaluate: Callable[..., tuple[float, dict[str, Any]]],
     configs: list[OptimizeAnythingConfig],
     *,
     max_workers: int | None = None,
@@ -130,7 +131,7 @@ def optimize_parallel(
 
 def optimize_best_of(
     task: Task,
-    evaluate: EvalFn,
+    evaluate: Callable[..., tuple[float, dict[str, Any]]],
     configs: list[OptimizeAnythingConfig],
     *,
     max_workers: int | None = None,
@@ -149,7 +150,7 @@ def optimize_best_of(
 
 def optimize_vote(
     task: Task,
-    evaluate: EvalFn,
+    evaluate: Callable[..., tuple[float, dict[str, Any]]],
     configs: list[OptimizeAnythingConfig],
     *,
     max_workers: int | None = None,
@@ -465,7 +466,7 @@ def optimize_best_of_with_server(
 def optimize_vote_with_server(
     servers: list[EvalServer],
     configs: list[OptimizeAnythingConfig],
-    evaluate: EvalFn,
+    evaluate: Callable[..., tuple[float, dict[str, Any]]],
     *,
     max_workers: int | None = None,
 ) -> Result:
