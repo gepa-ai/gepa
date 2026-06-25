@@ -318,6 +318,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.acceptance_criterion, StrictImprovementAcceptance | ImprovementOrEqualAcceptance
         )
 
+        from gepa.logging.admission_manifest import acceptance_operator, criterion_name
+
+        crit_name = criterion_name(self.acceptance_criterion)
+
         if not self.acceptance_criterion.should_accept(proposal, state):
             if _uses_builtin_criterion:
                 reject_msg = f"Iteration {iteration}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
@@ -342,6 +346,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 proposal=proposal,
                 proposal_kind=proposal.tag or "reflective_mutation",
                 decision_reason=reject_reason,
+                acceptance_criterion=crit_name,
                 subsample_score_before=old_sum,
                 subsample_score_after=new_sum,
                 metric_calls_before=metric_calls_before,
@@ -350,9 +355,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             return False
 
         if _uses_builtin_criterion:
+            op = acceptance_operator(crit_name)
             accept_msg = f"Iteration {iteration}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
+            accept_reason = f"subsample score {new_sum} {op} {old_sum} (accepted by {crit_name})"
         else:
             accept_msg = f"Iteration {iteration}: Candidate accepted (old_sum={old_sum}, new_sum={new_sum}). Continue to full eval and add to candidate pool."
+            accept_reason = f"accepted by acceptance criterion {crit_name} (old_sum={old_sum}, new_sum={new_sum})"
         self.logger.log(accept_msg)
 
         new_idx, linear_pareto_idx = self._run_full_eval_and_add(
@@ -377,7 +385,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             iteration=iteration,
             proposal=proposal,
             proposal_kind=proposal.tag or "reflective_mutation",
-            decision_reason=f"subsample score {new_sum} > {old_sum} (accepted by {type(self.acceptance_criterion).__name__})",
+            decision_reason=accept_reason,
+            acceptance_criterion=crit_name,
             subsample_score_before=old_sum,
             subsample_score_after=new_sum,
             metric_calls_before=metric_calls_before,
@@ -715,6 +724,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                             new_sum = sum(proposal.subsample_scores_after or [])
                             merge_metric_calls_before = state.total_num_evals
 
+                            from gepa.logging.admission_manifest import MERGE_GATE
+
                             # Notify merge attempted
                             notify_callbacks(
                                 self.callbacks,
@@ -762,6 +773,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                     proposal=proposal,
                                     proposal_kind="merge",
                                     decision_reason=f"merged subsample score {new_sum} >= max(parent sums) {max(parent_sums)}",
+                                    acceptance_criterion=MERGE_GATE,
                                     subsample_score_before=max(parent_sums),
                                     subsample_score_after=new_sum,
                                     metric_calls_before=merge_metric_calls_before,
@@ -791,6 +803,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                     proposal=proposal,
                                     proposal_kind="merge",
                                     decision_reason=f"merged subsample score {new_sum} < max(parent sums) {max(parent_sums)}",
+                                    acceptance_criterion=MERGE_GATE,
                                     subsample_score_before=max(parent_sums),
                                     subsample_score_after=new_sum,
                                     metric_calls_before=merge_metric_calls_before,
@@ -889,6 +902,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         proposal: CandidateProposal,
         proposal_kind: str,
         decision_reason: str,
+        acceptance_criterion: str,
         subsample_score_before: float,
         subsample_score_after: float,
         metric_calls_before: int,
@@ -906,6 +920,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 proposal_kind=proposal_kind,
                 decision="rejected",
                 decision_reason=decision_reason,
+                acceptance_criterion=acceptance_criterion,
                 candidate=proposal.candidate,
                 parent_ids=proposal.parent_program_ids,
                 parents=parents,
@@ -925,6 +940,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         proposal: CandidateProposal,
         proposal_kind: str,
         decision_reason: str,
+        acceptance_criterion: str,
         subsample_score_before: float,
         subsample_score_after: float,
         metric_calls_before: int,
@@ -949,6 +965,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 proposal_kind=proposal_kind,
                 decision="accepted",
                 decision_reason=decision_reason,
+                acceptance_criterion=acceptance_criterion,
                 candidate=proposal.candidate,
                 parent_ids=proposal.parent_program_ids,
                 parents=parents,
