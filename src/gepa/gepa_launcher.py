@@ -1,8 +1,7 @@
 """
-Legacy GEPA-specific ``optimize_anything`` implementation.
+``gepa_launcher`` — the GEPA-specific ``optimize_anything`` implementation.
 
-This is the archived implementation that previously backed
-``gepa.gepa_launcher`` directly. It is kept for callers that still use the
+This module backs ``gepa.gepa_launcher``. It is kept for callers that use the
 ``seed_candidate`` / ``evaluator`` API. New code should import
 :class:`gepa.optimize_anything.Task` and call the engine-pluggable
 ``gepa.optimize_anything.optimize_anything`` entry point.
