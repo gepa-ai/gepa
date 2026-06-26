@@ -14,8 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import gepa.legacy_optimize_anything as oa
-from gepa.legacy_optimize_anything import EvaluatorWrapper, OptimizationState
+import gepa.gepa_launcher as oa
+from gepa.gepa_launcher import EvaluatorWrapper, OptimizationState
 from gepa.utils.stdio_capture import StreamCaptureManager, ThreadLocalStreamCapture
 
 # ---------------------------------------------------------------------------

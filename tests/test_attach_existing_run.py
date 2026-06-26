@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 
 from gepa.logging.experiment_tracker import ExperimentTracker, create_experiment_tracker
-from gepa.legacy_optimize_anything import GEPAConfig, TrackingConfig
+from gepa.gepa_launcher import GEPAConfig, TrackingConfig
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +184,7 @@ class TestTrackingConfig:
 
     def test_config_wired_to_tracker_via_optimize_anything(self):
         """TrackingConfig.wandb_attach_existing reaches the ExperimentTracker."""
-        from gepa.legacy_optimize_anything import optimize_anything, EngineConfig, ReflectionConfig
+        from gepa.gepa_launcher import optimize_anything, EngineConfig, ReflectionConfig
 
         created_trackers: list[ExperimentTracker] = []
         original = create_experiment_tracker
@@ -195,8 +195,8 @@ class TestTrackingConfig:
             return t
 
         with (
-            patch("gepa.legacy_optimize_anything.create_experiment_tracker", side_effect=spy),
-            patch("gepa.legacy_optimize_anything.GEPAEngine") as mock_cls,
+            patch("gepa.gepa_launcher.create_experiment_tracker", side_effect=spy),
+            patch("gepa.gepa_launcher.GEPAEngine") as mock_cls,
             patch("wandb.login"),
             patch("wandb.init"),
             patch("wandb.finish"),
@@ -385,7 +385,7 @@ class TestKeyPrefix:
 
     def test_prefix_via_tracking_config(self):
         """key_prefix in TrackingConfig is wired to ExperimentTracker."""
-        from gepa.legacy_optimize_anything import TrackingConfig, GEPAConfig
+        from gepa.gepa_launcher import TrackingConfig, GEPAConfig
 
         created: list[ExperimentTracker] = []
         original = create_experiment_tracker
@@ -396,8 +396,8 @@ class TestKeyPrefix:
             return t
 
         with (
-            patch("gepa.legacy_optimize_anything.create_experiment_tracker", side_effect=spy),
-            patch("gepa.legacy_optimize_anything.GEPAEngine") as mock_cls,
+            patch("gepa.gepa_launcher.create_experiment_tracker", side_effect=spy),
+            patch("gepa.gepa_launcher.GEPAEngine") as mock_cls,
             patch("wandb.login"),
             patch("wandb.init"),
             patch("wandb.finish"),
@@ -420,7 +420,7 @@ class TestKeyPrefix:
             mock_engine.run.return_value = mock_state
             mock_cls.return_value = mock_engine
 
-            from gepa.legacy_optimize_anything import optimize_anything, EngineConfig, ReflectionConfig
+            from gepa.gepa_launcher import optimize_anything, EngineConfig, ReflectionConfig
 
             optimize_anything(
                 seed_candidate="x",

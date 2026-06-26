@@ -40,10 +40,10 @@ class GepaEngine:
 
     Engine-specific keys read from ``OptimizeAnythingConfig.engine_config`` (all optional):
 
-    - ``engine``: kwargs for :class:`gepa.legacy_optimize_anything.EngineConfig`.
-    - ``reflection``: kwargs for :class:`~gepa.legacy_optimize_anything.ReflectionConfig`.
-    - ``merge``: kwargs for :class:`~gepa.legacy_optimize_anything.MergeConfig` (or ``None``).
-    - ``refiner``: kwargs for :class:`~gepa.legacy_optimize_anything.RefinerConfig` (or ``None``).
+    - ``engine``: kwargs for :class:`gepa.gepa_launcher.EngineConfig`.
+    - ``reflection``: kwargs for :class:`~gepa.gepa_launcher.ReflectionConfig`.
+    - ``merge``: kwargs for :class:`~gepa.gepa_launcher.MergeConfig` (or ``None``).
+    - ``refiner``: kwargs for :class:`~gepa.gepa_launcher.RefinerConfig` (or ``None``).
     - ``objective``, ``background``: override ``task.objective`` / ``task.background``.
     - ``reflection_lm_kwargs``: extra kwargs for ``gepa.lm.LM(...)``.
     - ``callbacks``: list of GEPA callbacks.
@@ -85,7 +85,7 @@ class GepaEngine:
         )
 
     def run(self, task: Task, server: EvalServer) -> Result:
-        from gepa.legacy_optimize_anything import (
+        from gepa.gepa_launcher import (
             EngineConfig,
             GEPAConfig,
             MergeConfig,
@@ -192,7 +192,7 @@ class GepaEngine:
         )
 
         # The optimize_anything eval server (server.evaluate) is our single budget choke
-        # point — gepa.legacy_optimize_anything's evaluator goes straight through it.
+        # point — gepa.gepa_launcher's evaluator goes straight through it.
         def evaluator(candidate, example=None, **kwargs):
             return server.evaluate(candidate, example)
 

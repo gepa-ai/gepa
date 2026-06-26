@@ -236,7 +236,7 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
             )
         )
 
-        with patch("gepa.legacy_optimize_anything.optimize_anything", side_effect=fake_optimize):
+        with patch("gepa.gepa_launcher.optimize_anything", side_effect=fake_optimize):
             result = engine.run(server.task, server)
 
         self.assertEqual(seen["max_reflection_cost"], 2.5)

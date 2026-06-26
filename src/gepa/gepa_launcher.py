@@ -2,7 +2,7 @@
 Legacy GEPA-specific ``optimize_anything`` implementation.
 
 This is the archived implementation that previously backed
-``gepa.legacy_optimize_anything`` directly. It is kept for callers that still use the
+``gepa.gepa_launcher`` directly. It is kept for callers that still use the
 ``seed_candidate`` / ``evaluator`` API. New code should import
 :class:`gepa.optimize_anything.Task` and call the engine-pluggable
 ``gepa.optimize_anything.optimize_anything`` entry point.
@@ -56,8 +56,8 @@ Useful for creative or exploratory tasks where the solution space is large.
 
 Quick example::
 
-    import gepa.legacy_optimize_anything as oa
-    from gepa.legacy_optimize_anything import optimize_anything, GEPAConfig, EngineConfig
+    import gepa.gepa_launcher as oa
+    from gepa.gepa_launcher import optimize_anything, GEPAConfig, EngineConfig
 
     def evaluate(candidate: str) -> float:
         score, diagnostic = run_candidate(candidate)
@@ -316,7 +316,7 @@ def get_log_context() -> LogContext:
     inside your evaluator::
 
         import threading
-        import gepa.legacy_optimize_anything as oa
+        import gepa.gepa_launcher as oa
 
         def my_evaluator(candidate):
             ctx = oa.get_log_context()
@@ -368,7 +368,7 @@ def log(*args: Any, sep: str = " ", end: str = "\n") -> None:
 
     Usage::
 
-        import gepa.legacy_optimize_anything as oa
+        import gepa.gepa_launcher as oa
         oa.log("Landing distance:", distance, "meters")
     """
     ctx = _get_log_context()
@@ -425,7 +425,7 @@ class Evaluator(Protocol):
 
         **Single-Task Search** (``dataset=None``) — called without ``example``::
 
-            import gepa.legacy_optimize_anything as oa
+            import gepa.gepa_launcher as oa
 
             def evaluate(candidate):
                 result = run_code(candidate["code"])
@@ -1198,7 +1198,7 @@ def optimize_anything(
 
         Single-task search (circle packing)::
 
-            import gepa.legacy_optimize_anything as oa
+            import gepa.gepa_launcher as oa
 
             def evaluate(candidate: str) -> float:
                 result = run_code(candidate)

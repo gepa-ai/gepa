@@ -1,6 +1,6 @@
 # ReflectionConfig
 
-::: gepa.legacy_optimize_anything.ReflectionConfig
+::: gepa.gepa_launcher.ReflectionConfig
     handler: python
     options:
         show_source: true

@@ -78,7 +78,7 @@ def optimize_anything(
 ) -> Result:
     """Optimize a text candidate (prompt, code, instructions, ...) against a score.
 
-    The signature mirrors :func:`gepa.legacy_optimize_anything.optimize_anything`
+    The signature mirrors :func:`gepa.gepa_launcher.optimize_anything`
     (``seed_candidate`` / ``evaluator`` / ``dataset`` / ``valset`` / ``objective``
     / ``background``) so the two entry points share one shape; the new API only
     swaps ``config`` for an :class:`OptimizeAnythingConfig` and adds ``test_set``.

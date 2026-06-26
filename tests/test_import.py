@@ -23,10 +23,10 @@ def test_optimize_anything_imports():
     """
     Ensures the public optimize_anything API and archived legacy API can be imported.
     """
-    from gepa.legacy_optimize_anything import optimize_anything as legacy_optimize_anything
+    from gepa.gepa_launcher import optimize_anything as gepa_launcher
     from gepa.optimize_anything import Engine, OptimizeAnythingConfig, Task, optimize_anything
 
-    assert optimize_anything is not legacy_optimize_anything
+    assert optimize_anything is not gepa_launcher
     assert Engine is not None
     assert OptimizeAnythingConfig is not None
     assert Task is not None

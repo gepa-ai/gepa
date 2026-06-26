@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from gepa.legacy_optimize_anything import (
+from gepa.gepa_launcher import (
     DEFAULT_REFINER_PROMPT,
     EngineConfig,
     GEPAConfig,
@@ -354,7 +354,7 @@ class TestRefiner:
         by _evaluate_single_with_refinement.
         """
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.legacy_optimize_anything import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
+        from gepa.gepa_launcher import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
 
         call_counter = {"count": 0}
 
@@ -429,7 +429,7 @@ class TestRefiner:
         improve a deliberately bad seed (number=0, score=-42).
         """
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.legacy_optimize_anything import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
+        from gepa.gepa_launcher import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
 
         def raw_fitness_fn(candidate: dict[str, str], **kwargs) -> tuple[float, dict]:
             try:
@@ -499,7 +499,7 @@ class TestRefiner:
     def test_refiner_score_never_worse(self):
         """Test the max(original, refined) guarantee — refiner can only help, never hurt."""
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.legacy_optimize_anything import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
+        from gepa.gepa_launcher import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
 
         def raw_fitness_fn(candidate: dict[str, str], **kwargs) -> tuple[float, dict]:
             try:
@@ -550,7 +550,7 @@ class TestRefiner:
         and failed attempts have placeholder score=0.0.
         """
         from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
-        from gepa.legacy_optimize_anything import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
+        from gepa.gepa_launcher import _SINGLE_INSTANCE_SENTINEL, EvaluatorWrapper
 
         def raw_fitness_fn(candidate: dict[str, str], **kwargs) -> tuple[float, dict]:
             try:

@@ -5,10 +5,10 @@ internal engine.  It handles:
 
 - **Evaluation**: calls the user's wrapped evaluator (single or parallel)
 - **Caching**: optional memory or disk cache for ``(candidate, example)`` pairs
-- **Refinement**: when :class:`~gepa.legacy_optimize_anything.RefinerConfig` is set,
+- **Refinement**: when :class:`~gepa.gepa_launcher.RefinerConfig` is set,
   iteratively improves candidates via an LLM after each evaluation
 - **Best-evals tracking**: maintains top-K evaluations per example for
-  warm-starting via :class:`~gepa.legacy_optimize_anything.OptimizationState`
+  warm-starting via :class:`~gepa.gepa_launcher.OptimizationState`
 - **Reflective dataset**: formats evaluation results for the reflection LLM
 """
 
@@ -28,7 +28,7 @@ from gepa.proposer.reflective_mutation.base import LanguageModel
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from gepa.legacy_optimize_anything import Candidate, OptimizationState, RefinerConfig, SideInfo
+    from gepa.gepa_launcher import Candidate, OptimizationState, RefinerConfig, SideInfo
 
 
 REFINER_PROMPT_TEMPLATE = """You are refining a candidate to improve its performance.
@@ -56,7 +56,7 @@ Return ONLY a valid JSON object with the improved parameters (no explanation, no
 class OptimizeAnythingAdapter(GEPAAdapter):
     """Adapter connecting the ``optimize_anything`` API to GEPA's engine.
 
-    Created automatically by :func:`~gepa.legacy_optimize_anything.optimize_anything` —
+    Created automatically by :func:`~gepa.gepa_launcher.optimize_anything` —
     users do not instantiate this directly.
     """
 
@@ -174,7 +174,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
     def _build_opt_state(self, example: Any) -> "OptimizationState":
         """Build an OptimizationState for the given example."""
-        from gepa.legacy_optimize_anything import OptimizationState
+        from gepa.gepa_launcher import OptimizationState
 
         return OptimizationState(best_example_evals=self._get_best_example_evals(example))
 

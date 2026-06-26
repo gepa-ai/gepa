@@ -25,7 +25,7 @@ from gskill.cost_tracker import reset_tracker
 from gskill.experiment_logger import ExperimentLogger, set_logger
 from gskill.swe_fitness_fn import create_swe_fitness_fn
 
-from gepa.legacy_optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, TrackingConfig, optimize_anything
+from gepa.gepa_launcher import EngineConfig, GEPAConfig, ReflectionConfig, TrackingConfig, optimize_anything
 from gepa.utils.stop_condition import TimeoutStopCondition
 
 

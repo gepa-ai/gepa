@@ -5,7 +5,7 @@
 
 from unittest.mock import MagicMock
 
-from gepa.legacy_optimize_anything import (
+from gepa.gepa_launcher import (
     GEPAConfig,
     EngineConfig,
     ReflectionConfig,

@@ -1,6 +1,6 @@
 # MergeConfig
 
-::: gepa.legacy_optimize_anything.MergeConfig
+::: gepa.gepa_launcher.MergeConfig
     handler: python
     options:
         show_source: true

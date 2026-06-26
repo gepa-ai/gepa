@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from gepa.legacy_optimize_anything import (
+from gepa.gepa_launcher import (
     _STR_CANDIDATE_KEY,
     EngineConfig,
     GEPAConfig,
