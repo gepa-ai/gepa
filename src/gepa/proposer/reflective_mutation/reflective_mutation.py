@@ -365,10 +365,39 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                     reflective_dataset=reflective_dataset_concrete,
                 ),
             )
+            # Surface earlier rejected attempts from this same parent so the
+            # reflection step has context about what was already tried and
+            # why it failed, instead of starting from a blank slate every
+            # time this parent is sampled (issue #379). This is purely
+            # informational -- not a tabu list -- so the reflection LM can
+            # still retry a similar idea if it has reason to believe it
+            # would work this time. Bounded to the last 3 per parent so hot
+            # parents don't bloat the prompt indefinitely. Only added to
+            # components that already have feedback data, so components
+            # with no data are still skipped as before.
+            rejection_records = state.rejected_proposals_by_parent.get(ctx.curr_prog_id, [])
+            if rejection_records:
+                history_note = {
+                    "note": "Earlier attempted edits from this parent and what went wrong",
+                    "previous_attempts": [
+                        {
+                            "iteration": rec.iteration,
+                            "proposed_change": rec.proposed_text_diff,
+                            "why_it_was_rejected": rec.summarized_failure,
+                        }
+                        for rec in rejection_records[-3:]
+                    ],
+                }
+                reflective_dataset = {
+                    name: ([*items, history_note] if name in predictor_names_to_update and items else items)
+                    for name, items in reflective_dataset.items()
+                }
 
             new_texts, prompts, raw_lm_outputs = self.propose_new_texts(
                 ctx.curr_prog, reflective_dataset, predictor_names_to_update
             )
+
+            
 
             notify_callbacks(
                 self.callbacks,

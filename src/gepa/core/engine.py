@@ -27,7 +27,14 @@ from gepa.core.callbacks import (
     notify_callbacks,
 )
 from gepa.core.data_loader import DataId, DataLoader, ensure_loader
-from gepa.core.state import EvaluationCache, FrontierType, GEPAState, ValsetEvaluation, initialize_gepa_state
+from gepa.core.state import (
+    EvaluationCache, 
+    FrontierType,
+    GEPAState,
+    RejectionRecord ,
+    ValsetEvaluation, 
+    initialize_gepa_state
+)
 from gepa.logging.experiment_tracker import ExperimentTracker
 from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
@@ -309,6 +316,20 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 reject_reason = f"Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum})"
             self.logger.log(reject_msg)
             self._log_proposal_lm_calls(iteration, proposal, candidate_idx=-1)
+            parent_candidates = [state.program_candidates[pid] for pid in proposal.parent_program_ids]
+            proposed_text_diff = {
+                name: text
+                for name, text in proposal.candidate.items()
+                if not any(parent.get(name) == text for parent in parent_candidates)
+            }
+            rejection_record = RejectionRecord(
+                proposed_text_diff=proposed_text_diff,
+                summarized_failure=reject_reason,
+                minibatch_score=new_sum,
+                iteration=iteration,
+            )
+            for parent_id in proposal.parent_program_ids:
+                state.rejected_proposals_by_parent.setdefault(parent_id, []).append(rejection_record)
             notify_callbacks(
                 self.callbacks,
                 "on_candidate_rejected",
