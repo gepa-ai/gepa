@@ -61,6 +61,7 @@ class ProposalOutput:
     total_evals: int
     trace_data: dict[str, Any] = field(default_factory=dict)
     cache_entry: tuple | None = None
+    eval_call_deltas: list[int] = field(default_factory=list)
 
 
 class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
@@ -249,6 +250,7 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             "subsample_ids": ctx.subsample_ids,
         }
         total_evals = 0
+        eval_call_deltas: list[int] = []
         cache_entry = None
 
         # 1) Evaluate current program with traces
@@ -266,7 +268,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             ),
         )
         eval_curr = self.adapter.evaluate(ctx.minibatch, ctx.curr_prog, capture_traces=True)
-        total_evals += eval_curr.num_metric_calls if eval_curr.num_metric_calls is not None else len(ctx.subsample_ids)
+        eval_curr_calls = eval_curr.num_metric_calls if eval_curr.num_metric_calls is not None else len(ctx.subsample_ids)
+        total_evals += eval_curr_calls
+        eval_call_deltas.append(eval_curr_calls)
         trace_data["subsample_scores"] = eval_curr.scores
         notify_callbacks(
             self.callbacks,
@@ -302,7 +306,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 ),
             )
             return ProposalOutput(
-                proposal=None, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry
+                proposal=None,
+                total_evals=total_evals,
+                trace_data=trace_data,
+                cache_entry=cache_entry,
+                eval_call_deltas=eval_call_deltas,
             )
 
         if (
@@ -323,7 +331,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
                 ),
             )
             return ProposalOutput(
-                proposal=None, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry
+                proposal=None,
+                total_evals=total_evals,
+                trace_data=trace_data,
+                cache_entry=cache_entry,
+                eval_call_deltas=eval_call_deltas,
             )
 
         self.experiment_tracker.log_metrics(
@@ -398,7 +410,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
 
             self.logger.log(traceback.format_exc())
             return ProposalOutput(
-                proposal=None, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry
+                proposal=None,
+                total_evals=total_evals,
+                trace_data=trace_data,
+                cache_entry=cache_entry,
+                eval_call_deltas=eval_call_deltas,
             )
 
         # 4) Create candidate, evaluate on same minibatch
@@ -424,7 +440,9 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         eval_after = self.adapter.evaluate(ctx.minibatch, new_candidate, capture_traces=True)
         new_scores = eval_after.scores
         new_outputs = eval_after.outputs
-        total_evals += eval_after.num_metric_calls if eval_after.num_metric_calls is not None else len(ctx.subsample_ids)
+        eval_after_calls = eval_after.num_metric_calls if eval_after.num_metric_calls is not None else len(ctx.subsample_ids)
+        total_evals += eval_after_calls
+        eval_call_deltas.append(eval_after_calls)
 
         notify_callbacks(
             self.callbacks,
@@ -473,11 +491,21 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             tag="reflective_mutation",
             metadata=_lm_metadata,
         )
-        return ProposalOutput(proposal=proposal, total_evals=total_evals, trace_data=trace_data, cache_entry=cache_entry)
+        return ProposalOutput(
+            proposal=proposal,
+            total_evals=total_evals,
+            trace_data=trace_data,
+            cache_entry=cache_entry,
+            eval_call_deltas=eval_call_deltas,
+        )
 
     def apply_proposal_output(self, output: ProposalOutput, state: GEPAState) -> None:
         """Apply deferred state updates from a proposal. Must be called sequentially."""
-        state.increment_evals(output.total_evals)
+        if output.eval_call_deltas:
+            for delta in output.eval_call_deltas:
+                state.increment_evals(delta)
+        else:
+            state.increment_evals(output.total_evals)
         if output.cache_entry is not None and state.evaluation_cache is not None:
             candidate, ids, outputs, scores, obj_scores = output.cache_entry
             state.evaluation_cache.put_batch(candidate, ids, outputs, scores, obj_scores)

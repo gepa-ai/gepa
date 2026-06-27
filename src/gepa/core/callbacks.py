@@ -8,7 +8,7 @@ Callbacks are synchronous, observational (cannot modify state), and receive
 full GEPAState access for maximum flexibility.
 
 Each callback receives a single event TypedDict containing all parameters.
-This allows easy extension via NotRequired fields without breaking changes.
+This allows easy extension via optional fields without breaking changes.
 
 Example usage:
 
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # Event TypedDicts
 # =============================================================================
 # Each callback receives a single event object containing all parameters.
-# Use NotRequired for optional fields when extending in the future.
+# Use optional TypedDict subclasses when extending event fields in the future.
 
 
 class OptimizationStartEvent(TypedDict):
@@ -111,7 +111,7 @@ class EvaluationStartEvent(TypedDict):
     is_seed_candidate: bool
 
 
-class EvaluationEndEvent(TypedDict):
+class _EvaluationEndEventRequired(TypedDict):
     """Event for on_evaluation_end callback."""
 
     iteration: int
@@ -123,6 +123,12 @@ class EvaluationEndEvent(TypedDict):
     trajectories: list[Any] | None
     objective_scores: list[dict[str, float]] | None
     is_seed_candidate: bool
+
+
+class EvaluationEndEvent(_EvaluationEndEventRequired, total=False):
+    metric_calls_before: int
+    metric_calls_delta: int
+    metric_calls_after: int
 
 
 class EvaluationSkippedEvent(TypedDict):
@@ -214,7 +220,7 @@ class ParetoFrontUpdatedEvent(TypedDict):
     displaced_candidates: list[int]
 
 
-class ValsetEvaluatedEvent(TypedDict):
+class _ValsetEvaluatedEventRequired(TypedDict):
     """Event for on_valset_evaluated callback."""
 
     iteration: int
@@ -227,6 +233,12 @@ class ValsetEvaluatedEvent(TypedDict):
     parent_ids: Sequence[ProgramIdx]
     is_best_program: bool
     outputs_by_val_id: dict[Any, Any] | None
+
+
+class ValsetEvaluatedEvent(_ValsetEvaluatedEventRequired, total=False):
+    metric_calls_before: int
+    metric_calls_delta: int
+    metric_calls_after: int
 
 
 class StateSavedEvent(TypedDict):

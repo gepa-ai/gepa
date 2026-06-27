@@ -304,8 +304,12 @@ class ExperimentTracker:
                 numeric_metrics = {self._p(k): v for k, v in metrics.items() if isinstance(v, int | float)}
                 if numeric_metrics:
                     if self.trackio_step_metric and step is not None:
+                        # Use a custom x-axis metric without overriding Trackio's
+                        # run-level step counter, which may be owned by a host run.
                         numeric_metrics[self.trackio_step_metric] = step
-                    self._log_trackio(numeric_metrics, step=step)
+                        self._log_trackio(numeric_metrics)
+                    else:
+                        self._log_trackio(numeric_metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log metrics to trackio: {e}")
 
