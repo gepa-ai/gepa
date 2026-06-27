@@ -327,7 +327,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
             )
 
         self.experiment_tracker.log_metrics(
-            {"subsample_score": sum(eval_curr.scores), "total_metric_calls": total_evals}, step=i
+            {
+                "subsample_score": sum(eval_curr.scores),
+                "total_metric_calls": state.total_num_evals + total_evals,
+            },
+            step=i,
         )
 
         # 2) Decide which components to update (lock protects RoundRobin state mutation)
@@ -441,7 +445,11 @@ class ReflectiveMutationProposer(ProposeNewCandidate[DataId]):
         trace_data["new_subsample_scores"] = new_scores
         new_sum = sum(new_scores)
         self.experiment_tracker.log_metrics(
-            {"new_subsample_score": new_sum, "total_metric_calls": total_evals}, step=i
+            {
+                "new_subsample_score": new_sum,
+                "total_metric_calls": state.total_num_evals + total_evals,
+            },
+            step=i,
         )
 
         proposal = CandidateProposal(

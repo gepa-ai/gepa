@@ -871,6 +871,14 @@ class TrackingConfig:
     ``trackio.init()``) — it will not call ``trackio.init()`` on entry or
     ``trackio.finish()`` on exit.
     """
+    trackio_step_metric: str | None = None
+    """Metric name to log with Trackio whenever GEPA logs a step.
+
+    Trackio can use logged scalar metrics as chart x-axes.  Setting this to
+    e.g. ``"gepa/iteration"`` ensures every GEPA metric row also carries a
+    stable iteration-valued x-axis, even when the host process logs unrelated
+    Trackio steps.
+    """
     key_prefix: str = ""
     """String prepended to every key/name logged to wandb and MLflow.
 
@@ -1521,6 +1529,7 @@ def optimize_anything(
         use_trackio=config.tracking.use_trackio,
         trackio_init_kwargs=config.tracking.trackio_init_kwargs,
         trackio_attach_existing=config.tracking.trackio_attach_existing,
+        trackio_step_metric=config.tracking.trackio_step_metric,
         key_prefix=config.tracking.key_prefix,
     )
 

@@ -291,6 +291,7 @@ class TestTrackingConfig:
         assert cfg.wandb_attach_existing is False
         assert cfg.mlflow_attach_existing is False
         assert cfg.trackio_attach_existing is False
+        assert cfg.trackio_step_metric is None
 
     def test_fields_settable(self):
         cfg = TrackingConfig(
@@ -301,14 +302,16 @@ class TestTrackingConfig:
             use_trackio=True,
             trackio_attach_existing=True,
             trackio_init_kwargs={"project": "gepa"},
+            trackio_step_metric="gepa/iteration",
         )
         assert cfg.wandb_attach_existing is True
         assert cfg.mlflow_attach_existing is True
         assert cfg.trackio_attach_existing is True
         assert cfg.trackio_init_kwargs == {"project": "gepa"}
+        assert cfg.trackio_step_metric == "gepa/iteration"
 
     def test_config_wired_to_tracker_via_optimize_anything(self):
-        """TrackingConfig.wandb_attach_existing reaches the ExperimentTracker."""
+        """TrackingConfig reaches the ExperimentTracker."""
         from gepa.optimize_anything import EngineConfig, ReflectionConfig, optimize_anything
 
         created_trackers: list[ExperimentTracker] = []
@@ -320,10 +323,7 @@ class TestTrackingConfig:
             return t
 
         with patch("gepa.optimize_anything.create_experiment_tracker", side_effect=spy), \
-             patch("gepa.optimize_anything.GEPAEngine") as mock_cls, \
-             patch("wandb.login"), patch("wandb.init"), patch("wandb.finish"), \
-             patch("mlflow.active_run", return_value=MagicMock()), \
-             patch("mlflow.start_run"), patch("mlflow.end_run"):
+             patch("gepa.optimize_anything.GEPAEngine") as mock_cls:
             mock_engine = MagicMock()
             mock_state = MagicMock()
             mock_state.program_candidates = [{"current_candidate": "v0"}]
@@ -349,20 +349,16 @@ class TestTrackingConfig:
                         reflection_lm=MagicMock(return_value="```\nx\n```")
                     ),
                     tracking=TrackingConfig(
-                        use_wandb=True,
-                        wandb_attach_existing=True,
-                        use_mlflow=True,
-                        mlflow_attach_existing=True,
                         use_trackio=True,
                         trackio_attach_existing=True,
+                        trackio_step_metric="gepa/iteration",
                     ),
                 ),
             )
 
         assert len(created_trackers) == 1
-        assert created_trackers[0].wandb_attach_existing is True
-        assert created_trackers[0].mlflow_attach_existing is True
         assert created_trackers[0].trackio_attach_existing is True
+        assert created_trackers[0].trackio_step_metric == "gepa/iteration"
 
 
 # ---------------------------------------------------------------------------

@@ -166,6 +166,25 @@ class TestExperimentTrackerIntegration:
 
         assert not tracker.is_active()
 
+    def test_trackio_step_metric_is_logged_with_step(self):
+        calls = []
+
+        class FakeRun:
+            def log(self, *, metrics, step=None):
+                calls.append((metrics, step))
+
+        tracker = ExperimentTracker(
+            use_trackio=True,
+            trackio_attach_existing=True,
+            trackio_step_metric="gepa/iteration",
+            key_prefix="gepa/",
+        )
+        tracker._trackio_run = FakeRun()
+
+        tracker.log_metrics({"loss": 0.5}, step=3)
+
+        assert calls == [({"gepa/loss": 0.5, "gepa/iteration": 3}, 3)]
+
     @pytest.mark.skipif(not has_wandb(), reason="wandb not available")
     def test_wandb_offline_initialization(self, mock_wandb, temp_dir):
         """Test wandb initialization in offline mode."""

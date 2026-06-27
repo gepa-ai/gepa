@@ -29,11 +29,12 @@ class ExperimentTracker:
         wandb_step_metric: str | None = None,
         use_mlflow: bool = False,
         mlflow_tracking_uri: str | None = None,
+        mlflow_experiment_name: str | None = None,
+        mlflow_attach_existing: bool = False,
         use_trackio: bool = False,
         trackio_init_kwargs: dict[str, Any] | None = None,
         trackio_attach_existing: bool = False,
-        mlflow_experiment_name: str | None = None,
-        mlflow_attach_existing: bool = False,
+        trackio_step_metric: str | None = None,
         key_prefix: str = "",
     ):
         self.use_wandb = use_wandb
@@ -45,10 +46,11 @@ class ExperimentTracker:
         self.wandb_attach_existing = wandb_attach_existing
         self.wandb_step_metric = wandb_step_metric
         self.mlflow_tracking_uri = mlflow_tracking_uri
-        self.trackio_init_kwargs = trackio_init_kwargs or {}
-        self.trackio_attach_existing = trackio_attach_existing
         self.mlflow_experiment_name = mlflow_experiment_name
         self.mlflow_attach_existing = mlflow_attach_existing
+        self.trackio_init_kwargs = trackio_init_kwargs or {}
+        self.trackio_attach_existing = trackio_attach_existing
+        self.trackio_step_metric = trackio_step_metric
         self.key_prefix = key_prefix
 
         self._created_mlflow_run = False
@@ -301,6 +303,8 @@ class ExperimentTracker:
             try:
                 numeric_metrics = {self._p(k): v for k, v in metrics.items() if isinstance(v, int | float)}
                 if numeric_metrics:
+                    if self.trackio_step_metric and step is not None:
+                        numeric_metrics[self.trackio_step_metric] = step
                     self._log_trackio(numeric_metrics, step=step)
             except Exception as e:
                 print(f"Warning: Failed to log metrics to trackio: {e}")
@@ -530,11 +534,12 @@ def create_experiment_tracker(
     wandb_step_metric: str | None = None,
     use_mlflow: bool = False,
     mlflow_tracking_uri: str | None = None,
+    mlflow_experiment_name: str | None = None,
+    mlflow_attach_existing: bool = False,
     use_trackio: bool = False,
     trackio_init_kwargs: dict[str, Any] | None = None,
     trackio_attach_existing: bool = False,
-    mlflow_experiment_name: str | None = None,
-    mlflow_attach_existing: bool = False,
+    trackio_step_metric: str | None = None,
     key_prefix: str = "",
 ) -> ExperimentTracker:
     """
@@ -554,12 +559,16 @@ def create_experiment_tracker(
             Required when embedding GEPA inside a host training loop that
             manages its own wandb step counter.
         mlflow_tracking_uri: Tracking URI for mlflow
-        trackio_init_kwargs: Additional kwargs for trackio.init()
-        trackio_attach_existing: When True, skip trackio.init() and
-            trackio.finish() and log into the already-active run.
         mlflow_experiment_name: Experiment name for mlflow
         mlflow_attach_existing: When True, skip mlflow.start_run() and
             mlflow.end_run() and log into the already-active run.
+        trackio_init_kwargs: Additional kwargs for trackio.init()
+        trackio_attach_existing: When True, skip trackio.init() and
+            trackio.finish() and log into the already-active run.
+        trackio_step_metric: Metric name to log with Trackio whenever GEPA
+            logs a step. Trackio can use logged metrics as chart x-axes; this
+            keeps GEPA charts aligned on e.g. ``gepa/iteration`` even when the
+            host process also logs its own steps.
 
     Returns:
         ExperimentTracker instance
@@ -575,10 +584,11 @@ def create_experiment_tracker(
         wandb_step_metric=wandb_step_metric,
         use_mlflow=use_mlflow,
         mlflow_tracking_uri=mlflow_tracking_uri,
+        mlflow_experiment_name=mlflow_experiment_name,
+        mlflow_attach_existing=mlflow_attach_existing,
         use_trackio=use_trackio,
         trackio_init_kwargs=trackio_init_kwargs,
         trackio_attach_existing=trackio_attach_existing,
-        mlflow_experiment_name=mlflow_experiment_name,
-        mlflow_attach_existing=mlflow_attach_existing,
+        trackio_step_metric=trackio_step_metric,
         key_prefix=key_prefix,
     )
