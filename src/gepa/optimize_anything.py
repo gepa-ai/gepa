@@ -606,8 +606,8 @@ Based on your analysis, propose an improved version that:
     sections.append("""
 ## Output Format
 
-Provide ONLY the improved version within ``` blocks. The output must be a complete, 
-drop-in replacement for the current component (whether it's a prompt, configuration, 
+Provide ONLY the improved version within ``` blocks. The output must be a complete,
+drop-in replacement for the current component (whether it's a prompt, configuration,
 code, or any other parameter type).
 Do not include explanations, commentary, or markdown outside the ``` blocks.""")
 
@@ -861,6 +861,23 @@ class TrackingConfig:
                 ),
             )
             mlflow.log_metric("train/loss", 0.1)  # still works
+    """
+    use_trackio: bool = False
+    trackio_init_kwargs: dict[str, Any] | None = None
+    trackio_attach_existing: bool = False
+    """Attach to an already-active Trackio run without managing its lifecycle.
+
+    When ``True``, GEPA logs into the run that is already active (via
+    ``trackio.init()``) — it will not call ``trackio.init()`` on entry or
+    ``trackio.finish()`` on exit.
+    """
+    trackio_step_metric: str | None = None
+    """Metric name to log with Trackio whenever GEPA logs a step.
+
+    Trackio can use logged scalar metrics as chart x-axes.  Setting this to
+    e.g. ``"gepa/iteration"`` ensures every GEPA metric row also carries a
+    stable iteration-valued x-axis, even when the host process logs unrelated
+    Trackio steps.
     """
     key_prefix: str = ""
     """String prepended to every key/name logged to wandb and MLflow.
@@ -1509,6 +1526,10 @@ def optimize_anything(
         mlflow_tracking_uri=config.tracking.mlflow_tracking_uri,
         mlflow_experiment_name=config.tracking.mlflow_experiment_name,
         mlflow_attach_existing=config.tracking.mlflow_attach_existing,
+        use_trackio=config.tracking.use_trackio,
+        trackio_init_kwargs=config.tracking.trackio_init_kwargs,
+        trackio_attach_existing=config.tracking.trackio_attach_existing,
+        trackio_step_metric=config.tracking.trackio_step_metric,
         key_prefix=config.tracking.key_prefix,
     )
 

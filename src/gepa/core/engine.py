@@ -246,6 +246,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 outputs_by_val_id=(
                     dict(valset_evaluation.outputs_by_val_id) if valset_evaluation.outputs_by_val_id else None
                 ),
+                metric_calls_before=num_metric_calls_by_discovery,
+                metric_calls_delta=state.total_num_evals - num_metric_calls_by_discovery,
+                metric_calls_after=state.total_num_evals,
             ),
         )
 
@@ -601,6 +604,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 parent_ids=[],
                 is_best_program=True,  # Seed is always best at iteration 0
                 outputs_by_val_id=None,  # Outputs not tracked at initialization unless track_best_outputs=True
+                metric_calls_before=0,
+                metric_calls_delta=state.total_num_evals,
+                metric_calls_after=state.total_num_evals,
             ),
         )
 

@@ -10,6 +10,7 @@ import gepa
 import gepa.core.state as state_mod
 from gepa.core.adapter import EvaluationBatch
 from gepa.core.state import ValsetEvaluation
+from gepa.proposer.reflective_mutation.reflective_mutation import ProposalOutput, ReflectiveMutationProposer
 from gepa.strategies.eval_policy import EvaluationPolicy
 
 
@@ -155,6 +156,32 @@ def test_budget_hooks_excluded_from_serialization(run_dir):
     loaded_state.add_budget_hook(lambda total, delta: loaded_hook_calls.append((total, delta)))
     loaded_state.increment_evals(2)
     assert loaded_hook_calls == [(20, 2)]
+
+
+def test_reflective_proposal_output_commits_eval_call_deltas_separately():
+    seed = {"model": "m"}
+    valset_out = ValsetEvaluation(
+        outputs_by_val_id={0: "out"},
+        scores_by_val_id={0: 0.5},
+        objective_scores_by_val_id=None,
+    )
+    state = state_mod.GEPAState(seed, valset_out)
+    state.total_num_evals = 10
+    hook_calls = []
+    state.add_budget_hook(lambda total, delta: hook_calls.append((total, delta)))
+
+    proposer = ReflectiveMutationProposer.__new__(ReflectiveMutationProposer)
+    proposer.apply_proposal_output(
+        ProposalOutput(
+            proposal=None,
+            total_evals=5,
+            eval_call_deltas=[2, 3],
+        ),
+        state,
+    )
+
+    assert state.total_num_evals == 15
+    assert hook_calls == [(12, 2), (15, 3)]
 
 
 def test_dynamic_validation(run_dir, rng):

@@ -14,7 +14,7 @@ import pytest
 # message that surfaces this exact variable name.
 os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
 
-from gepa.logging.experiment_tracker import ExperimentTracker, create_experiment_tracker  # noqa: E402
+from gepa.logging.experiment_tracker import ExperimentTracker, create_experiment_tracker
 
 
 def has_wandb():
@@ -165,6 +165,43 @@ class TestExperimentTrackerIntegration:
             tracker.log_metrics({"test": 1.0}, step=1)
 
         assert not tracker.is_active()
+
+    def test_trackio_step_metric_is_logged_without_global_step(self):
+        calls = []
+
+        class FakeRun:
+            def log(self, *, metrics, step=None):
+                calls.append((metrics, step))
+
+        tracker = ExperimentTracker(
+            use_trackio=True,
+            trackio_attach_existing=True,
+            trackio_step_metric="gepa/iteration",
+            key_prefix="gepa/",
+        )
+        tracker._trackio_run = FakeRun()
+
+        tracker.log_metrics({"loss": 0.5}, step=3)
+
+        assert calls == [({"gepa/loss": 0.5, "gepa/iteration": 3}, None)]
+
+    def test_trackio_without_step_metric_uses_global_step(self):
+        calls = []
+
+        class FakeRun:
+            def log(self, *, metrics, step=None):
+                calls.append((metrics, step))
+
+        tracker = ExperimentTracker(
+            use_trackio=True,
+            trackio_attach_existing=True,
+            key_prefix="gepa/",
+        )
+        tracker._trackio_run = FakeRun()
+
+        tracker.log_metrics({"loss": 0.5}, step=3)
+
+        assert calls == [({"gepa/loss": 0.5}, 3)]
 
     @pytest.mark.skipif(not has_wandb(), reason="wandb not available")
     def test_wandb_offline_initialization(self, mock_wandb, temp_dir):

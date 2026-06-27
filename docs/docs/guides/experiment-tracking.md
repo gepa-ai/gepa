@@ -1,6 +1,6 @@
-# Experiment Tracking with WandB and MLflow
+# Experiment Tracking with WandB, MLflow, and Trackio
 
-GEPA integrates with [Weights & Biases](https://wandb.ai) and [MLflow](https://mlflow.org) to log metrics, prompts, and structured tables throughout optimization.  Both backends can be enabled simultaneously.
+GEPA integrates with [Weights & Biases](https://wandb.ai), [MLflow](https://mlflow.org), and [Trackio](https://github.com/gradio-app/trackio) to log metrics, prompts, and structured tables throughout optimization. Backends can be enabled simultaneously.
 
 ---
 
@@ -41,14 +41,33 @@ GEPA integrates with [Weights & Biases](https://wandb.ai) and [MLflow](https://m
     )
     ```
 
-=== "Both at once"
+=== "Trackio"
+
+    ```python
+    import gepa
+
+    result = gepa.optimize(
+        seed_candidate={"system_prompt": "You are a helpful assistant."},
+        trainset=trainset,
+        valset=valset,
+        adapter=adapter,
+        reflection_lm="openai/gpt-5",
+        max_metric_calls=200,
+        use_trackio=True,
+        trackio_init_kwargs={"project": "my-gepa-run", "name": "experiment-1"},
+    )
+    ```
+
+=== "Multiple backends"
 
     ```python
     result = gepa.optimize(
         ...
         use_wandb=True,
         use_mlflow=True,
+        use_trackio=True,
         mlflow_experiment_name="my-gepa-run",
+        trackio_init_kwargs={"project": "my-gepa-run"},
     )
     ```
 
@@ -62,8 +81,8 @@ GEPA integrates with [Weights & Biases](https://wandb.ai) and [MLflow](https://m
         evaluator=my_evaluator,
         config=GEPAConfig(
             tracking=TrackingConfig(
-                use_wandb=True,
-                wandb_init_kwargs={"project": "my-gepa-run"},
+                use_trackio=True,
+                trackio_init_kwargs={"project": "my-gepa-run"},
             )
         ),
     )
@@ -88,7 +107,7 @@ Every iteration GEPA logs scalars you can plot over time:
 
 ### Structured Tables
 
-GEPA logs structured data as tables (WandB `Table` / MLflow `log_table`):
+GEPA logs structured data as tables (WandB `Table`, MLflow `log_table`, or Trackio `Table`):
 
 #### `candidates` table
 
@@ -228,8 +247,9 @@ with open(local_path) as f:
 ## Logging Into an Already-Active Run
 
 When GEPA is embedded inside a larger workflow that already has an active
-wandb/MLflow run, use `wandb_attach_existing=True` or `mlflow_attach_existing=True`
-to log GEPA metrics into it **without touching the run lifecycle**.
+wandb, MLflow, or Trackio run, use `wandb_attach_existing=True`,
+`mlflow_attach_existing=True`, or `trackio_attach_existing=True` to log GEPA
+metrics into it **without touching the run lifecycle**.
 
 Without these flags, GEPA calls `wandb.init()` on entry and `wandb.finish()` on exit —
 terminating the caller's run and causing all subsequent `wandb.log()` calls to
@@ -290,6 +310,25 @@ silently fail.
         mlflow.log_metric("final_score", result.val_aggregate_scores[result.best_idx])
     ```
 
+=== "Trackio"
+
+    ```python
+    import trackio
+    import gepa
+
+    trackio.init(project="my-project", name="outer-run")  # caller owns this run
+
+    result = gepa.optimize(
+        ...,
+        use_trackio=True,
+        trackio_attach_existing=True,   # skip init() + finish()
+    )
+
+    # Still works — run was never closed by GEPA
+    trackio.log({"final_score": result.val_aggregate_scores[result.best_idx]})
+    trackio.finish()
+    ```
+
 !!! tip "What gets logged in attach mode"
     All of GEPA's normal logging still works — `log_metrics()`, `log_table()`,
     `log_summary()`, `log_html()` — it just doesn't touch `init` / `finish`.
@@ -338,9 +377,12 @@ config params, summary values, table names, and HTML artifact keys.
 
 ## Installation
 
-WandB and MLflow are optional dependencies included in `gepa[full]`:
+Experiment trackers are optional runtime dependencies. Install the backend you
+want to enable before setting `use_wandb=True`, `use_mlflow=True`, or
+`use_trackio=True`:
 
 ```bash
-pip install "gepa[full]"         # includes wandb + mlflow
-pip install wandb mlflow         # or install individually
+pip install wandb
+pip install mlflow
+pip install trackio
 ```

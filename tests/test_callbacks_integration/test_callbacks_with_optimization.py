@@ -198,7 +198,9 @@ def test_callbacks_during_optimization(mocked_lms, recorder_dir):
     prev_used = 0
     for call in budget_calls:
         assert call["metric_calls_used"] >= prev_used, "budget should increase monotonically"
+        assert call["metric_calls_delta"] > 0, "budget deltas should be positive"
         prev_used = call["metric_calls_used"]
+    assert prev_used == opt_end_calls[0]["total_metric_calls"]
 
     # Pareto front callbacks
     pareto_calls = callback.get_calls("on_pareto_front_updated")
@@ -218,11 +220,19 @@ def test_callbacks_during_optimization(mocked_lms, recorder_dir):
     assert seed_call["candidate_idx"] == 0, "seed candidate should have index 0"
     assert seed_call["parent_ids"] == [], "seed candidate should have no parents"
     assert seed_call["is_best_program"] is True, "seed candidate should be best at iteration 0"
+    assert seed_call["metric_calls_before"] == 0
+    assert seed_call["metric_calls_delta"] == seed_call["num_examples_evaluated"]
+    assert seed_call["metric_calls_after"] == seed_call["num_examples_evaluated"]
 
     for call in valset_calls:
         assert "candidate_idx" in call
         assert "average_score" in call
         assert "is_best_program" in call
+        assert "metric_calls_before" in call
+        assert "metric_calls_delta" in call
+        assert "metric_calls_after" in call
+        assert call["metric_calls_after"] >= call["metric_calls_before"]
+        assert call["metric_calls_delta"] == call["metric_calls_after"] - call["metric_calls_before"]
 
     # Proposal callbacks - core to the optimization loop
     proposal_start_calls = callback.get_calls("on_proposal_start")
