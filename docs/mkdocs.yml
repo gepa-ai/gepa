@@ -32,6 +32,7 @@ nav:
         - Cost & Token Tracking: guides/cost-tracking.md
         - Experiment Tracking: guides/experiment-tracking.md
         - Using Claude Code as a Proposer: guides/claude-cli-as-proposer.md
+        - Using the GEPA Agent Skill: guides/agent-skill.md
         - gskill: guides/gskill.md
         - Contributing: guides/contributing.md
     - Tutorials:
