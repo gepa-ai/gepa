@@ -25,7 +25,7 @@ class SelectionStrategy(Protocol):
     ) -> list[CandidateProposal]: ...
 
 
-class AllImprovements:
+class AllImprovements(SelectionStrategy):
     """Accept all proposals that pass the acceptance criterion."""
 
     def select(
@@ -37,7 +37,7 @@ class AllImprovements:
         return [p for p in proposals if acceptance_criterion.should_accept(p, state)]
 
 
-class BestImprovement:
+class BestImprovement(SelectionStrategy):
     """Accept only the single best-improving proposal."""
 
     def select(
@@ -57,7 +57,7 @@ class BestImprovement:
         return [best] if best else []
 
 
-class TopKImprovements:
+class TopKImprovements(SelectionStrategy):
     """Accept top-K proposals by improvement margin."""
 
     def __init__(self, k: int):

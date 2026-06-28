@@ -147,6 +147,8 @@ from gepa.strategies.component_selector import (
     RoundRobinReflectionComponentSelector,
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
+from gepa.strategies.proposal_sampling import SamplingStrategy
+from gepa.strategies.proposal_selection import SelectionStrategy
 from gepa.utils import FileStopper, StopperProtocol
 from gepa.utils.stdio_capture import ThreadLocalStreamCapture, stream_manager
 
@@ -507,8 +509,8 @@ class EngineConfig:
 
     # Proposal strategies (default: 1 parent, 1 mutation per iteration).
     # Swap in a different SamplingStrategy to propose multiple candidates.
-    sampling_strategy: Any | None = None
-    selection_strategy: Any | None = None
+    sampling_strategy: SamplingStrategy | None = None
+    selection_strategy: SelectionStrategy | None = None
 
 
 def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:

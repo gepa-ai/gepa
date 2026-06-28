@@ -39,7 +39,7 @@ class SamplingStrategy(Protocol):
     ) -> list[ProposalTask]: ...
 
 
-class SingleMutationSampling:
+class SingleMutationSampling(SamplingStrategy):
     """1 parent, 1 mutation — default GEPA behavior."""
 
     def sample_tasks(
@@ -54,7 +54,7 @@ class SingleMutationSampling:
         return [ProposalTask(parent_idx, state.program_candidates[parent_idx], mb_ids, trainset.fetch(mb_ids))]
 
 
-class SameParentSampling:
+class SameParentSampling(SamplingStrategy):
     """Best-of-N on the same parent with different minibatches."""
 
     def __init__(self, n: int):
@@ -76,7 +76,7 @@ class SameParentSampling:
         return tasks
 
 
-class IndependentSampling:
+class IndependentSampling(SamplingStrategy):
     """N different parents, each with their own minibatch."""
 
     def __init__(self, n: int):
@@ -97,7 +97,7 @@ class IndependentSampling:
         return tasks
 
 
-class PxNSampling:
+class PxNSampling(SamplingStrategy):
     """P parents x N mutations each = P*N total tasks."""
 
     def __init__(self, p: int, n: int):
