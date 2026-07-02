@@ -144,6 +144,47 @@ def test_require_format_supports_custom_validator():
     assert side_info["Error"] == "Output must be uppercase."
 
 
+def test_require_format_supports_boolean_predicate_validators():
+    called = False
+
+    @require_format(lambda raw_output: raw_output.startswith("ok:"), format_name="prefix")
+    def evaluator(response):
+        nonlocal called
+        called = True
+        return 1.0, {"Output": response}
+
+    assert evaluator("ok:value") == (1.0, {"Output": "ok:value"})
+
+    called = False
+    score, side_info = evaluator("bad:value")
+    assert score == 0.0
+    assert side_info["format"] == "prefix"
+    assert side_info["Error"] == "Format validator returned False."
+    assert side_info["Output"] == "bad:value"
+    assert called is False
+
+
+def test_require_format_validator_exception_returns_failure_feedback():
+    called = False
+
+    def validator(raw_output):
+        raise ValueError(f"cannot validate {raw_output}")
+
+    @require_format(validator, format_name="custom")
+    def evaluator(response):
+        nonlocal called
+        called = True
+        return 1.0, {"Output": response}
+
+    score, side_info = evaluator("bad")
+
+    assert score == 0.0
+    assert called is False
+    assert side_info["format"] == "custom"
+    assert side_info["Error"] == "cannot validate bad"
+    assert "custom validation failed: cannot validate bad" in side_info["Feedback"]
+
+
 def test_schema_list_validates_every_item():
     @require_json_output(schema={"answers": [str]})
     def evaluator(response):

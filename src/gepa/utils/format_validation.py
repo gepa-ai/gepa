@@ -37,10 +37,11 @@ def require_format(
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Wrap an evaluator so invalid structured output returns a hard-failure score.
 
-    ``validator_fn`` receives the raw output argument and should return the value
-    to pass into the wrapped evaluator. If it raises an exception, the evaluator
-    is not called and the wrapper returns ``(failure_score, side_info)`` by
-    default.
+    ``validator_fn`` receives the raw output argument. It may return ``True`` to
+    pass the original output through, ``False`` to fail validation, or another
+    value to pass into the wrapped evaluator. If it raises an exception, the
+    evaluator is not called and the wrapper returns ``(failure_score, side_info)``
+    by default.
 
     Args:
         validator_fn: Function that validates and optionally parses the output.
@@ -277,10 +278,15 @@ def _replace_output_argument(
 
 def _validate_or_fail(validator_fn: Callable[[Any], Any], raw_output: Any) -> Any:
     try:
-        return validator_fn(raw_output)
+        validated = validator_fn(raw_output)
     except Exception as exc:
         message = str(exc) or exc.__class__.__name__
         raise _ValidationFailureError(raw_output, message) from exc
+    if validated is False:
+        raise _ValidationFailureError(raw_output, "Format validator returned False.")
+    if validated is True:
+        return raw_output
+    return validated
 
 
 def _failure_side_info(
