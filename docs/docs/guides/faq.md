@@ -254,26 +254,25 @@ result = optimize_anything(..., config=config)
 
 Yes, and this is one of GEPA's strongest use cases for smaller models. Dropbox reduced gemma-3-12b's malformed JSON rate from **40% to under 3%** while simultaneously improving relevance quality, by optimizing the prompt to enforce structured output compliance.
 
-The key is to **penalize format failures in your metric** so GEPA learns this is a hard constraint:
+The key is to **penalize format failures in your metric** so GEPA learns this is a hard constraint. GEPA includes evaluator wrappers for common structured-output formats:
 
 ```python
-def evaluator(data, response):
-    import json
-    # Hard penalty for format violations
-    try:
-        parsed = json.loads(response)
-    except json.JSONDecodeError:
-        return 0.0, {"Output": response, "Error": "Malformed JSON — failed to parse"}
+from gepa.utils import require_json_output
 
-    score = compute_quality_score(parsed, data)
+
+@require_json_output(schema={"score": int, "reasoning": str})
+def evaluator(data, response):
+    # response is already parsed JSON here. If parsing or schema validation
+    # fails, GEPA returns score=0.0 with the parse error in side_info.
+    score = compute_quality_score(response, data)
     return score, {
-        "Output": parsed,
+        "Output": response,
         "Expected": data["expected"],
         "Score": score,
     }
 ```
 
-Including the parse error in `side_info` gives GEPA's reflection LM the signal it needs to add explicit formatting instructions to the prompt.
+`require_json_output` automatically returns `score=0.0` with the malformed output and validation error in `side_info`. The parse error gives GEPA's reflection LM the signal it needs to add explicit formatting instructions to the prompt. For non-JSON formats, use `require_regex_match`, `require_xml_output`, or `require_format` with a custom validator.
 
 ### Does GEPA support async optimization?
 
