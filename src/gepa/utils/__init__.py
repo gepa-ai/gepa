@@ -10,6 +10,9 @@ Re-exports:
 
     **Stdio capture** — thread-safe stdout/stderr capture during evaluation:
     ``StreamCaptureManager``, ``ThreadLocalStreamCapture``.
+
+    **Format validation** — evaluator decorators for hard-failing malformed outputs:
+    ``require_json_output``, ``require_format``, ``require_regex_match``.
 """
 
 # Code execution utilities for fitness functions that evaluate generated code
@@ -20,6 +23,7 @@ from .code_execution import (
     execute_code,
     get_code_hash,
 )
+from .format_validator import require_format, require_json_output, require_regex_match
 from .stdio_capture import (
     StreamCaptureManager,
     ThreadLocalStreamCapture,
@@ -56,6 +60,10 @@ __all__ = [
     "TimeLimitError",
     "execute_code",
     "get_code_hash",
+    # Format validation utilities
+    "require_format",
+    "require_json_output",
+    "require_regex_match",
     # Stdio capture utilities
     "StreamCaptureManager",
     "ThreadLocalStreamCapture",
