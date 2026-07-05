@@ -17,6 +17,7 @@ from gepa.core.adapter import (
 from gepa.core.callbacks import (
     CandidateSelectedEvent,
     EvaluationEndEvent,
+    EvaluationSkippedEvent,
     EvaluationStartEvent,
     GEPACallback,
     MinibatchSampledEvent,
@@ -329,6 +330,17 @@ class ReflectiveMutationProposer:
 
             if not eval_curr.trajectories:
                 self.logger.log(f"Iteration {i}: No trajectories for parent {task.parent_idx}. Skipping.")
+                notify_callbacks(
+                    self.callbacks,
+                    "on_evaluation_skipped",
+                    EvaluationSkippedEvent(
+                        iteration=i,
+                        candidate_idx=task.parent_idx,
+                        reason="no_trajectories",
+                        scores=eval_curr.scores,
+                        is_seed_candidate=task.parent_idx == 0,
+                    ),
+                )
                 prepared.append(None)
                 continue
 
@@ -338,6 +350,17 @@ class ReflectiveMutationProposer:
                 and all(s is not None and s >= self.perfect_score for s in eval_curr.scores)
             ):
                 self.logger.log(f"Iteration {i}: All subsample scores perfect for parent {task.parent_idx}. Skipping.")
+                notify_callbacks(
+                    self.callbacks,
+                    "on_evaluation_skipped",
+                    EvaluationSkippedEvent(
+                        iteration=i,
+                        candidate_idx=task.parent_idx,
+                        reason="all_scores_perfect",
+                        scores=eval_curr.scores,
+                        is_seed_candidate=task.parent_idx == 0,
+                    ),
+                )
                 prepared.append(None)
                 continue
 

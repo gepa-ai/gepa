@@ -327,17 +327,15 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         eval_batches: list[EvaluationBatch] = []
         for item_idx in range(len(items)):
+            candidate = items[item_idx][0]
             item_results = results_by_item.get(item_idx, [])
             scores = [s for s, _, _ in item_results]
             outputs = [o for _, o, _ in item_results]
             side_infos: list[dict[str, Any]] = [si for _, _, si in item_results]
 
-            objective_scores: list[dict[str, float]] = []
-            for si in side_infos:
-                obj: dict[str, float] = {}
-                if isinstance(si, dict) and "scores" in si:
-                    obj.update(si["scores"])
-                objective_scores.append(obj)
+            objective_scores: list[dict[str, float]] = [
+                self._extract_objective_scores(candidate, si) for si in side_infos
+            ]
 
             eval_batches.append(
                 EvaluationBatch(
