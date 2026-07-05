@@ -42,6 +42,7 @@ from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
+from gepa.strategies.proposal_selection import AllImprovements, SelectionStrategy
 from gepa.utils import StopperProtocol
 
 # Import tqdm for progress bar functionality
@@ -80,8 +81,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Budget and Stop Condition
         stop_callback: StopperProtocol | None = None,
         val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
-        # Acceptance criterion for reflective mutation proposals
+        # Acceptance criterion + selection strategy for reflective mutation proposals
         acceptance_criterion: AcceptanceCriterion | None = None,
+        selection_strategy: SelectionStrategy | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
     ):
@@ -123,6 +125,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.merge_proposer.last_iter_found_new_program = False
 
         self.acceptance_criterion: AcceptanceCriterion = acceptance_criterion or StrictImprovementAcceptance()
+        self.selection_strategy: SelectionStrategy = selection_strategy or AllImprovements()
         self.track_best_outputs = track_best_outputs
         self.display_progress_bar = display_progress_bar
         self.use_cloudpickle = use_cloudpickle
@@ -360,76 +363,76 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     # Reflective proposal acceptance (shared by single and parallel paths)
     # ------------------------------------------------------------------
 
-    def _reflective_acceptance(
+    def _report_rejected_proposal(
         self,
         proposal: CandidateProposal,
         iteration: int,
         state: GEPAState[RolloutOutput, DataId],
-    ) -> bool:
-        """Apply the acceptance criterion (on subsample scores) and fire the
-        reject path. Returns True if the proposal should proceed to full eval.
-
-        This is the cheap, sequential gate; the expensive full-valset eval and
-        the pool/Pareto mutation happen afterwards in :meth:`_run_reflective_batch`.
-        """
+    ) -> None:
+        """Log and fire ``on_candidate_rejected`` for a proposal that failed acceptance."""
         old_sum = sum(proposal.subsample_scores_before or [])
         new_sum = sum(proposal.subsample_scores_after or [])
-        _uses_builtin_criterion = isinstance(
-            self.acceptance_criterion, StrictImprovementAcceptance | ImprovementOrEqualAcceptance
-        )
-
-        if not self.acceptance_criterion.should_accept(proposal, state):
-            if _uses_builtin_criterion:
-                reject_msg = f"Iteration {iteration}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
-                reject_reason = f"New subsample score {new_sum} not better than old score {old_sum}"
-            else:
-                reject_msg = f"Iteration {iteration}: Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum}), skipping"
-                reject_reason = f"Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum})"
-            self.logger.log(reject_msg)
-            self._log_proposal_lm_calls(iteration, proposal, candidate_idx=-1)
-            notify_callbacks(
-                self.callbacks,
-                "on_candidate_rejected",
-                CandidateRejectedEvent(
-                    iteration=iteration,
-                    old_score=old_sum,
-                    new_score=new_sum,
-                    reason=reject_reason,
-                ),
+        if isinstance(self.acceptance_criterion, StrictImprovementAcceptance | ImprovementOrEqualAcceptance):
+            reject_msg = (
+                f"Iteration {iteration}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
             )
-            return False
-
-        if _uses_builtin_criterion:
-            accept_msg = f"Iteration {iteration}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
+            reject_reason = f"New subsample score {new_sum} not better than old score {old_sum}"
         else:
-            accept_msg = f"Iteration {iteration}: Candidate accepted (old_sum={old_sum}, new_sum={new_sum}). Continue to full eval and add to candidate pool."
-        self.logger.log(accept_msg)
-        return True
+            reject_msg = f"Iteration {iteration}: Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum}), skipping"
+            reject_reason = f"Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum})"
+        self.logger.log(reject_msg)
+        self._log_proposal_lm_calls(iteration, proposal, candidate_idx=-1)
+        notify_callbacks(
+            self.callbacks,
+            "on_candidate_rejected",
+            CandidateRejectedEvent(
+                iteration=iteration,
+                old_score=old_sum,
+                new_score=new_sum,
+                reason=reject_reason,
+            ),
+        )
 
     def _run_reflective_batch(
         self,
         proposals: list[CandidateProposal],
         state: GEPAState[RolloutOutput, DataId],
     ) -> bool:
-        """Gate, full-eval, and add a batch of reflective proposals.
+        """Gate, select, full-eval, and add a batch of reflective proposals.
 
-        Gating and pool mutation stay sequential and ordered; the accepted
-        candidates' valset evals are batched into one
-        :meth:`_evaluate_programs_on_valset` call. Returns True if any was accepted.
+        The engine is the single acceptance + selection authority: each proposal
+        is gated by the acceptance criterion (failures fire ``on_candidate_rejected``),
+        the selection strategy picks which of the accepted proposals to keep, and
+        the kept ones are batch-evaluated on the valset (one
+        :meth:`_evaluate_programs_on_valset` call) and added to the pool in order.
+        Returns True if any proposal was accepted.
         """
         iteration = state.i + 1
 
-        # 1) Acceptance gate.
-        accepted = [p for p in proposals if self._reflective_acceptance(p, iteration, state)]
-        if not accepted:
+        # 1) Acceptance gate (on subsample scores); reject the failures.
+        accepted: list[CandidateProposal] = []
+        for proposal in proposals:
+            if self.acceptance_criterion.should_accept(proposal, state):
+                accepted.append(proposal)
+            else:
+                self._report_rejected_proposal(proposal, iteration, state)
+
+        # 2) Selection strategy picks which accepted proposals to add.
+        selected = self.selection_strategy.select(accepted, state, self.acceptance_criterion)
+        if not selected:
             return False
 
-        # 2) Full-valset eval of all accepted candidates.
-        valset_evals = self._evaluate_programs_on_valset([p.candidate for p in accepted], state)
+        # 3) Full-valset eval of the selected candidates (one batched, read-only call).
+        valset_evals = self._evaluate_programs_on_valset([p.candidate for p in selected], state)
 
-        # 3) Add each accepted candidate to the pool, in order.
+        # 4) Add each selected candidate to the pool, in order.
         any_accepted = False
-        for proposal, (valset_evaluation, num_actual_evals) in zip(accepted, valset_evals, strict=True):
+        for proposal, (valset_evaluation, num_actual_evals) in zip(selected, valset_evals, strict=True):
+            new_sum = sum(proposal.subsample_scores_after or [])
+            self.logger.log(
+                f"Iteration {iteration}: Accepted candidate (subsample score "
+                f"{sum(proposal.subsample_scores_before or [])} -> {new_sum}); running full eval."
+            )
             new_idx, _ = self._add_evaluated_program(
                 new_program=proposal.candidate,
                 state=state,
@@ -444,7 +447,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 CandidateAcceptedEvent(
                     iteration=iteration,
                     new_candidate_idx=new_idx,
-                    new_score=sum(proposal.subsample_scores_after or []),
+                    new_score=new_sum,
                     parent_ids=proposal.parent_program_ids,
                 ),
             )
@@ -498,13 +501,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         def valset_evaluator(
             program: dict[str, str],
+            val_ids: list[Any],
         ) -> ValsetEvaluation[RolloutOutput, DataId]:
-            all_ids = list(valset.all_ids())
-            outputs, scores, objective_scores = self.evaluator(valset.fetch(all_ids), program)
-            outputs_dict = dict(zip(all_ids, outputs, strict=False))
-            scores_dict = dict(zip(all_ids, scores, strict=False))
+            outputs, scores, objective_scores = self.evaluator(valset.fetch(val_ids), program)
+            outputs_dict = dict(zip(val_ids, outputs, strict=False))
+            scores_dict = dict(zip(val_ids, scores, strict=False))
             objective_scores_dict = (
-                dict(zip(all_ids, objective_scores, strict=False)) if objective_scores is not None else None
+                dict(zip(val_ids, objective_scores, strict=False)) if objective_scores is not None else None
             )
             return ValsetEvaluation(
                 outputs_by_val_id=outputs_dict,
@@ -528,8 +531,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ),
         )
 
-        # Evaluate seed candidate on valset (after on_optimization_start callback)
-        seed_valset_evaluation = valset_evaluator(self.seed_candidate)
+        # Evaluate seed candidate on valset (after on_optimization_start callback).
+        # Policies may narrow the seed evaluation via the optional get_seed_eval_batch
+        # hook; the state does not exist yet, so get_eval_batch cannot be used here.
+        seed_batch_fn = getattr(self.val_evaluation_policy, "get_seed_eval_batch", None)
+        seed_val_ids = list(seed_batch_fn(valset)) if seed_batch_fn is not None else list(valset.all_ids())
+        seed_valset_evaluation = valset_evaluator(self.seed_candidate, seed_val_ids)
 
         # Initialize state with pre-computed seed evaluation
         state = initialize_gepa_state(

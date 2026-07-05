@@ -35,11 +35,9 @@ from gepa.proposer.reflective_mutation.base import (
     ReflectionComponentSelector,
 )
 from gepa.proposer.reflective_mutation.reflection_lm import StatelessReflectionLM
-from gepa.strategies.acceptance import AcceptanceCriterion, StrictImprovementAcceptance
 from gepa.strategies.batch_sampler import BatchSampler
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 from gepa.strategies.proposal_sampling import ProposalTask, SamplingStrategy, SingleMutationSampling
-from gepa.strategies.proposal_selection import AllImprovements, SelectionStrategy
 
 
 class ReflectiveMutationProposer:
@@ -72,9 +70,7 @@ class ReflectiveMutationProposer:
         reflection_prompt_template: str | dict[str, str] | None = None,
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
-        acceptance_criterion: AcceptanceCriterion | None = None,
         sampling_strategy: SamplingStrategy | None = None,
-        selection_strategy: SelectionStrategy | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -88,9 +84,7 @@ class ReflectiveMutationProposer:
         self.reflection_lm = reflection_lm
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
-        self.acceptance_criterion: AcceptanceCriterion = acceptance_criterion or StrictImprovementAcceptance()
         self.sampling_strategy: SamplingStrategy = sampling_strategy or SingleMutationSampling()
-        self.selection_strategy: SelectionStrategy = selection_strategy or AllImprovements()
 
         self.reflection_prompt_template = reflection_prompt_template
 
@@ -200,11 +194,12 @@ class ReflectiveMutationProposer:
     # ------------------------------------------------------------------
 
     def propose(self, state: GEPAState) -> list[CandidateProposal]:
-        """Run the reflective mutation pipeline and return accepted proposals.
+        """Run the reflective mutation pipeline and return all evaluated proposals.
 
-        With the default ``SingleMutationSampling`` + ``AllImprovements``,
-        this returns 0 or 1 proposals — identical to the original sequential
-        behavior.
+        The proposer generates and minibatch-evaluates candidates; acceptance and
+        selection (which to keep) are the engine's job. With the default
+        ``SingleMutationSampling`` this returns at most one proposal — identical to
+        the original sequential behavior.
         """
         i = state.i + 1
 
@@ -516,4 +511,4 @@ class ReflectiveMutationProposer:
             )
             proposals.append(proposal)
 
-        return self.selection_strategy.select(proposals, state, self.acceptance_criterion)
+        return proposals

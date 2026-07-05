@@ -394,9 +394,7 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
-        acceptance_criterion=acceptance_criterion_instance,
         sampling_strategy=sampling_strategy,
-        selection_strategy=selection_strategy,
     )
 
     def evaluator_fn(
@@ -437,6 +435,7 @@ def optimize(
         stop_callback=stop_callback,
         val_evaluation_policy=val_evaluation_policy,
         acceptance_criterion=acceptance_criterion_instance,
+        selection_strategy=selection_strategy,
         use_cloudpickle=use_cloudpickle,
         evaluation_cache=evaluation_cache,
     )

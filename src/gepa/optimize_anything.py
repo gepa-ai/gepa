@@ -1559,9 +1559,7 @@ def optimize_anything(
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
         callbacks=config.callbacks,
-        acceptance_criterion=acceptance_criterion_instance,
         sampling_strategy=config.engine.sampling_strategy,
-        selection_strategy=config.engine.selection_strategy,
     )
 
     # Define evaluator function for merge proposer
@@ -1609,6 +1607,7 @@ def optimize_anything(
         stop_callback=stop_callback,
         val_evaluation_policy=config.engine.val_evaluation_policy,
         acceptance_criterion=acceptance_criterion_instance,
+        selection_strategy=config.engine.selection_strategy,
         use_cloudpickle=config.engine.use_cloudpickle,
         evaluation_cache=evaluation_cache,
     )
