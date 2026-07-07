@@ -143,7 +143,6 @@ def optimize_anything(
         task,
         evaluator,
         budget,
-        tracker=config.tracker,
         max_concurrency=config.max_concurrency,
         output_dir=output_dir,
     )

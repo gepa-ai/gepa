@@ -24,14 +24,15 @@ import subprocess
 import tempfile
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from gepa.oa._helpers import example_to_json, warn_unknown_config_keys
 from gepa.oa.budget import BudgetTracker
 from gepa.oa.engine import Result
 from gepa.oa.engines.claude_utils import copy_session_transcript
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args
+from gepa.oa.utils import example_to_json
 
 if TYPE_CHECKING:
     from gepa.oa.config import OptimizeAnythingConfig
@@ -39,7 +40,40 @@ if TYPE_CHECKING:
     from gepa.oa.task import Task
 
 
-_AR_CONFIG_KEYS: tuple[str, ...] = ("model", "ralph", "max_no_eval_seconds", "handoffs")
+@dataclass
+class AutoResearchConfig:
+    """Engine-specific options for :class:`AutoResearchEngine`.
+
+    Populated from ``OptimizeAnythingConfig.engine_config``.
+
+    Attributes:
+        model: Claude model id. Versioned default — pin for reproducibility;
+            pass ``"sonnet"`` / ``"opus"`` to track Anthropic's current default.
+        ralph: Continue one Claude Code session via repeated
+            ``claude --resume`` while budget remains. Stops early on a zero-cost
+            iteration (no progress) or a claude error.
+        max_no_eval_seconds: Terminate the subprocess after this many seconds
+            without an eval call. ``None`` disables the guard.
+        handoffs: Prior-stage artifacts for sequential compositions — each item
+            describes one stage (paths materialized under ``handoff/`` and
+            referenced from ``program.md``).
+        effort: ``claude --effort`` value (CLI flag).
+        max_thinking_tokens: Fixed thinking-token budget (``MAX_THINKING_TOKENS``).
+    """
+
+    model: str = "claude-sonnet-4-6"
+    ralph: bool = True
+    max_no_eval_seconds: float | None = None
+    handoffs: list[dict[str, Any]] | None = None
+    effort: str | None = None
+    max_thinking_tokens: int | None = None
+
+    def __post_init__(self) -> None:
+        # yaml/CLI may pass ralph as a string ("false") and max_no_eval_seconds
+        # as a string/int; coerce to the declared types.
+        self.ralph = _config_bool(self.ralph)
+        if self.max_no_eval_seconds is not None:
+            self.max_no_eval_seconds = float(self.max_no_eval_seconds)
 
 
 # Nudge fed to claude --resume on each Ralph iteration.
@@ -290,9 +324,7 @@ def _materialize_sandbox(
     server_url = server.url
     work_dir.mkdir(parents=True, exist_ok=True)
     (work_dir / "program.md").write_text(
-        _build_program_md(
-            task, budget, max_token_cost=max_token_cost, perfect_score=perfect_score, handoffs=handoffs
-        )
+        _build_program_md(task, budget, max_token_cost=max_token_cost, perfect_score=perfect_score, handoffs=handoffs)
     )
     (work_dir / "candidate.txt").write_text(task.seed_candidate or "")
     (work_dir / "best_candidate.txt").write_text(task.seed_candidate or "")
@@ -364,40 +396,22 @@ def _safe_name(value: str) -> str:
 class AutoResearchEngine:
     """Black-box research optimizer backed by Claude Code.
 
-    Engine-specific keys read from ``OptimizeAnythingConfig.engine_config``:
-
-    - ``model``: Claude model id. Default ``"claude-sonnet-4-6"`` (versioned —
-      pin for reproducibility; pass ``"sonnet"`` / ``"opus"`` aliases to track
-      Anthropic's current default).
-    - ``ralph``: When true, continue the same Claude Code session via repeated
-      ``claude --resume <session_id>`` calls while eval/LLM budget remains.
-      Stops early if an iteration produces no measurable cost (likely no
-      further progress) or if claude errors out. Default ``True``.
-    - ``max_no_eval_seconds``: If set, terminate the Claude Code subprocess
-      after this many seconds without an eval call. Guards against agents
-      that wedge on long internal reasoning without scoring.
-    - ``handoffs``: ``list[dict]`` of prior-stage artifacts, used by sequential
-      compositions to give this stage context on what earlier stages tried.
-      Each item describes one stage (``stage_idx``, ``engine``, ``best_score``,
-      ``num_evals``, and the paths ``summary_path`` / ``best_candidate_path`` /
-      ``eval_trace_dir``); they are materialized under ``handoff/`` in the
-      workspace and referenced from ``program.md``. Default ``None``.
+    Engine-specific options come from ``OptimizeAnythingConfig.engine_config``,
+    parsed into :class:`AutoResearchConfig`.
     """
 
     name = "autoresearch"
 
     def __init__(self, config: OptimizeAnythingConfig) -> None:
-        extras = config.engine_config
-        warn_unknown_config_keys(self.name, extras, _AR_CONFIG_KEYS)
-        self.model: str = extras.get("model", "claude-sonnet-4-6")
-        self.ralph = _config_bool(extras.get("ralph", True))
-        raw_max_no_eval_seconds = extras.get("max_no_eval_seconds")
-        self.max_no_eval_seconds = float(raw_max_no_eval_seconds) if raw_max_no_eval_seconds is not None else None
-        self.handoffs: list[dict[str, Any]] | None = extras.get("handoffs")
+        engine_config = AutoResearchConfig(**config.engine_config)
+        self.model = engine_config.model
+        self.ralph = engine_config.ralph
+        self.max_no_eval_seconds = engine_config.max_no_eval_seconds
+        self.handoffs = engine_config.handoffs
+        self.effort = engine_config.effort
+        self.max_thinking_tokens = engine_config.max_thinking_tokens
         self.run_dir = config.run_dir
-        self.effort = config.effort
         self.stop_at_score = config.stop_at_score
-        self.max_thinking_tokens = config.max_thinking_tokens
         self.sandbox = config.sandbox
         # Proposer-cost cap: USD the claude subprocess(es) may spend. Enforced
         # via --max-budget-usd; the eval server never sees proposer spend.

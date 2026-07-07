@@ -3,15 +3,17 @@
 In-process — calls ``server.evaluate(candidate, example)`` directly. Budget is
 enforced by the server. ``max_token_cost`` is enforced via the GEPA engine's
 ``max_reflection_cost`` stopper.
+
+``OptimizeAnythingConfig.engine_config`` maps directly to a
+:class:`~gepa.gepa_launcher.GEPAConfig`; the OA layer only overlays the eval
+budget, ``run_dir``, and its own callbacks/stoppers on top.
 """
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from gepa.oa._helpers import warn_unknown_config_keys
 from gepa.oa.budget import BudgetExhausted
 from gepa.oa.engine import Result
 
@@ -21,185 +23,74 @@ if TYPE_CHECKING:
     from gepa.oa.task import Task
 
 
-# Keys this engine understands inside ``OptimizeAnythingConfig.engine_config``.
-_GEPA_CONFIG_KEYS: tuple[str, ...] = (
-    "engine",
-    "reflection",
-    "merge",
-    "refiner",
-    "objective",
-    "background",
-    "reflection_lm_kwargs",
-    "callbacks",
-    "claude_code_agent",
-)
-
-
 class GepaEngine:
     """Runs GEPA's ``optimize_anything`` against an optimize_anything task.
 
-    Engine-specific keys read from ``OptimizeAnythingConfig.engine_config`` (all optional):
-
-    - ``engine``: kwargs for :class:`gepa.gepa_launcher.EngineConfig`.
-    - ``reflection``: kwargs for :class:`~gepa.gepa_launcher.ReflectionConfig`.
-    - ``merge``: kwargs for :class:`~gepa.gepa_launcher.MergeConfig` (or ``None``).
-    - ``refiner``: kwargs for :class:`~gepa.gepa_launcher.RefinerConfig` (or ``None``).
-    - ``objective``, ``background``: override ``task.objective`` / ``task.background``.
-    - ``reflection_lm_kwargs``: extra kwargs for ``gepa.lm.LM(...)``.
-    - ``callbacks``: list of GEPA callbacks.
-    - ``claude_code_agent``: kwargs forwarded to
-      :class:`~gepa.oa.proposers.ClaudeCodeAgentProposer`. When set, GEPA's
-      reflection step is replaced by a Claude Code subprocess that reads the
-      agent-readable run-dir tree (``write_agent_state`` is auto-enabled);
-      ``run_dir``, ``max_thinking_tokens``, ``effort``, and ``sandbox`` come
-      from the surrounding :class:`OptimizeAnythingConfig`. Mutually exclusive with
-      ``reflection.custom_candidate_proposer``.
+    ``OptimizeAnythingConfig.engine_config`` maps directly to a
+    :class:`~gepa.gepa_launcher.GEPAConfig` (see its fields for the options).
+    The OA layer only overlays the eval budget, ``run_dir``, and its own
+    callbacks/stoppers on top.
     """
 
     name = "gepa"
 
     def __init__(self, config: OptimizeAnythingConfig) -> None:
-        extras = config.engine_config
-        warn_unknown_config_keys(self.name, extras, _GEPA_CONFIG_KEYS)
+        from gepa.gepa_launcher import GEPAConfig
+
         # Cross-cutting (read directly off OptimizeAnythingConfig)
         self.run_dir = config.run_dir
         self.stop_at_score = config.stop_at_score
-        self.effort = config.effort
-        self.max_thinking_tokens = config.max_thinking_tokens
-        self.sandbox = config.sandbox
         # Proposer-cost cap: USD this engine may spend on its reflection LM /
-        # agent. Enforced here via max_reflection_cost / the agent's
-        # --max-budget-usd; the eval server never sees reflection spend.
+        # agent. Enforced via GEPA's max_reflection_cost stopper; the eval
+        # server never sees reflection spend.
         self.max_token_cost = config.max_token_cost
-        # Engine-specific (read out of config.engine_config)
-        self.engine: dict[str, Any] = dict(extras.get("engine") or {})
-        self.reflection: dict[str, Any] = dict(extras.get("reflection") or {})
-        self.merge: dict[str, Any] | None = dict(extras["merge"]) if extras.get("merge") else None
-        self.refiner: dict[str, Any] | None = dict(extras["refiner"]) if extras.get("refiner") else None
-        self.objective: str | None = extras.get("objective")
-        self.background: str | None = extras.get("background")
-        self.callbacks: list[Any] = list(extras.get("callbacks") or [])
-        self.reflection_lm_kwargs: dict[str, Any] = dict(extras.get("reflection_lm_kwargs") or {})
-        self.claude_code_agent: dict[str, Any] | None = (
-            dict(extras["claude_code_agent"]) if extras.get("claude_code_agent") else None
-        )
+        # engine_config is a GEPAConfig-shaped dict, forwarded verbatim.
+        # GEPAConfig(**...) validates it now (TypeError on an unknown key, so a
+        # typo fails fast) and coerces nested dicts to their dataclasses. OA
+        # overlays (budget, run_dir) are applied in run().
+        self.gepa_config = GEPAConfig(**config.engine_config)
 
     def run(self, task: Task, server: EvalServer) -> Result:
-        from gepa.gepa_launcher import (
-            EngineConfig,
-            GEPAConfig,
-            MergeConfig,
-            RefinerConfig,
-            ReflectionConfig,
-            optimize_anything,
-        )
-        from gepa.lm import LM
+        from gepa.gepa_launcher import optimize_anything
 
         budget = server.budget
-        objective = self.objective or task.objective
-        background = self.background or task.background
+        objective = task.objective
+        background = task.background
 
-        reflection_kwargs = dict(self.reflection)
-        reflection_lm: Any | None = None
-        agent_proposer: Any | None = None
-        if self.claude_code_agent is not None:
-            if reflection_kwargs.get("custom_candidate_proposer") is not None:
-                raise ValueError("claude_code_agent is mutually exclusive with reflection.custom_candidate_proposer")
-            if self.run_dir is None:
-                raise ValueError("claude_code_agent requires OptimizeAnythingConfig.run_dir to be set")
-            agent_proposer = self._build_claude_code_agent(
-                objective,
-                background,
-                default_max_budget_usd=self.max_token_cost,
-            )
-            reflection_kwargs["custom_candidate_proposer"] = agent_proposer
-            # The proposer reads <run_dir>/iterations/, <run_dir>/pareto/.
-            # The state.save() pass that writes them is gated on this flag.
-            reflection_kwargs.setdefault("reflection_lm", None)
+        gepa_config = self.gepa_config
 
-        if "reflection_lm" in reflection_kwargs:
-            lm_name = reflection_kwargs["reflection_lm"]
-            if isinstance(lm_name, str):
-                lm_kwargs = dict(self.reflection_lm_kwargs)
-                if self.max_thinking_tokens is not None:
-                    lm_kwargs["thinking"] = {"type": "enabled", "budget_tokens": self.max_thinking_tokens}
-                if self.effort is not None:
-                    # Auto-thread OptimizeAnythingConfig.effort into the LM kwargs so the
-                    # LM-based proposer picks up extended thinking the same way
-                    # the claude_code_agent path does. User overrides via
-                    # explicit reflection_lm_kwargs.reasoning_effort still win.
-                    lm_kwargs.setdefault("reasoning_effort", self.effort)
-                reflection_lm = LM(lm_name, **lm_kwargs)
-                reflection_kwargs["reflection_lm"] = reflection_lm
-            else:
-                reflection_lm = lm_name
-
-        # Default ``cache_evaluation=True`` so re-evaluating the same
-        # (candidate, minibatch) pair across iterations is a no-op. Gepa's
-        # EngineConfig defaults this to False, which causes the reflective
-        # proposer's ``eval_curr`` to call evaluate() on the same selected
-        # program every time it gets re-picked from the pareto frontier
-        # (and on the seed in iteration 1, because curr_prog == seed).
-        # Caller can override via ``config.engine.cache_evaluation=False``.
-        engine_kwargs: dict[str, Any] = {
-            "cache_evaluation": True,
-            **self.engine,
-            "run_dir": self.run_dir,
-            "max_metric_calls": budget.max_evals,
-        }
-        if agent_proposer is not None:
-            # Proposer reads iterations/, pareto/, history.md off run_dir.
-            engine_kwargs["write_agent_state"] = True
-        callbacks = list(self.callbacks)
-        cost_callback: _ReflectionCostCallback | None = None
-        cost_source = reflection_lm if reflection_lm is not None else agent_proposer
-        initial_adapter_cost = float(getattr(cost_source, "total_cost", 0.0) or 0.0) if cost_source is not None else 0.0
-        if self.max_token_cost is not None and "max_reflection_cost" not in engine_kwargs:
-            engine_kwargs["max_reflection_cost"] = initial_adapter_cost + self.max_token_cost
-        if cost_source is not None:
-            cost_callback = _ReflectionCostCallback(cost_source, server.tracker, output_dir=self.run_dir)
-            callbacks.append(cost_callback)
-        if agent_proposer is not None:
-            # The adapter-curated reflective_dataset (the thing the LM
-            # normally sees as ``<side_info>``) is not persisted by GEPA core.
-            # Mirror it under ``iterations/<id>/reflective_dataset.json`` so
-            # the agent proposer can browse past iterations' structured
-            # feedback when planning the next mutation.
-            callbacks.append(_ReflectiveDatasetDumpCallback(self.run_dir))
-        if task.val_set:
-            callbacks.append(_ProgressCallback(server, reflection_lm=cost_source))
-
-        stop_callbacks: list[Any] = []
+        # OA owns the eval budget, workspace, and the top-level convenience
+        # limits — set them as EngineConfig fields; GEPA core installs the
+        # matching stoppers. The eval-call cap must win over any user value.
+        gepa_config.engine.max_metric_calls = budget.max_evals
+        if self.run_dir is not None:
+            gepa_config.engine.run_dir = self.run_dir
         if self.stop_at_score is not None:
-            from gepa.utils.stop_condition import ScoreThresholdStopper
+            gepa_config.engine.stop_at_score = self.stop_at_score
 
-            stop_callbacks.append(ScoreThresholdStopper(self.stop_at_score))
-        if self.max_token_cost is not None and cost_source is not None:
-            from gepa.utils.stop_condition import MaxReflectionCostStopper
+        # Resolve the reflection LM cost source: GEPA core builds the LM from a
+        # string itself, but we need a live handle now to report reflection cost
+        # on the Result and to set the proposer-cost cap. Build it here and place
+        # it back so core reuses the same object. A custom proposer
+        # (e.g. ClaudeCodeAgentProposer) is the cost source when present. It
+        # starts fresh (zero cost) — we don't support reusing a pre-spent one.
+        cost_source = self._resolve_cost_source(gepa_config)
 
-            stop_callbacks.append(MaxReflectionCostStopper(self.max_token_cost, reflection_lm=cost_source))
+        # Proposer-cost cap → EngineConfig.max_reflection_cost; core turns it
+        # into a MaxReflectionCostStopper bound to the effective cost source.
+        if self.max_token_cost is not None and gepa_config.engine.max_reflection_cost is None:
+            gepa_config.engine.max_reflection_cost = self.max_token_cost
 
-        # Build GEPA's nested dataclasses explicitly. GEPAConfig.__post_init__
-        # also accepts dicts, but its type annotations don't, so passing dicts
-        # is a runtime feature pyright can't see.
-        config = GEPAConfig(
-            engine=EngineConfig(**engine_kwargs),
-            reflection=ReflectionConfig(**reflection_kwargs),
-            merge=MergeConfig(**self.merge) if self.merge else None,
-            refiner=RefinerConfig(**self.refiner) if self.refiner else None,
-            callbacks=callbacks or None,
-            stop_callbacks=stop_callbacks or None,
-        )
-
-        # The optimize_anything eval server (server.evaluate) is our single budget choke
-        # point — gepa.gepa_launcher's evaluator goes straight through it.
+        # The optimize_anything eval server (server.evaluate) is our single
+        # budget choke point — gepa.gepa_launcher's evaluator goes straight
+        # through it.
         def evaluator(candidate, example=None, **kwargs):
             return server.evaluate(candidate, example)
 
         oa_kwargs: dict[str, Any] = {
             "seed_candidate": task.seed_candidate,
             "evaluator": evaluator,
-            "config": config,
+            "config": gepa_config,
         }
         if task.has_dataset:
             if task.train_set:
@@ -208,7 +99,6 @@ class GepaEngine:
             # post-run eval and must never leak into the optimization loop.
             if task.val_set:
                 oa_kwargs["valset"] = task.val_set
-
         if objective:
             oa_kwargs["objective"] = objective
         if background:
@@ -219,22 +109,15 @@ class GepaEngine:
         except BudgetExhausted:
             gepa_result = self._load_result_from_state(
                 run_dir=self.run_dir,
-                seed=engine_kwargs.get("seed"),
+                seed=gepa_config.engine.seed,
                 # optimize_anything candidates are always strings (seedless ->
                 # None seed), never the legacy dict form.
                 str_candidate_mode=not isinstance(task.seed_candidate, dict),
             )
 
-        final_adapter_cost = float(getattr(cost_source, "total_cost", 0.0) or 0.0) if cost_source is not None else 0.0
-        reflection_meta: dict[str, Any] = {}
-        if cost_callback is not None:
-            reflection_meta = {"reflection_cost_log": cost_callback.cost_log}
-            if cost_callback.cost_log:
-                final_adapter_cost = max(final_adapter_cost, float(cost_callback.cost_log[-1]["reflection_cost"]))
-        adapter_cost = max(0.0, final_adapter_cost - initial_adapter_cost)
-        if cost_source is not None:
-            reflection_meta["reflection_cost_initial"] = initial_adapter_cost
-            reflection_meta["reflection_cost_final"] = final_adapter_cost
+        # Reflection/proposer spend for this run, read straight off the cost
+        # source's cumulative total_cost (it started fresh).
+        adapter_cost = float(getattr(cost_source, "total_cost", 0.0) or 0.0) if cost_source is not None else 0.0
 
         if gepa_result is not None:
             # gepa_result.best_candidate is str | dict[str,str]; our seed is a
@@ -248,18 +131,41 @@ class GepaEngine:
                 best_score=gepa_result.val_aggregate_scores[gepa_result.best_idx],
                 total_evals=server.budget.used,
                 eval_log=server.eval_log,
-                metadata={"gepa_result": gepa_result, "adapter_cost": adapter_cost, **reflection_meta},
+                metadata={"gepa_result": gepa_result, "adapter_cost": adapter_cost},
             )
         return Result(
             best_candidate=server.best_candidate,
             best_score=server.best_score,
             total_evals=server.budget.used,
             eval_log=server.eval_log,
-            metadata={"adapter_cost": adapter_cost, **reflection_meta},
+            metadata={"adapter_cost": adapter_cost},
         )
 
     def process_result(self, result: Result, output_dir: Path | None) -> None:
         return
+
+    def _resolve_cost_source(self, gepa_config: Any) -> Any | None:
+        """Return the live LM/proposer whose ``total_cost`` we track and cap.
+
+        A custom candidate proposer (e.g. ``ClaudeCodeAgentProposer``) is the
+        cost source when set. Otherwise, if ``reflection.reflection_lm`` is a
+        model-name string, build the ``LM`` now and place it back on the config
+        so GEPA core reuses the same object (rather than building its own,
+        which we couldn't then read cost from).
+        """
+        proposer = gepa_config.reflection.custom_candidate_proposer
+        if proposer is not None:
+            return proposer
+        reflection_lm = gepa_config.reflection.reflection_lm
+        if isinstance(reflection_lm, str):
+            from gepa.lm import LM
+
+            lm = LM(reflection_lm, **(gepa_config.reflection.reflection_lm_kwargs or {}))
+            gepa_config.reflection.reflection_lm = lm
+            return lm
+        # Already a callable/None — core wraps callables in TrackingLM (cost
+        # always 0.0), so there's nothing meaningful to track here.
+        return reflection_lm if hasattr(reflection_lm, "total_cost") else None
 
     def _load_result_from_state(
         self,
@@ -283,121 +189,3 @@ class GepaEngine:
             )
         except Exception:
             return None
-
-    def _build_claude_code_agent(
-        self,
-        objective: str | None,
-        background: str | None,
-        *,
-        default_max_budget_usd: float | None = None,
-    ) -> Any:
-        """Construct a :class:`ClaudeCodeAgentProposer` from this engine's config.
-
-        ``OptimizeAnythingConfig.run_dir``, ``effort``, ``max_thinking_tokens``, and
-        ``sandbox`` flow in from the surrounding config. Anything in
-        ``OptimizeAnythingConfig.engine_config["claude_code_agent"]`` overrides those defaults
-        (e.g. set ``"sandbox": False`` to override the global, or
-        ``"max_budget_usd"`` for a per-proposer USD cap). If omitted, the
-        surrounding OptimizeAnything token-cost budget is used as the proposer cap.
-        ``objective`` / ``background`` default to the values resolved against
-        the task; explicit keys override.
-        """
-        from gepa.oa.proposers import ClaudeCodeAgentProposer
-
-        cfg = dict(self.claude_code_agent or {})
-        kwargs: dict[str, Any] = {
-            "model": cfg.pop("model", "claude-sonnet-4-6"),
-            "run_dir": cfg.pop("run_dir", self.run_dir),
-            "objective": cfg.pop("objective", objective),
-            "background": cfg.pop("background", background),
-            "effort": cfg.pop("effort", self.effort),
-            "max_thinking_tokens": cfg.pop("max_thinking_tokens", self.max_thinking_tokens),
-            "sandbox": cfg.pop("sandbox", self.sandbox),
-        }
-        if default_max_budget_usd is not None:
-            kwargs["max_budget_usd"] = cfg.pop("max_budget_usd", default_max_budget_usd)
-        # Pass through anything else verbatim (max_budget_usd, subdir_prefix, ...).
-        kwargs.update(cfg)
-        return ClaudeCodeAgentProposer(**kwargs)
-
-
-class _ReflectionCostCallback:
-    def __init__(self, lm: Any, tracker: Any | None, output_dir: str | Path | None = None) -> None:
-        self._lm = lm
-        self._tracker = tracker
-        self._cost_log: list[dict[str, Any]] = []
-        self._log_path: Path | None = None
-        if output_dir is not None:
-            self._log_path = Path(output_dir) / "reflection_cost_log.jsonl"
-            self._log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    @property
-    def cost_log(self) -> list[dict[str, Any]]:
-        return list(self._cost_log)
-
-    def on_iteration_end(self, event: dict[str, Any]) -> None:
-        entry = {
-            "iteration": event["iteration"],
-            "reflection_cost": self._lm.total_cost,
-            "reflection_tokens_in": self._lm.total_tokens_in,
-            "reflection_tokens_out": self._lm.total_tokens_out,
-        }
-        self._cost_log.append(entry)
-        if self._log_path is not None:
-            with open(self._log_path, "a") as f:
-                f.write(json.dumps(entry) + "\n")
-        if self._tracker is not None:
-            try:
-                self._tracker.log_metrics(
-                    {
-                        "reflection/cost": entry["reflection_cost"],
-                        "reflection/tokens_in": entry["reflection_tokens_in"],
-                        "reflection/tokens_out": entry["reflection_tokens_out"],
-                    },
-                    step=entry["iteration"],
-                )
-            except Exception:
-                pass
-
-
-class _ProgressCallback:
-    def __init__(self, server: Any, reflection_lm: Any = None) -> None:
-        self._server = server
-        self._reflection_lm = reflection_lm
-
-    def on_valset_evaluated(self, event: dict[str, Any]) -> None:
-        candidate_dict = event.get("candidate", {})
-        candidate_text = next(iter(candidate_dict.values()), None) if candidate_dict else None
-        reflection_cost = self._reflection_lm.total_cost if self._reflection_lm else 0.0
-        self._server.log_progress(event["average_score"], candidate=candidate_text, reflection_cost=reflection_cost)
-
-
-class _ReflectiveDatasetDumpCallback:
-    """Write each iteration's reflective_dataset to disk under run_dir.
-
-    GEPA core writes per-iteration meta / components / trace under
-    ``iterations/<id>/`` (keyed by the proposal's random ``iteration_id`` —
-    seed owns ``SEED_ITERATION_ID``), but the adapter-curated
-    reflective_dataset (the thing the LM normally sees as ``<side_info>``) is
-    never persisted by core. This callback closes that gap so the agent
-    proposer can browse past iterations' structured feedback via
-    ``iterations/<id>/reflective_dataset.json``.
-
-    Only installed when the file-based agent proposer is selected.
-    """
-
-    def __init__(self, run_dir: str | Path | None) -> None:
-        self._run_dir = Path(run_dir) if run_dir is not None else None
-
-    def on_reflective_dataset_built(self, event: dict[str, Any]) -> None:
-        if self._run_dir is None:
-            return
-        # ``event["iteration_id"]`` is the on-disk anchor for this proposal —
-        # the same directory GEPA core writes the rest of the iteration under.
-        iteration_id = event.get("iteration_id")
-        dataset = event.get("dataset") or event.get("reflective_dataset")
-        if iteration_id is None or dataset is None:
-            return
-        target = self._run_dir / "iterations" / str(iteration_id) / "reflective_dataset.json"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(dataset, indent=2, default=str))

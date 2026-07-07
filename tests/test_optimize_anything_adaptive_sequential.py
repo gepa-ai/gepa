@@ -239,10 +239,10 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
         with patch("gepa.gepa_launcher.optimize_anything", side_effect=fake_optimize):
             result = engine.run(server.task, server)
 
-        self.assertEqual(seen["max_reflection_cost"], 2.5)
-        self.assertEqual(result.metadata["adapter_cost"], 0.75)
-        self.assertEqual(result.metadata["reflection_cost_initial"], 2.0)
-        self.assertEqual(result.metadata["reflection_cost_final"], 2.75)
+        # The cost source is treated as fresh: the cap is max_token_cost itself,
+        # and adapter_cost is the full total_cost the run reported.
+        self.assertEqual(seen["max_reflection_cost"], 0.5)
+        self.assertEqual(result.metadata["adapter_cost"], 2.75)
 
 
 if __name__ == "__main__":

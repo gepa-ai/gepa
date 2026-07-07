@@ -16,10 +16,10 @@ from __future__ import annotations
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from gepa.lm import LM
-from gepa.oa._helpers import warn_unknown_config_keys
 from gepa.oa.engine import Result
 
 if TYPE_CHECKING:
@@ -31,7 +31,31 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_BON_CONFIG_KEYS = ("model", "temperature", "max_n", "lm_kwargs")
+
+@dataclass
+class BestOfNConfig:
+    """Engine-specific options for :class:`BestOfNEngine`.
+
+    Populated from ``OptimizeAnythingConfig.engine_config``.
+
+    Attributes:
+        model: LiteLLM model id.
+        temperature: Sampling temperature (sampling on by default so N calls
+            don't collapse to N copies of one response).
+        max_n: Optional hard cap on samples. ``None`` = run until budget out.
+        lm_kwargs: Extra kwargs forwarded to :class:`gepa.lm.LM`.
+        effort: ``claude --effort`` value threaded into the LM as
+            ``reasoning_effort``.
+        max_thinking_tokens: Fixed thinking-token budget for the LM.
+    """
+
+    model: str = "claude-sonnet-4-6"
+    temperature: float = 1.0
+    max_n: int | None = None
+    lm_kwargs: dict[str, Any] = field(default_factory=dict)
+    effort: str | None = None
+    max_thinking_tokens: int | None = None
+
 
 # Match a fenced code block. Captures the body. Allows an optional language tag.
 _FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\n(.*?)```", re.DOTALL)
@@ -73,29 +97,21 @@ def _parse_candidate(response: str | None) -> str | None:
 class BestOfNEngine:
     """Stateless sample-and-keep-best baseline.
 
-    Engine-specific keys read from ``OptimizeAnythingConfig.engine_config``:
-
-    - ``model``: LiteLLM model id. Default ``"claude-sonnet-4-6"``.
-    - ``temperature``: Sampling temperature. Default ``1.0`` (sampling on
-      by default — N independent calls would otherwise produce N copies of
-      the same response).
-    - ``max_n``: Optional hard cap on the number of samples. Default
-      ``None`` (run until the budget is exhausted).
-    - ``lm_kwargs``: Extra kwargs forwarded to :class:`gepa.lm.LM`.
+    Engine-specific options come from ``OptimizeAnythingConfig.engine_config``,
+    parsed into :class:`BestOfNConfig`.
     """
 
     name = "best_of_n"
 
     def __init__(self, config: OptimizeAnythingConfig) -> None:
-        extras = config.engine_config
-        warn_unknown_config_keys(self.name, extras, _BON_CONFIG_KEYS)
-        self.model: str = extras.get("model", "claude-sonnet-4-6")
-        self.temperature: float = float(extras.get("temperature", 1.0))
-        self.max_n: int | None = extras.get("max_n")
-        self.lm_kwargs: dict[str, Any] = dict(extras.get("lm_kwargs") or {})
+        engine_config = BestOfNConfig(**config.engine_config)
+        self.model = engine_config.model
+        self.temperature = engine_config.temperature
+        self.max_n = engine_config.max_n
+        self.lm_kwargs = engine_config.lm_kwargs
+        self.effort = engine_config.effort
+        self.max_thinking_tokens = engine_config.max_thinking_tokens
         self.stop_at_score = config.stop_at_score
-        self.effort = config.effort
-        self.max_thinking_tokens = config.max_thinking_tokens
         # Proposer-cost cap: USD this engine may spend sampling candidates.
         # Eval-side cost (server.total_cost) is a separate bucket.
         self.max_token_cost = config.max_token_cost

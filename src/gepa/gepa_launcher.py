@@ -124,11 +124,12 @@ from typing import (
     Protocol,
     Sequence,
     TypeAlias,
+    cast,
 )
 
 from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
 from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn
-from gepa.core.callbacks import GEPACallback
+from gepa.core.callbacks import GEPACallback, ReflectiveDatasetDumpCallback
 from gepa.core.data_loader import ensure_loader
 from gepa.core.engine import GEPAEngine
 from gepa.core.result import GEPAResult
@@ -480,6 +481,8 @@ class EngineConfig:
     max_metric_calls: int | None = None
     max_candidate_proposals: int | None = None
     max_reflection_cost: float | None = None
+    stop_at_score: float | None = None
+    """Stop once the best valset aggregate score reaches this threshold."""
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
@@ -1376,11 +1379,21 @@ def optimize_anything(
 
         stop_callbacks_list.append(MaxCandidateProposalsStopper(config.engine.max_candidate_proposals))
 
+    if config.engine.stop_at_score is not None:
+        from gepa.utils.stop_condition import ScoreThresholdStopper
+
+        stop_callbacks_list.append(ScoreThresholdStopper(config.engine.stop_at_score))
+
     if config.engine.max_reflection_cost is not None:
         from gepa.utils import MaxReflectionCostStopper
 
+        # Bind to the effective cost source: when a custom proposer drives
+        # reflection (e.g. an agent subprocess), it — not reflection_lm — is the
+        # thing that spends, and reflection_lm is None. Reading total_cost off
+        # the proposer is what makes the cap actually fire in that mode.
+        cost_source = config.reflection.custom_candidate_proposer or config.reflection.reflection_lm
         stop_callbacks_list.append(
-            MaxReflectionCostStopper(config.engine.max_reflection_cost, reflection_lm=config.reflection.reflection_lm)
+            MaxReflectionCostStopper(config.engine.max_reflection_cost, reflection_lm=cost_source)
         )
 
     if not stop_callbacks_list:
@@ -1567,6 +1580,19 @@ def optimize_anything(
         else:
             InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
 
+    # --- 10.5. Resolve the callback list ---
+    # When write_agent_state is on, GEPA writes the agent-readable
+    # iterations/<id>/ tree; auto-register the callback that persists each
+    # iteration's reflective_dataset.json alongside it so that tree is
+    # complete without callers wiring their own dump callback.
+    resolved_callbacks: list[GEPACallback] = list(config.callbacks or [])
+    if config.engine.write_agent_state and config.engine.run_dir is not None:
+        # Callbacks are duck-typed (dispatched via getattr in notify_callbacks),
+        # so a partial callback implementing only on_reflective_dataset_built is
+        # valid at runtime even though it doesn't structurally satisfy the full
+        # GEPACallback protocol.
+        resolved_callbacks.append(cast(GEPACallback, ReflectiveDatasetDumpCallback(config.engine.run_dir)))
+
     # --- 11. Build reflective proposer from ReflectionConfig ---
     reflective_proposer = ReflectiveMutationProposer(
         logger=config.tracking.logger,
@@ -1581,7 +1607,7 @@ def optimize_anything(
         reflection_lm=config.reflection.reflection_lm,
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
-        callbacks=config.callbacks,
+        callbacks=resolved_callbacks,
     )
 
     # Define evaluator function for merge proposer
@@ -1622,7 +1648,7 @@ def optimize_anything(
         frontier_type=config.engine.frontier_type,
         logger=config.tracking.logger,
         experiment_tracker=experiment_tracker,
-        callbacks=config.callbacks,
+        callbacks=resolved_callbacks,
         track_best_outputs=config.engine.track_best_outputs,
         display_progress_bar=config.engine.display_progress_bar,
         raise_on_exception=config.engine.raise_on_exception,

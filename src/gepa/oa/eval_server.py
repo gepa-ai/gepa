@@ -69,7 +69,6 @@ class EvalServer:
         task: Task definition (name, datasets, objective/background).
         evaluate: Scoring function. Required.
         budget: Budget tracker for limiting evaluations.
-        tracker: Optional experiment tracker (wandb/mlflow) for logging.
         max_concurrency: Max parallel evaluations. Defaults to 8.
         output_dir: If set, each eval is persisted as ``<dir>/evals/<i>.json``
             and a rolling ``summary.json`` is written.
@@ -81,14 +80,12 @@ class EvalServer:
         evaluate: Callable[..., tuple[float, dict[str, Any]]],
         budget: BudgetTracker,
         *,
-        tracker: Any | None = None,
         max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
         output_dir: str | Path | None = None,
     ) -> None:
         self.task = task
         self.eval_fn: Callable[..., tuple[float, dict[str, Any]]] = evaluate
         self.budget = budget
-        self.tracker = tracker
         self.max_concurrency = max_concurrency
         self.best_score: float = float("-inf")
         self.best_candidate: str = task.seed_candidate or ""
@@ -386,11 +383,6 @@ class EvalServer:
             if score > self.best_score:
                 self.best_score = score
                 self.best_candidate = candidate
-            if self.tracker is not None:
-                try:
-                    self.tracker.log_eval(self.budget.used, score, self.best_score, cost)
-                except Exception:
-                    pass
             snapshot = self._snapshot()
 
         if self.output_dir is not None:

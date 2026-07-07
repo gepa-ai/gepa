@@ -55,19 +55,33 @@ GEPA integrates with [Weights & Biases](https://wandb.ai) and [MLflow](https://m
 === "optimize_anything"
 
     ```python
-    from gepa.optimize_anything import optimize_anything, GEPAConfig, TrackingConfig
+    from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
+    from gepa.gepa_launcher import TrackingConfig
 
     result = optimize_anything(
         seed_candidate="...",
         evaluator=my_evaluator,
-        config=GEPAConfig(
-            tracking=TrackingConfig(
-                use_wandb=True,
-                wandb_init_kwargs={"project": "my-gepa-run"},
-            )
+        config=OptimizeAnythingConfig(
+            engine="gepa",
+            max_evals=200,
+            # GEPA-core tracking is a GEPAConfig field, so it goes in
+            # engine_config (the gepa engine's config is passed through 1-to-1).
+            engine_config={
+                "tracking": TrackingConfig(
+                    use_wandb=True,
+                    wandb_init_kwargs={"project": "my-gepa-run"},
+                ),
+            },
         ),
     )
     ```
+
+!!! note "Where tracking is configured with `optimize_anything`"
+    Experiment tracking applies to the **gepa** engine and is configured
+    through its `engine_config["tracking"]` (a
+    `gepa.gepa_launcher.TrackingConfig`), as shown above. The gepa engine's
+    `engine_config` is a `GEPAConfig`-shaped dict passed through 1-to-1, so
+    every `TrackingConfig` option below is available.
 
 ---
 
@@ -258,15 +272,19 @@ silently fail.
     Or via `TrackingConfig` with `optimize_anything`:
 
     ```python
-    from gepa.optimize_anything import optimize_anything, GEPAConfig, TrackingConfig
+    from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
+    from gepa.gepa_launcher import TrackingConfig
 
     result = optimize_anything(
         ...,
-        config=GEPAConfig(
-            tracking=TrackingConfig(
-                use_wandb=True,
-                wandb_attach_existing=True,
-            )
+        config=OptimizeAnythingConfig(
+            engine="gepa",
+            engine_config={
+                "tracking": TrackingConfig(
+                    use_wandb=True,
+                    wandb_attach_existing=True,
+                ),
+            },
         ),
     )
     ```
@@ -305,16 +323,20 @@ so they don't collide with the caller's metrics:
 === "optimize_anything"
 
     ```python
-    from gepa.optimize_anything import GEPAConfig, TrackingConfig
+    from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
+    from gepa.gepa_launcher import TrackingConfig
 
     result = optimize_anything(
         ...,
-        config=GEPAConfig(
-            tracking=TrackingConfig(
-                use_wandb=True,
-                wandb_attach_existing=True,
-                key_prefix="gepa/",        # all keys become gepa/<key>
-            )
+        config=OptimizeAnythingConfig(
+            engine="gepa",
+            engine_config={
+                "tracking": TrackingConfig(
+                    use_wandb=True,
+                    wandb_attach_existing=True,
+                    key_prefix="gepa/",        # all keys become gepa/<key>
+                ),
+            },
         ),
     )
     # wandb will show: gepa/val_score, gepa/candidates (table), gepa/candidate_tree, …

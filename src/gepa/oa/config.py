@@ -47,29 +47,43 @@ class OptimizeAnythingConfig:
             ``progress_log.jsonl``, and ``summary.json``. When ``None``, the
             api constructs a timestamped default (``outputs/optimize_anything/<task>/
             <engine>/<timestamp>/``) so a run always has somewhere to land.
-        tracker: Optional experiment tracker (wandb/mlflow wrapper).
         run_dir: Engine workspace directory. Distinct from ``output_dir``:
             this is where the engine writes its own artifacts (gepa run dir,
             autoresearch work dir, etc.). When ``None``, subprocess engines
             use a tempdir; in-process engines skip artifact writes. Set
             explicitly to persist them.
         stop_at_score: Score threshold for early stop. Each engine interprets.
-        effort: ``claude --effort low|medium|high|max`` for engines that use
-            Claude Code. Independent of ``max_thinking_tokens`` — both can be
-            set; behavior with both set is whatever the runtime (claude CLI /
-            litellm) does when both are passed.
-        max_thinking_tokens: Fixed thinking-token budget. Independent of
-            ``effort`` (both can be set together).
         sandbox: Wrap subprocess engines in bwrap (Linux). Default ``False``.
         engine_config: Engine-specific options that don't generalize across
             engines. Each engine reads the keys it understands and warns about
             leftovers so typos surface. The keys an engine accepts are
-            enumerated in that engine's class docstring and in its
-            ``_<ENGINE>_CONFIG_KEYS`` tuple (the validation source of truth) —
-            e.g. ``GepaEngine`` / ``_GEPA_CONFIG_KEYS``,
-            ``AutoResearchEngine`` / ``_AR_CONFIG_KEYS`` (model, ralph,
-            max_no_eval_seconds, handoffs), ``BestOfNEngine`` /
-            ``_BON_CONFIG_KEYS``, ``MetaHarnessEngine`` / ``_MH_CONFIG_KEYS``.
+            enumerated in that engine's class docstring:
+
+            - ``gepa`` — a ``GEPAConfig``-shaped dict, passed through **1-to-1**.
+              Its accepted keys are the live fields of
+              :class:`~gepa.gepa_launcher.GEPAConfig` (``engine``,
+              ``reflection``, ``merge``, ``refiner``, ``tracking``,
+              ``callbacks``, ``stop_callbacks``); the OA layer only overlays the
+              budget/run_dir/cost-cap and merges its own callbacks. Set the
+              reflection LM, wandb/mlflow tracking, reasoning knobs (via
+              ``reflection.reflection_lm_kwargs``, e.g. ``reasoning_effort`` /
+              ``thinking``), and (via ``reflection.custom_candidate_proposer``)
+              a Claude Code proposer here — see
+              :class:`~gepa.oa.engines.gepa.GepaEngine`.
+            - ``autoresearch`` — ``model``, ``ralph``, ``max_no_eval_seconds``,
+              ``handoffs``, ``effort``, ``max_thinking_tokens`` (see
+              ``AutoResearchEngine`` / ``_AR_CONFIG_KEYS``).
+            - ``best_of_n`` — ``model``, ``temperature``, ``max_n``,
+              ``lm_kwargs``, ``effort``, ``max_thinking_tokens`` (see
+              ``BestOfNEngine`` / ``_BON_CONFIG_KEYS``).
+            - ``meta_harness`` — ``model``, ``max_iterations``,
+              ``max_candidates_per_iter``, ``effort``, ``max_thinking_tokens``
+              (see ``MetaHarnessEngine`` / ``_MH_CONFIG_KEYS``).
+
+            ``effort`` (``claude --effort``) and ``max_thinking_tokens`` are
+            Claude-CLI knobs, so they live in each agent engine's
+            ``engine_config``; the gepa engine takes reasoning knobs through
+            ``reflection.reflection_lm_kwargs`` instead.
     """
 
     engine: str | Engine = "gepa"
@@ -82,13 +96,10 @@ class OptimizeAnythingConfig:
     # Eval server
     max_concurrency: int = 8
     output_dir: str | Path | None = None
-    tracker: Any | None = None
 
     # Cross-engine conveniences
     run_dir: str | None = None
     stop_at_score: float | None = None
-    effort: str | None = None
-    max_thinking_tokens: int | None = None
     sandbox: bool = False
 
     # Engine-specific. Each engine's factory pops what it knows (see the

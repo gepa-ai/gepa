@@ -17,13 +17,14 @@ import sys
 import tempfile
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from gepa.oa._helpers import example_to_json, warn_unknown_config_keys
 from gepa.oa.budget import BudgetExhausted, BudgetTracker
 from gepa.oa.engine import Result
 from gepa.oa.sandbox import DENY_WEB_TOOLS, bwrap_prefix, claude_permission_args
+from gepa.oa.utils import example_to_json
 
 if TYPE_CHECKING:
     from gepa.oa.config import OptimizeAnythingConfig
@@ -31,7 +32,29 @@ if TYPE_CHECKING:
     from gepa.oa.task import Task
 
 
-_MH_CONFIG_KEYS: tuple[str, ...] = ("model", "max_iterations", "max_candidates_per_iter")
+@dataclass
+class MetaHarnessConfig:
+    """Engine-specific options for :class:`MetaHarnessEngine`.
+
+    Populated from ``OptimizeAnythingConfig.engine_config``.
+
+    Attributes:
+        model: Proposer model id. Versioned default — pin for reproducibility;
+            pass ``"sonnet"`` / ``"opus"`` to track Anthropic's current default.
+        max_iterations: Hard cap on proposer sessions. ``None`` = until budget.
+        max_candidates_per_iter: Upper bound on candidates per iteration.
+        effort: ``claude --effort`` value (CLI flag).
+        max_thinking_tokens: Fixed thinking-token budget (``MAX_THINKING_TOKENS``).
+    """
+
+    model: str = "claude-sonnet-4-6"
+    max_iterations: int | None = None
+    max_candidates_per_iter: int = 3
+    effort: str | None = None
+    max_thinking_tokens: int | None = None
+
+    def __post_init__(self) -> None:
+        self.max_candidates_per_iter = max(1, int(self.max_candidates_per_iter))
 
 
 SKILL_MD = """\
@@ -597,29 +620,21 @@ def _colorize_score(score: float) -> str:
 class MetaHarnessEngine:
     """Iterative meta-harness optimizer.
 
-    Engine-specific keys read from ``OptimizeAnythingConfig.engine_config``:
-
-    - ``model``: Proposer model. Default ``"claude-sonnet-4-6"`` (versioned —
-      pin for reproducibility; pass ``"sonnet"`` / ``"opus"`` aliases to track
-      Anthropic's current default).
-    - ``max_iterations``: Hard cap on proposer sessions. ``None`` = until budget.
-        Default ``None``.
-    - ``max_candidates_per_iter``: Upper bound on candidates per iteration.
-        Default ``3``.
+    Engine-specific options come from ``OptimizeAnythingConfig.engine_config``,
+    parsed into :class:`MetaHarnessConfig`.
     """
 
     name = "meta_harness"
 
     def __init__(self, config: OptimizeAnythingConfig) -> None:
-        extras = config.engine_config
-        warn_unknown_config_keys(self.name, extras, _MH_CONFIG_KEYS)
-        self.model: str = extras.get("model", "claude-sonnet-4-6")
-        self.max_iterations: int | None = extras.get("max_iterations", None)
-        self.max_candidates_per_iter: int = max(1, int(extras.get("max_candidates_per_iter", 3)))
+        engine_config = MetaHarnessConfig(**config.engine_config)
+        self.model = engine_config.model
+        self.max_iterations = engine_config.max_iterations
+        self.max_candidates_per_iter = engine_config.max_candidates_per_iter
+        self.effort = engine_config.effort
+        self.max_thinking_tokens = engine_config.max_thinking_tokens
         self.run_dir = config.run_dir
-        self.effort = config.effort
         self.stop_at_score = config.stop_at_score
-        self.max_thinking_tokens = config.max_thinking_tokens
         self.sandbox = config.sandbox
         # Proposer-cost cap: USD this engine may spend across its claude
         # subprocess sessions. Enforced via --max-budget-usd; the eval server
@@ -867,21 +882,6 @@ class MetaHarnessEngine:
                     _log(f"    {_green('perfect score reached')}: {score:.4f} >= {self.stop_at_score}")
                     stop_reason = "perfect_score"
                     break
-
-                tracker = getattr(server, "tracker", None)
-                if tracker is not None:
-                    try:
-                        tracker.log_metrics(
-                            {
-                                "meta_harness/iteration": iteration,
-                                "meta_harness/candidate_score": score,
-                                "meta_harness/best_score": (self._best_score(frontier_path) or 0.0),
-                                "meta_harness/proposer_cost": total_proposer_cost,
-                            },
-                            step=budget.used,
-                        )
-                    except Exception:
-                        pass
 
             bench_time = time.time() - bench_start
 
