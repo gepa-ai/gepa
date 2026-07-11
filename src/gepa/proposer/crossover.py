@@ -7,6 +7,12 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, ClassVar
 
 from gepa.core.adapter import DataInst, RolloutOutput
+from gepa.core.callbacks import (
+    EvaluationEndEvent,
+    EvaluationStartEvent,
+    GEPACallback,
+    notify_callbacks,
+)
 from gepa.core.data_loader import DataId, DataLoader
 from gepa.core.state import GEPAState, ObjectiveScores, ProgramIdx
 from gepa.gepa_utils import find_dominator_programs
@@ -104,7 +110,7 @@ class CrossoverProposer(ProposeNewCandidate[DataId]):
         min_win_asymmetry: int = 2,
         crossover_prompt_template: str | None = None,
         rng: random.Random | None = None,
-        callbacks: list[Any] | None = None,
+        callbacks: list[GEPACallback] | None = None,
     ):
         if num_subsample_ids <= 0:
             raise ValueError("num_subsample_ids should be a positive integer")
@@ -184,9 +190,7 @@ class CrossoverProposer(ProposeNewCandidate[DataId]):
         prog1 = state.program_candidates[id1]
         prog2 = state.program_candidates[id2]
         diverging = [
-            name
-            for name in prog1
-            if prog1[name] != prog2.get(name) and (id1, id2, name) not in self._attempted
+            name for name in prog1 if prog1[name] != prog2.get(name) and (id1, id2, name) not in self._attempted
         ]
         if not diverging:
             return None
@@ -298,11 +302,44 @@ class CrossoverProposer(ProposeNewCandidate[DataId]):
             self.logger.log(f"Iteration {i}: No contested subsample available for crossover, skipping")
             return None
 
+        mini_devset = self.valset.fetch(subsample_ids)
+
+        # Notify evaluation start for the crossover child (mirrors MergeProposer).
+        notify_callbacks(
+            self.callbacks,
+            "on_evaluation_start",
+            EvaluationStartEvent(
+                iteration=i,
+                candidate_idx=None,
+                batch_size=len(mini_devset),
+                capture_traces=False,
+                parent_ids=[id1, id2],
+                inputs=mini_devset,
+                is_seed_candidate=False,
+            ),
+        )
+
         # Metric-call axis: evaluate the child on the contested subsample only.
-        _outputs, scores_by_id, _obj_by_id, actual_evals = state.cached_evaluate_full(
+        outputs_by_id, scores_by_id, objective_by_id, actual_evals = state.cached_evaluate_full(
             child, subsample_ids, self.valset.fetch, self.evaluator
         )
         state.increment_evals(actual_evals)
+
+        notify_callbacks(
+            self.callbacks,
+            "on_evaluation_end",
+            EvaluationEndEvent(
+                iteration=i,
+                candidate_idx=None,
+                scores=[scores_by_id[k] for k in subsample_ids],
+                has_trajectories=False,
+                parent_ids=[id1, id2],
+                outputs=[outputs_by_id[k] for k in subsample_ids],
+                trajectories=None,
+                objective_scores=[objective_by_id[k] for k in subsample_ids] if objective_by_id else None,
+                is_seed_candidate=False,
+            ),
+        )
 
         id1_sub_scores = [state.prog_candidate_val_subscores[id1][k] for k in subsample_ids]
         id2_sub_scores = [state.prog_candidate_val_subscores[id2][k] for k in subsample_ids]

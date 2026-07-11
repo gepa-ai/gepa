@@ -206,6 +206,31 @@ class MergeRejectedEvent(TypedDict):
     reason: str
 
 
+class CrossoverAttemptedEvent(TypedDict):
+    """Event for on_crossover_attempted callback."""
+
+    iteration: int
+    parent_ids: Sequence[ProgramIdx]
+    component: str
+    crossover_candidate: dict[str, str]
+
+
+class CrossoverAcceptedEvent(TypedDict):
+    """Event for on_crossover_accepted callback."""
+
+    iteration: int
+    new_candidate_idx: int
+    parent_ids: Sequence[ProgramIdx]
+
+
+class CrossoverRejectedEvent(TypedDict):
+    """Event for on_crossover_rejected callback."""
+
+    iteration: int
+    parent_ids: Sequence[ProgramIdx]
+    reason: str
+
+
 class ParetoFrontUpdatedEvent(TypedDict):
     """Event for on_pareto_front_updated callback."""
 
@@ -362,6 +387,22 @@ class GEPACallback(Protocol):
         ...
 
     # =========================================================================
+    # Crossover Events
+    # =========================================================================
+
+    def on_crossover_attempted(self, event: CrossoverAttemptedEvent) -> None:
+        """Called when a crossover is attempted."""
+        ...
+
+    def on_crossover_accepted(self, event: CrossoverAcceptedEvent) -> None:
+        """Called when a crossover is accepted."""
+        ...
+
+    def on_crossover_rejected(self, event: CrossoverRejectedEvent) -> None:
+        """Called when a crossover is rejected."""
+        ...
+
+    # =========================================================================
     # State Events
     # =========================================================================
 
@@ -510,6 +551,15 @@ class CompositeCallback:
 
     def on_merge_rejected(self, event: MergeRejectedEvent) -> None:
         self._notify("on_merge_rejected", event)
+
+    def on_crossover_attempted(self, event: CrossoverAttemptedEvent) -> None:
+        self._notify("on_crossover_attempted", event)
+
+    def on_crossover_accepted(self, event: CrossoverAcceptedEvent) -> None:
+        self._notify("on_crossover_accepted", event)
+
+    def on_crossover_rejected(self, event: CrossoverRejectedEvent) -> None:
+        self._notify("on_crossover_rejected", event)
 
     def on_pareto_front_updated(self, event: ParetoFrontUpdatedEvent) -> None:
         self._notify("on_pareto_front_updated", event)

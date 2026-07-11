@@ -18,6 +18,9 @@ from gepa.core.callbacks import (
     BudgetUpdatedEvent,
     CandidateAcceptedEvent,
     CandidateRejectedEvent,
+    CrossoverAcceptedEvent,
+    CrossoverAttemptedEvent,
+    CrossoverRejectedEvent,
     ErrorEvent,
     GEPACallback,
     IterationEndEvent,
@@ -867,6 +870,18 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                 float("-inf"),
                             ]
                             new_sum = sum(proposal.subsample_scores_after or [])
+                            component = str((proposal.metadata or {}).get("component", ""))
+
+                            notify_callbacks(
+                                self.callbacks,
+                                "on_crossover_attempted",
+                                CrossoverAttemptedEvent(
+                                    iteration=state.i + 1,
+                                    parent_ids=proposal.parent_program_ids,
+                                    component=component,
+                                    crossover_candidate=proposal.candidate,
+                                ),
+                            )
 
                             if new_sum >= max(parent_sums):
                                 new_idx, _ = self._run_full_eval_and_add(
@@ -878,6 +893,15 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                 self.crossover_proposer.total_crossovers_tested += 1
                                 proposal_accepted = True
 
+                                notify_callbacks(
+                                    self.callbacks,
+                                    "on_crossover_accepted",
+                                    CrossoverAcceptedEvent(
+                                        iteration=state.i + 1,
+                                        new_candidate_idx=new_idx,
+                                        parent_ids=proposal.parent_program_ids,
+                                    ),
+                                )
                                 notify_callbacks(
                                     self.callbacks,
                                     "on_candidate_accepted",
@@ -896,11 +920,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                 )
                                 notify_callbacks(
                                     self.callbacks,
-                                    "on_candidate_rejected",
-                                    CandidateRejectedEvent(
+                                    "on_crossover_rejected",
+                                    CrossoverRejectedEvent(
                                         iteration=state.i + 1,
-                                        old_score=max(parent_sums),
-                                        new_score=new_sum,
+                                        parent_ids=proposal.parent_program_ids,
                                         reason=f"Crossover score {new_sum} worse than both parents {parent_sums}",
                                     ),
                                 )
