@@ -1,6 +1,8 @@
 import random
 from types import SimpleNamespace
 
+import pytest
+
 from gepa.proposer.crossover import CrossoverProposer, CrossoverSignature
 
 
@@ -230,3 +232,97 @@ def test_crossover_skips_when_no_complementary_pair():
     proposer.crossovers_due = 1
 
     assert proposer.propose(_complementary_state()) is None
+
+
+def test_crossover_returns_none_when_lm_raises():
+    def failing_lm(_prompt):
+        raise RuntimeError("synthesis backend down")
+
+    proposer = CrossoverProposer(
+        logger=_StubLogger(),
+        valset=_StubValset(),
+        evaluator=lambda batch, prog: (batch, [0.95 for _ in batch], None),
+        reflection_lm=failing_lm,
+        use_crossover=True,
+        rng=random.Random(0),
+    )
+    proposer.last_iter_found_new_program = True
+    proposer.crossovers_due = 1
+
+    state = _complementary_state()
+    assert proposer.propose(state) is None
+    assert state.total_num_evals == 0  # no metric calls spent on a failed synthesis
+
+
+def test_crossover_returns_none_on_empty_synthesis():
+    proposer = CrossoverProposer(
+        logger=_StubLogger(),
+        valset=_StubValset(),
+        evaluator=lambda batch, prog: (batch, [0.95 for _ in batch], None),
+        reflection_lm=lambda _p: "```\n\n```",  # extractor yields an empty instruction
+        use_crossover=True,
+        rng=random.Random(0),
+    )
+    proposer.last_iter_found_new_program = True
+    proposer.crossovers_due = 1
+
+    state = _complementary_state()
+    assert proposer.propose(state) is None
+    assert state.total_num_evals == 0
+
+
+def test_crossover_subsample_balances_contested_buckets():
+    proposer = CrossoverProposer(
+        logger=_StubLogger(),
+        valset=_StubValset(),
+        evaluator=lambda batch, prog: (batch, [0.95 for _ in batch], None),
+        reflection_lm=lambda _p: "```\nx\n```",
+        use_crossover=True,
+        num_subsample_ids=5,
+        rng=random.Random(0),
+    )
+
+    selected = proposer._select_contested_subsample([0, 1, 2], [3, 4, 5], [6, 7])
+
+    assert len(selected) == 5
+    assert len(set(selected)) == 5
+    # ceil(5/3)=2 from each winning bucket, remainder from ties.
+    assert len([i for i in selected if i in {0, 1, 2}]) == 2
+    assert len([i for i in selected if i in {3, 4, 5}]) == 2
+    assert len([i for i in selected if i in {6, 7}]) == 1
+
+
+def test_crossover_subsample_returns_all_when_fewer_than_requested():
+    proposer = CrossoverProposer(
+        logger=_StubLogger(),
+        valset=_StubValset(),
+        evaluator=lambda batch, prog: (batch, [0.95 for _ in batch], None),
+        reflection_lm=lambda _p: "```\nx\n```",
+        use_crossover=True,
+        num_subsample_ids=5,
+        rng=random.Random(0),
+    )
+
+    assert sorted(proposer._select_contested_subsample([0], [1], [])) == [0, 1]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"num_subsample_ids": 0},
+        {"num_subsample_ids": -1},
+        {"min_win_asymmetry": 0},
+        {"min_win_asymmetry": -2},
+    ],
+)
+def test_crossover_init_rejects_nonpositive_params(kwargs):
+    with pytest.raises(ValueError):
+        CrossoverProposer(
+            logger=_StubLogger(),
+            valset=_StubValset(),
+            evaluator=lambda batch, prog: (batch, [0.95 for _ in batch], None),
+            reflection_lm=lambda _p: "```\nx\n```",
+            use_crossover=True,
+            rng=random.Random(0),
+            **kwargs,
+        )

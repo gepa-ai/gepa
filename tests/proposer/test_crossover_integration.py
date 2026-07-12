@@ -9,6 +9,8 @@ pair. The crossover synthesis prompt (which contains "VARIANT A") returns an
 instruction with BOTH tokens, which wins everywhere and is accepted.
 """
 
+import pytest
+
 from gepa import optimize
 from gepa.core.adapter import EvaluationBatch
 from gepa.core.callbacks import GEPACallback
@@ -53,6 +55,22 @@ class _AcceptCapture(GEPACallback):
         self.accepts.append(dict(event))
 
 
+class _CrossoverCapture(GEPACallback):
+    def __init__(self):
+        self.attempted = []
+        self.accepted = []
+        self.rejected = []
+
+    def on_crossover_attempted(self, event):
+        self.attempted.append(dict(event))
+
+    def on_crossover_accepted(self, event):
+        self.accepted.append(dict(event))
+
+    def on_crossover_rejected(self, event):
+        self.rejected.append(dict(event))
+
+
 def test_engine_crossover_slot_produces_accepted_crossover():
     data = [{"type": "A"}, {"type": "A"}, {"type": "B"}, {"type": "B"}]
 
@@ -91,3 +109,60 @@ def test_engine_crossover_slot_produces_accepted_crossover():
 
     two_parent_accepts = [e for e in capture.accepts if len(e["parent_ids"]) == 2]
     assert two_parent_accepts, "expected an accepted proposal with two parents (a crossover)"
+
+
+def test_engine_crossover_slot_rejects_regressing_synthesis():
+    data = [{"type": "A"}, {"type": "A"}, {"type": "B"}, {"type": "B"}]
+
+    def reflection_lm(prompt):
+        # Crossover synthesis prompt -> a regression: neither token, scores 0.2 everywhere.
+        if "VARIANT A" in prompt:
+            return "```\nUseless synthesized instruction\n```"
+        if "ALPHA" in prompt:
+            return "```\nInstruction with BETA\n```"
+        return "```\nInstruction with ALPHA\n```"
+
+    capture = _CrossoverCapture()
+
+    result = optimize(
+        seed_candidate={"instructions": "plain instruction"},
+        trainset=data,
+        valset=data,
+        adapter=_TokenAdapter(),
+        reflection_lm=reflection_lm,
+        use_crossover=True,
+        max_crossover_invocations=5,
+        reflection_minibatch_size=4,
+        max_metric_calls=150,
+        callbacks=[capture],
+        seed=0,
+    )
+
+    assert capture.attempted, "expected the crossover slot to attempt a synthesis"
+    assert capture.rejected, "expected the regressing synthesis to be rejected"
+    assert not capture.accepted
+    for event in capture.rejected:
+        assert len(event["parent_ids"]) == 2
+        assert "worse" in event["reason"]
+    # The rejected child must never enter the candidate pool.
+    assert all("Useless" not in c["instructions"] for c in result.candidates)
+
+
+def test_optimize_use_crossover_requires_reflection_lm():
+    data = [{"type": "A"}, {"type": "B"}]
+
+    class _SelfProposingAdapter(_TokenAdapter):
+        def propose_new_texts(self, candidate, reflective_dataset, components_to_update):
+            return {name: "Instruction with ALPHA" for name in components_to_update}
+
+    with pytest.raises(ValueError, match="use_crossover"):
+        optimize(
+            seed_candidate={"instructions": "plain instruction"},
+            trainset=data,
+            valset=data,
+            adapter=_SelfProposingAdapter(),
+            reflection_lm=None,
+            use_crossover=True,
+            max_metric_calls=10,
+            seed=0,
+        )
