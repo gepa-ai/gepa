@@ -32,6 +32,23 @@ def _candidate_hash(candidate: dict[str, str]) -> CandidateHash:
     """Compute a deterministic hash of a candidate dictionary."""
     return hashlib.sha256(json.dumps(sorted(candidate.items())).encode()).hexdigest()
 
+@dataclass
+class RejectionRecord:
+    """A single rejected reflective-mutation attempt, kept per parent.
+
+    Lets the reflective proposer see what was already tried (and why it
+    failed) the next time the same parent is sampled, instead of starting
+    from a blank slate every iteration. Intentionally informational, not a
+    hard tabu list -- the reflection LM decides how much weight to give it.
+    """
+
+    proposed_text_diff: dict[str, str]
+    """Component name -> proposed text, for components that differed from the parent."""
+    summarized_failure: str
+    """Short human-readable reason the proposal was rejected (mirrors engine.py's reject_reason)."""
+    minibatch_score: float
+    """The rejected candidate's subsample score sum (proposal.subsample_scores_after)."""
+    iteration: int
 
 @dataclass
 class CachedEvaluation(Generic[RolloutOutput]):
@@ -150,7 +167,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     returned by :func:`~gepa.optimize_anything.optimize_anything`.
     """
 
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 5
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 6
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
     _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
 
@@ -187,6 +204,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     # Opaque bag for adapter-specific persistent state.
     # Core GEPA never inspects this; adapters read/write via get_adapter_state()/set_adapter_state().
     adapter_state: dict[str, Any]
+    rejected_proposals_by_parent: dict[ProgramIdx, list[RejectionRecord]]
 
     def __init__(
         self,
@@ -252,7 +270,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.validation_schema_version = self._VALIDATION_SCHEMA_VERSION
         self.evaluation_cache = evaluation_cache
         self.adapter_state: dict[str, Any] = {}
-
+        self.rejected_proposals_by_parent: dict[ProgramIdx, list[RejectionRecord]] = {}
     def is_consistent(self) -> bool:
         assert len(self.program_candidates) == len(self.parent_program_for_candidate)
         assert len(self.program_candidates) == len(self.named_predictor_id_to_update_next_for_program_candidate)
@@ -373,6 +391,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         assert set(state.pareto_front_valset.keys()) == set(state.program_at_pareto_front_valset.keys())
         assert set(state.objective_pareto_front.keys()) == set(state.program_at_pareto_front_objectives.keys())
         assert isinstance(state.adapter_state, dict)
+        assert isinstance(state.rejected_proposals_by_parent, dict)
         return state
 
     @staticmethod
@@ -417,6 +436,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             d["evaluation_cache"] = None
         if "adapter_state" not in d:
             d["adapter_state"] = {}
+        if "rejected_proposals_by_parent" not in d:       
+            d["rejected_proposals_by_parent"] = {}
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod
