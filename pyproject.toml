@@ -22,7 +22,14 @@ dependencies = []
 [project.optional-dependencies]
 full = [
     # Common dependencies (all Python versions)
-    "litellm>=1.83.0",
+    # litellm 1.92.0 introduced a native extension and publishes manylinux
+    # wheels only (cp310-cp313): no macOS, no Windows, no cp314. Everyone else
+    # falls back to the sdist, which needs Cargo >= 1.85 (edition2024) and a
+    # PyO3 that caps at Python 3.13 — so fresh installs break on macOS/Windows
+    # (all Pythons) and on 3.14 (all platforms). Cap unconditionally; lift once
+    # litellm ships a complete wheel matrix (or a pure-Python build) — check
+    # https://pypi.org/pypi/litellm/<version>/json artifact list first.
+    "litellm>=1.83.0,<1.92",
     "tqdm>=4.66.1",
     "cloudpickle>=3.0.0",
     # Python < 3.14
@@ -40,8 +47,9 @@ full = [
 ]
 confidence = [
     "llm-structured-confidence>=0.4.5",
-    "litellm>=1.64.0; python_version < '3.14'",
-    "litellm>=1.81.0; python_version >= '3.14'",
+    # See the litellm cap comment in the `full` extra (incomplete 1.92 wheels).
+    "litellm>=1.64.0,<1.92; python_version < '3.14'",
+    "litellm>=1.81.0,<1.92; python_version >= '3.14'",
 ]
 dspy = []
 test = [

@@ -62,8 +62,14 @@ jobs:
           NEW_VERSION=$(uv run python .github/workflows/build_utils/test_version.py $PACKAGE_NAME $VERSION https://test.pypi.org)  
           echo "Version to be used for TestPyPI release: $NEW_VERSION"  
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-      - name: Update version in pyproject.toml
-        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml
+      - name: Update version in pyproject.toml and refresh lockfile
+        run: |
+          sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml
+          # Keep uv.lock in sync with the bumped version. A stale lock breaks
+          # `uv sync --locked` in CI, and with a plain `uv sync` it silently
+          # re-resolves against latest PyPI (which is how an unbuildable
+          # litellm 1.92.0 reached the Python 3.14 jobs after the 0.1.2 bump).
+          uv lock
       - name: Build a binary wheel
         run: uv run python -m build
       - name: List built distributions
@@ -91,7 +97,7 @@ jobs:
       - name: Create release-test branch and push changes
         run: |
           git checkout -b release-test-${{ needs.extract-tag.outputs.version }}
-          git add pyproject.toml
+          git add pyproject.toml uv.lock
           git commit -m "Update version to ${{ steps.check_version.outputs.version }} for test PyPI (from tag ${{ needs.extract-tag.outputs.version }})"
           git push origin release-test-${{ needs.extract-tag.outputs.version }}
 
@@ -148,8 +154,14 @@ jobs:
           fi
           
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-      - name: Update version in pyproject.toml
-        run: sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml
+      - name: Update version in pyproject.toml and refresh lockfile
+        run: |
+          sed -i '/#replace_package_version_marker/{n;s/version="[^"]*"/version="${{ steps.check_version.outputs.version }}"/;}' pyproject.toml
+          # Keep uv.lock in sync with the bumped version. A stale lock breaks
+          # `uv sync --locked` in CI, and with a plain `uv sync` it silently
+          # re-resolves against latest PyPI (which is how an unbuildable
+          # litellm 1.92.0 reached the Python 3.14 jobs after the 0.1.2 bump).
+          uv lock
       - name: Build a binary wheel
         run: uv run python -m build
       # Test the locally built wheel before publishing to pypi
@@ -173,7 +185,7 @@ jobs:
       - name: Create release branch and push changes
         run: |
           git checkout -b release-${{ needs.extract-tag.outputs.version }}
-          git add pyproject.toml
+          git add pyproject.toml uv.lock
           git commit -m "Update version to ${{ steps.check_version.outputs.version }} (from tag ${{ needs.extract-tag.outputs.version }})"
           git push origin release-${{ needs.extract-tag.outputs.version }}
 
