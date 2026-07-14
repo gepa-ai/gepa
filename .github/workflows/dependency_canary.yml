@@ -1,14 +1,20 @@
 # Fresh-resolution canary: regular CI installs from the committed uv.lock
 # (`uv sync --locked`), which keeps PRs deterministic — but real users install
-# with pip and resolve the latest matching versions from PyPI. This workflow
-# simulates that: it upgrades the resolution to latest and runs the test suite,
-# so a new upstream release that breaks a fresh `pip install gepa[...]`
-# (e.g. litellm 1.92.0's native extension with no Python 3.14 wheels) surfaces
-# here on a schedule instead of inside an unrelated PR or a release merge.
+# with pip, which resolves the latest matching versions for THEIR interpreter.
+# A universal lockfile cannot simulate that: uv unifies a package to a single
+# version whenever one version satisfies every marker branch, so a cap that
+# targets only Python >= 3.14 (like litellm<1.92) also holds the locked
+# version down for 3.10-3.13. This workflow therefore uses `uv pip install`
+# — per-interpreter, pip-semantics resolution against latest PyPI — so each
+# matrix leg tests exactly what a fresh `pip install gepa[...]` would pull
+# for that interpreter. A failing leg means users on that interpreter are
+# likely broken (e.g. litellm 1.92.0: cp310-cp313 wheels only, sdist
+# unbuildable on 3.14), and the failure opens/updates a tracking issue.
 name: Dependency Canary
 
 permissions:
   contents: read
+  issues: write
 
 on:
   schedule:
@@ -18,35 +24,49 @@ on:
 jobs:
   fresh-resolve:
     name: Fresh Resolve & Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # Oldest and newest supported interpreters bracket the wheel matrix.
-        python-version: ["3.10", "3.14"]
+        # Wheel gaps are ABI- and platform-specific (litellm 1.92.0 shipped
+        # manylinux-only wheels: broken for macOS/Windows users on every
+        # interpreter, and for cp314 everywhere), so the matrix spans both
+        # axes. Windows is a candidate third OS if the suite is kept clean.
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install uv with caching
+      - name: Install uv
         uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: |
-            **/pyproject.toml
-            **/uv.lock
-      - name: Create and activate virtual environment
+      - name: Create virtual environment
         run: |
           uv venv .venv
           echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
-      - name: Resolve latest dependencies (ignore committed lock)
-        run: uv lock --upgrade
-      - name: Install dependencies
+      - name: Install with fresh per-interpreter resolution (pip semantics)
         run: |
-          uv sync -p .venv --extra dev
-          uv pip list
+          uv pip install -p .venv '.[dev]'
+          uv pip list -p .venv
       - name: Import smoke test
-        run: uv run -p .venv python -c "import gepa"
+        run: .venv/bin/python -c "import gepa"
       - name: Run tests with pytest
-        run: uv run -p .venv pytest -vv tests/
+        # Not `uv run` — that would sync the environment back to uv.lock and
+        # clobber the fresh resolution under test.
+        run: .venv/bin/python -m pytest -vv tests/
+      - name: Open or update tracking issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Dependency canary failing"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          body="Fresh-resolution canary failed on Python ${{ matrix.python-version }} (${{ matrix.os }}): $run_url
+          A new dependency release likely breaks a fresh \`pip install gepa[...]\` for users on this interpreter."
+          num=$(gh issue list --repo "$GITHUB_REPOSITORY" --search "\"$title\" in:title" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$num" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          else
+            gh issue comment "$num" --repo "$GITHUB_REPOSITORY" --body "$body"
+          fi
