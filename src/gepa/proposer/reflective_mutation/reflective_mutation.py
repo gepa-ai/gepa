@@ -448,7 +448,45 @@ class ReflectiveMutationProposer:
             return []
 
         child_items = [(c[1], c[0].minibatch) for _, c in valid_children]
+
+        # Fire evaluation start callbacks for each child candidate (parity with
+        # the pre-batch sequential path, which emitted these around the new
+        # candidate's minibatch evaluation; candidate_idx is None because the
+        # child is not in the candidate pool yet)
+        for _, (task, _new_candidate, _eval_curr, _meta) in valid_children:
+            notify_callbacks(
+                self.callbacks,
+                "on_evaluation_start",
+                EvaluationStartEvent(
+                    iteration=i,
+                    candidate_idx=None,
+                    batch_size=len(task.minibatch),
+                    capture_traces=True,
+                    parent_ids=[task.parent_idx],
+                    inputs=task.minibatch,
+                    is_seed_candidate=False,
+                ),
+            )
+
         child_evals = self._batch_evaluate(child_items)
+
+        # Fire evaluation end callbacks for each child candidate
+        for (_, (task, _new_candidate, _eval_curr, _meta)), child_eval in zip(valid_children, child_evals, strict=True):
+            notify_callbacks(
+                self.callbacks,
+                "on_evaluation_end",
+                EvaluationEndEvent(
+                    iteration=i,
+                    candidate_idx=None,
+                    scores=child_eval.scores,
+                    has_trajectories=bool(child_eval.trajectories),
+                    parent_ids=[task.parent_idx],
+                    outputs=child_eval.outputs,
+                    trajectories=child_eval.trajectories,
+                    objective_scores=child_eval.objective_scores,
+                    is_seed_candidate=False,
+                ),
+            )
 
         total_child_evals = sum(
             e.num_metric_calls if e.num_metric_calls is not None else len(child_items[idx][1])
