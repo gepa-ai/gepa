@@ -83,6 +83,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
         # Parallel proposals
         num_parallel_proposals: int = 1,
+        # Admission manifest (opt-in per-decision JSONL audit ledger; requires run_dir)
+        write_admission_manifest: bool = False,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -131,6 +133,21 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.val_evaluation_policy: EvaluationPolicy[DataId, DataInst] = (
             val_evaluation_policy if val_evaluation_policy is not None else FullEvaluationPolicy()
         )
+
+        # Admission manifest: opt-in per-decision JSONL audit ledger under run_dir.
+        # Off by default and zero-cost when off. Requires run_dir so existing runs
+        # never start emitting a (potentially sensitive) artifact unexpectedly.
+        self.write_admission_manifest = write_admission_manifest
+        self._admission_writer = None
+        if write_admission_manifest:
+            if run_dir is None:
+                raise ValueError(
+                    "write_admission_manifest=True requires run_dir to be set; the "
+                    "manifest is written to <run_dir>/admission_manifest.jsonl."
+                )
+            from gepa.logging.admission_manifest import MANIFEST_FILENAME, AdmissionManifestWriter
+
+            self._admission_writer = AdmissionManifestWriter(os.path.join(run_dir, MANIFEST_FILENAME))
 
     def _sync_adapter_state_to_state(self, state: GEPAState) -> None:
         """Snapshot adapter state into GEPAState before saving.
@@ -294,11 +311,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         Returns True if the proposal was accepted.
         """
+        metric_calls_before = state.total_num_evals
         old_sum = sum(proposal.subsample_scores_before or [])
         new_sum = sum(proposal.subsample_scores_after or [])
         _uses_builtin_criterion = isinstance(
             self.acceptance_criterion, StrictImprovementAcceptance | ImprovementOrEqualAcceptance
         )
+
+        from gepa.logging.admission_manifest import acceptance_operator, criterion_name
+
+        crit_name = criterion_name(self.acceptance_criterion)
 
         if not self.acceptance_criterion.should_accept(proposal, state):
             if _uses_builtin_criterion:
@@ -319,15 +341,29 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     reason=reject_reason,
                 ),
             )
+            self._emit_admission_reject(
+                iteration=iteration,
+                proposal=proposal,
+                proposal_kind=proposal.tag or "reflective_mutation",
+                decision_reason=reject_reason,
+                acceptance_criterion=crit_name,
+                subsample_score_before=old_sum,
+                subsample_score_after=new_sum,
+                metric_calls_before=metric_calls_before,
+                state=state,
+            )
             return False
 
         if _uses_builtin_criterion:
+            op = acceptance_operator(crit_name)
             accept_msg = f"Iteration {iteration}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
+            accept_reason = f"subsample score {new_sum} {op} {old_sum} (accepted by {crit_name})"
         else:
             accept_msg = f"Iteration {iteration}: Candidate accepted (old_sum={old_sum}, new_sum={new_sum}). Continue to full eval and add to candidate pool."
+            accept_reason = f"accepted by acceptance criterion {crit_name} (old_sum={old_sum}, new_sum={new_sum})"
         self.logger.log(accept_msg)
 
-        new_idx, _ = self._run_full_eval_and_add(
+        new_idx, linear_pareto_idx = self._run_full_eval_and_add(
             new_program=proposal.candidate,
             state=state,
             parent_program_idx=proposal.parent_program_ids,
@@ -344,6 +380,19 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 new_score=new_sum,
                 parent_ids=proposal.parent_program_ids,
             ),
+        )
+        self._emit_admission_accept(
+            iteration=iteration,
+            proposal=proposal,
+            proposal_kind=proposal.tag or "reflective_mutation",
+            decision_reason=accept_reason,
+            acceptance_criterion=crit_name,
+            subsample_score_before=old_sum,
+            subsample_score_after=new_sum,
+            metric_calls_before=metric_calls_before,
+            new_idx=new_idx,
+            linear_pareto_idx=linear_pareto_idx,
+            state=state,
         )
         return True
 
@@ -673,6 +722,9 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                 float("-inf"),
                             ]
                             new_sum = sum(proposal.subsample_scores_after or [])
+                            merge_metric_calls_before = state.total_num_evals
+
+                            from gepa.logging.admission_manifest import MERGE_GATE
 
                             # Notify merge attempted
                             notify_callbacks(
@@ -687,7 +739,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
                             if new_sum >= max(parent_sums):
                                 # ACCEPTED: consume one merge attempt and record it
-                                new_idx, _ = self._run_full_eval_and_add(
+                                new_idx, merge_linear_pareto_idx = self._run_full_eval_and_add(
                                     new_program=proposal.candidate,
                                     state=state,
                                     parent_program_idx=proposal.parent_program_ids,
@@ -716,6 +768,19 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                         parent_ids=proposal.parent_program_ids,
                                     ),
                                 )
+                                self._emit_admission_accept(
+                                    iteration=state.i + 1,
+                                    proposal=proposal,
+                                    proposal_kind="merge",
+                                    decision_reason=f"merged subsample score {new_sum} >= max(parent sums) {max(parent_sums)}",
+                                    acceptance_criterion=MERGE_GATE,
+                                    subsample_score_before=max(parent_sums),
+                                    subsample_score_after=new_sum,
+                                    metric_calls_before=merge_metric_calls_before,
+                                    new_idx=new_idx,
+                                    linear_pareto_idx=merge_linear_pareto_idx,
+                                    state=state,
+                                )
                                 continue  # skip reflective this iteration
                             else:
                                 # REJECTED: do NOT consume merges_due or total_merges_tested
@@ -732,6 +797,17 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                         parent_ids=proposal.parent_program_ids,
                                         reason=f"Merged score {new_sum} worse than both parents {parent_sums}",
                                     ),
+                                )
+                                self._emit_admission_reject(
+                                    iteration=state.i + 1,
+                                    proposal=proposal,
+                                    proposal_kind="merge",
+                                    decision_reason=f"merged subsample score {new_sum} < max(parent sums) {max(parent_sums)}",
+                                    acceptance_criterion=MERGE_GATE,
+                                    subsample_score_before=max(parent_sums),
+                                    subsample_score_after=new_sum,
+                                    metric_calls_before=merge_metric_calls_before,
+                                    state=state,
                                 )
                                 # Skip reflective this iteration (old behavior)
                                 continue
@@ -814,6 +890,103 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         self.experiment_tracker.log_summary(summary)
 
         return state
+
+    # ------------------------------------------------------------------
+    # Admission manifest (opt-in per-decision audit ledger)
+    # ------------------------------------------------------------------
+
+    def _emit_admission_reject(
+        self,
+        *,
+        iteration: int,
+        proposal: CandidateProposal,
+        proposal_kind: str,
+        decision_reason: str,
+        acceptance_criterion: str,
+        subsample_score_before: float,
+        subsample_score_after: float,
+        metric_calls_before: int,
+        state: GEPAState[RolloutOutput, DataId],
+    ) -> None:
+        """Append a rejected-decision record immediately (validation fields stay null)."""
+        if self._admission_writer is None:
+            return
+        try:
+            from gepa.logging.admission_manifest import build_decision_record
+
+            parents = [state.program_candidates[i] for i in proposal.parent_program_ids]
+            record = build_decision_record(
+                iteration=iteration,
+                proposal_kind=proposal_kind,
+                decision="rejected",
+                decision_reason=decision_reason,
+                acceptance_criterion=acceptance_criterion,
+                candidate=proposal.candidate,
+                parent_ids=proposal.parent_program_ids,
+                parents=parents,
+                subsample_ids=proposal.subsample_indices,
+                subsample_score_before=subsample_score_before,
+                subsample_score_after=subsample_score_after,
+                metric_calls_before_decision=metric_calls_before,
+            )
+            self._admission_writer.append_record(record)
+        except Exception as e:  # an audit log must never crash the optimization
+            self.logger.log(f"Warning: failed to write admission manifest (reject): {e}")
+
+    def _emit_admission_accept(
+        self,
+        *,
+        iteration: int,
+        proposal: CandidateProposal,
+        proposal_kind: str,
+        decision_reason: str,
+        acceptance_criterion: str,
+        subsample_score_before: float,
+        subsample_score_after: float,
+        metric_calls_before: int,
+        new_idx: int,
+        linear_pareto_idx: int,
+        state: GEPAState[RolloutOutput, DataId],
+    ) -> None:
+        """Finalize and append an accepted-decision record once, after the full-val eval.
+
+        Shared by the reflective and merge accept paths. The decision snapshot is
+        built from the proposal; the ``validation`` block is post-decision
+        enrichment from the just-completed ``_run_full_eval_and_add``.
+        """
+        if self._admission_writer is None:
+            return
+        try:
+            from gepa.logging.admission_manifest import build_decision_record
+
+            parents = [state.program_candidates[i] for i in proposal.parent_program_ids]
+            record = build_decision_record(
+                iteration=iteration,
+                proposal_kind=proposal_kind,
+                decision="accepted",
+                decision_reason=decision_reason,
+                acceptance_criterion=acceptance_criterion,
+                candidate=proposal.candidate,
+                parent_ids=proposal.parent_program_ids,
+                parents=parents,
+                subsample_ids=proposal.subsample_indices,
+                subsample_score_before=subsample_score_before,
+                subsample_score_after=subsample_score_after,
+                metric_calls_before_decision=metric_calls_before,
+            )
+            trace_entry = state.full_program_trace[-1] if state.full_program_trace else {}
+            evaluated_val_ids = sorted(trace_entry.get("evaluated_val_indices", []) or [])
+            record["candidate_idx"] = new_idx
+            record["validation"] = {
+                "val_average_score": self.val_evaluation_policy.get_valset_score(new_idx, state),
+                "evaluated_val_ids": evaluated_val_ids,
+                "is_best_program": new_idx == linear_pareto_idx,
+                "metric_calls_after_validation": state.total_num_evals,
+                "metric_calls_charged_validation": state.total_num_evals - metric_calls_before,
+            }
+            self._admission_writer.append_record(record)
+        except Exception as e:  # an audit log must never crash the optimization
+            self.logger.log(f"Warning: failed to write admission manifest (accept): {e}")
 
     def _log_proposal_lm_calls(
         self,

@@ -457,6 +457,11 @@ class EngineConfig:
     """
 
     run_dir: str | None = None
+    # When True, append a per-decision JSONL admission ledger to
+    # <run_dir>/admission_manifest.jsonl (one record per accept/reject decision,
+    # keyed by candidate + parent hashes). Requires run_dir; off by default so
+    # existing runs never start emitting a new artifact unexpectedly.
+    write_admission_manifest: bool = False
     seed: int = 0
     display_progress_bar: bool = False
     raise_on_exception: bool = True
@@ -1625,6 +1630,7 @@ def optimize_anything(
             config.engine.max_workers or (os.cpu_count() or 32),
             config.reflection.reflection_minibatch_size or 1,
         ),
+        write_admission_manifest=config.engine.write_admission_manifest,
     )
 
     # --- 15. Run optimization ---
