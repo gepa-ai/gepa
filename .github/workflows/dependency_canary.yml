@@ -1,0 +1,52 @@
+# Fresh-resolution canary: regular CI installs from the committed uv.lock
+# (`uv sync --locked`), which keeps PRs deterministic — but real users install
+# with pip and resolve the latest matching versions from PyPI. This workflow
+# simulates that: it upgrades the resolution to latest and runs the test suite,
+# so a new upstream release that breaks a fresh `pip install gepa[...]`
+# (e.g. litellm 1.92.0's native extension with no Python 3.14 wheels) surfaces
+# here on a schedule instead of inside an unrelated PR or a release merge.
+name: Dependency Canary
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "0 8 * * 1,4" # Mon & Thu 08:00 UTC
+  workflow_dispatch:
+
+jobs:
+  fresh-resolve:
+    name: Fresh Resolve & Test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Oldest and newest supported interpreters bracket the wheel matrix.
+        python-version: ["3.10", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install uv with caching
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+      - name: Create and activate virtual environment
+        run: |
+          uv venv .venv
+          echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+      - name: Resolve latest dependencies (ignore committed lock)
+        run: uv lock --upgrade
+      - name: Install dependencies
+        run: |
+          uv sync -p .venv --extra dev
+          uv pip list
+      - name: Import smoke test
+        run: uv run -p .venv python -c "import gepa"
+      - name: Run tests with pytest
+        run: uv run -p .venv pytest -vv tests/
