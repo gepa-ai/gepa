@@ -23,6 +23,7 @@ from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
+from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
@@ -98,6 +99,7 @@ def optimize(
     # Proposal strategies (default: 1 parent, 1 mutation per iteration)
     sampling_strategy: SamplingStrategy | None = None,
     selection_strategy: SelectionStrategy | None = None,
+    reflection_strategy: ReflectionLM | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -144,6 +146,9 @@ def optimize(
 
     # Reflection-based configuration
     - reflection_lm: A `LanguageModel` instance that is used to reflect on the performance of the candidate program.
+    - sampling_strategy: Controls how many (parent, minibatch) proposal tasks are sampled per iteration. One of `SingleMutationSampling` (default; 1 parent, 1 mutation — identical to classic GEPA), `SameParentSampling(n)`, `IndependentSampling(n)`, or `PxNSampling(p, n)`, or any custom `SamplingStrategy`.
+    - selection_strategy: Controls which of an iteration's improving proposals enter the candidate pool. One of `AllImprovements` (default), `BestImprovement`, or `TopKImprovements(k)`, or any custom `SelectionStrategy`.
+    - reflection_strategy: Advanced: a `ReflectionLM` implementation that owns how reflective mutation calls the reflection model (e.g. stateful sessions or aggregating reflectors). Defaults to the stateless single-call reflector built from `reflection_lm`. Implementations may provide `reflect_many` for batched reflection; otherwise `reflect` is called once per task.
     - candidate_selection_strategy: The strategy to use for selecting the candidate to update. Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'. Defaults to 'pareto'.
     - frontier_type: Strategy for tracking Pareto frontiers. 'instance' tracks per validation example, 'objective' tracks per objective metric, 'hybrid' combines both, 'cartesian' tracks per (example, objective) pair. Defaults to 'instance'.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
@@ -395,6 +400,7 @@ def optimize(
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
         sampling_strategy=sampling_strategy,
+        reflection_strategy=reflection_strategy,
     )
 
     def evaluator_fn(

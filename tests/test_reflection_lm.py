@@ -146,3 +146,69 @@ def test_per_component_template_dict_and_missing_warning():
     lm.reflect(candidate, reflective_dataset, ["a", "b"])
     missing_warnings = [m for m in logger.messages if "No reflection_prompt_template found for parameter 'b'" in m]
     assert len(missing_warnings) == 1
+
+
+# ---------------------------------------------------------------------------
+# reflection_strategy injection seam (#329 Phase 2 entry point)
+# ---------------------------------------------------------------------------
+
+
+class _ReflectOnlyLM:
+    """A ReflectionLM implementation that provides only reflect() — no reflect_many."""
+
+    def __init__(self):
+        self.calls: list[list[str]] = []
+
+    def reflect(self, candidate, reflective_dataset, components_to_update):
+        self.calls.append(list(components_to_update))
+        proposal = ReflectionProposal(new_texts={c: f"new_{c}" for c in components_to_update})
+        return proposal, self
+
+
+def _make_proposer(**overrides):
+    from unittest.mock import MagicMock
+
+    from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
+
+    adapter = MagicMock()
+    adapter.propose_new_texts = None
+    kwargs = {
+        "logger": MagicMock(),
+        "trainset": [{"q": 1}, {"q": 2}],
+        "adapter": adapter,
+        "candidate_selector": MagicMock(),
+        "module_selector": MagicMock(),
+        "batch_sampler": MagicMock(),
+        "perfect_score": None,
+        "skip_perfect_score": False,
+        "experiment_tracker": MagicMock(),
+        "reflection_lm": None,
+        "custom_candidate_proposer": None,
+    }
+    kwargs.update(overrides)
+    return ReflectiveMutationProposer(**kwargs)
+
+
+def test_injected_reflection_strategy_takes_precedence_over_stateless_default():
+    stub = _ReflectOnlyLM()
+    proposer = _make_proposer(reflection_strategy=stub, reflection_lm=RecordingLM())
+    assert proposer._reflection_lm is stub
+
+
+def test_without_injection_stateless_default_is_built():
+    proposer = _make_proposer(reflection_lm=RecordingLM())
+    assert isinstance(proposer._reflection_lm, StatelessReflectionLM)
+
+
+def test_reflect_only_strategy_used_per_task_in_batch_path():
+    """A ReflectionLM without reflect_many must be called once per job by
+    _propose_texts_batch (the seam a ComBEE-style reflector plugs into)."""
+    stub = _ReflectOnlyLM()
+    proposer = _make_proposer(reflection_strategy=stub)
+    jobs = [
+        ({"c": "old1"}, {"c": [{"feedback": "f1"}]}, ["c"]),
+        ({"c": "old2"}, {"c": [{"feedback": "f2"}]}, ["c"]),
+    ]
+    results = proposer._propose_texts_batch(jobs)
+    assert stub.calls == [["c"], ["c"]]
+    assert [r[0] for r in results] == [{"c": "new_c"}, {"c": "new_c"}]
