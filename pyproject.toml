@@ -22,7 +22,11 @@ dependencies = []
 [project.optional-dependencies]
 full = [
     # Common dependencies (all Python versions)
-    "litellm>=1.83.0",
+    # litellm 1.92.0 ships no cp314 wheels and its sdist fails to build on
+    # Python 3.14 (bundled pyo3 0.23.5 predates the 3.14 ABI); cap on 3.14
+    # until upstream publishes cp314 wheels.
+    "litellm>=1.83.0; python_version < '3.14'",
+    "litellm>=1.83.0,<1.92.0; python_version >= '3.14'",
     "tqdm>=4.66.1",
     "cloudpickle>=3.0.0",
     # Python < 3.14
@@ -41,7 +45,7 @@ full = [
 confidence = [
     "llm-structured-confidence>=0.4.5",
     "litellm>=1.64.0; python_version < '3.14'",
-    "litellm>=1.81.0; python_version >= '3.14'",
+    "litellm>=1.81.0,<1.92.0; python_version >= '3.14'",
 ]
 dspy = []
 test = [

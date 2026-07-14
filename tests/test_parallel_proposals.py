@@ -3,9 +3,12 @@
 
 """Tests for batch-based parallel proposals."""
 
+from itertools import pairwise
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from conftest import create_mocked_lms_context
 
 from gepa.core.adapter import EvaluationBatch, default_batch_evaluate
 from gepa.core.state import GEPAState, ValsetEvaluation
@@ -185,13 +188,154 @@ class TestDefaultBatchEvaluate:
         assert adapter.evaluate.call_count == 2
 
 
+class _EventLog:
+    """Records every callback event GEPA emits, in order."""
+
+    def __init__(self):
+        self.events: list[tuple[str, dict]] = []
+
+    def __getattr__(self, name):
+        if name.startswith("on_"):
+
+            def _record(event, _name=name):
+                self.events.append((_name, dict(event)))
+
+            return _record
+        raise AttributeError(name)
+
+    def names(self) -> list[str]:
+        return [n for n, _ in self.events]
+
+    def of(self, name: str) -> list[dict]:
+        return [e for n, e in self.events if n == name]
+
+
+_AIME_CACHE_DIR = Path(__file__).parent / "test_aime_prompt_optimization"
+_AIME_SEED_PROMPT = (
+    "You are a helpful assistant. You are given a question and you need to answer it. "
+    "The answer should be given at the end of your response in exactly the format '### <final answer>'"
+)
+
+
+@pytest.fixture(scope="module")
+def aime_lms():
+    """Replay LMs backed by the recorded AIME run (fails on any unseen LM input)."""
+    yield from create_mocked_lms_context(_AIME_CACHE_DIR)
+
+
+def _run_recorded_optimization(aime_lms, sampling_strategy=None, selection_strategy=None):
+    import gepa
+    from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
+
+    task_lm, reflection_lm = aime_lms
+    trainset, valset, _ = gepa.examples.aime.init_dataset()
+    log = _EventLog()
+    result = gepa.optimize(
+        seed_candidate={"system_prompt": _AIME_SEED_PROMPT},
+        trainset=trainset[:10],
+        valset=valset[:10],
+        adapter=DefaultAdapter(model=task_lm),
+        max_metric_calls=30,
+        reflection_lm=reflection_lm,
+        callbacks=[log],
+        display_progress_bar=False,
+        sampling_strategy=sampling_strategy,
+        selection_strategy=selection_strategy,
+    )
+    return result, log
+
+
+@pytest.fixture(scope="module")
+def default_run(aime_lms):
+    """The default path (sampling/selection strategies left unset)."""
+    return _run_recorded_optimization(aime_lms)
+
+
+@pytest.fixture(scope="module")
+def explicit_run(aime_lms):
+    """Same run with the documented defaults passed explicitly."""
+    return _run_recorded_optimization(
+        aime_lms,
+        sampling_strategy=SingleMutationSampling(),
+        selection_strategy=AllImprovements(),
+    )
+
+
 class TestDefaultStrategiesRetainBehavior:
-    """Verify that default strategies produce the expected behavior."""
+    """Pin the default path against a fully cached, pre-#369 GEPA run.
 
-    def test_single_mutation_is_default_sampling(self):
-        strategy = SingleMutationSampling()
-        assert hasattr(strategy, "sample_tasks")
+    The replay fixture hard-fails on any LM input that is not in the recorded
+    cache, so these tests only pass if the default
+    SingleMutationSampling + AllImprovements path reproduces the recorded run's
+    exact LM request stream. On top of that we pin the final result, the budget
+    ledger, and the callback-event stream.
+    """
 
-    def test_all_improvements_is_default_selection(self):
-        strategy = AllImprovements()
-        assert hasattr(strategy, "select")
+    def test_default_path_reproduces_recorded_run(self, default_run):
+        result, _ = default_run
+        golden = (_AIME_CACHE_DIR / "optimized_prompt.txt").read_text()
+        assert result.best_candidate["system_prompt"] == golden
+
+    def test_budget_ledger_is_consistent(self, default_run):
+        result, log = default_run
+        budget = log.of("on_budget_updated")
+        assert budget, "expected at least one on_budget_updated event"
+        assert all(e["metric_calls_delta"] > 0 for e in budget)
+        used = [e["metric_calls_used"] for e in budget]
+        assert used == sorted(used), "metric_calls_used must be monotonic"
+        # Every event's absolute counter must agree with the previous one plus
+        # its own delta (no unaccounted increments once the hook is live).
+        for prev, cur in pairwise(budget):
+            assert cur["metric_calls_used"] == prev["metric_calls_used"] + cur["metric_calls_delta"]
+        # The only increment that predates hook registration is the seed's
+        # full-valset evaluation (10 examples in the recorded run).
+        assert used[0] - budget[0]["metric_calls_delta"] == 10
+        assert used[-1] == result.total_metric_calls
+
+    def test_explicit_defaults_identical_to_implicit_defaults(self, default_run, explicit_run):
+        d_result, d_log = default_run
+        e_result, e_log = explicit_run
+        assert e_result.best_candidate == d_result.best_candidate
+        assert e_result.total_metric_calls == d_result.total_metric_calls
+        assert e_log.names() == d_log.names()
+
+    def test_proposal_event_ordering(self, default_run):
+        _, log = default_run
+        names = log.names()
+        for earlier, later in [
+            ("on_candidate_selected", "on_minibatch_sampled"),
+            ("on_minibatch_sampled", "on_reflective_dataset_built"),
+            ("on_reflective_dataset_built", "on_proposal_start"),
+            ("on_proposal_start", "on_proposal_end"),
+        ]:
+            assert earlier in names and later in names, f"missing {earlier}/{later}"
+            assert names.index(earlier) < names.index(later)
+
+    def test_budget_event_granularity_contract(self, default_run):
+        """Each completed proposal emits separate parent-eval and child-eval
+        budget events (finer granularity than pre-#369; totals unchanged), and
+        each *accepted* candidate's full-valset evaluation emits one more (the
+        seed's valset eval precedes budget-hook registration, so it produces an
+        on_valset_evaluated event but no budget event). Pin the composition so
+        any future change to budget-event granularity is made consciously."""
+        _, log = default_run
+        n_proposals = len(log.of("on_proposal_end"))
+        n_budget = len(log.of("on_budget_updated"))
+        n_accepted = len(log.of("on_candidate_accepted"))
+        assert n_budget == 2 * n_proposals + n_accepted, (
+            f"budget-event composition changed: {n_budget} events for "
+            f"{n_proposals} proposals + {n_accepted} accepted candidates"
+        )
+
+    def test_child_evaluation_events_are_emitted(self, default_run):
+        """Parity with the pre-#369 sequential path: every completed proposal
+        produces an evaluation start/end pair for the parent minibatch eval AND
+        one for the new candidate's minibatch eval (child pairs carry
+        candidate_idx=None because the child is not in the pool yet)."""
+        _, log = default_run
+        starts = log.of("on_evaluation_start")
+        ends = log.of("on_evaluation_end")
+        n_proposals = len(log.of("on_proposal_end"))
+        assert len(starts) == len(ends) == 2 * n_proposals
+        child_ends = [e for e in ends if e["candidate_idx"] is None]
+        assert len(child_ends) == n_proposals

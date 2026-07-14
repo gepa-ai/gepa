@@ -34,7 +34,7 @@ from gepa.proposer.reflective_mutation.base import (
     LanguageModel,
     ReflectionComponentSelector,
 )
-from gepa.proposer.reflective_mutation.reflection_lm import StatelessReflectionLM
+from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM, StatelessReflectionLM
 from gepa.strategies.batch_sampler import BatchSampler
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 from gepa.strategies.proposal_sampling import ProposalTask, SamplingStrategy, SingleMutationSampling
@@ -71,6 +71,7 @@ class ReflectiveMutationProposer:
         custom_candidate_proposer: ProposalFn | None = None,
         callbacks: list[GEPACallback] | None = None,
         sampling_strategy: SamplingStrategy | None = None,
+        reflection_strategy: ReflectionLM | None = None,
     ):
         self.logger = logger
         self.trainset = ensure_loader(trainset)
@@ -94,8 +95,12 @@ class ReflectiveMutationProposer:
         else:
             InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
 
-        # Reflection LM (#329 Phase 1); None when an adapter/custom proposer owns reflection.
-        self._reflection_lm: StatelessReflectionLM | None = (
+        # Reflection LM (#329 Phase 1); None when an adapter/custom proposer owns
+        # reflection. An injected reflection_strategy — any ReflectionLM
+        # implementation, e.g. session-based or ComBEE-style aggregating
+        # reflectors (#329 Phase 2/3) — takes precedence over the stateless
+        # default built from the raw reflection_lm callable.
+        self._reflection_lm: ReflectionLM | None = reflection_strategy or (
             StatelessReflectionLM(reflection_lm, reflection_prompt_template, logger)
             if reflection_lm is not None
             else None
@@ -139,10 +144,12 @@ class ReflectiveMutationProposer:
     ) -> list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]]]:
         """Propose new texts for many tasks, batching the reflection LM calls.
 
-        Only the built-in stateless reflection path can be batched (one
-        ``litellm.batch_completion`` covering every task/component). When an
-        adapter proposer or custom proposer owns the call, fall back to one
-        invocation per task — their batching, if any, is their concern.
+        ReflectionLM implementations that provide ``reflect_many`` (e.g. the
+        stateless default, which issues one ``litellm.batch_completion``
+        covering every task/component) are batched; implementations that only
+        provide ``reflect()`` are called once per task. When an adapter
+        proposer or custom proposer owns the call, fall back to one invocation
+        per task — their batching, if any, is their concern.
         """
         if (
             self.adapter.propose_new_texts is not None
@@ -151,7 +158,11 @@ class ReflectiveMutationProposer:
         ):
             return [self.propose_new_texts(cand, refds, comps) for cand, refds, comps in jobs]
 
-        results = self._reflection_lm.reflect_many(jobs)
+        reflect_many = getattr(self._reflection_lm, "reflect_many", None)
+        if reflect_many is not None:
+            results = reflect_many(jobs)
+        else:
+            results = [self._reflection_lm.reflect(cand, refds, comps) for cand, refds, comps in jobs]
         return [(proposal.new_texts, proposal.prompts, proposal.raw_lm_outputs) for proposal, _next_lm in results]
 
     def _propose_texts_batch_safe(
@@ -448,7 +459,45 @@ class ReflectiveMutationProposer:
             return []
 
         child_items = [(c[1], c[0].minibatch) for _, c in valid_children]
+
+        # Fire evaluation start callbacks for each child candidate (parity with
+        # the pre-batch sequential path, which emitted these around the new
+        # candidate's minibatch evaluation; candidate_idx is None because the
+        # child is not in the candidate pool yet)
+        for _, (task, _new_candidate, _eval_curr, _meta) in valid_children:
+            notify_callbacks(
+                self.callbacks,
+                "on_evaluation_start",
+                EvaluationStartEvent(
+                    iteration=i,
+                    candidate_idx=None,
+                    batch_size=len(task.minibatch),
+                    capture_traces=True,
+                    parent_ids=[task.parent_idx],
+                    inputs=task.minibatch,
+                    is_seed_candidate=False,
+                ),
+            )
+
         child_evals = self._batch_evaluate(child_items)
+
+        # Fire evaluation end callbacks for each child candidate
+        for (_, (task, _new_candidate, _eval_curr, _meta)), child_eval in zip(valid_children, child_evals, strict=True):
+            notify_callbacks(
+                self.callbacks,
+                "on_evaluation_end",
+                EvaluationEndEvent(
+                    iteration=i,
+                    candidate_idx=None,
+                    scores=child_eval.scores,
+                    has_trajectories=bool(child_eval.trajectories),
+                    parent_ids=[task.parent_idx],
+                    outputs=child_eval.outputs,
+                    trajectories=child_eval.trajectories,
+                    objective_scores=child_eval.objective_scores,
+                    is_seed_candidate=False,
+                ),
+            )
 
         total_child_evals = sum(
             e.num_metric_calls if e.num_metric_calls is not None else len(child_items[idx][1])
