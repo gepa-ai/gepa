@@ -23,6 +23,7 @@ from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
+from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
@@ -37,6 +38,8 @@ from gepa.strategies.component_selector import (
     RoundRobinReflectionComponentSelector,
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
+from gepa.strategies.proposal_sampling import SamplingStrategy
+from gepa.strategies.proposal_selection import SelectionStrategy
 from gepa.utils import FileStopper, StopperProtocol
 
 
@@ -93,6 +96,10 @@ def optimize(
     val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | Literal["full_eval"] | None = None,
     acceptance_criterion: AcceptanceCriterion
     | Literal["strict_improvement", "improvement_or_equal"] = "strict_improvement",
+    # Proposal strategies (default: 1 parent, 1 mutation per iteration)
+    sampling_strategy: SamplingStrategy | None = None,
+    selection_strategy: SelectionStrategy | None = None,
+    reflection_strategy: ReflectionLM | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -139,6 +146,9 @@ def optimize(
 
     # Reflection-based configuration
     - reflection_lm: A `LanguageModel` instance that is used to reflect on the performance of the candidate program.
+    - sampling_strategy: Controls how many (parent, minibatch) proposal tasks are sampled per iteration. One of `SingleMutationSampling` (default; 1 parent, 1 mutation — identical to classic GEPA), `SameParentSampling(n)`, `IndependentSampling(n)`, or `PxNSampling(p, n)`, or any custom `SamplingStrategy`.
+    - selection_strategy: Controls which of an iteration's improving proposals enter the candidate pool. One of `AllImprovements` (default), `BestImprovement`, or `TopKImprovements(k)`, or any custom `SelectionStrategy`.
+    - reflection_strategy: Advanced: a `ReflectionLM` implementation that owns how reflective mutation calls the reflection model (e.g. stateful sessions or aggregating reflectors). Defaults to the stateless single-call reflector built from `reflection_lm`. Implementations may provide `reflect_many` for batched reflection; otherwise `reflect` is called once per task.
     - candidate_selection_strategy: The strategy to use for selecting the candidate to update. Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'. Defaults to 'pareto'.
     - frontier_type: Strategy for tracking Pareto frontiers. 'instance' tracks per validation example, 'objective' tracks per objective metric, 'hybrid' combines both, 'cartesian' tracks per (example, objective) pair. Defaults to 'instance'.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
@@ -219,10 +229,11 @@ def optimize(
         )
 
     if not adapter_has_propose and custom_candidate_proposer is None:
-        assert reflection_lm is not None, (
+        assert reflection_lm is not None or reflection_strategy is not None, (
             f"reflection_lm was not provided. The adapter used '{active_adapter!s}' does not provide a propose_new_texts method, "
             + "and custom_candidate_proposer was not provided. "
-            + "GEPA will use the default proposer, which requires a reflection_lm to be specified."
+            + "GEPA will use the default proposer, which requires a reflection_lm (or a "
+            + "reflection_strategy) to be specified."
         )
 
     # Resolve reflection LM before building stoppers so cost stopper can reference it
@@ -257,7 +268,18 @@ def optimize(
     if max_reflection_cost is not None:
         from gepa.utils import MaxReflectionCostStopper
 
-        stop_callbacks_list.append(MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_lm_callable))
+        if reflection_strategy is not None:
+            if not hasattr(reflection_strategy, "total_cost"):
+                raise ValueError(
+                    "max_reflection_cost is set but reflection_strategy does not expose total_cost — "
+                    "the cost stopper would silently never fire (unbounded reflection spend). Expose a "
+                    "total_cost property on the strategy, or remove max_reflection_cost."
+                )
+            stop_callbacks_list.append(MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_strategy))
+        else:
+            stop_callbacks_list.append(
+                MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_lm_callable)
+            )
 
     if not stop_callbacks_list:
         raise ValueError(
@@ -389,6 +411,8 @@ def optimize(
         reflection_prompt_template=reflection_prompt_template,
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
+        sampling_strategy=sampling_strategy,
+        reflection_strategy=reflection_strategy,
     )
 
     def evaluator_fn(
@@ -429,6 +453,7 @@ def optimize(
         stop_callback=stop_callback,
         val_evaluation_policy=val_evaluation_policy,
         acceptance_criterion=acceptance_criterion_instance,
+        selection_strategy=selection_strategy,
         use_cloudpickle=use_cloudpickle,
         evaluation_cache=evaluation_cache,
     )

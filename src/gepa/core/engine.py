@@ -4,10 +4,16 @@
 import os
 import traceback
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Generic
 
-from gepa.core.adapter import DataInst, GEPAAdapter, RolloutOutput, Trajectory
+from gepa.core.adapter import (
+    DataInst,
+    EvaluationBatch,
+    GEPAAdapter,
+    RolloutOutput,
+    Trajectory,
+    default_batch_evaluate,
+)
 from gepa.core.callbacks import (
     BudgetUpdatedEvent,
     CandidateAcceptedEvent,
@@ -33,12 +39,10 @@ from gepa.logging.logger import LoggerProtocol
 from gepa.logging.utils import log_detailed_metrics_after_discovering_new_program
 from gepa.proposer.base import CandidateProposal
 from gepa.proposer.merge import MergeProposer
-from gepa.proposer.reflective_mutation.reflective_mutation import (
-    ProposalOutput,
-    ReflectiveMutationProposer,
-)
+from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
+from gepa.strategies.proposal_selection import AllImprovements, SelectionStrategy
 from gepa.utils import StopperProtocol
 
 # Import tqdm for progress bar functionality
@@ -46,6 +50,27 @@ try:
     from tqdm import tqdm
 except ImportError:
     tqdm = None
+
+
+class _MemoizedAcceptance:
+    """Wraps an AcceptanceCriterion so each proposal is judged EXACTLY once per
+    engine batch, no matter how many times the selection strategy and the
+    engine's rejection classification consult it. Stateful or stochastic
+    criteria therefore see one call per proposal (the pre-#329 contract) and
+    verdicts stay consistent between selection and rejection reporting."""
+
+    def __init__(self, criterion):
+        self._criterion = criterion
+        self._verdicts: dict[int, bool] = {}
+
+    def should_accept(self, proposal, state) -> bool:
+        key = id(proposal)
+        if key not in self._verdicts:
+            self._verdicts[key] = self._criterion.should_accept(proposal, state)
+        return self._verdicts[key]
+
+    def __getattr__(self, name):
+        return getattr(self._criterion, name)
 
 
 class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
@@ -77,12 +102,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         # Budget and Stop Condition
         stop_callback: StopperProtocol | None = None,
         val_evaluation_policy: EvaluationPolicy[DataId, DataInst] | None = None,
-        # Acceptance criterion for reflective mutation proposals
+        # Acceptance criterion + selection strategy for reflective mutation proposals
         acceptance_criterion: AcceptanceCriterion | None = None,
+        selection_strategy: SelectionStrategy | None = None,
         # Evaluation caching (stored in state, passed here for initialization)
         evaluation_cache: EvaluationCache[RolloutOutput, DataId] | None = None,
-        # Parallel proposals
-        num_parallel_proposals: int = 1,
     ):
         self.logger = logger
         self.run_dir = run_dir
@@ -122,11 +146,11 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             self.merge_proposer.last_iter_found_new_program = False
 
         self.acceptance_criterion: AcceptanceCriterion = acceptance_criterion or StrictImprovementAcceptance()
+        self.selection_strategy: SelectionStrategy = selection_strategy or AllImprovements()
         self.track_best_outputs = track_best_outputs
         self.display_progress_bar = display_progress_bar
         self.use_cloudpickle = use_cloudpickle
 
-        self.num_parallel_proposals = num_parallel_proposals
         self.raise_on_exception = raise_on_exception
         self.val_evaluation_policy: EvaluationPolicy[DataId, DataInst] = (
             val_evaluation_policy if val_evaluation_policy is not None else FullEvaluationPolicy()
@@ -151,26 +175,85 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if setter is not None:
             setter(state.adapter_state)
 
-    def _evaluate_on_valset(
+    def _evaluate_programs_on_valset(
         self,
-        program: dict[str, str],
+        programs: list[dict[str, str]],
         state: GEPAState[RolloutOutput, DataId],
-    ) -> ValsetEvaluation[RolloutOutput, DataId]:
+    ) -> list[tuple[ValsetEvaluation[RolloutOutput, DataId], int]]:
+        """Evaluate candidates on the valset, read-only, via ``adapter.batch_evaluate``.
+
+        Cache-miss examples across all candidates go out in one batched call, so
+        parallelism (if any) is the adapter's. Honors the eval cache and
+        ``val_evaluation_policy``. Returns each evaluation with its metric-call
+        count (cache misses); the budget is incremented later in
+        :meth:`_add_evaluated_program`, not here.
+        """
         valset = self.valset
         assert valset is not None
+        cache = state.evaluation_cache
 
-        val_ids = self.val_evaluation_policy.get_eval_batch(valset, state)
+        # 1) Per program: split the requested val examples into cached vs. to-evaluate.
+        cached_per: list[dict[Any, Any]] = []
+        todo_per: list[list[Any]] = []
+        for program in programs:
+            val_ids = list(self.val_evaluation_policy.get_eval_batch(valset, state))
+            if cache is not None:
+                cached, uncached = cache.get_batch(program, val_ids)
+            else:
+                cached, uncached = {}, val_ids
+            cached_per.append(cached)
+            todo_per.append(uncached)
 
-        outputs_by_val_idx, scores_by_val_idx, objective_by_val_idx, num_actual_evals = state.cached_evaluate_full(
-            program, list(val_ids), valset.fetch, self.evaluator
-        )
-        state.increment_evals(num_actual_evals)
+        # 2) One adapter call over every (program, cache-miss examples) pair.
+        eval_idxs = [i for i, todo in enumerate(todo_per) if todo]
+        items = [(programs[i], valset.fetch(todo_per[i])) for i in eval_idxs]
+        fresh = self._batch_evaluate(items) if items else []
+        fresh_by_idx = dict(zip(eval_idxs, fresh, strict=True))
 
-        return ValsetEvaluation(
-            outputs_by_val_id=outputs_by_val_idx,
-            scores_by_val_id=scores_by_val_idx,
-            objective_scores_by_val_id=objective_by_val_idx,
-        )
+        # 3) Merge cached + fresh per program, repopulating the cache.
+        results: list[tuple[ValsetEvaluation[RolloutOutput, DataId], int]] = []
+        for i, program in enumerate(programs):
+            outputs_by: dict[Any, Any] = {}
+            scores_by: dict[Any, float] = {}
+            objective_by: dict[Any, Any] | None = None
+            for eid, entry in cached_per[i].items():
+                outputs_by[eid] = entry.output
+                scores_by[eid] = entry.score
+                if entry.objective_scores is not None:
+                    objective_by = objective_by or {}
+                    objective_by[eid] = entry.objective_scores
+
+            uncached = todo_per[i]
+            if uncached:
+                eb = fresh_by_idx[i]
+                obj = list(eb.objective_scores) if eb.objective_scores else None
+                for j, eid in enumerate(uncached):
+                    outputs_by[eid] = eb.outputs[j]
+                    scores_by[eid] = eb.scores[j]
+                    if obj is not None:
+                        objective_by = objective_by or {}
+                        objective_by[eid] = obj[j]
+                if cache is not None:
+                    cache.put_batch(program, uncached, eb.outputs, eb.scores, obj)
+
+            results.append(
+                (
+                    ValsetEvaluation(
+                        outputs_by_val_id=outputs_by,
+                        scores_by_val_id=scores_by,
+                        objective_scores_by_val_id=objective_by,
+                    ),
+                    len(uncached),
+                )
+            )
+        return results
+
+    def _batch_evaluate(self, items: list[tuple[dict[str, str], list]]) -> list[EvaluationBatch]:
+        """Evaluate (candidate, batch) pairs via the adapter's batch_evaluate or fallback."""
+        batch_fn = getattr(self.adapter, "batch_evaluate", None)
+        if batch_fn is not None:
+            return batch_fn(items)
+        return default_batch_evaluate(self.adapter, items)
 
     def _run_full_eval_and_add(
         self,
@@ -178,8 +261,25 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         state: GEPAState[RolloutOutput, DataId],
         parent_program_idx: list[int],
     ) -> tuple[int, int]:
+        valset_evaluation, num_actual_evals = self._evaluate_programs_on_valset([new_program], state)[0]
+        return self._add_evaluated_program(new_program, state, parent_program_idx, valset_evaluation, num_actual_evals)
+
+    def _add_evaluated_program(
+        self,
+        new_program: dict[str, str],
+        state: GEPAState[RolloutOutput, DataId],
+        parent_program_idx: list[int],
+        valset_evaluation: ValsetEvaluation[RolloutOutput, DataId],
+        num_actual_evals: int,
+    ) -> tuple[int, int]:
+        """Add an already-evaluated candidate to the pool. Must run sequentially.
+
+        Snapshots the discovery budget before incrementing so candidates,
+        processed in order, record the same ``num_metric_calls_by_discovery``
+        as the serial path.
+        """
         num_metric_calls_by_discovery = state.total_num_evals
-        valset_evaluation = self._evaluate_on_valset(new_program, state)
+        state.increment_evals(num_actual_evals)
         state.num_full_ds_evals += 1
 
         # Snapshot Pareto front before update
@@ -222,6 +322,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         )
 
         state.full_program_trace[-1]["new_program_idx"] = new_program_idx
+        state.full_program_trace[-1].setdefault("new_program_indices", []).append(new_program_idx)
         state.full_program_trace[-1]["evaluated_val_indices"] = sorted(valset_evaluation.scores_by_val_id.keys())
 
         if is_best_program:
@@ -284,170 +385,168 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     # Reflective proposal acceptance (shared by single and parallel paths)
     # ------------------------------------------------------------------
 
-    def _accept_reflective_proposal(
+    def _report_rejected_proposal(
         self,
         proposal: CandidateProposal,
         iteration: int,
         state: GEPAState[RolloutOutput, DataId],
-    ) -> bool:
-        """Check acceptance, run full eval if accepted, fire callbacks.
+        dropped_by_selection: bool = False,
+        reason_override: str | None = None,
+    ) -> None:
+        """Log and fire ``on_candidate_rejected`` for a non-selected proposal.
 
-        Returns True if the proposal was accepted.
+        ``dropped_by_selection=True`` means the proposal PASSED the acceptance
+        criterion but was not picked by the selection strategy (e.g.
+        BestImprovement/TopK) — the reason must say so rather than falsely
+        claiming a score regression.
         """
         old_sum = sum(proposal.subsample_scores_before or [])
         new_sum = sum(proposal.subsample_scores_after or [])
-        _uses_builtin_criterion = isinstance(
-            self.acceptance_criterion, StrictImprovementAcceptance | ImprovementOrEqualAcceptance
-        )
-
-        if not self.acceptance_criterion.should_accept(proposal, state):
-            if _uses_builtin_criterion:
-                reject_msg = f"Iteration {iteration}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
-                reject_reason = f"New subsample score {new_sum} not better than old score {old_sum}"
-            else:
-                reject_msg = f"Iteration {iteration}: Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum}), skipping"
-                reject_reason = f"Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum})"
-            self.logger.log(reject_msg)
-            self._log_proposal_lm_calls(iteration, proposal, candidate_idx=-1)
-            notify_callbacks(
-                self.callbacks,
-                "on_candidate_rejected",
-                CandidateRejectedEvent(
-                    iteration=iteration,
-                    old_score=old_sum,
-                    new_score=new_sum,
-                    reason=reject_reason,
-                ),
+        custom_reason = getattr(self.acceptance_criterion, "reject_reason", None)
+        if reason_override is not None:
+            reject_reason = reason_override
+            reject_msg = f"Iteration {iteration}: {reject_reason}, skipping"
+        elif dropped_by_selection:
+            reject_reason = (
+                f"Passed acceptance (score {old_sum} -> {new_sum}) but was not selected "
+                f"by the selection strategy ({type(self.selection_strategy).__name__})"
             )
-            return False
-
-        if _uses_builtin_criterion:
-            accept_msg = f"Iteration {iteration}: New subsample score {new_sum} is better than old score {old_sum}. Continue to full eval and add to candidate pool."
+            reject_msg = f"Iteration {iteration}: {reject_reason}, skipping"
+        elif custom_reason is not None:
+            reject_reason = custom_reason(proposal, state)
+            reject_msg = f"Iteration {iteration}: {reject_reason}"
+        elif isinstance(self.acceptance_criterion, StrictImprovementAcceptance | ImprovementOrEqualAcceptance):
+            reject_msg = (
+                f"Iteration {iteration}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
+            )
+            reject_reason = f"New subsample score {new_sum} not better than old score {old_sum}"
         else:
-            accept_msg = f"Iteration {iteration}: Candidate accepted (old_sum={old_sum}, new_sum={new_sum}). Continue to full eval and add to candidate pool."
-        self.logger.log(accept_msg)
-
-        new_idx, _ = self._run_full_eval_and_add(
-            new_program=proposal.candidate,
-            state=state,
-            parent_program_idx=proposal.parent_program_ids,
-        )
-
-        self._log_proposal_lm_calls(iteration, proposal, candidate_idx=new_idx)
-
+            reject_msg = f"Iteration {iteration}: Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum}), skipping"
+            reject_reason = f"Candidate rejected by acceptance criterion (old_sum={old_sum}, new_sum={new_sum})"
+        self.logger.log(reject_msg)
+        self._log_proposal_lm_calls(iteration, proposal, candidate_idx=-1)
         notify_callbacks(
             self.callbacks,
-            "on_candidate_accepted",
-            CandidateAcceptedEvent(
+            "on_candidate_rejected",
+            CandidateRejectedEvent(
                 iteration=iteration,
-                new_candidate_idx=new_idx,
+                old_score=old_sum,
                 new_score=new_sum,
-                parent_ids=proposal.parent_program_ids,
+                reason=reject_reason,
             ),
         )
-        return True
 
-    def _process_proposal_output(
+    def _run_reflective_batch(
         self,
-        output: ProposalOutput,
-        iteration: int,
-        trace_entry: dict,
+        proposals: list[CandidateProposal],
         state: GEPAState[RolloutOutput, DataId],
     ) -> bool:
-        """Apply deferred state updates from a ProposalOutput and run acceptance.
+        """Gate, select, full-eval, and add a batch of reflective proposals.
 
-        Returns True if the proposal was accepted.
+        The selection strategy is the authority over which proposals proceed:
+        it receives ALL evaluated proposals together with the acceptance
+        criterion. The built-in strategies apply the criterion; a custom
+        strategy may deliberately surface a proposal the criterion would
+        reject (e.g. exploration picks). Everything not selected fires
+        ``on_candidate_rejected`` — including acceptance-passing proposals
+        dropped by Best/TopK selection, which previously vanished without an
+        event. Selected proposals are batch-evaluated on the valset (one
+        :meth:`_evaluate_programs_on_valset` call) and added to the pool in
+        order. Returns True if any proposal was accepted.
         """
-        self.reflective_proposer.apply_proposal_output(output, state)
-        trace_entry.update(output.trace_data)
+        iteration = state.i + 1
 
-        if output.proposal is None:
-            self.logger.log(f"Iteration {iteration}: Reflective mutation did not propose a new candidate")
-            return False
+        # 1) Selection is authoritative; it sees every evaluated proposal and
+        #    the acceptance criterion (no engine pre-filter). The criterion is
+        #    memoized so each proposal is judged exactly once per batch even
+        #    though both the strategy and the rejection classification below
+        #    consult it — stateful/stochastic criteria stay coherent.
+        criterion = _MemoizedAcceptance(self.acceptance_criterion)
+        selected = self.selection_strategy.select(list(proposals), state, criterion)
 
-        accepted = self._accept_reflective_proposal(output.proposal, iteration, state)
+        # Defensive: strategies must return proposals FROM the input list.
+        input_ids = {id(p) for p in proposals}
+        foreign = [p for p in selected if id(p) not in input_ids]
+        if foreign:
+            self.logger.log(
+                f"Iteration {iteration}: selection strategy returned {len(foreign)} object(s) not from "
+                "the proposal list; ignoring them (strategies must select from the given proposals)."
+            )
+            selected = [p for p in selected if id(p) in input_ids]
 
-        if accepted and self.merge_proposer is not None:
-            self.merge_proposer.last_iter_found_new_program = True
-            if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
-                self.merge_proposer.merges_due += 1
-
-        return accepted
-
-    # ------------------------------------------------------------------
-    # Parallel reflective proposals
-    # ------------------------------------------------------------------
-
-    def _run_parallel_reflective_batch(
-        self,
-        state: GEPAState[RolloutOutput, DataId],
-    ) -> bool:
-        """Run multiple reflective proposals in parallel.
-
-        Pre-samples N contexts sequentially, executes the heavy
-        evaluate-propose-evaluate pipeline in parallel threads, then
-        processes acceptances sequentially.
-        """
-        n = self.num_parallel_proposals
-
-        # Step 1: Pre-sample N contexts (sequential)
-        contexts = []
-        trace_entries: list[dict] = []
-
-        # First context uses the iteration slot already created by the caller
-        trace_entry_0 = state.full_program_trace[-1]
-        ctx_0 = self.reflective_proposer.prepare_proposal(state)
-        trace_entry_0["selected_program_candidate"] = ctx_0.curr_prog_id
-        trace_entry_0["subsample_ids"] = ctx_0.subsample_ids
-        contexts.append(ctx_0)
-        trace_entries.append(trace_entry_0)
-
-        for _ in range(n - 1):
-            if self._should_stop(state):
-                break
-            state.i += 1
-            trace_entry: dict[str, Any] = {"i": state.i}
-            state.full_program_trace.append(trace_entry)
-            ctx = self.reflective_proposer.prepare_proposal(state)
-            trace_entry["selected_program_candidate"] = ctx.curr_prog_id
-            trace_entry["subsample_ids"] = ctx.subsample_ids
-            contexts.append(ctx)
-            trace_entries.append(trace_entry)
-
-        if not contexts:
-            return False
-
-        # Step 2: Execute proposals in parallel (thread-safe heavy compute)
-        outputs: list[ProposalOutput | None] = [None] * len(contexts)
-        with ThreadPoolExecutor(max_workers=len(contexts)) as executor:
-            future_to_idx = {
-                executor.submit(self.reflective_proposer.execute_proposal, ctx, state): idx
-                for idx, ctx in enumerate(contexts)
-            }
-            for future in as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                try:
-                    outputs[idx] = future.result()
-                except Exception as e:
-                    self.logger.log(f"Iteration {contexts[idx].iteration}: Parallel proposal failed: {e}")
-                    self.logger.log(traceback.format_exc())
-                    notify_callbacks(
-                        self.callbacks,
-                        "on_error",
-                        ErrorEvent(
-                            iteration=contexts[idx].iteration,
-                            exception=e,
-                            will_continue=True,
-                        ),
-                    )
-
-        # Step 3: Process acceptances sequentially
-        any_accepted = False
-        for _idx, (ctx, trace_entry, output) in enumerate(zip(contexts, trace_entries, outputs, strict=False)):
-            if output is None:
+        # Deduplicate: identical child candidates selected in the same
+        # iteration would each get a full valset eval and a pool entry.
+        deduped: list[CandidateProposal] = []
+        seen_candidates: set[tuple] = set()
+        seen_ids: set[int] = set()
+        duplicates: list[CandidateProposal] = []
+        for p in selected:
+            content_key = tuple(sorted(p.candidate.items()))
+            if id(p) in seen_ids or content_key in seen_candidates:
+                duplicates.append(p)
                 continue
-            if self._process_proposal_output(output, ctx.iteration, trace_entry, state):
-                any_accepted = True
+            seen_ids.add(id(p))
+            seen_candidates.add(content_key)
+            deduped.append(p)
+        selected = deduped
+
+        # 2) Report everything not selected as rejected, distinguishing
+        #    acceptance failures from selection drops (memoized verdicts keep
+        #    the reasons truthful at zero extra criterion calls).
+        selected_ids = {id(p) for p in selected}
+        for proposal in proposals:
+            if id(proposal) in selected_ids:
+                continue
+            if any(proposal is d for d in duplicates):
+                self._report_rejected_proposal(
+                    proposal,
+                    iteration,
+                    state,
+                    reason_override="Duplicate of another candidate selected this iteration",
+                )
+                continue
+            passed_acceptance = criterion.should_accept(proposal, state)
+            self._report_rejected_proposal(
+                proposal, iteration, state, dropped_by_selection=passed_acceptance
+            )
+
+        if not selected:
+            return False
+
+        # 3) Full-valset eval of the selected candidates (one batched, read-only call).
+        valset_evals = self._evaluate_programs_on_valset([p.candidate for p in selected], state)
+
+        # 4) Add each selected candidate to the pool, in order.
+        any_accepted = False
+        for proposal, (valset_evaluation, num_actual_evals) in zip(selected, valset_evals, strict=True):
+            new_sum = sum(proposal.subsample_scores_after or [])
+            self.logger.log(
+                f"Iteration {iteration}: Accepted candidate (subsample score "
+                f"{sum(proposal.subsample_scores_before or [])} -> {new_sum}); running full eval."
+            )
+            new_idx, _ = self._add_evaluated_program(
+                new_program=proposal.candidate,
+                state=state,
+                parent_program_idx=proposal.parent_program_ids,
+                valset_evaluation=valset_evaluation,
+                num_actual_evals=num_actual_evals,
+            )
+            self._log_proposal_lm_calls(iteration, proposal, candidate_idx=new_idx)
+            notify_callbacks(
+                self.callbacks,
+                "on_candidate_accepted",
+                CandidateAcceptedEvent(
+                    iteration=iteration,
+                    new_candidate_idx=new_idx,
+                    new_score=new_sum,
+                    parent_ids=proposal.parent_program_ids,
+                ),
+            )
+            any_accepted = True
+            if self.merge_proposer is not None:
+                self.merge_proposer.last_iter_found_new_program = True
+                if self.merge_proposer.total_merges_tested < self.merge_proposer.max_merge_invocations:
+                    self.merge_proposer.merges_due += 1
 
         return any_accepted
 
@@ -493,13 +592,13 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         def valset_evaluator(
             program: dict[str, str],
+            val_ids: list[Any],
         ) -> ValsetEvaluation[RolloutOutput, DataId]:
-            all_ids = list(valset.all_ids())
-            outputs, scores, objective_scores = self.evaluator(valset.fetch(all_ids), program)
-            outputs_dict = dict(zip(all_ids, outputs, strict=False))
-            scores_dict = dict(zip(all_ids, scores, strict=False))
+            outputs, scores, objective_scores = self.evaluator(valset.fetch(val_ids), program)
+            outputs_dict = dict(zip(val_ids, outputs, strict=False))
+            scores_dict = dict(zip(val_ids, scores, strict=False))
             objective_scores_dict = (
-                dict(zip(all_ids, objective_scores, strict=False)) if objective_scores is not None else None
+                dict(zip(val_ids, objective_scores, strict=False)) if objective_scores is not None else None
             )
             return ValsetEvaluation(
                 outputs_by_val_id=outputs_dict,
@@ -523,8 +622,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             ),
         )
 
-        # Evaluate seed candidate on valset (after on_optimization_start callback)
-        seed_valset_evaluation = valset_evaluator(self.seed_candidate)
+        # Evaluate seed candidate on valset (after on_optimization_start callback).
+        # Policies may narrow the seed evaluation via the optional get_seed_eval_batch
+        # hook; the state does not exist yet, so get_eval_batch cannot be used here.
+        seed_batch_fn = getattr(self.val_evaluation_policy, "get_seed_eval_batch", None)
+        seed_val_ids = list(seed_batch_fn(valset)) if seed_batch_fn is not None else list(valset.all_ids())
+        seed_valset_evaluation = valset_evaluator(self.seed_candidate, seed_val_ids)
 
         # Initialize state with pre-computed seed evaluation
         state = initialize_gepa_state(
@@ -740,13 +843,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                     self.merge_proposer.last_iter_found_new_program = False
 
                 # 2) Reflective mutation proposer
-                if self.num_parallel_proposals > 1:
-                    proposal_accepted = self._run_parallel_reflective_batch(state)
-                else:
-                    output = self.reflective_proposer.propose_output(state)
-                    proposal_accepted = self._process_proposal_output(
-                        output, state.i + 1, state.full_program_trace[-1], state
-                    )
+                proposals = self.reflective_proposer.propose(state)
+                if not proposals:
+                    self.logger.log(f"Iteration {state.i + 1}: Reflective mutation did not propose a new candidate")
+                    continue
+
+                proposal_accepted = self._run_reflective_batch(proposals, state)
 
             except Exception as e:
                 self.logger.log(f"Iteration {state.i + 1}: Exception during optimization: {e}")
@@ -829,11 +931,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         ``"candidates"`` table in WandB / MLflow.
         """
         metadata = proposal.metadata or {}
-        components = {
-            k.split(":", 1)[1]
-            for k in metadata
-            if k.startswith("prompt:") or k.startswith("raw_lm_output:")
-        }
+        components = {k.split(":", 1)[1] for k in metadata if k.startswith("prompt:") or k.startswith("raw_lm_output:")}
         if not components:
             return
 
@@ -847,18 +945,20 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             prompt = metadata.get(f"prompt:{comp}", "")
             raw_output = metadata.get(f"raw_lm_output:{comp}", "")
             proposed_text = proposal.candidate.get(comp, "")
-            rows.append([
-                iteration,
-                comp,
-                status,
-                candidate_idx,
-                parent_ids_str,
-                subsample_before,
-                subsample_after,
-                prompt if isinstance(prompt, str) else str(prompt),
-                raw_output,
-                proposed_text,
-            ])
+            rows.append(
+                [
+                    iteration,
+                    comp,
+                    status,
+                    candidate_idx,
+                    parent_ids_str,
+                    subsample_before,
+                    subsample_after,
+                    prompt if isinstance(prompt, str) else str(prompt),
+                    raw_output,
+                    proposed_text,
+                ]
+            )
 
         self.experiment_tracker.log_table(
             "proposals",

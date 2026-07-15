@@ -22,6 +22,11 @@ class AcceptanceCriterion(Protocol):
       - ``parent_program_ids``: indices of parent candidates.
       - ``metadata``: free-form dict with LM prompts and raw outputs.
 
+    Implementations may additionally define an optional
+    ``reject_reason(proposal, state) -> str`` method; when present, the engine
+    uses it to produce an informative log message for rejected proposals
+    instead of the generic fallback.
+
     - ``state``: the full ``GEPAState``, giving access to all existing candidates,
       validation scores, the Pareto frontier, iteration count, etc.
     """
