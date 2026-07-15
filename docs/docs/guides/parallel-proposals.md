@@ -111,11 +111,20 @@ optimize_anything(evaluator=my_eval, batch_evaluator=my_batch_eval, ...)
 
 The contract, precisely: str-candidate unwrapping, per-pair `opt_states`
 injection (if your signature accepts it), exception policy
-(`raise_on_exception`), warm-start history, and output packaging all match the
-sequential path. What does **not** apply — structurally, because there is no
-per-evaluation call to scope them to — is `oa.log()` and stdout/stderr
-capture: return diagnostics inside each pair's `side_info` instead.
-`evaluator=` is still required for single-pair features such as the refiner.
+(`raise_on_exception`), **evaluation caching** (shared store and keys with the
+sequential path — only cache misses reach your function, still as one call),
+warm-start history, and output packaging all match the sequential path. What
+does **not** apply — structurally, because there is no per-evaluation call to
+scope them to — is `oa.log()` and stdout/stderr capture: return diagnostics
+inside each pair's `side_info` instead.
+
+`evaluator=` is optional when `batch_evaluator=` is set. With only a batch
+function, *everything* routes through it: multi-pair work (minibatch stages,
+valset/seed/merge evaluations) as grouped calls, and single-pair resolutions
+(refiner steps) as **singleton batches** — make your function efficient for
+`len(pairs) == 1` if you enable the refiner. When both are provided, grouped
+work prefers `batch_evaluator` and singles use `evaluator` (whose per-call
+`oa.log()`/stdio capture then applies to those calls).
 
 ## Budget accounting and events
 

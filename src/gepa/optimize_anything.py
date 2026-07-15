@@ -1114,7 +1114,7 @@ class EvaluatorWrapper:
 def optimize_anything(
     seed_candidate: str | Candidate | None = None,
     *,
-    evaluator: Callable[..., Any],
+    evaluator: Callable[..., Any] | None = None,
     batch_evaluator: Callable[..., Any] | None = None,
     dataset: list[DataInst] | None = None,
     valset: list[DataInst] | None = None,
@@ -1159,6 +1159,9 @@ def optimize_anything(
               where to begin.
 
         evaluator: Scoring function.  Returns ``(score, side_info)`` or ``score``.
+            Optional when ``batch_evaluator`` is provided (at least one is
+            required): without it, every evaluation — including refiner steps,
+            as singleton batches — routes through ``batch_evaluator``.
             See :class:`Evaluator`.  Diagnostic output via ``oa.log()`` is
             automatically captured as Actionable Side Information (ASI).
             For richer diagnostics, return a ``(score, dict)`` tuple with
@@ -1178,8 +1181,13 @@ def optimize_anything(
             packaging match the sequential path exactly. NOT available on this
             path (structurally per-call features): ``oa.log()`` capture and
             stdout/stderr capture — put diagnostics in each returned
-            ``side_info`` instead. ``evaluator`` is still required and is used
-            by features that evaluate single pairs (e.g. the refiner).
+            ``side_info`` instead. When both are provided,
+            multi-pair evaluations (minibatch stages, valset/seed/merge evals)
+            prefer ``batch_evaluator`` while single-pair resolutions (refiner
+            steps) use ``evaluator``; with only ``batch_evaluator``, singles
+            route through it as singleton batches. Caching (``cache_evaluation``)
+            applies identically on both paths, with a shared store: a pair
+            cached by either path is a hit for the other.
         dataset: Examples for multi-task or generalization modes.
             ``None`` = single-task search mode.
         valset: Held-out validation set for generalization mode.
@@ -1281,13 +1289,21 @@ def optimize_anything(
         effective_dataset = dataset if dataset is not None else [None]  # type: ignore[list-item]
 
     # Wrap the evaluator to handle signature normalization, log/stdout capture, etc.
-    wrapped_evaluator = EvaluatorWrapper(
-        evaluator,
-        single_instance_mode,
-        capture_stdio=config.engine.capture_stdio,
-        str_candidate_mode=str_candidate_mode,
-        raise_on_exception=config.engine.raise_on_exception,
-    )
+    if evaluator is None and batch_evaluator is None:
+        raise ValueError(
+            "Provide evaluator=, batch_evaluator=, or both. "
+            "batch_evaluator alone is sufficient: single-pair resolutions "
+            "(e.g. refiner steps) are routed through it as singleton batches."
+        )
+    wrapped_evaluator = None
+    if evaluator is not None:
+        wrapped_evaluator = EvaluatorWrapper(
+            evaluator,
+            single_instance_mode,
+            capture_stdio=config.engine.capture_stdio,
+            str_candidate_mode=str_candidate_mode,
+            raise_on_exception=config.engine.raise_on_exception,
+        )
 
     # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
     if not config.engine.cache_evaluation:

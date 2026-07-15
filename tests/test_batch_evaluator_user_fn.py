@@ -163,3 +163,88 @@ def test_batch_path_receives_per_pair_opt_states():
     adapter.batch_evaluate(ITEMS)
     assert len(received) == 1
     assert len(received[0]) == 4  # one OptimizationState per flattened pair
+
+
+# ---------------------------------------------------------------------------
+# Unification: optional evaluator, shared caching, routing preferences
+# ---------------------------------------------------------------------------
+
+
+class _CountingBatchFn:
+    def __init__(self):
+        self.calls: list[list] = []
+
+    def __call__(self, pairs):
+        self.calls.append(list(pairs))
+        return [(float(ex) + float(c["bias"]), {"example": ex}) for c, ex in pairs]
+
+
+def test_ctor_requires_at_least_one_transport():
+    with pytest.raises(ValueError, match="evaluator"):
+        OptimizeAnythingAdapter(evaluator=None, batch_evaluator=None)
+
+
+def test_batch_only_adapter_evaluate_routes_whole_batch():
+    fn = _CountingBatchFn()
+    adapter = OptimizeAnythingAdapter(evaluator=None, parallel=False, cache_mode="off", batch_evaluator=fn)
+    result = adapter.evaluate([1, 2, 3], {"bias": "0"})
+    assert result.scores == [1.0, 2.0, 3.0]
+    assert len(fn.calls) == 1 and len(fn.calls[0]) == 3  # one grouped call
+    # Packaging parity: outputs are (score, candidate, side_info) triples.
+    assert all(out[1] == {"bias": "0"} for out in result.outputs)
+
+
+def test_batch_only_singleton_resolution_for_refiner_seam():
+    """_call_evaluator (the refiner's seam) routes singles through the batch fn."""
+    fn = _CountingBatchFn()
+    adapter = OptimizeAnythingAdapter(evaluator=None, parallel=False, cache_mode="off", batch_evaluator=fn)
+    score, _output, _side_info = adapter._call_evaluator({"bias": "10"}, 5)
+    assert score == 15.0
+    assert len(fn.calls) == 1 and len(fn.calls[0]) == 1  # singleton batch
+
+
+def test_cache_shared_between_batch_and_singleton_paths():
+    fn = _CountingBatchFn()
+    adapter = OptimizeAnythingAdapter(evaluator=None, parallel=False, cache_mode="memory", batch_evaluator=fn)
+    adapter.batch_evaluate(ITEMS)  # fills the cache (4 pairs)
+    assert sum(len(c) for c in fn.calls) == 4
+
+    # Second grouped call: all hits, user fn NOT called again.
+    adapter.batch_evaluate(ITEMS)
+    assert sum(len(c) for c in fn.calls) == 4
+
+    # Singleton resolution (refiner seam) hits the same cache.
+    score, _, _ = adapter._call_evaluator({"bias": "0"}, 1)
+    assert score == 1.0
+    assert sum(len(c) for c in fn.calls) == 4
+
+    # A genuinely new pair triggers exactly one miss-only call.
+    adapter.batch_evaluate([({"bias": "0"}, [1, 2, 99])])
+    assert sum(len(c) for c in fn.calls) == 5
+    assert len(fn.calls[-1]) == 1  # only the miss (99) reached the user fn
+
+
+def test_both_transports_grouped_prefers_batch_fn():
+    fn = _CountingBatchFn()
+    seen_by_evaluator = []
+
+    def evaluator(candidate, example=None, **kwargs):
+        seen_by_evaluator.append(example)
+        return float(example), None, {}
+
+    adapter = OptimizeAnythingAdapter(evaluator=evaluator, parallel=False, cache_mode="off", batch_evaluator=fn)
+    adapter.evaluate([1, 2], {"bias": "0"})
+    assert len(fn.calls) == 1  # grouped work went to the batch fn
+    assert seen_by_evaluator == []
+
+    # Single-pair resolution (refiner seam) prefers the single-pair evaluator.
+    adapter._call_evaluator({"bias": "0"}, 7)
+    assert seen_by_evaluator == [7]
+    assert len(fn.calls) == 1
+
+
+def test_optimize_anything_requires_a_transport():
+    from gepa.optimize_anything import optimize_anything
+
+    with pytest.raises(ValueError, match="batch_evaluator"):
+        optimize_anything(seed_candidate="x")

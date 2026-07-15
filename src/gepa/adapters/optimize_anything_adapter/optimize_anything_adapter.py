@@ -146,7 +146,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
     def __init__(
         self,
-        evaluator: Callable[..., tuple[float, Any, dict[str, Any]]],
+        evaluator: Callable[..., tuple[float, Any, dict[str, Any]]] | None = None,
         reflection_lm: LanguageModel | None = None,
         reflection_prompt_template: str | None = None,
         parallel: bool = True,
@@ -159,6 +159,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         cache_dir: str | Path | None = None,
         batch_evaluator: Callable[..., Any] | None = None,
     ):
+        if evaluator is None and batch_evaluator is None:
+            raise ValueError("Provide evaluator=, batch_evaluator=, or both.")
         self.evaluator = evaluator
         if batch_evaluator is not None and not isinstance(batch_evaluator, BatchEvaluatorWrapper):
             batch_evaluator = BatchEvaluatorWrapper(batch_evaluator)
@@ -266,6 +268,27 @@ class OptimizeAnythingAdapter(GEPAAdapter):
 
         return OptimizationState(best_example_evals=self._get_best_example_evals(example))
 
+    def _resolve_pair(self, candidate: "Candidate", example: Any) -> tuple[float, Any, dict]:
+        """Resolve ONE (candidate, example) pair, whichever evaluation transport exists.
+
+        Uses the single-pair evaluator when provided; otherwise routes a
+        singleton batch through ``batch_evaluator``. This is the seam that
+        makes the refiner (and any other per-pair resolution) work identically
+        with or without a single-pair evaluator — including shared caching,
+        since :meth:`_call_evaluator`'s cache wraps this method on both paths.
+        """
+        if self.evaluator is not None:
+            return self.evaluator(
+                candidate,
+                example=example,
+                opt_state=self._build_opt_state(example),
+            )
+        assert self._batch_evaluator is not None
+        ((score, side_info),) = self._batch_evaluator(
+            [(candidate, example)], opt_states=[self._build_opt_state(example)]
+        )
+        return score, None, side_info
+
     def _call_evaluator(
         self,
         candidate: "Candidate",
@@ -274,11 +297,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         """Call evaluator with optional caching."""
         # No caching
         if self.cache_mode == "off":
-            return self.evaluator(
-                candidate,
-                example=example,
-                opt_state=self._build_opt_state(example),
-            )
+            return self._resolve_pair(candidate, example)
 
         # Build cache key
         cache_key = self._cache_key(candidate, example)
@@ -289,11 +308,7 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 return self._eval_cache[cache_key]
 
         # Cache miss - call evaluator
-        result = self.evaluator(
-            candidate,
-            example=example,
-            opt_state=self._build_opt_state(example),
-        )
+        result = self._resolve_pair(candidate, example)
 
         # Store in cache (thread-safe)
         with self._eval_cache_lock:
@@ -321,6 +336,11 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # ``batch_evaluate``'s parallel fallback can reuse the exact same
         # packaging (best-evals update, objective-score extraction, counts).
         if self.refiner_config is None:
+            if self._batch_evaluator is not None:
+                # batch_evaluator is the preferred transport for any multi-pair
+                # evaluation (valset evals, merge evals, seed evals) — one
+                # external call for the whole batch, cache-aware.
+                return self._batch_evaluate_via_user_fn([(candidate, batch)])[0]
             if self.parallel and len(batch) > 1:
                 raw_results = self._evaluate_parallel(batch, candidate)
             else:
@@ -396,8 +416,36 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 pairs.append((candidate, example))
                 pair_to_item_idx.append(item_idx)
 
-        opt_states = [self._build_opt_state(example) for _, example in pairs]
-        results = self._batch_evaluator(pairs, opt_states=opt_states)
+        # Cache layer: identical key/value format to _call_evaluator, so
+        # entries are shared across the batch path, the sequential path, and
+        # the refiner's singleton resolutions. Only misses reach the user's
+        # function — still as ONE call.
+        results: list[tuple[float, dict[str, Any]] | None] = [None] * len(pairs)
+        miss_indices = list(range(len(pairs)))
+        if self.cache_mode != "off":
+            miss_indices = []
+            with self._eval_cache_lock:
+                for idx, (cand, example) in enumerate(pairs):
+                    cached = self._eval_cache.get(self._cache_key(cand, example))
+                    if cached is not None:
+                        score, _output, side_info = cached
+                        results[idx] = (score, side_info)
+                    else:
+                        miss_indices.append(idx)
+
+        if miss_indices:
+            miss_pairs = [pairs[idx] for idx in miss_indices]
+            miss_opt_states = [self._build_opt_state(example) for _, example in miss_pairs]
+            miss_results = self._batch_evaluator(miss_pairs, opt_states=miss_opt_states)
+            for idx, res in zip(miss_indices, miss_results, strict=True):
+                results[idx] = res
+                if self.cache_mode != "off":
+                    score, side_info = res
+                    cache_key = self._cache_key(*pairs[idx])
+                    with self._eval_cache_lock:
+                        self._eval_cache[cache_key] = (score, None, side_info)
+                        if self.cache_mode == "disk":
+                            self._save_cache_entry(cache_key, (score, None, side_info))
 
         raw_by_item: dict[int, list[tuple[float, Any, SideInfo]]] = {}
         for (score, side_info), item_idx in zip(results, pair_to_item_idx, strict=True):
