@@ -461,7 +461,9 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                             self._save_cache_entry(cache_key, (score, None, side_info))
 
         raw_by_item: dict[int, list[tuple[float, Any, SideInfo]]] = {}
-        for (score, side_info), item_idx in zip(results, pair_to_item_idx, strict=True):
+        for res, item_idx in zip(results, pair_to_item_idx, strict=True):
+            assert res is not None, "unresolved evaluation pair (cache/miss bookkeeping bug)"
+            score, side_info = res
             raw_by_item.setdefault(item_idx, []).append((score, None, side_info))
 
         return [

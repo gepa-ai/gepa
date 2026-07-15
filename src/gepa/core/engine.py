@@ -374,7 +374,8 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         new_sum = sum(proposal.subsample_scores_after or [])
         custom_reason = getattr(self.acceptance_criterion, "reject_reason", None)
         if custom_reason is not None:
-            reject_msg = f"Iteration {iteration}: {custom_reason(proposal, state)}"
+            reject_reason = custom_reason(proposal, state)
+            reject_msg = f"Iteration {iteration}: {reject_reason}"
         elif isinstance(self.acceptance_criterion, StrictImprovementAcceptance | ImprovementOrEqualAcceptance):
             reject_msg = (
                 f"Iteration {iteration}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
