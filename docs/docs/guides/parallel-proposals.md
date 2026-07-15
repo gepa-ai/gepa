@@ -135,7 +135,10 @@ sequential path — only cache misses reach your function, still as one call),
 warm-start history, and output packaging all match the sequential path. What
 does **not** apply — structurally, because there is no per-evaluation call to
 scope them to — is `oa.log()` and stdout/stderr capture: return diagnostics
-inside each pair's `side_info` instead.
+inside each pair's `side_info` instead. If the whole batch call raises with
+`raise_on_exception=False`, each affected pair's `side_info` carries
+`{"error": ..., "_gepa_transient_failure": True}`; such results are never
+cached, so they are re-evaluated on the next run.
 
 In single-task mode (no `dataset`/`valset`) the `example` slot of each
 pair is `None` — mirror of the evaluator path, which omits `example` entirely.
