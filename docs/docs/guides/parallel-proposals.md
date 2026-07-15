@@ -13,10 +13,9 @@ The defaults (`SingleMutationSampling` + `AllImprovements`) reproduce classic
 GEPA behavior exactly: one parent, one mutation per iteration. Existing runs
 do not change.
 
-!!! note "Replaces `num_parallel_proposals`"
-    Versions v0.1.2/v0.1.3 briefly shipped an experimental integer knob,
-    `EngineConfig.num_parallel_proposals`. It is replaced by the strategies on
-    this page (see [RFC #329](https://github.com/gepa-ai/gepa/issues/329)).
+!!! note
+    These strategies are the interface for multi-proposal iterations
+    (design: [RFC #329](https://github.com/gepa-ai/gepa/issues/329)).
 
 ## Sampling strategies
 
@@ -67,10 +66,12 @@ result = gepa.optimize(
 )
 ```
 
-Acceptance is unchanged: every proposal is still evaluated on its minibatch
-and only improvements (per the configured `acceptance_criterion`) are
-considered by the selection strategy. The engine remains the single accept
-authority.
+Every proposal is still evaluated on its minibatch. The selection strategy
+is the authority over which proposals enter the pool: it receives **all**
+evaluated proposals plus the configured `acceptance_criterion`. The built-in
+strategies apply the criterion (so defaults only admit improvements); a custom
+strategy may deliberately surface a proposal the criterion would reject — e.g.
+an exploration pick. Anything not selected fires `on_candidate_rejected`.
 
 ## Where the parallelism actually runs: `batch_evaluate`
 
@@ -92,6 +93,30 @@ Third-party adapters that only implement `evaluate()` keep working unmodified
 is batched analogously: the built-in stateless reflector batches all
 per-component reflection calls via `litellm.batch_completion`.
 
+### `batch_evaluator`: one external call for the whole batch
+
+In `optimize_anything`, you can take over batching entirely: pass
+`batch_evaluator=` and GEPA hands you **all pending `(candidate, example)`
+pairs in a single call** — submit them as one provider batch job, one Slurm
+array, one Ray job — and return one result per pair (`score` or
+`(score, side_info)`).
+
+```python
+def my_batch_eval(pairs, opt_states):   # opt_states is optional — declare it to receive warm-start state
+    jobs = [submit(candidate, example) for candidate, example in pairs]
+    return [(job.score(), {"log": job.diagnostics()}) for job in jobs]
+
+optimize_anything(evaluator=my_eval, batch_evaluator=my_batch_eval, ...)
+```
+
+The contract, precisely: str-candidate unwrapping, per-pair `opt_states`
+injection (if your signature accepts it), exception policy
+(`raise_on_exception`), warm-start history, and output packaging all match the
+sequential path. What does **not** apply — structurally, because there is no
+per-evaluation call to scope them to — is `oa.log()` and stdout/stderr
+capture: return diagnostics inside each pair's `side_info` instead.
+`evaluator=` is still required for single-pair features such as the refiner.
+
 ## Budget accounting and events
 
 Totals are identical to the sequential path, at finer event granularity: each
@@ -105,7 +130,8 @@ counting events.
 
 The reflection call itself is a seam (`ReflectionLM`,
 [RFC #329](https://github.com/gepa-ai/gepa/issues/329)): pass
-`reflection_strategy=` to `gepa.optimize()` to replace the stateless
+`reflection_strategy=` to `gepa.optimize()` (or set
+`ReflectionConfig.reflection_strategy` in `optimize_anything`) to replace the stateless
 single-call reflector with a stateful or aggregating implementation (e.g.
 session-based reflection, or map-reduce aggregation over parallel reflections
 as in [ComBEE, PR #307](https://github.com/gepa-ai/gepa/pull/307)).

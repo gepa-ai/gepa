@@ -13,6 +13,7 @@ internal engine.  It handles:
 """
 
 import hashlib
+import inspect
 import json
 import logging
 import pickle
@@ -53,6 +54,89 @@ Return ONLY a valid JSON object with the improved parameters (no explanation, no
 """
 
 
+class BatchEvaluatorWrapper:
+    """Wraps a user ``batch_evaluator`` while preserving its single-external-call contract.
+
+    The whole point of ``batch_evaluator`` is that the user receives ALL
+    (candidate, example) pairs in ONE call (e.g. to submit a provider batch job
+    or fan out over their own cluster), so per-call features of the standard
+    evaluator path — ``oa.log()`` capture and stdout/stderr capture — cannot
+    apply here: there is no per-evaluation call to scope them to. Diagnostics
+    belong in each returned ``side_info``.
+
+    What IS restored for parity with the standard evaluator path:
+
+    - ``str_candidate_mode``: candidates are unwrapped to ``str`` before the
+      user function sees them (mirror of ``EvaluatorWrapper``).
+    - ``opt_states`` injection: if the function's signature accepts an
+      ``opt_states`` keyword (or ``**kwargs``), it receives a list of
+      :class:`OptimizationState` aligned with ``pairs`` — the batch analogue of
+      the per-call ``opt_state`` kwarg (warm-starting, #160).
+    - Exception policy: when ``raise_on_exception=False``, a raised batch call
+      is converted to per-pair ``(0.0, {"error": ...})`` results instead of
+      sinking the iteration.
+    - Result normalization: each per-pair result may be ``float``,
+      ``(score, side_info)`` (the mirror of the evaluator protocol), or a
+      legacy ``(score, output, side_info)`` 3-tuple; all normalize to
+      ``(score, side_info)``.
+    """
+
+    def __init__(
+        self,
+        batch_fn: Callable[..., Any],
+        *,
+        str_candidate_key: str | None = None,
+        raise_on_exception: bool = True,
+    ):
+        self._fn = batch_fn
+        self._str_candidate_key = str_candidate_key
+        self._raise_on_exception = raise_on_exception
+        sig = inspect.signature(batch_fn)
+        has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        self._accepts_opt_states = has_var_kw or "opt_states" in sig.parameters
+
+    def __call__(
+        self,
+        pairs: list[tuple["Candidate", Any]],
+        opt_states: "list[OptimizationState] | None" = None,
+    ) -> list[tuple[float, dict[str, Any]]]:
+        call_pairs: list[tuple[Any, Any]] = list(pairs)
+        if self._str_candidate_key is not None:
+            call_pairs = [(candidate[self._str_candidate_key], example) for candidate, example in pairs]
+
+        kwargs: dict[str, Any] = {}
+        if self._accepts_opt_states and opt_states is not None:
+            kwargs["opt_states"] = opt_states
+
+        try:
+            raw_results = list(self._fn(call_pairs, **kwargs))
+        except Exception as e:
+            if self._raise_on_exception:
+                raise
+            return [(0.0, {"error": str(e)}) for _ in pairs]
+
+        if len(raw_results) != len(pairs):
+            raise ValueError(f"batch_evaluator returned {len(raw_results)} results but expected {len(pairs)}")
+
+        normalized: list[tuple[float, dict[str, Any]]] = []
+        for r in raw_results:
+            if isinstance(r, list | tuple):
+                r_seq = list(r)
+                if len(r_seq) >= 3:
+                    # Legacy (score, output, side_info): the output slot is
+                    # ignored — the adapter packages outputs identically to the
+                    # sequential path as (score, candidate, side_info).
+                    si = r_seq[2] if isinstance(r_seq[2], dict) else {}
+                elif len(r_seq) == 2:
+                    si = r_seq[1] if isinstance(r_seq[1], dict) else {}
+                else:
+                    si = {}
+                normalized.append((float(r_seq[0]), si))
+            else:
+                normalized.append((float(r), {}))
+        return normalized
+
+
 class OptimizeAnythingAdapter(GEPAAdapter):
     """Adapter connecting the ``optimize_anything`` API to GEPA's engine.
 
@@ -76,6 +160,8 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         batch_evaluator: Callable[..., Any] | None = None,
     ):
         self.evaluator = evaluator
+        if batch_evaluator is not None and not isinstance(batch_evaluator, BatchEvaluatorWrapper):
+            batch_evaluator = BatchEvaluatorWrapper(batch_evaluator)
         self._batch_evaluator = batch_evaluator
         self.parallel = parallel
         self.max_workers = max_workers
@@ -291,7 +377,16 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         self,
         items: list[tuple["Candidate", list]],
     ) -> list[EvaluationBatch]:
-        """Flatten all (candidate, example) pairs, call batch_evaluator once, repackage."""
+        """Flatten all (candidate, example) pairs, call batch_evaluator once, repackage.
+
+        The (wrapped) batch_evaluator normalizes every per-pair result to
+        ``(score, side_info)``; packaging then goes through
+        :meth:`_assemble_no_refiner_batch` so the batch path produces byte-identical
+        EvaluationBatches to the sequential path: ``outputs`` are
+        ``(score, candidate, side_info)`` tuples, best-evals history is updated
+        (feeding ``OptimizationState.best_example_evals``), objective scores are
+        extracted, and metric calls are counted the same way.
+        """
         assert self._batch_evaluator is not None
 
         pairs: list[tuple[dict[str, str], Any]] = []
@@ -301,53 +396,17 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                 pairs.append((candidate, example))
                 pair_to_item_idx.append(item_idx)
 
-        raw_results = self._batch_evaluator(pairs)
-        if len(raw_results) != len(pairs):
-            raise ValueError(f"batch_evaluator returned {len(raw_results)} results but expected {len(pairs)}")
+        opt_states = [self._build_opt_state(example) for _, example in pairs]
+        results = self._batch_evaluator(pairs, opt_states=opt_states)
 
-        # Normalize each result to (score, output, side_info)
-        normalized: list[tuple[float, Any, dict[str, Any]]] = []
-        for r in raw_results:
-            r_seq: list[Any] = list(r) if isinstance(r, list | tuple) else [r]
-            if len(r_seq) >= 3:
-                si = r_seq[2] if isinstance(r_seq[2], dict) else {}
-                normalized.append((float(r_seq[0]), r_seq[1], si))
-            elif len(r_seq) == 2:
-                si = r_seq[1] if isinstance(r_seq[1], dict) else {}
-                normalized.append((float(r_seq[0]), (r_seq[0], None, si), si))
-            else:
-                score = float(r_seq[0])
-                normalized.append((score, (score, None, {}), {}))
+        raw_by_item: dict[int, list[tuple[float, Any, SideInfo]]] = {}
+        for (score, side_info), item_idx in zip(results, pair_to_item_idx, strict=True):
+            raw_by_item.setdefault(item_idx, []).append((score, None, side_info))
 
-        # Group by item index and build EvaluationBatch per item
-        results_by_item: dict[int, list[tuple[float, Any, dict[str, Any]]]] = {}
-        for pair_idx, norm in enumerate(normalized):
-            item_idx = pair_to_item_idx[pair_idx]
-            results_by_item.setdefault(item_idx, []).append(norm)
-
-        eval_batches: list[EvaluationBatch] = []
-        for item_idx in range(len(items)):
-            candidate = items[item_idx][0]
-            item_results = results_by_item.get(item_idx, [])
-            scores = [s for s, _, _ in item_results]
-            outputs = [o for _, o, _ in item_results]
-            side_infos: list[dict[str, Any]] = [si for _, _, si in item_results]
-
-            objective_scores: list[dict[str, float]] = [
-                self._extract_objective_scores(candidate, si) for si in side_infos
-            ]
-
-            eval_batches.append(
-                EvaluationBatch(
-                    outputs=outputs,
-                    scores=scores,
-                    trajectories=side_infos,
-                    objective_scores=objective_scores,
-                    num_metric_calls=len(item_results),
-                )
-            )
-
-        return eval_batches
+        return [
+            self._assemble_no_refiner_batch(items[item_idx][0], items[item_idx][1], raw_by_item.get(item_idx, []))
+            for item_idx in range(len(items))
+        ]
 
     def _evaluate_with_refinement(
         self,

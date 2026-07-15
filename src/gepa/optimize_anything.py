@@ -121,7 +121,10 @@ from typing import (
     TypeAlias,
 )
 
-from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
+from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import (
+    BatchEvaluatorWrapper,
+    OptimizeAnythingAdapter,
+)
 from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn
 from gepa.core.callbacks import GEPACallback
 from gepa.core.data_loader import ensure_loader
@@ -133,6 +136,7 @@ from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
+from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
@@ -727,6 +731,11 @@ class ReflectionConfig:
 
     skip_perfect_score: bool = False
     perfect_score: float | None = None
+    # Advanced: a ReflectionLM implementation that owns how reflective mutation
+    # calls the reflection model (sessions, ComBEE-style aggregation, coding
+    # agents). Defaults to the stateless single-call reflector built from
+    # ``reflection_lm``. Mirror of gepa.optimize()'s reflection_strategy=.
+    reflection_strategy: "ReflectionLM | None" = None
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled"
     reflection_minibatch_size: int | None = None  # Default: 1 for single-instance mode, 3 otherwise
     module_selector: ReflectionComponentSelector | Literal["round_robin", "all"] = "round_robin"
@@ -1155,6 +1164,22 @@ def optimize_anything(
             For richer diagnostics, return a ``(score, dict)`` tuple with
             structured feedback, error messages, or even rendered images
             (via :class:`~gepa.Image`).
+        batch_evaluator: Optional low-level batch evaluation hook. When set,
+            GEPA hands you ALL pending ``(candidate, example)`` pairs in ONE
+            call — e.g. to submit a provider batch job or fan out over your
+            own infrastructure — instead of calling ``evaluator`` per pair.
+            Return one result per pair, each ``score`` or
+            ``(score, side_info)``. Parity with the standard path: candidates
+            are unwrapped in str-candidate mode; if your function accepts an
+            ``opt_states`` keyword it receives per-pair
+            :class:`OptimizationState` objects (warm-starting); a raised call
+            is converted to per-pair ``(0.0, {"error": ...})`` results when
+            ``raise_on_exception=False``; best-evals history and output
+            packaging match the sequential path exactly. NOT available on this
+            path (structurally per-call features): ``oa.log()`` capture and
+            stdout/stderr capture — put diagnostics in each returned
+            ``side_info`` instead. ``evaluator`` is still required and is used
+            by features that evaluate single pairs (e.g. the refiner).
         dataset: Examples for multi-task or generalization modes.
             ``None`` = single-task search mode.
         valset: Held-out validation set for generalization mode.
@@ -1298,7 +1323,15 @@ def optimize_anything(
         background=background,
         cache_mode=resolved_cache_mode,
         cache_dir=config.engine.run_dir,
-        batch_evaluator=batch_evaluator,
+        batch_evaluator=(
+            BatchEvaluatorWrapper(
+                batch_evaluator,
+                str_candidate_key=_STR_CANDIDATE_KEY if str_candidate_mode else None,
+                raise_on_exception=config.engine.raise_on_exception,
+            )
+            if batch_evaluator is not None
+            else None
+        ),
     )
 
     # Normalize datasets to DataLoader instances
@@ -1560,6 +1593,7 @@ def optimize_anything(
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
         callbacks=config.callbacks,
         sampling_strategy=config.engine.sampling_strategy,
+        reflection_strategy=config.reflection.reflection_strategy,
     )
 
     # Define evaluator function for merge proposer
