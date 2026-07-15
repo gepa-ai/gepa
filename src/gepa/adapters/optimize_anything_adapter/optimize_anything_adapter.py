@@ -79,6 +79,12 @@ class BatchEvaluatorWrapper:
       ``(score, side_info)`` (the mirror of the evaluator protocol), or a
       legacy ``(score, output, side_info)`` 3-tuple; all normalize to
       ``(score, side_info)``.
+
+    Concurrency: grouped evaluations arrive as one call at a time, but when
+    ``refiner_config`` is combined with ``parallel=True`` (and no single-pair
+    evaluator exists), per-example refinement loops run on a thread pool and
+    may call this wrapper concurrently with singleton batches — the wrapped
+    function should be thread-safe in that configuration.
     """
 
     def __init__(
@@ -165,6 +171,13 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         if batch_evaluator is not None and not isinstance(batch_evaluator, BatchEvaluatorWrapper):
             batch_evaluator = BatchEvaluatorWrapper(batch_evaluator)
         self._batch_evaluator = batch_evaluator
+        if batch_evaluator is not None and parallel:
+            logger.info(
+                "batch_evaluator provided: grouped evaluations route through it, so the "
+                "parallel=True thread pool is not used as their transport. If refiner_config "
+                "is set, refinement loops still run on the thread pool and may invoke "
+                "batch_evaluator concurrently with singleton batches — ensure it is thread-safe."
+            )
         self.parallel = parallel
         self.max_workers = max_workers
         self.refiner_config = refiner_config

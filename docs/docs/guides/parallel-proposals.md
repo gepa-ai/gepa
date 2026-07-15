@@ -73,6 +73,23 @@ strategies apply the criterion (so defaults only admit improvements); a custom
 strategy may deliberately surface a proposal the criterion would reject — e.g.
 an exploration pick. Anything not selected fires `on_candidate_rejected`.
 
+## Choosing an evaluation tier
+
+Three tiers, from easiest to most control — they compose, and none replaces
+the others:
+
+| Tier | You write | You get | Reach for it when |
+|---|---|---|---|
+| `parallel=False` | a singleton `evaluator(candidate, example)` | sequential, deterministic evaluation on the caller thread | debugging, or your evaluator is not thread-safe (shared state, GPU contexts) |
+| `parallel=True` *(default)* | the same singleton evaluator | automatic thread-pool concurrency **with the full per-call feature surface**: `oa.log()`/stdio capture, per-pair exception isolation, per-call `opt_state` | the common case — I/O-bound evaluators (LLM calls, HTTP) |
+| `batch_evaluator=` | a function over **all pending pairs at once** | one grouped external call: provider batch APIs, cluster/Slurm/Ray dispatch, vLLM server batching, cross-pair dedup, CPU-bound work beyond the GIL | threads-over-singletons can't express your batching |
+
+When `batch_evaluator` is provided, it is the preferred transport for all
+grouped evaluations — the `parallel=True` thread pool is not used for them
+(a log line notes this). Providing **both** gives grouped work to the batch
+function and single-pair resolutions (refiner steps) to the evaluator, whose
+per-call features apply there.
+
 ## Where the parallelism actually runs: `batch_evaluate`
 
 Multi-proposal iterations batch their evaluations at the **adapter edge**. The
@@ -122,7 +139,9 @@ inside each pair's `side_info` instead.
 function, *everything* routes through it: multi-pair work (minibatch stages,
 valset/seed/merge evaluations) as grouped calls, and single-pair resolutions
 (refiner steps) as **singleton batches** — make your function efficient for
-`len(pairs) == 1` if you enable the refiner. When both are provided, grouped
+`len(pairs) == 1` if you enable the refiner, and thread-safe if you combine
+the refiner with `parallel=True` (refinement loops run on the thread pool and
+may call it concurrently). When both are provided, grouped
 work prefers `batch_evaluator` and singles use `evaluator` (whose per-call
 `oa.log()`/stdio capture then applies to those calls).
 

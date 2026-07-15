@@ -1187,7 +1187,10 @@ def optimize_anything(
             steps) use ``evaluator``; with only ``batch_evaluator``, singles
             route through it as singleton batches. Caching (``cache_evaluation``)
             applies identically on both paths, with a shared store: a pair
-            cached by either path is a hit for the other.
+            cached by either path is a hit for the other. Note: with
+            ``refiner_config`` + ``parallel=True`` and no ``evaluator``, your
+            batch function may be called concurrently with singleton batches
+            from the refinement thread pool — make it thread-safe.
         dataset: Examples for multi-task or generalization modes.
             ``None`` = single-task search mode.
         valset: Held-out validation set for generalization mode.
