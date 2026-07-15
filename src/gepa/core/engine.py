@@ -52,6 +52,27 @@ except ImportError:
     tqdm = None
 
 
+class _MemoizedAcceptance:
+    """Wraps an AcceptanceCriterion so each proposal is judged EXACTLY once per
+    engine batch, no matter how many times the selection strategy and the
+    engine's rejection classification consult it. Stateful or stochastic
+    criteria therefore see one call per proposal (the pre-#329 contract) and
+    verdicts stay consistent between selection and rejection reporting."""
+
+    def __init__(self, criterion):
+        self._criterion = criterion
+        self._verdicts: dict[int, bool] = {}
+
+    def should_accept(self, proposal, state) -> bool:
+        key = id(proposal)
+        if key not in self._verdicts:
+            self._verdicts[key] = self._criterion.should_accept(proposal, state)
+        return self._verdicts[key]
+
+    def __getattr__(self, name):
+        return getattr(self._criterion, name)
+
+
 class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     """Orchestrates the optimization loop using pluggable candidate proposers."""
 
@@ -301,6 +322,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         )
 
         state.full_program_trace[-1]["new_program_idx"] = new_program_idx
+        state.full_program_trace[-1].setdefault("new_program_indices", []).append(new_program_idx)
         state.full_program_trace[-1]["evaluated_val_indices"] = sorted(valset_evaluation.scores_by_val_id.keys())
 
         if is_best_program:
@@ -369,6 +391,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         iteration: int,
         state: GEPAState[RolloutOutput, DataId],
         dropped_by_selection: bool = False,
+        reason_override: str | None = None,
     ) -> None:
         """Log and fire ``on_candidate_rejected`` for a non-selected proposal.
 
@@ -380,7 +403,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         old_sum = sum(proposal.subsample_scores_before or [])
         new_sum = sum(proposal.subsample_scores_after or [])
         custom_reason = getattr(self.acceptance_criterion, "reject_reason", None)
-        if dropped_by_selection:
+        if reason_override is not None:
+            reject_reason = reason_override
+            reject_msg = f"Iteration {iteration}: {reject_reason}, skipping"
+        elif dropped_by_selection:
             reject_reason = (
                 f"Passed acceptance (score {old_sum} -> {new_sum}) but was not selected "
                 f"by the selection strategy ({type(self.selection_strategy).__name__})"
@@ -431,19 +457,58 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         iteration = state.i + 1
 
         # 1) Selection is authoritative; it sees every evaluated proposal and
-        #    the acceptance criterion (no engine pre-filter).
-        selected = self.selection_strategy.select(list(proposals), state, self.acceptance_criterion)
+        #    the acceptance criterion (no engine pre-filter). The criterion is
+        #    memoized so each proposal is judged exactly once per batch even
+        #    though both the strategy and the rejection classification below
+        #    consult it — stateful/stochastic criteria stay coherent.
+        criterion = _MemoizedAcceptance(self.acceptance_criterion)
+        selected = self.selection_strategy.select(list(proposals), state, criterion)
+
+        # Defensive: strategies must return proposals FROM the input list.
+        input_ids = {id(p) for p in proposals}
+        foreign = [p for p in selected if id(p) not in input_ids]
+        if foreign:
+            self.logger.log(
+                f"Iteration {iteration}: selection strategy returned {len(foreign)} object(s) not from "
+                "the proposal list; ignoring them (strategies must select from the given proposals)."
+            )
+            selected = [p for p in selected if id(p) in input_ids]
+
+        # Deduplicate: identical child candidates selected in the same
+        # iteration would each get a full valset eval and a pool entry.
+        deduped: list[CandidateProposal] = []
+        seen_candidates: set[tuple] = set()
+        seen_ids: set[int] = set()
+        duplicates: list[CandidateProposal] = []
+        for p in selected:
+            content_key = tuple(sorted(p.candidate.items()))
+            if id(p) in seen_ids or content_key in seen_candidates:
+                duplicates.append(p)
+                continue
+            seen_ids.add(id(p))
+            seen_candidates.add(content_key)
+            deduped.append(p)
+        selected = deduped
 
         # 2) Report everything not selected as rejected, distinguishing
-        #    acceptance failures from selection drops (re-checking the
-        #    criterion here is cheap and keeps rejection reasons truthful).
+        #    acceptance failures from selection drops (memoized verdicts keep
+        #    the reasons truthful at zero extra criterion calls).
         selected_ids = {id(p) for p in selected}
         for proposal in proposals:
-            if id(proposal) not in selected_ids:
-                passed_acceptance = self.acceptance_criterion.should_accept(proposal, state)
+            if id(proposal) in selected_ids:
+                continue
+            if any(proposal is d for d in duplicates):
                 self._report_rejected_proposal(
-                    proposal, iteration, state, dropped_by_selection=passed_acceptance
+                    proposal,
+                    iteration,
+                    state,
+                    reason_override="Duplicate of another candidate selected this iteration",
                 )
+                continue
+            passed_acceptance = criterion.should_accept(proposal, state)
+            self._report_rejected_proposal(
+                proposal, iteration, state, dropped_by_selection=passed_acceptance
+            )
 
         if not selected:
             return False

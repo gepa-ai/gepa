@@ -229,10 +229,11 @@ def optimize(
         )
 
     if not adapter_has_propose and custom_candidate_proposer is None:
-        assert reflection_lm is not None, (
+        assert reflection_lm is not None or reflection_strategy is not None, (
             f"reflection_lm was not provided. The adapter used '{active_adapter!s}' does not provide a propose_new_texts method, "
             + "and custom_candidate_proposer was not provided. "
-            + "GEPA will use the default proposer, which requires a reflection_lm to be specified."
+            + "GEPA will use the default proposer, which requires a reflection_lm (or a "
+            + "reflection_strategy) to be specified."
         )
 
     # Resolve reflection LM before building stoppers so cost stopper can reference it
@@ -267,7 +268,18 @@ def optimize(
     if max_reflection_cost is not None:
         from gepa.utils import MaxReflectionCostStopper
 
-        stop_callbacks_list.append(MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_lm_callable))
+        if reflection_strategy is not None:
+            if not hasattr(reflection_strategy, "total_cost"):
+                raise ValueError(
+                    "max_reflection_cost is set but reflection_strategy does not expose total_cost — "
+                    "the cost stopper would silently never fire (unbounded reflection spend). Expose a "
+                    "total_cost property on the strategy, or remove max_reflection_cost."
+                )
+            stop_callbacks_list.append(MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_strategy))
+        else:
+            stop_callbacks_list.append(
+                MaxReflectionCostStopper(max_reflection_cost, reflection_lm=reflection_lm_callable)
+            )
 
     if not stop_callbacks_list:
         raise ValueError(

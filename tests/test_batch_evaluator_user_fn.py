@@ -61,7 +61,7 @@ def test_wrapper_exception_policy_convert():
         raise RuntimeError("cluster down")
 
     out = BatchEvaluatorWrapper(boom, raise_on_exception=False)(PAIRS)
-    assert out == [(0.0, {"error": "cluster down"})] * 2
+    assert out == [(0.0, {"error": "cluster down", "_gepa_transient_failure": True})] * 2
 
 
 def test_wrapper_str_candidate_unwrapping():
@@ -274,3 +274,81 @@ def test_batch_evaluate_with_refiner_and_batch_fn_still_refines_per_example():
     assert calls, "batch_evaluator was never called"
     assert all(n == 1 for n in calls), f"grouped call leaked past the refiner guard: {calls}"
     assert len(calls) >= 2  # at least one original eval per example
+
+
+# ---------------------------------------------------------------------------
+# Adversarial-review fixes: sentinel mirror, copies, failure caching, dedup
+# ---------------------------------------------------------------------------
+
+
+def test_single_instance_mode_examples_are_none():
+    seen = []
+
+    def fn(pairs):
+        seen.extend(ex for _, ex in pairs)
+        return [0.0 for _ in pairs]
+
+    wrapper = BatchEvaluatorWrapper(fn, single_instance_mode=True)
+    wrapper([({"t": "x"}, object()), ({"t": "y"}, object())])
+    assert seen == [None, None], f"internal sentinel leaked to user fn: {seen}"
+
+
+def test_side_info_is_defensively_copied():
+    retained = {"note": "original"}
+    wrapper = BatchEvaluatorWrapper(lambda pairs: [(1.0, retained) for _ in pairs])
+    out = wrapper(PAIRS)
+    retained["note"] = "MUTATED"
+    assert all(si["note"] == "original" for _, si in out)
+
+
+def test_non_dict_side_info_raises_loudly():
+    wrapper = BatchEvaluatorWrapper(lambda pairs: [(1.0, "not-a-dict") for _ in pairs])
+    with pytest.raises(TypeError, match="side_info must be a dict"):
+        wrapper(PAIRS)
+
+
+def test_transient_batch_failure_is_never_cached():
+    state = {"fail": True}
+
+    def flaky(pairs):
+        if state["fail"]:
+            raise RuntimeError("transient outage")
+        return [(1.0, {}) for _ in pairs]
+
+    adapter = OptimizeAnythingAdapter(evaluator=None, parallel=False, cache_mode="memory", batch_evaluator=flaky)
+    # NOTE: raise_on_exception lives on the wrapper; rebuild with it disabled.
+    adapter._batch_evaluator = BatchEvaluatorWrapper(flaky, raise_on_exception=False)
+
+    first = adapter.batch_evaluate([({"bias": "0"}, [1, 2])])
+    assert first[0].scores == [0.0, 0.0]
+    assert all(t.get("_gepa_transient_failure") for t in first[0].trajectories)
+
+    state["fail"] = False
+    second = adapter.batch_evaluate([({"bias": "0"}, [1, 2])])
+    assert second[0].scores == [1.0, 1.0], "failure results were cached and never re-evaluated"
+
+
+def test_duplicate_pairs_deduplicated_within_grouped_call_when_cached():
+    fn = _CountingBatchFn()
+    adapter = OptimizeAnythingAdapter(evaluator=None, parallel=False, cache_mode="memory", batch_evaluator=fn)
+    # Same (candidate, example) pair appears twice across items.
+    adapter.batch_evaluate([({"bias": "0"}, [1, 2]), ({"bias": "0"}, [2, 3])])
+    assert sum(len(c) for c in fn.calls) == 3, f"duplicate pair not deduped: {fn.calls}"
+
+
+def test_capture_stdio_without_evaluator_warns():
+    import warnings as _warnings
+
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, optimize_anything
+
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        try:
+            optimize_anything(
+                seed_candidate="x",
+                batch_evaluator=lambda pairs: [0.0 for _ in pairs],
+                config=GEPAConfig(engine=EngineConfig(capture_stdio=True, max_metric_calls=1)),
+            )
+        except Exception:  # only the warning matters here
+            pass
+        assert any("capture_stdio" in str(w.message) for w in caught)

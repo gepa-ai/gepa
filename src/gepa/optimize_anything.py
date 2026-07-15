@@ -1298,6 +1298,13 @@ def optimize_anything(
             "batch_evaluator alone is sufficient: single-pair resolutions "
             "(e.g. refiner steps) are routed through it as singleton batches."
         )
+    if config.engine.capture_stdio and evaluator is None:
+        warnings.warn(
+            "capture_stdio=True has no effect without a single-pair evaluator: the batch_evaluator "
+            "path cannot scope stdio capture to individual evaluations. Return diagnostics in "
+            "side_info instead.",
+            stacklevel=2,
+        )
     wrapped_evaluator = None
     if evaluator is not None:
         wrapped_evaluator = EvaluatorWrapper(
@@ -1347,6 +1354,7 @@ def optimize_anything(
                 batch_evaluator,
                 str_candidate_key=_STR_CANDIDATE_KEY if str_candidate_mode else None,
                 raise_on_exception=config.engine.raise_on_exception,
+                single_instance_mode=single_instance_mode,
             )
             if batch_evaluator is not None
             else None
@@ -1405,6 +1413,14 @@ def optimize_anything(
 
         stop_callbacks_list.append(MaxCandidateProposalsStopper(config.engine.max_candidate_proposals))
 
+    if config.engine.max_reflection_cost is not None and config.reflection.reflection_strategy is not None:
+        strategy = config.reflection.reflection_strategy
+        if not hasattr(strategy, "total_cost"):
+            raise ValueError(
+                "max_reflection_cost is set but reflection_strategy does not expose total_cost — "
+                "the cost stopper would silently never fire (unbounded reflection spend). Expose a "
+                "total_cost property on the strategy, or remove max_reflection_cost."
+            )
     if config.engine.max_reflection_cost is not None:
         from gepa.utils import MaxReflectionCostStopper
 

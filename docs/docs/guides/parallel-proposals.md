@@ -47,7 +47,9 @@ from gepa.strategies.proposal_selection import (
 
 ## Using them
 
-Both `gepa.optimize()` and `optimize_anything` accept the strategies directly:
+`gepa.optimize()` accepts the strategies directly; in `optimize_anything`
+they are fields of `EngineConfig` (`EngineConfig(sampling_strategy=...,
+selection_strategy=...)`):
 
 ```python
 import gepa
@@ -135,6 +137,9 @@ does **not** apply — structurally, because there is no per-evaluation call to
 scope them to — is `oa.log()` and stdout/stderr capture: return diagnostics
 inside each pair's `side_info` instead.
 
+In single-task mode (no `dataset`/`valset`) the `example` slot of each
+pair is `None` — mirror of the evaluator path, which omits `example` entirely.
+
 `evaluator=` is optional when `batch_evaluator=` is set. With only a batch
 function, *everything* routes through it: multi-pair work (minibatch stages,
 valset/seed/merge evaluations) as grouped calls, and single-pair resolutions
@@ -152,7 +157,10 @@ iteration emits separate `on_budget_updated` events for the parent-evaluation
 and child-evaluation stages (plus one per accepted candidate's full-valset
 evaluation), and `metric_calls_used` remains monotonic with self-consistent
 deltas. If you aggregate budget events, sum `metric_calls_delta` rather than
-counting events.
+counting events. Note that budget overshoot past `max_metric_calls` scales with
+the per-iteration proposal count (the stop condition is checked between
+iterations): with `PxNSampling(p=4, n=4)` a single iteration can spend up to
+16 minibatches + 16 child evaluations beyond the limit.
 
 ## Advanced: custom reflection strategies
 

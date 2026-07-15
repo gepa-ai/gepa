@@ -152,9 +152,12 @@ class ReflectiveMutationProposer:
         if self._reflection_lm is None:
             raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
 
-        # Delegate to the ReflectionLM (#329 Phase 1). The stateless default
-        # returns itself as next_lm, so we ignore it; a later phase pools it.
-        proposal, _next_lm = self._reflection_lm.reflect(candidate, reflective_dataset, components_to_update)
+        # Delegate to the ReflectionLM (#329 Phase 1). Stateful implementations
+        # return a successor carrying accumulated context; chain it so session
+        # state actually persists (stateless implementations return self,
+        # making this a no-op).
+        proposal, next_lm = self._reflection_lm.reflect(candidate, reflective_dataset, components_to_update)
+        self._reflection_lm = next_lm
         return proposal.new_texts, proposal.prompts, proposal.raw_lm_outputs, proposal.metadata
 
     def _propose_texts_batch(
@@ -178,9 +181,20 @@ class ReflectiveMutationProposer:
 
         reflect_many = getattr(self._reflection_lm, "reflect_many", None)
         if reflect_many is not None:
-            results = reflect_many(jobs)
+            results = list(reflect_many(jobs))
+            if len(results) != len(jobs):
+                raise ValueError(
+                    f"ReflectionLM.reflect_many returned {len(results)} results for {len(jobs)} jobs"
+                )
         else:
-            results = [self._reflection_lm.reflect(cand, refds, comps) for cand, refds, comps in jobs]
+            results = []
+            for cand, refds, comps in jobs:
+                proposal, next_lm = self._reflection_lm.reflect(cand, refds, comps)
+                self._reflection_lm = next_lm  # chain stateful reflectors
+                results.append((proposal, next_lm))
+        if results:
+            # For batched reflection, chain to the final returned successor.
+            self._reflection_lm = results[-1][1]
         return [
             (proposal.new_texts, proposal.prompts, proposal.raw_lm_outputs, proposal.metadata)
             for proposal, _next_lm in results
@@ -484,9 +498,14 @@ class ReflectiveMutationProposer:
                 _lm_metadata[f"raw_lm_output:{comp}"] = raw_outputs.get(comp, "")
             # Multi-call reflection diagnostics (e.g. ComBEE per-call
             # intermediates) flow into the proposal metadata for callbacks,
-            # trackers, and the run manifest.
-            if reflection_metadata:
-                _lm_metadata.update(reflection_metadata)
+            # trackers, and the run manifest. Keys that would collide with the
+            # reserved prompt:/raw_lm_output: namespaces are remapped so a
+            # reflector cannot inject phantom components into proposal tables.
+            for meta_key, meta_val in (reflection_metadata or {}).items():
+                if meta_key.startswith(("prompt:", "raw_lm_output:")):
+                    _lm_metadata[f"reflection_meta:{meta_key}"] = meta_val
+                else:
+                    _lm_metadata[meta_key] = meta_val
 
             for pname, text in new_texts.items():
                 self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
@@ -577,6 +596,9 @@ class ReflectiveMutationProposer:
                 subsample_after = sum(child_evals[0].scores)
                 self.experiment_tracker.log_metrics(
                     {
+                        # pre-#329 key names, kept for existing dashboards
+                        "subsample_score": subsample_before,
+                        "new_subsample_score": subsample_after,
                         "subsample/before": subsample_before,
                         "subsample/after": subsample_after,
                         "total_metric_calls": state.total_num_evals,

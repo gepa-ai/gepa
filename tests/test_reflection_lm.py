@@ -421,3 +421,124 @@ def test_trace_records_every_task_not_just_the_first():
     # Legacy first-task keys unchanged for older tooling.
     assert entry["selected_program_candidate"] == 0
     assert entry["subsample_ids"] == [0]
+
+
+# ---------------------------------------------------------------------------
+# Adversarial-review fixes: next_lm chaining, reflect_many validation,
+# api entry point, tracker keys
+# ---------------------------------------------------------------------------
+
+
+class _ChainingLM:
+    """Stateful ReflectionLM: each reflect() returns a NEW successor."""
+
+    def __init__(self, generation=0):
+        self.generation = generation
+
+    def reflect(self, candidate, reflective_dataset, components_to_update):
+        proposal = ReflectionProposal(new_texts={c: f"gen{self.generation}_{c}" for c in components_to_update})
+        return proposal, _ChainingLM(self.generation + 1)
+
+
+def test_stateful_reflection_lm_successor_is_chained():
+    proposer = _make_proposer(reflection_strategy=_ChainingLM())
+    assert proposer._reflection_lm.generation == 0
+    proposer.propose_new_texts({"c": "x"}, {"c": [{"f": 1}]}, ["c"])
+    assert proposer._reflection_lm.generation == 1, "next_lm was discarded"
+    proposer.propose_new_texts({"c": "x"}, {"c": [{"f": 1}]}, ["c"])
+    assert proposer._reflection_lm.generation == 2
+
+
+class _WrongLengthLM:
+    def reflect(self, candidate, reflective_dataset, components_to_update):
+        return ReflectionProposal(new_texts={}), self
+
+    def reflect_many(self, jobs):
+        return []  # wrong length
+
+
+def test_reflect_many_wrong_length_raises():
+    import pytest
+
+    proposer = _make_proposer(reflection_strategy=_WrongLengthLM())
+    with pytest.raises(ValueError, match="reflect_many returned 0 results for 1 jobs"):
+        proposer._propose_texts_batch([({"c": "x"}, {"c": [{"f": 1}]}, ["c"])])
+
+
+def test_reflection_metadata_reserved_prefixes_are_remapped():
+    class _CollidingMetaLM:
+        def reflect(self, candidate, reflective_dataset, components_to_update):
+            return ReflectionProposal(
+                new_texts={c: f"new_{c}" for c in components_to_update},
+                metadata={"prompt:phantom": "spoof", "safe_key": 1},
+            ), self
+
+    proposer, _ = _make_propose_harness(_CollidingMetaLM())
+    proposals = proposer.propose(_make_state())
+    md = proposals[0].metadata
+    assert "prompt:phantom" not in md
+    assert md["reflection_meta:prompt:phantom"] == "spoof"
+    assert md["safe_key"] == 1
+
+
+def test_legacy_tracker_metric_keys_still_emitted():
+    from unittest.mock import MagicMock
+
+    tracker = MagicMock()
+    proposer, _ = _make_propose_harness(_FixedProposalLM({"c": "improved"}))
+    proposer.experiment_tracker = tracker
+    proposer.propose(_make_state())
+    logged_keys = set()
+    for call in tracker.log_metrics.call_args_list:
+        logged_keys |= set(call.args[0].keys())
+    assert {"subsample_score", "new_subsample_score"} <= logged_keys, logged_keys
+
+
+def test_gepa_optimize_accepts_reflection_strategy_without_reflection_lm():
+    import gepa
+    from gepa.core.adapter import EvaluationBatch
+
+    class Adapter:
+        propose_new_texts = None
+
+        def evaluate(self, batch, candidate, capture_traces=False):
+            return EvaluationBatch(
+                outputs=["o"] * len(batch),
+                scores=[0.5] * len(batch),
+                trajectories=[{"f": 1}] * len(batch) if capture_traces else None,
+                objective_scores=None,
+                num_metric_calls=len(batch),
+            )
+
+        def make_reflective_dataset(self, candidate, eval_batch, components):
+            return {c: [{"Feedback": "f"}] for c in components}
+
+    stub = _ReflectOnlyLM()
+    result = gepa.optimize(
+        seed_candidate={"c": "x"},
+        trainset=[{"q": 1}] * 4,
+        valset=[{"q": 1}] * 4,
+        adapter=Adapter(),
+        reflection_strategy=stub,
+        max_metric_calls=25,
+        display_progress_bar=False,
+        seed=0,
+    )
+    assert stub.calls, "reflection_strategy never invoked via gepa.optimize"
+    assert result is not None
+
+
+def test_max_reflection_cost_with_costless_strategy_raises():
+    import pytest
+
+    import gepa
+
+    with pytest.raises(ValueError, match="total_cost"):
+        gepa.optimize(
+            seed_candidate={"c": "x"},
+            trainset=[{"q": 1}],
+            adapter=__import__("unittest.mock", fromlist=["MagicMock"]).MagicMock(propose_new_texts=None),
+            reflection_strategy=_ReflectOnlyLM(),
+            max_reflection_cost=5.0,
+            max_metric_calls=10,
+        )

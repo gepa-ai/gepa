@@ -93,10 +93,12 @@ class BatchEvaluatorWrapper:
         *,
         str_candidate_key: str | None = None,
         raise_on_exception: bool = True,
+        single_instance_mode: bool = False,
     ):
         self._fn = batch_fn
         self._str_candidate_key = str_candidate_key
         self._raise_on_exception = raise_on_exception
+        self._single_instance_mode = single_instance_mode
         sig = inspect.signature(batch_fn)
         has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
         self._accepts_opt_states = has_var_kw or "opt_states" in sig.parameters
@@ -108,7 +110,12 @@ class BatchEvaluatorWrapper:
     ) -> list[tuple[float, dict[str, Any]]]:
         call_pairs: list[tuple[Any, Any]] = list(pairs)
         if self._str_candidate_key is not None:
-            call_pairs = [(candidate[self._str_candidate_key], example) for candidate, example in pairs]
+            call_pairs = [(candidate[self._str_candidate_key], example) for candidate, example in call_pairs]
+        if self._single_instance_mode:
+            # Mirror of EvaluatorWrapper's single-instance handling: the
+            # internal placeholder example must never reach user code — the
+            # user-visible example is None in this mode.
+            call_pairs = [(candidate, None) for candidate, _example in call_pairs]
 
         kwargs: dict[str, Any] = {}
         if self._accepts_opt_states and opt_states is not None:
@@ -119,25 +126,41 @@ class BatchEvaluatorWrapper:
         except Exception as e:
             if self._raise_on_exception:
                 raise
-            return [(0.0, {"error": str(e)}) for _ in pairs]
+            # _gepa_transient_failure marks these as synthetic whole-batch
+            # failure results: the adapter will NOT cache them, so one
+            # transient infrastructure error cannot poison the (disk) cache
+            # for every pair across runs.
+            return [(0.0, {"error": str(e), "_gepa_transient_failure": True}) for _ in pairs]
 
         if len(raw_results) != len(pairs):
             raise ValueError(f"batch_evaluator returned {len(raw_results)} results but expected {len(pairs)}")
 
         normalized: list[tuple[float, dict[str, Any]]] = []
-        for r in raw_results:
+        for idx, r in enumerate(raw_results):
             if isinstance(r, list | tuple):
                 r_seq = list(r)
                 if len(r_seq) >= 3:
                     # Legacy (score, output, side_info): the output slot is
                     # ignored — the adapter packages outputs identically to the
                     # sequential path as (score, candidate, side_info).
-                    si = r_seq[2] if isinstance(r_seq[2], dict) else {}
+                    si_raw = r_seq[2]
                 elif len(r_seq) == 2:
-                    si = r_seq[1] if isinstance(r_seq[1], dict) else {}
+                    si_raw = r_seq[1]
                 else:
-                    si = {}
-                normalized.append((float(r_seq[0]), si))
+                    si_raw = {}
+                if si_raw is None:
+                    si_raw = {}
+                if not isinstance(si_raw, dict):
+                    # Mirror the evaluator path's loudness instead of silently
+                    # discarding user diagnostics.
+                    raise TypeError(
+                        f"batch_evaluator result {idx}: side_info must be a dict or None, "
+                        f"got {type(si_raw).__name__}"
+                    )
+                # Defensive copy (mirror of EvaluatorWrapper): the user may
+                # retain and mutate their dict; the cache, best-evals history,
+                # and objective scores must not be corruptible after return.
+                normalized.append((float(r_seq[0]), dict(si_raw)))
             else:
                 normalized.append((float(r), {}))
         return normalized
@@ -326,11 +349,14 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         # Cache miss - call evaluator
         result = self._resolve_pair(candidate, example)
 
-        # Store in cache (thread-safe)
-        with self._eval_cache_lock:
-            self._eval_cache[cache_key] = result
-            if self.cache_mode == "disk":
-                self._save_cache_entry(cache_key, result)
+        # Store in cache (thread-safe); synthetic transient-failure results
+        # from a batch_evaluator exception are never cached.
+        side_info = result[2] if len(result) > 2 and isinstance(result[2], dict) else {}
+        if not side_info.get("_gepa_transient_failure"):
+            with self._eval_cache_lock:
+                self._eval_cache[cache_key] = result
+                if self.cache_mode == "disk":
+                    self._save_cache_entry(cache_key, result)
 
         return result
 
@@ -454,18 +480,40 @@ class OptimizeAnythingAdapter(GEPAAdapter):
                         miss_indices.append(idx)
 
         if miss_indices:
-            miss_pairs = [pairs[idx] for idx in miss_indices]
+            # With caching enabled, duplicate (candidate, example) pairs within
+            # one grouped call resolve to a single user-fn evaluation (the
+            # sequential path gets the same effect through per-pair cache hits).
+            if self.cache_mode != "off":
+                first_by_key: dict[tuple[str, str], int] = {}
+                unique_miss: list[int] = []
+                alias_of: dict[int, int] = {}
+                for idx in miss_indices:
+                    key = self._cache_key(*pairs[idx])
+                    if key in first_by_key:
+                        alias_of[idx] = first_by_key[key]
+                    else:
+                        first_by_key[key] = idx
+                        unique_miss.append(idx)
+            else:
+                unique_miss = list(miss_indices)
+                alias_of = {}
+
+            miss_pairs = [pairs[idx] for idx in unique_miss]
             miss_opt_states = [self._build_opt_state(example) for _, example in miss_pairs]
             miss_results = self._batch_evaluator(miss_pairs, opt_states=miss_opt_states)
-            for idx, res in zip(miss_indices, miss_results, strict=True):
+            for idx, res in zip(unique_miss, miss_results, strict=True):
                 results[idx] = res
-                if self.cache_mode != "off":
-                    score, side_info = res
+                score, side_info = res
+                # Transient whole-batch failures (see BatchEvaluatorWrapper)
+                # are never cached — they must be re-evaluated next time.
+                if self.cache_mode != "off" and not side_info.get("_gepa_transient_failure"):
                     cache_key = self._cache_key(*pairs[idx])
                     with self._eval_cache_lock:
                         self._eval_cache[cache_key] = (score, None, side_info)
                         if self.cache_mode == "disk":
                             self._save_cache_entry(cache_key, (score, None, side_info))
+            for idx, src in alias_of.items():
+                results[idx] = results[src]
 
         raw_by_item: dict[int, list[tuple[float, Any, SideInfo]]] = {}
         for res, item_idx in zip(results, pair_to_item_idx, strict=True):
