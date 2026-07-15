@@ -378,6 +378,20 @@ Discover how organizations and researchers are using GEPA to optimize AI systems
 
     [:material-arrow-right: Resources page](https://www.intrinsic-labs.ai/resources/prompt-optimized-ocr-for-production)
 
+-   **LanceDB: Handwritten Medical-Notes OCR Pipeline**
+
+    ---
+
+    Prashanth Rao (LanceDB) uses **DSPy + GEPA** to optimize the prompt for a handwritten-medicine-name OCR reader on top of `gemini-3.1-flash-lite`, keeping the same low-cost student model and using `gemini-3.1-pro-preview` as the reflection LM. A ~15-minute optimization run on a laptop lifts held-out results on 780 test images:
+
+    - **Normalized OCR match:** 54.1% → **59.4%**
+    - **Average edit distance:** 1.01 → **0.87**
+    - No fine-tuning, no bigger model — the discovered instruction alone (trailing-letters, casing, punctuation, pharmacological tie-breakers) drives the lift.
+
+    The post also walks through metric design pitfalls specific to GEPA (why edit distance shouldn't dominate the objective and how validation-set sizing trades off against exploration budget).
+
+    [:material-arrow-right: Read the blog post](https://www.lancedb.com/blog/make-handwritten-notes-searchable-optimizing-an-ocr-pipeline-with-lancedb)
+
 -   **Market Research AI Personas**
 
     ---
