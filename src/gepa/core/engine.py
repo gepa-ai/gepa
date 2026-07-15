@@ -368,12 +368,25 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         proposal: CandidateProposal,
         iteration: int,
         state: GEPAState[RolloutOutput, DataId],
+        dropped_by_selection: bool = False,
     ) -> None:
-        """Log and fire ``on_candidate_rejected`` for a proposal that failed acceptance."""
+        """Log and fire ``on_candidate_rejected`` for a non-selected proposal.
+
+        ``dropped_by_selection=True`` means the proposal PASSED the acceptance
+        criterion but was not picked by the selection strategy (e.g.
+        BestImprovement/TopK) — the reason must say so rather than falsely
+        claiming a score regression.
+        """
         old_sum = sum(proposal.subsample_scores_before or [])
         new_sum = sum(proposal.subsample_scores_after or [])
         custom_reason = getattr(self.acceptance_criterion, "reject_reason", None)
-        if custom_reason is not None:
+        if dropped_by_selection:
+            reject_reason = (
+                f"Passed acceptance (score {old_sum} -> {new_sum}) but was not selected "
+                f"by the selection strategy ({type(self.selection_strategy).__name__})"
+            )
+            reject_msg = f"Iteration {iteration}: {reject_reason}, skipping"
+        elif custom_reason is not None:
             reject_reason = custom_reason(proposal, state)
             reject_msg = f"Iteration {iteration}: {reject_reason}"
         elif isinstance(self.acceptance_criterion, StrictImprovementAcceptance | ImprovementOrEqualAcceptance):
@@ -421,11 +434,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         #    the acceptance criterion (no engine pre-filter).
         selected = self.selection_strategy.select(list(proposals), state, self.acceptance_criterion)
 
-        # 2) Report everything not selected as rejected.
+        # 2) Report everything not selected as rejected, distinguishing
+        #    acceptance failures from selection drops (re-checking the
+        #    criterion here is cheap and keeps rejection reasons truthful).
         selected_ids = {id(p) for p in selected}
         for proposal in proposals:
             if id(proposal) not in selected_ids:
-                self._report_rejected_proposal(proposal, iteration, state)
+                passed_acceptance = self.acceptance_criterion.should_accept(proposal, state)
+                self._report_rejected_proposal(
+                    proposal, iteration, state, dropped_by_selection=passed_acceptance
+                )
 
         if not selected:
             return False

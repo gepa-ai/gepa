@@ -35,6 +35,14 @@ class ReflectionProposal:
     new_texts: dict[str, str]
     prompts: dict[str, str | list[dict[str, Any]]] = field(default_factory=dict)
     raw_lm_outputs: dict[str, str] = field(default_factory=dict)
+    # Free-form diagnostics for multi-call reflection strategies. ``prompts``/
+    # ``raw_lm_outputs`` assume ONE LM call per component; strategies that make
+    # several (e.g. ComBEE's k map calls + 1 reduce call per component) should
+    # record per-call intermediates here (namespaced keys, e.g.
+    # "combee:level1_prompts"). Merged into CandidateProposal.metadata, so it
+    # reaches on_proposal_end consumers, experiment trackers, and the run
+    # manifest without a future protocol break.
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @runtime_checkable

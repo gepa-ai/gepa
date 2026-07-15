@@ -326,3 +326,98 @@ def test_tracking_lm_exposes_batch_complete_conditionally():
     out = tracked.batch_complete([[{"role": "user", "content": "hi"}]] * 3)
     assert out == ["y", "y", "y"]
     assert tracked.total_tokens_out > 0
+
+
+# ---------------------------------------------------------------------------
+# reflection_strategy conflict guard + metadata threading + per-task trace
+# ---------------------------------------------------------------------------
+
+
+def test_reflection_strategy_conflicts_with_custom_proposer():
+    import pytest
+
+    with pytest.raises(ValueError, match="custom_candidate_proposer"):
+        _make_proposer(
+            reflection_strategy=_ReflectOnlyLM(),
+            custom_candidate_proposer=lambda c, d, comps: {},
+        )
+
+
+def test_reflection_strategy_conflicts_with_adapter_proposer():
+    from unittest.mock import MagicMock
+
+    import pytest
+
+    adapter = MagicMock()
+    adapter.propose_new_texts = lambda c, d, comps: {}
+    with pytest.raises(ValueError, match=r"adapter\.propose_new_texts"):
+        _make_proposer(reflection_strategy=_ReflectOnlyLM(), adapter=adapter)
+
+
+class _MetadataLM:
+    """ReflectionLM stub recording multi-call diagnostics in metadata."""
+
+    def reflect(self, candidate, reflective_dataset, components_to_update):
+        proposal = ReflectionProposal(
+            new_texts={c: f"new_{c}" for c in components_to_update},
+            metadata={"combee:level1_outputs": ["draft-1", "draft-2"]},
+        )
+        return proposal, self
+
+
+def test_reflection_metadata_reaches_candidate_proposal():
+    proposer, _adapter = _make_propose_harness(_MetadataLM())
+    proposals = proposer.propose(_make_state())
+    assert len(proposals) == 1
+    assert proposals[0].metadata["combee:level1_outputs"] == ["draft-1", "draft-2"]
+    # Single-call diagnostics still present alongside.
+    assert "prompt:c" in proposals[0].metadata
+
+
+def test_trace_records_every_task_not_just_the_first():
+    from unittest.mock import MagicMock
+
+    from gepa.core.adapter import EvaluationBatch
+    from gepa.strategies.proposal_sampling import ProposalTask
+
+    class TwoTaskSampling:
+        def sample_tasks(self, state, candidate_selector, batch_sampler, trainset):
+            return [
+                ProposalTask(parent_idx=0, parent_candidate=dict(state.program_candidates[0]), minibatch_ids=[0], minibatch=[{"q": 0}]),
+                ProposalTask(parent_idx=0, parent_candidate=dict(state.program_candidates[0]), minibatch_ids=[1], minibatch=[{"q": 1}]),
+            ]
+
+    adapter = MagicMock()
+    adapter.propose_new_texts = None
+    adapter.batch_evaluate = MagicMock(
+        side_effect=lambda items: [
+            EvaluationBatch(outputs=["o"], scores=[0.4], trajectories=[{"step": 1}], objective_scores=None, num_metric_calls=1)
+            for _ in items
+        ]
+    )
+    adapter.make_reflective_dataset = MagicMock(return_value={"c": [{"feedback": "f"}]})
+    module_selector = MagicMock(return_value=["c"])
+
+    proposer = _make_proposer(
+        adapter=adapter,
+        candidate_selector=MagicMock(),
+        batch_sampler=MagicMock(),
+        module_selector=module_selector,
+        trainset=[{"q": 0}, {"q": 1}],
+        reflection_strategy=_FixedProposalLM({"c": "improved"}),
+        sampling_strategy=TwoTaskSampling(),
+    )
+    state = _make_state()
+    proposals = proposer.propose(state)
+    assert len(proposals) == 2
+
+    entry = state.full_program_trace[-1]
+    assert entry["n_tasks"] == 2
+    assert len(entry["tasks"]) == 2
+    assert [t["subsample_ids"] for t in entry["tasks"]] == [[0], [1]]
+    for t in entry["tasks"]:
+        assert t["subsample_scores"] == [0.4]
+        assert t["new_subsample_scores"] == [0.4]
+    # Legacy first-task keys unchanged for older tooling.
+    assert entry["selected_program_candidate"] == 0
+    assert entry["subsample_ids"] == [0]

@@ -364,3 +364,41 @@ def test_selection_strategy_sees_all_proposals_including_rejected(aime_lms):
     assert True in spy.seen
     golden = (_AIME_CACHE_DIR / "optimized_prompt.txt").read_text()
     assert result.best_candidate["system_prompt"] == golden
+
+
+def test_selection_dropped_rejection_reason_is_truthful():
+    """A proposal that PASSES acceptance but is dropped by selection must not
+    be reported as a score regression (engine reason poisoning fix)."""
+    from unittest.mock import MagicMock
+
+    from gepa.core.engine import GEPAEngine
+
+    proposal = CandidateProposal(
+        candidate={"p": "x"},
+        parent_program_ids=[0],
+        subsample_indices=[0],
+        subsample_scores_before=[5.0],
+        subsample_scores_after=[8.0],
+        eval_before=SubsampleEvaluation(scores=[5.0], outputs=["o"]),
+        eval_after=SubsampleEvaluation(scores=[8.0], outputs=["o"]),
+        tag="test",
+    )
+    mock_engine = MagicMock()
+    mock_engine.acceptance_criterion = StrictImprovementAcceptance()
+    mock_engine.selection_strategy = BestImprovement()
+    logged: list[str] = []
+    mock_engine.logger.log = lambda m: logged.append(m)
+    events: list[dict] = []
+    mock_engine.callbacks = [type("Cb", (), {"on_candidate_rejected": staticmethod(lambda e: events.append(dict(e)))})()]
+
+    GEPAEngine._report_rejected_proposal(mock_engine, proposal, 3, MagicMock(), dropped_by_selection=True)
+
+    assert "not selected by the selection strategy (BestImprovement)" in logged[0]
+    assert "not better than" not in logged[0]
+    assert "not selected by the selection strategy" in events[0]["reason"]
+
+    # Acceptance-failed path keeps the classic message.
+    logged.clear()
+    events.clear()
+    GEPAEngine._report_rejected_proposal(mock_engine, proposal, 3, MagicMock(), dropped_by_selection=False)
+    assert "not better than" in logged[0] or "rejected by acceptance criterion" in logged[0]

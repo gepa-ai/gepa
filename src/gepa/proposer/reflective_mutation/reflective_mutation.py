@@ -97,6 +97,19 @@ class ReflectiveMutationProposer:
         else:
             InstructionProposalSignature.validate_prompt_template(reflection_prompt_template)
 
+        if reflection_strategy is not None and (
+            adapter.propose_new_texts is not None or custom_candidate_proposer is not None
+        ):
+            owner = (
+                "adapter.propose_new_texts"
+                if adapter.propose_new_texts is not None
+                else "custom_candidate_proposer"
+            )
+            raise ValueError(
+                f"reflection_strategy was provided, but {owner} owns proposal generation "
+                "and the reflection strategy would be silently ignored. Remove one of the two."
+            )
+
         # Reflection LM (#329 Phase 1); None when an adapter/custom proposer owns
         # reflection. An injected reflection_strategy — any ReflectionLM
         # implementation, e.g. session-based or ComBEE-style aggregating
@@ -119,19 +132,22 @@ class ReflectiveMutationProposer:
         candidate: dict[str, str],
         reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
         components_to_update: list[str],
-    ) -> tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]]:
+    ) -> tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str], dict[str, Any]]:
         """Propose new instruction texts for the given components.
 
         Returns:
-            A tuple of (new_texts, prompts, raw_lm_outputs) where each is a
-            dict keyed by component name.
+            A tuple of (new_texts, prompts, raw_lm_outputs, reflection_metadata)
+            where the first three are dicts keyed by component name and
+            ``reflection_metadata`` is the ReflectionLM's free-form diagnostics
+            (empty for single-call reflectors; multi-call strategies such as
+            ComBEE record per-call intermediates here).
         """
         empty: dict[str, str | list[dict[str, Any]]] = {}
         if self.adapter.propose_new_texts is not None:
-            return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update), empty, {}
+            return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update), empty, {}, {}
 
         if self.custom_candidate_proposer is not None:
-            return self.custom_candidate_proposer(candidate, reflective_dataset, components_to_update), empty, {}
+            return self.custom_candidate_proposer(candidate, reflective_dataset, components_to_update), empty, {}, {}
 
         if self._reflection_lm is None:
             raise ValueError("reflection_lm must be provided when adapter.propose_new_texts is None.")
@@ -139,11 +155,11 @@ class ReflectiveMutationProposer:
         # Delegate to the ReflectionLM (#329 Phase 1). The stateless default
         # returns itself as next_lm, so we ignore it; a later phase pools it.
         proposal, _next_lm = self._reflection_lm.reflect(candidate, reflective_dataset, components_to_update)
-        return proposal.new_texts, proposal.prompts, proposal.raw_lm_outputs
+        return proposal.new_texts, proposal.prompts, proposal.raw_lm_outputs, proposal.metadata
 
     def _propose_texts_batch(
         self, jobs: list[tuple[dict[str, str], Mapping[str, Sequence[Mapping[str, Any]]], list[str]]]
-    ) -> list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]]]:
+    ) -> list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str], dict[str, Any]]]:
         """Propose new texts for many tasks, batching the reflection LM calls.
 
         ReflectionLM implementations that provide ``reflect_many`` (e.g. the
@@ -165,11 +181,14 @@ class ReflectiveMutationProposer:
             results = reflect_many(jobs)
         else:
             results = [self._reflection_lm.reflect(cand, refds, comps) for cand, refds, comps in jobs]
-        return [(proposal.new_texts, proposal.prompts, proposal.raw_lm_outputs) for proposal, _next_lm in results]
+        return [
+            (proposal.new_texts, proposal.prompts, proposal.raw_lm_outputs, proposal.metadata)
+            for proposal, _next_lm in results
+        ]
 
     def _propose_texts_batch_safe(
         self, jobs: list[tuple[dict[str, str], Mapping[str, Sequence[Mapping[str, Any]]], list[str]]]
-    ) -> list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]] | None]:
+    ) -> list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str], dict[str, Any]] | None]:
         """Like :meth:`_propose_texts_batch`, but isolates per-task failures.
 
         Returns ``None`` in the slot of any task whose reflection raised, so one
@@ -182,7 +201,7 @@ class ReflectiveMutationProposer:
         except Exception as e:
             self.logger.log(f"Batched reflection failed ({e}); retrying per task.")
             self.logger.log(traceback.format_exc())
-            out: list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str]] | None] = []
+            out: list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str], dict[str, Any]] | None] = []
             for cand, refds, comps in jobs:
                 try:
                     out.append(self.propose_new_texts(cand, refds, comps))
@@ -311,10 +330,17 @@ class ReflectiveMutationProposer:
                     objective_scores_list,
                 )
 
-        # Log first task's selection (for trace compatibility)
+        # Trace: legacy first-task keys (pre-#329 tooling compatibility) plus
+        # full per-task records — multi-task iterations record every task, not
+        # just the first. Tasks that get skipped later simply never receive
+        # score keys.
         first_task = tasks[0]
         state.full_program_trace[-1]["selected_program_candidate"] = first_task.parent_idx
         state.full_program_trace[-1]["subsample_ids"] = first_task.minibatch_ids
+        state.full_program_trace[-1]["n_tasks"] = len(tasks)
+        state.full_program_trace[-1]["tasks"] = [
+            {"parent_idx": task.parent_idx, "subsample_ids": list(task.minibatch_ids)} for task in tasks
+        ]
         self.logger.log(
             f"Iteration {i}: Selected program {first_task.parent_idx} "
             f"score: {state.program_full_scores_val_set[first_task.parent_idx]}"
@@ -427,7 +453,7 @@ class ReflectiveMutationProposer:
             if texts is None:
                 children.append(None)
                 continue
-            new_texts, prompts, raw_outputs = texts
+            new_texts, prompts, raw_outputs, reflection_metadata = texts
 
             if not new_texts:
                 # Reflection produced no text updates (e.g. every requested
@@ -456,6 +482,11 @@ class ReflectiveMutationProposer:
             for comp in new_texts:
                 _lm_metadata[f"prompt:{comp}"] = prompts.get(comp, "")
                 _lm_metadata[f"raw_lm_output:{comp}"] = raw_outputs.get(comp, "")
+            # Multi-call reflection diagnostics (e.g. ComBEE per-call
+            # intermediates) flow into the proposal metadata for callbacks,
+            # trackers, and the run manifest.
+            if reflection_metadata:
+                _lm_metadata.update(reflection_metadata)
 
             for pname, text in new_texts.items():
                 self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
@@ -526,6 +557,13 @@ class ReflectiveMutationProposer:
                 state.evaluation_cache.put_batch(
                     new_candidate, task.minibatch_ids, child_eval.outputs, child_eval.scores, new_obj_scores
                 )
+
+        # Trace: per-task before/after scores (children is index-aligned with tasks)
+        trace_tasks = state.full_program_trace[-1].get("tasks")
+        if trace_tasks is not None:
+            for (child_idx, (_task, _nc, eval_curr, _md)), child_eval in zip(valid_children, child_evals, strict=True):
+                trace_tasks[child_idx]["subsample_scores"] = list(eval_curr.scores)
+                trace_tasks[child_idx]["new_subsample_scores"] = list(child_eval.scores)
 
         # Log subsample scores for first task (trace compatibility)
         if valid_children:
