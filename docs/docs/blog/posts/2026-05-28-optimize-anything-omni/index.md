@@ -60,31 +60,31 @@ Under the hood, three families of optimizers all fit the same `(candidate, score
 | `"autoresearch"` | Autonomous agent | A long-horizon [Claude Code](https://www.anthropic.com/claude-code) session ([AutoResearch](https://github.com/karpathy/autoresearch)-style) owns the entire loop: selection, proposal, and evaluation. |
 | `"meta_harness"` | Agent-based | A coding-agent proposer mutates candidates while the framework owns the outer loop and parent selection ([Meta-Harness](https://arxiv.org/abs/2603.28052)). |
 
-You pick the engine with one argument. The `Task`, the `evaluate` function, and the budget stay the same:
+You pick the engine with one argument. The task, the `evaluate` function, and the budget stay the same:
 
 ```python
-from gepa.optimize_anything import optimize_anything, Task, OptimizeAnythingConfig
-
-task = Task(
-    name="frontier_cs/algo_0",
-    initial_candidate=open("seed_solution.py").read(),
-    objective="Maximize the hidden-test score for this competitive-programming problem.",
-    background="A single Python program. A sandboxed judge runs it against hidden tests and returns a 0–100 score.",
-)
+from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
 
 def evaluate(candidate: str) -> tuple[float, dict]:
     score, feedback = run_judge(candidate)      # your sandboxed judge
     return score, {"Feedback": feedback}        # the dict is handed to the proposer as ASI
 
+seed = open("seed_solution.py").read()
+task = dict(
+    evaluator=evaluate,
+    objective="Maximize the hidden-test score for this competitive-programming problem.",
+    background="A single Python program. A sandboxed judge runs it against hidden tests and returns a 0–100 score.",
+)
+
 # Same task, same evaluator — swap only the engine:
-result = optimize_anything(task, evaluate, OptimizeAnythingConfig(engine="gepa",         max_token_cost=20))
-result = optimize_anything(task, evaluate, OptimizeAnythingConfig(engine="autoresearch", max_token_cost=20))
-result = optimize_anything(task, evaluate, OptimizeAnythingConfig(engine="meta_harness", max_token_cost=20))
+result = optimize_anything(seed, **task, config=OptimizeAnythingConfig(engine="gepa",         max_token_cost=20))
+result = optimize_anything(seed, **task, config=OptimizeAnythingConfig(engine="autoresearch", max_token_cost=20))
+result = optimize_anything(seed, **task, config=OptimizeAnythingConfig(engine="meta_harness", max_token_cost=20))
 
 print(result.best_score, result.best_candidate)
 ```
 
-`engine="gepa"` is the default, so existing code keeps its exact behavior. The `evaluate` contract is the same one from `optimize_anything`: `(candidate) -> (score, info)` for single-task problems, or `(candidate, example) -> (score, info)` when the `Task` carries a `train_set`/`val_set`. The returned `info` dict is handed to the proposer as **Actionable Side Information (ASI)** — the feedback an engine uses to decide what to change next.
+`engine="gepa"` is the default, so existing code keeps its exact behavior. The `evaluate` contract is the same one from `optimize_anything`: `(candidate) -> (score, info)` for single-task problems, or `(candidate, example) -> (score, info)` when you also pass `dataset` / `valset` examples. The returned `info` dict is handed to the proposer as **Actionable Side Information (ASI)** — the feedback an engine uses to decide what to change next.
 
 
 ## Why one optimizer is not enough
@@ -123,11 +123,10 @@ These observations point to a design rather than a single winner. **`OMNI`** is 
 Phase 1 starts the slow part of the search from a better candidate than any single optimizer reaches alone; phase 2 hands that candidate to a fresh optimizer to push past the plateau. In the new API this is a short composition over the same engines: `optimize_best_of` runs several engines in parallel and keeps the highest-scoring candidate, then a fresh optimizer continues from it:
 
 ```python
-from dataclasses import replace
-from gepa.optimize_anything import optimize_anything, optimize_best_of, Task, OptimizeAnythingConfig
+from gepa.optimize_anything import optimize_anything, optimize_best_of, OptimizeAnythingConfig
 
 # Phase 1 — explore: run all three engines in parallel, keep the single best candidate.
-explore = optimize_best_of(task, evaluate, configs=[
+explore = optimize_best_of(seed, **task, configs=[
     OptimizeAnythingConfig(engine="gepa",         max_token_cost=5),
     OptimizeAnythingConfig(engine="autoresearch", max_token_cost=5),
     OptimizeAnythingConfig(engine="meta_harness", max_token_cost=5),
@@ -136,9 +135,9 @@ explore = optimize_best_of(task, evaluate, configs=[
 # Phase 2 — continue: seed a fresh optimizer from the winner and spend the rest of the budget.
 #   The continuation engine names the variant — this is OMNI-GEPA.
 omni = optimize_anything(
-    replace(task, initial_candidate=explore.best_candidate),
-    evaluate,
-    OptimizeAnythingConfig(engine="gepa", max_token_cost=5),
+    explore.best_candidate,
+    **task,
+    config=OptimizeAnythingConfig(engine="gepa", max_token_cost=5),
 )
 
 print(omni.best_score, omni.best_candidate)
@@ -151,7 +150,7 @@ print(omni.best_score, omni.best_candidate)
 - **`optimize_vote`** — run in parallel, then re-score each engine's best once through your evaluator for a fair cross-engine comparison.
 - **`optimize_adaptive_sequential_with_server`** — give the active engine a bounded slice, watch for a plateau, and *automatically* switch engines when progress stalls — the "fresh optimizer unsticks the plateau" effect, scheduled for you under one shared budget.
 
-Every stage shares the same eval server and budget, so a composition spends the same total as a single run — it isn't just more budget.
+A composition spends the same total as a single run — the budget is pre-partitioned across stages (the \$5 slices above), not multiplied. And each helper has a `*_with_server` variant (e.g. `optimize_best_of_with_server`) that runs every stage against one caller-owned eval server, enforcing a single hard budget across the whole pipeline.
 
 ## Results: OMNI beats every standalone optimizer on Frontier-CS
 
@@ -174,11 +173,12 @@ pip install gepa
 ```
 
 ```python
-from gepa.optimize_anything import optimize_anything, Task, OptimizeAnythingConfig
+from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
 
 result = optimize_anything(
-    Task(name="my_task", initial_candidate="<your artifact>", objective="<what good looks like>"),
-    evaluate=your_evaluator,
+    "<your artifact>",
+    evaluator=your_evaluator,
+    objective="<what good looks like>",
     config=OptimizeAnythingConfig(engine="gepa"),   # or "autoresearch", "meta_harness"
 )
 ```
