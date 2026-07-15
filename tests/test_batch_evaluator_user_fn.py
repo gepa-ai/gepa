@@ -248,3 +248,29 @@ def test_optimize_anything_requires_a_transport():
 
     with pytest.raises(ValueError, match="batch_evaluator"):
         optimize_anything(seed_candidate="x")
+
+
+def test_batch_evaluate_with_refiner_and_batch_fn_still_refines_per_example():
+    """N1 regression: refiner_config + batch_evaluator must NOT silently skip
+    refinement on the grouped batch_evaluate path. Evaluation degrades to
+    per-example loops whose evals reach the batch fn as singleton batches —
+    the fn must never see a grouped (>1 pair) call in this configuration."""
+    from gepa.optimize_anything import RefinerConfig
+
+    calls: list[int] = []
+
+    def fn(pairs):
+        calls.append(len(pairs))
+        return [(1.0, {}) for _ in pairs]
+
+    adapter = OptimizeAnythingAdapter(
+        evaluator=None,
+        batch_evaluator=fn,
+        refiner_config=RefinerConfig(refiner_lm=lambda prompt: "no-op refinement", max_refinements=1),
+        parallel=False,
+        cache_mode="off",
+    )
+    adapter.batch_evaluate([({"refiner_prompt": "seed"}, [1, 2])])
+    assert calls, "batch_evaluator was never called"
+    assert all(n == 1 for n in calls), f"grouped call leaked past the refiner guard: {calls}"
+    assert len(calls) >= 2  # at least one original eval per example

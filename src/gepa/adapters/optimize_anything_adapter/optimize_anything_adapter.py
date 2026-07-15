@@ -300,6 +300,9 @@ class OptimizeAnythingAdapter(GEPAAdapter):
         ((score, side_info),) = self._batch_evaluator(
             [(candidate, example)], opt_states=[self._build_opt_state(example)]
         )
+        # Slot 1 is the "output" placeholder, mirroring EvaluatorWrapper's
+        # (score, None, side_info) contract; downstream packaging rebuilds it
+        # from the candidate (_assemble_no_refiner_batch / refiner path).
         return score, None, side_info
 
     def _call_evaluator(
@@ -393,14 +396,18 @@ class OptimizeAnythingAdapter(GEPAAdapter):
     ) -> list[EvaluationBatch]:
         """Evaluate multiple (candidate, batch) pairs.
 
-        When a ``batch_evaluator`` was provided at construction time, all
-        (candidate, example) pairs are flattened into a single call to the
-        user's batch function.
+        When a ``batch_evaluator`` was provided at construction time (and no
+        refiner is configured), all (candidate, example) pairs are flattened
+        into a single call to the user's batch function.
 
         Falls back to sequential ``evaluate()`` calls for the refiner path or a
-        single item. Always captures traces.
+        single item. Always captures traces. With ``refiner_config`` set,
+        evaluation is per-example by construction (each example runs its own
+        evaluate->refine->re-evaluate loop), so grouped calls degrade to
+        singleton batches through ``_resolve_pair`` — refinement is never
+        silently skipped.
         """
-        if self._batch_evaluator is not None:
+        if self._batch_evaluator is not None and self.refiner_config is None:
             return self._batch_evaluate_via_user_fn(items)
         if self.parallel and self.refiner_config is None and len(items) > 1:
             return self._batch_evaluate_parallel_fallback(items)

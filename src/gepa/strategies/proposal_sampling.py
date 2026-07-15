@@ -22,7 +22,7 @@ class ProposalTask(Generic[DataId, DataInst]):
     minibatch: list[DataInst]
 
 
-class SamplingStrategy(Protocol):
+class SamplingStrategy(Protocol[DataId, DataInst]):
     """Generates one or more (parent, minibatch) tasks per iteration.
 
     The default (``SingleMutationSampling``) produces exactly one task,
@@ -41,9 +41,9 @@ class SamplingStrategy(Protocol):
         self,
         state: GEPAState,
         candidate_selector: CandidateSelector,
-        batch_sampler: BatchSampler,
-        trainset: DataLoader,
-    ) -> list[ProposalTask]: ...
+        batch_sampler: BatchSampler[DataId, DataInst],
+        trainset: DataLoader[DataId, DataInst],
+    ) -> list[ProposalTask[DataId, DataInst]]: ...
 
 
 class SingleMutationSampling(SamplingStrategy):
