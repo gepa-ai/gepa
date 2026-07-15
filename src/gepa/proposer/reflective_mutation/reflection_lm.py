@@ -72,7 +72,7 @@ class BatchReflectionLM(ReflectionLM, Protocol):
 
 
 class StatelessReflectionLM:
-    """Default reflection LM: one stateless LM call per component.
+    """Default reflection LM: one stateless LM call per component (or one batched call covering all tasks/components when the underlying LM provides ``batch_complete``).
 
     For each component with feedback, render the instruction-proposal prompt
     (honoring a global or per-component template) and parse the new instruction.

@@ -4,22 +4,22 @@
 """Sampling strategies for selecting (parent, minibatch) pairs each iteration."""
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Generic, Protocol
 
-from gepa.core.data_loader import DataLoader
+from gepa.core.data_loader import DataId, DataInst, DataLoader
 from gepa.core.state import GEPAState
 from gepa.proposer.reflective_mutation.base import CandidateSelector
 from gepa.strategies.batch_sampler import BatchSampler
 
 
 @dataclass
-class ProposalTask:
+class ProposalTask(Generic[DataId, DataInst]):
     """One (parent, minibatch) pair to propose from."""
 
     parent_idx: int
     parent_candidate: dict[str, str]
-    minibatch_ids: list
-    minibatch: list
+    minibatch_ids: list[DataId]
+    minibatch: list[DataInst]
 
 
 class SamplingStrategy(Protocol):
@@ -28,6 +28,13 @@ class SamplingStrategy(Protocol):
     The default (``SingleMutationSampling``) produces exactly one task,
     matching GEPA's original sequential behavior.  Swap in a different
     strategy to propose multiple candidates per iteration.
+
+    Note on trainset size: multi-task strategies draw ``n`` minibatches from
+    the epoch-shuffled sampler per iteration. When
+    ``n * minibatch_size > len(trainset)`` the sampler wraps around within the
+    iteration, so some tasks will receive repeated minibatches. This is safe
+    but reduces the diversity benefit — prefer ``n <= len(trainset) //
+    minibatch_size``.
     """
 
     def sample_tasks(
