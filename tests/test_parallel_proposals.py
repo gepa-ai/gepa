@@ -339,3 +339,28 @@ class TestDefaultStrategiesRetainBehavior:
         assert len(starts) == len(ends) == 2 * n_proposals
         child_ends = [e for e in ends if e["candidate_idx"] is None]
         assert len(child_ends) == n_proposals
+
+
+class _SpySelection(AllImprovements):
+    """Records every (proposal, criterion verdict) the engine hands to selection."""
+
+    def __init__(self):
+        self.seen: list[bool] = []
+
+    def select(self, proposals, state, acceptance_criterion):
+        self.seen.extend(acceptance_criterion.should_accept(p, state) for p in proposals)
+        return super().select(proposals, state, acceptance_criterion)
+
+
+def test_selection_strategy_sees_all_proposals_including_rejected(aime_lms):
+    """The engine must not pre-filter: a custom SelectionStrategy receives ALL
+    evaluated proposals together with the acceptance criterion, including ones
+    the criterion rejects (which the built-in strategies then filter). In the
+    recorded run, iteration 1's proposal fails acceptance and iteration 2's
+    passes — the spy must see both verdicts."""
+    spy = _SpySelection()
+    result, _ = _run_recorded_optimization(aime_lms, selection_strategy=spy)
+    assert False in spy.seen, "criterion-rejected proposal was pre-filtered before selection"
+    assert True in spy.seen
+    golden = (_AIME_CACHE_DIR / "optimized_prompt.txt").read_text()
+    assert result.best_candidate["system_prompt"] == golden

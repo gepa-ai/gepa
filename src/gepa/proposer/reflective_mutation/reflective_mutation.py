@@ -49,7 +49,9 @@ class ReflectiveMutationProposer:
     2. Batch-evaluates all parents (deduplicated)
     3. For each task: builds a reflective dataset and proposes new texts
     4. Batch-evaluates all children
-    5. Filters proposals via ``selection_strategy`` + ``acceptance_criterion``
+    5. Returns ALL evaluated proposals as :class:`CandidateProposal` objects —
+       acceptance and selection are applied by the engine, which is the single
+       accept+select authority
 
     With the default ``SingleMutationSampling``, this produces exactly one
     task per iteration — matching GEPA's original sequential behavior.
@@ -426,6 +428,18 @@ class ReflectiveMutationProposer:
                 children.append(None)
                 continue
             new_texts, prompts, raw_outputs = texts
+
+            if not new_texts:
+                # Reflection produced no text updates (e.g. every requested
+                # component was missing from the reflective dataset). A child
+                # would be byte-identical to its parent: don't burn minibatch
+                # metric calls evaluating it or emit proposal/rejection events
+                # for a proposal that never happened.
+                self.logger.log(
+                    f"Iteration {i}: Reflection returned no text updates; skipping proposal for this task."
+                )
+                children.append(None)
+                continue
 
             notify_callbacks(
                 self.callbacks,

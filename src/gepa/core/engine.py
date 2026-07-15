@@ -372,7 +372,10 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         """Log and fire ``on_candidate_rejected`` for a proposal that failed acceptance."""
         old_sum = sum(proposal.subsample_scores_before or [])
         new_sum = sum(proposal.subsample_scores_after or [])
-        if isinstance(self.acceptance_criterion, StrictImprovementAcceptance | ImprovementOrEqualAcceptance):
+        custom_reason = getattr(self.acceptance_criterion, "reject_reason", None)
+        if custom_reason is not None:
+            reject_msg = f"Iteration {iteration}: {custom_reason(proposal, state)}"
+        elif isinstance(self.acceptance_criterion, StrictImprovementAcceptance | ImprovementOrEqualAcceptance):
             reject_msg = (
                 f"Iteration {iteration}: New subsample score {new_sum} is not better than old score {old_sum}, skipping"
             )
@@ -400,25 +403,29 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
     ) -> bool:
         """Gate, select, full-eval, and add a batch of reflective proposals.
 
-        The engine is the single acceptance + selection authority: each proposal
-        is gated by the acceptance criterion (failures fire ``on_candidate_rejected``),
-        the selection strategy picks which of the accepted proposals to keep, and
-        the kept ones are batch-evaluated on the valset (one
-        :meth:`_evaluate_programs_on_valset` call) and added to the pool in order.
-        Returns True if any proposal was accepted.
+        The selection strategy is the authority over which proposals proceed:
+        it receives ALL evaluated proposals together with the acceptance
+        criterion. The built-in strategies apply the criterion; a custom
+        strategy may deliberately surface a proposal the criterion would
+        reject (e.g. exploration picks). Everything not selected fires
+        ``on_candidate_rejected`` — including acceptance-passing proposals
+        dropped by Best/TopK selection, which previously vanished without an
+        event. Selected proposals are batch-evaluated on the valset (one
+        :meth:`_evaluate_programs_on_valset` call) and added to the pool in
+        order. Returns True if any proposal was accepted.
         """
         iteration = state.i + 1
 
-        # 1) Acceptance gate (on subsample scores); reject the failures.
-        accepted: list[CandidateProposal] = []
+        # 1) Selection is authoritative; it sees every evaluated proposal and
+        #    the acceptance criterion (no engine pre-filter).
+        selected = self.selection_strategy.select(list(proposals), state, self.acceptance_criterion)
+
+        # 2) Report everything not selected as rejected.
+        selected_ids = {id(p) for p in selected}
         for proposal in proposals:
-            if self.acceptance_criterion.should_accept(proposal, state):
-                accepted.append(proposal)
-            else:
+            if id(proposal) not in selected_ids:
                 self._report_rejected_proposal(proposal, iteration, state)
 
-        # 2) Selection strategy picks which accepted proposals to add.
-        selected = self.selection_strategy.select(accepted, state, self.acceptance_criterion)
         if not selected:
             return False
 
