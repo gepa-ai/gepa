@@ -2,9 +2,13 @@
 
 Two flavors of each helper:
 
-- ``optimize_*`` — convenience. Take ``(task, evaluate, configs)``, build
-  a fresh :class:`EvalServer` per engine internally (each with its own
-  budget from ``OptimizeAnythingConfig.max_evals`` / ``OptimizeAnythingConfig.max_token_cost``).
+- ``optimize_*`` — convenience. Mirror
+  :func:`gepa.optimize_anything.optimize_anything`'s flat shape
+  (``seed_candidate`` positional, ``evaluator=`` / ``objective=`` /
+  ``background=`` / ``dataset=`` / ``valset=`` / ``test_set=`` keywords) plus
+  ``configs=``, one :class:`OptimizeAnythingConfig` per engine. Build a fresh
+  :class:`EvalServer` per engine internally (each with its own budget from
+  ``OptimizeAnythingConfig.max_evals`` / ``OptimizeAnythingConfig.max_token_cost``).
   Budgets are pre-partitioned per config; if an engine finishes early its
   leftover budget is not redistributed.
 - ``optimize_*_with_server`` — primitive. Caller owns the
@@ -37,17 +41,19 @@ Helpers
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engine import Result
+from gepa.oa.task import Task
 
 if TYPE_CHECKING:
     from gepa.oa.eval_server import EvalServer
-    from gepa.oa.task import Task
 
 
 def optimize_anything_from_task(
@@ -99,12 +105,51 @@ def optimize_anything_with_server(
     return _run_engine(server, engine, owns_server=False)
 
 
+def _build_task(
+    seed_candidate: str | None,
+    *,
+    objective: str | None,
+    background: str | None,
+    dataset: list[Any] | None,
+    valset: list[Any] | None,
+    test_set: list[Any] | None,
+    name: str | None,
+) -> Task:
+    """Build the :class:`Task` an ensemble threads across its stages.
+
+    ``name`` groups every stage's outputs under one directory
+    (``outputs/optimize_anything/<name>/<engine>/<timestamp>``); when omitted,
+    a shared pipeline name is generated so the stages still land together.
+    """
+    if name is None:
+        name = f"pipeline-{uuid.uuid4().hex[:8]}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    return Task(
+        name=name,
+        seed_candidate=seed_candidate,
+        objective=objective or "",
+        background=background or "",
+        train_set=dataset,
+        val_set=valset,
+        test_set=test_set,
+    )
+
+
 def optimize_sequential(
-    task: Task,
-    evaluate: Callable[..., tuple[float, dict[str, Any]]],
+    seed_candidate: str | None = None,
+    *,
+    evaluator: Callable[..., tuple[float, dict[str, Any]]],
     configs: list[OptimizeAnythingConfig],
+    dataset: list[Any] | None = None,
+    valset: list[Any] | None = None,
+    objective: str | None = None,
+    background: str | None = None,
+    test_set: list[Any] | None = None,
+    name: str | None = None,
 ) -> Result:
     """Run ``configs`` in order; each engine's best becomes the next seed.
+
+    Takes the same task fields as :func:`gepa.optimize_anything.optimize_anything`,
+    plus ``configs`` — one :class:`OptimizeAnythingConfig` per stage.
 
     Monotonic: if engine ``k+1`` regresses, the chain still feeds the
     running-best candidate (not engine ``k``'s output verbatim) to
@@ -114,6 +159,23 @@ def optimize_sequential(
     augmented by ``all_results`` (one Result per config, stage-ordered) and
     ``best_stage_score`` / ``best_stage_candidate``.
     """
+    task = _build_task(
+        seed_candidate,
+        objective=objective,
+        background=background,
+        dataset=dataset,
+        valset=valset,
+        test_set=test_set,
+        name=name,
+    )
+    return _sequential_from_task(task, evaluator, configs)
+
+
+def _sequential_from_task(
+    task: Task,
+    evaluate: Callable[..., tuple[float, dict[str, Any]]],
+    configs: list[OptimizeAnythingConfig],
+) -> Result:
     if not configs:
         raise ValueError("optimize_sequential requires at least one config")
 
@@ -140,13 +202,22 @@ def optimize_sequential(
 
 
 def optimize_parallel(
-    task: Task,
-    evaluate: Callable[..., tuple[float, dict[str, Any]]],
-    configs: list[OptimizeAnythingConfig],
+    seed_candidate: str | None = None,
     *,
+    evaluator: Callable[..., tuple[float, dict[str, Any]]],
+    configs: list[OptimizeAnythingConfig],
+    dataset: list[Any] | None = None,
+    valset: list[Any] | None = None,
+    objective: str | None = None,
+    background: str | None = None,
+    test_set: list[Any] | None = None,
+    name: str | None = None,
     max_workers: int | None = None,
 ) -> list[Result]:
     """Run each config concurrently against the same task.
+
+    Takes the same task fields as :func:`gepa.optimize_anything.optimize_anything`,
+    plus ``configs`` — one :class:`OptimizeAnythingConfig` per engine.
 
     Each call gets its own :class:`EvalServer` and budget — pre-partition
     ``max_evals`` / ``max_token_cost`` across the configs the way you want
@@ -154,6 +225,25 @@ def optimize_parallel(
 
     ``max_workers`` defaults to ``len(configs)``.
     """
+    task = _build_task(
+        seed_candidate,
+        objective=objective,
+        background=background,
+        dataset=dataset,
+        valset=valset,
+        test_set=test_set,
+        name=name,
+    )
+    return _parallel_from_task(task, evaluator, configs, max_workers=max_workers)
+
+
+def _parallel_from_task(
+    task: Task,
+    evaluate: Callable[..., tuple[float, dict[str, Any]]],
+    configs: list[OptimizeAnythingConfig],
+    *,
+    max_workers: int | None = None,
+) -> list[Result]:
     if not configs:
         raise ValueError("optimize_parallel requires at least one config")
 
@@ -163,33 +253,60 @@ def optimize_parallel(
 
 
 def optimize_best_of(
-    task: Task,
-    evaluate: Callable[..., tuple[float, dict[str, Any]]],
-    configs: list[OptimizeAnythingConfig],
+    seed_candidate: str | None = None,
     *,
+    evaluator: Callable[..., tuple[float, dict[str, Any]]],
+    configs: list[OptimizeAnythingConfig],
+    dataset: list[Any] | None = None,
+    valset: list[Any] | None = None,
+    objective: str | None = None,
+    background: str | None = None,
+    test_set: list[Any] | None = None,
+    name: str | None = None,
     max_workers: int | None = None,
 ) -> Result:
     """Run all configs in parallel, return the result with the highest ``best_score``.
+
+    Takes the same task fields as :func:`gepa.optimize_anything.optimize_anything`,
+    plus ``configs`` — one :class:`OptimizeAnythingConfig` per engine.
 
     ``best_score`` comes from each engine's own scoring during its run — no
     re-scoring. Use :func:`optimize_vote` if you want a fair cross-engine
     comparison via a single re-score pass.
     """
-    results = optimize_parallel(task, evaluate, configs, max_workers=max_workers)
+    task = _build_task(
+        seed_candidate,
+        objective=objective,
+        background=background,
+        dataset=dataset,
+        valset=valset,
+        test_set=test_set,
+        name=name,
+    )
+    results = _parallel_from_task(task, evaluator, configs, max_workers=max_workers)
     winner = max(results, key=lambda r: r.best_score)
     winner.metadata["all_results"] = results
     return winner
 
 
 def optimize_vote(
-    task: Task,
-    evaluate: Callable[..., tuple[float, dict[str, Any]]],
-    configs: list[OptimizeAnythingConfig],
+    seed_candidate: str | None = None,
     *,
+    evaluator: Callable[..., tuple[float, dict[str, Any]]],
+    configs: list[OptimizeAnythingConfig],
+    dataset: list[Any] | None = None,
+    valset: list[Any] | None = None,
+    objective: str | None = None,
+    background: str | None = None,
+    test_set: list[Any] | None = None,
+    name: str | None = None,
     max_workers: int | None = None,
 ) -> Result:
     """Run all configs in parallel, then re-score each engine's best candidate
-    once via ``evaluate`` (outside any budget) and return the highest-scoring.
+    once via ``evaluator`` (outside any budget) and return the highest-scoring.
+
+    Takes the same task fields as :func:`gepa.optimize_anything.optimize_anything`,
+    plus ``configs`` — one :class:`OptimizeAnythingConfig` per engine.
 
     Unlike :func:`optimize_best_of`, the re-score pass uses a single shared
     scoring function, so engines with different internal eval semantics get
@@ -201,11 +318,20 @@ def optimize_vote(
     - ``vote_winner_idx``: index into ``configs`` of the winning engine.
     - ``all_results``: the raw list of engine results.
     """
-    results = optimize_parallel(task, evaluate, configs, max_workers=max_workers)
+    task = _build_task(
+        seed_candidate,
+        objective=objective,
+        background=background,
+        dataset=dataset,
+        valset=valset,
+        test_set=test_set,
+        name=name,
+    )
+    results = _parallel_from_task(task, evaluator, configs, max_workers=max_workers)
     vote_scores: list[float] = []
     for r in results:
         try:
-            score, _ = evaluate(r.best_candidate)
+            score, _ = evaluator(r.best_candidate)
         except Exception:
             score = float("-inf")
         vote_scores.append(float(score))
