@@ -15,6 +15,12 @@ class SelectionStrategy(Protocol):
 
     The default (``AllImprovements``) accepts every proposal that passes
     the acceptance criterion, matching GEPA's original behavior.
+    
+    Contract: ``select`` must return proposals FROM the given list (the same
+    objects, not copies) — the engine ignores foreign objects, deduplicates
+    identical candidates, and reports everything unselected as rejected. The
+    acceptance criterion passed in is memoized per batch: consulting it any
+    number of times costs exactly one underlying judgement per proposal.
     """
 
     def select(

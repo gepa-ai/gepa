@@ -1175,7 +1175,9 @@ def optimize_anything(
             ``(score, side_info)``. Parity with the standard path: candidates
             are unwrapped in str-candidate mode; if your function accepts an
             ``opt_states`` keyword it receives per-pair
-            :class:`OptimizationState` objects (warm-starting); a raised call
+            :class:`OptimizationState` objects (warm-starting; note they are
+            snapshotted when the grouped call is issued, so pairs within one
+            call do not see each other's fresh results); a raised call
             is converted to per-pair ``(0.0, {"error": ...})`` results when
             ``raise_on_exception=False``; best-evals history and output
             packaging match the sequential path exactly. NOT available on this
@@ -1649,6 +1651,7 @@ def optimize_anything(
             max_merge_invocations=config.merge.max_merge_invocations,
             rng=rng,
             val_overlap_floor=config.merge.merge_val_overlap_floor,
+            callbacks=config.callbacks,
         )
 
     # --- 13. Create evaluation cache if enabled ---

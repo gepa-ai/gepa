@@ -493,6 +493,10 @@ class ReflectiveMutationProposer:
             )
 
             _lm_metadata: dict[str, Any] = {}
+            # Stable per-proposal identifier (iteration-taskindex): downstream
+            # consumers (run manifests, #346's per-proposal state anchors) can
+            # key on this instead of positional inference.
+            _lm_metadata["proposal_id"] = f"{i}-{len(children)}"
             for comp in new_texts:
                 _lm_metadata[f"prompt:{comp}"] = prompts.get(comp, "")
                 _lm_metadata[f"raw_lm_output:{comp}"] = raw_outputs.get(comp, "")
