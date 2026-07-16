@@ -86,6 +86,7 @@ result = optimize_anything(
 ```python
 ComBEEReflectionLM(
     lm,                                # model name string, or any LanguageModel callable
+    lm_kwargs=None,                    # completion options for a model-name lm
     reflection_prompt_template=None,   # Level-1 template: str, or dict per component
     aggregation_prompt_template=None,  # Level-2 template (must contain <curr_param> and <side_info>)
     duplication_factor=2,              # p — augmented-shuffle duplication (§3.2)
@@ -102,6 +103,13 @@ ComBEEReflectionLM(
     minibatch sampling. Same-seed runs therefore reproduce the legacy call and
     shuffle sequence. Passing an explicit `rng=random.Random(...)` opts into an
     independent, pinned shuffle stream instead.
+
+!!! note "Public reflection configuration"
+    When ComBEE is supplied as `reflection_strategy=`, GEPA forwards the
+    public `reflection_prompt_template` and `reflection_lm_kwargs` settings to
+    it. Constructor values on `ComBEEReflectionLM` take precedence. Plain
+    callable LMs provide token estimates only; use a cost-tracking LM when
+    setting `max_reflection_cost`.
 
 ## Cost and observability
 

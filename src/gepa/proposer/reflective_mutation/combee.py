@@ -104,7 +104,10 @@ class ComBEEReflectionLM:
         lm: The reflection language model — a model name string (resolved via
             :class:`gepa.lm.LM`) or any ``LanguageModel`` callable. Callables
             without cost tracking are wrapped in :class:`gepa.lm.TrackingLM`
-            so ``max_reflection_cost`` remains usable.
+            for token estimates, but cannot support ``max_reflection_cost``.
+        lm_kwargs: Completion options used when ``lm`` is a model name. When
+            omitted, GEPA's public ``reflection_lm_kwargs`` are applied at
+            wiring time; explicit constructor kwargs take precedence.
         reflection_prompt_template: Level-1 (map) prompt template — a string
             applied to all components or a dict mapping component names to
             templates (components without an entry warn once and use the
@@ -139,16 +142,26 @@ class ComBEEReflectionLM:
         rng: random.Random | None = None,
         logger: Any | None = None,
         batch_reflection: bool = True,
+        *,
+        lm_kwargs: dict[str, Any] | None = None,
     ):
+        self._model_name = lm if isinstance(lm, str) else None
+        self._lm_kwargs_explicit = lm_kwargs is not None
         if isinstance(lm, str):
             from gepa.lm import LM
 
-            lm = LM(lm)
-        elif not hasattr(lm, "total_cost"):
+            self._cost_tracking_supported = True
+            lm = LM(lm, **(lm_kwargs or {}))
+        else:
             from gepa.lm import TrackingLM
 
-            lm = TrackingLM(lm)
+            # TrackingLM estimates tokens and deliberately reports zero cost;
+            # accepting it for a dollar cap would make the stopper inert.
+            self._cost_tracking_supported = hasattr(lm, "total_cost") and not isinstance(lm, TrackingLM)
+            if not hasattr(lm, "total_cost"):
+                lm = TrackingLM(lm)
         self.lm = lm
+        self._reflection_prompt_template_explicit = reflection_prompt_template is not None
         self.reflection_prompt_template = reflection_prompt_template
         # Only None means "use the default": an explicit (even empty) template
         # must go through placeholder validation and fail loudly if invalid.
@@ -188,6 +201,10 @@ class ComBEEReflectionLM:
     def total_tokens_out(self) -> int:
         return getattr(self.lm, "total_tokens_out", 0)
 
+    def supports_cost_tracking(self) -> bool:
+        """Whether ``total_cost`` represents real provider spend."""
+        return self._cost_tracking_supported
+
     def bind_rng(self, rng: random.Random) -> None:
         """Bind GEPA's run RNG unless the user supplied one explicitly.
 
@@ -202,6 +219,31 @@ class ComBEEReflectionLM:
         """Use GEPA's configured logger unless the caller supplied one."""
         if self.logger is None:
             self.logger = logger
+
+    def bind_lm_kwargs(self, lm_kwargs: dict[str, Any] | None) -> None:
+        """Apply public completion options to a model-name strategy.
+
+        The strategy is created before GEPA's front doors have finished
+        resolving configuration. Recreate the lightweight LM wrapper here,
+        before any reflection call, unless constructor kwargs were explicit.
+        """
+        if self._model_name is None or self._lm_kwargs_explicit or lm_kwargs is None:
+            return
+        from gepa.lm import LM
+
+        self.lm = LM(self._model_name, **lm_kwargs)
+
+    def bind_reflection_prompt_template(self, template: str | dict[str, str] | None) -> None:
+        """Use GEPA's public template unless the strategy supplied one."""
+        if self._reflection_prompt_template_explicit:
+            return
+        if isinstance(template, dict):
+            for value in template.values():
+                InstructionProposalSignature.validate_prompt_template(value)
+        else:
+            InstructionProposalSignature.validate_prompt_template(template)
+        self.reflection_prompt_template = template
+        self._missing_template_warnings.clear()
 
     def _log(self, message: str) -> None:
         if self.logger is not None:

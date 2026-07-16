@@ -14,6 +14,7 @@ import json
 import random
 import re
 from collections import defaultdict
+from typing import ClassVar
 
 import pytest
 
@@ -197,14 +198,19 @@ def test_metadata_records_level1_intermediates():
     assert proposal.metadata["combee:comp:num_lm_calls"] == 4
 
 
-def test_cost_tracking_delegation_for_max_reflection_cost():
-    """Plain callables are wrapped so total_cost exists — the config-time guard
-    for max_reflection_cost accepts ComBEE without extra user work."""
+def test_plain_callable_tracks_tokens_but_not_provider_cost():
+    """TrackingLM supplies token diagnostics, but its zero cost is not a
+    provider-spend signal suitable for a max-reflection-cost stopper."""
     combee, _ = _combee(["m0", "m1", "m2", "fin"])
     assert hasattr(combee, "total_cost")
+    assert not combee.supports_cost_tracking()
     combee.reflect({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
     assert combee.total_tokens_in > 0
     assert combee.total_tokens_out > 0
+
+    from gepa.lm import TrackingLM
+
+    assert not ComBEEReflectionLM(TrackingLM(lambda prompt: "update")).supports_cost_tracking()
 
 
 def test_str_model_name_resolved_via_gepa_lm():
@@ -215,6 +221,37 @@ def test_str_model_name_resolved_via_gepa_lm():
     assert isinstance(combee.lm, LM)
     assert combee.total_cost == 0.0
     assert combee.total_tokens_in == 0
+
+
+def test_model_name_binds_public_lm_kwargs_unless_constructor_overrides(monkeypatch):
+    import gepa.lm
+
+    _KwargRecordingLM.instances.clear()
+    monkeypatch.setattr(gepa.lm, "LM", _KwargRecordingLM)
+
+    combee = ComBEEReflectionLM("test/model")
+    assert combee.lm.kwargs == {}
+    combee.bind_lm_kwargs({"temperature": 0.25, "max_tokens": 77})
+    assert combee.lm.kwargs == {"temperature": 0.25, "max_tokens": 77}
+
+    explicit = ComBEEReflectionLM("test/model", lm_kwargs={"temperature": 0.9})
+    explicit.bind_lm_kwargs({"temperature": 0.25, "max_tokens": 77})
+    assert explicit.lm.kwargs == {"temperature": 0.9}
+
+
+def test_strategy_template_binding_uses_public_value_unless_explicit():
+    public_template = "PUBLIC TEMPLATE <curr_param> :: <side_info>"
+    explicit_template = "EXPLICIT TEMPLATE <curr_param> :: <side_info>"
+
+    combee, lm = _combee(["m0", "m1", "m2", "final"])
+    combee.bind_reflection_prompt_template(public_template)
+    combee.reflect({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
+    assert all("PUBLIC TEMPLATE" in prompt for prompt in lm.prompts[:3])
+
+    explicit, explicit_lm = _combee(["m0", "m1", "m2", "final"], template=explicit_template)
+    explicit.bind_reflection_prompt_template(public_template)
+    explicit.reflect({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
+    assert all("EXPLICIT TEMPLATE" in prompt for prompt in explicit_lm.prompts[:3])
 
 
 def test_duplication_factor_validation():
@@ -277,10 +314,34 @@ class ImprovingLM:
 
     def __init__(self):
         self.calls = 0
+        self.prompts: list[str] = []
 
     def __call__(self, prompt):
         self.calls += 1
         text = prompt if isinstance(prompt, str) else str(prompt)
+        self.prompts.append(text)
+        levels = [int(x) for x in re.findall(r"LEVEL=(\d+)", text)]
+        return f"```\nLEVEL={max(levels, default=0) + 1}\n```"
+
+
+class _KwargRecordingLM:
+    """Cost-tracking fake used to assert model-name strategy wiring without
+    making provider calls."""
+
+    instances: ClassVar[list["_KwargRecordingLM"]] = []
+
+    def __init__(self, model, **kwargs):
+        self.model = model
+        self.kwargs = kwargs
+        self.total_cost = 0.0
+        self.total_tokens_in = 0
+        self.total_tokens_out = 0
+        self.prompts: list[str] = []
+        self.instances.append(self)
+
+    def __call__(self, prompt):
+        text = prompt if isinstance(prompt, str) else str(prompt)
+        self.prompts.append(text)
         levels = [int(x) for x in re.findall(r"LEVEL=(\d+)", text)]
         return f"```\nLEVEL={max(levels, default=0) + 1}\n```"
 
@@ -480,8 +541,8 @@ def test_reflect_many_batches_in_two_waves():
     assert isinstance(combee, BatchReflectionLM)
 
     jobs = [
-        ({"comp": "I0"}, {"comp": RECORDS9}, ["comp"]),   # k=3 map/reduce
-        ({"comp": "I1"}, {"comp": RECORDS3}, ["comp"]),   # k=1 fallback
+        ({"comp": "I0"}, {"comp": RECORDS9}, ["comp"]),  # k=3 map/reduce
+        ({"comp": "I1"}, {"comp": RECORDS3}, ["comp"]),  # k=1 fallback
     ]
     results = combee.reflect_many(jobs)
     assert len(results) == 2
@@ -591,9 +652,7 @@ def test_e2e_pxn_with_batch_capable_lm(tmp_path):
         assert w1 % 3 == 0, f"wave1 size {w1} not a multiple of k=3 at index {i}"
         n_jobs = w1 // 3
         if n_jobs > 1:
-            assert i + 1 < len(waves) and waves[i + 1] == n_jobs, (
-                f"expected wave2={n_jobs} after wave1={w1}: {waves}"
-            )
+            assert i + 1 < len(waves) and waves[i + 1] == n_jobs, f"expected wave2={n_jobs} after wave1={w1}: {waves}"
             i += 2
         else:
             i += 1  # wave2 for a single job went through the plain-call path
@@ -628,8 +687,10 @@ def test_pxn_1x1_equivalent_to_single_mutation_sampling(tmp_path):
         class Cb:
             def __getattr__(self, name):
                 if name.startswith("on_"):
+
                     def rec(e, n=name):
                         events.append(n)
+
                     return rec
                 raise AttributeError(name)
 
@@ -908,7 +969,9 @@ def test_optimize_binds_configured_logger_to_combee(tmp_path):
     door must supply its configured logger so fallback warnings are visible."""
 
     logger = CollectingLogger()
-    combee = ComBEEReflectionLM(ImprovingLM(), rng=random.Random(0))
+    lm = ImprovingLM()
+    combee = ComBEEReflectionLM(lm, rng=random.Random(0))
+    template = "PUBLIC OPTIMIZE TEMPLATE <curr_param> :: <side_info>"
 
     gepa.optimize(
         seed_candidate={"system_prompt": "LEVEL=0"},
@@ -917,6 +980,7 @@ def test_optimize_binds_configured_logger_to_combee(tmp_path):
         adapter=SyntheticAdapter(),
         reflection_strategy=combee,
         reflection_minibatch_size=3,
+        reflection_prompt_template=template,
         max_metric_calls=80,
         logger=logger,
         run_dir=str(tmp_path / "combee-logger"),
@@ -925,27 +989,123 @@ def test_optimize_binds_configured_logger_to_combee(tmp_path):
     )
 
     assert combee.logger is logger
+    assert combee.reflection_prompt_template == template
+    assert any("PUBLIC OPTIMIZE TEMPLATE" in prompt for prompt in lm.prompts)
     assert any("falling back to standard single-call reflection" in message for message in logger.messages)
 
 
 def test_optimize_anything_binds_configured_logger_to_combee(tmp_path):
-    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, TrackingConfig, optimize_anything
+    from gepa.optimize_anything import (
+        EngineConfig,
+        GEPAConfig,
+        ReflectionConfig,
+        TrackingConfig,
+        optimize_anything,
+        optimize_anything_reflection_prompt_template,
+    )
 
     logger = CollectingLogger()
-    combee = ComBEEReflectionLM(ImprovingLM(), rng=random.Random(0))
+    lm = ImprovingLM()
+    combee = ComBEEReflectionLM(lm, rng=random.Random(0))
 
     optimize_anything(
         seed_candidate="LEVEL=0",
         evaluator=lambda candidate, example=None: (0.0, {"feedback": "bad"}),
         dataset=[0, 1, 2],
         config=GEPAConfig(
-            engine=EngineConfig(max_metric_calls=20, run_dir=str(tmp_path / "combee-oa-logger"), parallel=False),
+            engine=EngineConfig(max_metric_calls=80, run_dir=str(tmp_path / "combee-oa-logger"), parallel=False),
             reflection=ReflectionConfig(reflection_strategy=combee, reflection_minibatch_size=3),
             tracking=TrackingConfig(logger=logger),
         ),
     )
 
     assert combee.logger is logger
+    assert combee.reflection_prompt_template == optimize_anything_reflection_prompt_template
+
+
+def test_optimize_binds_public_lm_kwargs_to_combee_model_name(monkeypatch, tmp_path):
+    import gepa.lm
+
+    _KwargRecordingLM.instances.clear()
+    monkeypatch.setattr(gepa.lm, "LM", _KwargRecordingLM)
+    combee = ComBEEReflectionLM("test/model", rng=random.Random(0))
+
+    gepa.optimize(
+        seed_candidate={"system_prompt": "LEVEL=0"},
+        trainset=TRAIN,
+        valset=TRAIN,
+        adapter=SyntheticAdapter(),
+        reflection_strategy=combee,
+        reflection_lm_kwargs={"temperature": 0.25, "max_tokens": 77},
+        reflection_minibatch_size=3,
+        max_metric_calls=80,
+        run_dir=str(tmp_path / "combee-lm-kwargs"),
+        seed=0,
+        display_progress_bar=False,
+    )
+
+    assert combee.lm.model == "test/model"
+    assert combee.lm.kwargs == {"temperature": 0.25, "max_tokens": 77}
+
+
+def test_optimize_anything_binds_public_lm_kwargs_to_combee_model_name(monkeypatch, tmp_path):
+    import gepa.lm
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    _KwargRecordingLM.instances.clear()
+    monkeypatch.setattr(gepa.lm, "LM", _KwargRecordingLM)
+    combee = ComBEEReflectionLM("test/model", rng=random.Random(0))
+
+    optimize_anything(
+        seed_candidate="LEVEL=0",
+        evaluator=lambda candidate, example=None: (0.0, {"feedback": "bad"}),
+        dataset=[0, 1, 2],
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=20, run_dir=str(tmp_path / "combee-oa-lm-kwargs"), parallel=False),
+            reflection=ReflectionConfig(
+                reflection_strategy=combee,
+                reflection_lm_kwargs={"temperature": 0.25, "max_tokens": 77},
+                reflection_minibatch_size=3,
+            ),
+        ),
+    )
+
+    assert combee.lm.model == "test/model"
+    assert combee.lm.kwargs == {"temperature": 0.25, "max_tokens": 77}
+
+
+def test_optimize_rejects_cost_cap_for_combee_plain_callable():
+    from unittest.mock import MagicMock
+
+    with pytest.raises(ValueError, match="cost-tracking LM"):
+        gepa.optimize(
+            seed_candidate={"c": "seed"},
+            trainset=[{"q": 1}],
+            adapter=MagicMock(propose_new_texts=None),
+            reflection_strategy=ComBEEReflectionLM(lambda prompt: "```\nupdate\n```"),
+            max_reflection_cost=1.0,
+            max_metric_calls=10,
+        )
+
+
+def test_optimize_anything_rejects_cost_cap_for_combee_plain_callable(tmp_path):
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    with pytest.raises(ValueError, match="cost-tracking LM"):
+        optimize_anything(
+            seed_candidate="seed",
+            evaluator=lambda candidate, example=None: (0.0, {"feedback": "bad"}),
+            dataset=[0],
+            config=GEPAConfig(
+                engine=EngineConfig(
+                    max_metric_calls=10,
+                    max_reflection_cost=1.0,
+                    run_dir=str(tmp_path / "combee-oa-cost-cap"),
+                    parallel=False,
+                ),
+                reflection=ReflectionConfig(reflection_strategy=ComBEEReflectionLM(lambda prompt: "```\nupdate\n```")),
+            ),
+        )
 
 
 def test_tracker_logs_combee_reflection_diagnostics():
