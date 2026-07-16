@@ -49,7 +49,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from gepa.proposer.reflective_mutation.base import LanguageModel
-from gepa.proposer.reflective_mutation.reflection_lm import ReflectionProposal
+from gepa.proposer.reflective_mutation.reflection_lm import ReflectionJob, ReflectionProposal
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 DEFAULT_AGGREGATION_PROMPT_TEMPLATE = """I provided an assistant with the following current instruction:
@@ -277,3 +277,177 @@ class ComBEEReflectionLM:
         # Stateless across proposals: the RNG advances, but no reflection
         # context is carried, so this object is its own successor.
         return proposal, self
+
+    # ------------------------------------------------------------------
+    # Batched form (BatchReflectionLM): two waves across all jobs
+    # ------------------------------------------------------------------
+
+    def _render_prompt(
+        self, current_instruction: str, dataset_with_feedback: Any, prompt_template: str | None
+    ) -> tuple[str | list[dict[str, Any]], list[dict[str, Any]]]:
+        prompt = InstructionProposalSignature.prompt_renderer(
+            {
+                "current_instruction_doc": current_instruction,
+                "dataset_with_feedback": dataset_with_feedback,
+                "prompt_template": prompt_template,
+            }
+        )
+        messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
+        return prompt, messages
+
+    def _batch_complete(self, prompts: list[Any], messages_list: list[list[dict[str, Any]]]) -> list[str]:
+        """Issue completions, batched when the LM supports it (mirror of
+        StatelessReflectionLM): N=1 uses the plain call path, so results stay
+        byte-identical to :meth:`reflect`'s per-call behavior."""
+        if not prompts:
+            return []
+        if len(prompts) == 1:
+            return [self.lm(prompts[0])]
+        batch_complete = getattr(self.lm, "batch_complete", None)
+        if batch_complete is not None:
+            return list(batch_complete(messages_list))
+        return [self.lm(prompt) for prompt in prompts]
+
+    def reflect_many(self, jobs: list[ReflectionJob]) -> list[tuple[ReflectionProposal, ComBEEReflectionLM]]:
+        """Vectorized :meth:`reflect`: all jobs' ComBEE passes in two batched waves.
+
+        Wave 1 batches every Level-1 (map) call and every degenerate-fallback
+        call across all jobs/components into one completion round; Wave 2
+        batches every Level-2 (reduce) call into a second round. Prompts and
+        the RNG stream are identical to sequential :meth:`reflect` calls in job
+        order (shuffles happen at plan time, in job/component order); only the
+        global call ORDER differs, which cannot affect results for stateless
+        LMs. Cost per component is unchanged: k map calls + 1 reduce.
+        """
+        proposals = [ReflectionProposal(new_texts={}, prompts={}, raw_lm_outputs={}, metadata={}) for _ in jobs]
+        job_call_totals = [0] * len(jobs)
+
+        # --- Plan (consumes RNG in the same order as sequential reflect) ---
+        # wave1 entries: (job_idx, comp, kind, prompt, messages)
+        wave1: list[tuple[int, str, str, Any, list[dict[str, Any]]]] = []
+        # per-(job, comp) map bookkeeping, in plan order
+        comp_plans: dict[tuple[int, str], dict[str, Any]] = {}
+
+        for job_idx, (candidate, reflective_dataset, components_to_update) in enumerate(jobs):
+            for comp in components_to_update:
+                if comp not in reflective_dataset or not reflective_dataset.get(comp):
+                    self._log(f"Component '{comp}' is not in reflective dataset. Skipping.")
+                    continue
+                if comp not in candidate:
+                    self._log(f"Component '{comp}' is missing from candidate. Skipping.")
+                    continue
+
+                records = list(reflective_dataset[comp])
+                n = len(records)
+                k = max(1, int(n**0.5))
+                level1_template = self._resolve_template(comp)
+
+                if k <= 1:
+                    self._log(
+                        f"ComBEE: component '{comp}' has n={n} reflection records (k=1); "
+                        "falling back to standard single-call reflection. Raise "
+                        "reflection_minibatch_size to >= 4 to activate ComBEE aggregation."
+                    )
+                    prompt, messages = self._render_prompt(candidate[comp], records, level1_template)
+                    wave1.append((job_idx, comp, "fallback", prompt, messages))
+                    comp_plans[(job_idx, comp)] = {"mode": "fallback_single_call", "k": k}
+                    continue
+
+                augmented: list[Mapping[str, Any]] = records * self.duplication_factor
+                self._rng.shuffle(augmented)
+                total_aug = len(augmented)
+                base_group_size = total_aug // k
+                remainder = total_aug % k
+                offset = 0
+                n_groups = 0
+                for i in range(k):
+                    size = base_group_size + (1 if i < remainder else 0)
+                    group_records = augmented[offset : offset + size]
+                    offset += size
+                    # Defensive (mirrored from reflect()): unreachable by
+                    # construction — total_aug = p*n >= n >= k.
+                    if not group_records:
+                        continue
+                    prompt, messages = self._render_prompt(candidate[comp], group_records, level1_template)
+                    wave1.append((job_idx, comp, "map", prompt, messages))
+                    n_groups += 1
+                comp_plans[(job_idx, comp)] = {
+                    "mode": "map_reduce",
+                    "k": k,
+                    "level1_prompts": [],
+                    "level1_outputs": [],
+                    "group_proposals": [],
+                    "candidate_text": candidate[comp],
+                }
+
+        # --- Wave 1: all map + fallback calls, one batched round ---
+        wave1_outputs = self._batch_complete([e[3] for e in wave1], [e[4] for e in wave1])
+        for (job_idx, comp, kind, prompt, _messages), raw in zip(wave1, wave1_outputs, strict=True):
+            raw = raw.strip()
+            new_instruction = InstructionProposalSignature.output_extractor(raw)["new_instruction"]
+            plan = comp_plans[(job_idx, comp)]
+            job_call_totals[job_idx] += 1
+            if kind == "fallback":
+                proposal = proposals[job_idx]
+                proposal.new_texts[comp] = new_instruction
+                proposal.prompts[comp] = prompt
+                proposal.raw_lm_outputs[comp] = raw
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = 1
+                proposal.metadata[f"combee:{comp}:mode"] = "fallback_single_call"
+            else:
+                plan["group_proposals"].append(new_instruction)
+                plan["level1_prompts"].append(prompt)
+                plan["level1_outputs"].append(raw)
+
+        # --- Between waves: settle map results, plan reduces ---
+        # wave2 entries: (job_idx, comp, prompt, messages)
+        wave2: list[tuple[int, str, Any, list[dict[str, Any]]]] = []
+        for (job_idx, comp), plan in comp_plans.items():
+            if plan["mode"] != "map_reduce":
+                continue
+            proposal = proposals[job_idx]
+            group_proposals = plan["group_proposals"]
+            proposal.metadata[f"combee:{comp}:level1_prompts"] = plan["level1_prompts"]
+            proposal.metadata[f"combee:{comp}:level1_outputs"] = plan["level1_outputs"]
+            proposal.metadata[f"combee:{comp}:k"] = plan["k"]
+            if not group_proposals:
+                self._log(f"ComBEE: component '{comp}' produced no group proposals. Skipping.")
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = 0
+                proposal.metadata[f"combee:{comp}:mode"] = "no_group_proposals"
+                continue
+            if len(group_proposals) == 1:
+                self._log(
+                    f"ComBEE: component '{comp}' has a single surviving group proposal; "
+                    "skipping the aggregation step and using it directly."
+                )
+                proposal.new_texts[comp] = group_proposals[0]
+                proposal.prompts[comp] = plan["level1_prompts"][0]
+                proposal.raw_lm_outputs[comp] = plan["level1_outputs"][0]
+                proposal.metadata[f"combee:{comp}:num_lm_calls"] = 1
+                proposal.metadata[f"combee:{comp}:mode"] = "single_group"
+                continue
+            agg_records: list[Mapping[str, Any]] = [
+                {"Proposed Instruction Update": prop} for prop in group_proposals
+            ]
+            prompt, messages = self._render_prompt(
+                plan["candidate_text"], agg_records, self.aggregation_prompt_template
+            )
+            wave2.append((job_idx, comp, prompt, messages))
+
+        # --- Wave 2: all reduce calls, one batched round ---
+        wave2_outputs = self._batch_complete([e[2] for e in wave2], [e[3] for e in wave2])
+        for (job_idx, comp, prompt, _messages), raw in zip(wave2, wave2_outputs, strict=True):
+            raw = raw.strip()
+            final_text = InstructionProposalSignature.output_extractor(raw)["new_instruction"]
+            proposal = proposals[job_idx]
+            plan = comp_plans[(job_idx, comp)]
+            proposal.new_texts[comp] = final_text
+            proposal.prompts[comp] = prompt
+            proposal.raw_lm_outputs[comp] = raw
+            proposal.metadata[f"combee:{comp}:num_lm_calls"] = len(plan["group_proposals"]) + 1
+            proposal.metadata[f"combee:{comp}:mode"] = "map_reduce"
+            job_call_totals[job_idx] += 1
+
+        for job_idx, proposal in enumerate(proposals):
+            proposal.metadata["combee:total_lm_calls"] = job_call_totals[job_idx]
+        return [(proposal, self) for proposal in proposals]

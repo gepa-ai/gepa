@@ -105,6 +105,13 @@ proposal metadata under `combee:`-namespaced keys — `combee:<comp>:k`,
 experiment trackers. `total_cost` and token totals are exposed by delegation
 to the wrapped LM, so `max_reflection_cost` works as a stop condition.
 
+Under multi-proposal sampling strategies
+([parallel proposals](parallel-proposals.md)), ComBEE implements
+`reflect_many`: all proposals' Level-1 calls go out as **one batched wave**
+and all Level-2 calls as a second (via the LM's `batch_complete` when
+available), while producing results identical to sequential per-proposal
+reflection — same prompts, same RNG stream, same metadata.
+
 ## Credits
 
 ComBEE support was originally contributed by

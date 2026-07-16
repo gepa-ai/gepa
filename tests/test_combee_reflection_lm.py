@@ -444,3 +444,154 @@ def test_e2e_combee_with_pxn_sampling(tmp_path):
     result3, lm3, _adapter3, _spy3, _events3 = run(0, "a")
     assert lm3.calls == 0
     assert result3.best_candidate == result.best_candidate
+
+
+# ---------------------------------------------------------------------------
+# reflect_many: two-wave batching
+# ---------------------------------------------------------------------------
+
+
+class BatchScriptedLM(ScriptedLM):
+    """ScriptedLM that also exposes batch_complete, recording wave sizes."""
+
+    def __init__(self, replies):
+        super().__init__(replies)
+        self.batch_sizes: list[int] = []
+
+    def batch_complete(self, messages_list):
+        self.batch_sizes.append(len(messages_list))
+        out = []
+        for messages in messages_list:
+            self.prompts.append(str(messages[0]["content"]) if isinstance(messages, list) else str(messages))
+            out.append(f"```\n{self.replies[len(self.prompts) - 1]}\n```")
+        return out
+
+
+def test_reflect_many_batches_in_two_waves():
+    """All map/fallback calls across all jobs go out as ONE batched round,
+    all reduce calls as a second — with per-job results and metadata intact."""
+    from gepa.proposer.reflective_mutation.reflection_lm import BatchReflectionLM
+
+    lm = BatchScriptedLM(["j0m0", "j0m1", "j0m2", "j1naive", "j0final"])
+    combee = ComBEEReflectionLM(lm, rng=random.Random(0))
+    assert isinstance(combee, BatchReflectionLM)
+
+    jobs = [
+        ({"comp": "I0"}, {"comp": RECORDS9}, ["comp"]),   # k=3 map/reduce
+        ({"comp": "I1"}, {"comp": RECORDS3}, ["comp"]),   # k=1 fallback
+    ]
+    results = combee.reflect_many(jobs)
+    assert len(results) == 2
+    p0, p1 = results[0][0], results[1][0]
+    assert all(next_lm is combee for _, next_lm in results)
+
+    # Wave structure: 4 wave-1 calls (3 maps + 1 fallback), 1 wave-2 call.
+    assert lm.batch_sizes == [4]  # wave 2 has one prompt -> plain call path
+    assert len(lm.prompts) == 5
+    assert p0.new_texts == {"comp": "j0final"}
+    assert p0.metadata["combee:comp:mode"] == "map_reduce"
+    assert p0.metadata["combee:comp:num_lm_calls"] == 4
+    assert p0.metadata["combee:total_lm_calls"] == 4
+    assert p1.new_texts == {"comp": "j1naive"}
+    assert p1.metadata["combee:comp:mode"] == "fallback_single_call"
+    assert p1.metadata["combee:total_lm_calls"] == 1
+    # The reduce prompt (last) uses the aggregation template and sees j0's maps.
+    assert AGG_MARKER in lm.prompts[-1]
+    assert all(f"j0m{i}" in lm.prompts[-1] for i in range(3))
+
+
+class ContentKeyedLM:
+    """Deterministic LM whose reply depends only on the prompt content — makes
+    results order-independent, so sequential and batched paths are comparable."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def __call__(self, prompt):
+        self.calls += 1
+        text = prompt if isinstance(prompt, str) else str(prompt)
+        return f"```\nR{hash(text) % 99991}\n```"
+
+
+def test_reflect_many_equivalent_to_sequential_reflect():
+    """reflect_many(jobs) must produce the same proposals as sequential
+    reflect() calls in job order (same seed): identical texts, prompts, raw
+    outputs, and metadata — only the global call ORDER differs."""
+    jobs = [
+        ({"a": "IA", "b": "IB"}, {"a": RECORDS9, "b": RECORDS3}, ["a", "b"]),
+        ({"c": "IC"}, {"c": RECORDS9}, ["c"]),
+    ]
+
+    batched = ComBEEReflectionLM(ContentKeyedLM(), rng=random.Random(5))
+    batched_results = [prop for prop, _ in batched.reflect_many([tuple(j) for j in jobs])]
+
+    sequential = ComBEEReflectionLM(ContentKeyedLM(), rng=random.Random(5))
+    sequential_results = []
+    for job in jobs:
+        prop, _ = sequential.reflect(*job)
+        sequential_results.append(prop)
+
+    for bp, sp in zip(batched_results, sequential_results, strict=True):
+        assert bp.new_texts == sp.new_texts
+        assert bp.prompts == sp.prompts
+        assert bp.raw_lm_outputs == sp.raw_lm_outputs
+        assert bp.metadata == sp.metadata
+
+
+def test_e2e_pxn_with_batch_capable_lm(tmp_path):
+    """ComBEE x PxN with a batch-capable LM: each iteration's reflection goes
+    out as two waves (wave1 = 3 maps per job, wave2 = 1 reduce per job), and
+    the per-proposal cost contract is unchanged."""
+    from gepa.strategies.proposal_sampling import PxNSampling
+
+    class BatchImprovingLM(ImprovingLM):
+        def __init__(self):
+            super().__init__()
+            self.batch_sizes: list[int] = []
+
+        def batch_complete(self, messages_list):
+            self.batch_sizes.append(len(messages_list))
+            return [self(messages[0]["content"]) for messages in messages_list]
+
+    lm = BatchImprovingLM()
+    events = defaultdict(list)
+
+    class Cb:
+        def on_proposal_end(self, event):
+            events["proposal_end"].append(dict(event))
+
+    result = gepa.optimize(
+        seed_candidate={"system_prompt": "LEVEL=0"},
+        trainset=TRAIN,
+        valset=TRAIN,
+        adapter=SyntheticAdapter(),
+        reflection_strategy=ComBEEReflectionLM(lm, rng=random.Random(0)),
+        reflection_minibatch_size=9,
+        sampling_strategy=PxNSampling(p=2, n=2),
+        max_metric_calls=350,
+        callbacks=[Cb()],
+        run_dir=str(tmp_path / "combee-pxn-batched"),
+        seed=0,
+        display_progress_bar=False,
+    )
+    n_proposals = len(events["proposal_end"])
+    assert n_proposals > 0
+    assert lm.calls == 4 * n_proposals  # cost contract unchanged
+    # Two-wave structure: wave1 batches are 3x their iteration's wave2 batch.
+    assert lm.batch_sizes, "batch_complete was never used"
+    waves = list(lm.batch_sizes)
+    # Reconstruct (wave1, wave2) pairs; single-prompt waves use the plain call
+    # path and don't appear, which only happens for wave2 when 1 job survived.
+    i = 0
+    while i < len(waves):
+        w1 = waves[i]
+        assert w1 % 3 == 0, f"wave1 size {w1} not a multiple of k=3 at index {i}"
+        n_jobs = w1 // 3
+        if n_jobs > 1:
+            assert i + 1 < len(waves) and waves[i + 1] == n_jobs, (
+                f"expected wave2={n_jobs} after wave1={w1}: {waves}"
+            )
+            i += 2
+        else:
+            i += 1  # wave2 for a single job went through the plain-call path
+    assert result.val_aggregate_scores[result.best_idx] > result.val_aggregate_scores[0]
