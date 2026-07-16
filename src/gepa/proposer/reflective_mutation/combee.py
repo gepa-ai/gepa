@@ -525,7 +525,7 @@ class ComBEEReflectionLM:
             batch_complete = getattr(self.lm, "batch_complete", None)
             results = (
                 self._reflect_many_inner(jobs)
-                if self._batch_reflection and callable(batch_complete)
+                if self._batch_reflection and callable(batch_complete) and len(jobs) > 1
                 else self._reflect_many_sequential(jobs)
             )
         except Exception:

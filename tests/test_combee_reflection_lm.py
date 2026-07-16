@@ -564,6 +564,42 @@ def test_reflect_many_batches_in_two_waves():
     assert all(f"j0m{i}" in lm.prompts[-1] for i in range(3))
 
 
+def test_reflect_many_one_job_matches_reflect_for_transport_sensitive_lm():
+    """The public BatchReflectionLM API must preserve #307's single-job
+    transport. A batch-capable provider can return different samples through
+    batch_complete than through direct completion."""
+
+    class TransportSensitiveLM:
+        def __init__(self):
+            self.plain_calls = 0
+            self.batch_sizes: list[int] = []
+
+        def __call__(self, prompt):
+            self.plain_calls += 1
+            return f"```\nplain-{self.plain_calls}\n```"
+
+        def batch_complete(self, messages_list):
+            self.batch_sizes.append(len(messages_list))
+            return [f"```\nbatch-{i}\n```" for i, _ in enumerate(messages_list, 1)]
+
+    job = ({"comp": "I"}, {"comp": RECORDS9}, ["comp"])
+
+    direct_lm = TransportSensitiveLM()
+    direct = ComBEEReflectionLM(direct_lm, rng=random.Random(7))
+    direct_proposal, _ = direct.reflect(*job)
+
+    many_lm = TransportSensitiveLM()
+    many = ComBEEReflectionLM(many_lm, rng=random.Random(7))
+    many_proposal, _ = many.reflect_many([job])[0]
+
+    assert many_proposal.new_texts == direct_proposal.new_texts == {"comp": "plain-4"}
+    assert many_proposal.prompts == direct_proposal.prompts
+    assert many_proposal.raw_lm_outputs == direct_proposal.raw_lm_outputs
+    assert many_proposal.metadata == direct_proposal.metadata
+    assert many_lm.batch_sizes == []
+    assert many_lm.plain_calls == 4
+
+
 class ContentKeyedLM:
     """Deterministic LM whose reply depends only on the prompt content — makes
     results order-independent, so sequential and batched paths are comparable."""
