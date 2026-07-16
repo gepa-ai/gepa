@@ -361,3 +361,86 @@ def test_e2e_optimize_anything_with_combee(tmp_path):
     assert lm.calls > 0
     assert lm.calls % 4 == 0  # every proposal used k+1 = 4 calls
     assert result.best_candidate is not None
+
+
+def test_e2e_combee_with_pxn_sampling(tmp_path):
+    """ComBEE x PxNSampling: multi-task iterations route each task through
+    ComBEE's reflect() via the per-task fallback (ComBEE has no reflect_many),
+    so every attempted proposal costs exactly k+1 reflection calls, and each
+    proposal carries its own independent ComBEE diagnostics."""
+    from gepa.strategies.proposal_sampling import PxNSampling
+
+    def run(seed, tag):
+        lm = ImprovingLM()
+        adapter = SyntheticAdapter()
+        spy = _ProposalSpy()
+        events = defaultdict(list)
+
+        class Cb:
+            def on_proposal_end(self, event):
+                events["proposal_end"].append(dict(event))
+
+            def on_budget_updated(self, event):
+                events["budget"].append(dict(event))
+
+        result = gepa.optimize(
+            seed_candidate={"system_prompt": "LEVEL=0"},
+            trainset=TRAIN,
+            valset=TRAIN,
+            adapter=adapter,
+            reflection_strategy=ComBEEReflectionLM(lm, rng=random.Random(0)),
+            reflection_minibatch_size=9,  # n=9 -> k=3 -> 4 calls per task
+            sampling_strategy=PxNSampling(p=2, n=2),  # 4 tasks per iteration
+            selection_strategy=spy,
+            max_metric_calls=350,
+            callbacks=[Cb()],
+            run_dir=str(tmp_path / f"combee-pxn-{tag}"),
+            seed=seed,
+            display_progress_bar=False,
+        )
+        return result, lm, adapter, spy, events
+
+    result, lm, adapter, spy, events = run(0, "a")
+
+    n_proposals = len(events["proposal_end"])
+    assert n_proposals > 0
+    # Cost contract holds per attempted proposal, exactly as in single-task mode.
+    assert lm.calls == 4 * n_proposals
+
+    # PxN actually fanned out: some iteration attempted more than one proposal.
+    per_iter = defaultdict(int)
+    for e in events["proposal_end"]:
+        per_iter[e["iteration"]] += 1
+    assert max(per_iter.values()) > 1, f"PxN never produced a multi-proposal iteration: {dict(per_iter)}"
+
+    # Every evaluated proposal carries its own, non-aliased ComBEE diagnostics.
+    assert spy.proposals
+    metadata_ids = {id(p.metadata) for p in spy.proposals}
+    assert len(metadata_ids) == len(spy.proposals), "proposal metadata dicts are aliased"
+    for p in spy.proposals:
+        assert p.metadata["combee:system_prompt:num_lm_calls"] == 4
+        assert p.metadata["combee:system_prompt:mode"] == "map_reduce"
+        assert p.metadata["combee:total_lm_calls"] == 4
+    proposal_ids = [p.metadata["proposal_id"] for p in spy.proposals]
+    assert len(set(proposal_ids)) == len(proposal_ids), f"proposal_ids not unique: {proposal_ids}"
+
+    # Budget integrity under the combination.
+    assert result.total_metric_calls == adapter.metric_calls
+    budget = events["budget"]
+    assert budget[-1]["metric_calls_used"] == adapter.metric_calls
+
+    # The run actually improved over the seed.
+    assert result.val_aggregate_scores[result.best_idx] > result.val_aggregate_scores[0]
+
+    # Determinism: identical config reproduces the run exactly (ComBEE's
+    # internal shuffle RNG advances per task in deterministic task order).
+    result2, lm2, _adapter2, _spy2, events2 = run(0, "b")
+    assert result2.best_candidate == result.best_candidate
+    assert lm2.calls == lm.calls
+    assert len(events2["proposal_end"]) == n_proposals
+
+    # Resume compatibility: re-running with the SAME run_dir loads the finished
+    # state and stops on the exhausted budget without any new reflection calls.
+    result3, lm3, _adapter3, _spy3, _events3 = run(0, "a")
+    assert lm3.calls == 0
+    assert result3.best_candidate == result.best_candidate
