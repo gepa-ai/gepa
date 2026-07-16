@@ -1,0 +1,353 @@
+# Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
+# https://github.com/gepa-ai/gepa
+
+"""Tests for ComBEEReflectionLM (#307 re-hosted on the ReflectionLM seam, #329 Phase 3).
+
+The characterization tests in this file were first validated against the
+ORIGINAL PR #307 implementation (`_propose_new_texts_combee`), then against
+this port — with a fixed RNG seed and fake LM, the two produce byte-identical
+LM-call sequences and final texts across all scenarios, so these tests pin
+behavior preserved from the original contribution by @nuglifeleoji.
+"""
+
+import random
+import re
+from collections import defaultdict
+
+import pytest
+
+import gepa
+from gepa.core.adapter import EvaluationBatch
+from gepa.proposer.reflective_mutation.combee import (
+    DEFAULT_AGGREGATION_PROMPT_TEMPLATE,
+    ComBEEReflectionLM,
+)
+from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
+
+RECORDS9 = [{"Inputs": f"q{i}", "Generated Outputs": f"a{i}", "Feedback": f"fb{i}"} for i in range(9)]
+RECORDS3 = RECORDS9[:3]
+
+AGG_MARKER = "synthesize these proposed instruction updates"
+DEFAULT_TEMPLATE_MARKER = "I provided an assistant with the following instructions to perform a task"
+
+
+class ScriptedLM:
+    """Fake reflection LM: returns scripted replies in call order, logs prompts."""
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.prompts: list[str] = []
+
+    def __call__(self, prompt):
+        self.prompts.append(prompt if isinstance(prompt, str) else str(prompt))
+        return f"```\n{self.replies[len(self.prompts) - 1]}\n```"
+
+
+class CollectingLogger:
+    def __init__(self):
+        self.messages: list[str] = []
+
+    def log(self, message: str) -> None:
+        self.messages.append(message)
+
+
+def _combee(replies, *, seed=0, p=2, template=None, agg_template=None, logger=None):
+    lm = ScriptedLM(replies)
+    combee = ComBEEReflectionLM(
+        lm,
+        reflection_prompt_template=template,
+        aggregation_prompt_template=agg_template,
+        duplication_factor=p,
+        rng=random.Random(seed),
+        logger=logger,
+    )
+    return combee, lm
+
+
+# ---------------------------------------------------------------------------
+# Characterization (validated against the original PR #307 implementation)
+# ---------------------------------------------------------------------------
+
+
+def test_map_reduce_structure_n9():
+    """n=9 -> k=3 map calls with the standard template + 1 reduce call with the
+    aggregation template; the reduce sees every intermediate proposal."""
+    combee, lm = _combee([f"map-{i}" for i in range(3)] + ["final-synthesis"])
+    proposal, next_lm = combee.reflect({"comp": "SEED INSTRUCTION"}, {"comp": RECORDS9}, ["comp"])
+
+    assert next_lm is combee
+    assert len(lm.prompts) == 4
+    assert proposal.new_texts == {"comp": "final-synthesis"}
+    map_prompts, reduce_prompt = lm.prompts[:3], lm.prompts[3]
+    assert all(DEFAULT_TEMPLATE_MARKER in p for p in map_prompts)
+    assert all(AGG_MARKER not in p for p in map_prompts)
+    assert AGG_MARKER in reduce_prompt
+    assert all(f"map-{i}" in reduce_prompt for i in range(3))
+    assert "SEED INSTRUCTION" in reduce_prompt
+    # Raw feedback records never leak into the reduce prompt.
+    assert all(f"fb{i}" not in reduce_prompt for i in range(9))
+
+
+def test_augmented_shuffle_duplicates_each_record_p_times():
+    combee, lm = _combee(["m0", "m1", "m2", "fin"], p=2)
+    combee.reflect({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
+    for i in range(9):
+        assert sum(p.count(f"fb{i}") for p in lm.prompts[:3]) == 2
+
+    combee, lm = _combee(["m0", "m1", "m2", "fin"], p=1)
+    combee.reflect({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
+    for i in range(9):
+        assert sum(p.count(f"fb{i}") for p in lm.prompts[:3]) == 1
+
+
+def test_degenerate_n3_falls_back_to_single_call_with_log():
+    logger = CollectingLogger()
+    combee, lm = _combee(["naive-out"], logger=logger)
+    proposal, _ = combee.reflect({"comp": "INSTR3"}, {"comp": RECORDS3}, ["comp"])
+
+    assert len(lm.prompts) == 1
+    assert DEFAULT_TEMPLATE_MARKER in lm.prompts[0]
+    assert AGG_MARKER not in lm.prompts[0]
+    assert proposal.new_texts == {"comp": "naive-out"}
+    # Fallback does not duplicate records.
+    assert all(lm.prompts[0].count(f"fb{i}") == 1 for i in range(3))
+    # The old implementation fell back SILENTLY; the port logs it (review fix).
+    assert any("falling back to standard single-call reflection" in m for m in logger.messages)
+    # Diagnostics recorded even on the fallback path.
+    assert proposal.prompts["comp"]
+    assert proposal.raw_lm_outputs["comp"]
+    assert proposal.metadata["combee:comp:mode"] == "fallback_single_call"
+
+
+def test_multi_component_mixed_sizes():
+    combee, lm = _combee(["c1m0", "c1m1", "c1m2", "c1final", "c2naive"])
+    proposal, _ = combee.reflect({"c1": "I1", "c2": "I2"}, {"c1": RECORDS9, "c2": RECORDS3}, ["c1", "c2"])
+    assert len(lm.prompts) == 5
+    assert proposal.new_texts == {"c1": "c1final", "c2": "c2naive"}
+    assert proposal.metadata["combee:c1:mode"] == "map_reduce"
+    assert proposal.metadata["combee:c1:num_lm_calls"] == 4
+    assert proposal.metadata["combee:total_lm_calls"] == 5
+
+
+def test_component_missing_from_dataset_or_candidate_is_skipped():
+    logger = CollectingLogger()
+    combee, _lm = _combee(["m0", "m1", "m2", "fin"], logger=logger)
+    proposal, _ = combee.reflect({"c1": "I1"}, {"c1": RECORDS9, "orphan": RECORDS9}, ["c1", "ghost", "orphan"])
+    assert set(proposal.new_texts) == {"c1"}
+    assert any("'ghost' is not in reflective dataset" in m for m in logger.messages)
+    assert any("'orphan' is missing from candidate" in m for m in logger.messages)
+
+
+def test_custom_aggregation_template_used_for_reduce_only():
+    combee, lm = _combee(["m0", "m1", "m2", "fin"], agg_template="MY AGGREGATOR: <curr_param> || <side_info>")
+    combee.reflect({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
+    assert "MY AGGREGATOR" in lm.prompts[3]
+    assert AGG_MARKER not in lm.prompts[3]
+    assert all("MY AGGREGATOR" not in p for p in lm.prompts[:3])
+
+
+def test_custom_level1_template_used_for_maps_only():
+    combee, lm = _combee(["m0", "m1", "m2", "fin"], template="LEVEL1 TEMPLATE <curr_param> :: <side_info>")
+    combee.reflect({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
+    assert all("LEVEL1 TEMPLATE" in p for p in lm.prompts[:3])
+    assert "LEVEL1 TEMPLATE" not in lm.prompts[3]
+
+
+def test_per_component_template_dict_with_warn_once():
+    logger = CollectingLogger()
+    replies = ["a_m0", "a_m1", "a_m2", "a_fin", "b_m0", "b_m1", "b_m2", "b_fin"] * 2
+    combee, lm = _combee(replies, template={"a": "TEMPLATE-A <curr_param> <side_info>"}, logger=logger)
+    combee.reflect({"a": "IA", "b": "IB"}, {"a": RECORDS9, "b": RECORDS9}, ["a", "b"])
+    combee.reflect({"a": "IA", "b": "IB"}, {"a": RECORDS9, "b": RECORDS9}, ["a", "b"])
+    a_maps = lm.prompts[:3]
+    assert all("TEMPLATE-A" in p for p in a_maps)
+    warnings = [m for m in logger.messages if "No reflection_prompt_template found for parameter 'b'" in m]
+    assert len(warnings) == 1  # warn once, mirroring StatelessReflectionLM
+
+
+def test_deterministic_and_seed_sensitive():
+    replies = ["m0", "m1", "m2", "fin"]
+    combee_a, lm_a = _combee(replies, seed=42)
+    combee_a.reflect({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
+    combee_b, lm_b = _combee(replies, seed=42)
+    combee_b.reflect({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
+    combee_c, lm_c = _combee(replies, seed=7)
+    combee_c.reflect({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
+    assert lm_a.prompts == lm_b.prompts
+    assert lm_a.prompts != lm_c.prompts
+
+
+# ---------------------------------------------------------------------------
+# Seam integration and new-in-port behavior
+# ---------------------------------------------------------------------------
+
+
+def test_protocol_conformance():
+    combee, _ = _combee(["x"])
+    assert isinstance(combee, ReflectionLM)
+
+
+def test_metadata_records_level1_intermediates():
+    combee, _ = _combee(["m0", "m1", "m2", "fin"])
+    proposal, _ = combee.reflect({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
+    assert proposal.metadata["combee:comp:k"] == 3
+    assert len(proposal.metadata["combee:comp:level1_prompts"]) == 3
+    assert [o.strip("`\n") for o in proposal.metadata["combee:comp:level1_outputs"]] == ["m0", "m1", "m2"]
+    assert proposal.metadata["combee:comp:num_lm_calls"] == 4
+
+
+def test_cost_tracking_delegation_for_max_reflection_cost():
+    """Plain callables are wrapped so total_cost exists — the config-time guard
+    for max_reflection_cost accepts ComBEE without extra user work."""
+    combee, _ = _combee(["m0", "m1", "m2", "fin"])
+    assert hasattr(combee, "total_cost")
+    combee.reflect({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
+    assert combee.total_tokens_in > 0
+    assert combee.total_tokens_out > 0
+
+
+def test_duplication_factor_validation():
+    with pytest.raises(ValueError, match="duplication_factor"):
+        ComBEEReflectionLM(lambda p: "x", duplication_factor=0)
+
+
+def test_aggregation_template_placeholders_validated():
+    with pytest.raises(Exception):  # noqa: B017 — validate_prompt_template's error type
+        ComBEEReflectionLM(lambda p: "x", aggregation_prompt_template="no placeholders here")
+
+
+def test_default_aggregation_template_has_placeholders():
+    assert "<curr_param>" in DEFAULT_AGGREGATION_PROMPT_TEMPLATE
+    assert "<side_info>" in DEFAULT_AGGREGATION_PROMPT_TEMPLATE
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: gepa.optimize and optimize_anything drive ComBEE
+# ---------------------------------------------------------------------------
+
+TRAIN = [{"k": i} for i in range(10)]
+
+
+def _level_of(candidate):
+    m = re.search(r"LEVEL=(\d+)", candidate["system_prompt"])
+    return int(m.group(1)) if m else 0
+
+
+class SyntheticAdapter:
+    """score(candidate, example k) = 1.0 iff LEVEL >= k; one reflective record
+    per example, so reflection_minibatch_size controls ComBEE's n."""
+
+    propose_new_texts = None
+
+    def __init__(self):
+        self.metric_calls = 0
+
+    def evaluate(self, batch, candidate, capture_traces=False):
+        level = _level_of(candidate)
+        self.metric_calls += len(batch)
+        return EvaluationBatch(
+            outputs=[f"out-{ex['k']}" for ex in batch],
+            scores=[1.0 if level >= ex["k"] else 0.0 for ex in batch],
+            trajectories=(
+                [{"k": ex["k"], "feedback": f"level={level} needed k={ex['k']}"} for ex in batch]
+                if capture_traces
+                else None
+            ),
+            objective_scores=None,
+            num_metric_calls=len(batch),
+        )
+
+    def make_reflective_dataset(self, candidate, eval_batch, components):
+        return {c: [{"Feedback": t["feedback"]} for t in (eval_batch.trajectories or [])] for c in components}
+
+
+class ImprovingLM:
+    """Reflection LM whose proposals strictly improve: LEVEL = max seen + 1."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def __call__(self, prompt):
+        self.calls += 1
+        text = prompt if isinstance(prompt, str) else str(prompt)
+        levels = [int(x) for x in re.findall(r"LEVEL=(\d+)", text)]
+        return f"```\nLEVEL={max(levels, default=0) + 1}\n```"
+
+
+class _ProposalSpy:
+    """Selection strategy spy: records proposals, then defers to default filtering."""
+
+    def __init__(self):
+        self.proposals = []
+
+    def select(self, proposals, state, acceptance_criterion):
+        self.proposals.extend(proposals)
+        return [p for p in proposals if acceptance_criterion.should_accept(p, state)]
+
+
+def test_e2e_gepa_optimize_with_combee(tmp_path):
+    lm = ImprovingLM()
+    combee = ComBEEReflectionLM(lm, rng=random.Random(0))
+    spy = _ProposalSpy()
+    log = defaultdict(list)
+
+    class Cb:
+        def on_proposal_end(self, event):
+            log["proposal_end"].append(dict(event))
+
+    result = gepa.optimize(
+        seed_candidate={"system_prompt": "LEVEL=0"},
+        trainset=TRAIN,
+        valset=TRAIN,
+        adapter=SyntheticAdapter(),
+        reflection_strategy=combee,
+        reflection_minibatch_size=9,  # n=9 -> k=3 -> 4 LM calls per proposal
+        selection_strategy=spy,
+        max_metric_calls=120,
+        callbacks=[Cb()],
+        run_dir=str(tmp_path / "combee-e2e"),
+        seed=0,
+        display_progress_bar=False,
+    )
+
+    n_proposals = len(log["proposal_end"])
+    assert n_proposals > 0
+    # Exactly k+1 = 4 reflection calls per proposal — ComBEE's cost contract.
+    assert lm.calls == 4 * n_proposals
+    # ComBEE diagnostics flow into CandidateProposal.metadata.
+    assert spy.proposals
+    md = spy.proposals[0].metadata
+    assert md["combee:system_prompt:mode"] == "map_reduce"
+    assert md["combee:system_prompt:num_lm_calls"] == 4
+    assert md["combee:total_lm_calls"] == 4
+    # The optimization actually improved over the seed.
+    assert result.val_aggregate_scores[result.best_idx] > result.val_aggregate_scores[0]
+
+
+def test_e2e_optimize_anything_with_combee(tmp_path):
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    lm = ImprovingLM()
+    combee = ComBEEReflectionLM(lm, rng=random.Random(0))
+
+    def evaluator(candidate, example=None):
+        level = _level_of({"system_prompt": candidate})
+        return (1.0 if level >= example else 0.0), {"feedback": f"level={level} needed k={example}"}
+
+    result = optimize_anything(
+        seed_candidate="LEVEL=0",
+        evaluator=evaluator,
+        dataset=list(range(10)),
+        config=GEPAConfig(
+            engine=EngineConfig(
+                max_metric_calls=120,
+                run_dir=str(tmp_path / "combee-oa"),
+                parallel=False,
+                cache_evaluation=False,
+            ),
+            reflection=ReflectionConfig(reflection_strategy=combee, reflection_minibatch_size=9),
+        ),
+    )
+    assert lm.calls > 0
+    assert lm.calls % 4 == 0  # every proposal used k+1 = 4 calls
+    assert result.best_candidate is not None
