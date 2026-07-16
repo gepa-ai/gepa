@@ -785,3 +785,188 @@ def test_optimize_anything_cost_cap_stops_on_strategy_cost(tmp_path):
         ),
     )
     assert strategy.calls <= 4, f"cost cap never fired: {strategy.calls} reflections, ${strategy.total_cost}"
+
+
+# ---------------------------------------------------------------------------
+# Second review round: stream invariance, opt-out, cost transparency, protocol
+# ---------------------------------------------------------------------------
+
+
+def test_strategy_binding_does_not_shift_engine_streams(tmp_path):
+    """Wiring a strategy (bind_rng or not) must not consume the engine RNG:
+    candidate/minibatch selection streams are identical with no strategy, with
+    ComBEE(default rng), and with ComBEE(explicit rng)."""
+
+    def minibatch_stream(reflection_strategy, tag):
+        sampled = []
+
+        class Cb:
+            def on_minibatch_sampled(self, event):
+                sampled.append(tuple(event["minibatch_ids"]))
+
+        kwargs = {}
+        if reflection_strategy is not None:
+            kwargs["reflection_strategy"] = reflection_strategy
+        else:
+            kwargs["reflection_lm"] = lambda p: "```\nLEVEL=1\n```"
+        gepa.optimize(
+            seed_candidate={"system_prompt": "LEVEL=0"},
+            trainset=TRAIN,
+            valset=TRAIN,
+            adapter=SyntheticAdapter(),
+            reflection_minibatch_size=4,
+            max_metric_calls=60,
+            run_dir=str(tmp_path / tag),
+            seed=0,
+            display_progress_bar=False,
+            callbacks=[Cb()],
+            **kwargs,
+        )
+        return sampled
+
+    base = minibatch_stream(None, "none")
+    with_default = minibatch_stream(ComBEEReflectionLM(lambda p: "```\nLEVEL=1\n```"), "default")
+    with_explicit = minibatch_stream(
+        ComBEEReflectionLM(lambda p: "```\nLEVEL=1\n```", rng=random.Random(7)), "explicit"
+    )
+    assert base, "no minibatches sampled"
+    assert with_default == base, "default-rng strategy shifted the engine stream"
+    assert with_explicit == base, "explicit-rng strategy shifted the engine stream"
+
+
+class OrderDependentLM:
+    """Reply depends on GLOBAL call order — the adversarial case for batching."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def __call__(self, prompt):
+        self.calls += 1
+        return f"```\nreply-{self.calls}\n```"
+
+    def batch_complete(self, messages_list):
+        out = []
+        for _ in messages_list:
+            self.calls += 1
+            out.append(f"```\nreply-{self.calls}\n```")
+        return out
+
+
+def test_batch_reflection_false_enforces_sequential_ordering():
+    """The opt-out makes the ordering contract enforced: with
+    batch_reflection=False the engine dispatcher finds reflect_many=None and
+    runs strict per-proposal sequential reflection, so even an
+    order-DEPENDENT callable matches pure sequential reflect() calls."""
+    jobs = [
+        ({"comp": "I0"}, {"comp": RECORDS9}, ["comp"]),
+        ({"comp": "I1"}, {"comp": RECORDS9}, ["comp"]),
+    ]
+
+    opted_out = ComBEEReflectionLM(OrderDependentLM(), rng=random.Random(3), batch_reflection=False)
+    assert opted_out.reflect_many is None  # dispatcher falls back to per-task reflect()
+
+    reference = ComBEEReflectionLM(OrderDependentLM(), rng=random.Random(3), batch_reflection=False)
+    seq_results = []
+    for job in jobs:
+        prop, _ = reference.reflect(*job)
+        seq_results.append(prop.new_texts)
+
+    # Simulate the dispatcher's fallback loop on the opted-out instance.
+    fallback_results = []
+    for job in jobs:
+        prop, _ = opted_out.reflect(*job)
+        fallback_results.append(prop.new_texts)
+    assert fallback_results == seq_results
+    # Default instances still batch.
+    assert callable(ComBEEReflectionLM(lambda p: "x").reflect_many)
+
+
+def test_failed_reduce_wave_is_cost_transparent():
+    """RNG restore alone repeats paid map calls on retry; the completion memo
+    must reuse them: total completions across failure+retry == clean run."""
+
+    class FailSecondBatchLM:
+        def __init__(self):
+            self.completions = 0
+            self.batch_invocations = 0
+            self.prompt_log = []
+
+        def _reply(self, text):
+            self.completions += 1
+            self.prompt_log.append(text)
+            return f"```\nR{hash(text) % 99991}\n```"
+
+        def __call__(self, prompt):
+            return self._reply(prompt if isinstance(prompt, str) else str(prompt))
+
+        def batch_complete(self, messages_list):
+            self.batch_invocations += 1
+            if self.batch_invocations == 2:  # the reduce wave
+                raise RuntimeError("transient outage during reduce wave")
+            return [self._reply(str(m[0]["content"])) for m in messages_list]
+
+    jobs = [
+        ({"comp": "X"}, {"comp": RECORDS9}, ["comp"]),
+        ({"comp": "Y"}, {"comp": RECORDS9}, ["comp"]),
+    ]
+
+    flaky_lm = FailSecondBatchLM()
+    combee = ComBEEReflectionLM(flaky_lm, rng=random.Random(5))
+    with pytest.raises(RuntimeError):
+        combee.reflect_many([tuple(j) for j in jobs])
+    paid_before_retry = flaky_lm.completions
+    assert paid_before_retry == 6  # both jobs' map waves completed and were paid
+
+    # Engine retry path: per-task reflect() (as _propose_texts_batch_safe does).
+    retry_results = []
+    for job in jobs:
+        prop, _ = combee.reflect(*job)
+        retry_results.append(prop)
+
+    # Cost transparency: the 6 paid map completions were REUSED, not re-bought;
+    # only the 2 reduces were newly purchased.
+    assert flaky_lm.completions == 8, f"paid {flaky_lm.completions} completions (clean run pays 8)"
+    assert len(set(flaky_lm.prompt_log)) == len(flaky_lm.prompt_log), "a prompt was purchased twice"
+
+    # Result transparency: identical to a run where the outage never happened.
+    class CleanLM(FailSecondBatchLM):
+        def batch_complete(self, messages_list):
+            self.batch_invocations += 1
+            return [self._reply(str(m[0]["content"])) for m in messages_list]
+
+    clean = ComBEEReflectionLM(CleanLM(), rng=random.Random(5))
+    clean_results = [prop for prop, _ in clean.reflect_many([tuple(j) for j in jobs])]
+    for rp, cp in zip(retry_results, clean_results, strict=True):
+        assert rp.new_texts == cp.new_texts
+
+
+def test_bind_rng_true_attribute_does_not_crash_wiring(tmp_path):
+    """A strategy with a non-callable bind_rng attribute must be ignored by
+    the wiring, not called (previous code called any non-None attribute)."""
+
+    class WeirdStrategy:
+        bind_rng = True  # non-callable attribute
+
+        def reflect(self, candidate, reflective_dataset, components_to_update):
+            from gepa.proposer.reflective_mutation.reflection_lm import ReflectionProposal
+
+            return ReflectionProposal(new_texts={c: "v" for c in components_to_update}), self
+
+    result = gepa.optimize(
+        seed_candidate={"system_prompt": "LEVEL=0"},
+        trainset=TRAIN,
+        valset=TRAIN,
+        adapter=SyntheticAdapter(),
+        reflection_strategy=WeirdStrategy(),
+        max_metric_calls=25,
+        run_dir=str(tmp_path / "weird"),
+        seed=0,
+        display_progress_bar=False,
+    )
+    assert result is not None
+
+
+def test_seedable_protocol_conformance():
+    from gepa.proposer.reflective_mutation.reflection_lm import SeedableReflectionLM
+
+    assert isinstance(ComBEEReflectionLM(lambda p: "x"), SeedableReflectionLM)

@@ -79,6 +79,20 @@ class BatchReflectionLM(ReflectionLM, Protocol):
     def reflect_many(self, jobs: list[ReflectionJob]) -> list[tuple[ReflectionProposal, ReflectionLM]]: ...
 
 
+@runtime_checkable
+class SeedableReflectionLM(ReflectionLM, Protocol):
+    """A :class:`ReflectionLM` whose internal randomness can be bound to GEPA's run seed.
+
+    When a reflection strategy defines ``bind_rng``, GEPA's front doors call it
+    at wiring time with a stream **derived from** ``gepa.optimize(seed=...)``
+    (never the engine's own RNG object, so strategy randomness cannot perturb
+    candidate/minibatch selection). Implementations should treat it as a
+    default: a user-supplied explicit RNG must win over the bound one.
+    """
+
+    def bind_rng(self, rng: Any) -> None: ...
+
+
 class StatelessReflectionLM:
     """Default reflection LM: one stateless LM call per component (or one batched call covering all tasks/components when the underlying LM provides ``batch_complete``).
 

@@ -91,6 +91,12 @@ class ComBEEReflectionLM:
         rng: Seeded RNG for the augmented shuffle (default ``Random(0)``), so
             runs are reproducible.
         logger: Optional logger with a ``log(str)`` method.
+        batch_reflection: When True (default), multi-proposal iterations batch
+            all Level-1 calls into one wave and all Level-2 calls into a
+            second (assumes exchangeable LM calls — replies depending only on
+            their own prompt, the standard property of stateless completion
+            APIs). Set False to enforce strict sequential per-proposal
+            ordering (#307-identical), e.g. for order-dependent callables.
     """
 
     def __init__(
@@ -101,6 +107,7 @@ class ComBEEReflectionLM:
         duplication_factor: int = 2,
         rng: random.Random | None = None,
         logger: Any | None = None,
+        batch_reflection: bool = True,
     ):
         if isinstance(lm, str):
             from gepa.lm import LM
@@ -122,6 +129,19 @@ class ComBEEReflectionLM:
         self.duplication_factor = duplication_factor
         self._rng_explicit = rng is not None
         self._rng = rng if rng is not None else random.Random(0)
+        # Completion memo for failure transparency: populated while a
+        # reflect_many attempt runs, consulted by every LM call (including the
+        # engine's per-task retry path through reflect()), cleared at the
+        # start and successful end of each reflect_many. A failed wave never
+        # forces already-paid completions to be re-purchased.
+        self._completion_memo: dict[str, str] = {}
+        if not batch_reflection:
+            # Opting out makes the sequential-ordering contract ENFORCED, not
+            # documented: the engine's dispatcher sees reflect_many as None and
+            # runs one reflect() per proposal in task order (matching #307's
+            # exact call ordering). Use when the underlying callable is
+            # order-dependent (e.g. session-accumulating wrappers).
+            self.reflect_many = None  # type: ignore[assignment]
         self.logger = logger
         self._missing_template_warnings: set[str] = set()
 
@@ -168,18 +188,28 @@ class ComBEEReflectionLM:
             return template
         return self.reflection_prompt_template
 
+    def _memo_key(self, prompt: Any) -> str:
+        return prompt if isinstance(prompt, str) else str(prompt)
+
+    def _complete_one(self, prompt: Any) -> str:
+        """One completion, via the failure-transparency memo (see ctor)."""
+        key = self._memo_key(prompt)
+        cached = self._completion_memo.get(key)
+        if cached is not None:
+            return cached
+        raw = self.lm(prompt).strip()
+        self._completion_memo[key] = raw
+        return raw
+
     def _call_signature(
         self, current_instruction: str, dataset_with_feedback: Any, prompt_template: str | None
     ) -> tuple[str, str | list[dict[str, Any]], str]:
-        result, lm_prompt, raw_output = InstructionProposalSignature.run_with_metadata(
-            lm=self.lm,
-            input_dict={
-                "current_instruction_doc": current_instruction,
-                "dataset_with_feedback": dataset_with_feedback,
-                "prompt_template": prompt_template,
-            },
-        )
-        return result["new_instruction"], lm_prompt, raw_output
+        # Equivalent to InstructionProposalSignature.run_with_metadata (render
+        # -> complete -> strip -> extract), routed through the completion memo.
+        prompt, _messages = self._render_prompt(current_instruction, dataset_with_feedback, prompt_template)
+        raw_output = self._complete_one(prompt)
+        result = InstructionProposalSignature.output_extractor(raw_output)
+        return result["new_instruction"], prompt, raw_output
 
     def reflect(
         self,
@@ -311,17 +341,25 @@ class ComBEEReflectionLM:
         return prompt, messages
 
     def _batch_complete(self, prompts: list[Any], messages_list: list[list[dict[str, Any]]]) -> list[str]:
-        """Issue completions, batched when the LM supports it (mirror of
-        StatelessReflectionLM): N=1 uses the plain call path, so results stay
-        byte-identical to :meth:`reflect`'s per-call behavior."""
+        """Issue completions, batched when the LM supports it, through the
+        failure-transparency memo: already-paid completions (from a prior
+        failed attempt of the same iteration) are reused, and only misses are
+        sent. The sequential fallback memoizes incrementally, so a mid-wave
+        failure preserves every completed call for the retry."""
         if not prompts:
             return []
-        if len(prompts) == 1:
-            return [self.lm(prompts[0])]
-        batch_complete = getattr(self.lm, "batch_complete", None)
-        if batch_complete is not None:
-            return list(batch_complete(messages_list))
-        return [self.lm(prompt) for prompt in prompts]
+        keys = [self._memo_key(p) for p in prompts]
+        miss_idx = [i for i, k in enumerate(keys) if k not in self._completion_memo]
+        if miss_idx:
+            batch_complete = getattr(self.lm, "batch_complete", None)
+            if batch_complete is not None and len(miss_idx) > 1:
+                fresh = list(batch_complete([messages_list[i] for i in miss_idx]))
+                for i, raw in zip(miss_idx, fresh, strict=True):
+                    self._completion_memo[keys[i]] = raw.strip()
+            else:
+                for i in miss_idx:
+                    self._completion_memo[keys[i]] = self.lm(prompts[i]).strip()
+        return [self._completion_memo[k] for k in keys]
 
     def reflect_many(self, jobs: list[ReflectionJob]) -> list[tuple[ReflectionProposal, ComBEEReflectionLM]]:
         """Vectorized :meth:`reflect`: all jobs' ComBEE passes in two batched waves.
@@ -340,16 +378,20 @@ class ComBEEReflectionLM:
         it declares itself stateless by returning ``self`` as successor. Cost per
         component is unchanged: k map calls + 1 reduce.
         """
-        # Snapshot the RNG so a failed batched round is failure-transparent:
-        # the per-task retry path (and any later attempt) replays the same
-        # shuffle stream the batch would have used, keeping runs with a
-        # recovered transient LM failure bit-identical to runs without one.
+        # Failure transparency, two halves: (1) snapshot/restore the RNG so a
+        # failed round's retry replays the same shuffle stream — bit-identical
+        # results; (2) the completion memo (fresh per iteration, kept across a
+        # failure) so the retry reuses every already-paid completion — no
+        # double spend. Cleared again on success to bound memory.
+        self._completion_memo.clear()
         rng_state = self._rng.getstate()
         try:
-            return self._reflect_many_inner(jobs)
+            results = self._reflect_many_inner(jobs)
         except Exception:
             self._rng.setstate(rng_state)
             raise
+        self._completion_memo.clear()
+        return results
 
     def _reflect_many_inner(
         self, jobs: list[ReflectionJob]

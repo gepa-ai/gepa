@@ -399,10 +399,12 @@ def optimize(
 
     if reflection_strategy is not None:
         _bind_rng = getattr(reflection_strategy, "bind_rng", None)
-        if _bind_rng is not None:
-            # Derived (not shared) stream: seed-sensitive shuffles without
-            # coupling reflection randomness to the candidate-selector stream.
-            _bind_rng(random.Random(rng.getrandbits(64)))
+        if callable(_bind_rng):
+            # Derived from the seed VALUE (string seeding is stable across
+            # runs), never from the engine RNG object: binding a strategy must
+            # not consume — and therefore cannot shift — the candidate-selector
+            # or minibatch-sampler streams. See SeedableReflectionLM.
+            _bind_rng(random.Random(f"gepa-reflection-strategy:{seed}"))
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,

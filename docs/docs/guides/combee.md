@@ -91,6 +91,7 @@ ComBEEReflectionLM(
     duplication_factor=2,              # p — augmented-shuffle duplication (§3.2)
     rng=random.Random(0),              # seeded shuffle for reproducible runs
     logger=None,
+    batch_reflection=True,             # False = strict sequential per-proposal ordering
 )
 ```
 
@@ -119,7 +120,13 @@ Under multi-proposal sampling strategies
 `reflect_many`: all proposals' Level-1 calls go out as **one batched wave**
 and all Level-2 calls as a second (via the LM's `batch_complete` when
 available), while producing results identical to sequential per-proposal
-reflection — same prompts, same RNG stream, same metadata.
+reflection — same prompts, same RNG stream, same metadata. This assumes the
+LM's calls are **exchangeable** (each reply depends only on its own prompt —
+the standard property of stateless completion APIs); for order-dependent
+callables, construct with `batch_reflection=False` to enforce strict
+sequential per-proposal ordering. Failed waves are failure-transparent: the
+RNG state is restored and already-completed calls are memoized, so the retry
+neither changes results nor re-purchases paid completions.
 
 ## Credits
 
