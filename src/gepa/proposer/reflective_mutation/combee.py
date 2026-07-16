@@ -71,6 +71,7 @@ Provide the final synthesized instruction within ``` blocks."""
 # One logical reflection-LM completion.  The prompt fingerprint guards the
 # retry cache against a caller reusing an occurrence id with different input.
 _CompletionId = tuple[int, int, str, int]
+_BatchFingerprint = tuple[str, ...]
 
 
 @dataclass
@@ -81,7 +82,7 @@ class _CachedCompletion:
 
 @dataclass
 class _ReflectionAttempt:
-    """State kept only while retrying one ``reflect_many`` invocation.
+    """State retained only for an exact retry of one failed batch.
 
     ``reflect_many`` plans calls in map/reduce wave order, while the engine's
     failure fallback calls ``reflect`` in job order.  Completion ids therefore
@@ -89,6 +90,7 @@ class _ReflectionAttempt:
     """
 
     num_jobs: int
+    batch_fingerprint: _BatchFingerprint
     completions: dict[_CompletionId, _CachedCompletion] = field(default_factory=dict)
     next_fallback_job_idx: int = 0
 
@@ -261,6 +263,20 @@ class ComBEEReflectionLM:
     @staticmethod
     def _prompt_fingerprint(prompt: Any) -> str:
         return prompt if isinstance(prompt, str) else repr(prompt)
+
+    @staticmethod
+    def _batch_fingerprint(jobs: list[ReflectionJob]) -> _BatchFingerprint:
+        """Identify the complete ordered input to one retryable batch.
+
+        ``repr`` deliberately errs toward a cache miss for unusual user
+        objects or equivalent mappings with a different insertion order. A
+        false miss only repeats work; a false hit could leak a stochastic
+        completion from an unrelated failed batch.
+        """
+        return tuple(
+            repr((candidate, reflective_dataset, components_to_update))
+            for candidate, reflective_dataset, components_to_update in jobs
+        )
 
     @staticmethod
     def _completion_id(job_idx: int | None, component_idx: int, phase: str, call_idx: int) -> _CompletionId | None:
@@ -518,8 +534,9 @@ class ComBEEReflectionLM:
         before the next one starts, matching #307 call order. Both forms retain
         a logical-call retry cache and restore the shuffle stream on failure.
         """
-        if self._attempt is None or self._attempt.num_jobs != len(jobs):
-            self._attempt = _ReflectionAttempt(num_jobs=len(jobs))
+        batch_fingerprint = self._batch_fingerprint(jobs)
+        if self._attempt is None or self._attempt.batch_fingerprint != batch_fingerprint:
+            self._attempt = _ReflectionAttempt(num_jobs=len(jobs), batch_fingerprint=batch_fingerprint)
         rng_state = self._rng.getstate()
         try:
             batch_complete = getattr(self.lm, "batch_complete", None)

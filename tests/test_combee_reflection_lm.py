@@ -1370,6 +1370,55 @@ def test_direct_reflect_many_retry_reuses_completed_map_wave():
     assert lm.completions == 8
 
 
+def test_failed_attempt_cache_does_not_leak_to_changed_same_sized_batch():
+    """A new batch that merely shares some job prompts with a failed batch
+    must buy fresh stochastic completions, rather than reuse partial cache
+    entries left for the old retry."""
+
+    class FailFirstReduceLM:
+        def __init__(self):
+            self.completions = 0
+            self.batch_invocations = 0
+            self.batch_sizes: list[int] = []
+
+        def _reply(self, prompt):
+            self.completions += 1
+            return f"```\nR{self.completions}\n```"
+
+        def __call__(self, prompt):
+            return self._reply(prompt)
+
+        def batch_complete(self, messages_list):
+            self.batch_invocations += 1
+            self.batch_sizes.append(len(messages_list))
+            if self.batch_invocations == 2:
+                raise RuntimeError("transient reduce outage")
+            return [self._reply(messages[0]["content"]) for messages in messages_list]
+
+    original_jobs = [
+        ({"comp": "X"}, {"comp": RECORDS9}, ["comp"]),
+        ({"comp": "Y"}, {"comp": RECORDS9}, ["comp"]),
+    ]
+    changed_jobs = [
+        original_jobs[0],
+        ({"comp": "Y changed"}, {"comp": RECORDS9}, ["comp"]),
+    ]
+    lm = FailFirstReduceLM()
+    combee = ComBEEReflectionLM(lm, rng=random.Random(5))
+
+    with pytest.raises(RuntimeError, match="transient reduce outage"):
+        combee.reflect_many(original_jobs)
+    assert lm.completions == 6
+
+    combee.reflect_many(changed_jobs)
+
+    # The changed two-job batch has its own six-call map wave and two-call
+    # reduce wave. Reusing the shared first job's old map cache would produce
+    # [6, 2, 3, 2] and only 11 paid completions instead.
+    assert lm.batch_sizes == [6, 2, 6, 2]
+    assert lm.completions == 14
+
+
 def test_ordered_pxn_retry_is_cost_and_result_transparent():
     """The strict-ordering mode is still a PxN transaction: a failure in a
     later job must not rerun earlier completed jobs with a new shuffle."""
