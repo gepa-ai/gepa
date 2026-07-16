@@ -164,6 +164,41 @@ We compared each engine run standalone against the corresponding `omni` pipeline
 
 The largest gain goes to GEPA: `omni`-GEPA (61.8) more than closes its standalone gap behind the agent-based baselines, and overtakes even the strongest *standalone* optimizer (AutoResearch, 55.4). And every `omni` variant beats every standalone optimizer — the weakest `omni` pipeline (59.3) still tops the best single optimizer (55.4). The reliable win comes from composition, not from picking the right optimizer.
 
+## Bringing your own optimizer
+
+The three engines we ship are just a starting set. The engine surface is small enough that any LLM-driven search loop fits, and if you have a different proposer — a new reflective template, a different agent scaffold, an evolutionary policy — you drop it in as an engine and everything else in `optimize_anything` (the pipeline helpers, the eval-server budget, the [Terrarium](https://github.com/gepa-ai/terrarium) task registry) comes with it for free.
+
+The contract is one class and one line of registration:
+
+```python
+from gepa.oa.engine import Result
+from gepa.oa.registry import register_engine
+
+class MyEngine:
+    name = "my_engine"
+
+    def __init__(self, config):
+        # Cross-cutting caps every engine honors:
+        self.max_token_cost = config.max_token_cost   # your proposer's USD budget
+        self.stop_at_score = config.stop_at_score     # early-exit target
+        # Pop your engine-specific options out of config.engine_config here.
+
+    def run(self, task, server) -> Result:
+        best, best_score = task.seed_candidate or "", float("-inf")
+        while ...:                                     # your termination logic
+            candidate = your_proposer(task, best)
+            score, _ = server.evaluate(candidate)       # eval budget is enforced here
+            if score > best_score:
+                best, best_score = candidate, score
+        return Result(best_candidate=best, best_score=best_score)
+
+register_engine("my_engine", MyEngine)
+```
+
+Once registered, users pick your engine exactly like the built-ins — `config=OptimizeAnythingConfig(engine="my_engine")` — and every composition helper works with it. Running `optimize_best_of` with `MyEngine` alongside GEPA and AutoResearch, or slotting it into `optimize_adaptive_sequential_with_server` as an unstuck-the-plateau step, is a one-line configuration change. And the plateau story from earlier is the argument: engines that get stuck where GEPA doesn't (and vice versa) make every composition strictly better.
+
+The built-in [`best_of_n`](https://github.com/gepa-ai/gepa/blob/feat/optimize-anything-omni/src/gepa/oa/engines/best_of_n.py) engine — sample from one LLM call, evaluate, keep the best — is a ~150-line end-to-end reference for how a from-scratch engine reads `config.engine_config`, honors the two budgets, and streams to `eval_log`. If you'd like your optimizer to ship with `optimize_anything`, open a PR against [gepa-ai/gepa](https://github.com/gepa-ai/gepa); we'd love to make it available to every downstream user.
+
 ## Getting started
 
 `optimize_anything` was always meant to be a single frontend that dispatches to the right optimizer for your problem. Engines and pipelines deliver that: the API surface is unchanged, `engine="gepa"` is still the default, and you can switch to a different optimizer — or compose several — by changing one argument.
