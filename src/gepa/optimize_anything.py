@@ -1426,8 +1426,16 @@ def optimize_anything(
     if config.engine.max_reflection_cost is not None:
         from gepa.utils import MaxReflectionCostStopper
 
+        # The cost source must be whatever actually accumulates reflection
+        # spend: the strategy when one is set (validated above to expose
+        # total_cost), else the reflection LM.
+        cost_source = (
+            config.reflection.reflection_strategy
+            if config.reflection.reflection_strategy is not None
+            else config.reflection.reflection_lm
+        )
         stop_callbacks_list.append(
-            MaxReflectionCostStopper(config.engine.max_reflection_cost, reflection_lm=config.reflection.reflection_lm)
+            MaxReflectionCostStopper(config.engine.max_reflection_cost, reflection_lm=cost_source)
         )
 
     if not stop_callbacks_list:
@@ -1615,6 +1623,11 @@ def optimize_anything(
             InstructionProposalSignature.validate_prompt_template(config.reflection.reflection_prompt_template)
 
     # --- 11. Build reflective proposer from ReflectionConfig ---
+    if config.reflection.reflection_strategy is not None:
+        _bind_rng = getattr(config.reflection.reflection_strategy, "bind_rng", None)
+        if _bind_rng is not None:
+            _bind_rng(random.Random(rng.getrandbits(64)))
+
     reflective_proposer = ReflectiveMutationProposer(
         logger=config.tracking.logger,
         trainset=train_loader,

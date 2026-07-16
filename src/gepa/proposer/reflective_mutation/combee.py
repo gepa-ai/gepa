@@ -112,10 +112,15 @@ class ComBEEReflectionLM:
             lm = TrackingLM(lm)
         self.lm = lm
         self.reflection_prompt_template = reflection_prompt_template
-        self.aggregation_prompt_template = aggregation_prompt_template or DEFAULT_AGGREGATION_PROMPT_TEMPLATE
-        if duplication_factor < 1:
-            raise ValueError(f"duplication_factor must be >= 1, got {duplication_factor}")
+        # Only None means "use the default": an explicit (even empty) template
+        # must go through placeholder validation and fail loudly if invalid.
+        self.aggregation_prompt_template = (
+            DEFAULT_AGGREGATION_PROMPT_TEMPLATE if aggregation_prompt_template is None else aggregation_prompt_template
+        )
+        if not isinstance(duplication_factor, int) or isinstance(duplication_factor, bool) or duplication_factor < 1:
+            raise ValueError(f"duplication_factor must be an integer >= 1, got {duplication_factor!r}")
         self.duplication_factor = duplication_factor
+        self._rng_explicit = rng is not None
         self._rng = rng if rng is not None else random.Random(0)
         self.logger = logger
         self._missing_template_warnings: set[str] = set()
@@ -139,6 +144,16 @@ class ComBEEReflectionLM:
     @property
     def total_tokens_out(self) -> int:
         return getattr(self.lm, "total_tokens_out", 0)
+
+    def bind_rng(self, rng: random.Random) -> None:
+        """GEPA's wiring calls this with a stream derived from
+        ``gepa.optimize(seed=...)`` when the user did not pass an explicit
+        ``rng`` — making shuffles seed-sensitive by default while staying
+        independent of the candidate-selector stream (unlike #307's shared
+        RNG, where shuffles and selection perturbed each other). An explicit
+        user-provided ``rng`` always wins."""
+        if not self._rng_explicit:
+            self._rng = rng
 
     def _log(self, message: str) -> None:
         if self.logger is not None:
@@ -318,9 +333,27 @@ class ComBEEReflectionLM:
         order (shuffles happen at plan time, in job/component order), and
         proposals are finalized in plan order (so repeated component names
         overwrite exactly as they would sequentially); only the global call
-        ORDER differs, which cannot affect results for stateless LMs. Cost per
+        ORDER differs. Contract: the underlying LM's calls are assumed
+        exchangeable — each reply depends only on its own prompt, the standard
+        property of stateless completion APIs. Order-dependent callables
+        (e.g. session-accumulating wrappers) are outside ComBEE's contract;
+        it declares itself stateless by returning ``self`` as successor. Cost per
         component is unchanged: k map calls + 1 reduce.
         """
+        # Snapshot the RNG so a failed batched round is failure-transparent:
+        # the per-task retry path (and any later attempt) replays the same
+        # shuffle stream the batch would have used, keeping runs with a
+        # recovered transient LM failure bit-identical to runs without one.
+        rng_state = self._rng.getstate()
+        try:
+            return self._reflect_many_inner(jobs)
+        except Exception:
+            self._rng.setstate(rng_state)
+            raise
+
+    def _reflect_many_inner(
+        self, jobs: list[ReflectionJob]
+    ) -> list[tuple[ReflectionProposal, ComBEEReflectionLM]]:
         proposals = [ReflectionProposal(new_texts={}, prompts={}, raw_lm_outputs={}, metadata={}) for _ in jobs]
         job_call_totals = [0] * len(jobs)
 

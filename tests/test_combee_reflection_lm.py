@@ -654,3 +654,134 @@ def test_pxn_1x1_equivalent_to_single_mutation_sampling(tmp_path):
     assert len(r_pxn.candidates) == len(r_single.candidates)
     assert lm_pxn.calls == lm_single.calls
     assert ev_pxn == ev_single
+
+
+# ---------------------------------------------------------------------------
+# Review-round fixes: validation, empty template, RNG binding/restore, oa cap
+# ---------------------------------------------------------------------------
+
+
+def test_duplication_factor_must_be_integer():
+    with pytest.raises(ValueError, match="integer"):
+        ComBEEReflectionLM(lambda p: "x", duplication_factor=1.5)
+    with pytest.raises(ValueError, match="integer"):
+        ComBEEReflectionLM(lambda p: "x", duplication_factor=True)
+
+
+def test_empty_aggregation_template_is_rejected_not_defaulted():
+    with pytest.raises(Exception, match="curr_param|side_info|template"):
+        ComBEEReflectionLM(lambda p: "x", aggregation_prompt_template="")
+
+
+def test_bind_rng_makes_default_shuffles_seed_sensitive(tmp_path):
+    """With the default rng, gepa.optimize(seed=...) now varies ComBEE's
+    shuffle stream (via a derived, non-shared stream); same seed reproduces."""
+
+    def run(seed, tag):
+        lm = ScriptedLM(["improved"] * 40)
+        combee = ComBEEReflectionLM(lm)  # default rng -> bind_rng applies
+        gepa.optimize(
+            seed_candidate={"system_prompt": "LEVEL=0 SEED"},
+            trainset=TRAIN,
+            valset=TRAIN,
+            adapter=SyntheticAdapter(),
+            reflection_strategy=combee,
+            reflection_minibatch_size=9,
+            max_metric_calls=80,
+            run_dir=str(tmp_path / tag),
+            seed=seed,
+            display_progress_bar=False,
+        )
+        return lm.prompts  # map prompts embed the shuffle order
+
+    a1 = run(0, "s0a")
+    a2 = run(0, "s0b")
+    b = run(1, "s1")
+    assert a1, "no reflection prompts recorded"
+    assert a1 == a2, "same seed must reproduce the shuffle stream"
+    assert a1 != b, "different seed must vary the derived shuffle stream"
+
+
+def test_bind_rng_does_not_override_explicit_rng():
+    combee = ComBEEReflectionLM(lambda p: "x", rng=random.Random(123))
+    explicit = combee._rng
+    combee.bind_rng(random.Random(999))
+    assert combee._rng is explicit
+    combee_default = ComBEEReflectionLM(lambda p: "x")
+    bound = random.Random(999)
+    combee_default.bind_rng(bound)
+    assert combee_default._rng is bound
+
+
+def test_failed_batch_restores_rng_state_for_failure_transparency():
+    """A transient failure in the batched round must not advance the shuffle
+    stream: the per-task retry (and thus the whole run) stays bit-identical
+    to a run where the failure never happened."""
+
+    class FlakyThenContentLM:
+        def __init__(self, fail_first_batch):
+            self.fail_first_batch = fail_first_batch
+            self.inner = ContentKeyedLM()
+
+        def __call__(self, prompt):
+            return self.inner(prompt)
+
+        def batch_complete(self, messages_list):
+            if self.fail_first_batch:
+                self.fail_first_batch = False
+                raise RuntimeError("transient provider outage")
+            return [self.inner(m[0]["content"]) for m in messages_list]
+
+    job = ({"comp": "X"}, {"comp": RECORDS9}, ["comp"])
+
+    flaky = ComBEEReflectionLM(FlakyThenContentLM(fail_first_batch=True), rng=random.Random(5))
+    with pytest.raises(RuntimeError):
+        flaky.reflect_many([job, job])  # advances RNG in planning, then fails
+    retry = [prop for prop, _ in flaky.reflect_many([job, job])]  # RNG was restored
+
+    clean = ComBEEReflectionLM(FlakyThenContentLM(fail_first_batch=False), rng=random.Random(5))
+    clean_results = [prop for prop, _ in clean.reflect_many([job, job])]
+
+    for rp, cp in zip(retry, clean_results, strict=True):
+        assert rp.new_texts == cp.new_texts
+        assert rp.prompts == cp.prompts
+
+
+def test_optimize_anything_cost_cap_stops_on_strategy_cost(tmp_path):
+    """Regression (review P1): oa validated strategy.total_cost but wired the
+    stopper to reflection_lm — the cap never fired on strategy cost."""
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, optimize_anything
+
+    class CostlyStrategy:
+        def __init__(self):
+            self.total_cost = 0.0
+            self.calls = 0
+
+        def reflect(self, candidate, reflective_dataset, components_to_update):
+            self.calls += 1
+            self.total_cost += 1.0
+            from gepa.proposer.reflective_mutation.reflection_lm import ReflectionProposal
+
+            return ReflectionProposal(new_texts={c: f"v{self.calls}_{c}" for c in components_to_update}), self
+
+    strategy = CostlyStrategy()
+
+    def evaluator(candidate, example=None):
+        return float(len(str(candidate)) % 7) / 7.0, {"feedback": "vary"}
+
+    optimize_anything(
+        seed_candidate="seed text here",
+        evaluator=evaluator,
+        dataset=list(range(10)),
+        config=GEPAConfig(
+            engine=EngineConfig(
+                max_metric_calls=5000,  # huge: only the cost cap can stop this
+                max_reflection_cost=2.5,
+                run_dir=str(tmp_path / "oa-cap"),
+                parallel=False,
+                cache_evaluation=False,
+            ),
+            reflection=ReflectionConfig(reflection_strategy=strategy, reflection_minibatch_size=3),
+        ),
+    )
+    assert strategy.calls <= 4, f"cost cap never fired: {strategy.calls} reflections, ${strategy.total_cost}"
