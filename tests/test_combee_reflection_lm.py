@@ -595,3 +595,62 @@ def test_e2e_pxn_with_batch_capable_lm(tmp_path):
         else:
             i += 1  # wave2 for a single job went through the plain-call path
     assert result.val_aggregate_scores[result.best_idx] > result.val_aggregate_scores[0]
+
+
+def test_reflect_many_handles_duplicate_component_names():
+    """Pathological but legal: the same component listed twice must behave
+    exactly like sequential reflect() — second occurrence overwrites, both
+    occurrences' calls happen, RNG stream matches."""
+    job = ({"a": "IA"}, {"a": RECORDS9}, ["a", "a"])
+    seq = ComBEEReflectionLM(ContentKeyedLM(), rng=random.Random(5))
+    sp, _ = seq.reflect(*job)
+    bat = ComBEEReflectionLM(ContentKeyedLM(), rng=random.Random(5))
+    bp, _ = bat.reflect_many([job])[0]
+    assert bp.new_texts == sp.new_texts
+    assert bp.prompts == sp.prompts
+    assert bp.raw_lm_outputs == sp.raw_lm_outputs
+    assert bp.metadata == sp.metadata
+
+
+def test_pxn_1x1_equivalent_to_single_mutation_sampling(tmp_path):
+    """PxNSampling(1,1) consumes the candidate selector and batch sampler in
+    the same order as SingleMutationSampling, so a ComBEE run under either
+    produces identical results, prompts, and event streams."""
+    from gepa.strategies.proposal_sampling import PxNSampling, SingleMutationSampling
+
+    def run(sampling, tag):
+        lm = ContentKeyedLM()
+        events = []
+
+        class Cb:
+            def __getattr__(self, name):
+                if name.startswith("on_"):
+                    def rec(e, n=name):
+                        events.append(n)
+                    return rec
+                raise AttributeError(name)
+
+        result = gepa.optimize(
+            seed_candidate={"system_prompt": "LEVEL=0 SEED"},
+            trainset=TRAIN,
+            valset=TRAIN,
+            adapter=SyntheticAdapter(),
+            reflection_strategy=ComBEEReflectionLM(lm, rng=random.Random(0)),
+            reflection_minibatch_size=9,
+            sampling_strategy=sampling,
+            max_metric_calls=120,
+            callbacks=[Cb()],
+            run_dir=str(tmp_path / tag),
+            seed=0,
+            display_progress_bar=False,
+        )
+        return result, lm, events
+
+    r_single, lm_single, ev_single = run(SingleMutationSampling(), "single")
+    r_pxn, lm_pxn, ev_pxn = run(PxNSampling(p=1, n=1), "pxn11")
+
+    assert r_pxn.best_candidate == r_single.best_candidate
+    assert r_pxn.total_metric_calls == r_single.total_metric_calls
+    assert len(r_pxn.candidates) == len(r_single.candidates)
+    assert lm_pxn.calls == lm_single.calls
+    assert ev_pxn == ev_single

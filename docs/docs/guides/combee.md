@@ -94,6 +94,14 @@ ComBEEReflectionLM(
 )
 ```
 
+!!! note "Seeding the shuffle"
+    ComBEE's shuffle RNG is **independent of `gepa.optimize(seed=...)`** and
+    defaults to `Random(0)`: varying only `seed` will not vary the shuffle
+    stream. For seed-varied experiments pass `rng=random.Random(your_seed)`.
+    (The original #307 wiring shared the engine's seed-derived RNG with the
+    candidate selector, coupling selection and shuffling; the strategy object
+    deliberately decouples them.)
+
 ## Cost and observability
 
 ComBEE makes **`k + 1` reflection-LM calls per component per proposal** (vs 1
