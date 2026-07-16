@@ -221,6 +221,9 @@ class ComBEEReflectionLM:
                 size = base_group_size + (1 if i < remainder else 0)
                 group_records = augmented[offset : offset + size]
                 offset += size
+                # Defensive (mirrored from #307): unreachable by construction —
+                # total_aug = p*n >= n >= k, so no group is ever empty; kept as
+                # a guard for future changes that let map calls fail soft.
                 if not group_records:
                     continue
                 new_text, lm_prompt, raw_output = self._call_signature(

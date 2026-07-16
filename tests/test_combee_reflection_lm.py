@@ -206,6 +206,16 @@ def test_cost_tracking_delegation_for_max_reflection_cost():
     assert combee.total_tokens_out > 0
 
 
+def test_str_model_name_resolved_via_gepa_lm():
+    """A model-name string constructs a gepa.lm.LM with cost tracking wired."""
+    from gepa.lm import LM
+
+    combee = ComBEEReflectionLM("openai/gpt-4.1-mini")
+    assert isinstance(combee.lm, LM)
+    assert combee.total_cost == 0.0
+    assert combee.total_tokens_in == 0
+
+
 def test_duplication_factor_validation():
     with pytest.raises(ValueError, match="duplication_factor"):
         ComBEEReflectionLM(lambda p: "x", duplication_factor=0)
