@@ -308,7 +308,7 @@ class ComBEEReflectionLM:
             return list(batch_complete(messages_list))
         return [self.lm(prompt) for prompt in prompts]
 
-    def reflect_many(self, jobs: list[ReflectionJob]) -> list[tuple[ReflectionProposal, "ComBEEReflectionLM"]]:
+    def reflect_many(self, jobs: list[ReflectionJob]) -> list[tuple[ReflectionProposal, ComBEEReflectionLM]]:
         """Vectorized :meth:`reflect`: all jobs' ComBEE passes in two batched waves.
 
         Wave 1 batches every Level-1 (map) call and every degenerate-fallback
