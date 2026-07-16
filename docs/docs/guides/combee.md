@@ -90,8 +90,8 @@ ComBEEReflectionLM(
     aggregation_prompt_template=None,  # Level-2 template (must contain <curr_param> and <side_info>)
     duplication_factor=2,              # p — augmented-shuffle duplication (§3.2)
     rng=random.Random(0),              # optional independent shuffle stream
-    logger=None,
-    batch_reflection=True,             # False = strict sequential per-proposal ordering
+    logger=None,                       # GEPA injects its configured logger when omitted
+    batch_reflection=True,             # batches only when the LM provides batch_complete
 )
 ```
 
@@ -110,21 +110,22 @@ for the default reflector). The per-call intermediates are recorded in
 proposal metadata under `combee:`-namespaced keys — `combee:<comp>:k`,
 `combee:<comp>:level1_prompts` / `level1_outputs`,
 `combee:<comp>:num_lm_calls`, `combee:<comp>:mode`, and
-`combee:total_lm_calls` — visible to `on_proposal_end` consumers and
-experiment trackers. `total_cost` and token totals are exposed by delegation
-to the wrapped LM, so `max_reflection_cost` works as a stop condition.
+`combee:total_lm_calls` — visible to `on_proposal_end` consumers (in the
+event's `metadata`) and experiment trackers (in the
+`proposal_reflection_metadata` table). `total_cost` and token totals are
+exposed by delegation to the wrapped LM, so `max_reflection_cost` works as a
+stop condition.
 
 Under multi-proposal sampling strategies
 ([parallel proposals](parallel-proposals.md)), ComBEE implements
-`reflect_many`: all proposals' Level-1 calls go out as **one batched wave**
-and all Level-2 calls as a second (via the LM's `batch_complete` when
-available), while producing results identical to sequential per-proposal
-reflection — same prompts, same RNG stream, same metadata. This assumes the
-LM's calls are **exchangeable** (each reply depends only on its own prompt —
-the standard property of stateless completion APIs). For order-dependent
-callables, construct with `batch_reflection=False`; ComBEE then executes each
-job's complete map/reduce pass before starting the next one, while retaining
-the same retry boundary. Failed attempts restore the RNG state and memoize
+`reflect_many`: when the LM provides `batch_complete`, all proposals' Level-1
+calls go out as **one batched wave** and all Level-2 calls as a second. This
+assumes the LM's calls are **exchangeable** (each reply depends only on its
+own prompt — the standard property of stateless completion APIs). Without
+that capability, ComBEE automatically executes complete jobs in strict #307
+order, preserving sequential results for ordinary and order-dependent
+callables. Set `batch_reflection=False` to request that strict ordering even
+for a batch-capable LM. Failed attempts restore the RNG state and memoize
 already-completed logical calls, so both direct `reflect_many` retries and the
 engine's per-job recovery path preserve results without repurchasing work.
 

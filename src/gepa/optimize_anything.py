@@ -1630,6 +1630,9 @@ def optimize_anything(
             # engine stream unless the strategy was constructed with an
             # explicit RNG of its own.
             _bind_rng(rng)
+        _bind_logger = getattr(config.reflection.reflection_strategy, "bind_logger", None)
+        if callable(_bind_logger):
+            _bind_logger(config.tracking.logger)
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=config.tracking.logger,

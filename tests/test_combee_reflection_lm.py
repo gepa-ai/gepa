@@ -10,6 +10,7 @@ LM-call sequences and final texts across all scenarios, so these tests pin
 behavior preserved from the original contribution by @nuglifeleoji.
 """
 
+import json
 import random
 import re
 from collections import defaultdict
@@ -324,12 +325,15 @@ def test_e2e_gepa_optimize_with_combee(tmp_path):
     assert n_proposals > 0
     # Exactly k+1 = 4 reflection calls per proposal — ComBEE's cost contract.
     assert lm.calls == 4 * n_proposals
-    # ComBEE diagnostics flow into CandidateProposal.metadata.
+    # ComBEE diagnostics flow into both CandidateProposal.metadata and the
+    # proposal-end callback.
     assert spy.proposals
     md = spy.proposals[0].metadata
     assert md["combee:system_prompt:mode"] == "map_reduce"
     assert md["combee:system_prompt:num_lm_calls"] == 4
     assert md["combee:total_lm_calls"] == 4
+    assert log["proposal_end"][0]["metadata"]["combee:system_prompt:mode"] == "map_reduce"
+    assert log["proposal_end"][0]["metadata"]["combee:total_lm_calls"] == 4
     # The optimization actually improved over the seed.
     assert result.val_aggregate_scores[result.best_idx] > result.val_aggregate_scores[0]
 
@@ -873,6 +877,115 @@ def test_batch_reflection_false_enforces_sequential_ordering():
     assert ordered_results == seq_results
     # Default instances still batch.
     assert callable(ComBEEReflectionLM(lambda p: "x").reflect_many)
+
+
+def test_non_batchable_lm_automatically_preserves_sequential_ordering():
+    """Without ``batch_complete``, a map-first global schedule has no speed
+    benefit and changes order-dependent results. Default ComBEE must instead
+    follow #307's complete-job ordering."""
+
+    class PlainOrderDependentLM:
+        def __init__(self):
+            self.calls = 0
+
+        def __call__(self, prompt):
+            self.calls += 1
+            return f"```\nreply-{self.calls}\n```"
+
+    jobs = [
+        ({"comp": "I0"}, {"comp": RECORDS9}, ["comp"]),
+        ({"comp": "I1"}, {"comp": RECORDS9}, ["comp"]),
+    ]
+    combee = ComBEEReflectionLM(PlainOrderDependentLM(), rng=random.Random(3))
+
+    results = [proposal.new_texts for proposal, _ in combee.reflect_many(jobs)]
+
+    assert results == [{"comp": "reply-4"}, {"comp": "reply-8"}]
+
+
+def test_optimize_binds_configured_logger_to_combee(tmp_path):
+    """The documented strategy construction omits ``logger=``; the front
+    door must supply its configured logger so fallback warnings are visible."""
+
+    logger = CollectingLogger()
+    combee = ComBEEReflectionLM(ImprovingLM(), rng=random.Random(0))
+
+    gepa.optimize(
+        seed_candidate={"system_prompt": "LEVEL=0"},
+        trainset=TRAIN,
+        valset=TRAIN,
+        adapter=SyntheticAdapter(),
+        reflection_strategy=combee,
+        reflection_minibatch_size=3,
+        max_metric_calls=80,
+        logger=logger,
+        run_dir=str(tmp_path / "combee-logger"),
+        seed=0,
+        display_progress_bar=False,
+    )
+
+    assert combee.logger is logger
+    assert any("falling back to standard single-call reflection" in message for message in logger.messages)
+
+
+def test_optimize_anything_binds_configured_logger_to_combee(tmp_path):
+    from gepa.optimize_anything import EngineConfig, GEPAConfig, ReflectionConfig, TrackingConfig, optimize_anything
+
+    logger = CollectingLogger()
+    combee = ComBEEReflectionLM(ImprovingLM(), rng=random.Random(0))
+
+    optimize_anything(
+        seed_candidate="LEVEL=0",
+        evaluator=lambda candidate, example=None: (0.0, {"feedback": "bad"}),
+        dataset=[0, 1, 2],
+        config=GEPAConfig(
+            engine=EngineConfig(max_metric_calls=20, run_dir=str(tmp_path / "combee-oa-logger"), parallel=False),
+            reflection=ReflectionConfig(reflection_strategy=combee, reflection_minibatch_size=3),
+            tracking=TrackingConfig(logger=logger),
+        ),
+    )
+
+    assert combee.logger is logger
+
+
+def test_tracker_logs_combee_reflection_diagnostics():
+    """Intermediate ComBEE outputs must be available to trackers, not only
+    on the transient CandidateProposal object."""
+    from gepa.core.engine import GEPAEngine
+    from gepa.proposer.base import CandidateProposal
+
+    class CapturingTracker:
+        def __init__(self):
+            self.tables = []
+
+        def log_table(self, table_name, columns, data):
+            self.tables.append((table_name, columns, data))
+
+    tracker = CapturingTracker()
+    engine = object.__new__(GEPAEngine)
+    engine.experiment_tracker = tracker
+    proposal = CandidateProposal(
+        candidate={"comp": "final"},
+        parent_program_ids=[0],
+        metadata={
+            "proposal_id": "1-0",
+            "prompt:comp": "reduce prompt",
+            "raw_lm_output:comp": "```final```",
+            "combee:comp:level1_prompts": ["map prompt 1", "map prompt 2"],
+            "combee:comp:level1_outputs": ["map 1", "map 2"],
+            "combee:comp:num_lm_calls": 3,
+            "combee:total_lm_calls": 3,
+        },
+    )
+
+    engine._log_proposal_lm_calls(iteration=1, proposal=proposal, candidate_idx=-1)
+
+    metadata_table = next(table for table in tracker.tables if table[0] == "proposal_reflection_metadata")
+    assert metadata_table[1][-1] == "reflection_metadata"
+    diagnostics = json.loads(metadata_table[2][0][-1])
+    assert diagnostics["combee:comp:level1_prompts"] == ["map prompt 1", "map prompt 2"]
+    assert diagnostics["combee:comp:level1_outputs"] == ["map 1", "map 2"]
+    assert diagnostics["combee:total_lm_calls"] == 3
 
 
 def test_failed_reduce_wave_is_cost_transparent():

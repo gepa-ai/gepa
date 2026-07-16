@@ -481,17 +481,6 @@ class ReflectiveMutationProposer:
                 children.append(None)
                 continue
 
-            notify_callbacks(
-                self.callbacks,
-                "on_proposal_end",
-                ProposalEndEvent(
-                    iteration=i,
-                    new_instructions=new_texts,
-                    prompts=prompts,
-                    raw_lm_outputs=raw_outputs,
-                ),
-            )
-
             _lm_metadata: dict[str, Any] = {}
             # Stable per-proposal identifier (iteration-taskindex): downstream
             # consumers (run manifests, #346's per-proposal state anchors) can
@@ -513,6 +502,18 @@ class ReflectiveMutationProposer:
 
             for pname, text in new_texts.items():
                 self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
+
+            notify_callbacks(
+                self.callbacks,
+                "on_proposal_end",
+                ProposalEndEvent(
+                    iteration=i,
+                    new_instructions=new_texts,
+                    prompts=prompts,
+                    raw_lm_outputs=raw_outputs,
+                    metadata=dict(_lm_metadata),
+                ),
+            )
 
             new_candidate = task.parent_candidate.copy()
             for name, text in new_texts.items():

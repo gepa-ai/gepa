@@ -32,10 +32,10 @@ Usage::
 
 Cost: ``k + 1`` reflection-LM calls per component per proposal (vs 1 for the
 default reflector). Per-call intermediates and call counts are recorded in
-``ReflectionProposal.metadata`` under ``combee:``-namespaced keys, so they
-reach ``on_proposal_end`` consumers, experiment trackers, and proposal
-metadata. ``total_cost``/token totals are exposed by delegation to the wrapped
-LM, so ``max_reflection_cost`` works.
+``ReflectionProposal.metadata`` under ``combee:``-namespaced keys, and GEPA
+forwards them to ``on_proposal_end`` and experiment trackers. ``total_cost``/
+token totals are exposed by delegation to the wrapped LM, so
+``max_reflection_cost`` works.
 
 Originally contributed by @nuglifeleoji in
 https://github.com/gepa-ai/gepa/pull/307; re-hosted onto the ReflectionLM
@@ -47,7 +47,7 @@ from __future__ import annotations
 import random
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from gepa.proposer.reflective_mutation.base import LanguageModel
 from gepa.proposer.reflective_mutation.reflection_lm import ReflectionJob, ReflectionProposal
@@ -117,16 +117,17 @@ class ComBEEReflectionLM:
         rng: RNG for the augmented shuffle. When omitted, GEPA binds the
             engine RNG so the single-proposal path reproduces #307 exactly.
             Pass an explicit RNG to keep ComBEE independent of engine sampling.
-        logger: Optional logger with a ``log(str)`` method.
+        logger: Optional logger with a ``log(str)`` method. When the strategy
+            is passed to a GEPA front door, its configured logger is used when
+            this argument is omitted.
         batch_reflection: When True (default), multi-proposal iterations batch
             all Level-1 calls into one wave and all Level-2 calls into a
-            second (assumes exchangeable LM calls — replies depending only on
-            their own prompt, the standard property of stateless completion
-            APIs). Set False to enforce strict sequential per-proposal
-            ordering, e.g. for order-dependent callables. The strategy still
-            implements ``reflect_many`` in this mode so retries remain
-            transactional; it simply issues every job's map/reduce calls in
-            sequential order.
+            second when the underlying LM provides ``batch_complete``. Without
+            that capability, it automatically preserves #307's strict
+            sequential per-proposal order. Set False to enforce that order
+            even for batch-capable, order-dependent callables. The strategy
+            still implements ``reflect_many`` in sequential mode so retries
+            remain transactional.
     """
 
     def __init__(
@@ -196,6 +197,11 @@ class ComBEEReflectionLM:
         """
         if not self._rng_explicit:
             self._rng = rng
+
+    def bind_logger(self, logger: Any) -> None:
+        """Use GEPA's configured logger unless the caller supplied one."""
+        if self.logger is None:
+            self.logger = logger
 
     def _log(self, message: str) -> None:
         if self.logger is not None:
@@ -447,8 +453,8 @@ class ComBEEReflectionLM:
         miss_idx = [i for i, cached in enumerate(cached_outputs) if cached is None]
         if miss_idx:
             batch_complete = getattr(self.lm, "batch_complete", None)
-            if batch_complete is not None and len(miss_idx) > 1:
-                fresh = list(batch_complete([messages_list[i] for i in miss_idx]))
+            if callable(batch_complete) and len(miss_idx) > 1:
+                fresh = list(cast(Any, batch_complete)([messages_list[i] for i in miss_idx]))
                 for i, raw in zip(miss_idx, fresh, strict=True):
                     raw = raw.strip()
                     self._remember_completion(completion_ids[i], prompts[i], raw)
@@ -474,7 +480,12 @@ class ComBEEReflectionLM:
             self._attempt = _ReflectionAttempt(num_jobs=len(jobs))
         rng_state = self._rng.getstate()
         try:
-            results = self._reflect_many_inner(jobs) if self._batch_reflection else self._reflect_many_sequential(jobs)
+            batch_complete = getattr(self.lm, "batch_complete", None)
+            results = (
+                self._reflect_many_inner(jobs)
+                if self._batch_reflection and callable(batch_complete)
+                else self._reflect_many_sequential(jobs)
+            )
         except Exception:
             self._rng.setstate(rng_state)
             assert self._attempt is not None

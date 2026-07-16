@@ -34,6 +34,8 @@ import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Protocol, TypedDict, runtime_checkable
 
+from typing_extensions import NotRequired
+
 if TYPE_CHECKING:
     from gepa.core.data_loader import DataLoader
     from gepa.core.state import GEPAState, ProgramIdx
@@ -162,6 +164,8 @@ class ProposalEndEvent(TypedDict):
     """Per-component prompts sent to the reflection LM (component name → rendered prompt)."""
     raw_lm_outputs: dict[str, str]
     """Per-component raw LM outputs before extraction (component name → raw text)."""
+    metadata: NotRequired[dict[str, Any]]
+    """Strategy diagnostics, including ComBEE map/reduce details when available."""
 
 
 class CandidateAcceptedEvent(TypedDict):

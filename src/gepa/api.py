@@ -404,6 +404,9 @@ def optimize(
             # strategy that opts into SeedableReflectionLM. An explicit
             # strategy RNG remains the opt-in isolation mechanism.
             _bind_rng(rng)
+        _bind_logger = getattr(reflection_strategy, "bind_logger", None)
+        if callable(_bind_logger):
+            _bind_logger(logger)
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
