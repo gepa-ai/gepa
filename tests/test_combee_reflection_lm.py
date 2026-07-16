@@ -364,10 +364,9 @@ def test_e2e_optimize_anything_with_combee(tmp_path):
 
 
 def test_e2e_combee_with_pxn_sampling(tmp_path):
-    """ComBEE x PxNSampling: multi-task iterations route each task through
-    ComBEE's reflect() via the per-task fallback (ComBEE has no reflect_many),
-    so every attempted proposal costs exactly k+1 reflection calls, and each
-    proposal carries its own independent ComBEE diagnostics."""
+    """ComBEE x PxNSampling: multi-task iterations route through ComBEE's
+    two-wave ``reflect_many`` implementation, so every attempted proposal
+    costs exactly k+1 reflection calls and carries independent diagnostics."""
     from gepa.strategies.proposal_sampling import PxNSampling
 
     def run(seed, tag):
@@ -674,8 +673,9 @@ def test_empty_aggregation_template_is_rejected_not_defaulted():
 
 
 def test_bind_rng_makes_default_shuffles_seed_sensitive(tmp_path):
-    """With the default rng, gepa.optimize(seed=...) now varies ComBEE's
-    shuffle stream (via a derived, non-shared stream); same seed reproduces."""
+    """With the default RNG, ``gepa.optimize(seed=...)`` binds ComBEE to the
+    engine stream: changing the seed changes shuffles, while a fixed seed
+    reproduces them."""
 
     def run(seed, tag):
         lm = ScriptedLM(["improved"] * 40)
@@ -788,14 +788,13 @@ def test_optimize_anything_cost_cap_stops_on_strategy_cost(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Second review round: stream invariance, opt-out, cost transparency, protocol
+# Second review round: legacy stream compatibility, opt-out, retries, protocol
 # ---------------------------------------------------------------------------
 
 
-def test_strategy_binding_does_not_shift_engine_streams(tmp_path):
-    """Wiring a strategy (bind_rng or not) must not consume the engine RNG:
-    candidate/minibatch selection streams are identical with no strategy, with
-    ComBEE(default rng), and with ComBEE(explicit rng)."""
+def test_strategy_binding_preserves_legacy_shared_engine_stream(tmp_path):
+    """#307 shared ComBEE's RNG with GEPA. The default binding must retain
+    that behavior, while an explicit strategy RNG remains isolated."""
 
     def minibatch_stream(reflection_strategy, tag):
         sampled = []
@@ -830,8 +829,8 @@ def test_strategy_binding_does_not_shift_engine_streams(tmp_path):
         ComBEEReflectionLM(lambda p: "```\nLEVEL=1\n```", rng=random.Random(7)), "explicit"
     )
     assert base, "no minibatches sampled"
-    assert with_default == base, "default-rng strategy shifted the engine stream"
-    assert with_explicit == base, "explicit-rng strategy shifted the engine stream"
+    assert with_default != base, "default ComBEE must share and advance the engine RNG as #307 did"
+    assert with_explicit == base, "explicit-rng strategy must remain isolated from the engine stream"
 
 
 class OrderDependentLM:
@@ -853,17 +852,16 @@ class OrderDependentLM:
 
 
 def test_batch_reflection_false_enforces_sequential_ordering():
-    """The opt-out makes the ordering contract enforced: with
-    batch_reflection=False the engine dispatcher finds reflect_many=None and
-    runs strict per-proposal sequential reflection, so even an
-    order-DEPENDENT callable matches pure sequential reflect() calls."""
+    """The opt-out keeps a transactional reflect_many but executes every job
+    completely before moving to the next, matching direct sequential calls
+    even for an order-dependent callable."""
     jobs = [
         ({"comp": "I0"}, {"comp": RECORDS9}, ["comp"]),
         ({"comp": "I1"}, {"comp": RECORDS9}, ["comp"]),
     ]
 
     opted_out = ComBEEReflectionLM(OrderDependentLM(), rng=random.Random(3), batch_reflection=False)
-    assert opted_out.reflect_many is None  # dispatcher falls back to per-task reflect()
+    assert callable(opted_out.reflect_many)
 
     reference = ComBEEReflectionLM(OrderDependentLM(), rng=random.Random(3), batch_reflection=False)
     seq_results = []
@@ -871,12 +869,8 @@ def test_batch_reflection_false_enforces_sequential_ordering():
         prop, _ = reference.reflect(*job)
         seq_results.append(prop.new_texts)
 
-    # Simulate the dispatcher's fallback loop on the opted-out instance.
-    fallback_results = []
-    for job in jobs:
-        prop, _ = opted_out.reflect(*job)
-        fallback_results.append(prop.new_texts)
-    assert fallback_results == seq_results
+    ordered_results = [prop.new_texts for prop, _ in opted_out.reflect_many(jobs)]
+    assert ordered_results == seq_results
     # Default instances still batch.
     assert callable(ComBEEReflectionLM(lambda p: "x").reflect_many)
 
@@ -950,7 +944,7 @@ def test_bind_rng_true_attribute_does_not_crash_wiring(tmp_path):
         def reflect(self, candidate, reflective_dataset, components_to_update):
             from gepa.proposer.reflective_mutation.reflection_lm import ReflectionProposal
 
-            return ReflectionProposal(new_texts={c: "v" for c in components_to_update}), self
+            return ReflectionProposal(new_texts=dict.fromkeys(components_to_update, "v")), self
 
     result = gepa.optimize(
         seed_candidate={"system_prompt": "LEVEL=0"},
@@ -970,3 +964,138 @@ def test_seedable_protocol_conformance():
     from gepa.proposer.reflective_mutation.reflection_lm import SeedableReflectionLM
 
     assert isinstance(ComBEEReflectionLM(lambda p: "x"), SeedableReflectionLM)
+
+
+# ---------------------------------------------------------------------------
+# Third review round: retry identity and ordered PxN recovery
+# ---------------------------------------------------------------------------
+
+
+def test_direct_reflect_does_not_cache_completed_prompts():
+    """The public single-job method must issue a fresh completion on every
+    successful invocation, including when strict ordering is selected."""
+
+    class CountingLM:
+        def __init__(self):
+            self.calls = 0
+
+        def __call__(self, prompt):
+            self.calls += 1
+            return f"```\nreply-{self.calls}\n```"
+
+    lm = CountingLM()
+    combee = ComBEEReflectionLM(lm, batch_reflection=False)
+    job = ({"comp": "old"}, {"comp": [{"Feedback": "same"}]}, ["comp"])
+
+    first, _ = combee.reflect(*job)
+    second, _ = combee.reflect(*job)
+
+    assert first.new_texts == {"comp": "reply-1"}
+    assert second.new_texts == {"comp": "reply-2"}
+    assert lm.calls == 2
+
+
+def test_retry_does_not_conflate_identical_prompt_occurrences():
+    """Two equal prompts are still two calls. If the second one fails, retry
+    must reuse only the first logical occurrence, not its response for both."""
+
+    class FailSecondCallLM:
+        def __init__(self):
+            self.calls = 0
+            self.completions = 0
+
+        def __call__(self, prompt):
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("transient outage")
+            self.completions += 1
+            return f"```\nreply-{self.calls}\n```"
+
+    lm = FailSecondCallLM()
+    combee = ComBEEReflectionLM(lm)
+    job = ({"comp": "old"}, {"comp": [{"Feedback": "same"}]}, ["comp"])
+
+    with pytest.raises(RuntimeError):
+        combee.reflect_many([job, job])
+
+    first, _ = combee.reflect(*job)
+    second, _ = combee.reflect(*job)
+
+    assert first.new_texts == {"comp": "reply-1"}
+    assert second.new_texts == {"comp": "reply-3"}
+    assert lm.calls == 3
+    assert lm.completions == 2
+
+
+def test_direct_reflect_many_retry_reuses_completed_map_wave():
+    """The public reflect_many API itself must preserve paid map calls when a
+    reduce wave fails and the caller retries the same jobs."""
+
+    class FailFirstReduceLM:
+        def __init__(self):
+            self.completions = 0
+            self.batch_invocations = 0
+
+        def __call__(self, prompt):
+            self.completions += 1
+            return f"```\nR{hash(str(prompt)) % 99991}\n```"
+
+        def batch_complete(self, messages_list):
+            self.batch_invocations += 1
+            if self.batch_invocations == 2:
+                raise RuntimeError("transient reduce outage")
+            return [self(messages[0]["content"]) for messages in messages_list]
+
+    jobs = [
+        ({"comp": "X"}, {"comp": RECORDS9}, ["comp"]),
+        ({"comp": "Y"}, {"comp": RECORDS9}, ["comp"]),
+    ]
+    lm = FailFirstReduceLM()
+    combee = ComBEEReflectionLM(lm, rng=random.Random(5))
+
+    with pytest.raises(RuntimeError):
+        combee.reflect_many(jobs)
+    assert lm.completions == 6
+
+    combee.reflect_many(jobs)
+    assert lm.completions == 8
+
+
+def test_ordered_pxn_retry_is_cost_and_result_transparent():
+    """The strict-ordering mode is still a PxN transaction: a failure in a
+    later job must not rerun earlier completed jobs with a new shuffle."""
+
+    class ContentLM:
+        def __init__(self, fail_at=None):
+            self.fail_at = fail_at
+            self.calls = 0
+            self.completions = 0
+
+        def __call__(self, prompt):
+            self.calls += 1
+            if self.calls == self.fail_at:
+                raise RuntimeError("transient outage")
+            self.completions += 1
+            return f"```\nR{hash(str(prompt)) % 99991}\n```"
+
+    jobs = [
+        ({"comp": "X"}, {"comp": RECORDS9}, ["comp"]),
+        ({"comp": "Y"}, {"comp": RECORDS9}, ["comp"]),
+    ]
+    flaky_lm = ContentLM(fail_at=5)
+    flaky = ComBEEReflectionLM(flaky_lm, rng=random.Random(5), batch_reflection=False)
+
+    with pytest.raises(RuntimeError):
+        flaky.reflect_many(jobs)
+    retry = [flaky.reflect(*job)[0] for job in jobs]
+
+    clean_lm = ContentLM()
+    clean = ComBEEReflectionLM(clean_lm, rng=random.Random(5), batch_reflection=False)
+    clean_results = [proposal for proposal, _ in clean.reflect_many(jobs)]
+
+    assert flaky_lm.completions == 8
+    assert flaky_lm.calls == 9  # includes the one failed, unpaid invocation
+    assert clean_lm.completions == 8
+    for retry_proposal, clean_proposal in zip(retry, clean_results, strict=True):
+        assert retry_proposal.new_texts == clean_proposal.new_texts
+        assert retry_proposal.prompts == clean_proposal.prompts

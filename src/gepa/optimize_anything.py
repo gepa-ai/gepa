@@ -1626,8 +1626,10 @@ def optimize_anything(
     if config.reflection.reflection_strategy is not None:
         _bind_rng = getattr(config.reflection.reflection_strategy, "bind_rng", None)
         if callable(_bind_rng):
-            # Seed-value derivation; must not consume the engine RNG stream.
-            _bind_rng(random.Random(f"gepa-reflection-strategy:{config.engine.seed}"))
+            # Match gepa.optimize() and #307: strategy randomness shares the
+            # engine stream unless the strategy was constructed with an
+            # explicit RNG of its own.
+            _bind_rng(rng)
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=config.tracking.logger,

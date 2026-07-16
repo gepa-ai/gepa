@@ -89,20 +89,19 @@ ComBEEReflectionLM(
     reflection_prompt_template=None,   # Level-1 template: str, or dict per component
     aggregation_prompt_template=None,  # Level-2 template (must contain <curr_param> and <side_info>)
     duplication_factor=2,              # p — augmented-shuffle duplication (§3.2)
-    rng=random.Random(0),              # seeded shuffle for reproducible runs
+    rng=random.Random(0),              # optional independent shuffle stream
     logger=None,
     batch_reflection=True,             # False = strict sequential per-proposal ordering
 )
 ```
 
 !!! note "Seeding the shuffle"
-    By default ComBEE's shuffle stream is **derived from
-    `gepa.optimize(seed=...)`** at wiring time (via `bind_rng`), so varying
-    `seed` varies the shuffles and same-seed runs reproduce — while the stream
-    stays **independent** of the candidate-selector stream (the original #307
-    wiring shared one RNG between them, so shuffling and selection perturbed
-    each other). Passing an explicit `rng=random.Random(...)` overrides the
-    derivation and pins the shuffle stream regardless of `seed`.
+    By default GEPA binds ComBEE to the engine RNG. This preserves the
+    single-proposal behavior of [#307](https://github.com/gepa-ai/gepa/pull/307):
+    shuffles participate in the same random stream as candidate selection and
+    minibatch sampling. Same-seed runs therefore reproduce the legacy call and
+    shuffle sequence. Passing an explicit `rng=random.Random(...)` opts into an
+    independent, pinned shuffle stream instead.
 
 ## Cost and observability
 
@@ -122,11 +121,12 @@ and all Level-2 calls as a second (via the LM's `batch_complete` when
 available), while producing results identical to sequential per-proposal
 reflection — same prompts, same RNG stream, same metadata. This assumes the
 LM's calls are **exchangeable** (each reply depends only on its own prompt —
-the standard property of stateless completion APIs); for order-dependent
-callables, construct with `batch_reflection=False` to enforce strict
-sequential per-proposal ordering. Failed waves are failure-transparent: the
-RNG state is restored and already-completed calls are memoized, so the retry
-neither changes results nor re-purchases paid completions.
+the standard property of stateless completion APIs). For order-dependent
+callables, construct with `batch_reflection=False`; ComBEE then executes each
+job's complete map/reduce pass before starting the next one, while retaining
+the same retry boundary. Failed attempts restore the RNG state and memoize
+already-completed logical calls, so both direct `reflect_many` retries and the
+engine's per-job recovery path preserve results without repurchasing work.
 
 ## Credits
 

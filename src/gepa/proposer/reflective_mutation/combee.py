@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 from gepa.proposer.reflective_mutation.base import LanguageModel
@@ -65,6 +66,31 @@ Multiple parallel processes each independently proposed an updated instruction b
 Your task is to synthesize these proposed instruction updates into a single, comprehensive instruction. Incorporate the key improvements and specific insights from all proposals. When proposals offer complementary guidance, include all relevant details. When they conflict, prefer more specific and task-relevant guidance.
 
 Provide the final synthesized instruction within ``` blocks."""
+
+
+# One logical reflection-LM completion.  The prompt fingerprint guards the
+# retry cache against a caller reusing an occurrence id with different input.
+_CompletionId = tuple[int, int, str, int]
+
+
+@dataclass
+class _CachedCompletion:
+    prompt_fingerprint: str
+    raw_output: str
+
+
+@dataclass
+class _ReflectionAttempt:
+    """State kept only while retrying one ``reflect_many`` invocation.
+
+    ``reflect_many`` plans calls in map/reduce wave order, while the engine's
+    failure fallback calls ``reflect`` in job order.  Completion ids therefore
+    name a logical call occurrence instead of using prompt text as identity.
+    """
+
+    num_jobs: int
+    completions: dict[_CompletionId, _CachedCompletion] = field(default_factory=dict)
+    next_fallback_job_idx: int = 0
 
 
 class ComBEEReflectionLM:
@@ -88,15 +114,19 @@ class ComBEEReflectionLM:
             :data:`DEFAULT_AGGREGATION_PROMPT_TEMPLATE`.
         duplication_factor: ``p`` — how many times each record is duplicated
             before shuffling (§3.2). Default 2.
-        rng: Seeded RNG for the augmented shuffle (default ``Random(0)``), so
-            runs are reproducible.
+        rng: RNG for the augmented shuffle. When omitted, GEPA binds the
+            engine RNG so the single-proposal path reproduces #307 exactly.
+            Pass an explicit RNG to keep ComBEE independent of engine sampling.
         logger: Optional logger with a ``log(str)`` method.
         batch_reflection: When True (default), multi-proposal iterations batch
             all Level-1 calls into one wave and all Level-2 calls into a
             second (assumes exchangeable LM calls — replies depending only on
             their own prompt, the standard property of stateless completion
             APIs). Set False to enforce strict sequential per-proposal
-            ordering (#307-identical), e.g. for order-dependent callables.
+            ordering, e.g. for order-dependent callables. The strategy still
+            implements ``reflect_many`` in this mode so retries remain
+            transactional; it simply issues every job's map/reduce calls in
+            sequential order.
     """
 
     def __init__(
@@ -129,19 +159,11 @@ class ComBEEReflectionLM:
         self.duplication_factor = duplication_factor
         self._rng_explicit = rng is not None
         self._rng = rng if rng is not None else random.Random(0)
-        # Completion memo for failure transparency: populated while a
-        # reflect_many attempt runs, consulted by every LM call (including the
-        # engine's per-task retry path through reflect()), cleared at the
-        # start and successful end of each reflect_many. A failed wave never
-        # forces already-paid completions to be re-purchased.
-        self._completion_memo: dict[str, str] = {}
-        if not batch_reflection:
-            # Opting out makes the sequential-ordering contract ENFORCED, not
-            # documented: the engine's dispatcher sees reflect_many as None and
-            # runs one reflect() per proposal in task order (matching #307's
-            # exact call ordering). Use when the underlying callable is
-            # order-dependent (e.g. session-accumulating wrappers).
-            self.reflect_many = None  # type: ignore[assignment]
+        self._batch_reflection = batch_reflection
+        # This is intentionally absent outside a reflect_many attempt. Normal
+        # reflect() calls must never turn into a cross-iteration response cache.
+        self._attempt: _ReflectionAttempt | None = None
+        self._active_job_idx: int | None = None
         self.logger = logger
         self._missing_template_warnings: set[str] = set()
 
@@ -166,12 +188,12 @@ class ComBEEReflectionLM:
         return getattr(self.lm, "total_tokens_out", 0)
 
     def bind_rng(self, rng: random.Random) -> None:
-        """GEPA's wiring calls this with a stream derived from
-        ``gepa.optimize(seed=...)`` when the user did not pass an explicit
-        ``rng`` — making shuffles seed-sensitive by default while staying
-        independent of the candidate-selector stream (unlike #307's shared
-        RNG, where shuffles and selection perturbed each other). An explicit
-        user-provided ``rng`` always wins."""
+        """Bind GEPA's run RNG unless the user supplied one explicitly.
+
+        Sharing the engine stream preserves the #307 call and shuffle sequence
+        in the legacy single-proposal path. An explicit RNG remains the opt-in
+        isolation mechanism for callers that prefer independent streams.
+        """
         if not self._rng_explicit:
             self._rng = rng
 
@@ -188,39 +210,64 @@ class ComBEEReflectionLM:
             return template
         return self.reflection_prompt_template
 
-    def _memo_key(self, prompt: Any) -> str:
-        return prompt if isinstance(prompt, str) else str(prompt)
+    @staticmethod
+    def _prompt_fingerprint(prompt: Any) -> str:
+        return prompt if isinstance(prompt, str) else repr(prompt)
 
-    def _complete_one(self, prompt: Any) -> str:
-        """One completion, via the failure-transparency memo (see ctor)."""
-        key = self._memo_key(prompt)
-        cached = self._completion_memo.get(key)
+    @staticmethod
+    def _completion_id(job_idx: int | None, component_idx: int, phase: str, call_idx: int) -> _CompletionId | None:
+        if job_idx is None:
+            return None
+        return job_idx, component_idx, phase, call_idx
+
+    def _cached_completion(self, completion_id: _CompletionId | None, prompt: Any) -> str | None:
+        if self._attempt is None or completion_id is None:
+            return None
+        cached = self._attempt.completions.get(completion_id)
+        if cached is not None and cached.prompt_fingerprint == self._prompt_fingerprint(prompt):
+            return cached.raw_output
+        return None
+
+    def _remember_completion(self, completion_id: _CompletionId | None, prompt: Any, raw_output: str) -> None:
+        if self._attempt is not None and completion_id is not None:
+            self._attempt.completions[completion_id] = _CachedCompletion(
+                prompt_fingerprint=self._prompt_fingerprint(prompt), raw_output=raw_output
+            )
+
+    def _complete_one(self, prompt: Any, completion_id: _CompletionId | None = None) -> str:
+        """Issue one completion, reusing only its exact failed-attempt slot."""
+        cached = self._cached_completion(completion_id, prompt)
         if cached is not None:
             return cached
         raw = self.lm(prompt).strip()
-        self._completion_memo[key] = raw
+        self._remember_completion(completion_id, prompt, raw)
         return raw
 
     def _call_signature(
-        self, current_instruction: str, dataset_with_feedback: Any, prompt_template: str | None
+        self,
+        current_instruction: str,
+        dataset_with_feedback: Any,
+        prompt_template: str | None,
+        completion_id: _CompletionId | None = None,
     ) -> tuple[str, str | list[dict[str, Any]], str]:
         # Equivalent to InstructionProposalSignature.run_with_metadata (render
         # -> complete -> strip -> extract), routed through the completion memo.
         prompt, _messages = self._render_prompt(current_instruction, dataset_with_feedback, prompt_template)
-        raw_output = self._complete_one(prompt)
+        raw_output = self._complete_one(prompt, completion_id)
         result = InstructionProposalSignature.output_extractor(raw_output)
         return result["new_instruction"], prompt, raw_output
 
-    def reflect(
+    def _reflect(
         self,
         candidate: dict[str, str],
         reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
         components_to_update: list[str],
+        job_idx: int | None,
     ) -> tuple[ReflectionProposal, ComBEEReflectionLM]:
         proposal = ReflectionProposal(new_texts={}, prompts={}, raw_lm_outputs={}, metadata={})
         total_lm_calls = 0
 
-        for comp in components_to_update:
+        for component_idx, comp in enumerate(components_to_update):
             if comp not in reflective_dataset or not reflective_dataset.get(comp):
                 self._log(f"Component '{comp}' is not in reflective dataset. Skipping.")
                 continue
@@ -241,7 +288,12 @@ class ComBEEReflectionLM:
                     "falling back to standard single-call reflection. Raise "
                     "reflection_minibatch_size to >= 4 to activate ComBEE aggregation."
                 )
-                new_text, lm_prompt, raw_output = self._call_signature(candidate[comp], records, level1_template)
+                new_text, lm_prompt, raw_output = self._call_signature(
+                    candidate[comp],
+                    records,
+                    level1_template,
+                    self._completion_id(job_idx, component_idx, "fallback", 0),
+                )
                 proposal.new_texts[comp] = new_text
                 proposal.prompts[comp] = lm_prompt
                 proposal.raw_lm_outputs[comp] = raw_output
@@ -272,7 +324,10 @@ class ComBEEReflectionLM:
                 if not group_records:
                     continue
                 new_text, lm_prompt, raw_output = self._call_signature(
-                    candidate[comp], group_records, level1_template
+                    candidate[comp],
+                    group_records,
+                    level1_template,
+                    self._completion_id(job_idx, component_idx, "map", i),
                 )
                 group_proposals.append(new_text)
                 level1_prompts.append(lm_prompt)
@@ -305,11 +360,12 @@ class ComBEEReflectionLM:
             # --- Level-2 (Reduce): aggregate the k proposals into one instruction.
             # Each proposal is a single-field record so it renders cleanly in the
             # aggregation prompt's <side_info> block.
-            agg_records: list[Mapping[str, Any]] = [
-                {"Proposed Instruction Update": prop} for prop in group_proposals
-            ]
+            agg_records: list[Mapping[str, Any]] = [{"Proposed Instruction Update": prop} for prop in group_proposals]
             final_text, agg_prompt, agg_output = self._call_signature(
-                candidate[comp], agg_records, self.aggregation_prompt_template
+                candidate[comp],
+                agg_records,
+                self.aggregation_prompt_template,
+                self._completion_id(job_idx, component_idx, "reduce", 0),
             )
             total_lm_calls += 1
             proposal.new_texts[comp] = final_text
@@ -322,6 +378,38 @@ class ComBEEReflectionLM:
         # Stateless across proposals: the RNG advances, but no reflection
         # context is carried, so this object is its own successor.
         return proposal, self
+
+    def reflect(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
+        components_to_update: list[str],
+    ) -> tuple[ReflectionProposal, ComBEEReflectionLM]:
+        """Reflect one job.
+
+        Outside a failed ``reflect_many`` attempt this is a plain, uncached
+        call. During the engine's per-job recovery path it replays the matching
+        logical call slots, so completed work is reused without treating equal
+        prompts from different jobs as the same completion.
+        """
+        if self._active_job_idx is not None:
+            return self._reflect(candidate, reflective_dataset, components_to_update, self._active_job_idx)
+        if self._attempt is None:
+            return self._reflect(candidate, reflective_dataset, components_to_update, None)
+
+        attempt = self._attempt
+        job_idx = attempt.next_fallback_job_idx
+        self._active_job_idx = job_idx
+        try:
+            return self._reflect(candidate, reflective_dataset, components_to_update, job_idx)
+        finally:
+            self._active_job_idx = None
+            # _propose_texts_batch_safe tries every job even when one fails, so
+            # consume this slot on both success and failure.
+            if self._attempt is attempt:
+                attempt.next_fallback_job_idx += 1
+                if attempt.next_fallback_job_idx >= attempt.num_jobs:
+                    self._attempt = None
 
     # ------------------------------------------------------------------
     # Batched form (BatchReflectionLM): two waves across all jobs
@@ -340,62 +428,75 @@ class ComBEEReflectionLM:
         messages = [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
         return prompt, messages
 
-    def _batch_complete(self, prompts: list[Any], messages_list: list[list[dict[str, Any]]]) -> list[str]:
-        """Issue completions, batched when the LM supports it, through the
-        failure-transparency memo: already-paid completions (from a prior
-        failed attempt of the same iteration) are reused, and only misses are
-        sent. The sequential fallback memoizes incrementally, so a mid-wave
-        failure preserves every completed call for the retry."""
+    def _batch_complete(
+        self,
+        prompts: list[Any],
+        messages_list: list[list[dict[str, Any]]],
+        completion_ids: list[_CompletionId],
+    ) -> list[str]:
+        """Issue one wave and reuse only exact completed retry slots."""
         if not prompts:
             return []
-        keys = [self._memo_key(p) for p in prompts]
-        miss_idx = [i for i, k in enumerate(keys) if k not in self._completion_memo]
+        if not (len(prompts) == len(messages_list) == len(completion_ids)):
+            raise ValueError("prompts, messages_list, and completion_ids must have the same length")
+
+        cached_outputs = [
+            self._cached_completion(completion_id, prompt)
+            for completion_id, prompt in zip(completion_ids, prompts, strict=True)
+        ]
+        miss_idx = [i for i, cached in enumerate(cached_outputs) if cached is None]
         if miss_idx:
             batch_complete = getattr(self.lm, "batch_complete", None)
             if batch_complete is not None and len(miss_idx) > 1:
                 fresh = list(batch_complete([messages_list[i] for i in miss_idx]))
                 for i, raw in zip(miss_idx, fresh, strict=True):
-                    self._completion_memo[keys[i]] = raw.strip()
+                    raw = raw.strip()
+                    self._remember_completion(completion_ids[i], prompts[i], raw)
+                    cached_outputs[i] = raw
             else:
                 for i in miss_idx:
-                    self._completion_memo[keys[i]] = self.lm(prompts[i]).strip()
-        return [self._completion_memo[k] for k in keys]
+                    raw = self.lm(prompts[i]).strip()
+                    self._remember_completion(completion_ids[i], prompts[i], raw)
+                    cached_outputs[i] = raw
+        if any(raw is None for raw in cached_outputs):
+            raise RuntimeError("completion cache was not populated for every requested call")
+        return [raw if raw is not None else "" for raw in cached_outputs]
 
     def reflect_many(self, jobs: list[ReflectionJob]) -> list[tuple[ReflectionProposal, ComBEEReflectionLM]]:
-        """Vectorized :meth:`reflect`: all jobs' ComBEE passes in two batched waves.
+        """Reflect all jobs as one failure-atomic attempt.
 
-        Wave 1 batches every Level-1 (map) call and every degenerate-fallback
-        call across all jobs/components into one completion round; Wave 2
-        batches every Level-2 (reduce) call into a second round. Prompts and
-        the RNG stream are identical to sequential :meth:`reflect` calls in job
-        order (shuffles happen at plan time, in job/component order), and
-        proposals are finalized in plan order (so repeated component names
-        overwrite exactly as they would sequentially); only the global call
-        ORDER differs. Contract: the underlying LM's calls are assumed
-        exchangeable — each reply depends only on its own prompt, the standard
-        property of stateless completion APIs. Order-dependent callables
-        (e.g. session-accumulating wrappers) are outside ComBEE's contract;
-        it declares itself stateless by returning ``self`` as successor. Cost per
-        component is unchanged: k map calls + 1 reduce.
+        With ``batch_reflection=True``, map calls form one wave and reduce calls
+        form another. With ``False``, each job's full map/reduce pass completes
+        before the next one starts, matching #307 call order. Both forms retain
+        a logical-call retry cache and restore the shuffle stream on failure.
         """
-        # Failure transparency, two halves: (1) snapshot/restore the RNG so a
-        # failed round's retry replays the same shuffle stream — bit-identical
-        # results; (2) the completion memo (fresh per iteration, kept across a
-        # failure) so the retry reuses every already-paid completion — no
-        # double spend. Cleared again on success to bound memory.
-        self._completion_memo.clear()
+        if self._attempt is None or self._attempt.num_jobs != len(jobs):
+            self._attempt = _ReflectionAttempt(num_jobs=len(jobs))
         rng_state = self._rng.getstate()
         try:
-            results = self._reflect_many_inner(jobs)
+            results = self._reflect_many_inner(jobs) if self._batch_reflection else self._reflect_many_sequential(jobs)
         except Exception:
             self._rng.setstate(rng_state)
+            assert self._attempt is not None
+            self._attempt.next_fallback_job_idx = 0
             raise
-        self._completion_memo.clear()
+        self._attempt = None
         return results
 
-    def _reflect_many_inner(
+    def _reflect_many_sequential(
         self, jobs: list[ReflectionJob]
     ) -> list[tuple[ReflectionProposal, ComBEEReflectionLM]]:
+        """Strict #307 ordering, wrapped in the same retry transaction."""
+        results: list[tuple[ReflectionProposal, ComBEEReflectionLM]] = []
+        for job_idx, (candidate, reflective_dataset, components_to_update) in enumerate(jobs):
+            self._active_job_idx = job_idx
+            try:
+                results.append(self._reflect(candidate, reflective_dataset, components_to_update, job_idx))
+            finally:
+                self._active_job_idx = None
+        return results
+
+    def _reflect_many_inner(self, jobs: list[ReflectionJob]) -> list[tuple[ReflectionProposal, ComBEEReflectionLM]]:
         proposals = [ReflectionProposal(new_texts={}, prompts={}, raw_lm_outputs={}, metadata={}) for _ in jobs]
         job_call_totals = [0] * len(jobs)
 
@@ -403,10 +504,10 @@ class ComBEEReflectionLM:
         # One plan object per (job, component) OCCURRENCE, in plan order; wave
         # entries reference their plan directly, so duplicates never merge.
         plans: list[dict[str, Any]] = []
-        wave1: list[tuple[dict[str, Any], Any, list[dict[str, Any]]]] = []
+        wave1: list[tuple[dict[str, Any], Any, list[dict[str, Any]], _CompletionId]] = []
 
         for job_idx, (candidate, reflective_dataset, components_to_update) in enumerate(jobs):
-            for comp in components_to_update:
+            for component_idx, comp in enumerate(components_to_update):
                 if comp not in reflective_dataset or not reflective_dataset.get(comp):
                     self._log(f"Component '{comp}' is not in reflective dataset. Skipping.")
                     continue
@@ -421,6 +522,7 @@ class ComBEEReflectionLM:
 
                 plan: dict[str, Any] = {
                     "job_idx": job_idx,
+                    "component_idx": component_idx,
                     "comp": comp,
                     "k": k,
                     "level1_prompts": [],
@@ -438,7 +540,9 @@ class ComBEEReflectionLM:
                     )
                     plan["mode"] = "fallback_single_call"
                     prompt, messages = self._render_prompt(candidate[comp], records, level1_template)
-                    wave1.append((plan, prompt, messages))
+                    completion_id = self._completion_id(job_idx, component_idx, "fallback", 0)
+                    assert completion_id is not None
+                    wave1.append((plan, prompt, messages, completion_id))
                     continue
 
                 plan["mode"] = "map_reduce"
@@ -457,11 +561,13 @@ class ComBEEReflectionLM:
                     if not group_records:
                         continue
                     prompt, messages = self._render_prompt(candidate[comp], group_records, level1_template)
-                    wave1.append((plan, prompt, messages))
+                    completion_id = self._completion_id(job_idx, component_idx, "map", i)
+                    assert completion_id is not None
+                    wave1.append((plan, prompt, messages, completion_id))
 
         # --- Wave 1: all map + fallback calls, one batched round ---
-        wave1_outputs = self._batch_complete([e[1] for e in wave1], [e[2] for e in wave1])
-        for (plan, prompt, _messages), raw in zip(wave1, wave1_outputs, strict=True):
+        wave1_outputs = self._batch_complete([e[1] for e in wave1], [e[2] for e in wave1], [e[3] for e in wave1])
+        for (plan, prompt, _messages, _completion_id), raw in zip(wave1, wave1_outputs, strict=True):
             raw = raw.strip()
             new_instruction = InstructionProposalSignature.output_extractor(raw)["new_instruction"]
             job_call_totals[plan["job_idx"]] += 1
@@ -470,7 +576,7 @@ class ComBEEReflectionLM:
             plan["level1_outputs"].append(raw)
 
         # --- Between waves: plan reduces for map_reduce components ---
-        wave2: list[tuple[dict[str, Any], Any, list[dict[str, Any]]]] = []
+        wave2: list[tuple[dict[str, Any], Any, list[dict[str, Any]], _CompletionId]] = []
         for plan in plans:
             if plan["mode"] != "map_reduce" or len(plan["group_proposals"]) < 2:
                 continue
@@ -480,11 +586,13 @@ class ComBEEReflectionLM:
             prompt, messages = self._render_prompt(
                 plan["candidate_text"], agg_records, self.aggregation_prompt_template
             )
-            wave2.append((plan, prompt, messages))
+            completion_id = self._completion_id(plan["job_idx"], plan["component_idx"], "reduce", 0)
+            assert completion_id is not None
+            wave2.append((plan, prompt, messages, completion_id))
 
         # --- Wave 2: all reduce calls, one batched round ---
-        wave2_outputs = self._batch_complete([e[1] for e in wave2], [e[2] for e in wave2])
-        for (plan, prompt, _messages), raw in zip(wave2, wave2_outputs, strict=True):
+        wave2_outputs = self._batch_complete([e[1] for e in wave2], [e[2] for e in wave2], [e[3] for e in wave2])
+        for (plan, prompt, _messages, _completion_id), raw in zip(wave2, wave2_outputs, strict=True):
             raw = raw.strip()
             plan["reduce_prompt"] = prompt
             plan["reduce_output"] = raw

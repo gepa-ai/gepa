@@ -84,10 +84,10 @@ class SeedableReflectionLM(ReflectionLM, Protocol):
     """A :class:`ReflectionLM` whose internal randomness can be bound to GEPA's run seed.
 
     When a reflection strategy defines ``bind_rng``, GEPA's front doors call it
-    at wiring time with a stream **derived from** ``gepa.optimize(seed=...)``
-    (never the engine's own RNG object, so strategy randomness cannot perturb
-    candidate/minibatch selection). Implementations should treat it as a
-    default: a user-supplied explicit RNG must win over the bound one.
+    at wiring time with the engine's seeded RNG. Implementations should treat
+    it as a default: a user-supplied explicit RNG must win over the bound one.
+    Sharing the stream preserves legacy strategies such as #307 ComBEE, whose
+    shuffles intentionally participate in subsequent engine sampling.
     """
 
     def bind_rng(self, rng: Any) -> None: ...

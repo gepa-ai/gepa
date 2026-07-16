@@ -400,11 +400,10 @@ def optimize(
     if reflection_strategy is not None:
         _bind_rng = getattr(reflection_strategy, "bind_rng", None)
         if callable(_bind_rng):
-            # Derived from the seed VALUE (string seeding is stable across
-            # runs), never from the engine RNG object: binding a strategy must
-            # not consume — and therefore cannot shift — the candidate-selector
-            # or minibatch-sampler streams. See SeedableReflectionLM.
-            _bind_rng(random.Random(f"gepa-reflection-strategy:{seed}"))
+            # Preserve #307's shared-stream semantics for ComBEE and any other
+            # strategy that opts into SeedableReflectionLM. An explicit
+            # strategy RNG remains the opt-in isolation mechanism.
+            _bind_rng(rng)
 
     reflective_proposer = ReflectiveMutationProposer(
         logger=logger,
