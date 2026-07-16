@@ -13,6 +13,7 @@ The primary proposer that uses LLM-based reflection to improve candidates based 
 A proposer that combines successful candidates from the Pareto frontier.
 
 - [`MergeProposer`](MergeProposer.md) - Merge-based candidate proposer
+- [`CrossoverProposer`](CrossoverProposer.md) - LLM-synthesized recombination of two complementary Pareto candidates
 
 ## Base Classes and Protocols
 

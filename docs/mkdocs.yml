@@ -85,6 +85,9 @@ nav:
             - MergeAttemptedEvent: api/callbacks/MergeAttemptedEvent.md
             - MergeAcceptedEvent: api/callbacks/MergeAcceptedEvent.md
             - MergeRejectedEvent: api/callbacks/MergeRejectedEvent.md
+            - CrossoverAttemptedEvent: api/callbacks/CrossoverAttemptedEvent.md
+            - CrossoverAcceptedEvent: api/callbacks/CrossoverAcceptedEvent.md
+            - CrossoverRejectedEvent: api/callbacks/CrossoverRejectedEvent.md
             - BudgetUpdatedEvent: api/callbacks/BudgetUpdatedEvent.md
             - ErrorEvent: api/callbacks/ErrorEvent.md
             - StateSavedEvent: api/callbacks/StateSavedEvent.md
@@ -112,6 +115,7 @@ nav:
             - ProposeNewCandidate: api/proposers/ProposeNewCandidate.md
             - ReflectiveMutationProposer: api/proposers/ReflectiveMutationProposer.md
             - MergeProposer: api/proposers/MergeProposer.md
+            - CrossoverProposer: api/proposers/CrossoverProposer.md
             - Signature: api/proposers/Signature.md
             - LanguageModel: api/proposers/LanguageModel.md
         - Logging:
