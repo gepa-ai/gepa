@@ -8,7 +8,7 @@ Callbacks are synchronous, observational (cannot modify state), and receive
 full GEPAState access for maximum flexibility.
 
 Each callback receives a single event TypedDict containing all parameters.
-This allows easy extension via NotRequired fields without breaking changes.
+This allows easy extension with optional fields without breaking changes.
 
 Example usage:
 
@@ -45,7 +45,8 @@ logger = logging.getLogger(__name__)
 # Event TypedDicts
 # =============================================================================
 # Each callback receives a single event object containing all parameters.
-# Use NotRequired for optional fields when extending in the future.
+# Add optional fields via a `total=False` base TypedDict (see ProposalEndEvent) —
+# not `typing_extensions.NotRequired`, which the dependency-free core cannot import.
 
 
 class OptimizationStartEvent(TypedDict):
@@ -153,7 +154,18 @@ class ProposalStartEvent(TypedDict):
     reflective_dataset: dict[str, list[dict[str, Any]]]
 
 
-class ProposalEndEvent(TypedDict):
+class _ProposalEndEventOptional(TypedDict, total=False):
+    """Optional keys of :class:`ProposalEndEvent`.
+
+    A separate ``total=False`` base class instead of ``NotRequired`` so the
+    dependency-free core does not need ``typing_extensions`` on Python 3.10.
+    """
+
+    metadata: dict[str, Any]
+    """Strategy diagnostics, including ComBEE map/reduce details when available."""
+
+
+class ProposalEndEvent(_ProposalEndEventOptional):
     """Event for on_proposal_end callback."""
 
     iteration: int

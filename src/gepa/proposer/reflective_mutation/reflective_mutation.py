@@ -101,9 +101,7 @@ class ReflectiveMutationProposer:
             adapter.propose_new_texts is not None or custom_candidate_proposer is not None
         ):
             owner = (
-                "adapter.propose_new_texts"
-                if adapter.propose_new_texts is not None
-                else "custom_candidate_proposer"
+                "adapter.propose_new_texts" if adapter.propose_new_texts is not None else "custom_candidate_proposer"
             )
             raise ValueError(
                 f"reflection_strategy was provided, but {owner} owns proposal generation "
@@ -115,6 +113,10 @@ class ReflectiveMutationProposer:
         # implementation, e.g. session-based or ComBEE-style aggregating
         # reflectors (#329 Phase 2/3) — takes precedence over the stateless
         # default built from the raw reflection_lm callable.
+        if reflection_strategy is not None:
+            _bind_template = getattr(reflection_strategy, "bind_reflection_prompt_template", None)
+            if callable(_bind_template):
+                _bind_template(reflection_prompt_template)
         self._reflection_lm: ReflectionLM | None = reflection_strategy or (
             StatelessReflectionLM(reflection_lm, reflection_prompt_template, logger)
             if reflection_lm is not None
@@ -179,13 +181,18 @@ class ReflectiveMutationProposer:
         ):
             return [self.propose_new_texts(cand, refds, comps) for cand, refds, comps in jobs]
 
+        # SingleMutationSampling is #307's original execution path. Going
+        # through reflect_many([job]) lets a batch-capable LM change its call
+        # transport (and potentially its result) despite there being no PxN
+        # parallelism to exploit.
+        if len(jobs) == 1:
+            return [self.propose_new_texts(*jobs[0])]
+
         reflect_many = getattr(self._reflection_lm, "reflect_many", None)
         if reflect_many is not None:
             results = list(reflect_many(jobs))
             if len(results) != len(jobs):
-                raise ValueError(
-                    f"ReflectionLM.reflect_many returned {len(results)} results for {len(jobs)} jobs"
-                )
+                raise ValueError(f"ReflectionLM.reflect_many returned {len(results)} results for {len(jobs)} jobs")
         else:
             results = []
             for cand, refds, comps in jobs:
@@ -215,7 +222,9 @@ class ReflectiveMutationProposer:
         except Exception as e:
             self.logger.log(f"Batched reflection failed ({e}); retrying per task.")
             self.logger.log(traceback.format_exc())
-            out: list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str], dict[str, Any]] | None] = []
+            out: list[
+                tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str], dict[str, Any]] | None
+            ] = []
             for cand, refds, comps in jobs:
                 try:
                     out.append(self.propose_new_texts(cand, refds, comps))
@@ -475,22 +484,9 @@ class ReflectiveMutationProposer:
                 # would be byte-identical to its parent: don't burn minibatch
                 # metric calls evaluating it or emit proposal/rejection events
                 # for a proposal that never happened.
-                self.logger.log(
-                    f"Iteration {i}: Reflection returned no text updates; skipping proposal for this task."
-                )
+                self.logger.log(f"Iteration {i}: Reflection returned no text updates; skipping proposal for this task.")
                 children.append(None)
                 continue
-
-            notify_callbacks(
-                self.callbacks,
-                "on_proposal_end",
-                ProposalEndEvent(
-                    iteration=i,
-                    new_instructions=new_texts,
-                    prompts=prompts,
-                    raw_lm_outputs=raw_outputs,
-                ),
-            )
 
             _lm_metadata: dict[str, Any] = {}
             # Stable per-proposal identifier (iteration-taskindex): downstream
@@ -513,6 +509,18 @@ class ReflectiveMutationProposer:
 
             for pname, text in new_texts.items():
                 self.logger.log(f"Iteration {i}: Proposed new text for {pname}: {text}")
+
+            notify_callbacks(
+                self.callbacks,
+                "on_proposal_end",
+                ProposalEndEvent(
+                    iteration=i,
+                    new_instructions=new_texts,
+                    prompts=prompts,
+                    raw_lm_outputs=raw_outputs,
+                    metadata=dict(_lm_metadata),
+                ),
+            )
 
             new_candidate = task.parent_candidate.copy()
             for name, text in new_texts.items():

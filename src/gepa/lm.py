@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -242,13 +242,13 @@ class TrackingLM:
         # silently downgraded to the per-task path by this wrapper.
         if name == "batch_complete":
             inner = getattr(self._fn, "batch_complete", None)
-            if inner is None:
+            if not callable(inner):
                 raise AttributeError(name)
 
             def tracked_batch_complete(messages_list):
                 for messages in messages_list:
                     self._total_tokens_in += self._estimate_tokens(str(messages))
-                results = list(inner(messages_list))
+                results = list(cast(Any, inner)(messages_list))
                 for result in results:
                     if isinstance(result, str):
                         self._total_tokens_out += self._estimate_tokens(result)
