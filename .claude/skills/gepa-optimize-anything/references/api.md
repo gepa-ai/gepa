@@ -19,8 +19,8 @@ result = optimize_anything(
 ) -> Result
 ```
 Examples in `dataset`/`valset`/`test_set` are opaque — any object your `evaluator` understands.
-`seed_candidate` may be a `str` **or a `dict[str, str]`** of named components to optimize jointly
-(the evaluator then receives the dict).
+`seed_candidate` is a **single string** at this API (multi-component `dict[str, str]` candidates
+exist only in the lower-level `gepa.gepa_launcher.optimize_anything`).
 
 ### The three optimization modes (set by `dataset` / `valset`)
 | mode | pass | evaluator called | use when |
@@ -29,84 +29,157 @@ Examples in `dataset`/`valset`/`test_set` are opaque — any object your `evalua
 | **Multi-task** | `dataset=<list>, valset=None` | `evaluator(candidate, example)` | one shared candidate must do well across a batch of related problems; insight transfers across them. |
 | **Generalization** | `dataset=<list>, valset=<list>` | `evaluator(candidate, example)` | the candidate must transfer to **unseen** problems: optimize on `dataset`, select on `valset`. |
 
+*Note on `valset`:* held-out selection is currently implemented only by the gepa backend (GEPA is
+designed around this mode — `valset` selection plus a Pareto frontier over val instances). The
+other backends fold `valset` into the pool the eval server exposes (`train_set + val_set` merged),
+so they optimize over the combined set with no separate selection split — they may still produce
+candidates that generalize.
+
 **`test_set` is reporting-only and orthogonal to the mode.** Only `dataset` and `valset` affect
-optimization (search and selection). If you pass `test_set`, GEPA scores the **seed** and the **final
-chosen candidate** on it *after* optimization and reports them in `result.metadata` — it never enters
-the search, selection, or budget. Use it when you want an unbiased number to report; skip it otherwise.
+optimization (search and selection). If you pass `test_set`, the seed and the final chosen candidate
+are scored on it *after* optimization, outside the budget, and reported in `result.metadata`. The
+test set never enters the eval server's HTTP surface, so agentic backends cannot see it. Use it when
+you want an unbiased number to report; skip it otherwise.
 
 ## `OptimizeAnythingConfig` (top-level fields)
-| field | meaning |
-|---|---|
-| `engine` | `"gepa"` (default) / `"best_of_n"` / `"autoresearch"` / `"meta_harness"`, or a constructed `Engine`. |
-| `name` | run id (logging + default output dir). Auto-generated if `None`. |
-| `max_evals` | server-side cap on eval calls. `None` = unlimited. |
-| `max_token_cost` | USD cap on the engine's **own** optimizer-LLM spend (reflection/agent). Enforced by the engine, not the server. |
-| `max_concurrency` | eval-server thread-pool size. |
-| `output_dir` | where the server writes per-eval JSON, `progress_log.jsonl`, `summary.json`. |
-| `tracker` | optional **thin** experiment tracker (see `tracking.md`) — NOT GEPA's native wandb. |
-| `run_dir` | engine workspace (`iterations/`, `pareto/`, agent state). Distinct from `output_dir`. |
-| `stop_at_score` | early-stop score threshold. |
-| `effort` | `claude --effort low|medium|high|max` for Claude-backed engines/proposers. |
-| `max_thinking_tokens` | fixed thinking-token budget for the proposer LM. |
-| `sandbox` | wrap subprocess engines in bwrap (Linux). Default `False`. |
-| `engine_config` | dict of **engine-specific** options (see below). Unknown keys are warn-and-dropped. |
+| field | default | meaning |
+|---|---|---|
+| `engine` | `"gepa"` | `"gepa"` / `"autoresearch"` / `"meta_harness"` (or `"best_of_n"`, a baseline), or a constructed `Engine` instance (custom engines can be added via `gepa.oa.registry.register_engine`). |
+| `name` | `None` | run id (logging + default output dir). Auto-generated (`<engine>-<uuid>-<timestamp>`) if `None`. |
+| `max_evals` | **`100`** | server-side cap on eval calls. `None` = unlimited. Size it — the default is rarely right (see SKILL.md). |
+| `max_token_cost` | `None` | USD cap on the engine's **own** optimizer-LLM spend (reflection/agent). Enforced by the engine (gepa: `max_reflection_cost` stopper; agent engines: `--max-budget-usd`), not the eval server. |
+| `max_concurrency` | `8` | eval-server thread-pool size. |
+| `output_dir` | `None` | where the eval server writes per-eval JSON, `progress_log.jsonl`, `summary.json`. `None` → `outputs/optimize_anything/<task>/<engine>/<timestamp>/`. |
+| `run_dir` | `None` | engine workspace (gepa run dir / agent work dir; with `engine.write_agent_state=True` the gepa backend writes an agent-readable `iterations/` + `pareto/` tree here). Distinct from `output_dir`. `None` → subprocess engines use a tempdir; set it to persist artifacts. |
+| `stop_at_score` | `None` | early-stop score threshold; each engine interprets it. |
+| `sandbox` | `False` | wrap subprocess engines in bwrap (Linux). |
+| `engine_config` | `{}` | dict of **engine-specific** options — see the per-backend sections below. Parsed into a typed per-engine config dataclass; **an unknown key raises `TypeError` immediately** (fail fast, not warn-and-drop). |
 
-**At least one of `max_evals` / `max_token_cost` must be set**, else the run is unbounded (only a
-`warnings.warn`).
+**If both `max_evals` and `max_token_cost` are `None`, the run is unbounded** (only a
+`warnings.warn`). Note the former fields `tracker`, `effort`, and `max_thinking_tokens` no longer
+exist here: tracking is configured via the gepa backend's `engine_config["tracking"]`
+(see `tracking.md`), and `effort` / `max_thinking_tokens` are per-agent-engine `engine_config` keys.
 
-## `engine_config` for the `gepa` engine
-The GEPA engine reads only these keys (`_GEPA_CONFIG_KEYS`): `engine`, `reflection`, `merge`,
-`refiner`, `objective`, `background`, `reflection_lm_kwargs`, `callbacks`, `claude_code_agent`.
-`engine` and `reflection` are **opaque kwarg dicts** forwarded to core dataclasses:
+## The backends
+
+All are selected with `engine=` and run the **same** task/evaluator — switch optimizer by
+changing one argument. Each backend parses `engine_config` into its own typed dataclass, so swapping
+`engine=` also means swapping the `engine_config` block (leftover keys → `TypeError`).
+
+| engine | how it proposes candidates | runs | needs |
+|---|---|---|---|
+| `gepa` | an LLM reflects on evaluator feedback and mutates the candidate; keeps a Pareto frontier | in-process | reflection-LM creds (default `openai/gpt-5.1`) or a custom LM |
+| `autoresearch` | one Claude Code subprocess iterates in a work dir (`program.md`, `candidate.txt`, `eval.sh` → HTTP eval server) | subprocess | `claude` on PATH + headless auth, `jq` |
+| `meta_harness` | a Claude subprocess reads frontier/history and writes `pending_eval.json` candidates; the engine benchmarks each | subprocess | `claude` on PATH + headless auth |
+| `best_of_n` *(baseline)* | independent single-shot samples from one LLM; keep the best — no feedback, no history | in-process | LiteLLM creds for `model` (default `claude-sonnet-4-6`) |
+
+`scripts/preflight.py` checks a backend's prerequisites before a long run.
+
+### `gepa` — `engine_config` is a `GEPAConfig`-shaped dict (1-to-1 passthrough)
+The dict is passed to `gepa.gepa_launcher.GEPAConfig(**engine_config)`; valid top-level keys are
+exactly its fields — `engine`, `reflection`, `tracking`, `merge`, `refiner`, `callbacks`,
+`stop_callbacks` — and nested dicts are coerced to the matching dataclasses. The OA layer only
+overlays the eval budget (`max_evals` → `engine.max_metric_calls`), `run_dir`, `stop_at_score`, and
+the `max_token_cost` → `engine.max_reflection_cost` cap.
 
 ```python
 engine_config={
     "reflection": {                     # -> ReflectionConfig
-        "reflection_lm": "anthropic/claude-sonnet-4-6",  # see "Proposer LM" below
-        "reflection_minibatch_size": 5,
+        "reflection_lm": "anthropic/claude-sonnet-4-6",  # default "openai/gpt-5.1"; see "Proposer LM"
+        "reflection_lm_kwargs": {"reasoning_effort": "high"},  # litellm kwargs (temperature, thinking, …)
+        "reflection_minibatch_size": 5,  # default: 1 single-task, 3 otherwise
+        # "custom_candidate_proposer": ClaudeCodeAgentProposer(...),  # replace the reflection LM with
+        #                                # a Claude Code proposer (from gepa.oa.proposers)
+        # "reflection_strategy": ...,    # advanced: a ReflectionLM impl owning how reflection is called
     },
     "engine": {                          # -> EngineConfig (all optional, sensible defaults)
-        "max_workers": 32,
+        "max_workers": 32,               # parallel eval workers (default: cpu_count or 32)
         "seed": 0,                       # reproducibility
-        "frontier_type": "hybrid",       # multi-objective Pareto (see writing_evaluators.md)
-        "candidate_selection_strategy": ...,           # guide: candidate-selection
-        "acceptance_criterion": "strict_improvement",  # guide: acceptance-criterion
-        "cache_evaluation": True,        # cache identical (candidate, example) evals
+        "frontier_type": "hybrid",       # "instance" | "objective" | "hybrid" (default) | "cartesian"
+        "candidate_selection_strategy": "pareto",      # | "current_best" | "epsilon_greedy" | "top_k_pareto"
+        "acceptance_criterion": "strict_improvement",  # | "improvement_or_equal"
+        "cache_evaluation": False,       # opt-in: cache identical (candidate, example) evals
+        "capture_stdio": False,          # opt-in: route evaluator print() output into feedback
+        "raise_on_exception": True,      # False → evaluator exceptions become score 0 + info["error"]
+        # "write_agent_state": True,     # agent-readable iterations/ + pareto/ tree under run_dir
     },
+    "tracking": {"use_wandb": True},     # -> TrackingConfig (see references/tracking.md)
     "merge":  {...},                     # -> MergeConfig (cross-candidate merging) or omit
     "refiner": {...},                    # -> RefinerConfig (auto per-eval refinement) or omit
-    "tracking": {"use_wandb": True},     # -> TrackingConfig (see references/tracking.md)
-    # "callbacks": [GEPACallback, ...],  # guide: callbacks
-    # "claude_code_agent": {...},        # replace the reflection LM with a Claude Code subprocess proposer
+    # "callbacks": [GEPACallback, ...],  # observation hooks (on_iteration_end, on_candidate_accepted, …)
+    # "stop_callbacks": [...],           # custom StopperProtocol stop conditions
 }
 ```
-The `engine`/`reflection`/etc. dicts map onto core dataclasses (`gepa.gepa_launcher`: `EngineConfig`,
-`ReflectionConfig`, `MergeConfig`, `RefinerConfig`, `TrackingConfig`). Their knobs are documented in
-the GEPA guides — e.g. **candidate-selection**, **acceptance-criterion**, **batch-sampling**,
-**callbacks**, **cost-tracking**, **experiment-tracking** — see <https://gepa-ai.github.io/gepa/guides/>.
+The nested dataclasses live in `gepa.gepa_launcher` (`EngineConfig`, `ReflectionConfig`,
+`TrackingConfig`, `MergeConfig`, `RefinerConfig`); their knobs are documented in the GEPA guides —
+e.g. **candidate-selection**, **acceptance-criterion**, **batch-sampling**, **callbacks**,
+**cost-tracking**, **experiment-tracking** — see <https://gepa-ai.github.io/gepa/guides/>.
 
-### Proposer LM (not limited to LiteLLM)
-`reflection_lm` accepts either:
-- a **model-id string** resolved through LiteLLM (`"anthropic/claude-sonnet-4-6"`,
-  `"openai/gpt-5"`, a Bedrock inference-profile ARN, …) — the convenience default; set the
-  provider's credentials; or
+### `autoresearch` — `engine_config` → `AutoResearchConfig`
+| key | default | meaning |
+|---|---|---|
+| `model` | `"claude-sonnet-4-6"` | Claude model id (pass `"sonnet"`/`"opus"` to track the current default). |
+| `ralph` | `True` | keep resuming one Claude session (`claude --resume`) while budget remains. |
+| `max_no_eval_seconds` | `None` | kill the subprocess after this long with no eval call. |
+| `handoffs` | `None` | prior-stage artifacts for sequential compositions (materialized under `handoff/`). |
+| `effort` | `None` | `claude --effort` value. |
+| `max_thinking_tokens` | `None` | fixed thinking-token budget (`MAX_THINKING_TOKENS`). |
+
+The engine lays out a work dir (`program.md`, `candidate.txt`, `best_candidate.txt`, `eval.sh`) and
+launches `claude --print`; `eval.sh` POSTs candidates to the eval server, which enforces the budget
+server-side (HTTP 429 on exhaustion) and caps LLM spend via `--max-budget-usd` (from
+`max_token_cost`). Train and val are presented to the agent as one combined pool; the test set is
+unreachable over HTTP.
+
+### `meta_harness` — `engine_config` → `MetaHarnessConfig`
+| key | default | meaning |
+|---|---|---|
+| `model` | `"claude-sonnet-4-6"` | proposer model id. |
+| `max_iterations` | `None` | hard cap on proposer sessions; `None` = until budget. |
+| `max_candidates_per_iter` | `3` | upper bound on candidates proposed per iteration. |
+| `effort` | `None` | `claude --effort` value. |
+| `max_thinking_tokens` | `None` | fixed thinking-token budget. |
+
+Each iteration the proposer subprocess reads the frontier + history state files, writes
+`pending_eval.json` with 1+ candidates, and the engine benchmarks each through the eval server.
+
+### `best_of_n` (baseline) — `engine_config` → `BestOfNConfig`
+Deliberately naive: each sample is one independent LLM call — no feedback, no history, no
+selection pressure beyond keep-the-best. Use it as a **comparison floor** when evaluating an
+optimizer, not as the optimizer. Stops on budget exhaustion, `stop_at_score`, or `max_n`.
+
+| key | default | meaning |
+|---|---|---|
+| `model` | `"claude-sonnet-4-6"` | LiteLLM model id used to sample candidates. |
+| `temperature` | `1.0` | sampling on by default so N calls don't collapse to one response. |
+| `max_n` | `None` | optional hard cap on samples; `None` = run until budget out. |
+| `lm_kwargs` | `{}` | extra kwargs forwarded to `gepa.lm.LM`. |
+| `effort` | `None` | threaded into the LM as `reasoning_effort`. |
+| `max_thinking_tokens` | `None` | fixed thinking-token budget for the LM. |
+
+## Proposer LM (not limited to LiteLLM)
+`reflection.reflection_lm` (gepa) accepts either:
+- a **model-id string** resolved through LiteLLM (`"openai/gpt-5.1"` — the default —
+  `"anthropic/claude-sonnet-4-6"`, a Bedrock inference-profile ARN, …); set the provider's
+  credentials, and pass litellm kwargs via `reflection.reflection_lm_kwargs`; or
 - **any object/callable implementing GEPA's LM protocol** — `__call__(prompt) -> str` (a
   `str`-or-messages prompt in, completion text out). This is how you plug a **self-hosted or custom
   inference engine** (vLLM, a local server, your own client) instead of LiteLLM.
+  `reflection_lm_kwargs` is ignored for callables.
 
-## Engines and their prerequisites
-All four are selected with `engine=` and run the **same** task/evaluator — switch optimizer by
-changing one argument. `optimize_anything`'s purpose is this common interface for comparing them.
-| engine | how it proposes candidates | needs |
-|---|---|---|
-| `gepa` | an LLM reflects on evaluator feedback and mutates the candidate; keeps a Pareto frontier | proposer-LM creds (or a custom LM) |
-| `best_of_n` | samples N candidates from a model and keeps the best | LLM creds (`model`, `temperature`, `max_n`, `lm_kwargs`) |
-| `autoresearch` | an agentic optimizer driving a `claude` CLI subprocess (researcher-style iteration) | `claude` on PATH + headless auth, `run_dir` |
-| `meta_harness` | an agentic proposer (`claude` subprocess) that reads frontier/history and writes candidates | `claude` on PATH + headless auth, `run_dir` |
-
-Each engine reads its own keys from `engine_config` (`_<ENGINE>_CONFIG_KEYS`); unrecognized keys are
-warned and ignored, so swapping `engine=` also means swapping the `engine_config` block.
-`scripts/preflight.py` checks an engine's prerequisites before a long run.
+## Ensemble helpers (compose backends)
+`gepa.optimize_anything` also exports helpers that run several backends over the same
+task/evaluator. Each mirrors `optimize_anything`'s flat signature plus `configs=`, a list of
+`OptimizeAnythingConfig` (one per backend, each with its own budget):
+- `optimize_sequential` — pipeline: each backend's best becomes the next one's seed (monotonic — a
+  regressing stage doesn't poison the chain).
+- `optimize_parallel` — run N backends concurrently, return all results.
+- `optimize_best_of` — parallel, then keep the result with the highest `best_score`.
+- `optimize_vote` — parallel, then re-score each backend's best once via `evaluate` (outside any
+  budget) and return the highest re-score.
+`*_with_server` variants take caller-owned `EvalServer`s (one per config) for embedding in outer
+frameworks; `optimize_adaptive_sequential_with_server` rotates backends on score plateaus under one
+shared budget.
 
 ## `Result`
 ```python
@@ -115,13 +188,14 @@ result.best_score       # float (on valset/selection set)
 result.total_evals      # int
 result.eval_log         # list[dict]
 result.metadata         # dict (verified keys):
-#   "gepa_result"            full GEPAResult (all candidates + per-instance val scores)
+#   "gepa_result"            full GEPAResult (all candidates + per-instance val scores) — gepa engine only
 #   "test_score"             avg over test_set         } only present
 #   "test_scores"            per-example dict          } if you passed
 #   "baseline_test_score"    seed avg over test_set    } a test_set
 #   "baseline_test_scores"   seed per-example dict     }
-#   "budget", "total_cost", "adapter_cost", "wall_time", "engine", "output_dir",
-#   "progress_log", "reflection_cost_initial"/"reflection_cost_final"/"reflection_cost_log"
+#   "budget", "total_cost", "adapter_cost", "wall_time", "engine", "output_dir", "progress_log"
 ```
-GEPA also writes `run_dir/iterations/<uuid>/`, `run_dir/pareto/`, and `output_dir/summary.json`.
-The `gepa_result` in metadata is the richest artifact — keep it for post-hoc analysis.
+The gepa engine also writes `run_dir/` artifacts, and the eval server writes
+`output_dir/summary.json`. The `gepa_result` in metadata is the richest artifact — keep it for
+post-hoc analysis. (If the best candidate equals the seed, the test scores are reported from the
+seed's single scoring pass rather than re-scored.)

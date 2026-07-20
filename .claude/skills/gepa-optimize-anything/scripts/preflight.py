@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Pre-flight checks for a GEPA / optimize_anything run — fail fast before a long job.
+"""Pre-flight checks for an optimize_anything run (gepa package) — fail fast before a long job.
 
     python preflight.py                      # checks gepa + reflection-LM creds
-    python preflight.py --engine autoresearch  # also checks the `claude` CLI
+    python preflight.py --engine autoresearch  # also checks the `claude` CLI + jq
     GEPA_REFLECTION_LM=anthropic/claude-sonnet-4-6 python preflight.py --test-lm
 
 Exit code 0 = all good; non-zero = at least one blocker.
@@ -17,11 +17,35 @@ import sys
 OK, BAD = "\033[32mOK\033[0m", "\033[31mFAIL\033[0m"
 problems: list[str] = []
 
+# The gepa backend's reflection LM defaults to openai/gpt-5.1; best_of_n's
+# sampling model defaults to claude-sonnet-4-6 (see references/api.md).
+DEFAULT_LM_BY_ENGINE = {"gepa": "openai/gpt-5.1", "best_of_n": "claude-sonnet-4-6"}
+
 
 def check(label: str, ok: bool, fix: str = "") -> None:
     print(f"  [{OK if ok else BAD}] {label}")
     if not ok:
         problems.append(f"{label} — {fix}" if fix else label)
+
+
+def _creds_for(lm: str) -> tuple[bool, str]:
+    """Best-effort provider-credential check for a LiteLLM model id."""
+    has_aws = bool(
+        os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
+        or os.environ.get("AWS_ACCESS_KEY_ID")
+        or os.environ.get("AWS_PROFILE")
+    )
+    if "bedrock" in lm:
+        return has_aws, "export AWS creds (AWS_BEARER_TOKEN_BEDROCK / AWS_ACCESS_KEY_ID / AWS_PROFILE)"
+    if lm.startswith("openai/") or lm.startswith("gpt-") or "gpt-5" in lm:
+        return bool(os.environ.get("OPENAI_API_KEY")), "export OPENAI_API_KEY"
+    if "claude" in lm or lm.startswith("anthropic/"):
+        return bool(os.environ.get("ANTHROPIC_API_KEY")) or has_aws, "export ANTHROPIC_API_KEY (or AWS creds)"
+    # Unknown provider: accept any common key being present.
+    any_key = bool(
+        os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or has_aws
+    )
+    return any_key, "export your LiteLLM provider's API key"
 
 
 def main() -> int:
@@ -32,7 +56,7 @@ def main() -> int:
                     help="make a 1-call round-trip to the reflection LM (costs a few tokens)")
     a = ap.parse_args()
 
-    print("== GEPA preflight ==")
+    print("== optimize_anything preflight ==")
 
     # 1) import + the correct API surface
     try:
@@ -40,43 +64,40 @@ def main() -> int:
         from gepa.optimize_anything import OptimizeAnythingConfig, optimize_anything  # noqa
         check(f"import gepa ({getattr(gepa, '__version__', '?')}) + optimize_anything", True)
     except Exception as e:  # noqa
-        check("import gepa + optimize_anything", False, "pip install gepa")
+        check("import gepa + optimize_anything", False, "pip install 'gepa[full]'")
         print(f"      {e}")
         return _report()
 
-    # 2) reflection-LM credentials (engines that use an LLM)
+    # 2) LM credentials (in-process engines that call an LLM directly)
     lm = os.environ.get("GEPA_REFLECTION_LM", "")
     if a.engine in ("gepa", "best_of_n"):
-        is_bedrock = lm.startswith("bedrock/") or "bedrock" in lm
-        has_aws = bool(os.environ.get("AWS_BEARER_TOKEN_BEDROCK") or
-                       os.environ.get("AWS_ACCESS_KEY_ID") or os.environ.get("AWS_PROFILE"))
-        has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
-        if is_bedrock:
-            check("Bedrock creds present (AWS_BEARER_TOKEN_BEDROCK / AWS_ACCESS_KEY_ID / AWS_PROFILE)",
-                  has_aws, "export AWS creds for the Bedrock reflection LM")
-        else:
-            check("LLM creds present (ANTHROPIC_API_KEY or provider key)", has_anthropic or has_aws,
-                  "export ANTHROPIC_API_KEY (or your LiteLLM provider's key)")
-        check("GEPA_REFLECTION_LM is set", bool(lm),
-              "export GEPA_REFLECTION_LM=<litellm id or Bedrock ARN>")
+        effective_lm = lm or DEFAULT_LM_BY_ENGINE[a.engine]
+        if not lm:
+            print(f"      GEPA_REFLECTION_LM unset -> engine default '{effective_lm}'")
+        ok, fix = _creds_for(effective_lm)
+        check(f"LLM creds present for '{effective_lm}'", ok, fix)
 
-    # 3) agentic engines need the claude CLI
+    # 3) agentic engines need the claude CLI (and autoresearch's eval.sh uses jq)
     if a.engine in ("autoresearch", "meta_harness"):
         cli = shutil.which("claude")
         check(f"`claude` CLI on PATH (required by {a.engine})", bool(cli),
               "install + authenticate the Claude Code CLI headless")
         if cli:
             print(f"      claude -> {cli}")
+        if a.engine == "autoresearch":
+            check("`jq` on PATH (used by the generated eval.sh)", bool(shutil.which("jq")),
+                  "install jq")
 
     # 4) optional live LM round-trip
-    if a.test_lm and lm and a.engine in ("gepa", "best_of_n"):
+    if a.test_lm and a.engine in ("gepa", "best_of_n"):
+        target = lm or DEFAULT_LM_BY_ENGINE[a.engine]
         try:
             from gepa.lm import LM
-            out = LM(lm)("Reply with the single word: ok")
-            check("reflection LM 1-call round-trip", bool(out),
+            out = LM(target)("Reply with the single word: ok")
+            check(f"LM 1-call round-trip ({target})", bool(out),
                   "LM returned empty; check model id / creds / region")
         except Exception as e:  # noqa
-            check("reflection LM 1-call round-trip", False, str(e)[:160])
+            check(f"LM 1-call round-trip ({target})", False, str(e)[:160])
 
     return _report()
 

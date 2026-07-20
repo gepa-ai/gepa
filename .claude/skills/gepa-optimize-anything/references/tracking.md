@@ -1,7 +1,9 @@
 # Experiment tracking
 
-GEPA logs to **Weights & Biases** and **MLflow** via `TrackingConfig`. Configure it in the GEPA
-engine's config block:
+The gepa backend logs to **Weights & Biases** and **MLflow** via `TrackingConfig` — configure it
+under `engine_config["tracking"]` (a valid `GEPAConfig` field, coerced to `TrackingConfig`). The
+other backends have no built-in tracker; for them, rely on the eval server's `output_dir` records
+(always written, whatever the backend):
 
 ```python
 result = optimize_anything(
@@ -20,9 +22,10 @@ result = optimize_anything(
 ```
 
 ## `TrackingConfig` fields
-- `use_wandb`, `wandb_init_kwargs`, `wandb_attach_existing`
+- `use_wandb`, `wandb_api_key`, `wandb_init_kwargs`, `wandb_attach_existing`, `wandb_step_metric`
 - `use_mlflow`, `mlflow_tracking_uri`, `mlflow_experiment_name`, `mlflow_attach_existing`
-- `key_prefix` — namespaces all logged metrics (e.g. `"gepa/"` → `gepa/val_score`)
+- `key_prefix` — prepended to every logged key/name (e.g. `"gepa/"` → `gepa/val_score`)
+- `logger` — a custom `LoggerProtocol` for plain-text log lines
 
 ## What gets logged
 - **scalars** — `val_program_average`, `best_score_on_valset`, `total_metric_calls`, …
@@ -33,15 +36,21 @@ result = optimize_anything(
 ## Attaching to an existing run
 If you've already called `wandb.init()` (or started an MLflow run) yourself — e.g. a parent script
 that also logs other things — set `wandb_attach_existing=True` (or `mlflow_attach_existing=True`).
-GEPA then logs **into your active run** without calling `init()`/`finish()`, so it won't disrupt the
-run lifecycle. Combine with `key_prefix="gepa/"` to keep GEPA's metrics in their own namespace and
-avoid step collisions.
+The tracker then logs **into your active run** without calling `init()`/`finish()`, so it won't
+disrupt the run lifecycle. Combine with `key_prefix="gepa/"` to keep its metrics in their own
+namespace.
 
-## Custom logging
-You can also pass a thin tracker via `OptimizeAnythingConfig.tracker` to receive per-eval and
-per-iteration callbacks (`log_eval(used, score, best_score, cost)` / `log_metrics(metrics, step)`) —
-useful for piping into a logging system `TrackingConfig` doesn't cover. For full GEPA dashboards
-(Pareto/candidate tables, candidate tree), prefer `TrackingConfig` above.
+When the host loop manages its own wandb step counter, also set `wandb_step_metric` (e.g.
+`"gepa/iteration"`): the tracker then declares its own x-axis via `wandb.define_metric` instead of
+passing `step=`, so its `1, 2, 3, …` steps don't collide with the host's counter (a collision makes
+wandb silently drop the data).
+
+## Custom hooks
+For programmatic observation beyond metric logging, pass `engine_config={"callbacks": [...]}` —
+`GEPACallback` objects receive events like `on_optimization_start`, `on_iteration_end`,
+`on_candidate_accepted`, `on_proposal_end`. The eval server also always writes a flat record
+(per-eval JSON + `progress_log.jsonl` + `summary.json`) under `output_dir`, whatever tracking is
+configured.
 
 See the official guide for the authoritative list of fields and behaviors:
 <https://gepa-ai.github.io/gepa/guides/experiment-tracking/>.
