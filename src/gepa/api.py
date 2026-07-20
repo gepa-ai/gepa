@@ -62,6 +62,8 @@ def optimize(
     perfect_score: float = 1.0,
     reflection_prompt_template: str | dict[str, str] | None = None,
     custom_candidate_proposer: ProposalFn | None = None,
+    bon: int = 1,
+    itr: int = 1,
     # Component selection configuration
     module_selector: ReflectionComponentSelector | str = "round_robin",
     # Merge-based configuration
@@ -157,6 +159,8 @@ def optimize(
     - perfect_score: The perfect score to achieve.
     - reflection_prompt_template: The prompt template to use for reflection. Can be either a string (applied to all components) or a dict mapping component names to their specific templates. If not provided, GEPA will use the default prompt template (see [InstructionProposalSignature](src/gepa/strategies/instruction_proposal.py)). Each prompt template must contain the following placeholders, which will be replaced with actual values: `<curr_param>` (will be replaced by the instructions/component to evolve) and `<side_info>` (replaced with the inputs, outputs, and feedback generated with current instruction). When using a dict, components without a specified template will use the default template. This will be ignored if the adapter provides its own `propose_new_texts` method.
     - custom_candidate_proposer: Optional custom function for proposing new candidates. If provided, this will be used instead of the default LLM-based reflection approach. Cannot be used if adapter provides `propose_new_texts`. Signature: `(candidate, reflective_dataset, components_to_update) -> dict[str, str]`.
+    - bon: Best-of-N textual evolution count per reflected component. GEPA samples `bon` candidate text updates and asks the reflection LM to select the best one before returning or continuing to the next inner evolution step. Defaults to 1.
+    - itr: Number of sequential textual evolution steps to run inside one reflective mutation proposal. When greater than 1, the selected update from one step becomes the current text for the next step. Defaults to 1.
 
     # Component selection configuration
     - module_selector: Component selection strategy. Can be a ReflectionComponentSelector instance or a string ('round_robin', 'all'). Defaults to 'round_robin'. The 'round_robin' strategy cycles through components in order. The 'all' strategy selects all components for modification in every GEPA iteration.
@@ -198,6 +202,10 @@ def optimize(
     # Validate seed_candidate is not None or empty
     if seed_candidate is None or not seed_candidate:
         raise ValueError("seed_candidate must contain at least one component text.")
+    if bon < 1:
+        raise ValueError("bon must be >= 1.")
+    if itr < 1:
+        raise ValueError("itr must be >= 1.")
 
     active_adapter: GEPAAdapter[DataInst, Trajectory, RolloutOutput] | None = None
     if adapter is None:
@@ -228,6 +236,17 @@ def optimize(
             "Please use only one custom proposal method."
         )
 
+    if (bon != 1 or itr != 1) and (adapter_has_propose or custom_candidate_proposer is not None):
+        adapter_configurator = getattr(active_adapter, "configure_textual_gradient_search", None)
+        if adapter_has_propose and callable(adapter_configurator):
+            adapter_configurator(best_of_n=bon, num_iterations=itr)
+        else:
+            owner = "adapter.propose_new_texts" if adapter_has_propose else "custom_candidate_proposer"
+            raise ValueError(
+                f"bon/itr cannot be applied because {owner} owns proposal generation. "
+                "Use the default reflection_lm path or implement configure_textual_gradient_search on the adapter."
+            )
+
     if not adapter_has_propose and custom_candidate_proposer is None:
         assert reflection_lm is not None or reflection_strategy is not None, (
             f"reflection_lm was not provided. The adapter used '{active_adapter!s}' does not provide a propose_new_texts method, "
@@ -245,7 +264,9 @@ def optimize(
     elif reflection_lm is not None:
         from gepa.lm import TrackingLM
 
-        reflection_lm_callable = TrackingLM(reflection_lm) if not hasattr(reflection_lm, "total_cost") else reflection_lm
+        reflection_lm_callable = (
+            TrackingLM(reflection_lm) if not hasattr(reflection_lm, "total_cost") else reflection_lm
+        )
     else:
         reflection_lm_callable = None
 
@@ -413,6 +434,8 @@ def optimize(
         callbacks=callbacks,
         sampling_strategy=sampling_strategy,
         reflection_strategy=reflection_strategy,
+        best_of_n=bon,
+        num_iterations=itr,
     )
 
     def evaluator_fn(

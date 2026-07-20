@@ -4,6 +4,7 @@ from unittest.mock import Mock
 import pytest
 
 from gepa import optimize
+from gepa.core.adapter import EvaluationBatch
 
 
 def test_reflection_prompt_template():
@@ -177,6 +178,47 @@ def test_empty_seed_candidate():
             max_metric_calls=2,
             reflection_minibatch_size=1,
         )
+
+
+def test_bon_itr_forwarded_to_configurable_adapter():
+    """Adapters with their own proposer can opt in to optimize()'s bon/itr knobs."""
+
+    class ConfigurableAdapter:
+        def __init__(self):
+            self.configured = None
+
+        def configure_textual_gradient_search(self, *, best_of_n: int, num_iterations: int):
+            self.configured = (best_of_n, num_iterations)
+
+        def evaluate(self, batch, candidate, capture_traces=False):
+            return EvaluationBatch(
+                outputs=["out"] * len(batch),
+                scores=[0.0] * len(batch),
+                trajectories=[{"trace": "t"} for _ in batch] if capture_traces else None,
+                objective_scores=None,
+                num_metric_calls=len(batch),
+            )
+
+        def make_reflective_dataset(self, candidate, eval_batch, components_to_update):
+            return {component: [{"Feedback": "f"}] for component in components_to_update}
+
+        def propose_new_texts(self, candidate, reflective_dataset, components_to_update):
+            return {component: f"{candidate[component]} improved" for component in components_to_update}
+
+    adapter = ConfigurableAdapter()
+    optimize(
+        seed_candidate={"instructions": "initial"},
+        trainset=[{"input": "x"}],
+        valset=[{"input": "x"}],
+        adapter=adapter,
+        max_metric_calls=3,
+        skip_perfect_score=False,
+        use_merge=False,
+        bon=2,
+        itr=3,
+    )
+
+    assert adapter.configured == (2, 3)
 
 
 def test_none_seed_candidate():

@@ -19,6 +19,10 @@ from dspy.teleprompt.bootstrap_trace import FailedPrediction, TraceData
 
 from gepa import EvaluationBatch, GEPAAdapter
 from gepa.core.adapter import ProposalFn
+from gepa.proposer.reflective_mutation.reflection_lm import (
+    build_textual_gradient_selection_prompt,
+    extract_best_textual_gradient_index,
+)
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 logger = logging.getLogger(__name__)
@@ -101,6 +105,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         warn_on_score_mismatch: bool = True,
         enable_tool_optimization: bool = False,
         reflection_minibatch_size: int | None = None,
+        best_of_n: int = 1,
+        num_iterations: int = 1,
     ):
         self.student = student_module
         self.metric_fn = metric_fn
@@ -114,6 +120,15 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         self.warn_on_score_mismatch = warn_on_score_mismatch
         self.enable_tool_optimization = enable_tool_optimization
         self.reflection_minibatch_size = reflection_minibatch_size
+        self.configure_textual_gradient_search(best_of_n=best_of_n, num_iterations=num_iterations)
+
+    def configure_textual_gradient_search(self, *, best_of_n: int = 1, num_iterations: int = 1) -> None:
+        if best_of_n < 1:
+            raise ValueError("best_of_n must be >= 1.")
+        if num_iterations < 1:
+            raise ValueError("num_iterations must be >= 1.")
+        self.best_of_n = best_of_n
+        self.num_iterations = num_iterations
 
     def propose_new_texts(
         self,
@@ -146,33 +161,145 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
         results: dict[str, str] = {}
 
         with dspy.context(lm=reflection_lm):
-            # Handle regular instruction components
             if instruction_components:
                 for name in instruction_components:
+                    if name not in candidate or name not in reflective_dataset:
+                        continue
                     base_instruction = candidate[name]
                     dataset_with_feedback = reflective_dataset[name]
-                    results[name] = InstructionProposalSignature.run(
-                        lm=(lambda x: self.stripped_lm_call(x)[0]),
-                        input_dict={
-                            "current_instruction_doc": base_instruction,
-                            "dataset_with_feedback": dataset_with_feedback,
-                        },
-                    )["new_instruction"]
+                    results[name] = self._run_instruction_iterations(
+                        name=name,
+                        base_instruction=base_instruction,
+                        dataset_with_feedback=dataset_with_feedback,
+                        reflection_lm=reflection_lm,
+                    )
 
-            # Handle ReAct modules
             if tool_components:
                 from gepa.adapters.dspy_adapter.instruction_proposal import ToolProposer
 
                 tool_proposer = ToolProposer()
-                results.update(
-                    tool_proposer(
-                        candidate=candidate,
-                        reflective_dataset=reflective_dataset,
-                        components_to_update=tool_components,
+                for module_key in tool_components:
+                    if module_key not in candidate or module_key not in reflective_dataset:
+                        continue
+                    current_config = candidate[module_key]
+                    dataset_for_module = reflective_dataset[module_key]
+                    results[module_key] = self._run_tool_iterations(
+                        module_key=module_key,
+                        base_config=current_config,
+                        dataset_for_module=dataset_for_module,
+                        tool_proposer=tool_proposer,
+                        reflection_lm=reflection_lm,
                     )
-                )
 
         return results
+
+    def _run_instruction_iterations(
+        self,
+        name: str,
+        base_instruction: str,
+        dataset_with_feedback: list[ReflectiveExample],
+        reflection_lm,
+    ) -> str:
+        instruction = base_instruction
+        for _ in range(self.num_iterations):
+            proposals = [
+                InstructionProposalSignature.run(
+                    lm=(lambda x: self._call_reflection_model(reflection_lm, x)),
+                    input_dict={
+                        "current_instruction_doc": instruction,
+                        "dataset_with_feedback": dataset_with_feedback,
+                    },
+                )["new_instruction"]
+                for _ in range(self.best_of_n)
+            ]
+            instruction = self._select_best_candidate(
+                component_name=name,
+                component_type="instruction",
+                previous_text=instruction,
+                dataset_with_feedback=dataset_with_feedback,
+                proposals=proposals,
+                reflection_lm=reflection_lm,
+            )
+        return instruction
+
+    def _run_tool_iterations(
+        self,
+        module_key: str,
+        base_config: str,
+        dataset_for_module: list[ReflectiveExample],
+        tool_proposer,
+        reflection_lm,
+    ) -> str:
+        config = base_config
+        for _ in range(self.num_iterations):
+            proposals = [
+                tool_proposer(
+                    candidate={module_key: config},
+                    reflective_dataset={module_key: dataset_for_module},
+                    components_to_update=[module_key],
+                ).get(module_key, config)
+                for _ in range(self.best_of_n)
+            ]
+            config = self._select_best_candidate(
+                component_name=module_key,
+                component_type="tool configuration",
+                previous_text=config,
+                dataset_with_feedback=dataset_for_module,
+                proposals=proposals,
+                reflection_lm=reflection_lm,
+            )
+        return config
+
+    def _select_best_candidate(
+        self,
+        component_name: str,
+        component_type: str,
+        previous_text: str,
+        dataset_with_feedback: list[ReflectiveExample],
+        proposals: list[str],
+        reflection_lm,
+    ) -> str:
+        proposals = [proposal for proposal in proposals if proposal is not None]
+        if not proposals:
+            return previous_text
+        if len(proposals) == 1 or self.best_of_n == 1:
+            return proposals[0]
+        if reflection_lm is None:
+            logger.warning(
+                "best_of_n>1 requested for component '%s', but no reflection_lm is available. "
+                "Falling back to the first candidate.",
+                component_name,
+            )
+            return proposals[0]
+
+        prompt = build_textual_gradient_selection_prompt(
+            component_name=component_name,
+            component_type=component_type,
+            previous_text=previous_text,
+            dataset_with_feedback=dataset_with_feedback,
+            proposals=proposals,
+        )
+        try:
+            response_text = self._call_reflection_model(reflection_lm, prompt)
+            best_index = extract_best_textual_gradient_index(response_text, len(proposals))
+        except Exception as exc:
+            logger.warning(
+                "Failed to pick best candidate for %s due to %s. Defaulting to the first proposal.",
+                component_name,
+                exc,
+            )
+            best_index = 1
+        return proposals[best_index - 1]
+
+    @staticmethod
+    def _call_reflection_model(reflection_lm, prompt: str | list[dict[str, Any]]) -> str:
+        raw_outputs = reflection_lm(prompt)
+        if isinstance(raw_outputs, str):
+            return raw_outputs
+        first = raw_outputs[0] if raw_outputs else ""
+        if isinstance(first, dict):
+            return first.get("text") or first.get("content") or json.dumps(first)
+        return str(first)
 
     def build_program(self, candidate: dict[str, str]):
         new_prog = self.student.deepcopy()
@@ -477,6 +604,8 @@ class DspyAdapter(GEPAAdapter[Example, TraceData, Prediction]):
     # Even when it returns a dict with e.g., "text" and "reasoning" fields
     def stripped_lm_call(self, x: str) -> list[str]:
         raw_outputs = self.reflection_lm(x)
+        if isinstance(raw_outputs, str):
+            raw_outputs = [raw_outputs]
         outputs = []
         for raw_output in raw_outputs:
             if type(raw_output) == str:

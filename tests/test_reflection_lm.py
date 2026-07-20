@@ -148,6 +148,72 @@ def test_per_component_template_dict_and_missing_warning():
     assert len(missing_warnings) == 1
 
 
+def test_best_of_n_selects_ranked_candidate():
+    """best_of_n samples multiple evolutions and uses BEST_INDEX to pick one."""
+
+    class BestOfNLM:
+        def __init__(self):
+            self.calls = 0
+            self.prompts = []
+
+        def __call__(self, prompt):
+            self.prompts.append(prompt)
+            if "BEST_INDEX" in prompt:
+                return "BEST_INDEX: 2\nREASON: candidate 2 handles the feedback best."
+            self.calls += 1
+            return f"```\nproposal-{self.calls}\n```"
+
+    fake = BestOfNLM()
+    lm = StatelessReflectionLM(fake, best_of_n=3)
+    proposal, _ = lm.reflect({"a": "old"}, _reflective_dataset(["a"]), ["a"])
+
+    assert proposal.new_texts == {"a": "proposal-2"}
+    assert proposal.raw_lm_outputs["a"] == "```\nproposal-2\n```"
+    assert len(fake.prompts) == 4
+    assert "Candidate 1:\nproposal-1" in fake.prompts[-1]
+    assert "Candidate 2:\nproposal-2" in fake.prompts[-1]
+    assert proposal.metadata["textual_gradient:a:iterations"][0]["selected_index"] == 2
+
+
+def test_textual_gradient_iterations_chain_selected_text():
+    """The selected draft from one inner iteration becomes the next current text."""
+
+    class QueueLM:
+        def __init__(self):
+            self.responses = [
+                "```\nfirst-a\n```",
+                "```\nfirst-b\n```",
+                "BEST_INDEX: 2",
+                "```\nsecond-a\n```",
+                "```\nsecond-b\n```",
+                "BEST_INDEX: 1",
+            ]
+            self.prompts = []
+
+        def __call__(self, prompt):
+            self.prompts.append(prompt)
+            return self.responses.pop(0)
+
+    fake = QueueLM()
+    lm = StatelessReflectionLM(fake, best_of_n=2, num_iterations=2)
+    proposal, _ = lm.reflect({"a": "seed"}, _reflective_dataset(["a"]), ["a"])
+
+    assert proposal.new_texts == {"a": "second-a"}
+    # The proposal prompts for iteration 2 should contain the selected text from iteration 1.
+    assert "first-b" in fake.prompts[3]
+    iteration_records = proposal.metadata["textual_gradient:a:iterations"]
+    assert [record["selected_index"] for record in iteration_records] == [2, 1]
+
+
+def test_stateless_reflection_lm_rejects_invalid_textual_gradient_config():
+    import pytest
+
+    with pytest.raises(ValueError, match="best_of_n must be >= 1"):
+        StatelessReflectionLM(RecordingLM(), best_of_n=0)
+    with pytest.raises(ValueError, match="num_iterations must be >= 1"):
+        StatelessReflectionLM(RecordingLM(), num_iterations=0)
+
+
 # ---------------------------------------------------------------------------
 # reflection_strategy injection seam (#329 Phase 2 entry point)
 # ---------------------------------------------------------------------------
@@ -262,9 +328,7 @@ def _make_propose_harness(reflection_strategy):
 def _make_state():
     from gepa.core.state import GEPAState, ValsetEvaluation
 
-    base_eval = ValsetEvaluation(
-        outputs_by_val_id={0: "o"}, scores_by_val_id={0: 0.5}, objective_scores_by_val_id=None
-    )
+    base_eval = ValsetEvaluation(outputs_by_val_id={0: "o"}, scores_by_val_id={0: 0.5}, objective_scores_by_val_id=None)
     state = GEPAState({"c": "seed"}, base_eval, track_best_outputs=False)
     # Set by the engine's seed initialization in real runs (state.py:704).
     state.total_num_evals = 1
@@ -301,6 +365,8 @@ def test_reflection_config_accepts_reflection_strategy():
     stub = _ReflectOnlyLM()
     assert ReflectionConfig(reflection_strategy=stub).reflection_strategy is stub
     assert ReflectionConfig().reflection_strategy is None
+    assert ReflectionConfig(bon=2, itr=3).bon == 2
+    assert ReflectionConfig(bon=2, itr=3).itr == 3
 
 
 # ---------------------------------------------------------------------------
@@ -383,15 +449,27 @@ def test_trace_records_every_task_not_just_the_first():
     class TwoTaskSampling:
         def sample_tasks(self, state, candidate_selector, batch_sampler, trainset):
             return [
-                ProposalTask(parent_idx=0, parent_candidate=dict(state.program_candidates[0]), minibatch_ids=[0], minibatch=[{"q": 0}]),
-                ProposalTask(parent_idx=0, parent_candidate=dict(state.program_candidates[0]), minibatch_ids=[1], minibatch=[{"q": 1}]),
+                ProposalTask(
+                    parent_idx=0,
+                    parent_candidate=dict(state.program_candidates[0]),
+                    minibatch_ids=[0],
+                    minibatch=[{"q": 0}],
+                ),
+                ProposalTask(
+                    parent_idx=0,
+                    parent_candidate=dict(state.program_candidates[0]),
+                    minibatch_ids=[1],
+                    minibatch=[{"q": 1}],
+                ),
             ]
 
     adapter = MagicMock()
     adapter.propose_new_texts = None
     adapter.batch_evaluate = MagicMock(
         side_effect=lambda items: [
-            EvaluationBatch(outputs=["o"], scores=[0.4], trajectories=[{"step": 1}], objective_scores=None, num_metric_calls=1)
+            EvaluationBatch(
+                outputs=["o"], scores=[0.4], trajectories=[{"step": 1}], objective_scores=None, num_metric_calls=1
+            )
             for _ in items
         ]
     )
