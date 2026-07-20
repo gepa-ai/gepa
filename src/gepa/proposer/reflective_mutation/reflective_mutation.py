@@ -101,9 +101,7 @@ class ReflectiveMutationProposer:
             adapter.propose_new_texts is not None or custom_candidate_proposer is not None
         ):
             owner = (
-                "adapter.propose_new_texts"
-                if adapter.propose_new_texts is not None
-                else "custom_candidate_proposer"
+                "adapter.propose_new_texts" if adapter.propose_new_texts is not None else "custom_candidate_proposer"
             )
             raise ValueError(
                 f"reflection_strategy was provided, but {owner} owns proposal generation "
@@ -126,6 +124,50 @@ class ReflectiveMutationProposer:
                 "perfect_score must be provided when skip_perfect_score is True. "
                 "If you do not have a perfect target score, set skip_perfect_score=False."
             )
+
+    def get_proposer_state(self) -> dict[str, Any]:
+        getter = getattr(self._reflection_lm, "get_state", None)
+        if getter is None:
+            return {}
+        return {"reflection_strategy": getter()}
+
+    def set_proposer_state(self, value: Mapping[str, Any], state: GEPAState | None = None) -> None:
+        setter = getattr(self._reflection_lm, "set_state", None)
+        if setter is not None and value.get("reflection_strategy") is not None:
+            setter(value["reflection_strategy"])
+
+        synchronizer = getattr(self._reflection_lm, "synchronize_state", None)
+        if synchronizer is not None and state is not None:
+            synchronizer(state)
+
+    def on_proposal_accepted(
+        self,
+        proposal: CandidateProposal,
+        new_candidate_idx: int,
+        state: GEPAState,
+        valset_evaluation: Any | None = None,
+    ) -> None:
+        hook = getattr(self._reflection_lm, "on_proposal_accepted", None)
+        if hook is not None:
+            hook(proposal, new_candidate_idx, state, valset_evaluation)
+
+    def on_proposal_rejected(self, proposal: CandidateProposal, state: GEPAState, reason: str | None = None) -> None:
+        hook = getattr(self._reflection_lm, "on_proposal_rejected", None)
+        if hook is not None:
+            hook(proposal, state, reason)
+
+    def on_candidate_imported(
+        self,
+        candidate: dict[str, str],
+        parent_program_ids: list[int],
+        state: GEPAState,
+        *,
+        new_candidate_idx: int | None = None,
+    ) -> None:
+        hook = getattr(self._reflection_lm, "on_candidate_imported", None)
+        if hook is not None:
+            parents = [state.program_candidates[idx] for idx in parent_program_ids]
+            hook(candidate, parents, new_candidate_idx=new_candidate_idx, state=state)
 
     def propose_new_texts(
         self,
@@ -183,9 +225,7 @@ class ReflectiveMutationProposer:
         if reflect_many is not None:
             results = list(reflect_many(jobs))
             if len(results) != len(jobs):
-                raise ValueError(
-                    f"ReflectionLM.reflect_many returned {len(results)} results for {len(jobs)} jobs"
-                )
+                raise ValueError(f"ReflectionLM.reflect_many returned {len(results)} results for {len(jobs)} jobs")
         else:
             results = []
             for cand, refds, comps in jobs:
@@ -215,7 +255,9 @@ class ReflectiveMutationProposer:
         except Exception as e:
             self.logger.log(f"Batched reflection failed ({e}); retrying per task.")
             self.logger.log(traceback.format_exc())
-            out: list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str], dict[str, Any]] | None] = []
+            out: list[
+                tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str], dict[str, Any]] | None
+            ] = []
             for cand, refds, comps in jobs:
                 try:
                     out.append(self.propose_new_texts(cand, refds, comps))
@@ -475,9 +517,7 @@ class ReflectiveMutationProposer:
                 # would be byte-identical to its parent: don't burn minibatch
                 # metric calls evaluating it or emit proposal/rejection events
                 # for a proposal that never happened.
-                self.logger.log(
-                    f"Iteration {i}: Reflection returned no text updates; skipping proposal for this task."
-                )
+                self.logger.log(f"Iteration {i}: Reflection returned no text updates; skipping proposal for this task.")
                 children.append(None)
                 continue
 

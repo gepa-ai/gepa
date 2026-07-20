@@ -136,6 +136,7 @@ from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
+from gepa.proposer.reflective_mutation.prompt_breeder import PromptBreederConfig, PromptBreederReflectionLM
 from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
@@ -476,15 +477,15 @@ class EngineConfig:
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
-    candidate_selection_strategy: CandidateSelector | Literal[
-        "pareto", "current_best", "epsilon_greedy", "top_k_pareto"
-    ] = "pareto"
+    candidate_selection_strategy: (
+        CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"]
+    ) = "pareto"
     frontier_type: FrontierType = "hybrid"
 
     # Acceptance criterion for reflective mutation proposals
-    acceptance_criterion: AcceptanceCriterion | Literal[
-        "strict_improvement", "improvement_or_equal"
-    ] = "strict_improvement"
+    acceptance_criterion: AcceptanceCriterion | Literal["strict_improvement", "improvement_or_equal"] = (
+        "strict_improvement"
+    )
 
     # Parallelization settings for evaluation
     parallel: bool = True
@@ -607,8 +608,8 @@ Based on your analysis, propose an improved version that:
     sections.append("""
 ## Output Format
 
-Provide ONLY the improved version within ``` blocks. The output must be a complete, 
-drop-in replacement for the current component (whether it's a prompt, configuration, 
+Provide ONLY the improved version within ``` blocks. The output must be a complete,
+drop-in replacement for the current component (whether it's a prompt, configuration,
 code, or any other parameter type).
 Do not include explanations, commentary, or markdown outside the ``` blocks.""")
 
@@ -641,9 +642,7 @@ def _build_seed_generation_prompt(
         examples = dataset[:3]
         example_lines = [f"- Example {i}: {ex}" for i, ex in enumerate(examples, 1)]
         sections.append(
-            "\n## Sample Inputs\n\n"
-            "The candidate will be evaluated on inputs like these:\n\n"
-            + "\n".join(example_lines)
+            "\n## Sample Inputs\n\nThe candidate will be evaluated on inputs like these:\n\n" + "\n".join(example_lines)
         )
 
     sections.append(
@@ -736,6 +735,7 @@ class ReflectionConfig:
     # agents). Defaults to the stateless single-call reflector built from
     # ``reflection_lm``. Mirror of gepa.optimize()'s reflection_strategy=.
     reflection_strategy: "ReflectionLM | None" = None
+    prompt_breeder_config: PromptBreederConfig | None = None
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled"
     reflection_minibatch_size: int | None = None  # Default: 1 for single-instance mode, 3 otherwise
     module_selector: ReflectionComponentSelector | Literal["round_robin", "all"] = "round_robin"
@@ -936,6 +936,8 @@ class GEPAConfig:
             self.engine = EngineConfig(**self.engine)
         if isinstance(self.reflection, dict):
             self.reflection = ReflectionConfig(**self.reflection)
+        if isinstance(self.reflection.prompt_breeder_config, dict):
+            self.reflection.prompt_breeder_config = PromptBreederConfig(**self.reflection.prompt_breeder_config)
         if isinstance(self.tracking, dict):
             self.tracking = TrackingConfig(**self.tracking)
         if isinstance(self.merge, dict):
@@ -1393,6 +1395,18 @@ def optimize_anything(
 
         config.reflection.reflection_lm = TrackingLM(config.reflection.reflection_lm)
 
+    if config.reflection.prompt_breeder_config is not None:
+        if config.reflection.reflection_strategy is not None:
+            raise ValueError("Cannot provide both prompt_breeder_config and reflection_strategy.")
+        if config.reflection.custom_candidate_proposer is not None:
+            raise ValueError(
+                "prompt_breeder_config owns proposal generation and cannot be combined with custom_candidate_proposer."
+            )
+        if getattr(active_adapter, "propose_new_texts", None) is not None:
+            raise ValueError("prompt_breeder_config cannot be combined with an adapter that owns propose_new_texts.")
+        if config.reflection.reflection_lm is None:
+            raise ValueError("prompt_breeder_config requires reflection_lm.")
+
     # --- 2. Build stoppers (all in one place, after LM conversion) ---
     stop_callbacks_list: list[StopperProtocol] = []
 
@@ -1593,6 +1607,16 @@ def optimize_anything(
     if user_provided_objective_or_background:
         config.reflection.reflection_prompt_template = _build_reflection_prompt_template(
             objective=objective, background=background
+        )
+
+    if config.reflection.prompt_breeder_config is not None:
+        assert config.reflection.reflection_lm is not None
+        assert not isinstance(config.reflection.reflection_lm, str)
+        config.reflection.reflection_strategy = PromptBreederReflectionLM(
+            config.reflection.reflection_lm,
+            config=config.reflection.prompt_breeder_config,
+            logger=config.tracking.logger,
+            reflection_prompt_template=config.reflection.reflection_prompt_template,
         )
 
     # --- 10. Validate reflection prompt template ---

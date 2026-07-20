@@ -150,7 +150,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     returned by :func:`~gepa.optimize_anything.optimize_anything`.
     """
 
-    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 5
+    _VALIDATION_SCHEMA_VERSION: ClassVar[int] = 6
     # Attributes that are runtime-only and should not be serialized (e.g., callback hooks, caches)
     _EXCLUDED_FROM_SERIALIZATION: ClassVar[frozenset[str]] = frozenset({"_budget_hooks"})
 
@@ -187,6 +187,10 @@ class GEPAState(Generic[RolloutOutput, DataId]):
     # Opaque bag for adapter-specific persistent state.
     # Core GEPA never inspects this; adapters read/write via get_adapter_state()/set_adapter_state().
     adapter_state: dict[str, Any]
+
+    # Opaque bag for proposer/reflection-strategy persistent state.
+    # Core GEPA never inspects this; proposer hooks read/write it opportunistically.
+    proposer_state: dict[str, Any]
 
     def __init__(
         self,
@@ -252,6 +256,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         self.validation_schema_version = self._VALIDATION_SCHEMA_VERSION
         self.evaluation_cache = evaluation_cache
         self.adapter_state: dict[str, Any] = {}
+        self.proposer_state: dict[str, Any] = {}
 
     def is_consistent(self) -> bool:
         assert len(self.program_candidates) == len(self.parent_program_for_candidate)
@@ -373,6 +378,7 @@ class GEPAState(Generic[RolloutOutput, DataId]):
         assert set(state.pareto_front_valset.keys()) == set(state.program_at_pareto_front_valset.keys())
         assert set(state.objective_pareto_front.keys()) == set(state.program_at_pareto_front_objectives.keys())
         assert isinstance(state.adapter_state, dict)
+        assert isinstance(state.proposer_state, dict)
         return state
 
     @staticmethod
@@ -417,6 +423,8 @@ class GEPAState(Generic[RolloutOutput, DataId]):
             d["evaluation_cache"] = None
         if "adapter_state" not in d:
             d["adapter_state"] = {}
+        if "proposer_state" not in d:
+            d["proposer_state"] = {}
         d["validation_schema_version"] = GEPAState._VALIDATION_SCHEMA_VERSION
 
     @staticmethod

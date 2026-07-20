@@ -175,6 +175,16 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
         if setter is not None:
             setter(state.adapter_state)
 
+    def _sync_proposer_state_to_state(self, state: GEPAState) -> None:
+        getter = getattr(self.reflective_proposer, "get_proposer_state", None)
+        if getter is not None:
+            state.proposer_state = dict(getter())
+
+    def _sync_state_to_proposer(self, state: GEPAState) -> None:
+        setter = getattr(self.reflective_proposer, "set_proposer_state", None)
+        if setter is not None:
+            setter(state.proposer_state, state)
+
     def _evaluate_programs_on_valset(
         self,
         programs: list[dict[str, str]],
@@ -435,6 +445,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 reason=reject_reason,
             ),
         )
+        self.reflective_proposer.on_proposal_rejected(proposal, state, reject_reason)
 
     def _run_reflective_batch(
         self,
@@ -506,9 +517,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 )
                 continue
             passed_acceptance = criterion.should_accept(proposal, state)
-            self._report_rejected_proposal(
-                proposal, iteration, state, dropped_by_selection=passed_acceptance
-            )
+            self._report_rejected_proposal(proposal, iteration, state, dropped_by_selection=passed_acceptance)
 
         if not selected:
             return False
@@ -531,6 +540,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                 valset_evaluation=valset_evaluation,
                 num_actual_evals=num_actual_evals,
             )
+            self.reflective_proposer.on_proposal_accepted(proposal, new_idx, state, valset_evaluation)
             self._log_proposal_lm_calls(iteration, proposal, candidate_idx=new_idx)
             notify_callbacks(
                 self.callbacks,
@@ -642,6 +652,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
 
         # Restore adapter state from persisted state (only has effect on resume)
         self._sync_state_to_adapter(state)
+        self._sync_state_to_proposer(state)
 
         # Log base program score
         # Log run configuration
@@ -739,6 +750,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             iteration_started = False
             try:
                 self._sync_adapter_state_to_state(state)
+                self._sync_proposer_state_to_state(state)
                 state.save(self.run_dir, use_cloudpickle=self.use_cloudpickle)
                 notify_callbacks(
                     self.callbacks,
@@ -794,6 +806,12 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
                                     new_program=proposal.candidate,
                                     state=state,
                                     parent_program_idx=proposal.parent_program_ids,
+                                )
+                                self.reflective_proposer.on_candidate_imported(
+                                    proposal.candidate,
+                                    proposal.parent_program_ids,
+                                    state,
+                                    new_candidate_idx=new_idx,
                                 )
                                 self.merge_proposer.merges_due -= 1
                                 self.merge_proposer.total_merges_tested += 1
@@ -886,6 +904,7 @@ class GEPAEngine(Generic[DataId, DataInst, Trajectory, RolloutOutput]):
             progress_bar.close()
 
         self._sync_adapter_state_to_state(state)
+        self._sync_proposer_state_to_state(state)
         state.save(self.run_dir, use_cloudpickle=self.use_cloudpickle)
 
         # Notify optimization end

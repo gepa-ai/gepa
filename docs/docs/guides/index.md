@@ -9,6 +9,7 @@ Welcome to the GEPA guides! These guides will help you understand and use GEPA e
 - [FAQ](faq.md) - Frequently asked questions about GEPA
 - [Creating Adapters](adapters.md) - Learn how to integrate GEPA with your system
 - [Batch Sampling](batch-sampling.md) - Control which training examples the reflection LM sees each iteration
+- [PromptBreeder Reflection Co-Evolution](prompt-breeder-coevolution.md) - Evolve task prompts and the reflection process together
 - [Confidence-Aware Classification](confidence-adapter.md) - Optimize classification prompts with logprob confidence
 - [Using Callbacks](callbacks.md) - Monitor and instrument optimization runs
 - [gskill](gskill.md) - Learn repository-specific skills for coding agents

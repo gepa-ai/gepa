@@ -23,6 +23,7 @@ from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
+from gepa.proposer.reflective_mutation.prompt_breeder import PromptBreederConfig, PromptBreederReflectionLM
 from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
@@ -100,6 +101,7 @@ def optimize(
     sampling_strategy: SamplingStrategy | None = None,
     selection_strategy: SelectionStrategy | None = None,
     reflection_strategy: ReflectionLM | None = None,
+    prompt_breeder_config: PromptBreederConfig | None = None,
 ) -> GEPAResult[RolloutOutput, DataId]:
     """
     GEPA is an evolutionary optimizer that evolves (multiple) text components of a complex system to optimize them towards a given metric.
@@ -149,6 +151,7 @@ def optimize(
     - sampling_strategy: Controls how many (parent, minibatch) proposal tasks are sampled per iteration. One of `SingleMutationSampling` (default; 1 parent, 1 mutation — identical to classic GEPA), `SameParentSampling(n)`, `IndependentSampling(n)`, or `PxNSampling(p, n)`, or any custom `SamplingStrategy`.
     - selection_strategy: Controls which of an iteration's improving proposals enter the candidate pool. One of `AllImprovements` (default), `BestImprovement`, or `TopKImprovements(k)`, or any custom `SelectionStrategy`.
     - reflection_strategy: Advanced: a `ReflectionLM` implementation that owns how reflective mutation calls the reflection model (e.g. stateful sessions or aggregating reflectors). Defaults to the stateless single-call reflector built from `reflection_lm`. Implementations may provide `reflect_many` for batched reflection; otherwise `reflect` is called once per task.
+    - prompt_breeder_config: Enable fitness-based co-evolution of the task prompt and the reflection model's mutation prompt/thinking style. Successful mutators are inherited only when GEPA accepts the task-prompt child they generated. Requires `reflection_lm` and cannot be combined with `reflection_strategy`, `custom_candidate_proposer`, or an adapter-owned proposer.
     - candidate_selection_strategy: The strategy to use for selecting the candidate to update. Supported strategies: 'pareto', 'current_best', 'epsilon_greedy'. Defaults to 'pareto'.
     - frontier_type: Strategy for tracking Pareto frontiers. 'instance' tracks per validation example, 'objective' tracks per objective metric, 'hybrid' combines both, 'cartesian' tracks per (example, objective) pair. Defaults to 'instance'.
     - skip_perfect_score: Whether to skip updating the candidate if it achieves a perfect score on the minibatch.
@@ -245,9 +248,22 @@ def optimize(
     elif reflection_lm is not None:
         from gepa.lm import TrackingLM
 
-        reflection_lm_callable = TrackingLM(reflection_lm) if not hasattr(reflection_lm, "total_cost") else reflection_lm
+        reflection_lm_callable = (
+            TrackingLM(reflection_lm) if not hasattr(reflection_lm, "total_cost") else reflection_lm
+        )
     else:
         reflection_lm_callable = None
+
+    if prompt_breeder_config is not None:
+        if reflection_strategy is not None:
+            raise ValueError("Cannot provide both prompt_breeder_config and reflection_strategy.")
+        if adapter_has_propose or custom_candidate_proposer is not None:
+            raise ValueError(
+                "prompt_breeder_config owns proposal generation and cannot be combined with "
+                "adapter.propose_new_texts or custom_candidate_proposer."
+            )
+        if reflection_lm_callable is None:
+            raise ValueError("prompt_breeder_config requires reflection_lm.")
 
     # --- Build stoppers (all in one place, after LM conversion) ---
     stop_callbacks_list: list[StopperProtocol] = []
@@ -300,6 +316,16 @@ def optimize(
             logger = Logger(os.path.join(run_dir, "run_log.txt"))
         else:
             logger = StdOutLogger()
+
+    resolved_reflection_strategy = reflection_strategy
+    if prompt_breeder_config is not None:
+        assert reflection_lm_callable is not None
+        resolved_reflection_strategy = PromptBreederReflectionLM(
+            reflection_lm_callable,
+            config=prompt_breeder_config,
+            logger=logger,
+            reflection_prompt_template=reflection_prompt_template,
+        )
 
     rng = random.Random(seed)
 
@@ -412,7 +438,7 @@ def optimize(
         custom_candidate_proposer=custom_candidate_proposer,
         callbacks=callbacks,
         sampling_strategy=sampling_strategy,
-        reflection_strategy=reflection_strategy,
+        reflection_strategy=resolved_reflection_strategy,
     )
 
     def evaluator_fn(

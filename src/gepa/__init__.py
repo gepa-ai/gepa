@@ -10,6 +10,12 @@ from .core.adapter import EvaluationBatch, GEPAAdapter
 from .core.result import GEPAResult
 from .examples import aime
 from .image import Image
+from .proposer.reflective_mutation.prompt_breeder import (
+    BreederGenome,
+    PromptBreederConfig,
+    PromptBreederReflectionLM,
+    make_prompt_breeder_strategy,
+)
 from .utils.stop_condition import (
     CompositeStopper,
     FileStopper,

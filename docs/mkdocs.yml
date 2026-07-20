@@ -28,6 +28,7 @@ nav:
         - Candidate Selection Strategies: guides/candidate-selection.md
         - Acceptance Criterion: guides/acceptance-criterion.md
         - Batch Sampling: guides/batch-sampling.md
+        - PromptBreeder Reflection Co-Evolution: guides/prompt-breeder-coevolution.md
         - Parallel Proposals: guides/parallel-proposals.md
         - Using Callbacks: guides/callbacks.md
         - Cost & Token Tracking: guides/cost-tracking.md
