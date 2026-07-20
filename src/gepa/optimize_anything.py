@@ -476,15 +476,15 @@ class EngineConfig:
 
     # Strategy selection for the engine
     val_evaluation_policy: EvaluationPolicy | Literal["full_eval"] = "full_eval"
-    candidate_selection_strategy: CandidateSelector | Literal[
-        "pareto", "current_best", "epsilon_greedy", "top_k_pareto"
-    ] = "pareto"
+    candidate_selection_strategy: (
+        CandidateSelector | Literal["pareto", "current_best", "epsilon_greedy", "top_k_pareto"]
+    ) = "pareto"
     frontier_type: FrontierType = "hybrid"
 
     # Acceptance criterion for reflective mutation proposals
-    acceptance_criterion: AcceptanceCriterion | Literal[
-        "strict_improvement", "improvement_or_equal"
-    ] = "strict_improvement"
+    acceptance_criterion: AcceptanceCriterion | Literal["strict_improvement", "improvement_or_equal"] = (
+        "strict_improvement"
+    )
 
     # Parallelization settings for evaluation
     parallel: bool = True
@@ -607,8 +607,8 @@ Based on your analysis, propose an improved version that:
     sections.append("""
 ## Output Format
 
-Provide ONLY the improved version within ``` blocks. The output must be a complete, 
-drop-in replacement for the current component (whether it's a prompt, configuration, 
+Provide ONLY the improved version within ``` blocks. The output must be a complete,
+drop-in replacement for the current component (whether it's a prompt, configuration,
 code, or any other parameter type).
 Do not include explanations, commentary, or markdown outside the ``` blocks.""")
 
@@ -641,9 +641,7 @@ def _build_seed_generation_prompt(
         examples = dataset[:3]
         example_lines = [f"- Example {i}: {ex}" for i, ex in enumerate(examples, 1)]
         sections.append(
-            "\n## Sample Inputs\n\n"
-            "The candidate will be evaluated on inputs like these:\n\n"
-            + "\n".join(example_lines)
+            "\n## Sample Inputs\n\nThe candidate will be evaluated on inputs like these:\n\n" + "\n".join(example_lines)
         )
 
     sections.append(
@@ -727,6 +725,11 @@ class ReflectionConfig:
     targeted improvements on that subset.  Over iterations, all examples get
     attention, and the Pareto frontier preserves specialized gains across
     iterations rather than averaging them away.
+
+    ``bon`` and ``itr`` control inner textual-gradient search. ``bon`` samples
+    multiple candidate evolutions per component and asks the reflection LM to
+    pick the best; ``itr`` repeats that evolution step sequentially before the
+    candidate is evaluated.
     """
 
     skip_perfect_score: bool = False
@@ -747,6 +750,8 @@ class ReflectionConfig:
     Ignored when ``reflection_lm`` is already a callable."""
     reflection_prompt_template: str | dict[str, str] | None = optimize_anything_reflection_prompt_template
     custom_candidate_proposer: ProposalFn | None = None
+    bon: int = 1
+    itr: int = 1
 
 
 @dataclass
@@ -1631,6 +1636,8 @@ def optimize_anything(
         callbacks=config.callbacks,
         sampling_strategy=config.engine.sampling_strategy,
         reflection_strategy=config.reflection.reflection_strategy,
+        best_of_n=config.reflection.bon,
+        num_iterations=config.reflection.itr,
     )
 
     # Define evaluator function for merge proposer

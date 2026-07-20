@@ -74,7 +74,13 @@ class ReflectiveMutationProposer:
         callbacks: list[GEPACallback] | None = None,
         sampling_strategy: SamplingStrategy | None = None,
         reflection_strategy: ReflectionLM | None = None,
+        best_of_n: int = 1,
+        num_iterations: int = 1,
     ):
+        if best_of_n < 1:
+            raise ValueError("best_of_n must be >= 1.")
+        if num_iterations < 1:
+            raise ValueError("num_iterations must be >= 1.")
         self.logger = logger
         self.trainset = ensure_loader(trainset)
         self.adapter = adapter
@@ -88,6 +94,8 @@ class ReflectiveMutationProposer:
         self.custom_candidate_proposer = custom_candidate_proposer
         self.callbacks = callbacks
         self.sampling_strategy: SamplingStrategy = sampling_strategy or SingleMutationSampling()
+        self.best_of_n = best_of_n
+        self.num_iterations = num_iterations
 
         self.reflection_prompt_template = reflection_prompt_template
 
@@ -101,13 +109,17 @@ class ReflectiveMutationProposer:
             adapter.propose_new_texts is not None or custom_candidate_proposer is not None
         ):
             owner = (
-                "adapter.propose_new_texts"
-                if adapter.propose_new_texts is not None
-                else "custom_candidate_proposer"
+                "adapter.propose_new_texts" if adapter.propose_new_texts is not None else "custom_candidate_proposer"
             )
             raise ValueError(
                 f"reflection_strategy was provided, but {owner} owns proposal generation "
                 "and the reflection strategy would be silently ignored. Remove one of the two."
+            )
+
+        if reflection_strategy is not None and (best_of_n != 1 or num_iterations != 1):
+            raise ValueError(
+                "best_of_n/num_iterations are implemented by the default StatelessReflectionLM. "
+                "When reflection_strategy is provided, implement multi-step or Best-of-N behavior inside that strategy."
             )
 
         # Reflection LM (#329 Phase 1); None when an adapter/custom proposer owns
@@ -116,7 +128,13 @@ class ReflectiveMutationProposer:
         # reflectors (#329 Phase 2/3) — takes precedence over the stateless
         # default built from the raw reflection_lm callable.
         self._reflection_lm: ReflectionLM | None = reflection_strategy or (
-            StatelessReflectionLM(reflection_lm, reflection_prompt_template, logger)
+            StatelessReflectionLM(
+                reflection_lm,
+                reflection_prompt_template,
+                logger,
+                best_of_n=best_of_n,
+                num_iterations=num_iterations,
+            )
             if reflection_lm is not None
             else None
         )
@@ -183,9 +201,7 @@ class ReflectiveMutationProposer:
         if reflect_many is not None:
             results = list(reflect_many(jobs))
             if len(results) != len(jobs):
-                raise ValueError(
-                    f"ReflectionLM.reflect_many returned {len(results)} results for {len(jobs)} jobs"
-                )
+                raise ValueError(f"ReflectionLM.reflect_many returned {len(results)} results for {len(jobs)} jobs")
         else:
             results = []
             for cand, refds, comps in jobs:
@@ -215,7 +231,9 @@ class ReflectiveMutationProposer:
         except Exception as e:
             self.logger.log(f"Batched reflection failed ({e}); retrying per task.")
             self.logger.log(traceback.format_exc())
-            out: list[tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str], dict[str, Any]] | None] = []
+            out: list[
+                tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str], dict[str, Any]] | None
+            ] = []
             for cand, refds, comps in jobs:
                 try:
                     out.append(self.propose_new_texts(cand, refds, comps))
@@ -475,9 +493,7 @@ class ReflectiveMutationProposer:
                 # would be byte-identical to its parent: don't burn minibatch
                 # metric calls evaluating it or emit proposal/rejection events
                 # for a proposal that never happened.
-                self.logger.log(
-                    f"Iteration {i}: Reflection returned no text updates; skipping proposal for this task."
-                )
+                self.logger.log(f"Iteration {i}: Reflection returned no text updates; skipping proposal for this task.")
                 children.append(None)
                 continue
 
