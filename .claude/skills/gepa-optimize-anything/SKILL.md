@@ -45,8 +45,10 @@ argument** — and the same code runs under any of them:
 deliberately naive: use it as a **baseline** to compare an optimizer against, not as the optimizer.)
 
 This makes it easy to start with one backend and benchmark others on the identical task/evaluator.
-There are also **ensemble helpers** (`optimize_sequential`, `optimize_parallel`, `optimize_best_of`,
-`optimize_vote`) that compose several backends over the same task — see `references/api.md`.
+There are also **composition/pipeline helpers** that combine backends over the same task:
+`optimize_sequential` (a pipeline — each stage's best seeds the next), `optimize_parallel`,
+`optimize_best_of`, `optimize_vote` (re-score each branch's best for a fair pick), and an adaptive
+scheduler that rotates backends on score plateaus — see `references/api.md`.
 
 ## What can be a candidate
 A candidate is **any string your evaluator can score**. "Text in → a number out (higher is better),
@@ -237,7 +239,8 @@ These silently degrade *results* — skim before launching:
 
 ## Reference files (load as needed)
 - `references/api.md` — `OptimizeAnythingConfig`, the backends and their typed `engine_config`
-  options, the three modes, the LM protocol, budget/cost semantics, `Result` shape, ensemble helpers.
+  options, the three modes, the LM protocol, budget/cost semantics, `Result` shape, and the
+  composition/pipeline helpers.
 - `references/writing_evaluators.md` — the `(score, info)` contract, `oa.log()`/`capture_stdio`,
   LLM-as-judge scoring, multi-objective via `info["scores"]`, N>1 averaging, feedback design.
 - `references/tracking.md` — enabling wandb / mlflow experiment tracking and what gets logged.

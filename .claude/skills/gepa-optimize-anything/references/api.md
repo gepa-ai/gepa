@@ -167,19 +167,46 @@ optimizer, not as the optimizer. Stops on budget exhaustion, `stop_at_score`, or
   inference engine** (vLLM, a local server, your own client) instead of LiteLLM.
   `reflection_lm_kwargs` is ignored for callables.
 
-## Ensemble helpers (compose backends)
-`gepa.optimize_anything` also exports helpers that run several backends over the same
-task/evaluator. Each mirrors `optimize_anything`'s flat signature plus `configs=`, a list of
-`OptimizeAnythingConfig` (one per backend, each with its own budget):
-- `optimize_sequential` — pipeline: each backend's best becomes the next one's seed (monotonic — a
-  regressing stage doesn't poison the chain).
-- `optimize_parallel` — run N backends concurrently, return all results.
-- `optimize_best_of` — parallel, then keep the result with the highest `best_score`.
-- `optimize_vote` — parallel, then re-score each backend's best once via `evaluate` (outside any
-  budget) and return the highest re-score.
-`*_with_server` variants take caller-owned `EvalServer`s (one per config) for embedding in outer
-frameworks; `optimize_adaptive_sequential_with_server` rotates backends on score plateaus under one
-shared budget.
+## Composition / pipeline helpers (ensembles)
+`gepa.optimize_anything` also exports helpers that compose several backends over the same
+task/evaluator. Each takes the same flat task fields as `optimize_anything` (`seed_candidate`
+positional; `evaluator=`, `dataset=`, `valset=`, `objective=`, `background=`, `test_set=`, `name=`
+keywords) plus `configs=` — a list of `OptimizeAnythingConfig`, one per stage/branch, each carrying
+its own budget. Budgets are pre-partitioned per config; an early-finishing stage's leftover is not
+redistributed.
+
+- `optimize_sequential` — **pipeline**: run configs in order; each stage's best becomes the next
+  stage's seed. Monotonic — the running best is carried forward, so a regressing stage doesn't
+  poison the chain.
+- `optimize_parallel` — run all configs concurrently; returns the list of `Result`s (config order).
+- `optimize_best_of` — parallel, then keep the result with the highest `best_score` (each engine's
+  own number — no re-scoring).
+- `optimize_vote` — parallel, then re-score each branch's best candidate once via `evaluator`
+  (outside any budget) and return the highest re-score. Use when engines score with different
+  quirks and you want a fair cross-engine comparison.
+
+```python
+from gepa.optimize_anything import optimize_sequential, OptimizeAnythingConfig
+
+result = optimize_sequential(
+    SEED,
+    evaluator=evaluate,
+    dataset=trainset, valset=valset,
+    objective="...",
+    configs=[
+        OptimizeAnythingConfig(engine="autoresearch", max_evals=100, max_token_cost=5.0),
+        OptimizeAnythingConfig(engine="gepa", max_evals=200),  # refines autoresearch's best
+    ],
+)
+```
+
+`*_with_server` variants (`optimize_sequential_with_server`, `optimize_parallel_with_server`, …)
+take caller-owned `EvalServer`s — one per config — for embedding in outer frameworks that route
+every eval through their own server. `optimize_adaptive_sequential_with_server` is a **scheduler**
+over one shared server/budget: it gives the active engine bounded eval slices and rotates to the
+next engine after `patience` non-improving slices (plateau switching), always feeding the running
+best forward. Related: the autoresearch backend's `handoffs` key materializes prior-stage artifacts
+into the agent's work dir for hand-rolled sequential compositions.
 
 ## `Result`
 ```python
