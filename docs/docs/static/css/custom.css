@@ -19,9 +19,9 @@
   --md-accent-fg-color--transparent: rgba(144, 224, 239, 0.1);
 }
 
-/* Gradient-styled code text (e.g. "optimize_anything" in blog titles) */
+/* Gradient-styled code text (e.g. "optimize_anything" in blog titles) — GEPA logo colors, saturated */
 .gradient-code {
-    background: linear-gradient(135deg, #023E8A, #0077B6, #00B4D8, #48CAE4);
+    background: linear-gradient(135deg, #4d7fc4, #3fa98f, #67b944);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -29,7 +29,7 @@
 }
 
 [data-md-color-scheme="slate"] .gradient-code {
-    background: linear-gradient(135deg, #60A5FA, #818CF8, #A78BFA);
+    background: linear-gradient(135deg, #7dabe8, #5ec9ab, #93d46a);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
