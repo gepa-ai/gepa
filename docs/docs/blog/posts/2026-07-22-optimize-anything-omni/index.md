@@ -17,11 +17,11 @@ citation_keywords: "text optimization, LLM-driven optimization, prompt optimizat
 # <span class="gradient-code">optimize_anything</span> Goes <span class="gradient-code">omni</span> : Pluggable Engines and Composable Optimizer Pipelines
 
 !!! tip ""
-    **TL;DR.** `optimize_anything` is now **engine-pluggable** and **pipeline-composable**: one argument (`engine=`) dispatches the same optimization task to any supported engine, such as GEPA, [AutoResearch](https://github.com/karpathy/autoresearch), or [Meta-Harness](https://arxiv.org/abs/2603.28052), and the engines compose into multi-stage pipelines as well. Using **[Terrarium](https://github.com/gepa-ai/terrarium)**, our new evaluation framework that runs every optimizer to a curated set of task with a matched budget, we find that **no single optimizer dominates** on [Frontier-CS](https://arxiv.org/abs/2512.15699), but the composed **`omni`** pipeline beats every standalone optimizer under a matched \$20 budget.
+    **TL;DR.** `optimize_anything` is now **engine-pluggable** and **pipeline-composable**: one argument (`engine=`) dispatches the same optimization task to any supported engine, such as GEPA, [AutoResearch](https://github.com/karpathy/autoresearch), or [Meta-Harness](https://arxiv.org/abs/2603.28052), and the engines compose into multi-stage pipelines as well. Using [Terrarium](https://github.com/gepa-ai/terrarium), our new evaluation framework that runs every optimizer to a curated set of task with a matched budget, we find that **no single optimizer dominates** on [Frontier-CS](https://arxiv.org/abs/2512.15699), but the composed **<span class="gradient-code">omni</span>** pipeline beats every standalone optimizer under a matched \$20 budget.
 
 <figure markdown="span">
   ![Bar chart, mean score on Frontier-CS (10 problems, \$20 budget each): GEPA 43.8, AutoResearch 55.4, Meta-Harness 50.9 (gray), and omni 63.2 (dark blue). The omni bar tops every standalone optimizer.](images/omni_bar.png){ style="width: 70%;" }
-  <figcaption>On Frontier-CS (10 problems, matched $20 budget, Claude Sonnet 4.6), the composed <span class="gradient-code">omni</span> pipeline (63.2) beats every standalone optimizer.</figcaption>
+  <figcaption>On Frontier-CS, the composed optimizer pipeline <span class="gradient-code">omni</span> beats every standalone optimizer.</figcaption>
 </figure>
 
 When we [introduced `optimize_anything`](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/), the premise was simple: if your artifact is describable as text and its quality can be measured, you can optimize it. You write down the artifact and a function that scores it, and GEPA's reflective-mutation loop optimizes it.
@@ -65,11 +65,11 @@ task = dict(
 
 # Same task, same evaluator, swap only the engine:
 result_gepa = optimize_anything(seed, **task, 
-                            config=OptimizeAnythingConfig(engine="gepa",        ))
+                          config=OptimizeAnythingConfig(engine="gepa",        ))
 result_autoresearch = optimize_anything(seed, **task, 
-                            config=OptimizeAnythingConfig(engine="autoresearch",))
+                          config=OptimizeAnythingConfig(engine="autoresearch",))
 result_meta_harness = optimize_anything(seed, **task, 
-                            config=OptimizeAnythingConfig(engine="meta_harness",))
+                          config=OptimizeAnythingConfig(engine="meta_harness",))
 
 ```
 
@@ -100,50 +100,49 @@ It usually can.
 
 The plateau one optimizer reaches is rarely the best the budget can buy: a *different* optimizer, seeded from the stuck candidate, usually keeps making progress. Which one helps varies, too — on P0, AutoResearch breaks through while Meta-Harness stays put. Both findings point the same way: rather than bet the whole budget on one optimizer, **explore with several and continue from the best**.
 
-## omni: composing optimizers into a pipeline
+## <span class="gradient-code">omni</span>: composing optimizers into a pipeline
 
-These observations point to a design rather than a single winner. **`omni`** is a pipeline that puts both findings to work under one budget:
+These observations point to a design rather than a single winner. **<span class="gradient-code">omni</span>** is a pipeline that puts both findings to work under one budget:
 
 <figure markdown="span">
   ![omni pipeline diagram. Phase 1 (left): GEPA, AutoResearch, and Meta-Harness each run in parallel on a small slice of the budget (each labeled \$5). Their outputs flow into a "Pick Best" node. Phase 2 (right): the best candidate seeds a fresh instance of one optimizer (Fresh GEPA / Fresh AutoResearch / Fresh Meta-Harness, each \$5) that continues the search, producing the named variant omni-GEPA / omni-AutoResearch / omni-Meta-Harness, each capped at \$20 total.](images/omni_design.png){ style="width: 100%;" }
-  <figcaption><span class="gradient-code">omni</span> as an optimizer pipeline. <strong>Phase 1:</strong> run every engine in parallel on a small slice of the budget and pick the single best candidate (exploiting that no optimizer dominates, and that early progress is fast). <strong>Phase 2:</strong> hand that candidate to a <em>fresh</em> optimizer for the rest of the budget (exploiting that a fresh optimizer breaks plateaus). The continuation engine names the variant — <span class="gradient-code">omni</span>-GEPA, <span class="gradient-code">omni</span>-AutoResearch, or <span class="gradient-code">omni</span>-Meta-Harness — each capped at $20 total.</figcaption>
+  <figcaption><span class="gradient-code">omni</span> as an optimizer pipeline. <strong>Phase 1:</strong> run every engine in parallel on a small slice of the budget and pick the single best candidate, exploiting that no optimizer dominates, and that early progress is fast. <strong>Phase 2:</strong> hand that candidate to a <em>fresh</em> optimizer for the rest of the budget, exploiting that a fresh optimizer breaks plateaus.
 </figure>
 
 Phase 1 starts the slow part of the search from a better candidate than any single optimizer reaches alone; phase 2 hands that candidate to a fresh optimizer to push past the plateau. In the new API this is a short composition over the same engines: `optimize_best_of` runs several engines in parallel and keeps the highest-scoring candidate, then a fresh optimizer continues from it:
 
 ```python
-from gepa.optimize_anything import optimize_anything, optimize_best_of, OptimizeAnythingConfig
+from gepa.optimize_anything import (
+    optimize_anything, optimize_best_of, OptimizeAnythingConfig,
+)
 
-# Phase 1 — explore: run all three engines in parallel, keep the single best candidate.
+# Phase 1 ~ explore: run all engines in parallel, keep the best.
 explore = optimize_best_of(seed, **task, configs=[
     OptimizeAnythingConfig(engine="gepa",         max_token_cost=5),
     OptimizeAnythingConfig(engine="autoresearch", max_token_cost=5),
     OptimizeAnythingConfig(engine="meta_harness", max_token_cost=5),
 ])
 
-# Phase 2 — continue: seed a fresh optimizer from the winner and spend the rest of the budget.
-#   The continuation engine names the variant — this is omni-GEPA.
+# Phase 2 ~ continue: seed a fresh optimizer from the winner.
+#   The continuation engine names the variant. This is omni-GEPA.
 omni = optimize_anything(
-    explore.best_candidate,
-    **task,
+    explore.best_candidate, **task,
     config=OptimizeAnythingConfig(engine="gepa", max_token_cost=5),
 )
 
-print(omni.best_score, omni.best_candidate)
 ```
 
-`omni` is just one point in the design space the new API opens up. The same primitives compose other strategies:
+<span class="gradient-code">omni</span> is just one point in the design space the new API opens up. The same primitives compose other strategies:
 
 - **`optimize_sequential`** — chain engines; each one's best seeds the next (monotonic, so a regressing stage can't poison a later one).
 - **`optimize_parallel`** / **`optimize_best_of`** — run engines concurrently; take all results, or just the highest-scoring.
 - **`optimize_vote`** — run in parallel, then vote each engine's best once through your evaluator for a fair cross-engine comparison.
 - **`optimize_adaptive_sequential`** — give the active engine a bounded slice, watch for a plateau, and *automatically* switch engines when progress slows down. The "fresh optimizer breaks through the plateau" effect, scheduled for you under one shared budget.
 
-A composition can spend the same total as a single run: the budget is pre-partitioned across stages (the \$5 slices above).
 
-## Results: omni beats every standalone optimizer on Frontier-CS
+## Results: <span class="gradient-code">omni</span> beats every standalone optimizer on Frontier-CS
 
-We compared each engine run standalone against the corresponding `omni` pipeline on Frontier-CS, under a matched **\$20** budget. The figure at the top of the post shows that the best `omni` pipeline outscores every standalone optimizer, and every continuation variant beats its standalone counterpart:
+We compared each engine run standalone against the corresponding <span class="gradient-code">omni</span> pipeline on Frontier-CS, under a matched **\$20** budget. The figure at the top of the post shows that the best <span class="gradient-code">omni</span> pipeline outscores every standalone optimizer, and every continuation variant beats its standalone counterpart:
 
 | Optimizer | Standalone | `omni` | Improvement |
 | --- | --- | --- | --- |
@@ -151,7 +150,7 @@ We compared each engine run standalone against the corresponding `omni` pipeline
 | AutoResearch | 55.4 | **63.2** | +7.8 (+14%) |
 | Meta-Harness | 50.9 | **59.3** | +8.4 (+16%) |
 
-The largest gain goes to GEPA: standalone GEPA (43.8) is weaker than both agent-driven baselines, but `omni`-GEPA (61.8) overtakes even the strongest standalone optimizer (AutoResearch, 55.4). And every `omni` variant beats every standalone optimizer — the weakest `omni` pipeline (59.3) still scores higher than the best single optimizer (55.4). The reliable win comes from the composition.
+The largest gain goes to GEPA: standalone GEPA is weaker than both agent-driven baselines, but <span class="gradient-code">omni</span>-GEPA overtakes even the strongest standalone optimizer (AutoResearch). And every <span class="gradient-code">omni</span> variant beats every standalone optimizer — the weakest pipeline still scores higher than the best single engine. The reliable win comes from the composition.
 
 ## Getting started
 
@@ -174,7 +173,7 @@ result = optimize_anything(
 )
 ```
 
-We are releasing both pieces of this work together: the engine-pluggable, pipeline-composable `optimize_anything`, and **[Terrarium](https://github.com/gepa-ai/terrarium)**, the evaluation framework that pins optimizers to a shared task / eval-server / budget contract so they can be compared head-to-head. We'd love community contributions of new engines, tasks, and pipelines.
+We are releasing both pieces of this work together: the engine-pluggable, pipeline-composable `optimize_anything`, and [Terrarium](https://github.com/gepa-ai/terrarium), the evaluation framework that pins optimizers to a shared task / eval-server / budget contract so they can be compared head-to-head. We'd love community contributions of new engines, tasks, and pipelines.
 
 - [Documentation](https://gepa-ai.github.io/gepa/)
 - [GitHub](https://github.com/gepa-ai/gepa) · [Terrarium](https://github.com/gepa-ai/terrarium)
