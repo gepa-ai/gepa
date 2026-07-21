@@ -5,7 +5,7 @@ authors:
  - gepa-team
 slug: optimize-anything-omni
 readtime: 15
-title: "optimize_anything Goes omni: Composable Engines and Optimizer Pipelines"
+title: "optimize_anything Goes omni: Customizable Engines and Optimizer Pipelines"
 description: "optimize_anything now dispatches a single optimization call to any engine, such as GEPA, an autonomous coding agent, or an agent-based optimizer, and lets you compose them into multi-stage pipelines. On Frontier-CS, the composed omni pipeline beats every standalone optimizer under a matched budget."
 social_image: blog/2026-05-28-optimize-anything-omni/images/omni_design.png
 citation_authors:
