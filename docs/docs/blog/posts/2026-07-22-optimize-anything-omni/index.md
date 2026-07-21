@@ -154,9 +154,9 @@ The largest gain goes to GEPA: standalone GEPA is weaker than both agent-driven 
 
 ## Getting started
 
-`optimize_anything` was always meant to be a single frontend that dispatches to the right optimizer for your problem. Engines and pipelines deliver that: the API surface is mostly unchanged, `engine="gepa"` is the default, and you can switch to a different optimizer, or compose several, by changing one argument.
+**The best way to use `optimize_anything` is through the skill**, [`gepa-optimize-anything`](https://github.com/gepa-ai/gepa/tree/main/.claude/skills/gepa-optimize-anything): an instruction bundle that teaches a coding agent to drive the API for you, from picking the optimization mode to writing a feedback-rich evaluator, finding the right budget (it is always recommended to choose your own budget for realistic/production tasks), and avoiding the common pitfalls. In a clone of the repo, Claude Code (or any agent that reads `.claude/skills/`) discovers it automatically; just ask the agent to optimize something. Elsewhere, install it with `/plugin marketplace add gepa-ai/gepa` and `/plugin install gepa-optimize-anything@gepa` (see the [Agent Skill guide](https://gepa-ai.github.io/gepa/guides/agent-skill/)).
 
-`optimize_anything` also ships as an [Agent Skill](https://agentskills.io/), [`gepa-optimize-anything`](https://github.com/gepa-ai/gepa/tree/main/.claude/skills/gepa-optimize-anything), which teaches a coding agent to drive this API: pick the mode, write a feedback-rich evaluator, size the budget, and avoid the common pitfalls. **The best way to get started** is to let an agent with the skill do the setup. In a clone of the repo, Claude Code (or any agent that reads `.claude/skills/`) discovers it automatically; just ask it to optimize something. Elsewhere, install it with `/plugin marketplace add gepa-ai/gepa` and `/plugin install gepa-optimize-anything@gepa` (see the [Agent Skill guide](https://gepa-ai.github.io/gepa/guides/agent-skill/)). Or wire it up by hand:
+Prefer to wire it up by hand? `optimize_anything` should be your entry point. Define your evaluator, pick the engine, and go:
 
 ```bash
 pip install gepa[full]
