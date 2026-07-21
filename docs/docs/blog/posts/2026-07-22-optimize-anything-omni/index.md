@@ -14,7 +14,7 @@ citation_technical_report_institution: "UC Berkeley"
 citation_keywords: "text optimization, LLM-driven optimization, prompt optimization, program optimization, agent-based optimization, optimizer pipeline, Pareto optimization, GEPA, Frontier-CS"
 ---
 
-# <span class="gradient-code">optimize_anything</span> Goes Omni: Pluggable Engines and Composable Optimizer Pipelines
+# <span class="gradient-code">optimize_anything</span> Goes <span class="gradient-code">omni</span> : Pluggable Engines and Composable Optimizer Pipelines
 
 !!! tip ""
     **TL;DR.** `optimize_anything` is now **engine-pluggable** and **pipeline-composable**: one argument (`engine=`) dispatches the same optimization task to any supported engine, such as GEPA, [AutoResearch](https://github.com/karpathy/autoresearch), or [Meta-Harness](https://arxiv.org/abs/2603.28052), and the engines compose into multi-stage pipelines as well. Using **[Terrarium](https://github.com/gepa-ai/terrarium)**, our new evaluation framework that runs every optimizer to a curated set of task with a matched budget, we find that **no single optimizer dominates** on [Frontier-CS](https://arxiv.org/abs/2512.15699), but the composed **`omni`** pipeline beats every standalone optimizer under a matched \$20 budget.
@@ -26,13 +26,13 @@ citation_keywords: "text optimization, LLM-driven optimization, prompt optimizat
 
 When we [introduced `optimize_anything`](https://gepa-ai.github.io/gepa/blog/introducing-optimize-anything/), the premise was simple: if your artifact is describable as text and its quality can be measured, you can optimize it. You write down the artifact and a function that scores it, and GEPA's reflective-mutation loop optimizes it.
 
-But GEPA's reflective proposer is just *one* way to run that loop. A growing set of systems share a similar shape with a candidate string, a black-box scoring function, and an LLM-driven search loop. Some hand the optimization loop to an autonomous coding agent (e.g., [AutoResearch](https://github.com/karpathy/autoresearch)). Some keep an external framework in charge of loop orchestration and let an agent mutate one candidate at a time (e.g., [Meta-Harness](https://arxiv.org/abs/2603.28052)). Each is strong on some problems and weak on others, and **we don't have a good way to tell which will win**. Until now, switching between them meant porting your task into a new framework.
+But GEPA's reflective proposer is just *one* way to run the optimization loop. A growing set of systems share a similar shape with a candidate string, a black-box scoring function, and an LLM-driven search loop. Some delegate the entire loop to an autonomous coding agent (e.g., [AutoResearch](https://github.com/karpathy/autoresearch)). Some keep an external framework in charge of loop orchestration and let an agent mutate one candidate at a time (e.g., [Meta-Harness](https://arxiv.org/abs/2603.28052)). Each is strong on some problems and weak on others, and **we don't have a good way to tell which will win**. Until now, switching between them meant porting your task into a new framework.
 
-This release does two things. `optimize_anything` now runs the same call against any of these optimizers. You pick one with the `engine` argument or provide a new engine! And the optimizers compose: you can run several, keep the best, and continue.
+This release changes that in two ways. First, `optimize_anything` now can dispatch the same call to any of these optimizers. You pick one with the `engine` argument, or plug in your own. Second, the optimizers compose. You can run several engines in any order, keep the best, and continue from there.
 
-## What are the optimizers?
+## Different Optimizers
 
-Under the hood, three families of optimizers all fit the same `(candidate, score, loop)` contract, differing only in *who proposes the next candidate* and *who owns the search loop*:
+These systems fall into three families. All fit the same `(candidate, score, loop)` contract, differing only in *who proposes the next candidate* and *who owns the loop*:
 
 <figure markdown="span">
   ![Two boxes. Left, "Orchestrator Framework" (LLM-based / Agent-based): an external framework owns the outer loop, runs a parent-selection step (Pareto frontier or similar heuristic), then a proposer step that is either a single LLM call (LLM-based) or a coding agent (agent-based), with an eval server below. Right, "Autonomous Agent": a single coding agent collapses selection, proposal, and orchestration into one process, talking to its own eval server.](images/baselines.svg){ style="width: 100%;" }
@@ -47,31 +47,33 @@ Under the hood, three families of optimizers all fit the same `(candidate, score
 | `"autoresearch"` | Autonomous agent | A long-horizon [Claude Code](https://www.anthropic.com/claude-code) session ([AutoResearch](https://github.com/karpathy/autoresearch)-style) owns the entire loop: selection, proposal, and evaluation. |
 | `"meta_harness"` | Agent-based | A coding-agent proposer mutates candidates while the framework owns the outer loop and parent selection ([Meta-Harness](https://arxiv.org/abs/2603.28052)). |
 
-You pick the engine with one argument. The task, the `evaluate` function, and the budget stay the same:
+You pick the engine with one argument. The task and the `evaluate` function stay the same:
 
 ```python
 from gepa.optimize_anything import optimize_anything, OptimizeAnythingConfig
 
 def evaluate(candidate: str) -> tuple[float, dict]:
-    score, feedback = run_judge(candidate)      # your sandboxed judge
-    return score, {"Feedback": feedback}        # the dict is handed to the proposer as ASI
+    score, feedback = run_judge(candidate)
+    return score, {"Feedback": feedback}
 
 seed = open("seed_solution.py").read()
 task = dict(
     evaluator=evaluate,
-    objective="Maximize the hidden-test score for this competitive-programming problem.",
-    background="A single Python program. A sandboxed judge runs it against hidden tests and returns a 0–100 score.",
+    objective="Maximize the score for this competitive-programming problem.",
+    background="A sandboxed judge runs hidden tests and returns a 0–100 score.",
 )
 
 # Same task, same evaluator, swap only the engine:
-result = optimize_anything(seed, **task, config=OptimizeAnythingConfig(engine="gepa",         max_token_cost=20))
-result = optimize_anything(seed, **task, config=OptimizeAnythingConfig(engine="autoresearch", max_token_cost=20))
-result = optimize_anything(seed, **task, config=OptimizeAnythingConfig(engine="meta_harness", max_token_cost=20))
+result_gepa = optimize_anything(seed, **task, 
+                            config=OptimizeAnythingConfig(engine="gepa",        ))
+result_autoresearch = optimize_anything(seed, **task, 
+                            config=OptimizeAnythingConfig(engine="autoresearch",))
+result_meta_harness = optimize_anything(seed, **task, 
+                            config=OptimizeAnythingConfig(engine="meta_harness",))
 
-print(result.best_score, result.best_candidate)
 ```
 
-The `evaluate` function is polymorphic: `(candidate) -> (score, info)` for single-task problems, or `(candidate, example) -> (score, info)` when you also pass `dataset` / `valset` examples. The returned `info` dict is handed to the proposer as **Actionable Side Information (ASI)** — the feedback an engine uses to decide what to change next.
+The `evaluate` function is polymorphic: `(candidate) -> (score, info)` for single-task problems, or `(candidate, example) -> (score, info)` when you also pass `dataset` / `valset` examples. The returned `info` dict is handed to the proposer as **Actionable Side Information (ASI)**: the feedback an engine uses to decide what to change next.
 
 
 ## Why one optimizer is not enough
@@ -85,9 +87,9 @@ To decide *which* engine to reach for, we ran a controlled study with [Terrarium
 
 All three optimizers far outscore a zero-shot baseline. A single LLM call to the same model scores just **7.72** on average, versus 43.8–55.4 for the optimizers, so *some* optimizer is clearly essential. But which one? AutoResearch has the best average, but the per-problem numbers undercut that average: each optimizer is the best on about a third of the problems, and we couldn't find a way to predict the winner from the problem itself. "Pick the right optimizer for the task" isn't a usable answer when you can't tell which one is right.
 
-### Optimizers plateau — and a fresh optimizer can unstick them
+### Optimizers plateau, but a fresh optimizer may break through!
 
-There's a second effect. Given enough budget, every optimizer makes most of its gains early and then plateaus; the rest of the budget buys little. So we asked: is that tail of budget wasted, or can a *different* optimizer, handed the stalled candidate, break the plateau?
+There's a second effect. Given enough budget, every optimizer makes most of its gains early and then plateaus; the rest of the budget makes little difference. So we asked: is that tail of budget wasted, or can a *different* optimizer, handed the stalled candidate, break the plateau?
 
 It usually can.
 
@@ -134,14 +136,14 @@ print(omni.best_score, omni.best_candidate)
 
 - **`optimize_sequential`** — chain engines; each one's best seeds the next (monotonic, so a regressing stage can't poison a later one).
 - **`optimize_parallel`** / **`optimize_best_of`** — run engines concurrently; take all results, or just the highest-scoring.
-- **`optimize_vote`** — run in parallel, then re-score each engine's best once through your evaluator for a fair cross-engine comparison.
-- **`optimize_adaptive_sequential_with_server`** — give the active engine a bounded slice, watch for a plateau, and *automatically* switch engines when progress stalls — the "fresh optimizer unsticks the plateau" effect, scheduled for you under one shared budget.
+- **`optimize_vote`** — run in parallel, then vote each engine's best once through your evaluator for a fair cross-engine comparison.
+- **`optimize_adaptive_sequential`** — give the active engine a bounded slice, watch for a plateau, and *automatically* switch engines when progress slows down. The "fresh optimizer breaks through the plateau" effect, scheduled for you under one shared budget.
 
-A composition spends the same total as a single run — the budget is pre-partitioned across stages (the \$5 slices above), not multiplied. And each helper has a `*_with_server` variant (e.g. `optimize_best_of_with_server`) that runs every stage against one caller-owned eval server, enforcing a single hard budget across the whole pipeline.
+A composition can spend the same total as a single run: the budget is pre-partitioned across stages (the \$5 slices above).
 
 ## Results: omni beats every standalone optimizer on Frontier-CS
 
-We compared each engine run standalone against the corresponding `omni` pipeline on Frontier-CS, under a matched **\$20** budget. The figure at the top of the post shows the result: `omni` (63.2) tops every standalone optimizer, and every continuation variant beats its standalone counterpart:
+We compared each engine run standalone against the corresponding `omni` pipeline on Frontier-CS, under a matched **\$20** budget. The figure at the top of the post shows that the best `omni` pipeline outscores every standalone optimizer, and every continuation variant beats its standalone counterpart:
 
 | Optimizer | Standalone | `omni` | Improvement |
 | --- | --- | --- | --- |
@@ -149,14 +151,16 @@ We compared each engine run standalone against the corresponding `omni` pipeline
 | AutoResearch | 55.4 | **63.2** | +7.8 (+14%) |
 | Meta-Harness | 50.9 | **59.3** | +8.4 (+16%) |
 
-The largest gain goes to GEPA: `omni`-GEPA (61.8) more than closes its standalone gap behind the agent-based baselines, and overtakes even the strongest *standalone* optimizer (AutoResearch, 55.4). And every `omni` variant beats every standalone optimizer — the weakest `omni` pipeline (59.3) still tops the best single optimizer (55.4). The reliable win comes from composition, not from picking the right optimizer.
+The largest gain goes to GEPA: standalone GEPA (43.8) is weaker than both agent-driven baselines, but `omni`-GEPA (61.8) overtakes even the strongest standalone optimizer (AutoResearch, 55.4). And every `omni` variant beats every standalone optimizer — the weakest `omni` pipeline (59.3) still scores higher than the best single optimizer (55.4). The reliable win comes from the composition.
 
 ## Getting started
 
-`optimize_anything` was always meant to be a single frontend that dispatches to the right optimizer for your problem. Engines and pipelines deliver that: the API surface is unchanged, `engine="gepa"` is still the default, and you can switch to a different optimizer — or compose several — by changing one argument.
+`optimize_anything` was always meant to be a single frontend that dispatches to the right optimizer for your problem. Engines and pipelines deliver that: the API surface is mostly unchanged, `engine="gepa"` is the default, and you can switch to a different optimizer, or compose several, by changing one argument.
+
+`optimize_anything` also ships as an [Agent Skill](https://agentskills.io/), [`gepa-optimize-anything`](https://github.com/gepa-ai/gepa/tree/main/.claude/skills/gepa-optimize-anything), which teaches a coding agent to drive this API: pick the mode, write a feedback-rich evaluator, size the budget, and avoid the common pitfalls. **The best way to get started** is to let an agent with the skill do the setup. In a clone of the repo, Claude Code (or any agent that reads `.claude/skills/`) discovers it automatically; just ask it to optimize something. Elsewhere, install it with `/plugin marketplace add gepa-ai/gepa` and `/plugin install gepa-optimize-anything@gepa` (see the [Agent Skill guide](https://gepa-ai.github.io/gepa/guides/agent-skill/)). Or wire it up by hand:
 
 ```bash
-pip install gepa
+pip install gepa[full]
 ```
 
 ```python
