@@ -10,7 +10,11 @@ Two flavors of each helper:
   :class:`EvalServer` per engine internally (each with its own budget from
   ``OptimizeAnythingConfig.max_evals`` / ``OptimizeAnythingConfig.max_token_cost``).
   Budgets are pre-partitioned per config; if an engine finishes early its
-  leftover budget is not redistributed.
+  leftover budget is not redistributed. The one exception is
+  :func:`optimize_adaptive_sequential`, whose scheduler is defined by budget
+  *sharing*: it builds a single :class:`EvalServer` whose budget (the
+  ``max_evals`` argument, not per-config ``max_evals``) is spent by every
+  engine slice.
 - ``optimize_*_with_server`` — primitive. Caller owns the
   :class:`EvalServer`(s). All four helpers take **one server per config**
   (one :class:`BudgetTracker` per engine or per stage), so budget is
@@ -25,7 +29,8 @@ Helpers
   pipeline. Each engine's best becomes the next engine's seed.
   Monotonic: an engine that regresses doesn't poison the chain (the
   running best is carried forward).
-- :func:`optimize_adaptive_sequential_with_server` — rotate through engines
+- :func:`optimize_adaptive_sequential` /
+  :func:`optimize_adaptive_sequential_with_server` — rotate through engines
   on score plateaus while sharing one eval budget and carrying the running
   best forward.
 - :func:`optimize_parallel` / :func:`optimize_parallel_with_server` —
@@ -42,18 +47,19 @@ Helpers
 from __future__ import annotations
 
 import uuid
+import warnings
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
+from gepa.oa.budget import BudgetTracker
 from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engine import Result
+from gepa.oa.eval_server import DEFAULT_MAX_CONCURRENCY, EvalServer
 from gepa.oa.task import Task
-
-if TYPE_CHECKING:
-    from gepa.oa.eval_server import EvalServer
 
 
 def optimize_anything_from_task(
@@ -199,6 +205,116 @@ def _sequential_from_task(
     final.metadata["best_stage_score"] = best_so_far.best_score
     final.metadata["best_stage_candidate"] = best_so_far.best_candidate
     return final
+
+
+def optimize_adaptive_sequential(
+    seed_candidate: str | None = None,
+    *,
+    evaluator: Callable[..., tuple[float, dict[str, Any]]],
+    configs: list[OptimizeAnythingConfig],
+    plateau_evals: int,
+    dataset: list[Any] | None = None,
+    valset: list[Any] | None = None,
+    objective: str | None = None,
+    background: str | None = None,
+    test_set: list[Any] | None = None,
+    name: str | None = None,
+    max_evals: int | None = None,
+    patience: int = 1,
+    min_evals_per_stage: int = 0,
+    improvement_epsilon: float = 0.0,
+    cycle: bool = True,
+    max_switches: int | None = None,
+    max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+    output_dir: str | Path | None = None,
+) -> Result:
+    """Rotate through ``configs`` on score plateaus, sharing one eval budget.
+
+    Convenience flavor of :func:`optimize_adaptive_sequential_with_server`:
+    takes the same task fields as :func:`gepa.optimize_anything.optimize_anything`
+    plus ``configs``, and builds the single shared :class:`EvalServer` the
+    scheduler needs. Unlike the other convenience helpers, budget is **not**
+    pre-partitioned per config — ``max_evals`` is one pool that every engine
+    slice draws from, so per-config ``max_evals`` is ignored (as are the other
+    server-shaped config fields, ``output_dir`` and ``max_concurrency``).
+    Per-config ``max_token_cost`` still applies: each slice's engine enforces
+    its own proposer-cost cap.
+
+    ``max_evals=None`` leaves the pool unbounded; the run then stops only on
+    the scheduler's own conditions (``cycle=False`` end-of-list,
+    ``max_switches``, or a full round of idle slices), so a warning is issued
+    unless every config carries a ``max_token_cost``.
+
+    The held-out ``test_set`` never enters the shared server: the seed and the
+    returned best candidate are each scored on it once, outside the budget,
+    and reported under the same metadata keys as ``optimize_anything``
+    (``baseline_test_score(s)`` / ``test_score(s)``). Scheduler knobs
+    (``plateau_evals``, ``patience``, ``min_evals_per_stage``,
+    ``improvement_epsilon``, ``cycle``, ``max_switches``) and the returned
+    :class:`Result` are documented on the ``_with_server`` variant.
+    """
+    if not configs:
+        raise ValueError("optimize_adaptive_sequential requires at least one config")
+    if max_evals is None and any(cfg.max_token_cost is None for cfg in configs):
+        warnings.warn(
+            "max_evals is not set and not every config sets max_token_cost; the run is unbounded "
+            "and will stop only on the scheduler's own stop conditions.",
+            stacklevel=2,
+        )
+
+    # Lazy import avoids a circular import (gepa.optimize_anything imports this module).
+    from gepa.optimize_anything import _resolve_output_dir, _score_test
+
+    task = _build_task(
+        seed_candidate,
+        objective=objective,
+        background=background,
+        dataset=dataset,
+        valset=valset,
+        test_set=test_set,
+        name=name,
+    )
+    # The shared server's task omits test_set: every slice runs the standard
+    # engine harness, which would otherwise re-score the held-out set per
+    # slice. The single baseline/final test pass happens below instead.
+    server = EvalServer(
+        replace(task, test_set=None),
+        evaluator,
+        BudgetTracker(max_evals=max_evals),
+        max_concurrency=max_concurrency,
+        output_dir=_resolve_output_dir(output_dir, task=task, engine_name="adaptive"),
+    )
+    server.start()
+    try:
+        result = optimize_adaptive_sequential_with_server(
+            server,
+            configs,
+            plateau_evals=plateau_evals,
+            patience=patience,
+            min_evals_per_stage=min_evals_per_stage,
+            improvement_epsilon=improvement_epsilon,
+            cycle=cycle,
+            max_switches=max_switches,
+        )
+    finally:
+        server.stop()
+
+    # The last slice stamped budget/total_cost mid-run, under its sliced
+    # max_evals cap and with only its own adapter_cost; restate both for the
+    # whole run now that the scheduler has restored the shared budget.
+    result.metadata["budget"] = server.budget.status()
+    result.metadata["total_cost"] = server.total_cost + float(result.metadata.get("adapter_cost", 0.0))
+
+    baseline_test = _score_test(server, task, task.seed_candidate)
+    if result.best_candidate == task.seed_candidate:
+        optimized_test = baseline_test
+    else:
+        optimized_test = _score_test(server, task, result.best_candidate)
+    if baseline_test is not None:
+        result.metadata["baseline_test_scores"], result.metadata["baseline_test_score"] = baseline_test
+    if optimized_test is not None:
+        result.metadata["test_scores"], result.metadata["test_score"] = optimized_test
+    return result
 
 
 def optimize_parallel(

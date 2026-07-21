@@ -184,6 +184,12 @@ redistributed.
 - `optimize_vote` — parallel, then re-score each branch's best candidate once via `evaluator`
   (outside any budget) and return the highest re-score. Use when engines score with different
   quirks and you want a fair cross-engine comparison.
+- `optimize_adaptive_sequential` — **plateau scheduler**: give the active engine bounded eval
+  slices (`plateau_evals`) and rotate to the next config after `patience` non-improving slices,
+  always feeding the running best forward. The exception to per-config budgets: one shared eval
+  pool set by its `max_evals` keyword (per-config `max_evals` is ignored; per-config
+  `max_token_cost` still applies). Extra knobs: `min_evals_per_stage`, `improvement_epsilon`,
+  `cycle`, `max_switches`.
 
 ```python
 from gepa.optimize_anything import optimize_sequential, OptimizeAnythingConfig
@@ -201,12 +207,10 @@ result = optimize_sequential(
 ```
 
 `*_with_server` variants (`optimize_sequential_with_server`, `optimize_parallel_with_server`, …)
-take caller-owned `EvalServer`s — one per config — for embedding in outer frameworks that route
-every eval through their own server. `optimize_adaptive_sequential_with_server` is a **scheduler**
-over one shared server/budget: it gives the active engine bounded eval slices and rotates to the
-next engine after `patience` non-improving slices (plateau switching), always feeding the running
-best forward. Related: the autoresearch backend's `handoffs` key materializes prior-stage artifacts
-into the agent's work dir for hand-rolled sequential compositions.
+take caller-owned `EvalServer`s — one per config (one shared server for
+`optimize_adaptive_sequential_with_server`) — for embedding in outer frameworks that route every
+eval through their own server. Related: the autoresearch backend's `handoffs` key materializes
+prior-stage artifacts into the agent's work dir for hand-rolled sequential compositions.
 
 ## `Result`
 ```python

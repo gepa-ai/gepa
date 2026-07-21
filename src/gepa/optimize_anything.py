@@ -39,6 +39,7 @@ from gepa.oa.config import OptimizeAnythingConfig
 from gepa.oa.engine import Engine, Result
 from gepa.oa.engines import AutoResearchEngine, BestOfNEngine, GepaEngine, MetaHarnessEngine
 from gepa.oa.ensemble import (
+    optimize_adaptive_sequential,
     optimize_adaptive_sequential_with_server,
     optimize_anything_from_task,
     optimize_anything_with_server,
@@ -278,6 +279,7 @@ __all__ = [
     "get_task",
     "list_engines",
     "list_tasks",
+    "optimize_adaptive_sequential",
     "optimize_adaptive_sequential_with_server",
     "optimize_anything",
     "optimize_anything_with_server",

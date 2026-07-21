@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -7,7 +8,7 @@ from unittest.mock import patch
 from gepa.oa import BudgetTracker, EvalServer, OptimizeAnythingConfig, Task
 from gepa.oa.engines.autoresearch import _best_aggregate_candidate
 from gepa.oa.engines.gepa import GepaEngine
-from gepa.oa.ensemble import optimize_adaptive_sequential_with_server
+from gepa.oa.ensemble import optimize_adaptive_sequential, optimize_adaptive_sequential_with_server
 
 
 def _evaluate(candidate: str) -> tuple[float, dict]:
@@ -110,6 +111,77 @@ class OptimizeAnythingAdaptiveSequentialTests(unittest.TestCase):
         self.assertEqual(calls, ["gepa"])
         self.assertEqual(server.budget.used, 2)
         self.assertEqual(result.metadata["adaptive_stop_reason"], "scheduler_stopped")
+
+    def test_convenience_wrapper_shares_one_server_and_scores_test_outside_budget(self) -> None:
+        servers: list[EvalServer] = []
+        calls: list[tuple[str, str | None]] = []
+
+        def fake_optimize(active_server, cfg):
+            servers.append(active_server)
+            calls.append((str(cfg.engine), active_server.task.seed_candidate))
+            active_server.evaluate(str(cfg.engine))
+            if len(calls) == 1:
+                return SimpleNamespace(best_candidate="improved", best_score=0.8, metadata={})
+            return SimpleNamespace(best_candidate="regressed", best_score=0.1, metadata={})
+
+        test_scored: list[str] = []
+
+        def evaluate(candidate: str, example=None) -> tuple[float, dict]:
+            if example is not None:
+                test_scored.append(candidate)
+            return 1.0, {}
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("gepa.oa.ensemble.optimize_anything_with_server", side_effect=fake_optimize),
+        ):
+            result = optimize_adaptive_sequential(
+                "seed",
+                evaluator=evaluate,
+                configs=[
+                    OptimizeAnythingConfig(engine="gepa"),
+                    OptimizeAnythingConfig(engine="autoresearch"),
+                ],
+                plateau_evals=1,
+                test_set=[{"id": "t0"}],
+                max_evals=3,
+                patience=1,
+                min_evals_per_stage=1,
+                cycle=False,
+                output_dir=tmp,
+            )
+
+        # One shared server across every slice; slices never see the test_set.
+        self.assertEqual(len({id(s) for s in servers}), 1)
+        self.assertIsNone(servers[0].task.test_set)
+        self.assertEqual(calls, [("gepa", "seed"), ("gepa", "improved"), ("autoresearch", "improved")])
+        self.assertEqual(result.best_candidate, "improved")
+        self.assertEqual(result.best_score, 0.8)
+        # Test pass runs once for the seed and once for the best, outside the budget.
+        self.assertEqual(test_scored, ["seed", "improved"])
+        self.assertEqual(result.metadata["baseline_test_score"], 1.0)
+        self.assertEqual(result.metadata["test_score"], 1.0)
+        self.assertEqual(
+            result.metadata["budget"], {"exhausted": True, "max_evals": 3, "used": 3, "remaining_evals": 0}
+        )
+
+    def test_convenience_wrapper_warns_when_fully_unbounded(self) -> None:
+        def fake_optimize(active_server, cfg):
+            del active_server, cfg
+            return SimpleNamespace(best_candidate="seed", best_score=0.0, metadata={})
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("gepa.oa.ensemble.optimize_anything_with_server", side_effect=fake_optimize),
+            self.assertWarns(UserWarning),
+        ):
+            optimize_adaptive_sequential(
+                "seed",
+                evaluator=_evaluate,
+                configs=[OptimizeAnythingConfig(engine="gepa")],
+                plateau_evals=1,
+                output_dir=tmp,
+            )
 
     def test_autoresearch_aggregate_candidate_helper_ignores_per_eval_best(self) -> None:
         server = EvalServer(
