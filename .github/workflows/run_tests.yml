@@ -33,7 +33,7 @@ jobs:
           uv venv .venv --python 3.11
           echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
       - name: Install dependencies
-        run: uv sync -p .venv --extra dev
+        run: uv sync -p .venv --locked --extra dev
       - name: Ruff Check
         run: |
           uv run -p .venv ruff check --fix-only --diff --exit-non-zero-on-fix || (
@@ -67,7 +67,7 @@ jobs:
           uv venv .venv --python 3.11
           echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
       - name: Install dependencies
-        run: uv sync -p .venv --extra dev
+        run: uv sync -p .venv --locked --extra dev
       - name: Run Pyright
         run: uv run -p .venv pyright
 
@@ -75,6 +75,7 @@ jobs:
     name: Run Tests
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
@@ -95,7 +96,7 @@ jobs:
           echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
       - name: Install dependencies
         run: |
-          uv sync -p .venv --extra dev
+          uv sync -p .venv --locked --extra dev
           uv pip list
       - name: Run lint with tests
         uses: chartboost/ruff-action@v1
@@ -104,7 +105,7 @@ jobs:
       - name: Run tests with pytest
         run: uv run -p .venv pytest -vv tests/
       # - name: Install optional dependencies
-      #   run: uv sync -p .venv --extra dev --extra test_extras
+      #   run: uv sync -p .venv --locked --extra dev --extra test_extras
       # - name: Run extra tests
       #   run: uv run -p .venv pytest tests/ -m extra --extra
 
@@ -150,6 +151,7 @@ jobs:
     name: Build Package
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
@@ -169,7 +171,7 @@ jobs:
           uv venv .venv
           echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
       - name: Install dependencies
-        run: uv sync -p .venv --extra dev
+        run: uv sync -p .venv --locked --extra dev
       - name: Build
         run: uv run -p .venv python -m build
       - name: Install built package

@@ -121,7 +121,10 @@ from typing import (
     TypeAlias,
 )
 
-from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import OptimizeAnythingAdapter
+from gepa.adapters.optimize_anything_adapter.optimize_anything_adapter import (
+    BatchEvaluatorWrapper,
+    OptimizeAnythingAdapter,
+)
 from gepa.core.adapter import DataInst, GEPAAdapter, ProposalFn
 from gepa.core.callbacks import GEPACallback
 from gepa.core.data_loader import ensure_loader
@@ -133,6 +136,7 @@ from gepa.logging.experiment_tracker import create_experiment_tracker
 from gepa.logging.logger import Logger, LoggerProtocol, StdOutLogger
 from gepa.proposer.merge import MergeProposer
 from gepa.proposer.reflective_mutation.base import CandidateSelector, LanguageModel, ReflectionComponentSelector
+from gepa.proposer.reflective_mutation.reflection_lm import ReflectionLM
 from gepa.proposer.reflective_mutation.reflective_mutation import ReflectiveMutationProposer
 from gepa.strategies.acceptance import AcceptanceCriterion, ImprovementOrEqualAcceptance, StrictImprovementAcceptance
 from gepa.strategies.batch_sampler import BatchSampler, EpochShuffledBatchSampler
@@ -147,6 +151,8 @@ from gepa.strategies.component_selector import (
     RoundRobinReflectionComponentSelector,
 )
 from gepa.strategies.eval_policy import EvaluationPolicy, FullEvaluationPolicy
+from gepa.strategies.proposal_sampling import SamplingStrategy
+from gepa.strategies.proposal_selection import SelectionStrategy
 from gepa.utils import FileStopper, StopperProtocol
 from gepa.utils.stdio_capture import ThreadLocalStreamCapture, stream_manager
 
@@ -484,16 +490,6 @@ class EngineConfig:
     parallel: bool = True
     max_workers: int | None = field(default_factory=lambda: os.cpu_count() or 32)
 
-    # Number of parallel proposal workers per optimization step.
-    # When > 1, multiple minibatches are sampled and proposed concurrently
-    # (each with its own evaluate-propose-evaluate pipeline), then acceptances
-    # are processed sequentially.
-    # Set to "auto" to compute from max_workers and minibatch_size:
-    #   auto = max(1, max_workers // minibatch_size)
-    # Each proposal evaluates minibatch_size examples at a time, so this
-    # fills the worker pool across concurrent proposals.
-    num_parallel_proposals: int | Literal["auto"] = 1
-
     # Evaluation caching
     cache_evaluation: bool = False
     cache_evaluation_storage: CacheEvaluationStorage = "auto"
@@ -514,6 +510,11 @@ class EngineConfig:
     # internally by libraries. For those, use oa.log() or capture subprocess
     # output manually and pass it to oa.log().
     capture_stdio: bool = False
+
+    # Proposal strategies (default: 1 parent, 1 mutation per iteration).
+    # Swap in a different SamplingStrategy to propose multiple candidates.
+    sampling_strategy: SamplingStrategy | None = None
+    selection_strategy: SelectionStrategy | None = None
 
 
 def _build_reflection_prompt_template(objective: str | None = None, background: str | None = None) -> str:
@@ -730,6 +731,11 @@ class ReflectionConfig:
 
     skip_perfect_score: bool = False
     perfect_score: float | None = None
+    # Advanced: a ReflectionLM implementation that owns how reflective mutation
+    # calls the reflection model (sessions, ComBEE-style aggregation, coding
+    # agents). Defaults to the stateless single-call reflector built from
+    # ``reflection_lm``. Mirror of gepa.optimize()'s reflection_strategy=.
+    reflection_strategy: "ReflectionLM | None" = None
     batch_sampler: BatchSampler | Literal["epoch_shuffled"] = "epoch_shuffled"
     reflection_minibatch_size: int | None = None  # Default: 1 for single-instance mode, 3 otherwise
     module_selector: ReflectionComponentSelector | Literal["round_robin", "all"] = "round_robin"
@@ -1105,21 +1111,11 @@ class EvaluatorWrapper:
         return self._wrapped(candidate, example=example, **kwargs)
 
 
-def _resolve_num_parallel_proposals(
-    value: int | Literal["auto"],
-    max_workers: int,
-    minibatch_size: int,
-) -> int:
-    """Resolve num_parallel_proposals, computing automatically if "auto"."""
-    if isinstance(value, int):
-        return value
-    return max(1, max_workers // minibatch_size)
-
-
 def optimize_anything(
     seed_candidate: str | Candidate | None = None,
     *,
-    evaluator: Callable[..., Any],
+    evaluator: Callable[..., Any] | None = None,
+    batch_evaluator: Callable[..., Any] | None = None,
     dataset: list[DataInst] | None = None,
     valset: list[DataInst] | None = None,
     objective: str | None = None,
@@ -1163,11 +1159,40 @@ def optimize_anything(
               where to begin.
 
         evaluator: Scoring function.  Returns ``(score, side_info)`` or ``score``.
+            Optional when ``batch_evaluator`` is provided (at least one is
+            required): without it, every evaluation — including refiner steps,
+            as singleton batches — routes through ``batch_evaluator``.
             See :class:`Evaluator`.  Diagnostic output via ``oa.log()`` is
             automatically captured as Actionable Side Information (ASI).
             For richer diagnostics, return a ``(score, dict)`` tuple with
             structured feedback, error messages, or even rendered images
             (via :class:`~gepa.Image`).
+        batch_evaluator: Optional low-level batch evaluation hook. When set,
+            GEPA hands you ALL pending ``(candidate, example)`` pairs in ONE
+            call — e.g. to submit a provider batch job or fan out over your
+            own infrastructure — instead of calling ``evaluator`` per pair.
+            Return one result per pair, each ``score`` or
+            ``(score, side_info)``. Parity with the standard path: candidates
+            are unwrapped in str-candidate mode; if your function accepts an
+            ``opt_states`` keyword it receives per-pair
+            :class:`OptimizationState` objects (warm-starting; note they are
+            snapshotted when the grouped call is issued, so pairs within one
+            call do not see each other's fresh results); a raised call
+            is converted to per-pair ``(0.0, {"error": ...})`` results when
+            ``raise_on_exception=False``; best-evals history and output
+            packaging match the sequential path exactly. NOT available on this
+            path (structurally per-call features): ``oa.log()`` capture and
+            stdout/stderr capture — put diagnostics in each returned
+            ``side_info`` instead. When both are provided,
+            multi-pair evaluations (minibatch stages, valset/seed/merge evals)
+            prefer ``batch_evaluator`` while single-pair resolutions (refiner
+            steps) use ``evaluator``; with only ``batch_evaluator``, singles
+            route through it as singleton batches. Caching (``cache_evaluation``)
+            applies identically on both paths, with a shared store: a pair
+            cached by either path is a hit for the other. Note: with
+            ``refiner_config`` + ``parallel=True`` and no ``evaluator``, your
+            batch function may be called concurrently with singleton batches
+            from the refinement thread pool — make it thread-safe.
         dataset: Examples for multi-task or generalization modes.
             ``None`` = single-task search mode.
         valset: Held-out validation set for generalization mode.
@@ -1269,13 +1294,28 @@ def optimize_anything(
         effective_dataset = dataset if dataset is not None else [None]  # type: ignore[list-item]
 
     # Wrap the evaluator to handle signature normalization, log/stdout capture, etc.
-    wrapped_evaluator = EvaluatorWrapper(
-        evaluator,
-        single_instance_mode,
-        capture_stdio=config.engine.capture_stdio,
-        str_candidate_mode=str_candidate_mode,
-        raise_on_exception=config.engine.raise_on_exception,
-    )
+    if evaluator is None and batch_evaluator is None:
+        raise ValueError(
+            "Provide evaluator=, batch_evaluator=, or both. "
+            "batch_evaluator alone is sufficient: single-pair resolutions "
+            "(e.g. refiner steps) are routed through it as singleton batches."
+        )
+    if config.engine.capture_stdio and evaluator is None:
+        warnings.warn(
+            "capture_stdio=True has no effect without a single-pair evaluator: the batch_evaluator "
+            "path cannot scope stdio capture to individual evaluations. Return diagnostics in "
+            "side_info instead.",
+            stacklevel=2,
+        )
+    wrapped_evaluator = None
+    if evaluator is not None:
+        wrapped_evaluator = EvaluatorWrapper(
+            evaluator,
+            single_instance_mode,
+            capture_stdio=config.engine.capture_stdio,
+            str_candidate_mode=str_candidate_mode,
+            raise_on_exception=config.engine.raise_on_exception,
+        )
 
     # Resolve cache mode: cache_evaluation controls on/off, cache_evaluation_storage controls where
     if not config.engine.cache_evaluation:
@@ -1311,6 +1351,16 @@ def optimize_anything(
         background=background,
         cache_mode=resolved_cache_mode,
         cache_dir=config.engine.run_dir,
+        batch_evaluator=(
+            BatchEvaluatorWrapper(
+                batch_evaluator,
+                str_candidate_key=_STR_CANDIDATE_KEY if str_candidate_mode else None,
+                raise_on_exception=config.engine.raise_on_exception,
+                single_instance_mode=single_instance_mode,
+            )
+            if batch_evaluator is not None
+            else None
+        ),
     )
 
     # Normalize datasets to DataLoader instances
@@ -1365,6 +1415,14 @@ def optimize_anything(
 
         stop_callbacks_list.append(MaxCandidateProposalsStopper(config.engine.max_candidate_proposals))
 
+    if config.engine.max_reflection_cost is not None and config.reflection.reflection_strategy is not None:
+        strategy = config.reflection.reflection_strategy
+        if not hasattr(strategy, "total_cost"):
+            raise ValueError(
+                "max_reflection_cost is set but reflection_strategy does not expose total_cost — "
+                "the cost stopper would silently never fire (unbounded reflection spend). Expose a "
+                "total_cost property on the strategy, or remove max_reflection_cost."
+            )
     if config.engine.max_reflection_cost is not None:
         from gepa.utils import MaxReflectionCostStopper
 
@@ -1571,6 +1629,8 @@ def optimize_anything(
         reflection_prompt_template=config.reflection.reflection_prompt_template,
         custom_candidate_proposer=config.reflection.custom_candidate_proposer,
         callbacks=config.callbacks,
+        sampling_strategy=config.engine.sampling_strategy,
+        reflection_strategy=config.reflection.reflection_strategy,
     )
 
     # Define evaluator function for merge proposer
@@ -1591,6 +1651,7 @@ def optimize_anything(
             max_merge_invocations=config.merge.max_merge_invocations,
             rng=rng,
             val_overlap_floor=config.merge.merge_val_overlap_floor,
+            callbacks=config.callbacks,
         )
 
     # --- 13. Create evaluation cache if enabled ---
@@ -1618,16 +1679,12 @@ def optimize_anything(
         stop_callback=stop_callback,
         val_evaluation_policy=config.engine.val_evaluation_policy,
         acceptance_criterion=acceptance_criterion_instance,
+        selection_strategy=config.engine.selection_strategy,
         use_cloudpickle=config.engine.use_cloudpickle,
         evaluation_cache=evaluation_cache,
-        num_parallel_proposals=_resolve_num_parallel_proposals(
-            config.engine.num_parallel_proposals,
-            config.engine.max_workers or (os.cpu_count() or 32),
-            config.reflection.reflection_minibatch_size or 1,
-        ),
     )
 
-    # --- 15. Run optimization ---
+    # --- 16. Run optimization ---
     logger = config.tracking.logger
     with experiment_tracker:
         if isinstance(logger, Logger):
