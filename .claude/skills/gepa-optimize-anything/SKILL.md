@@ -101,7 +101,9 @@ pip install "gepa[full]"   # [full] pulls cloudpickle — needed to pickle closu
 2. **`evaluate(candidate, example) -> (score, info)`** — `score` is a float (higher is better);
    `info` is a free-form dict of **feedback the backend's proposer reads** to make better candidates
    (the gepa backend's reflection LM, or the agentic backends' agent; the `best_of_n` baseline
-   ignores feedback).
+   ignores feedback). When evals batch better than they stream (e.g. a provider batch API), pass
+   `batch_evaluator=` instead — all pending `(candidate, example)` pairs in one call; see
+   `references/api.md`.
 3. **Engine (backend)** — `"gepa"` (default), `"autoresearch"`, `"meta_harness"`, the `"best_of_n"`
    baseline, or a constructed `Engine` instance.
 4. **Budget** — `max_evals` (server-side eval-call cap, **default 100**) and/or `max_token_cost`
