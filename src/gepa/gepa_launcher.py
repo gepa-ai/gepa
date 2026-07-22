@@ -107,6 +107,7 @@ Public API:
       :class:`RefinerConfig`, :class:`MergeConfig`, :class:`TrackingConfig`
     - :func:`log`, :func:`get_log_context`, :func:`set_log_context` — in-evaluator logging
     - :func:`make_litellm_lm` — convert a model name string to a callable
+    - :func:`make_atlascloud_lm` — build an Atlas Cloud OpenAI-compatible callable
     - :class:`Image` — wrapper for including images in side_info (VLM reflection)
 """
 
@@ -986,6 +987,44 @@ def make_litellm_lm(model_name: str, **kwargs: Any) -> LanguageModel:
     from gepa.lm import LM
 
     return LM(model_name, **kwargs)
+
+
+def make_atlascloud_lm(model_name: str = "qwen/qwen3.5-flash", **kwargs: Any) -> LanguageModel:
+    """Create an Atlas Cloud OpenAI-compatible :class:`LanguageModel` callable.
+
+    Atlas Cloud exposes an OpenAI-compatible chat completions API, so this helper
+    builds the same lightweight :class:`gepa.lm.LM` wrapper as
+    :func:`make_litellm_lm` while preconfiguring the Atlas Cloud endpoint.
+
+    By default, the helper reads ``ATLASCLOUD_API_KEY`` for authentication and
+    ``ATLASCLOUD_API_BASE`` for endpoint overrides. Explicit ``api_key``,
+    ``api_base``, or ``base_url`` keyword arguments take precedence.
+
+    Args:
+        model_name: Atlas Cloud model identifier, for example
+            ``"qwen/qwen3.5-flash"`` or ``"deepseek-ai/deepseek-v4-pro"``.
+        **kwargs: Extra keyword arguments forwarded to ``litellm.completion``
+            (for example ``temperature=0.7`` or ``max_tokens=4096``).
+    """
+    from gepa.lm import LM
+
+    api_key = kwargs.pop("api_key", None) or os.getenv("ATLASCLOUD_API_KEY")
+    api_base = (
+        kwargs.pop("api_base", None)
+        or kwargs.pop("base_url", None)
+        or os.getenv("ATLASCLOUD_API_BASE")
+        or "https://api.atlascloud.ai/v1"
+    )
+
+    completion_kwargs = {
+        "api_base": api_base,
+        "custom_llm_provider": "openai",
+        **kwargs,
+    }
+    if api_key:
+        completion_kwargs["api_key"] = api_key
+
+    return LM(model_name, **completion_kwargs)
 
 
 class EvaluatorWrapper:
