@@ -28,7 +28,7 @@ When we [introduced `optimize_anything`](https://gepa-ai.github.io/gepa/blog/int
 
 But GEPA's reflective proposer is just *one* way to run the optimization loop. A growing set of systems share a similar shape with a candidate string, a black-box scoring function, and an LLM-driven search loop. Some delegate the entire loop to an autonomous coding agent (e.g., [AutoResearch](https://github.com/karpathy/autoresearch)). Some keep an external framework in charge of loop orchestration and let an agent mutate one candidate at a time (e.g., [Meta-Harness](https://arxiv.org/abs/2603.28052)). Each is strong on some problems and weak on others, and **we don't have a good way to tell which will win**. Until now, switching between them meant porting your task into a new framework.
 
-This release changes that in two ways. First, `optimize_anything` now can dispatch the same call to any of these optimizers. You pick one with the `engine` argument, or plug in your own. Second, the optimizers compose. You can run several engines in any order, keep the best, and continue from there.
+This release changes that in two ways. First, `optimize_anything` now can dispatch the same call to any of these optimizers. You pick one with the `engine` argument, or plug in your own. Second, the optimizers compose. You can run several engines in any order, keep the best, and continue from there. We also release an example meta-optimizer <span class="gradient-code">omni</span> that runs all three engines in parallel and leverages the best result. 
 
 ## Different Optimizers
 
