@@ -6,7 +6,7 @@ authors:
 slug: optimize-anything-omni
 readtime: 15
 title: "optimize_anything Goes omni: Composing Optimizers into Meta-Optimizer Pipelines"
-description: "optimize_anything now dispatches a single optimization call to any engine, such as GEPA, an autonomous coding agent, or an agent-based optimizer, and lets you compose them into multi-stage pipelines. On Frontier-CS, the omni meta-optimizer beats every standalone optimizer under a matched budget."
+description: "optimize_anything now supports customizable optimizers, which compose into meta-optimizer pipelines. No single optimizer wins everywhere. Our omni meta-optimizer combines the best of each and beats every standalone optimizer under a matched budget."
 social_image: blog/2026-05-28-optimize-anything-omni/images/omni_design.png
 citation_authors:
   - "GEPA Team"
