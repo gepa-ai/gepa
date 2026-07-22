@@ -1,7 +1,9 @@
 # Copyright (c) 2025 Lakshya A Agrawal and the GEPA contributors
 # https://github.com/gepa-ai/gepa
 
+import inspect
 import traceback
+import warnings
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -135,8 +137,10 @@ class ReflectiveMutationProposer:
     ) -> tuple[dict[str, str], dict[str, str | list[dict[str, Any]]], dict[str, str], dict[str, Any]]:
         """Propose new instruction texts for the given components.
 
-        ``metadata`` is an open-ended context dict forwarded unconditionally
-        to ``custom_candidate_proposer``. Keys GEPA currently supplies are both
+        ``metadata`` is an open-ended context dict forwarded to
+        ``custom_candidate_proposer`` when its signature accepts a ``metadata``
+        keyword (or ``**kwargs``); 3-positional-arg proposers are called
+        without it. Keys GEPA currently supplies are both
         on-disk anchors: ``"iteration_id"`` — this proposal's own slot
         (``iterations/<iteration_id>/``); and ``"parent_iteration_id"`` — the
         parent candidate's slot. The adapter-owned ``propose_new_texts`` path
@@ -154,11 +158,20 @@ class ReflectiveMutationProposer:
             return self.adapter.propose_new_texts(candidate, reflective_dataset, components_to_update), empty, {}, {}
 
         if self.custom_candidate_proposer is not None:
+            # Custom proposers may use the legacy 3-positional signature; only
+            # pass metadata= when the signature accepts it.
+            try:
+                sig = inspect.signature(self.custom_candidate_proposer)
+                accepts_metadata = "metadata" in sig.parameters or any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+                )
+            except (TypeError, ValueError):
+                accepts_metadata = False
             new_texts = self.custom_candidate_proposer(
                 candidate,
                 reflective_dataset,
                 components_to_update,
-                metadata=metadata,
+                **({"metadata": metadata} if accepts_metadata else {}),
             )
             return new_texts, empty, {}, {}
 

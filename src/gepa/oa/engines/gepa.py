@@ -11,6 +11,7 @@ budget, ``run_dir``, and its own callbacks/stoppers on top.
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -65,6 +66,16 @@ class GepaEngine:
         gepa_config.engine.max_metric_calls = budget.max_evals
         if self.run_dir is not None:
             gepa_config.engine.run_dir = self.run_dir
+        if gepa_config.engine.run_dir is None:
+            # Always persist GEPA state (gepa_state.bin, saved by core at each
+            # iteration boundary): on BudgetExhausted the val-aggregate/Pareto
+            # best is reloaded from it instead of falling back to the server's
+            # per-example argmax.
+            if server.output_dir is not None:
+                gepa_config.engine.run_dir = str(server.output_dir / "gepa_state")
+            else:
+                gepa_config.engine.run_dir = tempfile.mkdtemp(prefix="gepa-state-")
+        run_dir = gepa_config.engine.run_dir
         if self.stop_at_score is not None:
             gepa_config.engine.stop_at_score = self.stop_at_score
 
@@ -85,7 +96,7 @@ class GepaEngine:
         # budget choke point — gepa.gepa_launcher's evaluator goes straight
         # through it.
         def evaluator(candidate, example=None, **kwargs):
-            return server.evaluate(candidate, example)
+            return server.evaluate(candidate, example, **kwargs)
 
         oa_kwargs: dict[str, Any] = {
             "seed_candidate": task.seed_candidate,
@@ -116,7 +127,7 @@ class GepaEngine:
             gepa_result = optimize_anything(**oa_kwargs)
         except BudgetExhausted:
             gepa_result = self._load_result_from_state(
-                run_dir=self.run_dir,
+                run_dir=run_dir,
                 seed=gepa_config.engine.seed,
                 str_candidate_mode=not isinstance(task.seed_candidate, dict),
             )

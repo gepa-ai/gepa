@@ -77,10 +77,23 @@ def _normalize_result(result: Any) -> tuple[float, dict[str, Any]]:
 
 
 def _normalize_eval_fn(fn: Callable[..., Any]) -> Callable[..., tuple[float, dict[str, Any]]]:
-    """Wrap ``fn`` so every return normalizes to ``(score, info)``."""
+    """Wrap ``fn`` so every return normalizes to ``(score, info)``.
+
+    Extra kwargs (e.g. ``opt_state``) are forwarded only when ``fn``'s
+    signature accepts them (a matching parameter name or ``**kwargs``).
+    """
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        accepted: set[str] | None = set()  # unintrospectable — drop all extra kwargs
+    else:
+        has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        accepted = None if has_var_keyword else set(sig.parameters)
 
     @functools.wraps(fn)
     def evaluate(*args: Any, **kwargs: Any) -> tuple[float, dict[str, Any]]:
+        if accepted is not None:
+            kwargs = {k: v for k, v in kwargs.items() if k in accepted}
         return _normalize_result(fn(*args, **kwargs))
 
     return evaluate
@@ -148,10 +161,12 @@ class EvalServer:
                 raise ValueError("Provide evaluator=, batch_evaluator=, or both.")
             batch_fn = self.batch_fn
 
-            def _singleton(candidate: Any, example: Any | None = None) -> tuple[float, dict[str, Any]]:
+            def _singleton(
+                candidate: Any, example: Any | None = None, opt_state: Any | None = None
+            ) -> tuple[float, dict[str, Any]]:
                 # Launcher parity: with only a batch_evaluator, single-pair
                 # evaluations route through it as singleton batches.
-                return batch_fn([(candidate, example)])[0]
+                return batch_fn([(candidate, example)], opt_states=[opt_state] if opt_state is not None else None)[0]
 
             evaluate = _singleton
 
@@ -212,8 +227,12 @@ class EvalServer:
         for eid in self._split_ids.get(split, []):
             yield eid, self._examples[eid]
 
-    def evaluate(self, candidate: str, example: Any | None = None) -> tuple[float, dict[str, Any]]:
+    def evaluate(self, candidate: str, example: Any | None = None, **kwargs: Any) -> tuple[float, dict[str, Any]]:
         """Evaluate a candidate with budget enforcement.
+
+        Failed attempts consume budget (launcher parity). Extra kwargs (e.g.
+        ``opt_state``) are forwarded to the evaluator only if its signature
+        accepts them.
 
         Raises:
             BudgetExhausted: When the budget has been used up.
@@ -222,10 +241,15 @@ class EvalServer:
         try:
             self.budget.check()
 
-            if example is not None:
-                score, info = self.eval_fn(candidate, example)
-            else:
-                score, info = self.eval_fn(candidate)
+            try:
+                if example is not None:
+                    score, info = self.eval_fn(candidate, example, **kwargs)
+                else:
+                    score, info = self.eval_fn(candidate, **kwargs)
+            except Exception:
+                # check() passed above, so this record cannot itself raise.
+                self.budget.record(0.0)
+                raise
 
             self.budget.record(score)
             self._track(candidate, score, info)
@@ -248,6 +272,8 @@ class EvalServer:
         then recorded against the budget and tracked individually. The budget
         is checked once up front, so a batch may overshoot the cap by at most
         ``len(pairs) - 1`` — mirroring the launcher's iteration-boundary stops.
+        Failed attempts consume budget (launcher parity): a failed grouped
+        call records one tick per pair.
 
         Raises:
             BudgetExhausted: When the budget is already used up.
@@ -258,7 +284,17 @@ class EvalServer:
         self._eval_semaphore.acquire()
         try:
             self.budget.check()
-            results = self.batch_fn(pairs, opt_states=opt_states)
+            try:
+                results = self.batch_fn(pairs, opt_states=opt_states)
+            except Exception:
+                # Guard each record so crossing the cap while recording
+                # failures never masks the user's original exception.
+                for _ in pairs:
+                    try:
+                        self.budget.record(0.0)
+                    except BudgetExhausted:
+                        break
+                raise
         finally:
             self._eval_semaphore.release()
         out: list[tuple[float, dict[str, Any]]] = []
@@ -329,6 +365,7 @@ class EvalServer:
         infos: dict[str, dict[str, Any]] = {}
         errors: dict[str, str] = {}
 
+        grouped_done = False
         if self.batch_fn is not None:
             # Multi-pair evaluations prefer the grouped path (launcher parity):
             # the user's batch function sees all pairs in one call.
@@ -336,13 +373,18 @@ class EvalServer:
                 results = self.evaluate_batch([(candidate, ex) for _eid, ex in examples])
             except BudgetExhausted:
                 raise
-            except Exception as e:
-                errors = dict.fromkeys((eid for eid, _ex in examples), str(e))
-                results = []
-            for (eid, _ex), (score, ex_info) in zip(examples, results, strict=False):
-                scores[eid] = score
-                infos[eid] = ex_info
-        else:
+            except Exception:
+                # A failed grouped call must not zero the whole stage: fall
+                # through to per-pair evaluation so one bad pair costs one 0.0,
+                # matching the per-pair path's isolation. Both attempts consume
+                # budget — each was a real eval call.
+                pass
+            else:
+                grouped_done = True
+                for (eid, _ex), (score, ex_info) in zip(examples, results, strict=True):
+                    scores[eid] = score
+                    infos[eid] = ex_info
+        if not grouped_done:
 
             def _eval_one(eid: str, ex: Any) -> tuple[str, float, dict[str, Any] | None, str | None]:
                 try:
