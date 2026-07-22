@@ -1,6 +1,6 @@
 # GEPAConfig
 
-::: gepa.optimize_anything.GEPAConfig
+::: gepa.gepa_launcher.GEPAConfig
     handler: python
     options:
         show_source: true

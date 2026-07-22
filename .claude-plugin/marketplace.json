@@ -1,0 +1,17 @@
+{
+  "name": "gepa",
+  "owner": { "name": "GEPA", "url": "https://github.com/gepa-ai/gepa" },
+  "description": "Official GEPA Claude Code plugins.",
+  "plugins": [
+    {
+      "name": "gepa-optimize-anything",
+      "source": "./.claude/skills/gepa-optimize-anything",
+      "description": "Optimize any scorable text artifact (prompts, code, configs, agent scaffolds) with GEPA's optimize_anything.",
+      "version": "0.1.0",
+      "homepage": "https://gepa-ai.github.io/gepa/",
+      "license": "MIT",
+      "category": "optimization",
+      "keywords": ["gepa", "prompt-optimization", "optimize-anything"]
+    }
+  ]
+}

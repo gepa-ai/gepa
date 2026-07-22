@@ -244,7 +244,7 @@ def test_both_transports_grouped_prefers_batch_fn():
 
 
 def test_optimize_anything_requires_a_transport():
-    from gepa.optimize_anything import optimize_anything
+    from gepa.gepa_launcher import optimize_anything
 
     with pytest.raises(ValueError, match="batch_evaluator"):
         optimize_anything(seed_candidate="x")
@@ -255,7 +255,7 @@ def test_batch_evaluate_with_refiner_and_batch_fn_still_refines_per_example():
     refinement on the grouped batch_evaluate path. Evaluation degrades to
     per-example loops whose evals reach the batch fn as singleton batches —
     the fn must never see a grouped (>1 pair) call in this configuration."""
-    from gepa.optimize_anything import RefinerConfig
+    from gepa.gepa_launcher import RefinerConfig
 
     calls: list[int] = []
 
@@ -339,7 +339,7 @@ def test_duplicate_pairs_deduplicated_within_grouped_call_when_cached():
 def test_capture_stdio_without_evaluator_warns():
     import warnings as _warnings
 
-    from gepa.optimize_anything import EngineConfig, GEPAConfig, optimize_anything
+    from gepa.gepa_launcher import EngineConfig, GEPAConfig, optimize_anything
 
     with _warnings.catch_warnings(record=True) as caught:
         _warnings.simplefilter("always")

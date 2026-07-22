@@ -88,6 +88,7 @@ def optimize(
     track_best_outputs: bool = True,
     display_progress_bar: bool = False,
     use_cloudpickle: bool = False,
+    write_agent_state: bool = False,
     # Evaluation caching
     cache_evaluation: bool = False,
     # Reproducibility
@@ -186,6 +187,7 @@ def optimize(
     - track_best_outputs: Whether to track the best outputs on the validation set. If True, GEPAResult will contain the best outputs obtained for each task in the validation set.
     - display_progress_bar: Show a tqdm progress bar over metric calls when enabled.
     - use_cloudpickle: Use cloudpickle instead of pickle. This can be helpful when the serialized state contains dynamically generated DSPy signatures.
+    - write_agent_state: When True, write an agent-readable directory tree under `run_dir` alongside `gepa_state.bin` (`iterations/<id>/` + `pareto/`). Each loop iteration gets its own subdir (accepted or rejected) with `meta.json`, `components/`, `trace.json` (before/after scores + trajectories); accepted ones also get `val_scores.json`, `outputs/`, `trajectories/`. Seed is `iterations/seed/`. Default False; turn on when an agent (e.g. Claude Code) will read the run directory.
 
     # Evaluation caching
     - cache_evaluation: Whether to cache the (score, output, objective_scores) of (candidate, example) pairs. If True and a cache entry exists, GEPA will skip the fitness evaluation and use the cached results. This helps avoid redundant evaluations and saves metric calls. Defaults to False.
@@ -455,6 +457,7 @@ def optimize(
         acceptance_criterion=acceptance_criterion_instance,
         selection_strategy=selection_strategy,
         use_cloudpickle=use_cloudpickle,
+        write_agent_state=write_agent_state,
         evaluation_cache=evaluation_cache,
     )
 

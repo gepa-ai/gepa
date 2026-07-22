@@ -30,7 +30,9 @@ Example usage:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Protocol, TypedDict, runtime_checkable
 
@@ -139,6 +141,7 @@ class ReflectiveDatasetBuiltEvent(TypedDict):
     """Event for on_reflective_dataset_built callback."""
 
     iteration: int
+    iteration_id: str
     candidate_idx: int
     components: list[str]
     dataset: dict[str, list[dict[str, Any]]]
@@ -549,3 +552,33 @@ def notify_callbacks(
                 method(event)
             except Exception as e:
                 logger.warning(f"Callback {callback} failed on {method_name}: {e}")
+
+
+class ReflectiveDatasetDumpCallback:
+    """Persist each iteration's reflective dataset under ``run_dir``.
+
+    GEPA writes per-iteration meta / components / trace / outputs under
+    ``iterations/<iteration_id>/`` when ``write_agent_state`` is enabled, but
+    the adapter-curated reflective dataset (the ``<side_info>`` the reflection
+    LM sees) is not otherwise persisted. This callback closes that gap so an
+    agent proposer can browse past iterations' structured feedback via
+    ``iterations/<iteration_id>/reflective_dataset.json``.
+
+    Registered automatically by the launcher when ``write_agent_state`` and
+    ``run_dir`` are both set — the same condition that produces the rest of the
+    ``iterations/<id>/`` tree. The ``iteration_id`` on the event is the on-disk
+    anchor GEPA uses for every other file in that directory.
+    """
+
+    def __init__(self, run_dir: str) -> None:
+        self._run_dir = run_dir
+
+    def on_reflective_dataset_built(self, event: ReflectiveDatasetBuiltEvent) -> None:
+        iteration_id = event.get("iteration_id")
+        dataset = event.get("dataset")
+        if not iteration_id or dataset is None:
+            return
+        base = os.path.join(self._run_dir, "iterations", str(iteration_id))
+        os.makedirs(base, exist_ok=True)
+        with open(os.path.join(base, "reflective_dataset.json"), "w") as f:
+            json.dump(dataset, f, indent=2, default=str)

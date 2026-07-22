@@ -20,19 +20,30 @@ import yaml
 API_MAPPING = {
     "optimize_anything": [
         ("gepa.optimize_anything", "optimize_anything", "optimize_anything"),
-        ("gepa.optimize_anything", "GEPAConfig", "GEPAConfig"),
-        ("gepa.optimize_anything", "EngineConfig", "EngineConfig"),
-        ("gepa.optimize_anything", "ReflectionConfig", "ReflectionConfig"),
-        ("gepa.optimize_anything", "MergeConfig", "MergeConfig"),
-        ("gepa.optimize_anything", "RefinerConfig", "RefinerConfig"),
-        ("gepa.optimize_anything", "TrackingConfig", "TrackingConfig"),
-        ("gepa.optimize_anything", "Evaluator", "Evaluator"),
-        ("gepa.optimize_anything", "OptimizationState", "OptimizationState"),
-        ("gepa.optimize_anything", "LogContext", "LogContext"),
-        ("gepa.optimize_anything", "log", "log"),
-        ("gepa.optimize_anything", "get_log_context", "get_log_context"),
-        ("gepa.optimize_anything", "set_log_context", "set_log_context"),
-        ("gepa.optimize_anything", "make_litellm_lm", "make_litellm_lm"),
+        ("gepa.optimize_anything", "Task", "Task"),
+        ("gepa.optimize_anything", "OptimizeAnythingConfig", "OptimizeAnythingConfig"),
+        ("gepa.optimize_anything", "Engine", "Engine"),
+        ("gepa.optimize_anything", "Result", "Result"),
+        ("gepa.optimize_anything", "EvalServer", "EvalServer"),
+        ("gepa.optimize_anything", "BudgetTracker", "BudgetTracker"),
+        ("gepa.optimize_anything", "optimize_anything_with_server", "optimize_anything_with_server"),
+        ("gepa.optimize_anything", "list_engines", "list_engines"),
+        ("gepa.optimize_anything", "register_engine", "register_engine"),
+    ],
+    "gepa_engine": [
+        ("gepa.gepa_launcher", "GEPAConfig", "GEPAConfig"),
+        ("gepa.gepa_launcher", "EngineConfig", "EngineConfig"),
+        ("gepa.gepa_launcher", "ReflectionConfig", "ReflectionConfig"),
+        ("gepa.gepa_launcher", "MergeConfig", "MergeConfig"),
+        ("gepa.gepa_launcher", "RefinerConfig", "RefinerConfig"),
+        ("gepa.gepa_launcher", "TrackingConfig", "TrackingConfig"),
+        ("gepa.gepa_launcher", "Evaluator", "Evaluator"),
+        ("gepa.gepa_launcher", "OptimizationState", "OptimizationState"),
+        ("gepa.gepa_launcher", "LogContext", "LogContext"),
+        ("gepa.gepa_launcher", "log", "log"),
+        ("gepa.gepa_launcher", "get_log_context", "get_log_context"),
+        ("gepa.gepa_launcher", "set_log_context", "set_log_context"),
+        ("gepa.gepa_launcher", "make_litellm_lm", "make_litellm_lm"),
     ],
     "core": [
         ("gepa.api", "optimize", "optimize"),
@@ -122,7 +133,12 @@ API_MAPPING = {
 CATEGORY_INFO = {
     "optimize_anything": {
         "title": "optimize_anything",
-        "description": "The primary public API for GEPA. Optimize any text artifact with LLM-guided evolution — bring a seed candidate and an evaluator, and GEPA handles the rest.",
+        "description": "The primary public API for GEPA. Define a task, provide an evaluator, and choose an optimization engine.",
+    },
+    "gepa_engine": {
+        "title": "GEPA Engine",
+        "description": "Configuration for the built-in GEPA engine (`engine=\"gepa\"`). These classes are passed via `OptimizeAnythingConfig(engine_config={...})` to control GEPA-specific behavior.",
+        "dir": "optimize_anything",
     },
     "core": {
         "title": "Core",
@@ -183,7 +199,7 @@ def generate_category_index(category: str, items: list) -> str:
 {info["description"]}
 
 """
-    for module_path, name, display_name in items:
+    for _module_path, _name, display_name in items:
         content += f"- [{display_name}]({display_name}.md)\n"
 
     return content
@@ -198,10 +214,11 @@ Welcome to the GEPA API Reference. This documentation is auto-generated from the
 """
     for category, items in API_MAPPING.items():
         info = CATEGORY_INFO.get(category, {"title": category.replace("_", " ").title(), "description": ""})
+        dir_name = info.get("dir", category) if isinstance(info, dict) else category
         content += f"## {info['title']}\n\n"
         content += f"{info['description']}\n\n"
-        for module_path, name, display_name in items:
-            content += f"- [`{display_name}`]({category}/{display_name}.md)\n"
+        for _module_path, _name, display_name in items:
+            content += f"- [`{display_name}`]({dir_name}/{display_name}.md)\n"
         content += "\n"
 
     return content
@@ -213,11 +230,12 @@ def generate_nav_structure() -> list:
 
     for category, items in API_MAPPING.items():
         info = CATEGORY_INFO.get(category, {"title": category.replace("_", " ").title()})
+        dir_name = info.get("dir", category) if isinstance(info, dict) else category
         category_nav = {}
         category_entries = []
 
-        for module_path, name, display_name in items:
-            category_entries.append({display_name: f"api/{category}/{display_name}.md"})
+        for _module_path, _name, display_name in items:
+            category_entries.append({display_name: f"api/{dir_name}/{display_name}.md"})
 
         category_nav[info["title"]] = category_entries
         nav.append(category_nav)
@@ -237,8 +255,8 @@ def validate_api_mapping(skip_adapters: bool = False):
     skipped = []
     import importlib
 
-    for category, items in API_MAPPING.items():
-        for module_path, name, display_name in items:
+    for _category, items in API_MAPPING.items():
+        for module_path, name, _display_name in items:
             try:
                 module = importlib.import_module(module_path)
                 if not hasattr(module, name):
@@ -304,7 +322,9 @@ def main():
 
     # Generate individual API docs
     for category, items in API_MAPPING.items():
-        category_dir = api_dir / category
+        info = CATEGORY_INFO.get(category, {})
+        dir_name = info.get("dir", category) if isinstance(info, dict) else category
+        category_dir = api_dir / dir_name
         category_dir.mkdir(parents=True, exist_ok=True)
 
         for module_path, name, display_name in items:
