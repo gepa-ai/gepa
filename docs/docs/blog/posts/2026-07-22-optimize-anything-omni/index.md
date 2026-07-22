@@ -2,28 +2,30 @@
 date:
   created: 2026-07-22
 authors:
- - shangyin
- - lakshya
- - donghyun
- - ben
- - dan
- - koushik
- - alex
- - matei
+ - gepa-team
+# - shangyin
+# - lakshya
+# - donghyun
+# - ben
+# - dan
+# - koushik
+# - alex
+# - matei
 slug: optimize-anything-omni
 readtime: 15
 title: "optimize_anything Goes omni: Composing Optimizers into Meta-Optimizer Pipelines"
 description: "optimize_anything now supports customizable optimizers that can be composed into meta-optimizer pipelines. Why compose? Because no single optimizer wins everywhere. Our omni meta-optimizer combines the best of each and beats every standalone optimizer on Frontier-CS tasks under a matched budget."
 social_image: blog/2026-05-28-optimize-anything-omni/images/omni_design.png
 citation_authors:
-  - "Shangyin Tan"
-  - "Lakshya A Agrawal"
-  - "Donghyun Lee"
-  - "Jialin Zhang"
-  - "Dan Klein"
-  - "Koushik Sen"
-  - "Alexandros G. Dimakis"
-  - "Matei Zaharia"
+  - "GEPA Team"
+#  - "Shangyin Tan"
+#  - "Lakshya A Agrawal"
+#  - "Donghyun Lee"
+#  - "Jialin Zhang"
+#  - "Dan Klein"
+#  - "Koushik Sen"
+#  - "Alexandros G. Dimakis"
+#  - "Matei Zaharia"
 citation_technical_report_institution: "UC Berkeley"
 citation_keywords: "text optimization, LLM-driven optimization, prompt optimization, program optimization, agent-based optimization, optimizer pipeline, Pareto optimization, GEPA, Frontier-CS"
 ---
