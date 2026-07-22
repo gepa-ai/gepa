@@ -49,11 +49,12 @@ def test_optimize_anything_old_kwargs_are_rejected():
 
 
 def test_optimize_anything_requires_evaluator():
-    """evaluator is the only required arg; seed_candidate is an optional leading
-    positional (None = seedless) and the run name lives on OptimizeAnythingConfig."""
+    """evaluator (or the legacy batch_evaluator) is the only required arg;
+    seed_candidate is an optional leading positional (None = seedless) and the
+    run name lives on OptimizeAnythingConfig."""
     from gepa.optimize_anything import optimize_anything
 
-    with pytest.raises(TypeError, match="evaluator"):
+    with pytest.raises(ValueError, match="evaluator"):
         optimize_anything("x")
 
     with pytest.raises(TypeError, match="name"):

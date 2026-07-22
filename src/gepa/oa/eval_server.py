@@ -30,6 +30,8 @@ GET /task     → task metadata (objective/background/seed_candidate/...)
 
 from __future__ import annotations
 
+import functools
+import inspect
 import json
 import threading
 import time
@@ -59,6 +61,69 @@ def _resolve_id(item: Any, fallback: str) -> str:
     return fallback
 
 
+def _normalize_result(result: Any) -> tuple[float, dict[str, Any]]:
+    """Normalize one evaluation result to ``(score, info)``.
+
+    Accepts the legacy launcher shapes — a bare ``score``, ``(score, info)``,
+    or the 3-tuple ``(score, output, info)`` batch form.
+    """
+    if isinstance(result, tuple | list):
+        items = list(result)
+        if not items:
+            raise ValueError("evaluator returned an empty tuple; expected score or (score, info)")
+        info = items[2] if len(items) > 2 else items[1] if len(items) == 2 else None
+        return float(items[0]), dict(info) if info else {}
+    return float(result), {}
+
+
+def _normalize_eval_fn(fn: Callable[..., Any]) -> Callable[..., tuple[float, dict[str, Any]]]:
+    """Wrap ``fn`` so every return normalizes to ``(score, info)``.
+
+    Extra kwargs (e.g. ``opt_state``) are forwarded only when ``fn``'s
+    signature accepts them (a matching parameter name or ``**kwargs``).
+    """
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        accepted: set[str] | None = set()  # unintrospectable — drop all extra kwargs
+    else:
+        has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        accepted = None if has_var_keyword else set(sig.parameters)
+
+    @functools.wraps(fn)
+    def evaluate(*args: Any, **kwargs: Any) -> tuple[float, dict[str, Any]]:
+        if accepted is not None:
+            kwargs = {k: v for k, v in kwargs.items() if k in accepted}
+        return _normalize_result(fn(*args, **kwargs))
+
+    return evaluate
+
+
+def _normalize_batch_fn(fn: Callable[..., Any]) -> Callable[..., list[tuple[float, dict[str, Any]]]]:
+    """Wrap a user ``batch_evaluator`` so one grouped call returns per-pair ``(score, info)``.
+
+    Launcher contract: the function receives ALL ``(candidate, example)`` pairs
+    in one call and, when its signature accepts ``opt_states``, the aligned
+    per-pair states.
+    """
+    sig = inspect.signature(fn)
+    accepts_opt_states = "opt_states" in sig.parameters or any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+    )
+
+    @functools.wraps(fn)
+    def evaluate_batch(
+        pairs: list[tuple[Any, Any]], opt_states: list[Any] | None = None
+    ) -> list[tuple[float, dict[str, Any]]]:
+        kwargs: dict[str, Any] = {"opt_states": opt_states} if accepts_opt_states and opt_states is not None else {}
+        results = list(fn(list(pairs), **kwargs))
+        if len(results) != len(pairs):
+            raise ValueError(f"batch_evaluator returned {len(results)} results but expected {len(pairs)}")
+        return [_normalize_result(r) for r in results]
+
+    return evaluate_batch
+
+
 class EvalServer:
     """Eval server with budget enforcement — the single source of truth.
 
@@ -67,8 +132,13 @@ class EvalServer:
 
     Args:
         task: Task definition (name, datasets, objective/background).
-        evaluate: Scoring function. Required.
+        evaluate: Per-pair scoring function. Optional when ``batch_evaluate``
+            is provided (at least one is required); single-pair evaluations
+            then route through it as singleton batches.
         budget: Budget tracker for limiting evaluations.
+        batch_evaluate: Optional grouped scoring function taking a list of
+            ``(candidate, example)`` pairs and returning one result per pair.
+            Multi-pair evaluations prefer it over per-pair fan-out.
         max_concurrency: Max parallel evaluations. Defaults to 8.
         output_dir: If set, each eval is persisted as ``<dir>/evals/<i>.json``
             and a rolling ``summary.json`` is written.
@@ -77,14 +147,30 @@ class EvalServer:
     def __init__(
         self,
         task: Task,
-        evaluate: Callable[..., tuple[float, dict[str, Any]]],
+        evaluate: Callable[..., Any] | None,
         budget: BudgetTracker,
         *,
+        batch_evaluate: Callable[..., Any] | None = None,
         max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
         output_dir: str | Path | None = None,
     ) -> None:
         self.task = task
-        self.eval_fn: Callable[..., tuple[float, dict[str, Any]]] = evaluate
+        self.batch_fn = _normalize_batch_fn(batch_evaluate) if batch_evaluate is not None else None
+        if evaluate is None:
+            if self.batch_fn is None:
+                raise ValueError("Provide evaluator=, batch_evaluator=, or both.")
+            batch_fn = self.batch_fn
+
+            def _singleton(
+                candidate: Any, example: Any | None = None, opt_state: Any | None = None
+            ) -> tuple[float, dict[str, Any]]:
+                # Launcher parity: with only a batch_evaluator, single-pair
+                # evaluations route through it as singleton batches.
+                return batch_fn([(candidate, example)], opt_states=[opt_state] if opt_state is not None else None)[0]
+
+            evaluate = _singleton
+
+        self.eval_fn: Callable[..., tuple[float, dict[str, Any]]] = _normalize_eval_fn(evaluate)
         self.budget = budget
         self.max_concurrency = max_concurrency
         self.best_score: float = float("-inf")
@@ -141,8 +227,12 @@ class EvalServer:
         for eid in self._split_ids.get(split, []):
             yield eid, self._examples[eid]
 
-    def evaluate(self, candidate: str, example: Any | None = None) -> tuple[float, dict[str, Any]]:
+    def evaluate(self, candidate: str, example: Any | None = None, **kwargs: Any) -> tuple[float, dict[str, Any]]:
         """Evaluate a candidate with budget enforcement.
+
+        Failed attempts consume budget (launcher parity). Extra kwargs (e.g.
+        ``opt_state``) are forwarded to the evaluator only if its signature
+        accepts them.
 
         Raises:
             BudgetExhausted: When the budget has been used up.
@@ -151,10 +241,15 @@ class EvalServer:
         try:
             self.budget.check()
 
-            if example is not None:
-                score, info = self.eval_fn(candidate, example)
-            else:
-                score, info = self.eval_fn(candidate)
+            try:
+                if example is not None:
+                    score, info = self.eval_fn(candidate, example, **kwargs)
+                else:
+                    score, info = self.eval_fn(candidate, **kwargs)
+            except Exception:
+                # check() passed above, so this record cannot itself raise.
+                self.budget.record(0.0)
+                raise
 
             self.budget.record(score)
             self._track(candidate, score, info)
@@ -164,6 +259,52 @@ class EvalServer:
             return score, info
         finally:
             self._eval_semaphore.release()
+
+    def evaluate_batch(
+        self,
+        pairs: list[tuple[str, Any]],
+        opt_states: list[Any] | None = None,
+    ) -> list[tuple[float, dict[str, Any]]]:
+        """Evaluate ``pairs`` in ONE call to the user's ``batch_evaluate`` function.
+
+        The grouped analogue of :meth:`evaluate` (e.g. to submit a provider
+        batch job): the user function receives all pairs at once; each pair is
+        then recorded against the budget and tracked individually. The budget
+        is checked once up front, so a batch may overshoot the cap by at most
+        ``len(pairs) - 1`` — mirroring the launcher's iteration-boundary stops.
+        Failed attempts consume budget (launcher parity): a failed grouped
+        call records one tick per pair.
+
+        Raises:
+            BudgetExhausted: When the budget is already used up.
+            RuntimeError: When the server was constructed without ``batch_evaluate``.
+        """
+        if self.batch_fn is None:
+            raise RuntimeError("evaluate_batch requires the server to be constructed with batch_evaluate")
+        self._eval_semaphore.acquire()
+        try:
+            self.budget.check()
+            try:
+                results = self.batch_fn(pairs, opt_states=opt_states)
+            except Exception:
+                # Guard each record so crossing the cap while recording
+                # failures never masks the user's original exception.
+                for _ in pairs:
+                    try:
+                        self.budget.record(0.0)
+                    except BudgetExhausted:
+                        break
+                raise
+        finally:
+            self._eval_semaphore.release()
+        out: list[tuple[float, dict[str, Any]]] = []
+        for (candidate, _example), (score, info) in zip(pairs, results, strict=True):
+            self.budget.record(score)
+            self._track(candidate, score, info)
+            info = dict(info)
+            info["_budget"] = self.budget.status()
+            out.append((score, info))
+        return out
 
     def evaluate_examples(
         self,
@@ -224,22 +365,43 @@ class EvalServer:
         infos: dict[str, dict[str, Any]] = {}
         errors: dict[str, str] = {}
 
-        def _eval_one(eid: str, ex: Any) -> tuple[str, float, dict[str, Any] | None, str | None]:
+        grouped_done = False
+        if self.batch_fn is not None:
+            # Multi-pair evaluations prefer the grouped path (launcher parity):
+            # the user's batch function sees all pairs in one call.
             try:
-                score, info = self.evaluate(candidate, ex)
-                return (eid, score, info, None)
-            except Exception as e:
-                return (eid, 0.0, None, str(e))
-
-        futures = {self._pool.submit(_eval_one, eid, ex): eid for eid, ex in examples}
-        for future in as_completed(futures):
-            eid, score, ex_info, err = future.result()
-            if err is not None:
-                errors[eid] = err
+                results = self.evaluate_batch([(candidate, ex) for _eid, ex in examples])
+            except BudgetExhausted:
+                raise
+            except Exception:
+                # A failed grouped call must not zero the whole stage: fall
+                # through to per-pair evaluation so one bad pair costs one 0.0,
+                # matching the per-pair path's isolation. Both attempts consume
+                # budget — each was a real eval call.
+                pass
             else:
-                scores[eid] = score
-                if ex_info is not None:
+                grouped_done = True
+                for (eid, _ex), (score, ex_info) in zip(examples, results, strict=True):
+                    scores[eid] = score
                     infos[eid] = ex_info
+        if not grouped_done:
+
+            def _eval_one(eid: str, ex: Any) -> tuple[str, float, dict[str, Any] | None, str | None]:
+                try:
+                    score, info = self.evaluate(candidate, ex)
+                    return (eid, score, info, None)
+                except Exception as e:
+                    return (eid, 0.0, None, str(e))
+
+            futures = {self._pool.submit(_eval_one, eid, ex): eid for eid, ex in examples}
+            for future in as_completed(futures):
+                eid, score, ex_info, err = future.result()
+                if err is not None:
+                    errors[eid] = err
+                else:
+                    scores[eid] = score
+                    if ex_info is not None:
+                        infos[eid] = ex_info
 
         all_scores = {**scores, **dict.fromkeys(errors, 0.0)}
         avg = sum(all_scores.values()) / len(all_scores)
@@ -291,11 +453,13 @@ class EvalServer:
         return {"val_score": val_score, "best_val_score": self._best_val_score}
 
     def _register_candidate(self, candidate: str) -> int:
-        if candidate in self._candidate_registry:
-            return self._candidate_registry[candidate]
+        # Tolerate non-str candidates (e.g. a legacy dict) — key by a stable dump.
+        key = candidate if isinstance(candidate, str) else json.dumps(candidate, sort_keys=True)
+        if key in self._candidate_registry:
+            return self._candidate_registry[key]
         cid = self._next_candidate_id
         self._next_candidate_id += 1
-        self._candidate_registry[candidate] = cid
+        self._candidate_registry[key] = cid
         if self.output_dir is not None:
             with self._io_lock:
                 with open(self.output_dir / "candidates.jsonl", "a") as f:
@@ -373,7 +537,7 @@ class EvalServer:
             entry: dict[str, Any] = {
                 "eval": self.budget.used,
                 "score": score,
-                "candidate_len": len(candidate),
+                "candidate_len": len(candidate) if isinstance(candidate, str) else sum(map(len, candidate.values())),
                 "wall_time": time.time() - self._start_time,
                 "cumulative_cost": self.total_cost,
             }

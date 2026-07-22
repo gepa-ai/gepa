@@ -26,6 +26,7 @@ Example:
 
 from __future__ import annotations
 
+import dataclasses
 import time
 import uuid
 import warnings
@@ -69,7 +70,8 @@ from gepa.oa.task import Task
 def optimize_anything(
     seed_candidate: str | None = None,
     *,
-    evaluator: Callable[..., tuple[float, dict[str, Any]]],
+    evaluator: Callable[..., Any] | None = None,
+    batch_evaluator: Callable[..., Any] | None = None,
     dataset: list[Any] | None = None,
     valset: list[Any] | None = None,
     objective: str | None = None,
@@ -80,19 +82,33 @@ def optimize_anything(
     """Optimize a text candidate (prompt, code, instructions, ...) against a score.
 
     The signature mirrors :func:`gepa.gepa_launcher.optimize_anything`
-    (``seed_candidate`` / ``evaluator`` / ``dataset`` / ``valset`` / ``objective``
-    / ``background``) so the two entry points share one shape; the new API only
-    swaps ``config`` for an :class:`OptimizeAnythingConfig` and adds ``test_set``.
+    (``seed_candidate`` / ``evaluator`` / ``batch_evaluator`` / ``dataset`` /
+    ``valset`` / ``objective`` / ``background``) so the two entry points share
+    one shape; the new API swaps ``config`` for an
+    :class:`OptimizeAnythingConfig` and adds ``test_set``.
 
     Args:
         seed_candidate: The seed text to evolve from. ``None`` for seedless
             mode, where the engine bootstraps the first candidate from
             ``objective`` / ``background``.
-        evaluator: Scoring function returning ``(score, info)``. Use
+        evaluator: Scoring function returning ``(score, info)`` — a bare
+            ``score`` is also accepted, with ``info`` defaulting to ``{}``. Use
             ``(candidate) -> (score, info)`` for a single task, or
             ``(candidate, example) -> (score, info)`` when dataset/val/test
             examples are provided. ``score`` is a float (higher is better) and
             ``info`` is a free-form dict surfaced to the engine as feedback.
+            Optional when ``batch_evaluator`` is provided (at least one is
+            required).
+        batch_evaluator: Grouped scoring hook (launcher parity): receives ALL
+            ``(candidate, example)`` pairs of an evaluation stage in ONE call —
+            e.g. to submit a provider batch job or fan out over your own
+            infrastructure — and returns one result per pair (``score`` or
+            ``(score, info)``). Multi-pair evaluations (minibatch, valset, and
+            held-out test passes) prefer it; single-pair evaluations use
+            ``evaluator``, or route through the batch function as singleton
+            batches when ``evaluator`` is omitted. If its signature accepts an
+            ``opt_states`` keyword, the gepa engine forwards the aligned
+            per-pair optimization states.
         dataset: Optional training examples used during optimization. Items
             are opaque — any object ``evaluator`` understands. Pairs the
             dataset-shaped ``(candidate, example)`` signature with ``evaluator``.
@@ -119,6 +135,10 @@ def optimize_anything(
     """
     if config is None:
         config = OptimizeAnythingConfig()
+    elif not isinstance(config, OptimizeAnythingConfig):
+        config = _from_legacy_config(config)
+    if evaluator is None and batch_evaluator is None:
+        raise ValueError("Provide evaluator=, batch_evaluator=, or both.")
     if config.max_evals is None and config.max_token_cost is None:
         warnings.warn(
             "Neither config.max_evals nor config.max_token_cost is set; the run is unbounded "
@@ -144,10 +164,29 @@ def optimize_anything(
         task,
         evaluator,
         budget,
+        batch_evaluate=batch_evaluator,
         max_concurrency=config.max_concurrency,
         output_dir=output_dir,
     )
     return _run_engine(server, engine, owns_server=True)
+
+
+def _from_legacy_config(config: Any) -> OptimizeAnythingConfig:
+    """Convert a legacy launcher :class:`GEPAConfig` into the OA-shaped config.
+
+    The whole config rides through ``engine_config`` field-for-field (so nested
+    configs and callbacks survive as objects); the launcher's eval budget
+    becomes ``max_evals`` — ``None`` stays unbounded, as in the launcher.
+    """
+    from gepa.gepa_launcher import GEPAConfig
+
+    if not isinstance(config, GEPAConfig):
+        raise TypeError(f"config must be an OptimizeAnythingConfig or GEPAConfig, got {type(config).__name__}")
+    return OptimizeAnythingConfig(
+        engine="gepa",
+        max_evals=config.engine.max_metric_calls,
+        engine_config={f.name: getattr(config, f.name) for f in dataclasses.fields(config)},
+    )
 
 
 def _run_engine(server: EvalServer, engine: Engine, *, owns_server: bool) -> Result:
@@ -216,16 +255,25 @@ def _score_test(server: EvalServer, task: Task, candidate: str | None) -> tuple[
     """
     if not task.test_set or not candidate:
         return None
+    if server.batch_fn is not None:
+        # Grouped test pass: the user's batch function gets all pairs in one call.
+        try:
+            per_example = [score for score, _info in server.batch_fn([(candidate, ex) for ex in task.test_set])]
+        except Exception:
+            per_example = [0.0] * len(task.test_set)
+    else:
+        per_example = []
+        for ex in task.test_set:
+            try:
+                per_example.append(server.eval_fn(candidate, ex)[0])
+            except Exception:
+                per_example.append(0.0)
     scores: dict[str, float] = {}
-    for i, ex in enumerate(task.test_set):
+    for i, (ex, score) in enumerate(zip(task.test_set, per_example, strict=True)):
         eid = _resolve_id(ex, f"test_{i}")
         if eid in scores:
             eid = f"test_{i}"
-        try:
-            score, _ = server.eval_fn(candidate, ex)
-            scores[eid] = score
-        except Exception:
-            scores[eid] = 0.0
+        scores[eid] = score
     avg = sum(scores.values()) / len(scores) if scores else 0.0
     return scores, avg
 

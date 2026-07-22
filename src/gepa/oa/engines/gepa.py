@@ -11,8 +11,9 @@ budget, ``run_dir``, and its own callbacks/stoppers on top.
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from gepa.oa.budget import BudgetExhausted
 from gepa.oa.engine import Result
@@ -65,6 +66,16 @@ class GepaEngine:
         gepa_config.engine.max_metric_calls = budget.max_evals
         if self.run_dir is not None:
             gepa_config.engine.run_dir = self.run_dir
+        if gepa_config.engine.run_dir is None:
+            # Always persist GEPA state (gepa_state.bin, saved by core at each
+            # iteration boundary): on BudgetExhausted the val-aggregate/Pareto
+            # best is reloaded from it instead of falling back to the server's
+            # per-example argmax.
+            if server.output_dir is not None:
+                gepa_config.engine.run_dir = str(server.output_dir / "gepa_state")
+            else:
+                gepa_config.engine.run_dir = tempfile.mkdtemp(prefix="gepa-state-")
+        run_dir = gepa_config.engine.run_dir
         if self.stop_at_score is not None:
             gepa_config.engine.stop_at_score = self.stop_at_score
 
@@ -85,13 +96,21 @@ class GepaEngine:
         # budget choke point — gepa.gepa_launcher's evaluator goes straight
         # through it.
         def evaluator(candidate, example=None, **kwargs):
-            return server.evaluate(candidate, example)
+            return server.evaluate(candidate, example, **kwargs)
 
         oa_kwargs: dict[str, Any] = {
             "seed_candidate": task.seed_candidate,
             "evaluator": evaluator,
             "config": gepa_config,
         }
+        if server.batch_fn is not None:
+            # Grouped stages (minibatch, valset, merge evals) flow through the
+            # server's batch path in ONE user call per stage; opt_states pass
+            # through when the user's batch function accepts them.
+            def batch_evaluator(pairs, opt_states=None):
+                return server.evaluate_batch(pairs, opt_states=opt_states)
+
+            oa_kwargs["batch_evaluator"] = batch_evaluator
         if task.has_dataset:
             if task.train_set:
                 oa_kwargs["dataset"] = task.train_set
@@ -108,10 +127,8 @@ class GepaEngine:
             gepa_result = optimize_anything(**oa_kwargs)
         except BudgetExhausted:
             gepa_result = self._load_result_from_state(
-                run_dir=self.run_dir,
+                run_dir=run_dir,
                 seed=gepa_config.engine.seed,
-                # optimize_anything candidates are always strings (seedless ->
-                # None seed), never the legacy dict form.
                 str_candidate_mode=not isinstance(task.seed_candidate, dict),
             )
 
@@ -120,14 +137,13 @@ class GepaEngine:
         adapter_cost = float(getattr(cost_source, "total_cost", 0.0) or 0.0) if cost_source is not None else 0.0
 
         if gepa_result is not None:
-            # gepa_result.best_candidate is str | dict[str,str]; our seed is a
-            # str (or None for seedless), so the runtime value is str — but the
-            # typing admits the dict form. Coerce so the Result stays str-typed.
             best = gepa_result.best_candidate
-            if isinstance(best, dict):
+            if isinstance(best, dict) and not isinstance(task.seed_candidate, dict):
+                # str/seedless mode: unwrap GEPA's single-key internal form. A
+                # legacy dict seed keeps its full multi-component candidate.
                 best = next(iter(best.values()), "")
             return Result(
-                best_candidate=best,
+                best_candidate=cast(str, best),
                 best_score=gepa_result.val_aggregate_scores[gepa_result.best_idx],
                 total_evals=server.budget.used,
                 eval_log=server.eval_log,
