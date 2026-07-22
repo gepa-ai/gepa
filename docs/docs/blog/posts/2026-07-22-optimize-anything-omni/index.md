@@ -13,7 +13,7 @@ authors:
 slug: optimize-anything-omni
 readtime: 15
 title: "optimize_anything Goes omni: Composing Optimizers into Meta-Optimizer Pipelines"
-description: "optimize_anything now supports customizable optimizers, which compose into meta-optimizer pipelines. No single optimizer wins everywhere. Our omni meta-optimizer combines the best of each and beats every standalone optimizer under a matched budget."
+description: "optimize_anything now supports customizable optimizers that can be composed into meta-optimizer pipelines. Why compose? Because no single optimizer wins everywhere. Our omni meta-optimizer combines the best of each and beats every standalone optimizer on Frontier-CS tasks under a matched budget."
 social_image: blog/2026-05-28-optimize-anything-omni/images/omni_design.png
 citation_authors:
   - "Shangyin Tan"
